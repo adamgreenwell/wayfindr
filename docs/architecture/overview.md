@@ -8,6 +8,7 @@ Wayfindr is planned as a Laravel-first support platform with portable client int
 - Agent workspace.
 - Browser widget SDK.
 - Realtime WebSocket layer.
+- Cobrowse page-state telemetry and relay path.
 - Queue workers.
 - Postgres database.
 - Redis for cache, queues, and realtime support.
@@ -30,5 +31,7 @@ See [data-model.md](data-model.md) for the initial Laravel-owned domain records.
 - Start as a modular monolith.
 - Keep integrations thin.
 - Keep masking client-side.
+- Treat cobrowse as shared page state instead of video streaming.
+- Measure cobrowse latency and payload pressure before adding heavier transport.
 - Keep public APIs stable only after the prototype proves them.
 - Avoid microservices until operational pressure justifies them.

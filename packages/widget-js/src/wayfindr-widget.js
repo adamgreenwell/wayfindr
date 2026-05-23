@@ -106,6 +106,19 @@
           granted: Boolean(granted),
         });
       },
+      reportCobrowseTelemetry: function (supportCode, telemetry) {
+        telemetry = telemetry || {};
+
+        return postJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/cobrowse-telemetry', {
+          site_public_key: sitePublicKey,
+          anonymous_id: anonymousId,
+          visitor_token: requireVisitorToken(visitorToken),
+          rtt_ms: telemetry.rttMs,
+          payload_bytes: telemetry.payloadBytes,
+          dropped_batches: telemetry.droppedBatches,
+          reconnects: telemetry.reconnects,
+        });
+      },
       subscribeToConversation: function (supportCode, onMessage) {
         if (!realtime) {
           return null;
@@ -273,12 +286,27 @@
       cobrowseToggle.textContent = cobrowseGranted ? 'Stop cobrowse' : 'Allow cobrowse';
     }
 
+    function estimatePayloadBytes(payload) {
+      try {
+        var serialized = JSON.stringify(payload || {});
+
+        if (root.TextEncoder) {
+          return new root.TextEncoder().encode(serialized).length;
+        }
+
+        return serialized.length;
+      } catch (error) {
+        return 0;
+      }
+    }
+
     async function toggleCobrowseConsent() {
       if (!supportCode) {
         return;
       }
 
       var nextGranted = !cobrowseGranted;
+      var startedAt = Date.now();
 
       cobrowseToggle.disabled = true;
       status.textContent = nextGranted ? 'Granting cobrowse consent...' : 'Revoking cobrowse consent...';
@@ -289,6 +317,20 @@
 
         cobrowseGranted = consent === 'granted';
         renderCobrowseConsent();
+
+        if (cobrowseGranted) {
+          try {
+            await client.reportCobrowseTelemetry(supportCode, {
+              rttMs: Date.now() - startedAt,
+              payloadBytes: estimatePayloadBytes(result),
+              droppedBatches: 0,
+              reconnects: 0,
+            });
+          } catch (error) {
+            // Telemetry should never undo a successful consent change.
+          }
+        }
+
         status.textContent = cobrowseGranted ? 'Cobrowse consent granted.' : 'Cobrowse consent revoked.';
       } catch (error) {
         status.textContent = error.message || 'Wayfindr could not update cobrowse consent.';

@@ -256,6 +256,73 @@ test('visitor can revoke cobrowse consent for their conversation', function (): 
         ->ended_at->not->toBeNull();
 });
 
+test('visitor can report cobrowse telemetry for their active session', function (): void {
+    $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-TELEMETRY',
+    ]);
+    $session = CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinute(),
+        'ended_at' => null,
+        'metadata' => [],
+    ]);
+    $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+
+    $response = $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-telemetry", [
+        'site_public_key' => 'site_public_docs',
+        'anonymous_id' => 'anon-docs',
+        'visitor_token' => $token,
+        'rtt_ms' => 184,
+        'payload_bytes' => 8192,
+        'dropped_batches' => 2,
+        'reconnects' => 1,
+    ]);
+
+    $response
+        ->assertOk()
+        ->assertJsonPath('data.conversation.support_code', 'WF-TELEMETRY')
+        ->assertJsonPath('data.cobrowse.status', 'granted')
+        ->assertJsonPath('data.telemetry.rtt_ms', 184)
+        ->assertJsonPath('data.telemetry.max_rtt_ms', 184)
+        ->assertJsonPath('data.telemetry.payload_bytes', 8192)
+        ->assertJsonPath('data.telemetry.max_payload_bytes', 8192)
+        ->assertJsonPath('data.telemetry.dropped_batches', 2)
+        ->assertJsonPath('data.telemetry.reconnects', 1)
+        ->assertJsonPath('data.telemetry.samples', 1);
+
+    $secondResponse = $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-telemetry", [
+        'site_public_key' => 'site_public_docs',
+        'anonymous_id' => 'anon-docs',
+        'visitor_token' => $token,
+        'rtt_ms' => 90,
+        'payload_bytes' => 1024,
+        'dropped_batches' => 3,
+        'reconnects' => 1,
+    ]);
+
+    $secondResponse
+        ->assertOk()
+        ->assertJsonPath('data.telemetry.rtt_ms', 90)
+        ->assertJsonPath('data.telemetry.max_rtt_ms', 184)
+        ->assertJsonPath('data.telemetry.payload_bytes', 1024)
+        ->assertJsonPath('data.telemetry.max_payload_bytes', 8192)
+        ->assertJsonPath('data.telemetry.dropped_batches', 3)
+        ->assertJsonPath('data.telemetry.reconnects', 1)
+        ->assertJsonPath('data.telemetry.samples', 2);
+
+    expect($session->fresh()->metadata['telemetry'])
+        ->rtt_ms->toBe(90)
+        ->max_rtt_ms->toBe(184)
+        ->payload_bytes->toBe(1024)
+        ->max_payload_bytes->toBe(8192)
+        ->dropped_batches->toBe(3)
+        ->reconnects->toBe(1)
+        ->samples->toBe(2)
+        ->reported_at->not->toBeNull();
+});
+
 test('visitor cannot change cobrowse consent for another visitors conversation', function (): void {
     $site = Site::factory()->create(['public_key' => 'site_public_docs']);
     $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);

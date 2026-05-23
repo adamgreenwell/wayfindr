@@ -56,6 +56,45 @@
                 </div>
 
                 <p class="empty">{{ $cobrowseConsent['message'] }}</p>
+
+                @if ($cobrowseConsent['telemetry'])
+                    <div class="section-header">
+                        <strong>Connection telemetry</strong>
+                    </div>
+
+                    <div class="meta-grid realtime-grid">
+                        <div class="meta-item">
+                            <span class="meta-label">RTT</span>
+                            <span class="meta-value">{{ $cobrowseConsent['telemetry']['rtt'] }}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Max RTT</span>
+                            <span class="meta-value">{{ $cobrowseConsent['telemetry']['max_rtt'] }}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Payload</span>
+                            <span class="meta-value">{{ $cobrowseConsent['telemetry']['payload'] }}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Max payload</span>
+                            <span class="meta-value">{{ $cobrowseConsent['telemetry']['max_payload'] }}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Dropped batches</span>
+                            <span class="meta-value">{{ $cobrowseConsent['telemetry']['dropped_batches'] }}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Reconnects</span>
+                            <span class="meta-value">{{ $cobrowseConsent['telemetry']['reconnects'] }}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Samples</span>
+                            <span class="meta-value">{{ $cobrowseConsent['telemetry']['samples'] }}</span>
+                        </div>
+                    </div>
+                @else
+                    <p class="empty realtime-note">No cobrowse connection telemetry yet.</p>
+                @endif
             </section>
 
             <section class="section" aria-labelledby="messages-heading">

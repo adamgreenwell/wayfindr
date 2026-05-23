@@ -231,6 +231,59 @@ test('sets cobrowse consent through the public visitor API', async () => {
   assert.equal(result.cobrowse.consent, 'granted');
 });
 
+test('reports cobrowse telemetry through the public visitor API', async () => {
+  const calls = [];
+  const client = Wayfindr.createClient({
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    visitorToken: 'visitor-token-123',
+    fetch: async (url, options) => {
+      calls.push({ url, options });
+
+      return jsonResponse(200, {
+        data: {
+          conversation: {
+            support_code: 'WF-TEST123',
+          },
+          cobrowse: {
+            status: 'granted',
+          },
+          telemetry: {
+            rtt_ms: 120,
+            max_rtt_ms: 184,
+            payload_bytes: 2048,
+            max_payload_bytes: 8192,
+            dropped_batches: 1,
+            reconnects: 0,
+            samples: 3,
+          },
+        },
+      });
+    },
+  });
+
+  const result = await client.reportCobrowseTelemetry('WF-TEST123', {
+    rttMs: 120,
+    payloadBytes: 2048,
+    droppedBatches: 1,
+    reconnects: 0,
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'http://127.0.0.1:8000/api/conversations/WF-TEST123/cobrowse-telemetry');
+  assert.deepEqual(JSON.parse(calls[0].options.body), {
+    site_public_key: 'site_public_docs',
+    anonymous_id: 'anon-browser-123',
+    visitor_token: 'visitor-token-123',
+    rtt_ms: 120,
+    payload_bytes: 2048,
+    dropped_batches: 1,
+    reconnects: 0,
+  });
+  assert.equal(result.telemetry.samples, 3);
+});
+
 test('prepares private conversation subscriptions for realtime adapters', () => {
   let subscriptionPayload = null;
   const received = [];
@@ -667,6 +720,22 @@ test('renders widget cobrowse consent controls after a conversation starts', asy
         });
       }
 
+      if (url.endsWith('/api/conversations/WF-TEST123/cobrowse-telemetry')) {
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-TEST123' },
+            cobrowse: { status: 'granted' },
+            telemetry: {
+              rtt_ms: 10,
+              payload_bytes: 256,
+              dropped_batches: 0,
+              reconnects: 0,
+              samples: 1,
+            },
+          },
+        });
+      }
+
       return jsonResponse(200, {
         data: {
           conversation: { support_code: 'WF-TEST123', status: 'open' },
@@ -713,6 +782,17 @@ test('renders widget cobrowse consent controls after a conversation starts', asy
   });
   assert.equal(cobrowseButton.textContent, 'Stop cobrowse');
   assert.match(widget.root.querySelector('.wayfindr-widget__status').textContent, /Cobrowse consent granted/);
+
+  const telemetryCall = calls.find((call) => call.url.endsWith('/api/conversations/WF-TEST123/cobrowse-telemetry'));
+  const telemetryPayload = JSON.parse(telemetryCall.options.body);
+
+  assert.equal(telemetryPayload.site_public_key, 'site_public_docs');
+  assert.equal(telemetryPayload.anonymous_id, 'anon-browser-123');
+  assert.equal(telemetryPayload.visitor_token, 'visitor-token-123');
+  assert.equal(typeof telemetryPayload.rtt_ms, 'number');
+  assert.equal(typeof telemetryPayload.payload_bytes, 'number');
+  assert.equal(telemetryPayload.dropped_batches, 0);
+  assert.equal(telemetryPayload.reconnects, 0);
 
   cobrowseButton.dispatchEvent(new dom.window.Event('click', { bubbles: true }));
 

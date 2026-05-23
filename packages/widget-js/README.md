@@ -51,6 +51,8 @@ The widget currently supports the first visitor loop:
 - send visitor messages,
 - render the visitor-visible conversation message timeline,
 - receive live agent replies over Reverb when configured,
+- grant or revoke cobrowse consent,
+- report lightweight cobrowse connection telemetry after consent,
 - manually refresh for agent replies when realtime is unavailable.
 
 ```js
@@ -72,6 +74,8 @@ Lower-level calls such as `startConversation`, `sendMessage`, and
 `subscribeToConversation` prepares a private `conversations.{supportCode}`
 subscription for realtime adapters and uses Wayfindr's signed visitor session
 when authorizing the channel.
+`setCobrowseConsent` and `reportCobrowseTelemetry` prepare the consent and
+measurement path for shared page-state cobrowsing.
 
 ## Development
 
