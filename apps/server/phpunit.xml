@@ -22,7 +22,7 @@
     </source>
     <php>
         <env name="APP_ENV" value="testing"/>
-        <env name="APP_KEY" value="base64:AjjVl7T/fNLciJjPKF12mZX+mv7yuDspO2GepUD/7rM="/>
+        <env name="APP_KEY" value="testtesttesttesttesttesttesttest"/>
         <env name="APP_NAME" value="Wayfindr"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
