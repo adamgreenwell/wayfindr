@@ -90,7 +90,11 @@ class Site extends Model
 
     public function latestVisitor(): HasOne
     {
-        return $this->hasOne(Visitor::class)->latestOfMany('last_seen_at');
+        return $this->hasOne(Visitor::class)
+            ->ofMany([
+                'last_seen_at' => 'max',
+                'id' => 'max',
+            ], fn (Builder $query) => $query->where('anonymous_id', 'not like', 'tester-site-%'));
     }
 
     public function conversations(): HasMany

@@ -21,16 +21,24 @@ echo "Checking health endpoint..."
 curl -fsS "${base_url%/}/up" >/dev/null
 
 echo "Bootstrapping widget visitor..."
-json_post '/api/widget/bootstrap' "{
+bootstrap_response="$(json_post '/api/widget/bootstrap' "{
     \"site_public_key\": \"${site_public_key}\",
     \"anonymous_id\": \"${anonymous_id}\",
     \"page_url\": \"${base_url%/}/smoke\"
-}" >/dev/null
+}")"
+
+visitor_token="$(printf '%s' "$bootstrap_response" | php -r '$payload = json_decode(stream_get_contents(STDIN), true); echo $payload["data"]["visitor"]["token"] ?? "";')"
+
+if [[ -z "$visitor_token" ]]; then
+    echo "Unable to read visitor token from bootstrap response." >&2
+    exit 1
+fi
 
 echo "Creating conversation..."
 conversation_response="$(json_post '/api/conversations' "{
     \"site_public_key\": \"${site_public_key}\",
     \"anonymous_id\": \"${anonymous_id}\",
+    \"visitor_token\": \"${visitor_token}\",
     \"subject\": \"Forge smoke test\",
     \"page_url\": \"${base_url%/}/smoke\"
 }")"
@@ -46,6 +54,7 @@ echo "Sending message to ${support_code}..."
 json_post "/api/conversations/${support_code}/messages" "{
     \"site_public_key\": \"${site_public_key}\",
     \"anonymous_id\": \"${anonymous_id}\",
+    \"visitor_token\": \"${visitor_token}\",
     \"body\": \"Hello from the Forge smoke test.\"
 }" >/dev/null
 

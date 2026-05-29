@@ -47,6 +47,7 @@
                                         <td>
                                             <a class="text-link" href="{{ route('dashboard.sites.show', $site) }}">{{ $site->name }}</a>
                                             <span class="lede">{{ $site->domain ?? 'Not set' }}</span>
+                                            <div class="lede"><a class="text-link" href="{{ route('dashboard.sites.tester', $site) }}">Open tester</a></div>
                                         </td>
                                         <td>
                                             @if ($supportAgentCount > 0)

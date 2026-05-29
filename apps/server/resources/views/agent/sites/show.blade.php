@@ -108,6 +108,10 @@
                         <span class="meta-label">Last page</span>
                         <span class="meta-value">{{ $lastPageUrl ?: 'Not reported' }}</span>
                     </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Verification lab</span>
+                        <a class="text-link" href="{{ route('dashboard.sites.tester', $site) }}">Open tester</a>
+                    </div>
                 </div>
             </section>
 
@@ -159,6 +163,7 @@
                     <div class="notice-list" aria-label="Next steps">
                         <p><strong>Next steps</strong></p>
                         <p>Copy this snippet into {{ $site->domain ?? 'your site' }}.</p>
+                        <p>Use the tester when you want to confirm the widget loop without changing a public page.</p>
                         <p>Visit the site and send a test message from the widget.</p>
                         @if ($agent->isPlatformOperator())
                             <p>Open the operator console to review instance health, release identity, and self-hosting docs.</p>
@@ -168,6 +173,9 @@
                 </div>
 
                 <pre class="code-block"><code>{{ $widgetInstallSnippet }}</code></pre>
+                <div class="notice-actions">
+                    <a class="button secondary" href="{{ route('dashboard.sites.tester', $site) }}">Open tester</a>
+                </div>
             </section>
 
             <section class="section" aria-labelledby="support-access-heading">

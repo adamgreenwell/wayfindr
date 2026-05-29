@@ -78,6 +78,8 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.sites.store');
     Route::get('/dashboard/sites/{site}', [AgentSiteController::class, 'show'])
         ->name('dashboard.sites.show');
+    Route::get('/dashboard/sites/{site}/tester', [AgentSiteController::class, 'tester'])
+        ->name('dashboard.sites.tester');
     Route::put('/dashboard/sites/{site}', [AgentSiteController::class, 'update'])
         ->name('dashboard.sites.update');
     Route::put('/dashboard/sites/{site}/support-agents', [AgentSiteController::class, 'updateSupportAgents'])

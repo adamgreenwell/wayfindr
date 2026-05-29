@@ -129,6 +129,20 @@ class AgentSiteController extends Controller
         ]);
     }
 
+    public function tester(Request $request, Site $site): View
+    {
+        $this->authorizeSiteAbility($request, 'view', $site, 404);
+
+        return view('agent.sites.tester', [
+            'account' => $this->account($request),
+            'agent' => $request->user(),
+            'site' => $site,
+            'testerAnonymousId' => "tester-site-{$site->id}-agent-{$request->user()->id}",
+            'widgetBaseUrl' => $this->widgetBaseUrl(),
+            'widgetReverbConfig' => $this->publicReverbConfig(),
+        ]);
+    }
+
     /**
      * @return Collection<int, array{label: string, actor: string, subject: string, body: string, occurred_at: Carbon|null}>
      */

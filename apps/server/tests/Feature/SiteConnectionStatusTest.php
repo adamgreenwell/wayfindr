@@ -122,6 +122,7 @@ test('site index shows install health cues for visible sites', function (): void
         ->assertSee('id="site-install-health"', false)
         ->assertSee('Install health')
         ->assertSee('Wayfindr Public Site')
+        ->assertSee("/dashboard/sites/{$connectedSite->id}/tester", false)
         ->assertSee('Live')
         ->assertSee('Seen 5 minutes ago')
         ->assertSee('Quiet Docs')
@@ -136,6 +137,79 @@ test('site index shows install health cues for visible sites', function (): void
         ->assertSee("/dashboard/sites/{$quietSite->id}#install-verification", false)
         ->assertSee('https://wayfindr.cc/pricing')
         ->assertSee('https://quiet.example.test/help');
+});
+
+test('agents can open a hosted tester page for sites they support', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Wayfindr Public Site',
+        'domain' => 'wayfindr.cc',
+        'public_key' => 'site_public_docs',
+    ]);
+    $site->supportAgents()->attach($agent);
+
+    $this->actingAs($agent)
+        ->get("/dashboard/sites/{$site->id}/tester")
+        ->assertOk()
+        ->assertSee('Wayfindr Public Site tester')
+        ->assertSee('Test surface')
+        ->assertSee('Verification run')
+        ->assertSee('Sample page')
+        ->assertSee('visitor@example.test')
+        ->assertSee('data-wayfindr-mask', false)
+        ->assertSee('tester-site-'.$site->id.'-agent-'.$agent->id)
+        ->assertSee('src="http://localhost:8000/widget.js"', false)
+        ->assertSee('apiBaseUrl: "http:\/\/localhost:8000"', false)
+        ->assertSee('sitePublicKey: "site_public_docs"', false)
+        ->assertSee("wayfindr_source: 'tester'", false)
+        ->assertSee('/dashboard#conversations', false)
+        ->assertSee("/dashboard/sites/{$site->id}", false);
+});
+
+test('tester visitors do not satisfy install health check ins', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Quiet Docs',
+        'domain' => 'quiet.example.test',
+    ]);
+
+    Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-real',
+        'last_seen_at' => now()->subDays(2),
+        'metadata' => [
+            'last_page_url' => 'https://quiet.example.test/help',
+        ],
+    ]);
+
+    Visitor::factory()->for($site)->create([
+        'anonymous_id' => "tester-site-{$site->id}-agent-{$agent->id}",
+        'last_seen_at' => now()->subMinute(),
+        'metadata' => [
+            'last_page_url' => "http://localhost/dashboard/sites/{$site->id}/tester",
+        ],
+    ]);
+
+    $this->actingAs($agent)
+        ->get("/dashboard/sites/{$site->id}")
+        ->assertOk()
+        ->assertSee('Needs check')
+        ->assertSee('Seen 2 days ago')
+        ->assertSee('https://quiet.example.test/help')
+        ->assertDontSee("http://localhost/dashboard/sites/{$site->id}/tester");
+});
+
+test('agents cannot open tester pages for unsupported sites', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $assignedAgent = User::factory()->for($account)->create();
+    $unsupportedAgent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $site->supportAgents()->attach($assignedAgent);
+
+    $this->actingAs($unsupportedAgent)
+        ->get("/dashboard/sites/{$site->id}/tester")
+        ->assertNotFound();
 });
 
 test('site settings show the latest widget check in details', function (): void {
@@ -161,6 +235,8 @@ test('site settings show the latest widget check in details', function (): void 
         ->assertSee('Seen 3 minutes ago')
         ->assertSee('https://wayfindr.cc/docs')
         ->assertSee('Install verification')
+        ->assertSee('Open tester')
+        ->assertSee("/dashboard/sites/{$site->id}/tester", false)
         ->assertSee('The widget has checked in recently.')
         ->assertSee('Last verified page')
         ->assertSee('Verify again')
