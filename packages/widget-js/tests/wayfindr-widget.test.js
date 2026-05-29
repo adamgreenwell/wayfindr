@@ -1126,6 +1126,119 @@ test('renders the embedded conversation timeline and refreshes replies', async (
   );
 });
 
+test('marks consecutive widget messages from the same sender as a visual group', async () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    storage: memoryStorage(),
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    fetch: async (url) => {
+      const path = new URL(url).pathname;
+
+      if (path === '/api/widget/bootstrap') {
+        return jsonResponse(201, {
+          data: {
+            site: { public_key: 'site_public_docs', settings: {} },
+            visitor: { anonymous_id: 'anon-browser-123', token: 'visitor-token-123' },
+          },
+        });
+      }
+
+      if (path === '/api/conversations') {
+        return jsonResponse(201, {
+          data: {
+            support_code: 'WF-TEST123',
+            status: 'open',
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-TEST123/cobrowse') {
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-TEST123' },
+            cobrowse: {
+              status: 'unavailable',
+              consent: 'unavailable',
+              requested_by: null,
+            },
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-TEST123/messages') {
+        return jsonResponse(200, {
+          data: {
+            conversation: {
+              support_code: 'WF-TEST123',
+              status: 'open',
+            },
+            messages: [
+              {
+                id: 1,
+                sender: { kind: 'visitor', name: 'Visitor' },
+                type: 'text',
+                body: 'First thought.',
+                created_at: '2026-05-23T14:00:00.000000Z',
+              },
+              {
+                id: 2,
+                sender: { kind: 'visitor', name: 'Visitor' },
+                type: 'text',
+                body: 'One more detail.',
+                created_at: '2026-05-23T14:02:00.000000Z',
+              },
+              {
+                id: 3,
+                sender: { kind: 'agent', name: 'Ada Agent' },
+                type: 'text',
+                body: 'I am on it.',
+                created_at: '2026-05-23T14:03:00.000000Z',
+              },
+              {
+                id: 4,
+                sender: { kind: 'agent', name: 'Ada Agent' },
+                type: 'text',
+                body: 'Following up later.',
+                created_at: '2026-05-23T14:10:00.000000Z',
+              },
+            ],
+          },
+        });
+      }
+
+      throw new Error('Unexpected request ' + url);
+    },
+  });
+
+  widget.open();
+
+  widget.root.querySelector('.wayfindr-widget__textarea').value = 'First thought.';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+    new dom.window.Event('submit', { bubbles: true, cancelable: true }),
+  );
+
+  await settle();
+
+  const messages = [...widget.root.querySelectorAll('.wayfindr-widget__message')];
+
+  assert.equal(messages[0].classList.contains('wayfindr-widget__message--grouped'), false);
+  assert.equal(messages[1].classList.contains('wayfindr-widget__message--grouped'), true);
+  assert.equal(messages[2].classList.contains('wayfindr-widget__message--grouped'), false);
+  assert.equal(messages[3].classList.contains('wayfindr-widget__message--grouped'), false);
+  assert.equal(messages[1].querySelector('.wayfindr-widget__message-name').textContent, 'Visitor');
+  assert.equal(messages[1].querySelector('.wayfindr-widget__message-time').dateTime, '2026-05-23T14:02:00.000000Z');
+});
+
 test('polls active conversations so agent replies appear when realtime is unavailable', async () => {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
     url: 'https://docs.example.test/install',

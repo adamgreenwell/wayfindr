@@ -17,6 +17,7 @@
     mutationBatchMaxBytes: 60000,
     mutationQueueMaxRecords: 250,
   };
+  var MESSAGE_GROUP_WINDOW_MS = 5 * 60 * 1000;
   var DEFAULT_MASK_SELECTORS = [
     'input[type="password"]',
     'input[type="hidden"]',
@@ -406,7 +407,7 @@
       messages = Array.isArray(nextMessages) ? nextMessages : messages;
       timeline.textContent = '';
 
-      messages.forEach(function (message) {
+      messages.forEach(function (message, index) {
         var sender = message.sender || {};
         var senderKind = sender.kind === 'agent' ? 'agent' : 'visitor';
         var item = doc.createElement('article');
@@ -414,8 +415,14 @@
         var name = doc.createElement('strong');
         var body = doc.createElement('p');
         var time = createMessageTime(doc, message.created_at);
+        var grouped = shouldGroupMessage(message, messages[index - 1]);
 
         item.className = 'wayfindr-widget__message wayfindr-widget__message--' + senderKind;
+
+        if (grouped) {
+          item.className += ' wayfindr-widget__message--grouped';
+        }
+
         meta.className = 'wayfindr-widget__message-meta';
         name.className = 'wayfindr-widget__message-name';
         name.textContent = sender.name || (senderKind === 'agent' ? 'Support' : 'Visitor');
@@ -1003,6 +1010,48 @@
     time.textContent = formatMessageTime(date);
 
     return time;
+  }
+
+  function shouldGroupMessage(message, previousMessage) {
+    if (!previousMessage || !sameMessageSender(message, previousMessage)) {
+      return false;
+    }
+
+    var currentTime = parseMessageTime(message && message.created_at);
+    var previousTime = parseMessageTime(previousMessage && previousMessage.created_at);
+
+    if (currentTime === null || previousTime === null) {
+      return true;
+    }
+
+    var delta = currentTime - previousTime;
+
+    return delta >= 0 && delta <= MESSAGE_GROUP_WINDOW_MS;
+  }
+
+  function sameMessageSender(message, previousMessage) {
+    var sender = (message && message.sender) || {};
+    var previousSender = (previousMessage && previousMessage.sender) || {};
+    var senderKind = sender.kind === 'agent' ? 'agent' : 'visitor';
+    var previousSenderKind = previousSender.kind === 'agent' ? 'agent' : 'visitor';
+    var senderName = sender.name || (senderKind === 'agent' ? 'Support' : 'Visitor');
+    var previousSenderName = previousSender.name || (previousSenderKind === 'agent' ? 'Support' : 'Visitor');
+
+    return senderKind === previousSenderKind && senderName === previousSenderName;
+  }
+
+  function parseMessageTime(value) {
+    if (!value) {
+      return null;
+    }
+
+    var date = new Date(String(value));
+
+    if (Number.isNaN(date.getTime())) {
+      return null;
+    }
+
+    return date.getTime();
   }
 
   function formatMessageTime(date) {
@@ -1739,8 +1788,11 @@
       '.wayfindr-widget__connection{margin:0;padding:10px 16px 0;color:#62706b;font-size:12px;line-height:1.35}',
       '.wayfindr-widget__message{display:grid;gap:4px;width:88%;border:1px solid #d8dfdc;border-radius:8px;padding:9px 10px;background:#fff}',
       '.wayfindr-widget__message--agent{justify-self:end;background:#eef6f3;border-color:#cfe1dc}',
+      '.wayfindr-widget__message--grouped{margin-top:-6px}',
       '.wayfindr-widget__message-meta{display:flex;align-items:center;justify-content:space-between;gap:10px}',
       '.wayfindr-widget__message-name{color:#62706b;font-size:12px;line-height:1.2}',
+      '.wayfindr-widget__message--grouped .wayfindr-widget__message-name{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}',
+      '.wayfindr-widget__message--grouped .wayfindr-widget__message-meta{justify-content:flex-end}',
       '.wayfindr-widget__message-time{color:#7d8a85;font-size:11px;line-height:1.2;white-space:nowrap}',
       '.wayfindr-widget__message-body{margin:0;white-space:pre-wrap;color:#1d2523;font-size:14px;line-height:1.4}',
       '.wayfindr-widget__form{display:grid;gap:10px;padding:16px}',
