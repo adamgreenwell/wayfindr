@@ -64,6 +64,7 @@ class AgentProfileController extends Controller
         $request->user()->update([
             'alert_preferences' => array_merge($alertPreferences, [
                 'mode' => $validated['alert_mode'],
+                'email' => $request->boolean('email_alerts'),
             ]),
         ]);
 

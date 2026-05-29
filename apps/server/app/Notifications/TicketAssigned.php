@@ -5,6 +5,7 @@ namespace App\Notifications;
 use App\Models\Ticket;
 use App\Models\User;
 use Illuminate\Bus\Queueable;
+use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 class TicketAssigned extends Notification
@@ -25,7 +26,22 @@ class TicketAssigned extends Notification
      */
     public function via(object $notifiable): array
     {
-        return ['database'];
+        $channels = ['database'];
+
+        if ($notifiable instanceof User && $notifiable->alertEmailEnabled()) {
+            $channels[] = 'mail';
+        }
+
+        return $channels;
+    }
+
+    public function toMail(object $notifiable): MailMessage
+    {
+        return (new MailMessage)
+            ->subject('Wayfindr ticket assigned: '.$this->ticket->subject)
+            ->line($this->assignedBy->name.' assigned you a ticket on '.$this->ticket->site->name.'.')
+            ->line('Priority: '.ucfirst($this->ticket->priority))
+            ->action('Open ticket', route('dashboard.tickets.show', $this->ticket));
     }
 
     /**

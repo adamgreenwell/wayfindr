@@ -102,6 +102,11 @@ class User extends Authenticatable
             : self::ALERT_MODE_ALL;
     }
 
+    public function alertEmailEnabled(): bool
+    {
+        return data_get($this->alert_preferences, 'email') === true;
+    }
+
     public function shouldReceiveConversationAlert(Conversation $conversation): bool
     {
         if ($this->isDeactivated() || $this->alertMode() === self::ALERT_MODE_QUIET) {

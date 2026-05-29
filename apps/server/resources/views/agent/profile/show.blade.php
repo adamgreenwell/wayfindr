@@ -80,7 +80,18 @@
                 @enderror
             </div>
 
-            <p class="field-help">Quiet mode keeps the dashboard usable without creating new unread alerts.</p>
+            <label class="check-row" for="email_alerts">
+                <input
+                    id="email_alerts"
+                    name="email_alerts"
+                    type="checkbox"
+                    value="1"
+                    @checked(old('email_alerts', $agent->alertEmailEnabled()))
+                >
+                <span>Email alerts</span>
+            </label>
+
+            <p class="field-help">Email alerts send the same calm support signals to your inbox when mail is configured. Quiet mode still suppresses new alerts.</p>
 
             <button class="button" type="submit">Save alert preferences</button>
         </form>

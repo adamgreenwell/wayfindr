@@ -54,6 +54,74 @@ test('visitor messages notify the assigned agent', function (): void {
         ]);
 });
 
+test('conversation alerts include mail when the assigned agent opts in', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $assignedAgent = User::factory()->for($account)->create([
+        'name' => 'Ada Agent',
+        'alert_preferences' => [
+            'mode' => 'assigned',
+            'email' => true,
+        ],
+    ]);
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Acme Docs',
+        'public_key' => 'site_public_docs',
+    ]);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'assigned_agent_id' => $assignedAgent->id,
+        'support_code' => 'WF-MAIL1',
+        'subject' => 'Checkout trouble',
+    ]);
+    $token = notificationVisitorToken($this, 'site_public_docs', 'anon-docs');
+
+    $this->postJson("/api/conversations/{$conversation->support_code}/messages", [
+        'site_public_key' => 'site_public_docs',
+        'anonymous_id' => 'anon-docs',
+        'visitor_token' => $token,
+        'body' => 'The checkout button is still stuck.',
+    ])->assertCreated();
+
+    $notification = $assignedAgent->fresh()->unreadNotifications()->firstOrFail();
+
+    expect((new ConversationNeedsReply($conversation->messages()->latest('id')->firstOrFail()))->via($assignedAgent))
+        ->toBe(['database', 'mail'])
+        ->and($notification->data)->toMatchArray([
+            'support_code' => 'WF-MAIL1',
+            'message_preview' => 'The checkout button is still stuck.',
+        ]);
+});
+
+test('conversation alerts stay dashboard only when email alerts are disabled', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create([
+        'alert_preferences' => [
+            'mode' => 'all',
+            'email' => false,
+        ],
+    ]);
+    $site = Site::factory()->for($account)->create([
+        'public_key' => 'site_public_docs',
+    ]);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'assigned_agent_id' => $agent->id,
+        'support_code' => 'WF-MAIL2',
+    ]);
+    $token = notificationVisitorToken($this, 'site_public_docs', 'anon-docs');
+
+    $this->postJson("/api/conversations/{$conversation->support_code}/messages", [
+        'site_public_key' => 'site_public_docs',
+        'anonymous_id' => 'anon-docs',
+        'visitor_token' => $token,
+        'body' => 'Dashboard only, please.',
+    ])->assertCreated();
+
+    expect((new ConversationNeedsReply($conversation->messages()->latest('id')->firstOrFail()))->via($agent))
+        ->toBe(['database'])
+        ->and($agent->fresh()->unreadNotifications)->toHaveCount(1);
+});
+
 test('assigned conversation alerts batch repeated visitor messages', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
@@ -335,6 +403,38 @@ test('assigning a ticket notifies the new assignee', function (): void {
         'assigned_by_name' => 'Ada Agent',
         'url' => "/dashboard/tickets/{$ticket->id}",
     ]);
+});
+
+test('ticket assignment alerts include mail when the new assignee opts in', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $assigningAgent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $assignedAgent = User::factory()->for($account)->create([
+        'name' => 'Bea Builder',
+        'alert_preferences' => [
+            'mode' => 'assigned',
+            'email' => true,
+        ],
+    ]);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->create([
+            'assignee_id' => null,
+            'subject' => 'Escalated checkout issue',
+            'priority' => 'high',
+        ]);
+
+    $this->actingAs($assigningAgent)
+        ->from("/dashboard/tickets/{$ticket->id}")
+        ->put("/dashboard/tickets/{$ticket->id}/assignee", [
+            'assignee_id' => $assignedAgent->id,
+        ])
+        ->assertRedirect("/dashboard/tickets/{$ticket->id}");
+
+    expect((new TicketAssigned($ticket->fresh(), $assigningAgent))->via($assignedAgent))
+        ->toBe(['database', 'mail'])
+        ->and($assignedAgent->fresh()->unreadNotifications)->toHaveCount(1);
 });
 
 test('ticket assignment alerts honor quiet and deactivated agents', function (): void {

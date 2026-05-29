@@ -3,7 +3,9 @@
 namespace App\Notifications;
 
 use App\Models\ConversationMessage;
+use App\Models\User;
 use Illuminate\Bus\Queueable;
+use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Str;
 
@@ -26,7 +28,24 @@ class ConversationNeedsReply extends Notification
      */
     public function via(object $notifiable): array
     {
-        return ['database'];
+        $channels = ['database'];
+
+        if ($notifiable instanceof User && $notifiable->alertEmailEnabled()) {
+            $channels[] = 'mail';
+        }
+
+        return $channels;
+    }
+
+    public function toMail(object $notifiable): MailMessage
+    {
+        $conversation = $this->message->conversation;
+
+        return (new MailMessage)
+            ->subject('Wayfindr reply needed: '.($conversation->subject ?? $conversation->support_code))
+            ->line($conversation->site->name.' has a visitor message waiting for you.')
+            ->line(Str::limit((string) $this->message->body, 240))
+            ->action('Open conversation', route('dashboard.conversations.show', $conversation->support_code));
     }
 
     /**

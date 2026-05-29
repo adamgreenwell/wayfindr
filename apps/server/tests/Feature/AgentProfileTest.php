@@ -77,18 +77,21 @@ test('agent can update their alert preference mode', function (): void {
         ->assertSee('/dashboard/profile/alerts', false)
         ->assertSee('All site alerts I can support')
         ->assertSee('Only conversations and tickets assigned to me')
-        ->assertSee('Quiet mode');
+        ->assertSee('Quiet mode')
+        ->assertSee('Email alerts');
 
     $this->actingAs($agent)
         ->from('/dashboard/profile')
         ->put('/dashboard/profile/alerts', [
             'alert_mode' => 'assigned',
+            'email_alerts' => '1',
         ])
         ->assertRedirect('/dashboard/profile')
         ->assertSessionHas('status', 'Alert preferences updated.');
 
     expect($agent->fresh()->alert_preferences)->toMatchArray([
         'mode' => 'assigned',
+        'email' => true,
     ]);
 });
 
@@ -107,6 +110,28 @@ test('agent alert preference mode must be supported', function (): void {
 
     expect($agent->fresh()->alert_preferences)->toMatchArray([
         'mode' => 'all',
+    ]);
+});
+
+test('agent can disable email alert delivery while keeping dashboard alerts', function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => [
+            'mode' => 'all',
+            'email' => true,
+        ],
+    ]);
+
+    $this->actingAs($agent)
+        ->from('/dashboard/profile')
+        ->put('/dashboard/profile/alerts', [
+            'alert_mode' => 'all',
+        ])
+        ->assertRedirect('/dashboard/profile')
+        ->assertSessionHas('status', 'Alert preferences updated.');
+
+    expect($agent->fresh()->alert_preferences)->toMatchArray([
+        'mode' => 'all',
+        'email' => false,
     ]);
 });
 
