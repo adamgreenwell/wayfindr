@@ -410,16 +410,25 @@
         var sender = message.sender || {};
         var senderKind = sender.kind === 'agent' ? 'agent' : 'visitor';
         var item = doc.createElement('article');
+        var meta = doc.createElement('div');
         var name = doc.createElement('strong');
         var body = doc.createElement('p');
+        var time = createMessageTime(doc, message.created_at);
 
         item.className = 'wayfindr-widget__message wayfindr-widget__message--' + senderKind;
+        meta.className = 'wayfindr-widget__message-meta';
         name.className = 'wayfindr-widget__message-name';
         name.textContent = sender.name || (senderKind === 'agent' ? 'Support' : 'Visitor');
         body.className = 'wayfindr-widget__message-body';
         body.textContent = message.body || '';
 
-        item.appendChild(name);
+        meta.appendChild(name);
+
+        if (time) {
+          meta.appendChild(time);
+        }
+
+        item.appendChild(meta);
         item.appendChild(body);
         timeline.appendChild(item);
       });
@@ -974,6 +983,37 @@
     }
 
     return [eventName, '.' + eventName];
+  }
+
+  function createMessageTime(doc, value) {
+    if (!value) {
+      return null;
+    }
+
+    var date = new Date(String(value));
+
+    if (Number.isNaN(date.getTime())) {
+      return null;
+    }
+
+    var time = doc.createElement('time');
+    time.className = 'wayfindr-widget__message-time';
+    time.dateTime = String(value);
+    time.title = date.toISOString();
+    time.textContent = formatMessageTime(date);
+
+    return time;
+  }
+
+  function formatMessageTime(date) {
+    try {
+      return date.toLocaleTimeString([], {
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+    } catch (error) {
+      return date.toISOString().slice(11, 16);
+    }
   }
 
   function resolveAnonymousId(options) {
@@ -1699,7 +1739,9 @@
       '.wayfindr-widget__connection{margin:0;padding:10px 16px 0;color:#62706b;font-size:12px;line-height:1.35}',
       '.wayfindr-widget__message{display:grid;gap:4px;width:88%;border:1px solid #d8dfdc;border-radius:8px;padding:9px 10px;background:#fff}',
       '.wayfindr-widget__message--agent{justify-self:end;background:#eef6f3;border-color:#cfe1dc}',
+      '.wayfindr-widget__message-meta{display:flex;align-items:center;justify-content:space-between;gap:10px}',
       '.wayfindr-widget__message-name{color:#62706b;font-size:12px;line-height:1.2}',
+      '.wayfindr-widget__message-time{color:#7d8a85;font-size:11px;line-height:1.2;white-space:nowrap}',
       '.wayfindr-widget__message-body{margin:0;white-space:pre-wrap;color:#1d2523;font-size:14px;line-height:1.4}',
       '.wayfindr-widget__form{display:grid;gap:10px;padding:16px}',
       '.wayfindr-widget__label{font-size:13px;font-weight:700}',

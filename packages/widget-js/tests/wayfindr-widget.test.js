@@ -1100,8 +1100,12 @@ test('renders the embedded conversation timeline and refreshes replies', async (
     page_url: 'https://docs.example.test/install',
   });
   assert.deepEqual(
-    [...widget.root.querySelectorAll('.wayfindr-widget__message')].map((message) => message.textContent),
+    messageSummaries(widget),
     ['VisitorCan you help me?'],
+  );
+  assert.equal(
+    widget.root.querySelector('.wayfindr-widget__message-time').dateTime,
+    '2026-05-23T14:00:00.000000Z',
   );
 
   const refresh = widget.root.querySelector('.wayfindr-widget__refresh');
@@ -1113,8 +1117,12 @@ test('renders the embedded conversation timeline and refreshes replies', async (
   await settle();
 
   assert.deepEqual(
-    [...widget.root.querySelectorAll('.wayfindr-widget__message')].map((message) => message.textContent),
+    messageSummaries(widget),
     ['VisitorCan you help me?', 'Ada AgentAbsolutely, happy to help.'],
+  );
+  assert.deepEqual(
+    [...widget.root.querySelectorAll('.wayfindr-widget__message-time')].map((time) => time.dateTime),
+    ['2026-05-23T14:00:00.000000Z', '2026-05-23T14:01:00.000000Z'],
   );
 });
 
@@ -1224,7 +1232,7 @@ test('polls active conversations so agent replies appear when realtime is unavai
   await settle();
 
   assert.deepEqual(
-    [...widget.root.querySelectorAll('.wayfindr-widget__message')].map((message) => message.textContent),
+    messageSummaries(widget),
     ['VisitorCan you help me?', 'Ada AgentFallback hello.'],
   );
   assert.match(
@@ -1350,7 +1358,7 @@ test('appends live agent messages from the realtime subscription', async () => {
   });
 
   assert.deepEqual(
-    [...widget.root.querySelectorAll('.wayfindr-widget__message')].map((message) => message.textContent),
+    messageSummaries(widget),
     ['VisitorCan you help me?', 'Ada AgentLive hello.'],
   );
 
@@ -2242,4 +2250,11 @@ function memoryStorage() {
     getItem: (key) => values.get(key) ?? null,
     setItem: (key, value) => values.set(key, value),
   };
+}
+
+function messageSummaries(widget) {
+  return [...widget.root.querySelectorAll('.wayfindr-widget__message')].map((message) => {
+    return message.querySelector('.wayfindr-widget__message-name').textContent
+      + message.querySelector('.wayfindr-widget__message-body').textContent;
+  });
 }

@@ -62,7 +62,7 @@ The widget currently supports the first visitor loop:
 - bootstrap the site config, anonymous visitor, and signed visitor token,
 - start a conversation,
 - send visitor messages,
-- render the visitor-visible conversation message timeline,
+- render the visitor-visible conversation message timeline with timestamps,
 - receive live agent replies over Reverb when configured,
 - fetch the current cobrowse request status,
 - show explicit allow/decline controls only after support requests cobrowse,
