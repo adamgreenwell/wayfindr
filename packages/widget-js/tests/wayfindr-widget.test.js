@@ -1239,6 +1239,267 @@ test('marks consecutive widget messages from the same sender as a visual group',
   assert.equal(messages[1].querySelector('.wayfindr-widget__message-time').dateTime, '2026-05-23T14:02:00.000000Z');
 });
 
+test('keeps the widget composer busy and ignores duplicate submits while sending', async () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+  const calls = [];
+  const sendResponse = deferred();
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    storage: memoryStorage(),
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    fetch: async (url, options) => {
+      const path = new URL(url).pathname;
+      calls.push({ url, options });
+
+      if (path === '/api/widget/bootstrap') {
+        return jsonResponse(201, {
+          data: {
+            site: { public_key: 'site_public_docs', settings: {} },
+            visitor: { anonymous_id: 'anon-browser-123', token: 'visitor-token-123' },
+          },
+        });
+      }
+
+      if (path === '/api/conversations') {
+        return jsonResponse(201, {
+          data: {
+            support_code: 'WF-TEST123',
+            status: 'open',
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-TEST123/messages' && options.method === 'POST') {
+        return sendResponse.promise;
+      }
+
+      if (path === '/api/conversations/WF-TEST123/messages') {
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-TEST123', status: 'open' },
+            messages: [{
+              id: 1,
+              sender: { kind: 'visitor', name: 'Visitor' },
+              type: 'text',
+              body: 'Can you help me?',
+              created_at: '2026-05-23T14:00:00.000000Z',
+            }],
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-TEST123/cobrowse') {
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-TEST123' },
+            cobrowse: {
+              status: 'unavailable',
+              consent: 'unavailable',
+              requested_by: null,
+            },
+          },
+        });
+      }
+
+      throw new Error('Unexpected request ' + url);
+    },
+  });
+
+  widget.open();
+
+  const form = widget.root.querySelector('.wayfindr-widget__form');
+  const textarea = widget.root.querySelector('.wayfindr-widget__textarea');
+  const send = widget.root.querySelector('.wayfindr-widget__send');
+
+  textarea.value = 'Can you help me?';
+  form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+
+  await settle();
+
+  assert.equal(form.getAttribute('aria-busy'), 'true');
+  assert.equal(textarea.disabled, true);
+  assert.equal(send.disabled, true);
+  assert.equal(send.textContent, 'Sending...');
+
+  textarea.value = 'Duplicate click.';
+  form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+
+  await settle();
+
+  assert.equal(calls.filter((call) => new URL(call.url).pathname === '/api/conversations').length, 1);
+  assert.equal(
+    calls.filter((call) => new URL(call.url).pathname === '/api/conversations/WF-TEST123/messages' && call.options.method === 'POST').length,
+    1,
+  );
+
+  sendResponse.resolve(jsonResponse(201, {
+    data: {
+      conversation: { support_code: 'WF-TEST123' },
+      message: {
+        sender: { kind: 'visitor', name: 'Visitor' },
+        type: 'text',
+        body: 'Can you help me?',
+        created_at: '2026-05-23T14:00:00.000000Z',
+      },
+    },
+  }));
+
+  await settle();
+
+  assert.equal(form.getAttribute('aria-busy'), 'false');
+  assert.equal(textarea.disabled, false);
+  assert.equal(send.disabled, false);
+  assert.equal(send.textContent, 'Send message');
+});
+
+test('shows a calm busy state while refreshing widget messages', async () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+  const refreshResponse = deferred();
+  let timelineFetches = 0;
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    storage: memoryStorage(),
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    fetch: async (url, options) => {
+      const path = new URL(url).pathname;
+
+      if (path === '/api/widget/bootstrap') {
+        return jsonResponse(201, {
+          data: {
+            site: { public_key: 'site_public_docs', settings: {} },
+            visitor: { anonymous_id: 'anon-browser-123', token: 'visitor-token-123' },
+          },
+        });
+      }
+
+      if (path === '/api/conversations') {
+        return jsonResponse(201, {
+          data: {
+            support_code: 'WF-TEST123',
+            status: 'open',
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-TEST123/messages' && options.method === 'POST') {
+        return jsonResponse(201, {
+          data: {
+            conversation: { support_code: 'WF-TEST123' },
+            message: {
+              sender: { kind: 'visitor', name: 'Visitor' },
+              type: 'text',
+              body: 'Can you help me?',
+              created_at: '2026-05-23T14:00:00.000000Z',
+            },
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-TEST123/messages') {
+        timelineFetches += 1;
+
+        if (timelineFetches > 1) {
+          return refreshResponse.promise;
+        }
+
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-TEST123', status: 'open' },
+            messages: [{
+              id: 1,
+              sender: { kind: 'visitor', name: 'Visitor' },
+              type: 'text',
+              body: 'Can you help me?',
+              created_at: '2026-05-23T14:00:00.000000Z',
+            }],
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-TEST123/cobrowse') {
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-TEST123' },
+            cobrowse: {
+              status: 'unavailable',
+              consent: 'unavailable',
+              requested_by: null,
+            },
+          },
+        });
+      }
+
+      throw new Error('Unexpected request ' + url);
+    },
+  });
+
+  widget.open();
+
+  widget.root.querySelector('.wayfindr-widget__textarea').value = 'Can you help me?';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+    new dom.window.Event('submit', { bubbles: true, cancelable: true }),
+  );
+
+  await settle();
+
+  const refresh = widget.root.querySelector('.wayfindr-widget__refresh');
+
+  refresh.dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+
+  await settle();
+
+  assert.equal(refresh.disabled, true);
+  assert.equal(refresh.getAttribute('aria-busy'), 'true');
+  assert.equal(refresh.textContent, 'Refreshing...');
+
+  refreshResponse.resolve(jsonResponse(200, {
+    data: {
+      conversation: { support_code: 'WF-TEST123', status: 'open' },
+      messages: [{
+        id: 1,
+        sender: { kind: 'visitor', name: 'Visitor' },
+        type: 'text',
+        body: 'Can you help me?',
+        created_at: '2026-05-23T14:00:00.000000Z',
+      }, {
+        id: 2,
+        sender: { kind: 'agent', name: 'Ada Agent' },
+        type: 'text',
+        body: 'Still here with you.',
+        created_at: '2026-05-23T14:01:00.000000Z',
+      }],
+    },
+  }));
+
+  await settle();
+
+  assert.equal(refresh.disabled, false);
+  assert.equal(refresh.getAttribute('aria-busy'), 'false');
+  assert.equal(refresh.textContent, 'Refresh');
+  assert.deepEqual(
+    messageSummaries(widget),
+    ['VisitorCan you help me?', 'Ada AgentStill here with you.'],
+  );
+});
+
 test('polls active conversations so agent replies appear when realtime is unavailable', async () => {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
     url: 'https://docs.example.test/install',
@@ -2345,6 +2606,17 @@ function jsonResponse(status, payload) {
     status,
     json: async () => payload,
   };
+}
+
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+
+  return { promise, resolve, reject };
 }
 
 async function settle() {

@@ -402,6 +402,10 @@
     var cobrowseStatusPollMs = typeof options.cobrowseStatusPollMs === 'number' ? Math.max(0, options.cobrowseStatusPollMs) : 5000;
     var cobrowseStatusTimer = null;
     var visitorContext = options.visitorContext || null;
+    var composerBusy = false;
+    var refreshBusy = false;
+    var sendLabel = send.textContent;
+    var refreshLabel = refresh.textContent;
 
     function renderMessages(nextMessages) {
       messages = Array.isArray(nextMessages) ? nextMessages : messages;
@@ -779,11 +783,13 @@
     async function refreshMessages(options) {
       options = options || {};
 
-      if (!supportCode) {
+      if (!supportCode || refreshBusy) {
         return;
       }
 
-      refresh.disabled = true;
+      if (!options.silent) {
+        setRefreshBusy(true);
+      }
 
       if (!options.silent) {
         status.textContent = 'Refreshing...';
@@ -801,8 +807,25 @@
           status.textContent = error.message || 'Wayfindr could not refresh messages.';
         }
       } finally {
-        refresh.disabled = false;
+        if (!options.silent) {
+          setRefreshBusy(false);
+        }
       }
+    }
+
+    function setComposerBusy(nextBusy) {
+      composerBusy = Boolean(nextBusy);
+      form.setAttribute('aria-busy', composerBusy ? 'true' : 'false');
+      textarea.disabled = composerBusy;
+      send.disabled = composerBusy;
+      send.textContent = composerBusy ? 'Sending...' : sendLabel;
+    }
+
+    function setRefreshBusy(nextBusy) {
+      refreshBusy = Boolean(nextBusy);
+      refresh.setAttribute('aria-busy', refreshBusy ? 'true' : 'false');
+      refresh.disabled = refreshBusy;
+      refresh.textContent = refreshBusy ? 'Refreshing...' : refreshLabel;
     }
 
     function open() {
@@ -831,13 +854,17 @@
     form.addEventListener('submit', async function (event) {
       event.preventDefault();
 
+      if (composerBusy) {
+        return;
+      }
+
       var body = textarea.value.trim();
 
       if (!body) {
         return;
       }
 
-      send.disabled = true;
+      setComposerBusy(true);
       status.textContent = 'Sending...';
 
       try {
@@ -868,7 +895,7 @@
       } catch (error) {
         status.textContent = error.message || 'Wayfindr could not send that message.';
       } finally {
-        send.disabled = false;
+        setComposerBusy(false);
       }
     });
 
@@ -1799,6 +1826,7 @@
       '.wayfindr-widget__label{font-size:13px;font-weight:700}',
       '.wayfindr-widget__textarea{width:100%;resize:vertical;border:1px solid #d8dfdc;border-radius:6px;padding:10px;color:#1d2523;font:14px/1.4 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}',
       '.wayfindr-widget__textarea:focus{outline:3px solid rgba(13,111,104,.2);border-color:#0d6f68}',
+      '.wayfindr-widget__textarea:disabled{background:#f7f7f3;color:#62706b;cursor:wait}',
       '.wayfindr-widget__actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}',
       '.wayfindr-widget__refresh{min-height:40px;border:1px solid #d8dfdc;border-radius:6px;background:#fff;color:#1d2523;cursor:pointer;padding:0 12px;font:700 14px/1 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}',
       '.wayfindr-widget__refresh:hover{border-color:#0d6f68;color:#0d6f68}',
