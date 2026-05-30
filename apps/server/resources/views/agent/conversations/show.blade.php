@@ -65,8 +65,8 @@
 
             <section class="section" aria-labelledby="visitor-context-heading">
                 <div class="section-header">
-                    <h2 id="visitor-context-heading">Visitor context</h2>
-                    <span class="lede">Existing widget context</span>
+                    <h2 id="visitor-context-heading">Visitor at a glance</h2>
+                    <span class="lede">Safe context only</span>
                 </div>
 
                 <div class="meta-grid">
@@ -87,13 +87,18 @@
                         <span class="meta-value">{{ $visitorContext['last_page_url'] ?? 'Not reported' }}</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Started on</span>
+                        <span class="meta-label">Entry page</span>
                         <span class="meta-value">{{ $visitorContext['started_page_url'] ?? 'Not reported' }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">History on this site</span>
+                        <span class="meta-value">{{ $priorConversations->count() }} previous</span>
                     </div>
                 </div>
 
-                <div class="notice-copy">
-                    <p>Use this context to orient support, not to collect extra visitor data.</p>
+                <div class="notice-copy notice-copy-bordered">
+                    <p><strong>Data boundary</strong></p>
+                    <p>Use this context to answer the current request. Do not collect, export, or infer extra visitor data without consent.</p>
                 </div>
 
                 <div class="section-header">

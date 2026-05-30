@@ -1034,14 +1034,18 @@ test('agent can view safe visitor context on a conversation', function (): void 
     $this->actingAs($agent)
         ->get('/dashboard/conversations/WF-CONTEXT')
         ->assertOk()
-        ->assertSee('Visitor context')
+        ->assertSee('Visitor at a glance')
+        ->assertSee('Safe context only')
         ->assertSee('Last seen')
         ->assertSee('7 minutes ago')
         ->assertSee('Latest page')
         ->assertSee('https://docs.example.test/billing')
-        ->assertSee('Started on')
+        ->assertSee('Entry page')
         ->assertSee('https://docs.example.test/pricing')
-        ->assertSee('Use this context to orient support, not to collect extra visitor data.');
+        ->assertSee('History on this site')
+        ->assertSee('0 previous')
+        ->assertSee('Data boundary')
+        ->assertSee('Use this context to answer the current request. Do not collect, export, or infer extra visitor data without consent.');
 });
 
 test('agent can view safe host-provided visitor context', function (): void {
