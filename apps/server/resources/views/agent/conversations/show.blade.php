@@ -296,6 +296,37 @@
 
                 <p class="empty">{{ $cobrowseConsent['message'] }}</p>
 
+                @if ($cobrowseConsent['lifecycle'])
+                    <div class="section-header">
+                        <strong>Session timeline</strong>
+                    </div>
+
+                    <div class="meta-grid realtime-grid">
+                        <div class="meta-item">
+                            <span class="meta-label">Requested by</span>
+                            <span class="meta-value">{{ $cobrowseConsent['lifecycle']['requested_by'] }}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Requested</span>
+                            <span class="meta-value">{{ $cobrowseConsent['lifecycle']['requested_at'] }}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Consent granted</span>
+                            <span class="meta-value">{{ $cobrowseConsent['lifecycle']['consented_at'] }}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Stopped</span>
+                            <span class="meta-value">{{ $cobrowseConsent['lifecycle']['ended_at'] }}</span>
+                        </div>
+                        @if ($cobrowseConsent['lifecycle']['ended_at'] !== 'Still active')
+                            <div class="meta-item">
+                                <span class="meta-label">Stopped by</span>
+                                <span class="meta-value">{{ $cobrowseConsent['lifecycle']['ended_by'] }}</span>
+                            </div>
+                        @endif
+                    </div>
+                @endif
+
                 @if (in_array($cobrowseConsent['status'], ['unavailable', 'revoked', 'ended'], true))
                     <form class="section-form" method="POST" action="{{ route('dashboard.conversations.cobrowse.request', $conversation->support_code) }}">
                         @csrf

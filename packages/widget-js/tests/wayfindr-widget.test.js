@@ -2759,6 +2759,104 @@ test('declines a widget cobrowse request without starting page sharing', async (
   assert.equal(calls.some((call) => call.url.endsWith('/api/conversations/WF-TEST123/cobrowse-snapshot')), false);
 });
 
+test('clears active widget cobrowse notice when support ends the session', async () => {
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+  let cobrowseStatus = {
+    status: 'granted',
+    consent: 'granted',
+    requested_by: { name: 'Ada Agent' },
+  };
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    cobrowseStatusPollMs: 0,
+    storage: memoryStorage(),
+    fetch: async (url) => {
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return jsonResponse(201, {
+          data: {
+            site: { public_key: 'site_public_docs', settings: {} },
+            visitor: { anonymous_id: 'anon-browser-123', token: 'visitor-token-123' },
+          },
+        });
+      }
+
+      if (url.endsWith('/api/conversations')) {
+        return jsonResponse(201, {
+          data: {
+            support_code: 'WF-TEST123',
+            status: 'open',
+          },
+        });
+      }
+
+      if (url.endsWith('/api/conversations/WF-TEST123/messages')) {
+        return jsonResponse(201, {
+          data: {
+            conversation: { support_code: 'WF-TEST123' },
+            message: {
+              id: 1,
+              sender: { kind: 'visitor', name: 'Visitor' },
+              type: 'text',
+              body: 'Can you help me?',
+              created_at: '2026-05-23T14:00:00.000000Z',
+            },
+          },
+        });
+      }
+
+      if (url.includes('/api/conversations/WF-TEST123/cobrowse?')) {
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-TEST123' },
+            cobrowse: cobrowseStatus,
+          },
+        });
+      }
+
+      return jsonResponse(200, {
+        data: {
+          conversation: { support_code: 'WF-TEST123', status: 'open' },
+          messages: [],
+        },
+      });
+    },
+  });
+
+  widget.open();
+
+  widget.root.querySelector('.wayfindr-widget__textarea').value = 'Can you help me?';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+    new dom.window.Event('submit', { bubbles: true, cancelable: true }),
+  );
+
+  await settle();
+  await widget.refreshCobrowseStatus();
+  await settle();
+
+  assert.equal(widget.root.querySelector('.wayfindr-widget__cobrowse').hidden, false);
+
+  cobrowseStatus = {
+    status: 'ended',
+    consent: 'ended',
+    requested_by: { name: 'Ada Agent' },
+    ended_at: '2026-05-23T14:05:00.000000Z',
+  };
+
+  await widget.refreshCobrowseStatus();
+  await settle();
+
+  assert.equal(widget.root.querySelector('.wayfindr-widget__cobrowse').hidden, true);
+  assert.match(widget.root.querySelector('.wayfindr-widget__status').textContent, /Cobrowse stopped/);
+});
+
 function jsonResponse(status, payload) {
   return {
     ok: status >= 200 && status < 300,

@@ -563,6 +563,9 @@
     function applyCobrowseStatus(nextCobrowse) {
       nextCobrowse = nextCobrowse || {};
 
+      var previousState = cobrowseState;
+      var previousGranted = cobrowseGranted;
+
       cobrowseState = nextCobrowse.status || nextCobrowse.consent || 'unavailable';
       cobrowseRequestedBy = nextCobrowse.requested_by && nextCobrowse.requested_by.name
         ? nextCobrowse.requested_by.name
@@ -574,6 +577,12 @@
       }
 
       renderCobrowseConsent();
+
+      if ((previousGranted || previousState === 'requested') && cobrowseState === 'ended') {
+        status.textContent = 'Cobrowse stopped by support.';
+      } else if ((previousGranted || previousState === 'requested') && cobrowseState === 'revoked') {
+        status.textContent = previousGranted ? 'Cobrowse stopped.' : 'Cobrowse request declined.';
+      }
     }
 
     function scheduleCobrowseStatusPoll() {

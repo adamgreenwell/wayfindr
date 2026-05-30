@@ -54,8 +54,13 @@ class CobrowseConsentController extends Controller
                 'ended_at' => null,
             ])->save();
         } else {
+            $metadata = $cobrowseSession->metadata ?? [];
+            $metadata['ended_by_name'] = 'Visitor';
+            $metadata['ended_by_type'] = 'visitor';
+
             $cobrowseSession->forceFill([
                 'status' => 'revoked',
+                'metadata' => $metadata,
                 'ended_at' => now(),
             ])->save();
         }

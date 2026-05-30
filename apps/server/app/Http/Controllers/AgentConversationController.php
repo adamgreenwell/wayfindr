@@ -265,6 +265,7 @@ class AgentConversationController extends Controller
 
         $metadata = $cobrowseSession->metadata ?? [];
         $metadata['ended_by_id'] = $agent->id;
+        $metadata['ended_by_name'] = $agent->name;
         $metadata['ended_by_type'] = 'agent';
 
         $cobrowseSession->forceFill([

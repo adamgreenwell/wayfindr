@@ -3059,6 +3059,40 @@ test('agent can see cobrowse consent state on a conversation', function (?array 
     ],
 ]);
 
+test('agent can see cobrowse lifecycle details on a conversation', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-LIFECYCLE',
+        'subject' => 'Checkout trouble',
+        'status' => 'open',
+    ]);
+
+    CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->for($agent, 'requestedBy')->create([
+        'status' => 'ended',
+        'consented_at' => now()->subMinutes(3),
+        'ended_at' => now()->subMinute(),
+        'created_at' => now()->subMinutes(5),
+        'metadata' => [
+            'ended_by_type' => 'agent',
+            'ended_by_name' => 'Ada Agent',
+        ],
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-LIFECYCLE')
+        ->assertOk()
+        ->assertSee('Session timeline')
+        ->assertSee('Requested by')
+        ->assertSee('Ada Agent')
+        ->assertSee('Requested')
+        ->assertSee('Consent granted')
+        ->assertSee('Stopped')
+        ->assertSee('Stopped by');
+});
+
 test('agent can request cobrowse consent for their account conversation', function (): void {
     Event::fake([CobrowseStateUpdated::class]);
 

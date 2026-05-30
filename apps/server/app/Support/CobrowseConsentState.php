@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Models\CobrowseSession;
 use App\Models\Conversation;
 
 class CobrowseConsentState
@@ -9,11 +10,12 @@ class CobrowseConsentState
     public function __construct(private readonly CobrowseReplayPreview $replayPreview) {}
 
     /**
-     * @return array{label: string, message: string, status: string, payload_budget: array<string, string>|null, telemetry: array<string, string>|null, page_state: array<string, string>|null, snapshot: array<string, string>|null, mutation_stream: array<string, string>|null, replay_preview: array<string, string>|null}
+     * @return array{label: string, message: string, status: string, lifecycle: array<string, string>|null, payload_budget: array<string, string>|null, telemetry: array<string, string>|null, page_state: array<string, string>|null, snapshot: array<string, string>|null, mutation_stream: array<string, string>|null, replay_preview: array<string, string>|null}
      */
     public function forConversation(Conversation $conversation): array
     {
         $session = $conversation->cobrowseSessions()
+            ->with('requestedBy')
             ->latest('id')
             ->first();
 
@@ -22,6 +24,7 @@ class CobrowseConsentState
                 'label' => 'Unavailable',
                 'message' => 'Visitor has not granted cobrowse consent.',
                 'status' => 'unavailable',
+                'lifecycle' => null,
                 'payload_budget' => null,
                 'telemetry' => null,
                 'page_state' => null,
@@ -59,6 +62,7 @@ class CobrowseConsentState
             ],
         };
 
+        $state['lifecycle'] = $this->formatLifecycle($session);
         $state['payload_budget'] = $this->formatPayloadBudget($session->metadata['payload_budget'] ?? CobrowsePayloadBudget::limits());
         $state['telemetry'] = $this->formatTelemetry($session->metadata['telemetry'] ?? null);
         $state['page_state'] = $this->formatPageState($session->metadata['page_state'] ?? null);
@@ -67,6 +71,45 @@ class CobrowseConsentState
         $state['replay_preview'] = $this->replayPreview->fromMetadata($session->metadata ?? []);
 
         return $state;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function formatLifecycle(CobrowseSession $session): array
+    {
+        return [
+            'requested_by' => $session->requestedBy?->name ?? 'Unknown agent',
+            'requested_at' => $this->formatMoment($session->created_at),
+            'consented_at' => $this->formatMoment($session->consented_at, 'Not granted yet'),
+            'ended_at' => $this->formatMoment($session->ended_at, 'Still active'),
+            'ended_by' => $this->endedByLabel($session->metadata ?? []),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $metadata
+     */
+    private function endedByLabel(array $metadata): string
+    {
+        if (($metadata['ended_by_type'] ?? null) === 'visitor') {
+            return 'Visitor';
+        }
+
+        if (filled($metadata['ended_by_name'] ?? null)) {
+            return (string) $metadata['ended_by_name'];
+        }
+
+        return 'Not recorded';
+    }
+
+    private function formatMoment(mixed $moment, string $missing = 'Not recorded'): string
+    {
+        if (! $moment || ! method_exists($moment, 'diffForHumans')) {
+            return $missing;
+        }
+
+        return $moment->diffForHumans();
     }
 
     /**
