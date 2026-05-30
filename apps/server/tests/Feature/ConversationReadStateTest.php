@@ -70,6 +70,64 @@ test('dashboard shows conversation read state for the signed in agent', function
         ->assertSeeInOrder(['Already reviewed', 'Seen']);
 });
 
+test('dashboard filters conversations by new activity for the signed in agent', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $otherAgent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-filter']);
+
+    $unreadConversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-UNREAD2',
+        'subject' => 'Unread for Ada',
+        'status' => 'open',
+    ]);
+    $unreadMessage = ConversationMessage::factory()->for($unreadConversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'Ada has not seen this yet.',
+        'created_at' => now()->subMinutes(2),
+    ]);
+    $unreadConversation->forceFill(['last_message_at' => $unreadMessage->created_at])->save();
+
+    $otherAgentReadConversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-OTHER2',
+        'subject' => 'Only Bea has seen this',
+        'status' => 'open',
+    ]);
+    $otherAgentReadMessage = ConversationMessage::factory()->for($otherAgentReadConversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'This is still new for Ada.',
+        'created_at' => now()->subMinute(),
+    ]);
+    $otherAgentReadConversation->forceFill(['last_message_at' => $otherAgentReadMessage->created_at])->save();
+    $otherAgentReadConversation->markReadFor($otherAgent, now());
+
+    $seenConversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-SEEN02',
+        'subject' => 'Already seen by Ada',
+        'status' => 'open',
+    ]);
+    $seenMessage = ConversationMessage::factory()->for($seenConversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'Ada saw this one already.',
+        'created_at' => now()->subMinutes(5),
+    ]);
+    $seenConversation->forceFill(['last_message_at' => $seenMessage->created_at])->save();
+    $seenConversation->markReadFor($agent, now()->subMinute());
+
+    $this->actingAs($agent)
+        ->get('/dashboard?conversation_filter=new_activity')
+        ->assertOk()
+        ->assertSee('2 need attention')
+        ->assertSee('New activity')
+        ->assertSee('Unread for Ada')
+        ->assertSee('Only Bea has seen this')
+        ->assertDontSee('Already seen by Ada');
+});
+
 test('opening a conversation marks it read for the signed in agent', function (): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create();
@@ -107,7 +165,7 @@ test('opening a conversation marks it read for the signed in agent', function ()
     $this->get('/dashboard')
         ->assertOk()
         ->assertSeeInOrder(['Open marks seen', 'Seen'])
-        ->assertDontSee('New activity');
+        ->assertSee('0 need attention');
 });
 
 test('new visitor messages after the agent read marker restore new activity state', function (): void {
@@ -198,5 +256,5 @@ test('ticket replies mark the linked conversation read for the sending agent', f
     $this->get('/dashboard')
         ->assertOk()
         ->assertSeeInOrder(['Ticket-linked conversation', 'Seen'])
-        ->assertDontSee('New activity');
+        ->assertSee('0 need attention');
 });

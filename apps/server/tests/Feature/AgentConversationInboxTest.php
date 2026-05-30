@@ -248,9 +248,11 @@ test('dashboard exposes conversation queue filter links', function (): void {
         ->get('/dashboard')
         ->assertOk()
         ->assertSee('All open')
+        ->assertSee('New activity')
         ->assertSee('Needs reply')
         ->assertSee('Assigned to me')
         ->assertSee('Unassigned')
+        ->assertSee('/dashboard?conversation_filter=new_activity', false)
         ->assertSee('/dashboard?conversation_filter=needs_reply', false)
         ->assertSee('/dashboard?conversation_filter=assigned_to_me', false)
         ->assertSee('/dashboard?conversation_filter=unassigned', false);

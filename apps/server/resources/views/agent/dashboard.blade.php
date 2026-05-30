@@ -444,7 +444,10 @@
                 <div class="section-header">
                     <h2 id="conversations-heading">Conversations</h2>
                     <div class="section-actions">
-                        <span class="lede">{{ $conversations->count() }} open</span>
+                        <span class="lede">
+                            {{ $conversations->count() }} open ·
+                            {{ $newActivityConversationCount === 1 ? '1 needs attention' : $newActivityConversationCount.' need attention' }}
+                        </span>
                         @foreach ($conversationFilters as $filterValue => $filterLabel)
                             <a
                                 class="button {{ $conversationFilter === $filterValue ? '' : 'secondary' }}"
@@ -458,7 +461,7 @@
                 </div>
 
                 @if ($conversations->isEmpty())
-                    <p class="empty">No active conversations yet.</p>
+                    <p class="empty">{{ $conversationEmptyMessage }}</p>
                 @else
                     <div class="table-wrap">
                         <table>

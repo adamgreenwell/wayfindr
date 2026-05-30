@@ -5,6 +5,7 @@ namespace App\Models;
 use Carbon\CarbonInterface;
 use Database\Factories\ConversationFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -102,6 +103,21 @@ class Conversation extends Model
     public function readStateLabelFor(User $agent): string
     {
         return $this->hasNewActivityFor($agent) ? 'New activity' : 'Seen';
+    }
+
+    /**
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeWithNewActivityFor(Builder $query, User $agent): Builder
+    {
+        return $query->where(function (Builder $query) use ($agent): void {
+            $query
+                ->whereDoesntHave('readStates', fn (Builder $query) => $query->where('user_id', $agent->id))
+                ->orWhereHas('readStates', fn (Builder $query) => $query
+                    ->where('user_id', $agent->id)
+                    ->whereRaw('conversation_read_states.last_read_at < coalesce(conversations.last_message_at, conversations.created_at)'));
+        });
     }
 
     public function attentionState(): string

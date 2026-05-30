@@ -44,6 +44,7 @@ class AgentDashboardController extends Controller
 
         $conversationFilters = [
             'all' => 'All open',
+            'new_activity' => 'New activity',
             'needs_reply' => 'Needs reply',
             'assigned_to_me' => 'Assigned to me',
             'unassigned' => 'Unassigned',
@@ -113,6 +114,14 @@ class AgentDashboardController extends Controller
                 'closed' => 'No closed tickets yet.',
                 default => 'No open tickets yet.',
             };
+        $conversationEmptyMessage = $conversationFilter === 'new_activity'
+            ? 'No conversations need attention.'
+            : 'No active conversations yet.';
+        $newActivityConversationCount = Conversation::query()
+            ->where('status', 'open')
+            ->whereHas('site', fn ($query) => $query->visibleToAgent($agent))
+            ->withNewActivityFor($agent)
+            ->count();
 
         $conversations = Conversation::query()
             ->with([
@@ -124,6 +133,7 @@ class AgentDashboardController extends Controller
             ])
             ->where('status', 'open')
             ->whereHas('site', fn ($query) => $query->visibleToAgent($agent))
+            ->when($conversationFilter === 'new_activity', fn ($query) => $query->withNewActivityFor($agent))
             ->when($conversationFilter === 'needs_reply', function ($query): void {
                 $query->where(function ($query): void {
                     $query->whereDoesntHave('messages')
@@ -176,10 +186,12 @@ class AgentDashboardController extends Controller
             'agent' => $agent,
             'agents' => $agents,
             'adminShortcuts' => $this->adminShortcuts($agent),
+            'conversationEmptyMessage' => $conversationEmptyMessage,
             'conversationFilter' => $conversationFilter,
             'conversationFilters' => $conversationFilters,
             'conversations' => $conversations,
             'dataResponsibility' => config('wayfindr.data_responsibility'),
+            'newActivityConversationCount' => $newActivityConversationCount,
             'realtimeHealth' => $realtimeHealth->summary(),
             'sites' => $sites,
             'ticketCategory' => $ticketCategory,
