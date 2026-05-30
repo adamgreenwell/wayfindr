@@ -92,6 +92,42 @@ test('widget bootstrap stores safe host context and drops sensitive visitor fiel
         ->and($visitor->metadata['context'])->not->toHaveKey('preferences');
 });
 
+test('widget bootstrap stores a safe host visitor identifier', function (): void {
+    $site = Site::factory()->create([
+        'public_key' => 'site_public_docs',
+    ]);
+
+    $this->postJson('/api/widget/bootstrap', [
+        'site_public_key' => 'site_public_docs',
+        'anonymous_id' => 'anon-browser-123',
+        'external_id' => 'customer-123',
+    ])->assertCreated();
+
+    $this->assertDatabaseHas('visitors', [
+        'site_id' => $site->id,
+        'anonymous_id' => 'anon-browser-123',
+        'external_id' => 'customer-123',
+    ]);
+});
+
+test('widget bootstrap ignores sensitive host visitor identifiers', function (): void {
+    $site = Site::factory()->create([
+        'public_key' => 'site_public_docs',
+    ]);
+
+    $this->postJson('/api/widget/bootstrap', [
+        'site_public_key' => 'site_public_docs',
+        'anonymous_id' => 'anon-browser-123',
+        'external_id' => 'ada@example.test',
+    ])->assertCreated();
+
+    $this->assertDatabaseHas('visitors', [
+        'site_id' => $site->id,
+        'anonymous_id' => 'anon-browser-123',
+        'external_id' => null,
+    ]);
+});
+
 test('widget bootstrap rejects an unknown public key', function (): void {
     $this->postJson('/api/widget/bootstrap', [
         'site_public_key' => 'missing_key',
@@ -173,6 +209,28 @@ test('conversation creation can refresh safe host context for the visitor', func
         ],
     ])
         ->and($visitor->metadata['context'])->not->toHaveKey('session_token');
+});
+
+test('conversation creation can refresh a safe host visitor identifier', function (): void {
+    $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+    Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-docs',
+    ]);
+    $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+
+    $this->postJson('/api/conversations', [
+        'site_public_key' => 'site_public_docs',
+        'anonymous_id' => 'anon-docs',
+        'external_id' => 'customer-456',
+        'visitor_token' => $token,
+        'subject' => 'Need help installing',
+    ])->assertCreated();
+
+    $this->assertDatabaseHas('visitors', [
+        'site_id' => $site->id,
+        'anonymous_id' => 'anon-docs',
+        'external_id' => 'customer-456',
+    ]);
 });
 
 test('conversation creation requires a visitor token', function (): void {

@@ -12,7 +12,7 @@ document, not a complete compliance register.
 | Agents | Name, email, hashed password, account ID | `users` | Agents are authenticated Laravel users. |
 | Sites | Name, domain, public widget key, settings | `sites` | Site settings can include mask selectors. Only widget-safe settings should be exposed to public bootstrap responses. |
 | Site access | Site and agent links | `site_user` | Controls which agents can support each site. Empty site access keeps an account-wide fallback for first-run installs. |
-| Visitors | Anonymous ID, optional external ID, optional name/email, last seen time, metadata | `visitors` | Widget traffic is scoped by site public key and signed visitor token. |
+| Visitors | Anonymous ID, optional external ID, optional name/email, last seen time, metadata | `visitors` | Widget traffic is scoped by site public key and signed visitor token. Host-provided external IDs should be non-sensitive references; obvious direct PII is ignored by widget intake before it appears in agent context. |
 | Conversations | Subject, status, support code, visitor/site links, page URL metadata | `conversations` | Conversation subjects and page URLs can contain personal data depending on the host site. |
 | Messages | Visitor and agent message bodies, sender references, timestamps, metadata | `conversation_messages` | Message bodies are user-supplied support data. |
 | Tickets | Subject, status, priority, category, requester, assignee, conversation link, metadata | `tickets` | Tickets are durable support records and may outlive the original chat. |

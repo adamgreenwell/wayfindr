@@ -46,6 +46,17 @@ class VisitorContextSanitizer
         return $safeContext;
     }
 
+    public function sanitizeIdentifier(mixed $value): ?string
+    {
+        $displayValue = $this->safeValue($value);
+
+        if ($displayValue === null || $this->looksSensitiveValue($displayValue)) {
+            return null;
+        }
+
+        return $displayValue;
+    }
+
     /**
      * @param  array<string, mixed>|null  $metadata
      * @return array<string, mixed>

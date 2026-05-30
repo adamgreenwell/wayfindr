@@ -75,6 +75,10 @@
                         <span class="meta-value">{{ $visitorContext['anonymous_id'] }}</span>
                     </div>
                     <div class="meta-item">
+                        <span class="meta-label">Host visitor ID</span>
+                        <span class="meta-value">{{ $visitorContext['external_id'] ?? 'Not provided' }}</span>
+                    </div>
+                    <div class="meta-item">
                         <span class="meta-label">Last seen</span>
                         <span class="meta-value">{{ $visitorContext['last_seen_at']?->diffForHumans() ?? 'Not reported' }}</span>
                     </div>

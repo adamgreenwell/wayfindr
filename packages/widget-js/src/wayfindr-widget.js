@@ -111,6 +111,7 @@
     var apiBaseUrl = normalizeApiBaseUrl(options.apiBaseUrl || '');
     var sitePublicKey = options.sitePublicKey;
     var anonymousId = options.anonymousId;
+    var visitorExternalId = normalizeVisitorExternalId(options.visitorExternalId);
     var fetcher = options.fetch || (root && root.fetch ? root.fetch.bind(root) : null);
     var hasStorageOption = Object.prototype.hasOwnProperty.call(options, 'storage');
     var storage = hasStorageOption ? options.storage : null;
@@ -153,7 +154,7 @@
           site_public_key: sitePublicKey,
           anonymous_id: anonymousId,
           page_url: pageUrl || null,
-        }, context)).then(function (result) {
+        }, context, visitorExternalId)).then(function (result) {
           var token = result && result.visitor ? result.visitor.token : null;
 
           if (token) {
@@ -168,6 +169,7 @@
       },
       startConversation: function (body, details) {
         details = details || {};
+        var externalId = normalizeVisitorExternalId(details.visitorExternalId) || visitorExternalId;
 
         return postJson(fetcher, apiBaseUrl + '/api/conversations', withVisitorContext({
           site_public_key: sitePublicKey,
@@ -175,7 +177,7 @@
           visitor_token: requireVisitorToken(visitorToken),
           subject: details.subject || summarize(body),
           page_url: details.pageUrl || null,
-        }, details.context));
+        }, details.context, externalId));
       },
       sendMessage: function (supportCode, body) {
         return postJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/messages', {
@@ -320,6 +322,7 @@
       apiBaseUrl: options.apiBaseUrl,
       sitePublicKey: options.sitePublicKey,
       anonymousId: options.anonymousId,
+      visitorExternalId: options.visitorExternalId,
       fetch: options.fetch,
       storage: options.storage,
       visitorToken: options.visitorToken,
@@ -1750,7 +1753,21 @@
     return String(body || '').replace(/\s+/g, ' ').trim().slice(0, 255) || null;
   }
 
-  function withVisitorContext(payload, context) {
+  function normalizeVisitorExternalId(value) {
+    if (typeof value !== 'string' && typeof value !== 'number') {
+      return null;
+    }
+
+    value = String(value).trim();
+
+    return value ? value : null;
+  }
+
+  function withVisitorContext(payload, context, visitorExternalId) {
+    if (visitorExternalId) {
+      payload.external_id = visitorExternalId;
+    }
+
     if (context && typeof context === 'object' && !Array.isArray(context)) {
       payload.context = context;
     }
@@ -1887,6 +1904,7 @@
     init({
       apiBaseUrl: script.dataset.wayfindrApiBaseUrl || root.location.origin,
       sitePublicKey: script.dataset.wayfindrSiteKey,
+      visitorExternalId: script.dataset.wayfindrVisitorExternalId,
       launcherLabel: script.dataset.wayfindrLauncherLabel,
       title: script.dataset.wayfindrTitle,
       reverb: reverbOptionsFromScript(script),

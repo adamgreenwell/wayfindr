@@ -1074,6 +1074,47 @@ test('agent can view safe host-provided visitor context', function (): void {
         ->assertDontSee('super-secret');
 });
 
+test('agent can view a safe host visitor identifier on a conversation', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-acme',
+        'external_id' => 'customer-123',
+    ]);
+    Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-HOSTID',
+        'subject' => 'Billing confusion',
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-HOSTID')
+        ->assertOk()
+        ->assertSee('Host visitor ID')
+        ->assertSee('customer-123');
+});
+
+test('agent visitor context hides sensitive host visitor identifiers', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-acme',
+        'external_id' => 'ada@example.test',
+    ]);
+    Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-HOSTPII',
+        'subject' => 'Billing confusion',
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-HOSTPII')
+        ->assertOk()
+        ->assertSee('Host visitor ID')
+        ->assertSee('Not provided')
+        ->assertDontSee('ada@example.test');
+});
+
 test('agent can view prior conversations for the same visitor and site', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);

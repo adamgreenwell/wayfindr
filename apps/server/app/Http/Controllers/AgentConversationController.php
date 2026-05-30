@@ -305,7 +305,7 @@ class AgentConversationController extends Controller
     }
 
     /**
-     * @return array{anonymous_id: string, last_seen_at: Carbon|null, last_page_url: string|null, started_page_url: string|null, host_context: array<string, string>}
+     * @return array{anonymous_id: string, external_id: string|null, last_seen_at: Carbon|null, last_page_url: string|null, started_page_url: string|null, host_context: array<string, string>}
      */
     private function visitorContext(Conversation $conversation, VisitorContextSanitizer $visitorContextSanitizer): array
     {
@@ -315,6 +315,7 @@ class AgentConversationController extends Controller
 
         return [
             'anonymous_id' => $visitor?->anonymous_id ?? 'Unknown visitor',
+            'external_id' => $visitorContextSanitizer->sanitizeIdentifier($visitor?->external_id),
             'last_seen_at' => $visitor?->last_seen_at,
             'last_page_url' => $this->contextString($visitorMetadata['last_page_url'] ?? null),
             'started_page_url' => $this->contextString($conversationMetadata['started_page_url'] ?? null),

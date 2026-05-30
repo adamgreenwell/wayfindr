@@ -17,6 +17,7 @@ class BootstrapController extends Controller
         $validated = $request->validate([
             'site_public_key' => ['required', 'string', 'max:255'],
             'anonymous_id' => ['required', 'string', 'max:255'],
+            'external_id' => ['nullable', 'string', 'max:255'],
             'page_url' => ['nullable', 'url', 'max:2048'],
             'context' => ['nullable', 'array', 'max:50'],
         ]);
@@ -40,7 +41,7 @@ class BootstrapController extends Controller
                 $validated['context'] ?? null,
             ),
             'last_seen_at' => now(),
-        ])->save();
+        ] + $this->externalIdentifierUpdate($site, $visitor, $validated, $visitorContextSanitizer))->save();
 
         return response()->json([
             'data' => [
@@ -66,5 +67,30 @@ class BootstrapController extends Controller
                 'mask_selectors' => $site->settings['mask_selectors'] ?? [],
             ],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @return array{external_id?: string}
+     */
+    private function externalIdentifierUpdate(Site $site, Visitor $visitor, array $validated, VisitorContextSanitizer $visitorContextSanitizer): array
+    {
+        if (! array_key_exists('external_id', $validated)) {
+            return [];
+        }
+
+        $externalId = $visitorContextSanitizer->sanitizeIdentifier($validated['external_id']);
+
+        if ($externalId === null) {
+            return [];
+        }
+
+        $belongsToAnotherVisitor = Visitor::query()
+            ->where('site_id', $site->id)
+            ->where('external_id', $externalId)
+            ->where('anonymous_id', '!=', $visitor->anonymous_id)
+            ->exists();
+
+        return $belongsToAnotherVisitor ? [] : ['external_id' => $externalId];
     }
 }

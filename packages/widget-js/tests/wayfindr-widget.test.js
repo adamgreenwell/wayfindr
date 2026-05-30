@@ -105,6 +105,46 @@ test('bootstraps the widget against the public intake API', async () => {
   assert.equal(result.visitor.token, 'visitor-token-123');
 });
 
+test('bootstraps with a host visitor identifier when configured', async () => {
+  const calls = [];
+  const client = Wayfindr.createClient({
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    visitorExternalId: 'customer-123',
+    fetch: async (url, options) => {
+      calls.push({ url, options });
+
+      return jsonResponse(201, {
+        data: {
+          site: {
+            public_key: 'site_public_docs',
+            settings: {},
+          },
+          visitor: {
+            anonymous_id: 'anon-browser-123',
+            token: 'visitor-token-123',
+          },
+        },
+      });
+    },
+  });
+
+  await client.bootstrap('https://docs.example.test/install', {
+    plan: 'Team',
+  });
+
+  assert.deepEqual(JSON.parse(calls[0].options.body), {
+    site_public_key: 'site_public_docs',
+    anonymous_id: 'anon-browser-123',
+    external_id: 'customer-123',
+    page_url: 'https://docs.example.test/install',
+    context: {
+      plan: 'Team',
+    },
+  });
+});
+
 test('starts a conversation and sends the first visitor message', async () => {
   const calls = [];
   const client = Wayfindr.createClient({

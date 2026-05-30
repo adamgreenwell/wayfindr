@@ -12,6 +12,7 @@ plain HTML sites:
   Wayfindr.init({
     apiBaseUrl: 'https://your-wayfindr-host.example',
     sitePublicKey: 'site_demo_public_key',
+    visitorExternalId: 'customer-123',
     visitorContext: {
       plan: 'Team',
       support_region: 'EU',
@@ -42,6 +43,7 @@ Classic script tags can also use data attributes:
   src="https://your-wayfindr-host.example/widget.js"
   data-wayfindr-api-base-url="https://your-wayfindr-host.example"
   data-wayfindr-site-key="site_demo_public_key"
+  data-wayfindr-visitor-external-id="customer-123"
   data-wayfindr-reverb-app-key="your-public-reverb-app-key"
   data-wayfindr-reverb-host="your-wayfindr-host.example"
   data-wayfindr-reverb-port="443"
@@ -100,6 +102,10 @@ Host pages may pass a small `visitorContext` object to `Wayfindr.init`, or a
 Keep it operational and low-risk, such as plan, tier, product area, or support
 region. Wayfindr sanitizes this context server-side, drops obvious sensitive
 keys and non-scalar values, and truncates long values before agents can see it.
+If the host application has a non-sensitive stable visitor reference, pass it
+as `visitorExternalId`. Avoid email addresses, phone numbers, account secrets,
+or other direct PII; Wayfindr ignores obvious sensitive values before they show
+up in the agent context panel.
 `subscribeToConversation` prepares a private `conversations.{supportCode}`
 subscription for realtime adapters and uses Wayfindr's signed visitor session
 when authorizing the channel.
