@@ -153,6 +153,7 @@ class AgentTicketController extends Controller
 
         $this->recordActivity($ticket, $agent, 'ticket.reply_sent', $activityMetadata);
         $this->markConversationNotificationsRead($agent, $conversation);
+        $conversation->markReadFor($agent);
 
         event(new ConversationMessageCreated($message));
 

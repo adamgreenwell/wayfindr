@@ -32,6 +32,7 @@ class AgentConversationController extends Controller
             ->load(['assignedAgent', 'latestMessage', 'site', 'visitor']);
 
         $this->markConversationNotificationsRead($agent, $conversation);
+        $conversation->markReadFor($agent);
 
         $messages = $conversation->messages()
             ->with('sender')
@@ -94,6 +95,7 @@ class AgentConversationController extends Controller
         ])->save();
 
         $this->markConversationNotificationsRead($agent, $conversation);
+        $conversation->markReadFor($agent);
 
         event(new ConversationMessageCreated($message));
 

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\CarbonInterface;
 use Database\Factories\ConversationFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -61,6 +62,48 @@ class Conversation extends Model
         return $this->hasOne(ConversationMessage::class)->latestOfMany();
     }
 
+    public function readStates(): HasMany
+    {
+        return $this->hasMany(ConversationReadState::class);
+    }
+
+    public function readStateFor(User $agent): ?ConversationReadState
+    {
+        if ($this->relationLoaded('readStates')) {
+            return $this->readStates->firstWhere('user_id', $agent->id);
+        }
+
+        return $this->readStates()
+            ->where('user_id', $agent->id)
+            ->first();
+    }
+
+    public function markReadFor(User $agent, ?CarbonInterface $readAt = null): ConversationReadState
+    {
+        return $this->readStates()->updateOrCreate(
+            ['user_id' => $agent->id],
+            ['last_read_at' => $readAt ?? now()],
+        );
+    }
+
+    public function hasNewActivityFor(User $agent): bool
+    {
+        $lastActivityAt = $this->lastActivityAtForReadState();
+
+        if (! $lastActivityAt) {
+            return false;
+        }
+
+        $lastReadAt = $this->readStateFor($agent)?->last_read_at;
+
+        return ! $lastReadAt || $lastActivityAt->gt($lastReadAt);
+    }
+
+    public function readStateLabelFor(User $agent): string
+    {
+        return $this->hasNewActivityFor($agent) ? 'New activity' : 'Seen';
+    }
+
     public function attentionState(): string
     {
         $latestMessage = $this->relationLoaded('latestMessage')
@@ -96,5 +139,18 @@ class Conversation extends Model
     public function auditEvents(): MorphMany
     {
         return $this->morphMany(AuditEvent::class, 'subject');
+    }
+
+    private function lastActivityAtForReadState(): ?CarbonInterface
+    {
+        if ($this->last_message_at) {
+            return $this->last_message_at;
+        }
+
+        if ($this->relationLoaded('latestMessage') && $this->latestMessage?->created_at) {
+            return $this->latestMessage->created_at;
+        }
+
+        return $this->created_at;
     }
 }

@@ -115,7 +115,13 @@ class AgentDashboardController extends Controller
             };
 
         $conversations = Conversation::query()
-            ->with(['assignedAgent', 'latestMessage', 'site', 'visitor'])
+            ->with([
+                'assignedAgent',
+                'latestMessage',
+                'readStates' => fn ($query) => $query->where('user_id', $agent->id),
+                'site',
+                'visitor',
+            ])
             ->where('status', 'open')
             ->whereHas('site', fn ($query) => $query->visibleToAgent($agent))
             ->when($conversationFilter === 'needs_reply', function ($query): void {

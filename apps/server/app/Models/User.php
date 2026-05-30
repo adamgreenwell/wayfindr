@@ -132,6 +132,11 @@ class User extends Authenticatable
         return $this->hasMany(Conversation::class, 'assigned_agent_id');
     }
 
+    public function conversationReadStates(): HasMany
+    {
+        return $this->hasMany(ConversationReadState::class);
+    }
+
     public function supportedSites(): BelongsToMany
     {
         return $this->belongsToMany(Site::class)->withTimestamps();
