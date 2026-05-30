@@ -330,6 +330,7 @@ class AgentConversationController extends Controller
     private function priorConversations(Conversation $conversation): Collection
     {
         return Conversation::query()
+            ->with(['assignedAgent', 'tickets'])
             ->where('site_id', $conversation->site_id)
             ->where('visitor_id', $conversation->visitor_id)
             ->whereKeyNot($conversation->id)

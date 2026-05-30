@@ -132,31 +132,33 @@
                 @if ($priorConversations->isEmpty())
                     <p class="empty">No prior conversations for this visitor on this site.</p>
                 @else
-                    <div class="table-wrap">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th scope="col">Subject</th>
-                                    <th scope="col">Support code</th>
-                                    <th scope="col">Status</th>
-                                    <th scope="col">Last activity</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach ($priorConversations as $priorConversation)
-                                    <tr>
-                                        <td>
-                                            <a class="text-link" href="{{ route('dashboard.conversations.show', $priorConversation->support_code) }}">
-                                                {{ $priorConversation->subject ?? 'Untitled conversation' }}
+                    <div class="timeline-list">
+                        @foreach ($priorConversations as $priorConversation)
+                            <article class="timeline-item">
+                                <div class="timeline-content">
+                                    <a class="text-link" href="{{ route('dashboard.conversations.show', $priorConversation->support_code) }}">
+                                        {{ $priorConversation->subject ?? 'Untitled conversation' }}
+                                    </a>
+                                    <div class="timeline-meta">
+                                        <span>{{ $priorConversation->support_code }}</span>
+                                        <span>{{ ucfirst($priorConversation->status) }}</span>
+                                        <span>Owner: {{ $priorConversation->assignedAgent?->name ?? 'Unassigned' }}</span>
+                                        <span>Last activity: {{ $priorConversation->last_message_at?->diffForHumans() ?? $priorConversation->created_at->diffForHumans() }}</span>
+                                    </div>
+                                    <div class="timeline-meta">
+                                        <strong>Linked ticket</strong>
+                                        @forelse ($priorConversation->tickets as $ticket)
+                                            <a class="text-link" href="{{ route('dashboard.tickets.show', $ticket) }}">
+                                                {{ $ticket->subject }}
                                             </a>
-                                        </td>
-                                        <td>{{ $priorConversation->support_code }}</td>
-                                        <td>{{ ucfirst($priorConversation->status) }}</td>
-                                        <td>{{ $priorConversation->last_message_at?->diffForHumans() ?? $priorConversation->created_at->diffForHumans() }}</td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
+                                            <span>{{ ucfirst($ticket->status) }}</span>
+                                        @empty
+                                            <span>No ticket</span>
+                                        @endforelse
+                                    </div>
+                                </div>
+                            </article>
+                        @endforeach
                     </div>
                 @endif
             </section>

@@ -1118,19 +1118,30 @@ test('agent visitor context hides sensitive host visitor identifiers', function 
 test('agent can view prior conversations for the same visitor and site', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $assignedAgent = User::factory()->for($account)->create(['name' => 'Bea Builder']);
     $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
     $otherSite = Site::factory()->for($account)->create(['name' => 'Acme Store']);
     $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
     $otherVisitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-other']);
     $otherSiteVisitor = Visitor::factory()->for($otherSite)->create(['anonymous_id' => 'anon-acme']);
 
-    Conversation::factory()->for($site)->for($visitor)->create([
+    $ticketedConversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'assigned_agent_id' => $assignedAgent->id,
         'support_code' => 'WF-OLDONE',
         'subject' => 'Earlier billing question',
         'status' => 'closed',
         'created_at' => now()->subDays(3),
         'last_message_at' => now()->subDays(2),
     ]);
+    Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($ticketedConversation)
+        ->create([
+            'assignee_id' => $assignedAgent->id,
+            'subject' => 'Billing refund follow-up',
+            'status' => 'pending',
+        ]);
     Conversation::factory()->for($site)->for($visitor)->create([
         'support_code' => 'WF-OLDER2',
         'subject' => 'Second earlier question',
@@ -1158,10 +1169,17 @@ test('agent can view prior conversations for the same visitor and site', functio
         ->assertOk()
         ->assertSee('Prior conversations')
         ->assertSee('2 previous')
+        ->assertSee('Owner')
+        ->assertSee('Linked ticket')
         ->assertSee('Earlier billing question')
         ->assertSee('WF-OLDONE')
+        ->assertSee('Bea Builder')
+        ->assertSee('Billing refund follow-up')
+        ->assertSee('Pending')
         ->assertSee('Second earlier question')
         ->assertSee('WF-OLDER2')
+        ->assertSee('Unassigned')
+        ->assertSee('No ticket')
         ->assertDontSee('Different visitor question')
         ->assertDontSee('Other site question');
 });
