@@ -13,6 +13,8 @@
 
   var VERSION = '0.0.0';
   var STYLE_ID = 'wayfindr-widget-styles';
+  var MESSAGE_SEND_ERROR = 'Message could not be sent. Your text is still here so you can try again.';
+  var MESSAGE_REFRESH_ERROR = 'Messages could not be refreshed. Your current chat is still visible.';
   var DEFAULT_COBROWSE_PAYLOAD_BUDGET = {
     mutationBatchMaxBytes: 60000,
     mutationQueueMaxRecords: 250,
@@ -382,6 +384,7 @@
     var cobrowseDecline = rootEl.querySelector('.wayfindr-widget__cobrowse-decline');
     var bootstrapped = false;
     var supportCode = null;
+    var conversationActivated = false;
     var messages = [];
     var realtimeSubscription = null;
     var cobrowseGranted = false;
@@ -610,6 +613,19 @@
       cobrowseStatusTimer = null;
     }
 
+    function activateConversation() {
+      if (!supportCode || conversationActivated) {
+        return;
+      }
+
+      conversationActivated = true;
+      connectRealtime();
+      renderCobrowseConsent();
+      refresh.hidden = false;
+      scheduleMessagePoll();
+      scheduleCobrowseStatusPoll();
+    }
+
     function collectPageState() {
       var view = doc.defaultView || root;
       var docElement = doc.documentElement || {};
@@ -822,7 +838,7 @@
         }
       } catch (error) {
         if (!options.silent) {
-          status.textContent = error.message || 'Wayfindr could not refresh messages.';
+          status.textContent = MESSAGE_REFRESH_ERROR;
         }
       } finally {
         if (!options.silent) {
@@ -893,17 +909,16 @@
 
         if (supportCode) {
           await client.sendMessage(supportCode, body);
+          activateConversation();
         } else {
-          var result = await client.sendFirstMessage(body, {
+          var conversation = await client.startConversation(body, {
             pageUrl: location ? location.href : null,
             context: visitorContext,
           });
 
-          supportCode = result.conversation.support_code;
-          connectRealtime();
-          renderCobrowseConsent();
-          scheduleMessagePoll();
-          scheduleCobrowseStatusPoll();
+          supportCode = conversation.support_code;
+          await client.sendMessage(supportCode, body);
+          activateConversation();
         }
 
         textarea.value = '';
@@ -911,7 +926,7 @@
         await refreshCobrowseStatus({ silent: true });
         status.textContent = 'Message sent. Support code ' + supportCode + '.';
       } catch (error) {
-        status.textContent = error.message || 'Wayfindr could not send that message.';
+        status.textContent = MESSAGE_SEND_ERROR;
       } finally {
         setComposerBusy(false);
       }

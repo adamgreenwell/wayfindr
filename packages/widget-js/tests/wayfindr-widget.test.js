@@ -1520,6 +1520,146 @@ test('keeps the widget composer busy and ignores duplicate submits while sending
   assert.equal(send.textContent, 'Send message');
 });
 
+test('preserves failed first message drafts and retries without recreating the conversation', async () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+  const calls = [];
+  let messageAttempts = 0;
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    storage: memoryStorage(),
+    cobrowseStatusPollMs: 10,
+    messagePollMs: 10,
+    fetch: async (url, options) => {
+      const path = new URL(url).pathname;
+      calls.push({ url, options });
+
+      if (path === '/api/widget/bootstrap') {
+        return jsonResponse(201, {
+          data: {
+            site: { public_key: 'site_public_docs', settings: {} },
+            visitor: { anonymous_id: 'anon-browser-123', token: 'visitor-token-123' },
+          },
+        });
+      }
+
+      if (path === '/api/conversations') {
+        return jsonResponse(201, {
+          data: {
+            support_code: 'WF-RETRY123',
+            status: 'open',
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-RETRY123/messages' && options.method === 'POST') {
+        messageAttempts += 1;
+
+        if (messageAttempts === 1) {
+          return jsonResponse(500, {
+            message: 'Database unavailable.',
+          });
+        }
+
+        return jsonResponse(201, {
+          data: {
+            conversation: { support_code: 'WF-RETRY123' },
+            message: {
+              id: 1,
+              sender: { kind: 'visitor', name: 'Visitor' },
+              type: 'text',
+              body: 'Can you help me?',
+              created_at: '2026-05-23T14:00:00.000000Z',
+            },
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-RETRY123/messages') {
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-RETRY123', status: 'open' },
+            messages: [{
+              id: 1,
+              sender: { kind: 'visitor', name: 'Visitor' },
+              type: 'text',
+              body: 'Can you help me?',
+              created_at: '2026-05-23T14:00:00.000000Z',
+            }],
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-RETRY123/cobrowse') {
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-RETRY123' },
+            cobrowse: {
+              status: 'unavailable',
+              consent: 'unavailable',
+              requested_by: null,
+            },
+          },
+        });
+      }
+
+      throw new Error('Unexpected request ' + url);
+    },
+  });
+
+  widget.open();
+
+  const form = widget.root.querySelector('.wayfindr-widget__form');
+  const textarea = widget.root.querySelector('.wayfindr-widget__textarea');
+  const status = widget.root.querySelector('.wayfindr-widget__status');
+
+  textarea.value = 'Can you help me?';
+  form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+
+  await settle();
+  await wait(35);
+
+  assert.equal(textarea.value, 'Can you help me?');
+  assert.match(status.textContent, /Message could not be sent/);
+  assert.doesNotMatch(status.textContent, /Database unavailable/);
+  assert.equal(calls.filter((call) => new URL(call.url).pathname === '/api/conversations').length, 1);
+  assert.equal(
+    calls.filter((call) => new URL(call.url).pathname === '/api/conversations/WF-RETRY123/messages' && call.options.method === 'GET').length,
+    0,
+  );
+  assert.equal(
+    calls.filter((call) => new URL(call.url).pathname === '/api/conversations/WF-RETRY123/cobrowse' && call.options.method === 'GET').length,
+    0,
+  );
+  assert.equal(widget.root.querySelector('.wayfindr-widget__refresh').hidden, true);
+  assert.equal(widget.root.querySelector('.wayfindr-widget__connection').hidden, true);
+
+  form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+
+  await settle();
+
+  assert.equal(textarea.value, '');
+  assert.match(status.textContent, /Support code WF-RETRY123/);
+  assert.equal(calls.filter((call) => new URL(call.url).pathname === '/api/conversations').length, 1);
+  assert.equal(
+    calls.filter((call) => new URL(call.url).pathname === '/api/conversations/WF-RETRY123/messages' && call.options.method === 'POST').length,
+    2,
+  );
+  assert.deepEqual(
+    messageSummaries(widget),
+    ['VisitorCan you help me?'],
+  );
+
+  widget.destroy();
+});
+
 test('shows a calm busy state while refreshing widget messages', async () => {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
     url: 'https://docs.example.test/install',
@@ -1657,6 +1797,124 @@ test('shows a calm busy state while refreshing widget messages', async () => {
     messageSummaries(widget),
     ['VisitorCan you help me?', 'Ada AgentStill here with you.'],
   );
+});
+
+test('keeps the current widget timeline visible when manual refresh fails', async () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+  let timelineFetches = 0;
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    storage: memoryStorage(),
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    fetch: async (url, options) => {
+      const path = new URL(url).pathname;
+
+      if (path === '/api/widget/bootstrap') {
+        return jsonResponse(201, {
+          data: {
+            site: { public_key: 'site_public_docs', settings: {} },
+            visitor: { anonymous_id: 'anon-browser-123', token: 'visitor-token-123' },
+          },
+        });
+      }
+
+      if (path === '/api/conversations') {
+        return jsonResponse(201, {
+          data: {
+            support_code: 'WF-TEST123',
+            status: 'open',
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-TEST123/messages' && options.method === 'POST') {
+        return jsonResponse(201, {
+          data: {
+            conversation: { support_code: 'WF-TEST123' },
+            message: {
+              id: 1,
+              sender: { kind: 'visitor', name: 'Visitor' },
+              type: 'text',
+              body: 'Can you help me?',
+              created_at: '2026-05-23T14:00:00.000000Z',
+            },
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-TEST123/messages') {
+        timelineFetches += 1;
+
+        if (timelineFetches > 1) {
+          return jsonResponse(503, {
+            message: 'Upstream timeout.',
+          });
+        }
+
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-TEST123', status: 'open' },
+            messages: [{
+              id: 1,
+              sender: { kind: 'visitor', name: 'Visitor' },
+              type: 'text',
+              body: 'Can you help me?',
+              created_at: '2026-05-23T14:00:00.000000Z',
+            }],
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-TEST123/cobrowse') {
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-TEST123' },
+            cobrowse: {
+              status: 'unavailable',
+              consent: 'unavailable',
+              requested_by: null,
+            },
+          },
+        });
+      }
+
+      throw new Error('Unexpected request ' + url);
+    },
+  });
+
+  widget.open();
+
+  widget.root.querySelector('.wayfindr-widget__textarea').value = 'Can you help me?';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+    new dom.window.Event('submit', { bubbles: true, cancelable: true }),
+  );
+
+  await settle();
+
+  const refresh = widget.root.querySelector('.wayfindr-widget__refresh');
+  const status = widget.root.querySelector('.wayfindr-widget__status');
+
+  refresh.dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+
+  await settle();
+
+  assert.deepEqual(
+    messageSummaries(widget),
+    ['VisitorCan you help me?'],
+  );
+  assert.equal(refresh.disabled, false);
+  assert.equal(refresh.getAttribute('aria-busy'), 'false');
+  assert.match(status.textContent, /Messages could not be refreshed/);
+  assert.doesNotMatch(status.textContent, /Upstream timeout/);
 });
 
 test('polls active conversations so agent replies appear when realtime is unavailable', async () => {
