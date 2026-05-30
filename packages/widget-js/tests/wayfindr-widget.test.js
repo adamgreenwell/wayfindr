@@ -17,6 +17,28 @@ test('attaches the public API to window for classic script tags', () => {
   assert.equal(typeof sandbox.window.Wayfindr.createClient, 'function');
 });
 
+test('injects a hidden override for stateful widget sections', () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+
+  Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    storage: memoryStorage(),
+    fetch: async () => jsonResponse(404, { message: 'Not used' }),
+  });
+
+  assert.match(
+    dom.window.document.querySelector('#wayfindr-widget-styles').textContent,
+    /\.wayfindr-widget \[hidden\]\{display:none!important\}/,
+  );
+});
+
 test('resolves a stable anonymous id from storage when one is not supplied', () => {
   const values = new Map();
   const storage = {
@@ -1237,6 +1259,103 @@ test('marks consecutive widget messages from the same sender as a visual group',
   assert.equal(messages[3].classList.contains('wayfindr-widget__message--grouped'), false);
   assert.equal(messages[1].querySelector('.wayfindr-widget__message-name').textContent, 'Visitor');
   assert.equal(messages[1].querySelector('.wayfindr-widget__message-time').dateTime, '2026-05-23T14:02:00.000000Z');
+});
+
+test('shows sent delivery status only for visitor messages', async () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    storage: memoryStorage(),
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    fetch: async (url) => {
+      const path = new URL(url).pathname;
+
+      if (path === '/api/widget/bootstrap') {
+        return jsonResponse(201, {
+          data: {
+            site: { public_key: 'site_public_docs', settings: {} },
+            visitor: { anonymous_id: 'anon-browser-123', token: 'visitor-token-123' },
+          },
+        });
+      }
+
+      if (path === '/api/conversations') {
+        return jsonResponse(201, {
+          data: {
+            support_code: 'WF-TEST123',
+            status: 'open',
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-TEST123/cobrowse') {
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-TEST123' },
+            cobrowse: {
+              status: 'unavailable',
+              consent: 'unavailable',
+              requested_by: null,
+            },
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-TEST123/messages') {
+        return jsonResponse(200, {
+          data: {
+            conversation: {
+              support_code: 'WF-TEST123',
+              status: 'open',
+            },
+            messages: [
+              {
+                id: 1,
+                sender: { kind: 'visitor', name: 'Visitor' },
+                type: 'text',
+                body: 'Can you help me?',
+                created_at: '2026-05-23T14:00:00.000000Z',
+              },
+              {
+                id: 2,
+                sender: { kind: 'agent', name: 'Ada Agent' },
+                type: 'text',
+                body: 'Absolutely.',
+                created_at: '2026-05-23T14:01:00.000000Z',
+              },
+            ],
+          },
+        });
+      }
+
+      throw new Error('Unexpected request ' + url);
+    },
+  });
+
+  widget.open();
+
+  widget.root.querySelector('.wayfindr-widget__textarea').value = 'Can you help me?';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+    new dom.window.Event('submit', { bubbles: true, cancelable: true }),
+  );
+
+  await settle();
+
+  const messages = [...widget.root.querySelectorAll('.wayfindr-widget__message')];
+  const visitorDelivery = messages[0].querySelector('.wayfindr-widget__message-delivery');
+
+  assert.equal(visitorDelivery.textContent, 'Sent');
+  assert.equal(visitorDelivery.getAttribute('aria-label'), 'Message delivery status');
+  assert.equal(messages[1].querySelector('.wayfindr-widget__message-delivery'), null);
 });
 
 test('keeps the widget composer busy and ignores duplicate submits while sending', async () => {

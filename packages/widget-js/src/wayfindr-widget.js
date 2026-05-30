@@ -419,6 +419,7 @@
         var name = doc.createElement('strong');
         var body = doc.createElement('p');
         var time = createMessageTime(doc, message.created_at);
+        var delivery = createMessageDelivery(doc, senderKind);
         var grouped = shouldGroupMessage(message, messages[index - 1]);
 
         item.className = 'wayfindr-widget__message wayfindr-widget__message--' + senderKind;
@@ -441,6 +442,11 @@
 
         item.appendChild(meta);
         item.appendChild(body);
+
+        if (delivery) {
+          item.appendChild(delivery);
+        }
+
         timeline.appendChild(item);
       });
 
@@ -1037,6 +1043,19 @@
     time.textContent = formatMessageTime(date);
 
     return time;
+  }
+
+  function createMessageDelivery(doc, senderKind) {
+    if (senderKind !== 'visitor') {
+      return null;
+    }
+
+    var delivery = doc.createElement('span');
+    delivery.className = 'wayfindr-widget__message-delivery';
+    delivery.setAttribute('aria-label', 'Message delivery status');
+    delivery.textContent = 'Sent';
+
+    return delivery;
   }
 
   function shouldGroupMessage(message, previousMessage) {
@@ -1803,6 +1822,7 @@
     style.textContent = [
       '.wayfindr-widget{position:fixed;right:20px;bottom:20px;z-index:2147483000;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#1d2523}',
       '.wayfindr-widget *{box-sizing:border-box}',
+      '.wayfindr-widget [hidden]{display:none!important}',
       '.wayfindr-widget__launcher,.wayfindr-widget__send{border:0;border-radius:999px;background:#0d6f68;color:#fff;box-shadow:0 12px 30px rgba(8,37,34,.18);cursor:pointer;font:700 14px/1 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}',
       '.wayfindr-widget__launcher{min-height:48px;padding:0 18px}',
       '.wayfindr-widget__send{min-height:40px;padding:0 14px;border-radius:6px}',
@@ -1822,6 +1842,7 @@
       '.wayfindr-widget__message--grouped .wayfindr-widget__message-meta{justify-content:flex-end}',
       '.wayfindr-widget__message-time{color:#7d8a85;font-size:11px;line-height:1.2;white-space:nowrap}',
       '.wayfindr-widget__message-body{margin:0;white-space:pre-wrap;color:#1d2523;font-size:14px;line-height:1.4}',
+      '.wayfindr-widget__message-delivery{justify-self:end;color:#7d8a85;font-size:11px;line-height:1.2}',
       '.wayfindr-widget__form{display:grid;gap:10px;padding:16px}',
       '.wayfindr-widget__label{font-size:13px;font-weight:700}',
       '.wayfindr-widget__textarea{width:100%;resize:vertical;border:1px solid #d8dfdc;border-radius:6px;padding:10px;color:#1d2523;font:14px/1.4 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}',

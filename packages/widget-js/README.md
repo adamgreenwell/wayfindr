@@ -63,7 +63,7 @@ The widget currently supports the first visitor loop:
 - start a conversation,
 - send visitor messages,
 - prevent duplicate sends while the visitor composer is busy,
-- render the visitor-visible conversation message timeline with timestamps and simple message grouping,
+- render the visitor-visible conversation message timeline with timestamps, simple message grouping, and sent cues for visitor messages,
 - receive live agent replies over Reverb when configured,
 - fetch the current cobrowse request status,
 - show explicit allow/decline controls only after support requests cobrowse,
