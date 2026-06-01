@@ -16,6 +16,7 @@ use App\Http\Controllers\AgentSiteExternalIssueProjectController;
 use App\Http\Controllers\AgentTicketController;
 use App\Http\Controllers\AgentTicketExternalIssueController;
 use App\Http\Controllers\AgentTicketExternalLinkController;
+use App\Http\Controllers\AgentTicketLabelController;
 use App\Http\Controllers\Auth\SessionController;
 use App\Http\Controllers\FirstRunSetupController;
 use App\Http\Controllers\OperatorDashboardController;
@@ -54,6 +55,12 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.account.audit.index');
     Route::get('/dashboard/account/audit/export', [AgentAccountAuditController::class, 'export'])
         ->name('dashboard.account.audit.export');
+    Route::get('/dashboard/account/labels', [AgentTicketLabelController::class, 'index'])
+        ->name('dashboard.account.labels.index');
+    Route::put('/dashboard/account/labels/{ticketLabel}', [AgentTicketLabelController::class, 'update'])
+        ->name('dashboard.account.labels.update');
+    Route::delete('/dashboard/account/labels/{ticketLabel}', [AgentTicketLabelController::class, 'destroy'])
+        ->name('dashboard.account.labels.destroy');
     Route::get('/dashboard/readiness', AgentReadinessController::class)
         ->name('dashboard.readiness.show');
     Route::post('/dashboard/account/agents', [AgentAccountAgentController::class, 'store'])

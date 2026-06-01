@@ -464,6 +464,7 @@
                 gap: 8px;
         }
 
+        .compact-form input,
         .compact-form select {
             width: auto;
             min-width: 120px;

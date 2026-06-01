@@ -299,6 +299,12 @@ class AgentDashboardController extends Controller
                 'action' => 'Review',
             ],
             [
+                'label' => 'Ticket labels',
+                'description' => 'Rename or retire account-wide ticket triage labels.',
+                'href' => route('dashboard.account.labels.index'),
+                'action' => 'Manage',
+            ],
+            [
                 'label' => 'Audit log',
                 'description' => 'Search account activity and export safe audit records.',
                 'href' => route('dashboard.account.audit.index'),

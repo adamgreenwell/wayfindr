@@ -23,14 +23,11 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class AgentTicketController extends Controller
 {
-    private const RESERVED_LABEL_SLUGS = ['all'];
-
     public function show(Request $request, Ticket $ticket, VisitorContextSanitizer $visitorContextSanitizer): View
     {
         $agent = $request->user();
@@ -130,8 +127,8 @@ class AgentTicketController extends Controller
             'label_name' => ['required', 'string', 'max:64'],
         ]);
 
-        $name = $this->normalizeLabelName($validated['label_name']);
-        $slug = Str::slug($name);
+        $name = TicketLabel::normalizeName($validated['label_name']);
+        $slug = TicketLabel::slugForName($name);
 
         if ($name === '' || $slug === '') {
             throw ValidationException::withMessages([
@@ -139,7 +136,7 @@ class AgentTicketController extends Controller
             ]);
         }
 
-        if (in_array($slug, self::RESERVED_LABEL_SLUGS, true)) {
+        if (TicketLabel::isReservedSlug($slug)) {
             throw ValidationException::withMessages([
                 'label_name' => 'That label name is reserved for ticket filtering.',
             ]);
@@ -619,11 +616,6 @@ class AgentTicketController extends Controller
             'ticket.closed' => data_get($activity->metadata, 'resolution_note'),
             default => null,
         };
-    }
-
-    private function normalizeLabelName(string $labelName): string
-    {
-        return mb_substr(trim((string) preg_replace('/\s+/', ' ', $labelName)), 0, 64);
     }
 
     private function ticketUpdatedLabel(array $changes): string

@@ -45,6 +45,8 @@ test('dashboard gives account admins a command center for account administration
         ->assertSee('/dashboard/account#agents', false)
         ->assertSee('Site access')
         ->assertSee('/dashboard/account#site-access-matrix', false)
+        ->assertSee('Ticket labels')
+        ->assertSee('/dashboard/account/labels', false)
         ->assertSee('Audit log')
         ->assertSee('/dashboard/account/audit', false)
         ->assertSee('Readiness checks')
