@@ -141,7 +141,7 @@
 
                         <div class="field">
                             <label for="reply_template">Reply helper</label>
-                            <select id="reply_template" name="reply_template" data-reply-template data-target="#message">
+                            <select id="reply_template" name="reply_template" data-reply-template data-template-picker data-target="#message">
                                 <option value="">Write a custom reply</option>
                                 @foreach ($replyTemplates as $replyTemplateKey => $replyTemplate)
                                     <option
@@ -482,6 +482,25 @@
                     @csrf
 
                     <div class="field">
+                        <label for="note_template">Note helper</label>
+                        <select id="note_template" name="note_template" data-template-picker data-target="#body">
+                            <option value="">Write a custom note</option>
+                            @foreach ($noteTemplates as $noteTemplateKey => $noteTemplate)
+                                <option
+                                    value="{{ $noteTemplateKey }}"
+                                    data-body="{{ $noteTemplate['body'] }}"
+                                    @selected(old('note_template') === $noteTemplateKey)
+                                >
+                                    {{ $noteTemplate['label'] }}
+                                </option>
+                            @endforeach
+                        </select>
+                        @error('note_template')
+                            <p class="field-error">{{ $message }}</p>
+                        @enderror
+                    </div>
+
+                    <div class="field">
                         <label for="body">Add internal note</label>
                         <textarea id="body" name="body" rows="4" placeholder="Document follow-up, escalation context, or handoff details.">{{ old('body') }}</textarea>
                         @error('body')
@@ -594,20 +613,21 @@
                 </div>
             </section>
     <script>
-        const replyTemplate = document.querySelector('[data-reply-template]');
-        const replyTemplateTarget = replyTemplate
-            ? document.querySelector(replyTemplate.dataset.target)
-            : null;
+        document.querySelectorAll('[data-template-picker]').forEach((templatePicker) => {
+            const templateTarget = templatePicker.dataset.target
+                ? document.querySelector(templatePicker.dataset.target)
+                : null;
 
-        replyTemplate?.addEventListener('change', () => {
-            const body = replyTemplate.selectedOptions[0]?.dataset.body || '';
+            templatePicker.addEventListener('change', () => {
+                const body = templatePicker.selectedOptions[0]?.dataset.body || '';
 
-            if (! body || ! replyTemplateTarget) {
-                return;
-            }
+                if (! body || ! templateTarget) {
+                    return;
+                }
 
-            replyTemplateTarget.value = body;
-            replyTemplateTarget.focus();
+                templateTarget.value = body;
+                templateTarget.focus();
+            });
         });
     </script>
 </x-layouts.app>

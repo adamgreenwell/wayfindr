@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
 use App\Notifications\TicketAssigned;
+use App\Support\AgentNoteTemplate;
 use App\Support\AgentReplyTemplate;
 use App\Support\ExternalIssueProvider;
 use App\Support\ExternalIssueSyncStatus;
@@ -55,6 +56,7 @@ class AgentTicketController extends Controller
             'externalIssueProviders' => ExternalIssueProvider::options(),
             'externalIssueSyncStatuses' => ExternalIssueSyncStatus::options(),
             'githubIssueProjects' => $this->githubIssueProjectsForTicket($ticket),
+            'noteTemplates' => AgentNoteTemplate::options(),
             'replyTemplates' => AgentReplyTemplate::options(),
             'ticketActivity' => $ticket->auditEvents()
                 ->with('actor')
@@ -80,12 +82,32 @@ class AgentTicketController extends Controller
         $this->authorizeTicketAbility($agent, 'addNote', $ticket);
 
         $validated = $request->validate([
-            'body' => ['required', 'string', 'max:4000'],
+            'body' => ['nullable', 'string', 'max:4000'],
+            'note_template' => ['nullable', Rule::in(AgentNoteTemplate::values())],
         ]);
 
-        $this->recordActivity($ticket, $agent, 'ticket.note_added', [
-            'body' => $validated['body'],
-        ]);
+        $selectedTemplate = $validated['note_template'] ?? null;
+        $body = trim((string) ($validated['body'] ?? ''));
+
+        if ($body === '' && $selectedTemplate) {
+            $body = trim((string) AgentNoteTemplate::body($selectedTemplate));
+        }
+
+        if ($body === '') {
+            throw ValidationException::withMessages([
+                'body' => 'Please enter an internal note.',
+            ]);
+        }
+
+        $metadata = [
+            'body' => $body,
+        ];
+
+        if ($selectedTemplate) {
+            $metadata['note_template'] = $selectedTemplate;
+        }
+
+        $this->recordActivity($ticket, $agent, 'ticket.note_added', $metadata);
 
         return $this->redirectAfterUpdate($ticket, 'Ticket note added.');
     }

@@ -2249,6 +2249,92 @@ test('agent can add an internal note to a ticket record', function (): void {
         ->assertSee('Customer wants an update before noon.');
 });
 
+test('ticket detail exposes internal note helpers', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($agent, 'assignee')
+        ->create([
+            'subject' => 'Escalated checkout issue',
+            'status' => 'open',
+        ]);
+
+    $this->actingAs($agent)
+        ->get("/dashboard/tickets/{$ticket->id}")
+        ->assertOk()
+        ->assertSee('Note helper')
+        ->assertSee('Handoff summary')
+        ->assertSee('Waiting on visitor')
+        ->assertSee('Resolution summary');
+});
+
+test('agent can add an internal note from a ticket helper', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($agent, 'assignee')
+        ->create([
+            'subject' => 'Escalated checkout issue',
+            'status' => 'open',
+        ]);
+
+    $this->actingAs($agent)
+        ->from("/dashboard/tickets/{$ticket->id}")
+        ->post("/dashboard/tickets/{$ticket->id}/notes", [
+            'note_template' => 'handoff_summary',
+            'body' => '',
+        ])
+        ->assertRedirect("/dashboard/tickets/{$ticket->id}")
+        ->assertSessionHas('status', 'Ticket note added.');
+
+    $activity = AuditEvent::query()
+        ->where('subject_type', Ticket::class)
+        ->where('subject_id', $ticket->id)
+        ->where('action', 'ticket.note_added')
+        ->firstOrFail();
+
+    expect($activity->metadata)->toMatchArray([
+        'body' => 'Handoff summary: include what was tried, current customer impact, and the next recommended step.',
+        'note_template' => 'handoff_summary',
+    ]);
+
+    $this->actingAs($agent)
+        ->get("/dashboard/tickets/{$ticket->id}")
+        ->assertOk()
+        ->assertSee('Handoff summary: include what was tried, current customer impact, and the next recommended step.');
+});
+
+test('ticket internal note helpers validate selected helper', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($agent, 'assignee')
+        ->create([
+            'subject' => 'Escalated checkout issue',
+            'status' => 'open',
+        ]);
+
+    $this->actingAs($agent)
+        ->from("/dashboard/tickets/{$ticket->id}")
+        ->post("/dashboard/tickets/{$ticket->id}/notes", [
+            'note_template' => 'ship_it_anyway',
+            'body' => '',
+        ])
+        ->assertRedirect("/dashboard/tickets/{$ticket->id}")
+        ->assertSessionHasErrors('note_template');
+
+    expect($ticket->auditEvents()->where('action', 'ticket.note_added')->count())->toBe(0);
+});
+
 test('agent can send a visitor reply from a linked ticket record', function (): void {
     Event::fake([ConversationMessageCreated::class]);
 
