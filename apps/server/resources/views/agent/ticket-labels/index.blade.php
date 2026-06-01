@@ -60,10 +60,16 @@
                             </thead>
                             <tbody>
                                 @foreach ($ticketLabels as $ticketLabel)
+                                    @php
+                                        $labelTicketsUrl = route('dashboard', [
+                                            'ticket_status' => 'all',
+                                            'ticket_label' => $ticketLabel->slug,
+                                        ]).'#tickets';
+                                    @endphp
                                     <tr>
-                                        <td><strong>{{ $ticketLabel->name }}</strong></td>
+                                        <td><a class="text-link" href="{{ $labelTicketsUrl }}"><strong>{{ $ticketLabel->name }}</strong></a></td>
                                         <td><code>{{ $ticketLabel->slug }}</code></td>
-                                        <td>{{ $ticketLabel->tickets_count }} {{ \Illuminate\Support\Str::plural('ticket', $ticketLabel->tickets_count) }}</td>
+                                        <td><a class="text-link" href="{{ $labelTicketsUrl }}">{{ $ticketLabel->tickets_count }} {{ \Illuminate\Support\Str::plural('ticket', $ticketLabel->tickets_count) }}</a></td>
                                         <td>
                                             <form class="compact-form" method="POST" action="{{ route('dashboard.account.labels.update', $ticketLabel) }}">
                                                 @csrf
