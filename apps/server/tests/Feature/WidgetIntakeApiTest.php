@@ -7,6 +7,7 @@ use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 
 uses(RefreshDatabase::class);
 
@@ -897,24 +898,28 @@ test('visitor can read their conversation messages', function (): void {
         'support_code' => 'WF-MESSAGES',
     ]);
 
-    ConversationMessage::factory()->for($conversation)->create([
+    $visitorMessage = ConversationMessage::factory()->for($conversation)->create([
         'sender_type' => Visitor::class,
         'sender_id' => $visitor->id,
         'body' => 'Hello from the visitor.',
         'created_at' => now()->subMinute(),
     ]);
 
-    ConversationMessage::factory()->for($conversation)->create([
+    $agentMessage = ConversationMessage::factory()->for($conversation)->create([
         'sender_type' => User::class,
         'sender_id' => $agent->id,
         'body' => 'Hello from support.',
         'created_at' => now(),
     ]);
 
+    $seenAt = Carbon::parse('2026-06-01 12:00:00', 'UTC');
+    $this->travelTo($seenAt);
+
     $response = $this->getJson('/api/conversations/WF-MESSAGES/messages?'.http_build_query([
         'site_public_key' => 'site_public_docs',
         'anonymous_id' => 'anon-docs',
         'visitor_token' => widgetVisitorToken($this, 'site_public_docs', 'anon-docs'),
+        'mark_seen' => true,
     ]));
 
     $response
@@ -932,6 +937,33 @@ test('visitor can read their conversation messages', function (): void {
     expect($payload)
         ->not->toHaveKey('sender_id')
         ->not->toHaveKey('sender_type');
+
+    expect($visitorMessage->fresh()->seen_at)->toBeNull();
+    expect($agentMessage->fresh()->seen_at?->toJSON())->toBe($seenAt->toJSON());
+});
+
+test('visitor message fetch does not mark agent replies seen without a read signal', function (): void {
+    $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+    $agent = User::factory()->create(['name' => 'Ada Agent']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-MESSAGES',
+    ]);
+
+    $agentMessage = ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => User::class,
+        'sender_id' => $agent->id,
+        'body' => 'Hello from support.',
+        'created_at' => now(),
+    ]);
+
+    $this->getJson('/api/conversations/WF-MESSAGES/messages?'.http_build_query([
+        'site_public_key' => 'site_public_docs',
+        'anonymous_id' => 'anon-docs',
+        'visitor_token' => widgetVisitorToken($this, 'site_public_docs', 'anon-docs'),
+    ]))->assertOk();
+
+    expect($agentMessage->fresh()->seen_at)->toBeNull();
 });
 
 test('visitor message read cannot cross site boundaries', function (): void {

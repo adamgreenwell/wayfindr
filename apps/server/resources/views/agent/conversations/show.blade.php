@@ -592,7 +592,12 @@
                             <article class="{{ $messageClasses }}">
                                 <div class="message-meta">
                                     <strong class="{{ $isGrouped ? 'sr-only' : 'message-sender' }}">{{ $senderName }}</strong>
-                                    <time class="message-time" datetime="{{ $message->created_at->toJSON() }}">{{ $message->created_at->diffForHumans() }}</time>
+                                    <span class="message-status-line">
+                                        <time class="message-time" datetime="{{ $message->created_at->toJSON() }}">{{ $message->created_at->diffForHumans() }}</time>
+                                        @if ($isAgent && $message->seen_at)
+                                            <span class="message-seen">Seen by visitor</span>
+                                        @endif
+                                    </span>
                                 </div>
                                 <p class="message-body">{{ $message->body }}</p>
                             </article>

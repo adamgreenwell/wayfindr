@@ -758,6 +758,19 @@
             white-space: nowrap;
         }
 
+        .message-status-line {
+            display: inline-flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
+        .message-seen {
+            color: var(--accent-strong);
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
         .message-body {
             margin: 10px 0 0;
             white-space: pre-wrap;

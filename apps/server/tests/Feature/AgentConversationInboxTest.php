@@ -1008,6 +1008,7 @@ test('agent can view their account conversation timeline', function (): void {
         'sender_id' => $agent->id,
         'body' => 'First agent note.',
         'created_at' => Carbon::parse('2026-05-30 14:03:00', 'UTC'),
+        'seen_at' => Carbon::parse('2026-05-30 14:04:00', 'UTC'),
     ]);
 
     ConversationMessage::factory()->for($conversation)->create([
@@ -1028,11 +1029,13 @@ test('agent can view their account conversation timeline', function (): void {
         ->assertSee('name="body"', false)
         ->assertSee('datetime="2026-05-30T14:00:00.000000Z"', false)
         ->assertSee('datetime="2026-05-30T14:02:00.000000Z"', false)
+        ->assertSee('Seen by visitor')
         ->assertSee('message visitor grouped', false)
         ->assertSeeInOrder(['First visitor message.', 'Visitor follow-up.', 'First agent note.', 'Later agent follow-up.']);
 
     expect(substr_count($response->content(), 'message visitor grouped'))->toBe(1);
     expect(substr_count($response->content(), 'message agent grouped'))->toBe(0);
+    expect(substr_count($response->content(), 'Seen by visitor'))->toBe(1);
 });
 
 test('agent reply composer exposes progressive submission affordances', function (): void {

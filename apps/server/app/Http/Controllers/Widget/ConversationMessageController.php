@@ -20,6 +20,7 @@ class ConversationMessageController extends Controller
             'site_public_key' => ['required', 'string', 'max:255'],
             'anonymous_id' => ['required', 'string', 'max:255'],
             'visitor_token' => ['nullable', 'string', 'max:4096'],
+            'mark_seen' => ['nullable', 'boolean'],
         ]);
 
         $conversation = $this->conversationForVisitor(
@@ -29,6 +30,10 @@ class ConversationMessageController extends Controller
             $validated['site_public_key'],
             $validated['anonymous_id'],
         );
+
+        if ((bool) ($validated['mark_seen'] ?? false)) {
+            $this->markAgentMessagesSeen($conversation);
+        }
 
         $messages = $conversation->messages()
             ->with('sender')
@@ -126,6 +131,14 @@ class ConversationMessageController extends Controller
         abort_unless($conversation, 404, 'Conversation not found.');
 
         return $conversation;
+    }
+
+    private function markAgentMessagesSeen(Conversation $conversation): void
+    {
+        $conversation->messages()
+            ->where('sender_type', User::class)
+            ->whereNull('seen_at')
+            ->update(['seen_at' => now()]);
     }
 
     private function senderPayload($message): array

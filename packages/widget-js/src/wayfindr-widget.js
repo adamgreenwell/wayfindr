@@ -189,12 +189,19 @@
           body: body,
         });
       },
-      fetchMessages: function (supportCode) {
-        return getJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/messages?' + toQueryString({
+      fetchMessages: function (supportCode, details) {
+        details = details || {};
+        var params = {
           site_public_key: sitePublicKey,
           anonymous_id: anonymousId,
           visitor_token: requireVisitorToken(visitorToken),
-        }));
+        };
+
+        if (details.markSeen) {
+          params.mark_seen = '1';
+        }
+
+        return getJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/messages?' + toQueryString(params));
       },
       fetchCobrowseStatus: function (supportCode) {
         return getJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/cobrowse?' + toQueryString({
@@ -830,7 +837,13 @@
       }
 
       try {
-        var result = await client.fetchMessages(supportCode);
+        var result = await client.fetchMessages(supportCode, {
+          markSeen: shouldMarkMessagesSeen({
+            markSeen: options.markSeen,
+            panel: panel,
+            document: doc,
+          }),
+        });
         renderMessages(result.messages || []);
 
         if (!options.silent) {
@@ -863,9 +876,15 @@
     }
 
     function open() {
+      var wasHidden = panel.hidden;
+
       panel.hidden = false;
       launcher.hidden = true;
       textarea.focus();
+
+      if (wasHidden && supportCode) {
+        refreshMessages({ silent: true, markSeen: true });
+      }
     }
 
     function closePanel() {
@@ -950,6 +969,31 @@
         rootEl.remove();
       },
     };
+  }
+
+  function shouldMarkMessagesSeen(options) {
+    options = options || {};
+
+    if (options.markSeen === true) {
+      return true;
+    }
+
+    if (options.markSeen === false) {
+      return false;
+    }
+
+    return isPanelReadable(options);
+  }
+
+  function isPanelReadable(options) {
+    var panel = options && options.panel;
+    var doc = options && options.document;
+
+    if (!panel || panel.hidden) {
+      return false;
+    }
+
+    return !doc || !doc.visibilityState || doc.visibilityState !== 'hidden';
   }
 
   function resolveRealtime(options, fetcher) {

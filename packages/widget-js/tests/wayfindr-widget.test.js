@@ -276,6 +276,37 @@ test('fetches visitor-visible conversation messages', async () => {
   assert.equal(result.messages[0].body, 'Hello from support.');
 });
 
+test('can request a visitor read receipt when fetching messages', async () => {
+  const calls = [];
+  const client = Wayfindr.createClient({
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    visitorToken: 'visitor-token-123',
+    fetch: async (url, options) => {
+      calls.push({ url, options });
+
+      return jsonResponse(200, {
+        data: {
+          conversation: {
+            support_code: 'WF-TEST123',
+          },
+          messages: [],
+        },
+      });
+    },
+  });
+
+  await client.fetchMessages('WF-TEST123', { markSeen: true });
+
+  assert.equal(calls.length, 1);
+  assert.equal(
+    calls[0].url,
+    'http://127.0.0.1:8000/api/conversations/WF-TEST123/messages?site_public_key=site_public_docs&anonymous_id=anon-browser-123&visitor_token=visitor-token-123&mark_seen=1',
+  );
+  assert.equal(calls[0].options.method, 'GET');
+});
+
 test('sets cobrowse consent through the public visitor API', async () => {
   const calls = [];
   const client = Wayfindr.createClient({
@@ -2030,6 +2061,121 @@ test('polls active conversations so agent replies appear when realtime is unavai
     widget.root.querySelector('.wayfindr-widget__connection').textContent,
     /Using periodic refresh for updates/,
   );
+
+  widget.destroy();
+});
+
+test('does not mark closed-panel background polls as visitor reads', async () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+  const calls = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    storage: memoryStorage(),
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 50,
+    fetch: async (url, options) => {
+      const parsed = new URL(url);
+      const path = parsed.pathname;
+      calls.push({ url, options });
+
+      if (path === '/api/widget/bootstrap') {
+        return jsonResponse(201, {
+          data: {
+            site: { public_key: 'site_public_docs', settings: {} },
+            visitor: { anonymous_id: 'anon-browser-123', token: 'visitor-token-123' },
+          },
+        });
+      }
+
+      if (path === '/api/conversations') {
+        return jsonResponse(201, {
+          data: {
+            support_code: 'WF-TEST123',
+            status: 'open',
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-TEST123/messages' && options.method === 'POST') {
+        return jsonResponse(201, {
+          data: {
+            conversation: { support_code: 'WF-TEST123' },
+            message: {
+              id: 1,
+              sender: { kind: 'visitor', name: 'Visitor' },
+              type: 'text',
+              body: 'Can you help me?',
+              created_at: '2026-05-23T14:00:00.000000Z',
+            },
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-TEST123/messages') {
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-TEST123', status: 'open' },
+            messages: [{
+              id: 1,
+              sender: { kind: 'visitor', name: 'Visitor' },
+              type: 'text',
+              body: 'Can you help me?',
+              created_at: '2026-05-23T14:00:00.000000Z',
+            }, {
+              id: 2,
+              sender: { kind: 'agent', name: 'Ada Agent' },
+              type: 'text',
+              body: 'Fallback hello.',
+              created_at: '2026-05-23T14:01:00.000000Z',
+            }],
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-TEST123/cobrowse') {
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-TEST123' },
+            cobrowse: {
+              status: 'unavailable',
+              consent: 'unavailable',
+              requested_by: null,
+            },
+          },
+        });
+      }
+
+      throw new Error('Unexpected request ' + url);
+    },
+  });
+
+  widget.open();
+
+  widget.root.querySelector('.wayfindr-widget__textarea').value = 'Can you help me?';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+    new dom.window.Event('submit', { bubbles: true, cancelable: true }),
+  );
+
+  await settle();
+  widget.close();
+  await wait(70);
+  await settle();
+
+  const messageReads = calls
+    .filter((call) => new URL(call.url).pathname === '/api/conversations/WF-TEST123/messages' && call.options.method === 'GET')
+    .map((call) => new URL(call.url).searchParams.get('mark_seen'));
+
+  assert.equal(messageReads.length >= 2, true);
+  assert.equal(messageReads[0], '1');
+  assert.equal(messageReads[messageReads.length - 1], null);
 
   widget.destroy();
 });
