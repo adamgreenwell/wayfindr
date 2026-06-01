@@ -168,6 +168,34 @@ test('dashboard ticket labels link to the matching ticket queue filter', functio
         ->assertSee(route('dashboard', ['ticket_label' => 'needs-dev']).'#tickets', false);
 });
 
+test('dashboard ticket label links preserve the active ticket status queue', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $label = TicketLabel::factory()->for($account)->create([
+        'name' => 'Needs Dev',
+        'slug' => 'needs-dev',
+    ]);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($agent, 'assignee')
+        ->create([
+            'subject' => 'Checkout follow-up',
+            'status' => 'pending',
+        ]);
+    $ticket->labels()->attach($label);
+
+    $this->actingAs($agent)
+        ->get('/dashboard?ticket_status=pending')
+        ->assertOk()
+        ->assertSee('Checkout follow-up')
+        ->assertSee(route('dashboard', [
+            'ticket_status' => 'pending',
+            'ticket_label' => 'needs-dev',
+        ]).'#tickets');
+});
+
 test('ticket detail labels link back to the matching dashboard filter', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
@@ -191,6 +219,34 @@ test('ticket detail labels link back to the matching dashboard filter', function
         ->assertOk()
         ->assertSee('Billing')
         ->assertSee(route('dashboard', ['ticket_label' => 'billing']).'#tickets', false);
+});
+
+test('ticket detail label links preserve non-open ticket status', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $label = TicketLabel::factory()->for($account)->create([
+        'name' => 'Follow Up',
+        'slug' => 'follow-up',
+    ]);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($agent, 'assignee')
+        ->create([
+            'subject' => 'Closed follow-up',
+            'status' => 'closed',
+        ]);
+    $ticket->labels()->attach($label);
+
+    $this->actingAs($agent)
+        ->get("/dashboard/tickets/{$ticket->id}")
+        ->assertOk()
+        ->assertSee('Follow Up')
+        ->assertSee(route('dashboard', [
+            'ticket_status' => 'closed',
+            'ticket_label' => 'follow-up',
+        ]).'#tickets');
 });
 
 test('account admins can rename ticket labels', function (): void {

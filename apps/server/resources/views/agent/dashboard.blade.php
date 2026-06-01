@@ -453,7 +453,7 @@
                                             @else
                                                 <div class="ticket-label-list">
                                                     @foreach ($ticket->labels as $label)
-                                                        <x-ticket-label-chip :label="$label" />
+                                                        <x-ticket-label-chip :label="$label" :ticket-status="$ticketStatus" />
                                                     @endforeach
                                                 </div>
                                             @endif

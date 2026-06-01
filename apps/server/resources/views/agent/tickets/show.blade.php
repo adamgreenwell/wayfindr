@@ -38,7 +38,7 @@
                             @else
                                 <span class="ticket-label-list">
                                     @foreach ($ticket->labels as $label)
-                                        <x-ticket-label-chip :label="$label" />
+                                        <x-ticket-label-chip :label="$label" :ticket-status="$ticket->status" />
                                     @endforeach
                                 </span>
                             @endif
@@ -90,7 +90,7 @@
                     @forelse ($ticket->labels as $label)
                         <article class="message-card">
                             <div class="message-meta">
-                                <x-ticket-label-chip :label="$label" />
+                                <x-ticket-label-chip :label="$label" :ticket-status="$ticket->status" />
                                 <form method="POST" action="{{ route('dashboard.tickets.labels.destroy', [$ticket, $label]) }}">
                                     @csrf
                                     @method('DELETE')
