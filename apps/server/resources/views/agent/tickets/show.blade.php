@@ -32,7 +32,17 @@
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">Labels</span>
-                        <span class="meta-value">{{ $ticket->labels->pluck('name')->implode(', ') ?: 'None' }}</span>
+                        <span class="meta-value">
+                            @if ($ticket->labels->isEmpty())
+                                None
+                            @else
+                                <span class="ticket-label-list">
+                                    @foreach ($ticket->labels as $label)
+                                        <x-ticket-label-chip :label="$label" />
+                                    @endforeach
+                                </span>
+                            @endif
+                        </span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">Assignee</span>
@@ -80,7 +90,7 @@
                     @forelse ($ticket->labels as $label)
                         <article class="message-card">
                             <div class="message-meta">
-                                <strong>{{ $label->name }}</strong>
+                                <x-ticket-label-chip :label="$label" />
                                 <form method="POST" action="{{ route('dashboard.tickets.labels.destroy', [$ticket, $label]) }}">
                                     @csrf
                                     @method('DELETE')

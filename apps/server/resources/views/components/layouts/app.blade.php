@@ -649,6 +649,17 @@
             color: var(--muted);
         }
 
+        .ticket-label-list {
+            align-items: center;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .ticket-label-chip {
+            min-height: 30px;
+        }
+
         code {
             background: var(--surface-muted);
             border: 1px solid var(--border);

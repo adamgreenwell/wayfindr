@@ -447,7 +447,17 @@
                                         <td>{{ $ticket->site->name }}</td>
                                         <td>{{ ucfirst($ticket->status) }}</td>
                                         <td>{{ $ticket->categoryLabel() }}</td>
-                                        <td>{{ $ticket->labels->pluck('name')->implode(', ') ?: 'None' }}</td>
+                                        <td>
+                                            @if ($ticket->labels->isEmpty())
+                                                None
+                                            @else
+                                                <div class="ticket-label-list">
+                                                    @foreach ($ticket->labels as $label)
+                                                        <x-ticket-label-chip :label="$label" />
+                                                    @endforeach
+                                                </div>
+                                            @endif
+                                        </td>
                                         <td>{{ ucfirst($ticket->priority) }}</td>
                                         <td>{{ $ticket->assignee?->name ?? 'Unassigned' }}</td>
                                         <td>

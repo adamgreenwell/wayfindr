@@ -142,6 +142,57 @@ test('only account admins can create managed ticket labels', function (): void {
     ]);
 });
 
+test('dashboard ticket labels link to the matching ticket queue filter', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $label = TicketLabel::factory()->for($account)->create([
+        'name' => 'Needs Dev',
+        'slug' => 'needs-dev',
+    ]);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($agent, 'assignee')
+        ->create([
+            'subject' => 'Checkout outage',
+            'status' => 'open',
+        ]);
+    $ticket->labels()->attach($label);
+
+    $this->actingAs($agent)
+        ->get('/dashboard')
+        ->assertOk()
+        ->assertSee('Checkout outage')
+        ->assertSee('Needs Dev')
+        ->assertSee(route('dashboard', ['ticket_label' => 'needs-dev']).'#tickets', false);
+});
+
+test('ticket detail labels link back to the matching dashboard filter', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $label = TicketLabel::factory()->for($account)->create([
+        'name' => 'Billing',
+        'slug' => 'billing',
+    ]);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($agent, 'assignee')
+        ->create([
+            'subject' => 'Billing question',
+            'status' => 'open',
+        ]);
+    $ticket->labels()->attach($label);
+
+    $this->actingAs($agent)
+        ->get("/dashboard/tickets/{$ticket->id}")
+        ->assertOk()
+        ->assertSee('Billing')
+        ->assertSee(route('dashboard', ['ticket_label' => 'billing']).'#tickets', false);
+});
+
 test('account admins can rename ticket labels', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $admin = User::factory()->for($account)->create([
