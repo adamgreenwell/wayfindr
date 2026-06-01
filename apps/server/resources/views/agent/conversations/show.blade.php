@@ -610,20 +610,65 @@
                     <h2 id="reply-heading">Reply</h2>
                 </div>
 
-                <form class="section-form" method="POST" action="{{ route('dashboard.conversations.messages.store', $conversation->support_code) }}">
+                <form
+                    class="section-form"
+                    method="POST"
+                    action="{{ route('dashboard.conversations.messages.store', $conversation->support_code) }}"
+                    data-reply-composer
+                    data-submitting-label="Sending reply..."
+                >
                     @csrf
 
                     <div class="field">
                         <label for="body">Message</label>
-                        <textarea id="body" name="body" rows="4" required>{{ old('body') }}</textarea>
+                        <textarea id="body" name="body" rows="4" required data-reply-body>{{ old('body') }}</textarea>
                         @error('body')
                             <p class="field-error">{{ $message }}</p>
                         @enderror
                     </div>
 
-                    <button class="button" type="submit">Send reply</button>
+                    <p class="sr-only" data-reply-status aria-live="polite"></p>
+
+                    <button class="button" type="submit" data-reply-submit>Send reply</button>
                 </form>
             </section>
+
+            <script>
+                (function () {
+                    var forms = document.querySelectorAll('[data-reply-composer]');
+
+                    forms.forEach(function (form) {
+                        var submit = form.querySelector('[data-reply-submit]');
+                        var body = form.querySelector('[data-reply-body]');
+                        var status = form.querySelector('[data-reply-status]');
+                        var submittingLabel = form.getAttribute('data-submitting-label') || 'Sending...';
+
+                        form.addEventListener('submit', function (event) {
+                            if (form.getAttribute('data-submitting') === 'true') {
+                                event.preventDefault();
+
+                                return;
+                            }
+
+                            form.setAttribute('data-submitting', 'true');
+                            form.setAttribute('aria-busy', 'true');
+
+                            if (submit) {
+                                submit.disabled = true;
+                                submit.textContent = submittingLabel;
+                            }
+
+                            if (body) {
+                                body.readOnly = true;
+                            }
+
+                            if (status) {
+                                status.textContent = submittingLabel;
+                            }
+                        });
+                    });
+                })();
+            </script>
 
     @if ($realtime)
         <script>

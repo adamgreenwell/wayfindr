@@ -1035,6 +1035,27 @@ test('agent can view their account conversation timeline', function (): void {
     expect(substr_count($response->content(), 'message agent grouped'))->toBe(0);
 });
 
+test('agent reply composer exposes progressive submission affordances', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+    Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-REPLYUX',
+        'subject' => 'Reply composer check',
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-REPLYUX')
+        ->assertOk()
+        ->assertSee('data-reply-composer', false)
+        ->assertSee('data-submitting-label="Sending reply..."', false)
+        ->assertSee('data-reply-body', false)
+        ->assertSee('data-reply-submit', false)
+        ->assertSee('data-reply-status', false)
+        ->assertSee('aria-live="polite"', false);
+});
+
 test('agent can view safe visitor context on a conversation', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
