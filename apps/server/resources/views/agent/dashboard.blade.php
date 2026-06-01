@@ -361,6 +361,17 @@
                         </div>
 
                         <div class="meta-item">
+                            <label class="meta-label" for="ticket_attention">Next step</label>
+                            <select id="ticket_attention" name="ticket_attention">
+                                @foreach ($ticketAttentionFilters as $filterValue => $filterLabel)
+                                    <option value="{{ $filterValue }}" @selected($ticketAttention === $filterValue)>
+                                        {{ $filterLabel }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div class="meta-item">
                             <label class="meta-label" for="ticket_search">Search</label>
                             <input id="ticket_search" name="ticket_search" type="search" value="{{ $ticketSearch }}">
                         </div>
@@ -370,7 +381,7 @@
                             <button class="button" type="submit">Apply filters</button>
                             @php
                                 $clearParams = $ticketQuery;
-                                unset($clearParams['ticket_site'], $clearParams['ticket_priority'], $clearParams['ticket_category'], $clearParams['ticket_search']);
+                                unset($clearParams['ticket_site'], $clearParams['ticket_priority'], $clearParams['ticket_category'], $clearParams['ticket_attention'], $clearParams['ticket_search']);
                             @endphp
                             <a class="button secondary" href="{{ route('dashboard', $clearParams) }}">Clear filters</a>
                         </div>

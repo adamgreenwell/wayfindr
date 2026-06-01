@@ -89,6 +89,21 @@ class AgentDashboardController extends Controller
         $ticketCategory = is_string($ticketCategory) && array_key_exists($ticketCategory, $ticketCategoryFilters)
             ? $ticketCategory
             : 'all';
+        $ticketAttentionFilters = [
+            'all' => 'Any next step',
+            'needs_reply' => 'Needs reply',
+            'needs_owner' => 'Needs owner',
+            'needs_agent' => 'Needs agent',
+            'waiting_on_customer' => 'Waiting on customer',
+            'resolved' => 'Resolved',
+        ];
+        $ticketAttention = $request->query('ticket_attention', 'all');
+        $ticketAttention = is_string($ticketAttention) && array_key_exists($ticketAttention, $ticketAttentionFilters)
+            ? $ticketAttention
+            : 'all';
+        if ($ticketAttention === 'resolved' && ! in_array($ticketStatus, ['closed', 'all'], true)) {
+            $ticketStatus = 'closed';
+        }
         $requestedTicketSite = $request->query('ticket_site');
         $ticketSite = is_string($requestedTicketSite) && ctype_digit($requestedTicketSite) && $sites->contains('id', (int) $requestedTicketSite)
             ? (int) $requestedTicketSite
@@ -105,6 +120,7 @@ class AgentDashboardController extends Controller
             || $ticketSite
             || $ticketPriority !== 'all'
             || $ticketCategory !== 'all'
+            || $ticketAttention !== 'all'
             || $ticketSearch !== '';
         $ticketEmptyMessage = $ticketHasActiveRefinement
             ? 'No tickets match those filters.'
@@ -169,6 +185,7 @@ class AgentDashboardController extends Controller
             ->orderByDesc('updated_at')
             ->orderByDesc('created_at')
             ->get()
+            ->filter(fn (Ticket $ticket): bool => $ticketAttention === 'all' || $ticket->attentionState() === $ticketAttention)
             ->sortBy(fn (Ticket $ticket): array => [
                 $ticket->attentionSortRank(),
                 -$ticket->updated_at->getTimestamp(),
@@ -179,7 +196,7 @@ class AgentDashboardController extends Controller
         $unreadNotificationCount = $visibleUnreadNotifications->count();
         $unreadNotifications = $visibleUnreadNotifications->take(5);
 
-        $ticketQuery = $this->ticketQueryParams($ticketStatus, $ticketFilter, $ticketSite, $ticketPriority, $ticketCategory, $ticketSearch);
+        $ticketQuery = $this->ticketQueryParams($ticketStatus, $ticketFilter, $ticketSite, $ticketPriority, $ticketCategory, $ticketAttention, $ticketSearch);
 
         return view('agent.dashboard', [
             'account' => $account,
@@ -194,6 +211,8 @@ class AgentDashboardController extends Controller
             'newActivityConversationCount' => $newActivityConversationCount,
             'realtimeHealth' => $realtimeHealth->summary(),
             'sites' => $sites,
+            'ticketAttention' => $ticketAttention,
+            'ticketAttentionFilters' => $ticketAttentionFilters,
             'ticketCategory' => $ticketCategory,
             'ticketCategoryFilters' => $ticketCategoryFilters,
             'ticketEmptyMessage' => $ticketEmptyMessage,
@@ -213,6 +232,8 @@ class AgentDashboardController extends Controller
                 $ticketPriorityFilters,
                 $ticketCategory,
                 $ticketCategoryFilters,
+                $ticketAttention,
+                $ticketAttentionFilters,
                 $ticketSearch,
             ),
             'ticketQuery' => $ticketQuery,
@@ -282,7 +303,7 @@ class AgentDashboardController extends Controller
     /**
      * @return array<string, string|int>
      */
-    private function ticketQueryParams(string $ticketStatus, string $ticketFilter, ?int $ticketSite, string $ticketPriority, string $ticketCategory, string $ticketSearch): array
+    private function ticketQueryParams(string $ticketStatus, string $ticketFilter, ?int $ticketSite, string $ticketPriority, string $ticketCategory, string $ticketAttention, string $ticketSearch): array
     {
         $params = [];
 
@@ -306,6 +327,10 @@ class AgentDashboardController extends Controller
             $params['ticket_category'] = $ticketCategory;
         }
 
+        if ($ticketAttention !== 'all') {
+            $params['ticket_attention'] = $ticketAttention;
+        }
+
         if ($ticketSearch !== '') {
             $params['ticket_search'] = $ticketSearch;
         }
@@ -320,6 +345,7 @@ class AgentDashboardController extends Controller
      * @param  Collection<int, Site>  $sites
      * @param  array<string, string>  $ticketPriorityFilters
      * @param  array<string, string>  $ticketCategoryFilters
+     * @param  array<string, string>  $ticketAttentionFilters
      * @return array<int, array{label: string, href: string}>
      */
     private function activeTicketFilters(
@@ -334,6 +360,8 @@ class AgentDashboardController extends Controller
         array $ticketPriorityFilters,
         string $ticketCategory,
         array $ticketCategoryFilters,
+        string $ticketAttention,
+        array $ticketAttentionFilters,
         string $ticketSearch,
     ): array {
         $filters = [];
@@ -360,6 +388,10 @@ class AgentDashboardController extends Controller
 
         if ($ticketCategory !== 'all') {
             $filters[] = $this->ticketFilterChip('ticket_category', 'Category: '.$ticketCategoryFilters[$ticketCategory], $ticketQuery);
+        }
+
+        if ($ticketAttention !== 'all') {
+            $filters[] = $this->ticketFilterChip('ticket_attention', 'Next step: '.$ticketAttentionFilters[$ticketAttention], $ticketQuery);
         }
 
         if ($ticketSearch !== '') {
