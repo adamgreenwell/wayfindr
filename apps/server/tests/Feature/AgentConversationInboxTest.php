@@ -2388,6 +2388,33 @@ test('agent can add and remove labels on a ticket', function (): void {
     ]);
 });
 
+test('ticket labels reserve dashboard filter sentinel slugs', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($agent, 'assignee')
+        ->create([
+            'subject' => 'Escalated checkout issue',
+            'status' => 'open',
+        ]);
+
+    $this->actingAs($agent)
+        ->from("/dashboard/tickets/{$ticket->id}")
+        ->post("/dashboard/tickets/{$ticket->id}/labels", [
+            'label_name' => 'All',
+        ])
+        ->assertRedirect("/dashboard/tickets/{$ticket->id}")
+        ->assertSessionHasErrors('label_name');
+
+    $this->assertDatabaseMissing('ticket_labels', [
+        'account_id' => $account->id,
+        'slug' => 'all',
+    ]);
+});
+
 test('dashboard filters tickets by label', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);

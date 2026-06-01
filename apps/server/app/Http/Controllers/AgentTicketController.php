@@ -29,6 +29,8 @@ use Illuminate\Validation\ValidationException;
 
 class AgentTicketController extends Controller
 {
+    private const RESERVED_LABEL_SLUGS = ['all'];
+
     public function show(Request $request, Ticket $ticket, VisitorContextSanitizer $visitorContextSanitizer): View
     {
         $agent = $request->user();
@@ -134,6 +136,12 @@ class AgentTicketController extends Controller
         if ($name === '' || $slug === '') {
             throw ValidationException::withMessages([
                 'label_name' => 'Use at least one letter or number for the label.',
+            ]);
+        }
+
+        if (in_array($slug, self::RESERVED_LABEL_SLUGS, true)) {
+            throw ValidationException::withMessages([
+                'label_name' => 'That label name is reserved for ticket filtering.',
             ]);
         }
 
