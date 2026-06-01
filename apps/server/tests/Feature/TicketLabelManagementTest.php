@@ -40,6 +40,7 @@ test('account admins can review ticket labels and usage', function (): void {
         ->get('/dashboard/account/labels')
         ->assertOk()
         ->assertSee('Ticket labels')
+        ->assertSee('Create label')
         ->assertSee('Needs Dev')
         ->assertSee('needs-dev')
         ->assertSee('1 ticket')
@@ -54,6 +55,91 @@ test('account admins can review ticket labels and usage', function (): void {
 
     expect($unusedLabel->exists)->toBeTrue()
         ->and($otherAccountLabel->exists)->toBeTrue();
+});
+
+test('account admins can create reusable ticket labels from management', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'name' => 'Ada Admin',
+    ]);
+
+    $this->actingAs($admin)
+        ->from('/dashboard/account/labels')
+        ->post('/dashboard/account/labels', [
+            'label_name' => 'VIP Customer',
+        ])
+        ->assertRedirect('/dashboard/account/labels')
+        ->assertSessionHas('status', 'Ticket label created.');
+
+    $this->assertDatabaseHas('ticket_labels', [
+        'account_id' => $account->id,
+        'name' => 'VIP Customer',
+        'slug' => 'vip-customer',
+    ]);
+
+    $this->actingAs($admin)
+        ->get('/dashboard/account/labels')
+        ->assertOk()
+        ->assertSee('VIP Customer')
+        ->assertSee('vip-customer')
+        ->assertSee('0 tickets')
+        ->assertSee('Delete unused');
+});
+
+test('ticket label creation rejects reserved and duplicate account slugs', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+    ]);
+    TicketLabel::factory()->for($account)->create([
+        'name' => 'Needs Dev',
+        'slug' => 'needs-dev',
+    ]);
+
+    $this->actingAs($admin)
+        ->from('/dashboard/account/labels')
+        ->post('/dashboard/account/labels', [
+            'label_name' => 'All',
+        ])
+        ->assertRedirect('/dashboard/account/labels')
+        ->assertSessionHasErrors('label_name');
+
+    $this->assertDatabaseMissing('ticket_labels', [
+        'account_id' => $account->id,
+        'slug' => 'all',
+    ]);
+
+    $this->actingAs($admin)
+        ->from('/dashboard/account/labels')
+        ->post('/dashboard/account/labels', [
+            'label_name' => 'Needs    Dev',
+        ])
+        ->assertRedirect('/dashboard/account/labels')
+        ->assertSessionHasErrors('label_name');
+
+    expect(TicketLabel::query()
+        ->where('account_id', $account->id)
+        ->where('slug', 'needs-dev')
+        ->count())->toBe(1);
+});
+
+test('only account admins can create managed ticket labels', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+    ]);
+
+    $this->actingAs($agent)
+        ->post('/dashboard/account/labels', [
+            'label_name' => 'VIP Customer',
+        ])
+        ->assertForbidden();
+
+    $this->assertDatabaseMissing('ticket_labels', [
+        'account_id' => $account->id,
+        'slug' => 'vip-customer',
+    ]);
 });
 
 test('account admins can rename ticket labels', function (): void {

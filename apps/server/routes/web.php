@@ -57,6 +57,8 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.account.audit.export');
     Route::get('/dashboard/account/labels', [AgentTicketLabelController::class, 'index'])
         ->name('dashboard.account.labels.index');
+    Route::post('/dashboard/account/labels', [AgentTicketLabelController::class, 'store'])
+        ->name('dashboard.account.labels.store');
     Route::put('/dashboard/account/labels/{ticketLabel}', [AgentTicketLabelController::class, 'update'])
         ->name('dashboard.account.labels.update');
     Route::delete('/dashboard/account/labels/{ticketLabel}', [AgentTicketLabelController::class, 'destroy'])

@@ -21,6 +21,24 @@
                 <p class="field-error">{{ $message }}</p>
             @enderror
 
+            <section class="section" aria-labelledby="new-ticket-label-heading">
+                <div class="section-header">
+                    <h2 id="new-ticket-label-heading">Create label</h2>
+                    <span class="lede">Make a reusable triage label before a ticket needs it.</span>
+                </div>
+
+                <form class="section-form" method="POST" action="{{ route('dashboard.account.labels.store') }}">
+                    @csrf
+
+                    <div class="field">
+                        <label for="new-label-name">Label name</label>
+                        <input id="new-label-name" name="label_name" type="text" value="{{ old('label_name') }}" maxlength="64" placeholder="VIP Customer" required>
+                    </div>
+
+                    <button class="button" type="submit">Create label</button>
+                </form>
+            </section>
+
             <section class="section" aria-labelledby="ticket-labels-heading">
                 <div class="section-header">
                     <h2 id="ticket-labels-heading">Labels</h2>

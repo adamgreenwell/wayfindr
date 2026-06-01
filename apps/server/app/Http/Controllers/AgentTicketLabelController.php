@@ -28,41 +28,42 @@ class AgentTicketLabelController extends Controller
         ]);
     }
 
-    public function update(Request $request, TicketLabel $ticketLabel): RedirectResponse
+    public function store(Request $request): RedirectResponse
     {
         $agent = $request->user();
 
-        $this->authorizeManageLabel($agent, $ticketLabel);
+        abort_unless($agent?->isAdmin(), 403);
 
-        $validated = $request->validate([
-            'label_name' => ['required', 'string', 'max:64'],
-        ]);
+        $account = $agent->account()->firstOrFail();
+        $label = $this->validatedLabelInput($request);
 
-        $name = TicketLabel::normalizeName($validated['label_name']);
-        $slug = TicketLabel::slugForName($name);
-
-        if ($name === '' || $slug === '') {
-            throw ValidationException::withMessages([
-                'label_name' => 'Use at least one letter or number for the label.',
-            ]);
-        }
-
-        if (TicketLabel::isReservedSlug($slug)) {
-            throw ValidationException::withMessages([
-                'label_name' => 'That label name is reserved for ticket filtering.',
-            ]);
-        }
-
-        if ($this->labelSlugExists($ticketLabel, $slug)) {
+        if ($this->accountLabelSlugExists((int) $account->id, $label['slug'])) {
             throw ValidationException::withMessages([
                 'label_name' => 'That label already exists for this account.',
             ]);
         }
 
-        $ticketLabel->forceFill([
-            'name' => $name,
-            'slug' => $slug,
-        ])->save();
+        $account->ticketLabels()->create($label);
+
+        return redirect()
+            ->route('dashboard.account.labels.index')
+            ->with('status', 'Ticket label created.');
+    }
+
+    public function update(Request $request, TicketLabel $ticketLabel): RedirectResponse
+    {
+        $agent = $request->user();
+
+        $this->authorizeManageLabel($agent, $ticketLabel);
+        $label = $this->validatedLabelInput($request);
+
+        if ($this->labelSlugExists($ticketLabel, $label['slug'])) {
+            throw ValidationException::withMessages([
+                'label_name' => 'That label already exists for this account.',
+            ]);
+        }
+
+        $ticketLabel->forceFill($label)->save();
 
         return redirect()
             ->route('dashboard.account.labels.index')
@@ -96,6 +97,44 @@ class AgentTicketLabelController extends Controller
             && (int) $agent->account_id === (int) $ticketLabel->account_id,
             404,
         );
+    }
+
+    /**
+     * @return array{name: string, slug: string}
+     */
+    private function validatedLabelInput(Request $request): array
+    {
+        $validated = $request->validate([
+            'label_name' => ['required', 'string', 'max:64'],
+        ]);
+
+        $name = TicketLabel::normalizeName($validated['label_name']);
+        $slug = TicketLabel::slugForName($name);
+
+        if ($name === '' || $slug === '') {
+            throw ValidationException::withMessages([
+                'label_name' => 'Use at least one letter or number for the label.',
+            ]);
+        }
+
+        if (TicketLabel::isReservedSlug($slug)) {
+            throw ValidationException::withMessages([
+                'label_name' => 'That label name is reserved for ticket filtering.',
+            ]);
+        }
+
+        return [
+            'name' => $name,
+            'slug' => $slug,
+        ];
+    }
+
+    private function accountLabelSlugExists(int $accountId, string $slug): bool
+    {
+        return TicketLabel::query()
+            ->where('account_id', $accountId)
+            ->where('slug', $slug)
+            ->exists();
     }
 
     private function labelSlugExists(TicketLabel $ticketLabel, string $slug): bool
