@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
 
 uses(RefreshDatabase::class);
@@ -992,17 +993,31 @@ test('agent can view their account conversation timeline', function (): void {
         'sender_type' => Visitor::class,
         'sender_id' => $visitor->id,
         'body' => 'First visitor message.',
-        'created_at' => now()->subMinutes(2),
+        'created_at' => Carbon::parse('2026-05-30 14:00:00', 'UTC'),
+    ]);
+
+    ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'Visitor follow-up.',
+        'created_at' => Carbon::parse('2026-05-30 14:02:00', 'UTC'),
     ]);
 
     ConversationMessage::factory()->for($conversation)->create([
         'sender_type' => User::class,
         'sender_id' => $agent->id,
         'body' => 'First agent note.',
-        'created_at' => now()->subMinute(),
+        'created_at' => Carbon::parse('2026-05-30 14:03:00', 'UTC'),
     ]);
 
-    $this->actingAs($agent)
+    ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => User::class,
+        'sender_id' => $agent->id,
+        'body' => 'Later agent follow-up.',
+        'created_at' => Carbon::parse('2026-05-30 14:10:00', 'UTC'),
+    ]);
+
+    $response = $this->actingAs($agent)
         ->get('/dashboard/conversations/WF-DETAIL1')
         ->assertOk()
         ->assertSee('Checkout trouble')
@@ -1011,7 +1026,13 @@ test('agent can view their account conversation timeline', function (): void {
         ->assertSee('WF-DETAIL1')
         ->assertSee('Send reply')
         ->assertSee('name="body"', false)
-        ->assertSeeInOrder(['First visitor message.', 'First agent note.']);
+        ->assertSee('datetime="2026-05-30T14:00:00.000000Z"', false)
+        ->assertSee('datetime="2026-05-30T14:02:00.000000Z"', false)
+        ->assertSee('message visitor grouped', false)
+        ->assertSeeInOrder(['First visitor message.', 'Visitor follow-up.', 'First agent note.', 'Later agent follow-up.']);
+
+    expect(substr_count($response->content(), 'message visitor grouped'))->toBe(1);
+    expect(substr_count($response->content(), 'message agent grouped'))->toBe(0);
 });
 
 test('agent can view safe visitor context on a conversation', function (): void {

@@ -570,20 +570,36 @@
                     <p class="empty">No messages yet.</p>
                 @else
                     <div class="message-list">
+                        @php
+                            $previousMessage = null;
+                        @endphp
+
                         @foreach ($messages as $message)
                             @php
                                 $isAgent = $message->sender_type === \App\Models\User::class;
                                 $senderName = $isAgent
                                     ? ($message->sender?->name ?? 'Agent')
                                     : 'Visitor';
+                                $secondsSincePrevious = $previousMessage?->created_at?->diffInSeconds($message->created_at, false);
+                                $isGrouped = $previousMessage
+                                    && $previousMessage->sender_type === $message->sender_type
+                                    && (string) $previousMessage->sender_id === (string) $message->sender_id
+                                    && $secondsSincePrevious !== null
+                                    && $secondsSincePrevious >= 0
+                                    && $secondsSincePrevious <= 300;
+                                $messageClasses = 'message '.($isAgent ? 'agent' : 'visitor').($isGrouped ? ' grouped' : '');
                             @endphp
-                            <article class="message {{ $isAgent ? 'agent' : 'visitor' }}">
+                            <article class="{{ $messageClasses }}">
                                 <div class="message-meta">
-                                    <strong>{{ $senderName }}</strong>
-                                    <span>{{ $message->created_at->diffForHumans() }}</span>
+                                    <strong class="{{ $isGrouped ? 'sr-only' : 'message-sender' }}">{{ $senderName }}</strong>
+                                    <time class="message-time" datetime="{{ $message->created_at->toJSON() }}">{{ $message->created_at->diffForHumans() }}</time>
                                 </div>
                                 <p class="message-body">{{ $message->body }}</p>
                             </article>
+
+                            @php
+                                $previousMessage = $message;
+                            @endphp
                         @endforeach
                     </div>
                 @endif

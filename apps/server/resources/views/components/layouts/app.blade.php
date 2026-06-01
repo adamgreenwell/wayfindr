@@ -733,6 +733,14 @@
             background: var(--surface-muted);
         }
 
+        .message.grouped {
+            margin-top: -8px;
+        }
+
+        .message.grouped .message-meta {
+            justify-content: flex-end;
+        }
+
         .empty-state {
             color: var(--muted);
         }
@@ -746,9 +754,17 @@
             justify-content: space-between;
         }
 
+        .message-time {
+            white-space: nowrap;
+        }
+
         .message-body {
             margin: 10px 0 0;
             white-space: pre-wrap;
+        }
+
+        .message.grouped .message-body {
+            margin-top: 6px;
         }
 
         .message .button {
