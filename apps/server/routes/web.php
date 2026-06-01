@@ -108,6 +108,10 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.tickets.update');
     Route::post('/dashboard/tickets/{ticket}/notes', [AgentTicketController::class, 'storeNote'])
         ->name('dashboard.tickets.notes.store');
+    Route::post('/dashboard/tickets/{ticket}/labels', [AgentTicketController::class, 'storeLabel'])
+        ->name('dashboard.tickets.labels.store');
+    Route::delete('/dashboard/tickets/{ticket}/labels/{ticketLabel}', [AgentTicketController::class, 'destroyLabel'])
+        ->name('dashboard.tickets.labels.destroy');
     Route::post('/dashboard/tickets/{ticket}/replies', [AgentTicketController::class, 'storeReply'])
         ->name('dashboard.tickets.replies.store');
     Route::post('/dashboard/tickets/{ticket}/external-links', [AgentTicketExternalLinkController::class, 'store'])

@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 
@@ -135,6 +136,13 @@ class Ticket extends Model
     public function categoryLabel(): string
     {
         return TicketCategory::label($this->category);
+    }
+
+    public function labels(): BelongsToMany
+    {
+        return $this->belongsToMany(TicketLabel::class, 'ticket_label_ticket')
+            ->withTimestamps()
+            ->orderBy('name');
     }
 
     public function auditEvents(): MorphMany

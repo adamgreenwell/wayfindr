@@ -15,6 +15,7 @@ use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 
 uses(RefreshDatabase::class);
@@ -2333,6 +2334,152 @@ test('ticket internal note helpers validate selected helper', function (): void 
         ->assertSessionHasErrors('note_template');
 
     expect($ticket->auditEvents()->where('action', 'ticket.note_added')->count())->toBe(0);
+});
+
+test('agent can add and remove labels on a ticket', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($agent, 'assignee')
+        ->create([
+            'subject' => 'Escalated checkout issue',
+            'status' => 'open',
+        ]);
+
+    $this->actingAs($agent)
+        ->from("/dashboard/tickets/{$ticket->id}")
+        ->post("/dashboard/tickets/{$ticket->id}/labels", [
+            'label_name' => 'Needs Dev',
+        ])
+        ->assertRedirect("/dashboard/tickets/{$ticket->id}")
+        ->assertSessionHas('status', 'Ticket label added.');
+
+    $label = DB::table('ticket_labels')
+        ->where('account_id', $account->id)
+        ->where('slug', 'needs-dev')
+        ->first();
+
+    expect($label)->not->toBeNull()
+        ->and($label->name)->toBe('Needs Dev');
+
+    $this->assertDatabaseHas('ticket_label_ticket', [
+        'ticket_id' => $ticket->id,
+        'ticket_label_id' => $label->id,
+    ]);
+
+    $this->actingAs($agent)
+        ->get("/dashboard/tickets/{$ticket->id}")
+        ->assertOk()
+        ->assertSee('Labels')
+        ->assertSee('Needs Dev');
+
+    $this->actingAs($agent)
+        ->from("/dashboard/tickets/{$ticket->id}")
+        ->delete("/dashboard/tickets/{$ticket->id}/labels/{$label->id}")
+        ->assertRedirect("/dashboard/tickets/{$ticket->id}")
+        ->assertSessionHas('status', 'Ticket label removed.');
+
+    $this->assertDatabaseMissing('ticket_label_ticket', [
+        'ticket_id' => $ticket->id,
+        'ticket_label_id' => $label->id,
+    ]);
+});
+
+test('dashboard filters tickets by label', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $labelId = DB::table('ticket_labels')->insertGetId([
+        'account_id' => $account->id,
+        'name' => 'Needs Dev',
+        'slug' => 'needs-dev',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    $matchingTicket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($agent, 'assignee')
+        ->create([
+            'subject' => 'Checkout outage',
+            'status' => 'open',
+        ]);
+    $otherTicket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($agent, 'assignee')
+        ->create([
+            'subject' => 'Billing question',
+            'status' => 'open',
+        ]);
+
+    DB::table('ticket_label_ticket')->insert([
+        'ticket_id' => $matchingTicket->id,
+        'ticket_label_id' => $labelId,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard?ticket_label=needs-dev')
+        ->assertOk()
+        ->assertSee('Checkout outage')
+        ->assertSee('Needs Dev')
+        ->assertSee('Label: Needs Dev')
+        ->assertDontSee('Billing question');
+
+    expect($otherTicket->exists)->toBeTrue();
+});
+
+test('ticket labels are scoped to the agent account', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $otherAccount = Account::factory()->create(['name' => 'Other Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($agent, 'assignee')
+        ->create([
+            'subject' => 'Escalated checkout issue',
+            'status' => 'open',
+        ]);
+    $otherLabelId = DB::table('ticket_labels')->insertGetId([
+        'account_id' => $otherAccount->id,
+        'name' => 'Needs Dev',
+        'slug' => 'needs-dev',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $this->actingAs($agent)
+        ->from("/dashboard/tickets/{$ticket->id}")
+        ->post("/dashboard/tickets/{$ticket->id}/labels", [
+            'label_name' => 'Needs Dev',
+        ])
+        ->assertRedirect("/dashboard/tickets/{$ticket->id}")
+        ->assertSessionHas('status', 'Ticket label added.');
+
+    $ownLabel = DB::table('ticket_labels')
+        ->where('account_id', $account->id)
+        ->where('slug', 'needs-dev')
+        ->first();
+
+    expect($ownLabel)->not->toBeNull()
+        ->and($ownLabel->id)->not->toBe($otherLabelId);
+
+    $this->actingAs($agent)
+        ->from("/dashboard/tickets/{$ticket->id}")
+        ->delete("/dashboard/tickets/{$ticket->id}/labels/{$otherLabelId}")
+        ->assertNotFound();
+
+    $this->assertDatabaseHas('ticket_label_ticket', [
+        'ticket_id' => $ticket->id,
+        'ticket_label_id' => $ownLabel->id,
+    ]);
 });
 
 test('agent can send a visitor reply from a linked ticket record', function (): void {

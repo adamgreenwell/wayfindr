@@ -361,6 +361,17 @@
                         </div>
 
                         <div class="meta-item">
+                            <label class="meta-label" for="ticket_label">Label</label>
+                            <select id="ticket_label" name="ticket_label">
+                                @foreach ($ticketLabelFilters as $filterValue => $filterLabel)
+                                    <option value="{{ $filterValue }}" @selected($ticketLabel === $filterValue)>
+                                        {{ $filterLabel }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div class="meta-item">
                             <label class="meta-label" for="ticket_attention">Next step</label>
                             <select id="ticket_attention" name="ticket_attention">
                                 @foreach ($ticketAttentionFilters as $filterValue => $filterLabel)
@@ -381,7 +392,7 @@
                             <button class="button" type="submit">Apply filters</button>
                             @php
                                 $clearParams = $ticketQuery;
-                                unset($clearParams['ticket_site'], $clearParams['ticket_priority'], $clearParams['ticket_category'], $clearParams['ticket_attention'], $clearParams['ticket_search']);
+                                unset($clearParams['ticket_site'], $clearParams['ticket_priority'], $clearParams['ticket_category'], $clearParams['ticket_label'], $clearParams['ticket_attention'], $clearParams['ticket_search']);
                             @endphp
                             <a class="button secondary" href="{{ route('dashboard', $clearParams) }}">Clear filters</a>
                         </div>
@@ -417,6 +428,7 @@
                                     <th scope="col">Site</th>
                                     <th scope="col">Status</th>
                                     <th scope="col">Category</th>
+                                    <th scope="col">Labels</th>
                                     <th scope="col">Priority</th>
                                     <th scope="col">Assignee</th>
                                     <th scope="col">Next step</th>
@@ -435,6 +447,7 @@
                                         <td>{{ $ticket->site->name }}</td>
                                         <td>{{ ucfirst($ticket->status) }}</td>
                                         <td>{{ $ticket->categoryLabel() }}</td>
+                                        <td>{{ $ticket->labels->pluck('name')->implode(', ') ?: 'None' }}</td>
                                         <td>{{ ucfirst($ticket->priority) }}</td>
                                         <td>{{ $ticket->assignee?->name ?? 'Unassigned' }}</td>
                                         <td>

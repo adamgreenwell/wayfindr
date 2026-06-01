@@ -89,6 +89,17 @@ class AgentDashboardController extends Controller
         $ticketCategory = is_string($ticketCategory) && array_key_exists($ticketCategory, $ticketCategoryFilters)
             ? $ticketCategory
             : 'all';
+        $ticketLabels = $account->ticketLabels()
+            ->orderBy('name')
+            ->get();
+        $ticketLabelFilters = [
+            'all' => 'Any label',
+            ...$ticketLabels->pluck('name', 'slug')->all(),
+        ];
+        $ticketLabel = $request->query('ticket_label', 'all');
+        $ticketLabel = is_string($ticketLabel) && array_key_exists($ticketLabel, $ticketLabelFilters)
+            ? $ticketLabel
+            : 'all';
         $ticketAttentionFilters = [
             'all' => 'Any next step',
             'needs_reply' => 'Needs reply',
@@ -120,6 +131,7 @@ class AgentDashboardController extends Controller
             || $ticketSite
             || $ticketPriority !== 'all'
             || $ticketCategory !== 'all'
+            || $ticketLabel !== 'all'
             || $ticketAttention !== 'all'
             || $ticketSearch !== '';
         $ticketEmptyMessage = $ticketHasActiveRefinement
@@ -162,7 +174,7 @@ class AgentDashboardController extends Controller
             ->orderByDesc('created_at')
             ->get();
         $tickets = Ticket::query()
-            ->with(['assignee', 'conversation.latestMessage', 'site'])
+            ->with(['assignee', 'conversation.latestMessage', 'labels', 'site'])
             ->where('account_id', $account->id)
             ->whereHas('site', fn ($query) => $query->visibleToAgent($agent))
             ->when($ticketStatus !== 'all', fn ($query) => $query->where('status', $ticketStatus))
@@ -172,6 +184,9 @@ class AgentDashboardController extends Controller
             ->when($ticketPriority !== 'all', fn ($query) => $query->where('priority', $ticketPriority))
             ->when($ticketCategory === 'uncategorized', fn ($query) => $query->whereNull('category'))
             ->when($ticketCategory !== 'all' && $ticketCategory !== 'uncategorized', fn ($query) => $query->where('category', $ticketCategory))
+            ->when($ticketLabel !== 'all', fn ($query) => $query->whereHas('labels', fn ($query) => $query
+                ->where('account_id', $account->id)
+                ->where('slug', $ticketLabel)))
             ->when($ticketSearch !== '', function ($query) use ($ticketSearch): void {
                 $searchPattern = '%'.$ticketSearch.'%';
 
@@ -196,7 +211,7 @@ class AgentDashboardController extends Controller
         $unreadNotificationCount = $visibleUnreadNotifications->count();
         $unreadNotifications = $visibleUnreadNotifications->take(5);
 
-        $ticketQuery = $this->ticketQueryParams($ticketStatus, $ticketFilter, $ticketSite, $ticketPriority, $ticketCategory, $ticketAttention, $ticketSearch);
+        $ticketQuery = $this->ticketQueryParams($ticketStatus, $ticketFilter, $ticketSite, $ticketPriority, $ticketCategory, $ticketLabel, $ticketAttention, $ticketSearch);
 
         return view('agent.dashboard', [
             'account' => $account,
@@ -218,6 +233,8 @@ class AgentDashboardController extends Controller
             'ticketEmptyMessage' => $ticketEmptyMessage,
             'ticketFilter' => $ticketFilter,
             'ticketFilters' => $ticketFilters,
+            'ticketLabel' => $ticketLabel,
+            'ticketLabelFilters' => $ticketLabelFilters,
             'ticketPriority' => $ticketPriority,
             'ticketPriorityFilters' => $ticketPriorityFilters,
             'ticketActiveFilters' => $this->activeTicketFilters(
@@ -232,6 +249,8 @@ class AgentDashboardController extends Controller
                 $ticketPriorityFilters,
                 $ticketCategory,
                 $ticketCategoryFilters,
+                $ticketLabel,
+                $ticketLabelFilters,
                 $ticketAttention,
                 $ticketAttentionFilters,
                 $ticketSearch,
@@ -303,7 +322,7 @@ class AgentDashboardController extends Controller
     /**
      * @return array<string, string|int>
      */
-    private function ticketQueryParams(string $ticketStatus, string $ticketFilter, ?int $ticketSite, string $ticketPriority, string $ticketCategory, string $ticketAttention, string $ticketSearch): array
+    private function ticketQueryParams(string $ticketStatus, string $ticketFilter, ?int $ticketSite, string $ticketPriority, string $ticketCategory, string $ticketLabel, string $ticketAttention, string $ticketSearch): array
     {
         $params = [];
 
@@ -327,6 +346,10 @@ class AgentDashboardController extends Controller
             $params['ticket_category'] = $ticketCategory;
         }
 
+        if ($ticketLabel !== 'all') {
+            $params['ticket_label'] = $ticketLabel;
+        }
+
         if ($ticketAttention !== 'all') {
             $params['ticket_attention'] = $ticketAttention;
         }
@@ -345,6 +368,7 @@ class AgentDashboardController extends Controller
      * @param  Collection<int, Site>  $sites
      * @param  array<string, string>  $ticketPriorityFilters
      * @param  array<string, string>  $ticketCategoryFilters
+     * @param  array<string, string>  $ticketLabelFilters
      * @param  array<string, string>  $ticketAttentionFilters
      * @return array<int, array{label: string, href: string}>
      */
@@ -360,6 +384,8 @@ class AgentDashboardController extends Controller
         array $ticketPriorityFilters,
         string $ticketCategory,
         array $ticketCategoryFilters,
+        string $ticketLabel,
+        array $ticketLabelFilters,
         string $ticketAttention,
         array $ticketAttentionFilters,
         string $ticketSearch,
@@ -388,6 +414,10 @@ class AgentDashboardController extends Controller
 
         if ($ticketCategory !== 'all') {
             $filters[] = $this->ticketFilterChip('ticket_category', 'Category: '.$ticketCategoryFilters[$ticketCategory], $ticketQuery);
+        }
+
+        if ($ticketLabel !== 'all') {
+            $filters[] = $this->ticketFilterChip('ticket_label', 'Label: '.$ticketLabelFilters[$ticketLabel], $ticketQuery);
         }
 
         if ($ticketAttention !== 'all') {

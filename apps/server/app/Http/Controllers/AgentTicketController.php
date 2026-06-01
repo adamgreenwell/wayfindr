@@ -6,6 +6,7 @@ use App\Events\ConversationMessageCreated;
 use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\Ticket;
+use App\Models\TicketLabel;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
@@ -22,6 +23,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -40,6 +42,7 @@ class AgentTicketController extends Controller
             'externalLinks' => fn ($query) => $query
                 ->latest()
                 ->latest('id'),
+            'labels',
             'requester',
             'site.externalIssueProjects.providerConnection',
             'auditEvents' => fn ($query) => $query
@@ -58,6 +61,9 @@ class AgentTicketController extends Controller
             'githubIssueProjects' => $this->githubIssueProjectsForTicket($ticket),
             'noteTemplates' => AgentNoteTemplate::options(),
             'replyTemplates' => AgentReplyTemplate::options(),
+            'ticketLabelOptions' => $agent->account->ticketLabels()
+                ->orderBy('name')
+                ->get(),
             'ticketActivity' => $ticket->auditEvents()
                 ->with('actor')
                 ->whereIn('action', $this->visibleActivityActions())
@@ -110,6 +116,66 @@ class AgentTicketController extends Controller
         $this->recordActivity($ticket, $agent, 'ticket.note_added', $metadata);
 
         return $this->redirectAfterUpdate($ticket, 'Ticket note added.');
+    }
+
+    public function storeLabel(Request $request, Ticket $ticket): RedirectResponse
+    {
+        $agent = $request->user();
+
+        $this->authorizeTicketAbility($agent, 'update', $ticket);
+
+        $validated = $request->validate([
+            'label_name' => ['required', 'string', 'max:64'],
+        ]);
+
+        $name = $this->normalizeLabelName($validated['label_name']);
+        $slug = Str::slug($name);
+
+        if ($name === '' || $slug === '') {
+            throw ValidationException::withMessages([
+                'label_name' => 'Use at least one letter or number for the label.',
+            ]);
+        }
+
+        $label = TicketLabel::firstOrCreate([
+            'account_id' => $ticket->account_id,
+            'slug' => $slug,
+        ], [
+            'name' => $name,
+        ]);
+
+        $ticket->labels()->syncWithoutDetaching([$label->id]);
+
+        $this->recordActivity($ticket, $agent, 'ticket.label_added', [
+            'label_id' => $label->id,
+            'label_name' => $label->name,
+            'label_slug' => $label->slug,
+        ]);
+
+        return $this->redirectAfterUpdate($ticket, 'Ticket label added.');
+    }
+
+    public function destroyLabel(Request $request, Ticket $ticket, TicketLabel $ticketLabel): RedirectResponse
+    {
+        $agent = $request->user();
+
+        $this->authorizeTicketAbility($agent, 'update', $ticket);
+
+        abort_unless(
+            (int) $ticketLabel->account_id === (int) $ticket->account_id
+            && $ticket->labels()->whereKey($ticketLabel->id)->exists(),
+            404,
+        );
+
+        $ticket->labels()->detach($ticketLabel->id);
+
+        $this->recordActivity($ticket, $agent, 'ticket.label_removed', [
+            'label_id' => $ticketLabel->id,
+            'label_name' => $ticketLabel->name,
+            'label_slug' => $ticketLabel->slug,
+        ]);
+
+        return $this->redirectAfterUpdate($ticket, 'Ticket label removed.');
     }
 
     public function storeReply(Request $request, Ticket $ticket): RedirectResponse
@@ -471,6 +537,8 @@ class AgentTicketController extends Controller
             'ticket.closed',
             'ticket.reopened',
             'ticket.assignee_updated',
+            'ticket.label_added',
+            'ticket.label_removed',
             'ticket.note_added',
             'ticket.reply_sent',
             'ticket.external_link_created',
@@ -493,6 +561,8 @@ class AgentTicketController extends Controller
             'ticket.closed',
             'ticket.reopened',
             'ticket.assignee_updated',
+            'ticket.label_added',
+            'ticket.label_removed',
             'ticket.note_added',
             'ticket.external_link_created',
             'ticket.external_issue_created',
@@ -512,6 +582,8 @@ class AgentTicketController extends Controller
             'ticket.pending' => 'Ticket marked pending',
             'ticket.reopened' => 'Ticket reopened',
             'ticket.visitor_replied' => 'Visitor replied',
+            'ticket.label_added' => 'Label added: '.data_get($activity->metadata, 'label_name'),
+            'ticket.label_removed' => 'Label removed: '.data_get($activity->metadata, 'label_name'),
             'ticket.note_added' => 'Internal note',
             'ticket.external_link_created' => 'External link added: '.ExternalIssueProvider::label(data_get($activity->metadata, 'provider')).' '.(data_get($activity->metadata, 'external_key') ?? data_get($activity->metadata, 'external_id') ?? ''),
             'ticket.external_issue_created' => 'GitHub issue created: '.(data_get($activity->metadata, 'external_key') ?? data_get($activity->metadata, 'external_id') ?? ''),
@@ -539,6 +611,11 @@ class AgentTicketController extends Controller
             'ticket.closed' => data_get($activity->metadata, 'resolution_note'),
             default => null,
         };
+    }
+
+    private function normalizeLabelName(string $labelName): string
+    {
+        return mb_substr(trim((string) preg_replace('/\s+/', ' ', $labelName)), 0, 64);
     }
 
     private function ticketUpdatedLabel(array $changes): string

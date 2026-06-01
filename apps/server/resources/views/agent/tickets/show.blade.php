@@ -31,6 +31,10 @@
                         <span class="meta-value">{{ $ticket->categoryLabel() }}</span>
                     </div>
                     <div class="meta-item">
+                        <span class="meta-label">Labels</span>
+                        <span class="meta-value">{{ $ticket->labels->pluck('name')->implode(', ') ?: 'None' }}</span>
+                    </div>
+                    <div class="meta-item">
                         <span class="meta-label">Assignee</span>
                         <span class="meta-value">{{ $ticket->assignee?->name ?? 'Unassigned' }}</span>
                     </div>
@@ -64,6 +68,49 @@
                         </span>
                     </div>
                 </div>
+            </section>
+
+            <section class="section" aria-labelledby="ticket-labels-heading">
+                <div class="section-header">
+                    <h2 id="ticket-labels-heading">Labels</h2>
+                    <span class="lede">{{ $ticket->labels->count() }} total</span>
+                </div>
+
+                <div class="message-list">
+                    @forelse ($ticket->labels as $label)
+                        <article class="message-card">
+                            <div class="message-meta">
+                                <strong>{{ $label->name }}</strong>
+                                <form method="POST" action="{{ route('dashboard.tickets.labels.destroy', [$ticket, $label]) }}">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button class="button secondary" type="submit">Remove label</button>
+                                </form>
+                            </div>
+                        </article>
+                    @empty
+                        <div class="empty-state">No labels yet.</div>
+                    @endforelse
+                </div>
+
+                <form class="section-form" method="POST" action="{{ route('dashboard.tickets.labels.store', $ticket) }}">
+                    @csrf
+
+                    <div class="field">
+                        <label for="label_name">Add label</label>
+                        <input id="label_name" name="label_name" type="text" value="{{ old('label_name') }}" list="ticket-label-options" placeholder="needs-dev, vip, wordpress">
+                        <datalist id="ticket-label-options">
+                            @foreach ($ticketLabelOptions as $labelOption)
+                                <option value="{{ $labelOption->name }}"></option>
+                            @endforeach
+                        </datalist>
+                        @error('label_name')
+                            <p class="field-error">{{ $message }}</p>
+                        @enderror
+                    </div>
+
+                    <button class="button" type="submit">Add label</button>
+                </form>
             </section>
 
             <section class="section" aria-labelledby="ticket-timeline-heading">
@@ -583,6 +630,14 @@
 
                                     @case('ticket.assignee_updated')
                                         Assignee changed from {{ data_get($activity->metadata, 'old_assignee_name') ?? 'Unassigned' }} to {{ data_get($activity->metadata, 'new_assignee_name') ?? 'Unassigned' }}
+                                        @break
+
+                                    @case('ticket.label_added')
+                                        Label added: {{ data_get($activity->metadata, 'label_name') }}
+                                        @break
+
+                                    @case('ticket.label_removed')
+                                        Label removed: {{ data_get($activity->metadata, 'label_name') }}
                                         @break
 
                                     @case('ticket.updated')
