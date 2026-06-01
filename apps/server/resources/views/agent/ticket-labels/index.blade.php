@@ -67,9 +67,16 @@
                                         ]).'#tickets';
                                     @endphp
                                     <tr>
-                                        <td><a class="text-link" href="{{ $labelTicketsUrl }}"><strong>{{ $ticketLabel->name }}</strong></a></td>
+                                        <td><strong>{{ $ticketLabel->name }}</strong></td>
                                         <td><code>{{ $ticketLabel->slug }}</code></td>
-                                        <td><a class="text-link" href="{{ $labelTicketsUrl }}">{{ $ticketLabel->tickets_count }} {{ \Illuminate\Support\Str::plural('ticket', $ticketLabel->tickets_count) }}</a></td>
+                                        <td>
+                                            {{ $ticketLabel->tickets_count }} {{ \Illuminate\Support\Str::plural('ticket', $ticketLabel->tickets_count) }}
+                                            @if ($ticketLabel->visible_tickets_count > 0)
+                                                <a class="text-link" href="{{ $labelTicketsUrl }}">View {{ $ticketLabel->visible_tickets_count }} visible {{ \Illuminate\Support\Str::plural('ticket', $ticketLabel->visible_tickets_count) }}</a>
+                                            @else
+                                                <span class="lede">No visible tickets</span>
+                                            @endif
+                                        </td>
                                         <td>
                                             <form class="compact-form" method="POST" action="{{ route('dashboard.account.labels.update', $ticketLabel) }}">
                                                 @csrf

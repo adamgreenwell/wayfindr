@@ -22,7 +22,11 @@ class AgentTicketLabelController extends Controller
             'account' => $account,
             'agent' => $agent,
             'ticketLabels' => $account->ticketLabels()
-                ->withCount('tickets')
+                ->withCount([
+                    'tickets',
+                    'tickets as visible_tickets_count' => fn ($query) => $query
+                        ->whereHas('site', fn ($query) => $query->visibleToAgent($agent)),
+                ])
                 ->orderBy('name')
                 ->get(),
         ]);
