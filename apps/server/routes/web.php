@@ -13,6 +13,7 @@ use App\Http\Controllers\AgentProfileController;
 use App\Http\Controllers\AgentReadinessController;
 use App\Http\Controllers\AgentSiteController;
 use App\Http\Controllers\AgentSiteExternalIssueProjectController;
+use App\Http\Controllers\AgentSupportCodeLookupController;
 use App\Http\Controllers\AgentTicketController;
 use App\Http\Controllers\AgentTicketExternalIssueController;
 use App\Http\Controllers\AgentTicketExternalLinkController;
@@ -41,6 +42,8 @@ Route::middleware('guest')->group(function () {
 
 Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
     Route::get('/dashboard', AgentDashboardController::class)->name('dashboard');
+    Route::get('/dashboard/support-code', AgentSupportCodeLookupController::class)
+        ->name('dashboard.support-code.lookup');
     Route::get('/dashboard/profile', [AgentProfileController::class, 'show'])
         ->name('dashboard.profile.show');
     Route::put('/dashboard/profile', [AgentProfileController::class, 'update'])

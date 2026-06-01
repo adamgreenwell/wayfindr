@@ -2,6 +2,27 @@
             <h1>{{ $account->name }}</h1>
             <p class="lede">Signed in as {{ $agent->email }}</p>
 
+            <section class="section" aria-labelledby="support-code-lookup-heading">
+                <div class="section-header">
+                    <h2 id="support-code-lookup-heading">Find support record</h2>
+                    <span class="lede">Jump by support code</span>
+                </div>
+
+                @if (session('support_code_lookup_status'))
+                    <p class="empty">{{ session('support_code_lookup_status') }}</p>
+                @endif
+
+                <form class="section-form" method="GET" action="{{ route('dashboard.support-code.lookup') }}">
+                    <div class="field">
+                        <label for="support_code">Support code</label>
+                        <input id="support_code" name="support_code" type="search" value="{{ old('support_code') }}" placeholder="WF-ABC123" autocomplete="off">
+                        <p class="field-help">Use the visitor's support code to open a visible conversation or linked ticket.</p>
+                    </div>
+
+                    <button class="button" type="submit">Find record</button>
+                </form>
+            </section>
+
             <section class="section" aria-labelledby="manage-heading">
                 <div class="section-header">
                     <h2 id="manage-heading">Workspace shortcuts</h2>
