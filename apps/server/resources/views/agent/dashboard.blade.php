@@ -54,6 +54,50 @@
                 </div>
             </section>
 
+            <section class="section" aria-labelledby="visitor-support-readiness-heading">
+                <div class="section-header">
+                    <div>
+                        <h2 id="visitor-support-readiness-heading">Ready to support visitors?</h2>
+                        <p class="lede">A practical dogfood checklist before real visitor pressure shows up.</p>
+                    </div>
+                    <div class="section-actions">
+                        <span class="readiness-status" data-status="{{ $visitorSupportReadiness['attention_count'] > 0 ? 'attention' : 'ready' }}">
+                            {{ $visitorSupportReadiness['label'] }}
+                        </span>
+                        <span class="lede">
+                            {{ $visitorSupportReadiness['ready_count'] }} ready
+                            · {{ $visitorSupportReadiness['attention_count'] }} {{ $visitorSupportReadiness['attention_count'] === 1 ? 'needs' : 'need' }} attention
+                            · {{ $visitorSupportReadiness['manual_count'] }} {{ \Illuminate\Support\Str::plural('manual check', $visitorSupportReadiness['manual_count']) }}
+                        </span>
+                    </div>
+                </div>
+
+                <div class="readiness-list">
+                    @foreach ($visitorSupportReadiness['checks'] as $check)
+                        <article class="readiness-check" data-status="{{ $check['status'] }}">
+                            <div class="readiness-check-main">
+                                <div>
+                                    <h3>{{ $check['label'] }}</h3>
+                                    <p>{{ $check['summary'] }}</p>
+                                </div>
+                                <span class="readiness-status" data-status="{{ $check['status'] }}">
+                                    {{ $check['status_label'] }}
+                                </span>
+                            </div>
+
+                            <p class="lede">{{ $check['detail'] }}</p>
+                            <p class="readiness-action">
+                                @if ($check['href'])
+                                    <a class="text-link" href="{{ $check['href'] }}">{{ $check['action'] }}</a>
+                                @else
+                                    {{ $check['action'] }}
+                                @endif
+                            </p>
+                        </article>
+                    @endforeach
+                </div>
+            </section>
+
             @if ($adminShortcuts !== [])
                 <section class="section" aria-labelledby="admin-command-center-heading">
                     <div class="section-header">

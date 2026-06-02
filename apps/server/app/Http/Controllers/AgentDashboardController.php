@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Support\RealtimeHealth;
 use App\Support\TicketCategory;
 use App\Support\TicketPriority;
+use App\Support\VisitorSupportReadiness;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\Request;
 use Illuminate\Notifications\DatabaseNotification;
@@ -17,7 +18,7 @@ use Illuminate\Support\Facades\Gate;
 
 class AgentDashboardController extends Controller
 {
-    public function __invoke(Request $request, RealtimeHealth $realtimeHealth): View
+    public function __invoke(Request $request, RealtimeHealth $realtimeHealth, VisitorSupportReadiness $visitorSupportReadiness): View
     {
         $agent = $request->user();
 
@@ -212,6 +213,7 @@ class AgentDashboardController extends Controller
         $unreadNotifications = $visibleUnreadNotifications->take(5);
 
         $ticketQuery = $this->ticketQueryParams($ticketStatus, $ticketFilter, $ticketSite, $ticketPriority, $ticketCategory, $ticketLabel, $ticketAttention, $ticketSearch);
+        $realtimeHealthSummary = $realtimeHealth->summary();
 
         return view('agent.dashboard', [
             'account' => $account,
@@ -224,7 +226,7 @@ class AgentDashboardController extends Controller
             'conversations' => $conversations,
             'dataResponsibility' => config('wayfindr.data_responsibility'),
             'newActivityConversationCount' => $newActivityConversationCount,
-            'realtimeHealth' => $realtimeHealth->summary(),
+            'realtimeHealth' => $realtimeHealthSummary,
             'sites' => $sites,
             'ticketAttention' => $ticketAttention,
             'ticketAttentionFilters' => $ticketAttentionFilters,
@@ -264,6 +266,12 @@ class AgentDashboardController extends Controller
             'tickets' => $tickets,
             'unreadNotificationCount' => $unreadNotificationCount,
             'unreadNotifications' => $unreadNotifications,
+            'visitorSupportReadiness' => $visitorSupportReadiness->summary(
+                sites: $sites,
+                realtimeHealth: $realtimeHealthSummary,
+                canViewReadiness: $agent->isAdmin(),
+                canManagePrivacy: $agent->isAdmin(),
+            ),
         ]);
     }
 
