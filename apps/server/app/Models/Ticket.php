@@ -111,6 +111,45 @@ class Ticket extends Model
         };
     }
 
+    /**
+     * @return array{title: string, body: string, cta: string, href: string}
+     */
+    public function nextAction(): array
+    {
+        return match ($this->attentionState()) {
+            'needs_reply' => [
+                'body' => 'Visitor replied last. Send a clear response, then mark the ticket pending or close it when the outcome is settled.',
+                'cta' => 'Jump to reply',
+                'href' => '#ticket-reply',
+                'title' => 'Reply to visitor',
+            ],
+            'needs_owner' => [
+                'body' => 'No agent owns this ticket yet. Assign someone before work gets lost.',
+                'cta' => 'Assign ticket',
+                'href' => '#ticket-actions-heading',
+                'title' => 'Assign an owner',
+            ],
+            'waiting_on_customer' => [
+                'body' => 'Agent replied last. Keep the ticket visible, then reopen the loop when the visitor answers.',
+                'cta' => 'Review status actions',
+                'href' => '#ticket-actions-heading',
+                'title' => 'Wait on customer',
+            ],
+            'resolved' => [
+                'body' => 'This ticket is closed. Reopen it only if the customer comes back or the outcome changes.',
+                'cta' => 'Review status actions',
+                'href' => '#ticket-actions-heading',
+                'title' => 'Review resolution',
+            ],
+            default => [
+                'body' => 'This ticket is assigned and ready for an agent update. Add a reply, internal note, or status change.',
+                'cta' => 'Review actions',
+                'href' => '#ticket-actions-heading',
+                'title' => 'Add the next update',
+            ],
+        };
+    }
+
     public function attentionSortRank(): int
     {
         return match ($this->attentionState()) {

@@ -80,6 +80,24 @@
                 </div>
             </section>
 
+            @php($ticketNextAction = $ticket->nextAction())
+            <section class="section" aria-labelledby="ticket-next-action-heading">
+                <div class="section-header">
+                    <h2 id="ticket-next-action-heading">Next action</h2>
+                    <span class="lede">{{ $ticket->attentionLabel() }}</span>
+                </div>
+
+                <div class="notice-copy">
+                    <p><strong>{{ $ticketNextAction['title'] }}</strong></p>
+                    <p>{{ $ticketNextAction['body'] }}</p>
+                    <p>
+                        <a class="button secondary" href="{{ $ticketNextAction['href'] }}">
+                            {{ $ticketNextAction['cta'] }}
+                        </a>
+                    </p>
+                </div>
+            </section>
+
             <section class="section" aria-labelledby="ticket-labels-heading">
                 <div class="section-header">
                     <h2 id="ticket-labels-heading">Labels</h2>
@@ -193,7 +211,7 @@
                         @endforelse
                     </div>
 
-                    <form class="section-form" method="POST" action="{{ route('dashboard.tickets.replies.store', $ticket) }}">
+                    <form id="ticket-reply" class="section-form" method="POST" action="{{ route('dashboard.tickets.replies.store', $ticket) }}">
                         @csrf
 
                         <div class="field">
