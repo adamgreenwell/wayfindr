@@ -96,6 +96,50 @@
                     </div>
                 </div>
 
+                <div class="section-header">
+                    <strong>Support references</strong>
+                    <span class="lede">Current and same-visitor records</span>
+                </div>
+
+                <div class="meta-grid">
+                    <div class="meta-item">
+                        <span class="meta-label">Current support code</span>
+                        <span class="meta-value">
+                            <a class="text-link" href="{{ route('dashboard.support-code.lookup', ['support_code' => $conversation->support_code]) }}">
+                                {{ $conversation->support_code }}
+                            </a>
+                        </span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Visitor reference</span>
+                        <span class="meta-value">{{ $visitorContext['external_id'] ?? $visitorContext['anonymous_id'] }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Same visitor support codes</span>
+                        <span class="meta-value">{{ $priorConversations->count() }} previous</span>
+                        @if ($priorConversations->isEmpty())
+                            <div class="notice-list">
+                                <p>No previous support codes yet.</p>
+                            </div>
+                        @else
+                            <div class="notice-list">
+                                @foreach ($priorConversations as $priorConversation)
+                                    <p>
+                                        <a class="text-link" href="{{ route('dashboard.conversations.show', $priorConversation->support_code) }}">
+                                            {{ $priorConversation->support_code }}
+                                        </a>
+                                        <span class="lede">{{ $priorConversation->subject ?? 'Untitled conversation' }}</span>
+                                    </p>
+                                @endforeach
+                            </div>
+                        @endif
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Reference note</span>
+                        <span class="meta-value">Use these references when the visitor or another agent needs to find this support trail again.</span>
+                    </div>
+                </div>
+
                 <div class="notice-copy notice-copy-bordered">
                     <p><strong>Data boundary</strong></p>
                     <p>Use this context to answer the current request. Do not collect, export, or infer extra visitor data without consent.</p>

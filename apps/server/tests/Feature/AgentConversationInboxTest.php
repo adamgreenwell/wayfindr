@@ -1256,6 +1256,48 @@ test('agent can view a safe host visitor identifier on a conversation', function
         ->assertSee('customer-123');
 });
 
+test('agent conversation page surfaces a support reference trail', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-reference',
+        'external_id' => 'customer-789',
+    ]);
+    $otherVisitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-other']);
+
+    Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-PASTREF',
+        'subject' => 'Earlier checkout issue',
+        'created_at' => now()->subDays(2),
+        'last_message_at' => now()->subDay(),
+    ]);
+    Conversation::factory()->for($site)->for($otherVisitor)->create([
+        'support_code' => 'WF-NOTTHIS',
+        'subject' => 'Different visitor issue',
+    ]);
+    Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-CURRENTREF',
+        'subject' => 'Current checkout issue',
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-CURRENTREF')
+        ->assertOk()
+        ->assertSee('Support references')
+        ->assertSee('Use these references when the visitor or another agent needs to find this support trail again.')
+        ->assertSee('Current support code')
+        ->assertSee('WF-CURRENTREF')
+        ->assertSee(route('dashboard.support-code.lookup', ['support_code' => 'WF-CURRENTREF']), false)
+        ->assertSee('Visitor reference')
+        ->assertSee('customer-789')
+        ->assertSee('Same visitor support codes')
+        ->assertSee('WF-PASTREF')
+        ->assertSee('Earlier checkout issue')
+        ->assertDontSee('WF-NOTTHIS')
+        ->assertDontSee('Different visitor issue');
+});
+
 test('agent visitor context hides sensitive host visitor identifiers', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
