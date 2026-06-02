@@ -10,6 +10,7 @@ use App\Models\Site;
 use App\Models\User;
 use App\Notifications\ConversationNeedsReply;
 use App\Support\CobrowseConsentState;
+use App\Support\ReplyTemplateOptions;
 use App\Support\TicketCategory;
 use App\Support\TicketPriority;
 use App\Support\VisitorContextSanitizer;
@@ -24,7 +25,7 @@ use Illuminate\Validation\ValidationException;
 
 class AgentConversationController extends Controller
 {
-    public function show(Request $request, string $supportCode, CobrowseConsentState $cobrowseConsentState, VisitorContextSanitizer $visitorContextSanitizer): View
+    public function show(Request $request, string $supportCode, CobrowseConsentState $cobrowseConsentState, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions): View
     {
         $agent = $request->user();
 
@@ -53,6 +54,7 @@ class AgentConversationController extends Controller
             'messages' => $messages,
             'priorConversations' => $this->priorConversations($conversation),
             'realtime' => $this->realtimeConfig($conversation),
+            'replyTemplates' => $replyTemplateOptions->forAgent($agent),
             'tickets' => $tickets,
             'ticketCategories' => TicketCategory::options(),
             'ticketPriorities' => TicketPriority::options(),
@@ -62,16 +64,33 @@ class AgentConversationController extends Controller
         ]);
     }
 
-    public function storeMessage(Request $request, string $supportCode): RedirectResponse
+    public function storeMessage(Request $request, string $supportCode, ReplyTemplateOptions $replyTemplateOptions): RedirectResponse
     {
         $agent = $request->user();
         $conversation = $this->conversationForAgent($agent, $supportCode, 'reply');
 
         $validated = $request->validate([
-            'body' => ['required', 'string', 'max:4000'],
+            'body' => ['nullable', 'string', 'max:4000'],
+            'reply_template' => ['nullable', 'string', 'max:120'],
         ]);
 
-        $body = trim($validated['body']);
+        $selectedTemplate = $validated['reply_template'] ?? null;
+        $resolvedTemplate = null;
+        $body = trim((string) ($validated['body'] ?? ''));
+
+        if ($selectedTemplate) {
+            $resolvedTemplate = $replyTemplateOptions->resolve($agent, $selectedTemplate);
+
+            if (! $resolvedTemplate) {
+                throw ValidationException::withMessages([
+                    'reply_template' => 'Choose an available reply helper.',
+                ]);
+            }
+        }
+
+        if ($body === '' && $resolvedTemplate) {
+            $body = trim($resolvedTemplate['body']);
+        }
 
         if ($body === '') {
             throw ValidationException::withMessages([
@@ -84,7 +103,9 @@ class AgentConversationController extends Controller
             'sender_id' => $agent->id,
             'type' => 'text',
             'body' => $body,
-            'metadata' => [],
+            'metadata' => $resolvedTemplate
+                ? $this->replyTemplateMetadata($resolvedTemplate)
+                : [],
         ]);
 
         $conversation->forceFill([
@@ -102,6 +123,24 @@ class AgentConversationController extends Controller
         return redirect()
             ->route('dashboard.conversations.show', $conversation->support_code)
             ->with('status', 'Reply sent.');
+    }
+
+    /**
+     * @param  array{key: string, label: string, body: string, managed_id?: int}  $resolvedTemplate
+     * @return array<string, mixed>
+     */
+    private function replyTemplateMetadata(array $resolvedTemplate): array
+    {
+        if (array_key_exists('managed_id', $resolvedTemplate)) {
+            return [
+                'reply_template_id' => $resolvedTemplate['managed_id'],
+                'reply_template_name' => $resolvedTemplate['label'],
+            ];
+        }
+
+        return [
+            'reply_template' => $resolvedTemplate['key'],
+        ];
     }
 
     public function close(Request $request, string $supportCode): RedirectResponse

@@ -12,9 +12,9 @@ use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
 use App\Notifications\TicketAssigned;
 use App\Support\AgentNoteTemplate;
-use App\Support\AgentReplyTemplate;
 use App\Support\ExternalIssueProvider;
 use App\Support\ExternalIssueSyncStatus;
+use App\Support\ReplyTemplateOptions;
 use App\Support\TicketCategory;
 use App\Support\TicketPriority;
 use App\Support\VisitorContextSanitizer;
@@ -28,7 +28,7 @@ use Illuminate\Validation\ValidationException;
 
 class AgentTicketController extends Controller
 {
-    public function show(Request $request, Ticket $ticket, VisitorContextSanitizer $visitorContextSanitizer): View
+    public function show(Request $request, Ticket $ticket, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions): View
     {
         $agent = $request->user();
 
@@ -59,7 +59,7 @@ class AgentTicketController extends Controller
             'externalIssueSyncStatuses' => ExternalIssueSyncStatus::options(),
             'githubIssueProjects' => $this->githubIssueProjectsForTicket($ticket),
             'noteTemplates' => AgentNoteTemplate::options(),
-            'replyTemplates' => AgentReplyTemplate::options(),
+            'replyTemplates' => $replyTemplateOptions->forAgent($agent),
             'ticketReturnLink' => $this->ticketReturnLink($request),
             'ticketLabelOptions' => $agent->account->ticketLabels()
                 ->orderBy('name')
@@ -184,7 +184,7 @@ class AgentTicketController extends Controller
         return $this->redirectAfterUpdate($ticket, 'Ticket label removed.');
     }
 
-    public function storeReply(Request $request, Ticket $ticket): RedirectResponse
+    public function storeReply(Request $request, Ticket $ticket, ReplyTemplateOptions $replyTemplateOptions): RedirectResponse
     {
         $agent = $request->user();
 
@@ -195,14 +195,25 @@ class AgentTicketController extends Controller
 
         $validated = $request->validate([
             'message' => ['nullable', 'string', 'max:4000'],
-            'reply_template' => ['nullable', Rule::in(AgentReplyTemplate::values())],
+            'reply_template' => ['nullable', 'string', 'max:120'],
         ]);
 
         $selectedTemplate = $validated['reply_template'] ?? null;
+        $resolvedTemplate = null;
         $body = trim((string) ($validated['message'] ?? ''));
 
-        if ($body === '' && $selectedTemplate) {
-            $body = trim((string) AgentReplyTemplate::body($selectedTemplate));
+        if ($selectedTemplate) {
+            $resolvedTemplate = $replyTemplateOptions->resolve($agent, $selectedTemplate);
+
+            if (! $resolvedTemplate) {
+                throw ValidationException::withMessages([
+                    'reply_template' => 'Choose an available reply helper.',
+                ]);
+            }
+        }
+
+        if ($body === '' && $resolvedTemplate) {
+            $body = trim($resolvedTemplate['body']);
         }
 
         if ($body === '') {
@@ -217,8 +228,11 @@ class AgentTicketController extends Controller
             'ticket_id' => $ticket->id,
         ];
 
-        if ($selectedTemplate) {
-            $metadata['reply_template'] = $selectedTemplate;
+        if ($resolvedTemplate) {
+            $metadata = [
+                ...$metadata,
+                ...$this->replyTemplateMetadata($resolvedTemplate),
+            ];
         }
 
         $message = $conversation->messages()->create([
@@ -241,8 +255,11 @@ class AgentTicketController extends Controller
             'message_id' => $message->id,
         ];
 
-        if ($selectedTemplate) {
-            $activityMetadata['reply_template'] = $selectedTemplate;
+        if ($resolvedTemplate) {
+            $activityMetadata = [
+                ...$activityMetadata,
+                ...$this->replyTemplateMetadata($resolvedTemplate),
+            ];
         }
 
         $this->recordActivity($ticket, $agent, 'ticket.reply_sent', $activityMetadata);
@@ -252,6 +269,24 @@ class AgentTicketController extends Controller
         event(new ConversationMessageCreated($message));
 
         return $this->redirectAfterUpdate($ticket, 'Reply sent.');
+    }
+
+    /**
+     * @param  array{key: string, label: string, body: string, managed_id?: int}  $resolvedTemplate
+     * @return array<string, mixed>
+     */
+    private function replyTemplateMetadata(array $resolvedTemplate): array
+    {
+        if (array_key_exists('managed_id', $resolvedTemplate)) {
+            return [
+                'reply_template_id' => $resolvedTemplate['managed_id'],
+                'reply_template_name' => $resolvedTemplate['label'],
+            ];
+        }
+
+        return [
+            'reply_template' => $resolvedTemplate['key'],
+        ];
     }
 
     public function update(Request $request, Ticket $ticket): RedirectResponse

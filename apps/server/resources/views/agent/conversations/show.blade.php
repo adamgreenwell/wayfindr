@@ -669,8 +669,27 @@
                     @csrf
 
                     <div class="field">
+                        <label for="reply_template">Reply helper</label>
+                        <select id="reply_template" name="reply_template" data-template-picker data-target="#body">
+                            <option value="">Write a custom reply</option>
+                            @foreach ($replyTemplates as $replyTemplateKey => $replyTemplate)
+                                <option
+                                    value="{{ $replyTemplateKey }}"
+                                    data-body="{{ $replyTemplate['body'] }}"
+                                    @selected(old('reply_template') === $replyTemplateKey)
+                                >
+                                    {{ $replyTemplate['label'] }}
+                                </option>
+                            @endforeach
+                        </select>
+                        @error('reply_template')
+                            <p class="field-error">{{ $message }}</p>
+                        @enderror
+                    </div>
+
+                    <div class="field">
                         <label for="body">Message</label>
-                        <textarea id="body" name="body" rows="4" required data-reply-body>{{ old('body') }}</textarea>
+                        <textarea id="body" name="body" rows="4" data-reply-body>{{ old('body') }}</textarea>
                         @error('body')
                             <p class="field-error">{{ $message }}</p>
                         @enderror
@@ -684,7 +703,25 @@
 
             <script>
                 (function () {
+                    var templatePickers = document.querySelectorAll('[data-template-picker]');
                     var forms = document.querySelectorAll('[data-reply-composer]');
+
+                    templatePickers.forEach(function (templatePicker) {
+                        var templateTarget = templatePicker.dataset.target
+                            ? document.querySelector(templatePicker.dataset.target)
+                            : null;
+
+                        templatePicker.addEventListener('change', function () {
+                            var body = templatePicker.selectedOptions[0]?.dataset.body || '';
+
+                            if (! body || ! templateTarget) {
+                                return;
+                            }
+
+                            templateTarget.value = body;
+                            templateTarget.focus();
+                        });
+                    });
 
                     forms.forEach(function (form) {
                         var submit = form.querySelector('[data-reply-submit]');

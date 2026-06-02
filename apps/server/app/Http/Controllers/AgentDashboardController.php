@@ -316,6 +316,12 @@ class AgentDashboardController extends Controller
                 'action' => 'Manage',
             ],
             [
+                'label' => 'Reply templates',
+                'description' => 'Create reusable visitor replies agents can customize before sending.',
+                'href' => route('dashboard.account.reply-templates.index'),
+                'action' => 'Manage',
+            ],
+            [
                 'label' => 'Audit log',
                 'description' => 'Search account activity and export safe audit records.',
                 'href' => route('dashboard.account.audit.index'),

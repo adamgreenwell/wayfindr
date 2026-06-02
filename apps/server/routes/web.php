@@ -11,6 +11,7 @@ use App\Http\Controllers\AgentDashboardController;
 use App\Http\Controllers\AgentExternalIssueProviderConnectionController;
 use App\Http\Controllers\AgentProfileController;
 use App\Http\Controllers\AgentReadinessController;
+use App\Http\Controllers\AgentReplyTemplateController;
 use App\Http\Controllers\AgentSiteController;
 use App\Http\Controllers\AgentSiteExternalIssueProjectController;
 use App\Http\Controllers\AgentSupportCodeLookupController;
@@ -66,6 +67,14 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.account.labels.update');
     Route::delete('/dashboard/account/labels/{ticketLabel}', [AgentTicketLabelController::class, 'destroy'])
         ->name('dashboard.account.labels.destroy');
+    Route::get('/dashboard/account/reply-templates', [AgentReplyTemplateController::class, 'index'])
+        ->name('dashboard.account.reply-templates.index');
+    Route::post('/dashboard/account/reply-templates', [AgentReplyTemplateController::class, 'store'])
+        ->name('dashboard.account.reply-templates.store');
+    Route::put('/dashboard/account/reply-templates/{replyTemplate}', [AgentReplyTemplateController::class, 'update'])
+        ->name('dashboard.account.reply-templates.update');
+    Route::post('/dashboard/account/reply-templates/{replyTemplate}/archive', [AgentReplyTemplateController::class, 'archive'])
+        ->name('dashboard.account.reply-templates.archive');
     Route::get('/dashboard/readiness', AgentReadinessController::class)
         ->name('dashboard.readiness.show');
     Route::post('/dashboard/account/agents', [AgentAccountAgentController::class, 'store'])

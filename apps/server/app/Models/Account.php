@@ -34,6 +34,11 @@ class Account extends Model
         return $this->hasMany(TicketLabel::class);
     }
 
+    public function replyTemplates(): HasMany
+    {
+        return $this->hasMany(ReplyTemplate::class);
+    }
+
     public function ticketExternalLinks(): HasMany
     {
         return $this->hasMany(TicketExternalLink::class);
