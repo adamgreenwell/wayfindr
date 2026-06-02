@@ -64,6 +64,7 @@ test('dashboard lists open conversations for the agent account', function (): vo
         ->assertSee('/dashboard/sites/'.$site->id, false)
         ->assertSee('anon-acme')
         ->assertSee('WF-ACME123')
+        ->assertSee(route('dashboard.support-code.lookup', ['support_code' => 'WF-ACME123']), false)
         ->assertDontSee($closedConversation->subject)
         ->assertDontSee('Other account problem')
         ->assertDontSee('Other Docs');
@@ -313,6 +314,7 @@ test('dashboard lists open tickets for the agent account', function (): void {
         ->assertSee('Acme Docs')
         ->assertSee('High')
         ->assertSee('WF-TICKETDB')
+        ->assertSee(route('dashboard.support-code.lookup', ['support_code' => 'WF-TICKETDB']), false)
         ->assertDontSee('Closed account issue')
         ->assertDontSee('Other account issue')
         ->assertDontSee('Other Docs');

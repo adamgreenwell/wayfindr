@@ -485,7 +485,15 @@
                                             <strong>{{ $ticket->attentionLabel() }}</strong>
                                             <div class="lede">{{ $ticket->attentionDescription() }}</div>
                                         </td>
-                                        <td>{{ $ticket->conversation?->support_code ?? 'Not linked' }}</td>
+                                        <td>
+                                            @if ($ticket->conversation)
+                                                <a class="text-link" href="{{ route('dashboard.support-code.lookup', ['support_code' => $ticket->conversation->support_code]) }}" aria-label="Open support record {{ $ticket->conversation->support_code }}">
+                                                    <code>{{ $ticket->conversation->support_code }}</code>
+                                                </a>
+                                            @else
+                                                Not linked
+                                            @endif
+                                        </td>
                                         <td>{{ $ticket->updated_at->diffForHumans() }}</td>
                                     </tr>
                                 @endforeach
@@ -549,7 +557,11 @@
                                                 {{ $conversation->readStateLabelFor($agent) }}
                                             </span>
                                         </td>
-                                        <td>{{ $conversation->support_code }}</td>
+                                        <td>
+                                            <a class="text-link" href="{{ route('dashboard.support-code.lookup', ['support_code' => $conversation->support_code]) }}" aria-label="Open support record {{ $conversation->support_code }}">
+                                                <code>{{ $conversation->support_code }}</code>
+                                            </a>
+                                        </td>
                                         <td>{{ $conversation->last_message_at?->diffForHumans() ?? $conversation->created_at->diffForHumans() }}</td>
                                     </tr>
                                 @endforeach
