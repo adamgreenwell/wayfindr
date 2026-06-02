@@ -525,7 +525,7 @@
                                 @foreach ($tickets as $ticket)
                                     <tr>
                                         <td>
-                                            <a class="text-link" href="{{ route('dashboard.tickets.show', $ticket) }}">
+                                            <a class="text-link" href="{{ route('dashboard.tickets.show', ['ticket' => $ticket] + $ticketQuery) }}">
                                                 {{ $ticket->subject }}
                                             </a>
                                         </td>

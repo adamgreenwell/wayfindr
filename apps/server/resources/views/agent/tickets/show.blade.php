@@ -1,5 +1,5 @@
 <x-layouts.app title="Ticket - {{ $ticket->subject }}" :agent="$agent" :account="$account">
-            <a class="text-link" href="{{ route('dashboard') }}">Back to dashboard</a>
+            <a class="text-link" href="{{ $ticketReturnLink['href'] }}">{{ $ticketReturnLink['label'] }}</a>
             <h1>{{ $ticket->subject }}</h1>
             <p class="lede">Ticket #{{ $ticket->id }}</p>
 

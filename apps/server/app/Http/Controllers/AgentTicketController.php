@@ -60,6 +60,7 @@ class AgentTicketController extends Controller
             'githubIssueProjects' => $this->githubIssueProjectsForTicket($ticket),
             'noteTemplates' => AgentNoteTemplate::options(),
             'replyTemplates' => AgentReplyTemplate::options(),
+            'ticketReturnLink' => $this->ticketReturnLink($request),
             'ticketLabelOptions' => $agent->account->ticketLabels()
                 ->orderBy('name')
                 ->get(),
@@ -412,6 +413,38 @@ class AgentTicketController extends Controller
         return redirect()
             ->back(302, [], route('dashboard'))
             ->with('status', $status);
+    }
+
+    /**
+     * @return array{label: string, href: string}
+     */
+    private function ticketReturnLink(Request $request): array
+    {
+        $query = collect($request->only([
+            'ticket_status',
+            'ticket_filter',
+            'ticket_site',
+            'ticket_priority',
+            'ticket_category',
+            'ticket_label',
+            'ticket_attention',
+            'ticket_search',
+        ]))
+            ->filter(fn (mixed $value): bool => is_scalar($value) && trim((string) $value) !== '')
+            ->map(fn (mixed $value): string => mb_substr(trim((string) $value), 0, 120))
+            ->all();
+
+        if ($query === []) {
+            return [
+                'label' => 'Back to dashboard',
+                'href' => route('dashboard'),
+            ];
+        }
+
+        return [
+            'label' => 'Back to ticket queue',
+            'href' => route('dashboard', $query).'#tickets',
+        ];
     }
 
     private function markTicketAssignmentNotificationsRead(User $agent, Ticket $ticket): void
