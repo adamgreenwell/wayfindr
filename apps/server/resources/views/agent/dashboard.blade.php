@@ -464,6 +464,26 @@
                     </div>
                 </form>
 
+                @if (collect($ticketQueueSummary)->sum('count') > 0)
+                    <div class="filter-summary" aria-label="Ticket queue snapshot">
+                        <div>
+                            <strong>Queue snapshot</strong>
+                            <p class="lede">Next-step counts respect the current queue filters before the next-step filter narrows the table.</p>
+                        </div>
+                        <div class="filter-chips">
+                            @foreach ($ticketQueueSummary as $ticketSummary)
+                                <a
+                                    class="filter-chip"
+                                    href="{{ $ticketSummary['href'] }}"
+                                    @if ($ticketAttention === $ticketSummary['state']) aria-current="page" @endif
+                                >
+                                    {{ $ticketSummary['label'] }}: {{ $ticketSummary['count'] }}
+                                </a>
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
+
                 @if ($ticketActiveFilters !== [])
                     <div class="filter-summary" aria-label="Active ticket filters">
                         <div>

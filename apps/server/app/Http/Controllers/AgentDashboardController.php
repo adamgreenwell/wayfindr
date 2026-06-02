@@ -174,7 +174,8 @@ class AgentDashboardController extends Controller
             ->orderByDesc('last_message_at')
             ->orderByDesc('created_at')
             ->get();
-        $tickets = Ticket::query()
+        $ticketQuery = $this->ticketQueryParams($ticketStatus, $ticketFilter, $ticketSite, $ticketPriority, $ticketCategory, $ticketLabel, $ticketAttention, $ticketSearch);
+        $ticketResults = Ticket::query()
             ->with(['assignee', 'conversation.latestMessage', 'labels', 'site'])
             ->where('account_id', $account->id)
             ->whereHas('site', fn ($query) => $query->visibleToAgent($agent))
@@ -200,7 +201,9 @@ class AgentDashboardController extends Controller
             })
             ->orderByDesc('updated_at')
             ->orderByDesc('created_at')
-            ->get()
+            ->get();
+        $ticketQueueSummary = $this->ticketQueueSummary($ticketResults, $ticketQuery, $ticketAttentionFilters);
+        $tickets = $ticketResults
             ->filter(fn (Ticket $ticket): bool => $ticketAttention === 'all' || $ticket->attentionState() === $ticketAttention)
             ->sortBy(fn (Ticket $ticket): array => [
                 $ticket->attentionSortRank(),
@@ -212,7 +215,6 @@ class AgentDashboardController extends Controller
         $unreadNotificationCount = $visibleUnreadNotifications->count();
         $unreadNotifications = $visibleUnreadNotifications->take(5);
 
-        $ticketQuery = $this->ticketQueryParams($ticketStatus, $ticketFilter, $ticketSite, $ticketPriority, $ticketCategory, $ticketLabel, $ticketAttention, $ticketSearch);
         $realtimeHealthSummary = $realtimeHealth->summary();
 
         return view('agent.dashboard', [
@@ -239,6 +241,7 @@ class AgentDashboardController extends Controller
             'ticketLabelFilters' => $ticketLabelFilters,
             'ticketPriority' => $ticketPriority,
             'ticketPriorityFilters' => $ticketPriorityFilters,
+            'ticketQueueSummary' => $ticketQueueSummary,
             'ticketActiveFilters' => $this->activeTicketFilters(
                 $ticketQuery,
                 $ticketStatus,
@@ -457,5 +460,34 @@ class AgentDashboardController extends Controller
             'label' => $label,
             'href' => route('dashboard', $ticketQuery).'#tickets',
         ];
+    }
+
+    /**
+     * @param  Collection<int, Ticket>  $tickets
+     * @param  array<string, string|int>  $ticketQuery
+     * @param  array<string, string>  $ticketAttentionFilters
+     * @return array<int, array{state: string, label: string, count: int, href: string}>
+     */
+    private function ticketQueueSummary(Collection $tickets, array $ticketQuery, array $ticketAttentionFilters): array
+    {
+        $counts = $tickets->countBy(fn (Ticket $ticket): string => $ticket->attentionState());
+
+        return collect(['needs_reply', 'needs_owner', 'needs_agent', 'waiting_on_customer', 'resolved'])
+            ->map(function (string $state) use ($counts, $ticketAttentionFilters, $ticketQuery): array {
+                $query = $ticketQuery;
+                $query['ticket_attention'] = $state;
+
+                if ($state === 'resolved' && ! in_array($query['ticket_status'] ?? 'open', ['closed', 'all'], true)) {
+                    $query['ticket_status'] = 'closed';
+                }
+
+                return [
+                    'state' => $state,
+                    'label' => $ticketAttentionFilters[$state],
+                    'count' => (int) ($counts[$state] ?? 0),
+                    'href' => route('dashboard', $query).'#tickets',
+                ];
+            })
+            ->all();
     }
 }
