@@ -17,12 +17,16 @@ class AgentSupportCodeLookupController extends Controller
 
         abort_unless($agent?->account_id, 403);
 
-        $supportCode = Str::upper(trim((string) $request->query('support_code', '')));
+        $rawSupportCode = $request->query('support_code');
+
+        if (! is_string($rawSupportCode)) {
+            return $this->missingCode();
+        }
+
+        $supportCode = Str::upper(trim($rawSupportCode));
 
         if ($supportCode === '') {
-            return redirect()
-                ->route('dashboard')
-                ->with('support_code_lookup_status', 'Enter a support code to find a conversation or ticket.');
+            return $this->missingCode();
         }
 
         $conversation = Conversation::query()
@@ -54,5 +58,12 @@ class AgentSupportCodeLookupController extends Controller
         return redirect()
             ->route('dashboard')
             ->with('support_code_lookup_status', 'No visible support record found for '.$supportCode.'.');
+    }
+
+    private function missingCode(): RedirectResponse
+    {
+        return redirect()
+            ->route('dashboard')
+            ->with('support_code_lookup_status', 'Enter a support code to find a conversation or ticket.');
     }
 }

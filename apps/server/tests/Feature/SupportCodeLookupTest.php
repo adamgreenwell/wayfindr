@@ -77,6 +77,18 @@ test('support code lookup does not expose another account record', function (): 
         ->assertSessionHas('support_code_lookup_status', 'No visible support record found for WF-PRIVATE.');
 });
 
+test('support code lookup rejects non-scalar query values', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.support-code.lookup', [
+            'support_code' => ['WF-FINDME'],
+        ]))
+        ->assertRedirect(route('dashboard'))
+        ->assertSessionHas('support_code_lookup_status', 'Enter a support code to find a conversation or ticket.');
+});
+
 test('support code lookup respects explicit site support access', function (): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
