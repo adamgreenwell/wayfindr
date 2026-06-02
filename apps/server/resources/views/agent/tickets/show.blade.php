@@ -7,6 +7,58 @@
                 <p class="status-message">{{ session('status') }}</p>
             @endif
 
+            @php
+                $requesterReference = $ticket->requester?->email
+                    ?? $ticket->requester?->name
+                    ?? $ticket->requester?->anonymous_id
+                    ?? 'Not linked';
+            @endphp
+            <section class="section" aria-labelledby="ticket-reference-heading">
+                <div class="section-header">
+                    <h2 id="ticket-reference-heading">Support reference</h2>
+                    <span class="lede">Use these details when searching, handoffs, or follow-up need a stable anchor.</span>
+                </div>
+
+                <div class="meta-grid">
+                    <div class="meta-item">
+                        <span class="meta-label">Ticket reference</span>
+                        <span class="meta-value">Ticket #{{ $ticket->id }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Support code</span>
+                        <span class="meta-value">
+                            @if ($ticket->conversation)
+                                <a class="text-link" href="{{ route('dashboard.conversations.show', $ticket->conversation->support_code) }}">
+                                    {{ $ticket->conversation->support_code }}
+                                </a>
+                            @else
+                                No linked conversation
+                            @endif
+                        </span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Site</span>
+                        <span class="meta-value">{{ $ticket->site->name }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Requester</span>
+                        <span class="meta-value">{{ $requesterReference }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Latest visitor page</span>
+                        <span class="meta-value">
+                            @if ($visitorContext['last_page_url'])
+                                <a class="text-link" href="{{ $visitorContext['last_page_url'] }}" target="_blank" rel="noreferrer">
+                                    {{ $visitorContext['last_page_url'] }}
+                                </a>
+                            @else
+                                Not reported
+                            @endif
+                        </span>
+                    </div>
+                </div>
+            </section>
+
             <section class="section" aria-labelledby="ticket-context-heading">
                 <div class="section-header">
                     <h2 id="ticket-context-heading">Context</h2>
