@@ -19,6 +19,7 @@ use App\Http\Controllers\AgentTicketController;
 use App\Http\Controllers\AgentTicketExternalIssueController;
 use App\Http\Controllers\AgentTicketExternalLinkController;
 use App\Http\Controllers\AgentTicketLabelController;
+use App\Http\Controllers\AgentVisitorController;
 use App\Http\Controllers\Auth\SessionController;
 use App\Http\Controllers\FirstRunSetupController;
 use App\Http\Controllers\OperatorDashboardController;
@@ -111,6 +112,8 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.sites.external-issue-projects.destroy');
     Route::get('/dashboard/conversations/{supportCode}', [AgentConversationController::class, 'show'])
         ->name('dashboard.conversations.show');
+    Route::get('/dashboard/visitors/{visitor}', [AgentVisitorController::class, 'show'])
+        ->name('dashboard.visitors.show');
     Route::post('/dashboard/conversations/{supportCode}/close', [AgentConversationController::class, 'close'])
         ->name('dashboard.conversations.close');
     Route::post('/dashboard/conversations/{supportCode}/reopen', [AgentConversationController::class, 'reopen'])

@@ -16,7 +16,12 @@
             <section class="section" aria-labelledby="ticket-reference-heading">
                 <div class="section-header">
                     <h2 id="ticket-reference-heading">Support reference</h2>
-                    <span class="lede">Use these details when searching, handoffs, or follow-up need a stable anchor.</span>
+                    <div class="section-actions">
+                        <span class="lede">Use these details when searching, handoffs, or follow-up need a stable anchor.</span>
+                        @if ($ticket->requester)
+                            <a class="button secondary" href="{{ route('dashboard.visitors.show', $ticket->requester) }}">Open visitor profile</a>
+                        @endif
+                    </div>
                 </div>
 
                 <div class="meta-grid">

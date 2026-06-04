@@ -66,7 +66,12 @@
             <section class="section" aria-labelledby="visitor-context-heading">
                 <div class="section-header">
                     <h2 id="visitor-context-heading">Visitor at a glance</h2>
-                    <span class="lede">Safe context only</span>
+                    <div class="section-actions">
+                        <span class="lede">Safe context only</span>
+                        @if ($conversation->visitor)
+                            <a class="button secondary" href="{{ route('dashboard.visitors.show', $conversation->visitor) }}">Open visitor profile</a>
+                        @endif
+                    </div>
                 </div>
 
                 <div class="meta-grid">
