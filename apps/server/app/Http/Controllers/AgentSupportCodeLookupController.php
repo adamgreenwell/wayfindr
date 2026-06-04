@@ -23,11 +23,29 @@ class AgentSupportCodeLookupController extends Controller
             return $this->missingCode();
         }
 
-        $supportCode = Str::upper(trim($rawSupportCode));
+        $lookupReference = trim($rawSupportCode);
 
-        if ($supportCode === '') {
+        if ($lookupReference === '') {
             return $this->missingCode();
         }
+
+        $ticketReferenceId = $this->ticketReferenceId($lookupReference);
+
+        if ($ticketReferenceId) {
+            $ticket = Ticket::query()
+                ->with('site')
+                ->where('account_id', $agent->account_id)
+                ->whereKey($ticketReferenceId)
+                ->first();
+
+            if ($ticket && Gate::forUser($agent)->allows('view', $ticket)) {
+                return redirect()->route('dashboard.tickets.show', $ticket);
+            }
+
+            return $this->notFound($lookupReference);
+        }
+
+        $supportCode = Str::upper($lookupReference);
 
         $conversation = Conversation::query()
             ->with('site')
@@ -64,6 +82,34 @@ class AgentSupportCodeLookupController extends Controller
     {
         return redirect()
             ->route('dashboard')
-            ->with('support_code_lookup_status', 'Enter a support code to find a conversation or ticket.');
+            ->with('support_code_lookup_status', 'Enter a support code or ticket reference to find a conversation or ticket.');
+    }
+
+    private function ticketReferenceId(string $lookupReference): ?int
+    {
+        $lookupReference = trim($lookupReference);
+
+        if ($lookupReference === '') {
+            return null;
+        }
+
+        if (ctype_digit($lookupReference)) {
+            return $this->validTicketId((int) $lookupReference);
+        }
+
+        if (preg_match('/^(?:ticket\s*)?#\s*(\d+)$/i', $lookupReference, $matches)) {
+            return $this->validTicketId((int) $matches[1]);
+        }
+
+        if (preg_match('/^ticket\s+(\d+)$/i', $lookupReference, $matches)) {
+            return $this->validTicketId((int) $matches[1]);
+        }
+
+        return null;
+    }
+
+    private function validTicketId(int $ticketId): ?int
+    {
+        return $ticketId > 0 ? $ticketId : null;
     }
 }

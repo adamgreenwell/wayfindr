@@ -17,6 +17,8 @@ test('agents can see the support code lookup on the dashboard', function (): voi
         ->get('/dashboard')
         ->assertOk()
         ->assertSee('Find support record')
+        ->assertSee('Jump by support code or ticket reference')
+        ->assertSee('Support code or ticket reference')
         ->assertSee('support_code')
         ->assertSee(route('dashboard.support-code.lookup'), false);
 });
@@ -59,6 +61,28 @@ test('agents jump to the linked ticket when a visible support code has one', fun
         ->assertRedirect(route('dashboard.tickets.show', $ticket));
 });
 
+test('agents can jump to a visible ticket by ticket reference', function (string $ticketReference): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->create([
+            'subject' => 'Reference lookup ticket',
+        ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.support-code.lookup', [
+            'support_code' => str_replace('{ticket}', (string) $ticket->id, $ticketReference),
+        ]))
+        ->assertRedirect(route('dashboard.tickets.show', $ticket));
+})->with([
+    'ticket prefix' => [' Ticket #{ticket} '],
+    'hash reference' => ['#{ticket}'],
+    'plain id' => ['{ticket}'],
+]);
+
 test('support code lookup does not expose another account record', function (): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create();
@@ -77,6 +101,26 @@ test('support code lookup does not expose another account record', function (): 
         ->assertSessionHas('support_code_lookup_status', 'No visible support record found for WF-PRIVATE.');
 });
 
+test('support record lookup does not expose another account ticket reference', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $otherAccount = Account::factory()->create();
+    $otherSite = Site::factory()->for($otherAccount)->create();
+    $otherTicket = Ticket::factory()
+        ->for($otherAccount)
+        ->for($otherSite)
+        ->create([
+            'subject' => 'Other account ticket',
+        ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.support-code.lookup', [
+            'support_code' => 'Ticket #'.$otherTicket->id,
+        ]))
+        ->assertRedirect(route('dashboard'))
+        ->assertSessionHas('support_code_lookup_status', 'No visible support record found for Ticket #'.$otherTicket->id.'.');
+});
+
 test('support code lookup rejects non-scalar query values', function (): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create();
@@ -86,7 +130,7 @@ test('support code lookup rejects non-scalar query values', function (): void {
             'support_code' => ['WF-FINDME'],
         ]))
         ->assertRedirect(route('dashboard'))
-        ->assertSessionHas('support_code_lookup_status', 'Enter a support code to find a conversation or ticket.');
+        ->assertSessionHas('support_code_lookup_status', 'Enter a support code or ticket reference to find a conversation or ticket.');
 });
 
 test('support code lookup respects explicit site support access', function (): void {
