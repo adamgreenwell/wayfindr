@@ -146,6 +146,7 @@ test('ticket detail shows safe visitor context and prior support records', funct
         ->create([
             'metadata' => [
                 'visitor_context' => [
+                    'host_context' => [],
                     'started_page_url' => 'https://docs.example.test/pricing',
                 ],
             ],

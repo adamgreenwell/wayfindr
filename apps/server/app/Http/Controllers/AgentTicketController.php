@@ -608,6 +608,12 @@ class AgentTicketController extends Controller
             $visitorContext = [];
         }
 
+        $hostContext = $visitorContext['host_context'] ?? null;
+
+        if (! is_array($hostContext) || $hostContext === []) {
+            $hostContext = $requesterMetadata['context'] ?? [];
+        }
+
         return [
             'has_visitor' => $requester !== null,
             'anonymous_id' => $requester?->anonymous_id ?? 'Not linked',
@@ -617,7 +623,7 @@ class AgentTicketController extends Controller
                 ?? $this->contextString($requesterMetadata['last_page_url'] ?? null),
             'started_page_url' => $this->contextString($visitorContext['started_page_url'] ?? null)
                 ?? $this->contextString($conversationMetadata['started_page_url'] ?? null),
-            'host_context' => $visitorContextSanitizer->sanitize($visitorContext['host_context'] ?? $requesterMetadata['context'] ?? []),
+            'host_context' => $visitorContextSanitizer->sanitize($hostContext),
         ];
     }
 
