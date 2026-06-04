@@ -5,6 +5,7 @@ use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -16,9 +17,9 @@ test('agents can see the support code lookup on the dashboard', function (): voi
     $this->actingAs($agent)
         ->get('/dashboard')
         ->assertOk()
-        ->assertSee('Find support record')
-        ->assertSee('Jump by support code or ticket reference')
-        ->assertSee('Support code or ticket reference')
+        ->assertSee('Find support trail')
+        ->assertSee('Jump by support code, ticket reference, or visitor ID')
+        ->assertSee('Support code, ticket reference, or visitor ID')
         ->assertSee('support_code')
         ->assertSee(route('dashboard.support-code.lookup'), false);
 });
@@ -83,6 +84,37 @@ test('agents can jump to a visible ticket by ticket reference', function (string
     'plain id' => ['{ticket}'],
 ]);
 
+test('agents can jump to a visible visitor profile by anonymous visitor id', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-support-trail',
+    ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.support-code.lookup', [
+            'support_code' => ' anon-support-trail ',
+        ]))
+        ->assertRedirect(route('dashboard.visitors.show', $visitor));
+});
+
+test('agents can jump to a visible visitor profile by host visitor id', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-host-context',
+        'external_id' => 'customer-123',
+    ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.support-code.lookup', [
+            'support_code' => 'customer-123',
+        ]))
+        ->assertRedirect(route('dashboard.visitors.show', $visitor));
+});
+
 test('support code lookup does not expose another account record', function (): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create();
@@ -99,6 +131,24 @@ test('support code lookup does not expose another account record', function (): 
         ]))
         ->assertRedirect(route('dashboard'))
         ->assertSessionHas('support_code_lookup_status', 'No visible support record found for WF-PRIVATE.');
+});
+
+test('support code lookup does not expose another account visitor id', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $otherAccount = Account::factory()->create();
+    $otherSite = Site::factory()->for($otherAccount)->create();
+    Visitor::factory()->for($otherSite)->create([
+        'anonymous_id' => 'anon-private',
+        'external_id' => 'customer-private',
+    ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.support-code.lookup', [
+            'support_code' => 'customer-private',
+        ]))
+        ->assertRedirect(route('dashboard'))
+        ->assertSessionHas('support_code_lookup_status', 'No visible support record found for customer-private.');
 });
 
 test('support record lookup does not expose another account ticket reference', function (): void {
@@ -130,7 +180,7 @@ test('support code lookup rejects non-scalar query values', function (): void {
             'support_code' => ['WF-FINDME'],
         ]))
         ->assertRedirect(route('dashboard'))
-        ->assertSessionHas('support_code_lookup_status', 'Enter a support code or ticket reference to find a conversation or ticket.');
+        ->assertSessionHas('support_code_lookup_status', 'Enter a support code, ticket reference, or visitor ID to find a support trail.');
 });
 
 test('support code lookup respects explicit site support access', function (): void {
@@ -156,4 +206,23 @@ test('support code lookup respects explicit site support access', function (): v
         ->get('/dashboard')
         ->assertOk()
         ->assertSee('No visible support record found for WF-SCOPED.');
+});
+
+test('support code lookup does not expose visitors from unsupported sites', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $siteAgent = User::factory()->for($account)->create(['name' => 'Bea Builder']);
+    $scopedSite = Site::factory()->for($account)->create(['name' => 'Scoped Docs']);
+    $scopedSite->supportAgents()->attach($siteAgent);
+    Visitor::factory()->for($scopedSite)->create([
+        'anonymous_id' => 'anon-scoped',
+        'external_id' => 'customer-scoped',
+    ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.support-code.lookup', [
+            'support_code' => 'customer-scoped',
+        ]))
+        ->assertRedirect(route('dashboard'))
+        ->assertSessionHas('support_code_lookup_status', 'No visible support record found for customer-scoped.');
 });

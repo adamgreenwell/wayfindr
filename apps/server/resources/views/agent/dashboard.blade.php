@@ -4,8 +4,8 @@
 
             <section class="section" aria-labelledby="support-code-lookup-heading">
                 <div class="section-header">
-                    <h2 id="support-code-lookup-heading">Find support record</h2>
-                    <span class="lede">Jump by support code or ticket reference</span>
+                    <h2 id="support-code-lookup-heading">Find support trail</h2>
+                    <span class="lede">Jump by support code, ticket reference, or visitor ID</span>
                 </div>
 
                 @if (session('support_code_lookup_status'))
@@ -14,9 +14,9 @@
 
                 <form class="section-form" method="GET" action="{{ route('dashboard.support-code.lookup') }}">
                     <div class="field">
-                        <label for="support_code">Support code or ticket reference</label>
-                        <input id="support_code" name="support_code" type="search" value="{{ old('support_code') }}" placeholder="WF-ABC123 or Ticket #123" autocomplete="off">
-                        <p class="field-help">Use the visitor's support code or a ticket reference to open a visible conversation or ticket.</p>
+                        <label for="support_code">Support code, ticket reference, or visitor ID</label>
+                        <input id="support_code" name="support_code" type="search" value="{{ old('support_code') }}" placeholder="WF-ABC123, Ticket #123, or anon-visitor" autocomplete="off">
+                        <p class="field-help">Open a visible conversation, ticket, or visitor profile from the reference the visitor gives you.</p>
                     </div>
 
                     <button class="button" type="submit">Find record</button>
