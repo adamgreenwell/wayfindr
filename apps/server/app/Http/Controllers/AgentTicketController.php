@@ -321,12 +321,23 @@ class AgentTicketController extends Controller
 
         $this->authorizeTicketAbility($agent, 'updateStatus', $ticket);
 
+        $validated = $request->validate([
+            'pending_note' => ['nullable', 'string', 'max:4000'],
+        ]);
+
+        $pendingNote = trim((string) ($validated['pending_note'] ?? ''));
+
         $ticket->forceFill([
             'status' => 'pending',
             'closed_at' => null,
         ])->save();
 
-        $this->recordActivity($ticket, $agent, 'ticket.pending');
+        $this->recordActivity(
+            $ticket,
+            $agent,
+            'ticket.pending',
+            $pendingNote === '' ? [] : ['pending_note' => $pendingNote],
+        );
 
         return $this->redirectAfterUpdate($ticket, 'Ticket marked pending.');
     }
@@ -364,12 +375,23 @@ class AgentTicketController extends Controller
 
         $this->authorizeTicketAbility($agent, 'updateStatus', $ticket);
 
+        $validated = $request->validate([
+            'reopen_note' => ['nullable', 'string', 'max:4000'],
+        ]);
+
+        $reopenNote = trim((string) ($validated['reopen_note'] ?? ''));
+
         $ticket->forceFill([
             'status' => 'open',
             'closed_at' => null,
         ])->save();
 
-        $this->recordActivity($ticket, $agent, 'ticket.reopened');
+        $this->recordActivity(
+            $ticket,
+            $agent,
+            'ticket.reopened',
+            $reopenNote === '' ? [] : ['reopen_note' => $reopenNote],
+        );
 
         return $this->redirectAfterUpdate($ticket, 'Ticket reopened.');
     }
@@ -681,7 +703,9 @@ class AgentTicketController extends Controller
     {
         return match ($activity->action) {
             'ticket.note_added' => data_get($activity->metadata, 'body'),
+            'ticket.pending' => data_get($activity->metadata, 'pending_note'),
             'ticket.closed' => data_get($activity->metadata, 'resolution_note'),
+            'ticket.reopened' => data_get($activity->metadata, 'reopen_note'),
             default => null,
         };
     }

@@ -498,6 +498,13 @@
                 @if ($ticket->status === 'open')
                     <form class="section-form" method="POST" action="{{ route('dashboard.tickets.pending', $ticket) }}">
                         @csrf
+                        <div class="field">
+                            <label for="pending_note">Pending note</label>
+                            <textarea id="pending_note" name="pending_note" rows="3" placeholder="What are we waiting on from the customer?">{{ old('pending_note') }}</textarea>
+                            @error('pending_note')
+                                <p class="field-error">{{ $message }}</p>
+                            @enderror
+                        </div>
                         <button class="button secondary" type="submit">Mark pending</button>
                     </form>
                 @endif
@@ -505,6 +512,13 @@
                 @if (in_array($ticket->status, ['closed', 'pending'], true))
                     <form class="section-form" method="POST" action="{{ route('dashboard.tickets.reopen', $ticket) }}">
                         @csrf
+                        <div class="field">
+                            <label for="reopen_note">Reopen note</label>
+                            <textarea id="reopen_note" name="reopen_note" rows="3" placeholder="What changed or why does this need attention again?">{{ old('reopen_note') }}</textarea>
+                            @error('reopen_note')
+                                <p class="field-error">{{ $message }}</p>
+                            @enderror
+                        </div>
                         <button class="button secondary" type="submit">Reopen ticket</button>
                     </form>
                 @endif
@@ -738,8 +752,9 @@
                                         {{ ucfirst(str_replace(['ticket.', '_'], ['', ' '], $activity->action)) }}
                                 @endswitch
                             </p>
-                            @if (data_get($activity->metadata, 'resolution_note'))
-                                <p class="message-body">{{ data_get($activity->metadata, 'resolution_note') }}</p>
+                            @php($activityBody = data_get($activity->metadata, 'resolution_note') ?? data_get($activity->metadata, 'pending_note') ?? data_get($activity->metadata, 'reopen_note'))
+                            @if ($activityBody)
+                                <p class="message-body">{{ $activityBody }}</p>
                             @endif
                         </article>
                     @empty
