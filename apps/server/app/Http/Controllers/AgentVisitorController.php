@@ -29,7 +29,7 @@ class AgentVisitorController extends Controller
             'conversations' => $conversations,
             'tickets' => $this->visitorTickets($visitor),
             'visitor' => $visitor,
-            'visitorContext' => $this->visitorContext($visitor, $conversations, $visitorContextSanitizer),
+            'visitorContext' => $this->visitorContext($visitor, $visitorContextSanitizer),
         ]);
     }
 
@@ -67,10 +67,9 @@ class AgentVisitorController extends Controller
     }
 
     /**
-     * @param  Collection<int, Conversation>  $conversations
      * @return array{anonymous_id: string, external_id: string|null, last_seen_at: CarbonInterface|null, last_page_url: string|null, first_started_page_url: string|null, host_context: array<string, string>}
      */
-    private function visitorContext(Visitor $visitor, Collection $conversations, VisitorContextSanitizer $visitorContextSanitizer): array
+    private function visitorContext(Visitor $visitor, VisitorContextSanitizer $visitorContextSanitizer): array
     {
         $visitorMetadata = $visitor->metadata ?? [];
 
@@ -79,18 +78,19 @@ class AgentVisitorController extends Controller
             'external_id' => $visitorContextSanitizer->sanitizeIdentifier($visitor->external_id),
             'last_seen_at' => $visitor->last_seen_at,
             'last_page_url' => $this->contextString($visitorMetadata['last_page_url'] ?? null),
-            'first_started_page_url' => $this->firstStartedPageUrl($conversations),
+            'first_started_page_url' => $this->firstStartedPageUrl($visitor),
             'host_context' => $visitorContextSanitizer->sanitize($visitorMetadata['context'] ?? []),
         ];
     }
 
-    /**
-     * @param  Collection<int, Conversation>  $conversations
-     */
-    private function firstStartedPageUrl(Collection $conversations): ?string
+    private function firstStartedPageUrl(Visitor $visitor): ?string
     {
-        return $conversations
-            ->sortBy('created_at')
+        return Conversation::query()
+            ->where('site_id', $visitor->site_id)
+            ->where('visitor_id', $visitor->id)
+            ->oldest('created_at')
+            ->oldest('id')
+            ->cursor()
             ->map(fn (Conversation $conversation): ?string => $this->contextString(data_get($conversation->metadata, 'started_page_url')))
             ->first(fn (?string $url): bool => $url !== null);
     }

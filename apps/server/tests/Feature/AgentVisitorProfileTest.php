@@ -115,6 +115,49 @@ test('agent can view a safe visitor profile with same-site support history', fun
         ->assertDontSee('Other visitor ticket');
 });
 
+test('visitor profile finds the first entry page beyond the recent history limit', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-long-history',
+        'metadata' => [
+            'last_page_url' => 'https://docs.example.test/current',
+        ],
+    ]);
+
+    Conversation::factory()
+        ->for($site)
+        ->for($visitor)
+        ->create([
+            'support_code' => 'WF-FIRSTENTRY',
+            'subject' => 'Original entry page question',
+            'metadata' => [
+                'started_page_url' => 'https://docs.example.test/original-entry',
+            ],
+            'created_at' => now()->subDays(30),
+            'last_message_at' => now()->subDays(30),
+        ]);
+
+    foreach (range(1, 11) as $index) {
+        Conversation::factory()
+            ->for($site)
+            ->for($visitor)
+            ->create([
+                'support_code' => 'WF-RECENT'.str_pad((string) $index, 2, '0', STR_PAD_LEFT),
+                'subject' => 'Recent profile question '.$index,
+                'created_at' => now()->subDays(12 - $index),
+                'last_message_at' => now()->subDays(12 - $index),
+            ]);
+    }
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.visitors.show', $visitor))
+        ->assertOk()
+        ->assertSee('First captured entry page')
+        ->assertSee('https://docs.example.test/original-entry');
+});
+
 test('conversation and ticket context panels link to the visitor profile', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
