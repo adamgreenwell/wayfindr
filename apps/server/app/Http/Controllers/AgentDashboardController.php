@@ -191,12 +191,22 @@ class AgentDashboardController extends Controller
                 ->where('slug', $ticketLabel)))
             ->when($ticketSearch !== '', function ($query) use ($ticketSearch): void {
                 $searchPattern = '%'.$ticketSearch.'%';
+                $ticketReferenceId = $this->ticketReferenceId($ticketSearch);
 
-                $query->where(function ($query) use ($searchPattern): void {
+                $query->where(function ($query) use ($searchPattern, $ticketReferenceId): void {
                     $query
                         ->whereLike('subject', $searchPattern)
                         ->orWhereLike('description', $searchPattern)
-                        ->orWhereHas('conversation', fn ($query) => $query->whereLike('support_code', $searchPattern));
+                        ->orWhereHas('conversation', fn ($query) => $query->whereLike('support_code', $searchPattern))
+                        ->orWhereHas('requester', fn ($query) => $query
+                            ->whereLike('external_id', $searchPattern)
+                            ->orWhereLike('anonymous_id', $searchPattern)
+                            ->orWhereLike('name', $searchPattern)
+                            ->orWhereLike('email', $searchPattern));
+
+                    if ($ticketReferenceId) {
+                        $query->orWhere('id', $ticketReferenceId);
+                    }
                 });
             })
             ->orderByDesc('updated_at')
@@ -382,6 +392,29 @@ class AgentDashboardController extends Controller
         }
 
         return $params;
+    }
+
+    private function ticketReferenceId(string $ticketSearch): ?int
+    {
+        $ticketSearch = trim($ticketSearch);
+
+        if ($ticketSearch === '') {
+            return null;
+        }
+
+        if (ctype_digit($ticketSearch)) {
+            return (int) $ticketSearch;
+        }
+
+        if (preg_match('/^(?:ticket\s*)?#\s*(\d+)$/i', $ticketSearch, $matches)) {
+            return (int) $matches[1];
+        }
+
+        if (preg_match('/^ticket\s+(\d+)$/i', $ticketSearch, $matches)) {
+            return (int) $matches[1];
+        }
+
+        return null;
     }
 
     /**

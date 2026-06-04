@@ -568,20 +568,24 @@ test('dashboard filters tickets by category', function (): void {
         ->assertDontSee('How do I export invoices?');
 });
 
-test('dashboard searches tickets by subject description and support code', function (): void {
+test('dashboard searches tickets by subject description support code and requester references', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
     $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
-    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-acme',
+        'email' => 'billing-contact@example.test',
+    ]);
     $conversation = Conversation::factory()->for($site)->for($visitor)->create([
         'support_code' => 'WF-SEARCH777',
         'status' => 'open',
     ]);
 
-    Ticket::factory()
+    $ticket = Ticket::factory()
         ->for($account)
         ->for($site)
         ->for($conversation)
+        ->for($visitor, 'requester')
         ->create([
             'subject' => 'Checkout handoff',
             'description' => 'Customer cannot export their invoice PDF.',
@@ -605,6 +609,24 @@ test('dashboard searches tickets by subject description and support code', funct
 
     $this->actingAs($agent)
         ->get('/dashboard?ticket_search=WF-SEARCH777')
+        ->assertOk()
+        ->assertSee('Checkout handoff')
+        ->assertDontSee('Password reset request');
+
+    $this->actingAs($agent)
+        ->get('/dashboard?ticket_search=billing-contact@example.test')
+        ->assertOk()
+        ->assertSee('Checkout handoff')
+        ->assertDontSee('Password reset request');
+
+    $this->actingAs($agent)
+        ->get('/dashboard?ticket_search=anon-acme')
+        ->assertOk()
+        ->assertSee('Checkout handoff')
+        ->assertDontSee('Password reset request');
+
+    $this->actingAs($agent)
+        ->get('/dashboard?ticket_search=Ticket+%23'.$ticket->id)
         ->assertOk()
         ->assertSee('Checkout handoff')
         ->assertDontSee('Password reset request');
