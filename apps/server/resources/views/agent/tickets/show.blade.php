@@ -419,22 +419,44 @@
                 </form>
             </section>
 
-            @if ($visitorContext['last_page_url'] || $visitorContext['started_page_url'] || $visitorContext['host_context'] !== [])
+            @php($priorSupportRecordCount = $priorVisitorConversations->count() + $priorVisitorTickets->count())
+            @if ($visitorContext['has_visitor'] || $visitorContext['last_page_url'] || $visitorContext['started_page_url'] || $visitorContext['host_context'] !== [])
                 <section class="section" aria-labelledby="ticket-visitor-context-heading">
                     <div class="section-header">
-                        <h2 id="ticket-visitor-context-heading">Visitor context</h2>
-                        <span class="lede">Captured from conversation</span>
+                        <h2 id="ticket-visitor-context-heading">Visitor at a glance</h2>
+                        <span class="lede">Safe context only</span>
                     </div>
 
                     <div class="meta-grid">
+                        <div class="meta-item">
+                            <span class="meta-label">Visitor</span>
+                            <span class="meta-value">{{ $visitorContext['anonymous_id'] }}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Host visitor ID</span>
+                            <span class="meta-value">{{ $visitorContext['external_id'] ?? 'Not provided' }}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Last seen</span>
+                            <span class="meta-value">{{ $visitorContext['last_seen_at']?->diffForHumans() ?? 'Not reported' }}</span>
+                        </div>
                         <div class="meta-item">
                             <span class="meta-label">Latest page</span>
                             <span class="meta-value">{{ $visitorContext['last_page_url'] ?? 'Not reported' }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">Started on</span>
+                            <span class="meta-label">Entry page</span>
                             <span class="meta-value">{{ $visitorContext['started_page_url'] ?? 'Not reported' }}</span>
                         </div>
+                        <div class="meta-item">
+                            <span class="meta-label">History on this site</span>
+                            <span class="meta-value">{{ $priorSupportRecordCount }} {{ \Illuminate\Support\Str::plural('record', $priorSupportRecordCount) }}</span>
+                        </div>
+                    </div>
+
+                    <div class="notice-copy notice-copy-bordered">
+                        <p><strong>Data boundary</strong></p>
+                        <p>Use this context to answer the current request. Do not collect, export, or infer extra visitor data without consent.</p>
                     </div>
 
                     <div class="section-header">
@@ -462,6 +484,55 @@
                                     @endforeach
                                 </tbody>
                             </table>
+                        </div>
+                    @endif
+
+                    <div class="section-header">
+                        <strong>Prior support records</strong>
+                        <span class="lede">{{ $priorSupportRecordCount }} previous</span>
+                    </div>
+
+                    @if ($priorVisitorConversations->isEmpty() && $priorVisitorTickets->isEmpty())
+                        <p class="empty">No prior support records for this visitor on this site.</p>
+                    @else
+                        <div class="timeline-list">
+                            @foreach ($priorVisitorConversations as $priorConversation)
+                                <article class="timeline-item">
+                                    <div class="timeline-content">
+                                        <a class="text-link" href="{{ route('dashboard.conversations.show', $priorConversation->support_code) }}">
+                                            {{ $priorConversation->subject ?? 'Untitled conversation' }}
+                                        </a>
+                                        <div class="timeline-meta">
+                                            <span>{{ $priorConversation->support_code }}</span>
+                                            <span>{{ ucfirst($priorConversation->status) }}</span>
+                                            <span>Owner: {{ $priorConversation->assignedAgent?->name ?? 'Unassigned' }}</span>
+                                            <span>Last activity: {{ $priorConversation->last_message_at?->diffForHumans() ?? $priorConversation->created_at->diffForHumans() }}</span>
+                                        </div>
+                                    </div>
+                                </article>
+                            @endforeach
+
+                            @foreach ($priorVisitorTickets as $priorTicket)
+                                <article class="timeline-item">
+                                    <div class="timeline-content">
+                                        <a class="text-link" href="{{ route('dashboard.tickets.show', $priorTicket) }}">
+                                            {{ $priorTicket->subject }}
+                                        </a>
+                                        <div class="timeline-meta">
+                                            <span>Ticket #{{ $priorTicket->id }}</span>
+                                            <span>{{ ucfirst($priorTicket->status) }}</span>
+                                            <span>Owner: {{ $priorTicket->assignee?->name ?? 'Unassigned' }}</span>
+                                            @if ($priorTicket->conversation)
+                                                <a class="text-link" href="{{ route('dashboard.conversations.show', $priorTicket->conversation->support_code) }}">
+                                                    {{ $priorTicket->conversation->support_code }}
+                                                </a>
+                                            @else
+                                                <span>No linked conversation</span>
+                                            @endif
+                                        </div>
+                                    </div>
+                                </article>
+                            @endforeach
                         </div>
                     @endif
                 </section>

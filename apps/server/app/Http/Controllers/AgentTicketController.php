@@ -18,6 +18,7 @@ use App\Support\ReplyTemplateOptions;
 use App\Support\TicketCategory;
 use App\Support\TicketPriority;
 use App\Support\VisitorContextSanitizer;
+use Carbon\CarbonInterface;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -76,6 +77,8 @@ class AgentTicketController extends Controller
             'ticketPriorityGuidance' => TicketPriority::guidanceOptions(),
             'ticket' => $ticket,
             'visitorContext' => $this->visitorContext($ticket, $visitorContextSanitizer),
+            'priorVisitorConversations' => $this->priorVisitorConversations($ticket),
+            'priorVisitorTickets' => $this->priorVisitorTickets($ticket),
             'linkedConversationMessages' => $this->linkedConversationMessages($ticket),
             'ticketTimeline' => $this->ticketTimeline($ticket),
         ]);
@@ -591,10 +594,13 @@ class AgentTicketController extends Controller
     }
 
     /**
-     * @return array{last_page_url: string|null, started_page_url: string|null, host_context: array<string, string>}
+     * @return array{has_visitor: bool, anonymous_id: string, external_id: string|null, last_seen_at: CarbonInterface|null, last_page_url: string|null, started_page_url: string|null, host_context: array<string, string>}
      */
     private function visitorContext(Ticket $ticket, VisitorContextSanitizer $visitorContextSanitizer): array
     {
+        $requester = $ticket->requester;
+        $requesterMetadata = $requester?->metadata ?? [];
+        $conversationMetadata = $ticket->conversation?->metadata ?? [];
         $metadata = $ticket->metadata ?? [];
         $visitorContext = $metadata['visitor_context'] ?? [];
 
@@ -603,10 +609,59 @@ class AgentTicketController extends Controller
         }
 
         return [
-            'last_page_url' => $this->contextString($visitorContext['last_page_url'] ?? null),
-            'started_page_url' => $this->contextString($visitorContext['started_page_url'] ?? null),
-            'host_context' => $visitorContextSanitizer->sanitize($visitorContext['host_context'] ?? []),
+            'has_visitor' => $requester !== null,
+            'anonymous_id' => $requester?->anonymous_id ?? 'Not linked',
+            'external_id' => $visitorContextSanitizer->sanitizeIdentifier($requester?->external_id),
+            'last_seen_at' => $requester?->last_seen_at,
+            'last_page_url' => $this->contextString($visitorContext['last_page_url'] ?? null)
+                ?? $this->contextString($requesterMetadata['last_page_url'] ?? null),
+            'started_page_url' => $this->contextString($visitorContext['started_page_url'] ?? null)
+                ?? $this->contextString($conversationMetadata['started_page_url'] ?? null),
+            'host_context' => $visitorContextSanitizer->sanitize($visitorContext['host_context'] ?? $requesterMetadata['context'] ?? []),
         ];
+    }
+
+    /**
+     * @return Collection<int, Conversation>
+     */
+    private function priorVisitorConversations(Ticket $ticket): Collection
+    {
+        if (! $ticket->requester_id) {
+            return collect();
+        }
+
+        return Conversation::query()
+            ->with(['assignedAgent', 'tickets'])
+            ->where('site_id', $ticket->site_id)
+            ->where('visitor_id', $ticket->requester_id)
+            ->when($ticket->conversation_id, fn ($query) => $query->whereKeyNot($ticket->conversation_id))
+            ->latest('last_message_at')
+            ->latest('created_at')
+            ->latest('id')
+            ->limit(5)
+            ->get();
+    }
+
+    /**
+     * @return Collection<int, Ticket>
+     */
+    private function priorVisitorTickets(Ticket $ticket): Collection
+    {
+        if (! $ticket->requester_id) {
+            return collect();
+        }
+
+        return Ticket::query()
+            ->with(['assignee', 'conversation'])
+            ->where('account_id', $ticket->account_id)
+            ->where('site_id', $ticket->site_id)
+            ->where('requester_id', $ticket->requester_id)
+            ->whereKeyNot($ticket->id)
+            ->latest('updated_at')
+            ->latest('created_at')
+            ->latest('id')
+            ->limit(5)
+            ->get();
     }
 
     private function contextString(mixed $value): ?string
