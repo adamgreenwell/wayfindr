@@ -170,6 +170,20 @@ class OperatorReadiness
             );
         }
 
+        if ($mailer === 'smtp' && $this->hasUnsupportedSmtpScheme(config('mail.mailers.smtp.scheme'))) {
+            return $this->check(
+                key: 'mail_transport',
+                label: 'Mail transport',
+                status: 'attention',
+                summary: 'SMTP has an unsupported MAIL_SCHEME value.',
+                detail: sprintf(
+                    'MAIL_SCHEME is %s, but Laravel SMTP supports smtp, smtps, or no explicit scheme.',
+                    (string) config('mail.mailers.smtp.scheme')
+                ),
+                action: 'Unset MAIL_SCHEME for port 587 STARTTLS SMTP, or set it to smtps when using port 465.'
+            );
+        }
+
         if (! $this->hasValue(config('mail.from.address'))) {
             return $this->check(
                 key: 'mail_transport',
@@ -413,6 +427,15 @@ class OperatorReadiness
     private function isLocalMailHost(string $host): bool
     {
         return $this->isLocalHost(strtolower(trim($host)));
+    }
+
+    private function hasUnsupportedSmtpScheme(mixed $scheme): bool
+    {
+        if (! $this->hasValue($scheme)) {
+            return false;
+        }
+
+        return ! in_array(strtolower((string) $scheme), ['smtp', 'smtps'], true);
     }
 
     private function isPlaceholderMailFrom(string $address): bool

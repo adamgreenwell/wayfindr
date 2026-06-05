@@ -162,6 +162,26 @@ test('readiness diagnostics flag smtp mail that still points at local defaults',
     ]);
 });
 
+test('readiness diagnostics flag unsupported smtp schemes', function (): void {
+    config([
+        'mail.default' => 'smtp',
+        'mail.mailers.smtp.host' => 'smtp.example.test',
+        'mail.mailers.smtp.port' => 587,
+        'mail.mailers.smtp.scheme' => 'tls',
+        'mail.from.address' => 'support@example.test',
+    ]);
+
+    $readiness = app(OperatorReadiness::class)->summary();
+    $mail = collect($readiness['checks'])->firstWhere('key', 'mail_transport');
+
+    expect($mail)->toMatchArray([
+        'label' => 'Mail transport',
+        'status' => 'attention',
+        'summary' => 'SMTP has an unsupported MAIL_SCHEME value.',
+        'action' => 'Unset MAIL_SCHEME for port 587 STARTTLS SMTP, or set it to smtps when using port 465.',
+    ]);
+});
+
 test('readiness diagnostics include a guided post install smoke path', function (): void {
     config([
         'app.url' => 'https://support.example.test',

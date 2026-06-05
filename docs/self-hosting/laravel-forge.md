@@ -127,7 +127,8 @@ Before real support traffic, configure a real outbound provider such as `smtp`,
 `ses`, `postmark`, or `resend`, set a monitored `MAIL_FROM_ADDRESS`, and send a
 test email from the deployed environment. For SMTP, replace the local
 `MAIL_HOST=127.0.0.1` and `MAIL_PORT=2525` defaults with the provider's real
-host and port.
+host and port. Leave `MAIL_SCHEME` unset or `null` for port 587 STARTTLS SMTP
+providers; use `MAIL_SCHEME=smtps` only for implicit TLS providers on port 465.
 
 Keep `BROADCAST_CONNECTION=log` until a Reverb process and WebSocket routing are
 ready. Switch it to `reverb` when the site should publish live conversation
@@ -380,7 +381,9 @@ background process reloads the active release.
 16. Add the queue worker and scheduler.
 17. Add the Reverb process when switching `BROADCAST_CONNECTION` to `reverb`.
 18. Configure real outbound mail when email alerts, password resets, or
-    notifications should leave the app.
+    notifications should leave the app, then run `php artisan wayfindr:mail-test
+    --to="you@example.com"` from `apps/server` to confirm a real inbox receives
+    mail.
 19. Confirm database and storage backups are scheduled, retained, monitored,
     and restorable.
 20. Sign in with the generated first agent credentials.
@@ -399,6 +402,18 @@ WAYFINDR_SITE_PUBLIC_KEY=replace-with-bootstrap-site-public-key \
 
 Then sign in to the Forge site as the demo agent, confirm the smoke conversation
 appears in the agent inbox, and send a short agent reply.
+
+After configuring outbound mail, run a real mail smoke test from the Laravel
+application directory:
+
+```bash
+cd ~/wayfindr.on-forge.com/current/apps/server
+php artisan wayfindr:mail-test --to="verified-recipient@example.com"
+```
+
+If your mail provider still has sandbox restrictions, send to a verified
+recipient until production access is approved. The command prints the configured
+mailer, SMTP host, sender, and recipient, but it never prints SMTP credentials.
 
 For browser embed checks from an external static site, use the deployed widget
 script URL:

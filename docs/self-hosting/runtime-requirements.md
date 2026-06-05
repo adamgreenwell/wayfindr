@@ -102,7 +102,7 @@ MAIL_HOST=replace-with-mail-host
 MAIL_PORT=587
 MAIL_USERNAME=replace-with-mail-user
 MAIL_PASSWORD=replace-with-mail-password
-MAIL_ENCRYPTION=tls
+MAIL_SCHEME=null
 MAIL_FROM_ADDRESS=support@example.com
 MAIL_FROM_NAME="${APP_NAME}"
 ```
