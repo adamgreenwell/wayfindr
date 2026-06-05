@@ -10,6 +10,7 @@ uses(RefreshDatabase::class);
 
 test('account owner can inspect operator readiness diagnostics', function (): void {
     config([
+        'app.url' => 'https://wayfindr.example.test',
         'app.key' => 'base64:'.base64_encode(str_repeat('a', 32)),
         'broadcasting.default' => 'reverb',
         'broadcasting.connections.reverb.app_id' => 'wayfindr-production',
@@ -18,6 +19,8 @@ test('account owner can inspect operator readiness diagnostics', function (): vo
         'broadcasting.connections.reverb.options.host' => 'wayfindr.example.test',
         'broadcasting.connections.reverb.options.port' => 443,
         'broadcasting.connections.reverb.options.scheme' => 'https',
+        'mail.default' => 'smtp',
+        'mail.from.address' => 'support@wayfindr.example.test',
         'queue.default' => 'database',
     ]);
 
@@ -31,10 +34,13 @@ test('account owner can inspect operator readiness diagnostics', function (): vo
         ->assertSee('Operator readiness')
         ->assertSee('Application key')
         ->assertSee('Database connection')
+        ->assertSee('Public URL')
+        ->assertSee('Mail transport')
         ->assertSee('Queue worker')
         ->assertSee('Realtime broadcasting')
         ->assertSee('Storage paths')
         ->assertSee('Scheduler')
+        ->assertSee('Backups and restore')
         ->assertSee('Ready')
         ->assertSee('php artisan schedule:run')
         ->assertSee('php artisan reverb:restart');
@@ -75,6 +81,57 @@ test('readiness diagnostics flag missing app key and incomplete realtime setup',
         'label' => 'Realtime broadcasting',
         'status' => 'attention',
         'detail' => 'Add Reverb app credentials and public host settings before enabling live updates.',
+    ]);
+});
+
+test('readiness diagnostics flag local public urls and local-only mail transport', function (): void {
+    config([
+        'app.url' => 'http://localhost:8000',
+        'mail.default' => 'log',
+        'mail.from.address' => 'hello@wayfindr.local',
+    ]);
+
+    $readiness = app(OperatorReadiness::class)->summary();
+    $publicUrl = collect($readiness['checks'])->firstWhere('key', 'public_url');
+    $mail = collect($readiness['checks'])->firstWhere('key', 'mail_transport');
+    $backups = collect($readiness['checks'])->firstWhere('key', 'backups_restore');
+
+    expect($publicUrl)->toMatchArray([
+        'label' => 'Public URL',
+        'status' => 'attention',
+        'summary' => 'APP_URL is local or not secure.',
+        'action' => 'Set APP_URL to the public HTTPS URL visitors and agents will use.',
+    ])->and($mail)->toMatchArray([
+        'label' => 'Mail transport',
+        'status' => 'attention',
+        'summary' => 'MAIL_MAILER is log.',
+        'action' => 'Configure smtp, ses, postmark, resend, or another real outbound mail transport before relying on email alerts.',
+    ])->and($backups)->toMatchArray([
+        'label' => 'Backups and restore',
+        'status' => 'manual',
+        'action' => 'Confirm database and storage backups are scheduled, retained, monitored, and restorable before real support traffic arrives.',
+    ]);
+});
+
+test('readiness diagnostics accept a public https app url and outbound mail transport', function (): void {
+    config([
+        'app.url' => 'https://support.example.test',
+        'mail.default' => 'smtp',
+        'mail.from.address' => 'support@example.test',
+    ]);
+
+    $readiness = app(OperatorReadiness::class)->summary();
+    $publicUrl = collect($readiness['checks'])->firstWhere('key', 'public_url');
+    $mail = collect($readiness['checks'])->firstWhere('key', 'mail_transport');
+
+    expect($publicUrl)->toMatchArray([
+        'label' => 'Public URL',
+        'status' => 'ready',
+        'summary' => 'APP_URL is https://support.example.test.',
+    ])->and($mail)->toMatchArray([
+        'label' => 'Mail transport',
+        'status' => 'ready',
+        'summary' => 'MAIL_MAILER is smtp.',
     ]);
 });
 

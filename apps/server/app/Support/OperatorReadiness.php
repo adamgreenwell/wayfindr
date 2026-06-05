@@ -24,11 +24,14 @@ class OperatorReadiness
     {
         $checks = [
             $this->applicationKey(),
+            $this->publicUrl(),
             $this->databaseConnection(),
+            $this->mailTransport(),
             $this->queueWorker(),
             $this->realtimeBroadcasting(),
             $this->storagePaths(),
             $this->scheduler(),
+            $this->backupsRestore(),
         ];
 
         $attentionCount = count(array_filter($checks, fn (array $check): bool => $check['status'] === 'attention'));
@@ -73,6 +76,37 @@ class OperatorReadiness
     /**
      * @return array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
      */
+    private function publicUrl(): array
+    {
+        $url = $this->normalizedPublicUrl();
+        $parts = parse_url($url);
+        $host = strtolower((string) ($parts['host'] ?? ''));
+        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+
+        if ($url === '' || $host === '' || $scheme !== 'https' || $this->isLocalHost($host)) {
+            return $this->check(
+                key: 'public_url',
+                label: 'Public URL',
+                status: 'attention',
+                summary: 'APP_URL is local or not secure.',
+                detail: 'Visitors, agents, cookies, callbacks, and widget snippets need the real public HTTPS URL.',
+                action: 'Set APP_URL to the public HTTPS URL visitors and agents will use.'
+            );
+        }
+
+        return $this->check(
+            key: 'public_url',
+            label: 'Public URL',
+            status: 'ready',
+            summary: sprintf('APP_URL is %s.', $url),
+            detail: 'Wayfindr can generate public links and widget snippets from the production URL.',
+            action: 'Keep APP_URL stable and update it intentionally when changing domains.'
+        );
+    }
+
+    /**
+     * @return array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
+     */
     private function databaseConnection(): array
     {
         $connection = (string) config('database.default', 'unknown');
@@ -97,6 +131,45 @@ class OperatorReadiness
             summary: sprintf('The %s connection responded.', $connection),
             detail: 'Wayfindr can reach the configured database.',
             action: 'Keep migrations in the deploy script so schema changes land with releases.'
+        );
+    }
+
+    /**
+     * @return array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
+     */
+    private function mailTransport(): array
+    {
+        $mailer = strtolower((string) config('mail.default', 'log'));
+
+        if (in_array($mailer, ['', 'array', 'log'], true)) {
+            return $this->check(
+                key: 'mail_transport',
+                label: 'Mail transport',
+                status: 'attention',
+                summary: sprintf('MAIL_MAILER is %s.', $mailer === '' ? 'not set' : $mailer),
+                detail: 'Local-only mailers do not deliver password resets, support alerts, or operator notices outside the app.',
+                action: 'Configure smtp, ses, postmark, resend, or another real outbound mail transport before relying on email alerts.'
+            );
+        }
+
+        if (! $this->hasValue(config('mail.from.address'))) {
+            return $this->check(
+                key: 'mail_transport',
+                label: 'Mail transport',
+                status: 'attention',
+                summary: 'MAIL_FROM_ADDRESS is missing.',
+                detail: 'Outbound support email needs a sender address agents and visitors can recognize.',
+                action: 'Set MAIL_FROM_ADDRESS to a monitored sender before relying on email alerts.'
+            );
+        }
+
+        return $this->check(
+            key: 'mail_transport',
+            label: 'Mail transport',
+            status: 'ready',
+            summary: sprintf('MAIL_MAILER is %s.', $mailer),
+            detail: 'Wayfindr has an outbound mail transport configured.',
+            action: 'Send a real test email after deploy so DNS, credentials, and spam controls are verified.'
         );
     }
 
@@ -198,6 +271,21 @@ class OperatorReadiness
     /**
      * @return array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
      */
+    private function backupsRestore(): array
+    {
+        return $this->check(
+            key: 'backups_restore',
+            label: 'Backups and restore',
+            status: 'manual',
+            summary: 'Confirm database and storage backups outside Wayfindr.',
+            detail: 'Wayfindr cannot prove host snapshots, database dumps, object storage retention, or restore drills from inside a request.',
+            action: 'Confirm database and storage backups are scheduled, retained, monitored, and restorable before real support traffic arrives.'
+        );
+    }
+
+    /**
+     * @return array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
+     */
     private function check(string $key, string $label, string $status, string $summary, string $detail, string $action): array
     {
         return [
@@ -218,5 +306,21 @@ class OperatorReadiness
     private function hasValue(mixed $value): bool
     {
         return is_string($value) ? trim($value) !== '' : $value !== null;
+    }
+
+    private function isLocalHost(string $host): bool
+    {
+        return in_array($host, ['localhost', '127.0.0.1', '::1'], true);
+    }
+
+    private function normalizedPublicUrl(): string
+    {
+        $url = config('app.url');
+
+        if (! is_string($url)) {
+            return '';
+        }
+
+        return rtrim(trim($url), '/');
     }
 }

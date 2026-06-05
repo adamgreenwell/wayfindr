@@ -41,7 +41,13 @@ The intended self-hosting baseline is still Docker Compose with:
 - queue worker,
 - scheduler,
 - realtime process,
+- outbound mail transport,
 - Postgres,
-- Redis.
+- Redis,
+- database and storage backups.
 
-HTTPS and secure WebSocket configuration will be required for production.
+Production installs should use a public HTTPS `APP_URL`, secure WebSocket
+configuration, a real outbound mail provider, and restorable backups. Wayfindr's
+operator readiness screens flag the pieces the app can inspect directly and
+mark backups as a manual responsibility because backup coverage lives in the
+operator's infrastructure.

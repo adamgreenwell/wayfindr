@@ -48,8 +48,8 @@ repo-scoped install flow to document for self-hosters.
 
 - Project type: Laravel.
 - Repository: your fork, for example `your-org/wayfindr`.
-- Initial deploy branch: `feat/forge-deployment-readiness` until the stack is
-  merged to `main`; use `main` for stable releases once available.
+- Initial deploy branch: `main` for stable releases, or a feature branch when
+  intentionally testing unreleased work.
 - PHP: 8.3 or newer.
 - Database: Postgres.
 - Cache/queue: Redis.
@@ -121,6 +121,11 @@ MAIL_MAILER=log
 MAIL_FROM_ADDRESS=hello@example.test
 MAIL_FROM_NAME="${APP_NAME}"
 ```
+
+Use `MAIL_MAILER=log` only for smoke installs that should not send email.
+Before real support traffic, configure a real outbound provider such as `smtp`,
+`ses`, `postmark`, or `resend`, set a monitored `MAIL_FROM_ADDRESS`, and send a
+test email from the deployed environment.
 
 Keep `BROADCAST_CONNECTION=log` until a Reverb process and WebSocket routing are
 ready. Switch it to `reverb` when the site should publish live conversation
@@ -227,8 +232,14 @@ The first owner is also marked as the initial platform operator. Open
 readiness checks. Account owners and admins can still use
 `/dashboard/readiness` for the same install checkup from the account dashboard.
 These pages flag common self-hosting setup gaps such as missing app keys,
-database connectivity problems, queue worker configuration, Reverb settings,
-storage permissions, and scheduler setup.
+local or insecure public URLs, database connectivity problems, local-only mail
+transport, queue worker configuration, Reverb settings, storage permissions,
+scheduler setup, and backup/restore planning.
+
+The backup check is intentionally manual. Wayfindr cannot prove Forge snapshots,
+database dumps, storage retention, monitoring, or restore drills from inside the
+application request. Confirm those pieces in Forge or your infrastructure
+provider before putting real visitor conversations through the instance.
 
 `WAYFINDR_VERSION` and `WAYFINDR_COMMIT` are optional release identity values.
 Set them from your deploy process when available so the operator console can
@@ -366,8 +377,12 @@ background process reloads the active release.
 15. Visit `/setup` and create the first account owner and install site.
 16. Add the queue worker and scheduler.
 17. Add the Reverb process when switching `BROADCAST_CONNECTION` to `reverb`.
-18. Sign in with the generated first agent credentials.
-19. Review `/operator` or `/dashboard/readiness` and resolve any setup gaps.
+18. Configure real outbound mail when email alerts, password resets, or
+    notifications should leave the app.
+19. Confirm database and storage backups are scheduled, retained, monitored,
+    and restorable.
+20. Sign in with the generated first agent credentials.
+21. Review `/operator` or `/dashboard/readiness` and resolve any setup gaps.
 
 ## Smoke Test
 
