@@ -14,7 +14,7 @@ An agent is a Laravel user attached to one account. Agents can sign in, view the
 
 The starter RBAC implementation stores account authority on `users.account_role` while Wayfindr still supports one account per user. A dedicated membership model can replace this when multi-account users become a real product need.
 
-Owners and admins can create new agents from the account overview. New dashboard-created agents start with the `agent` role and receive a generated temporary password that is shown once; email invitations can replace this after outbound mail readiness is part of setup. Agents can use the profile screen to update their display name, replace a temporary password after sign-in, and choose whether alerts should cover all supported sites, only assigned work, or quiet mode.
+Owners and admins can create new agents from the account overview. New dashboard-created agents start with the `agent` role and receive a generated temporary password that is shown once. When outbound mail is configured, the creator can also send the agent a welcome email with the sign-in URL and temporary password; the one-time password display remains the fallback. Agents can use the profile screen to update their display name, replace a temporary password after sign-in, and choose whether alerts should cover all supported sites, only assigned work, or quiet mode.
 
 Agents can be deactivated without deleting their historical messages, tickets, assignments, or audit records. Deactivated agents cannot log in, and existing dashboard sessions are signed out before protected routes continue. Owners can deactivate or reactivate another same-account user. Admins can deactivate or reactivate non-owner agents, but cannot manage owner or admin access.
 

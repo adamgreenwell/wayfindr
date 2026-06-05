@@ -179,7 +179,21 @@
                                 <p class="field-error">{{ $message }}</p>
                             @enderror
                         </div>
+                        <label class="check-row" for="send_welcome_email">
+                            <input
+                                id="send_welcome_email"
+                                name="send_welcome_email"
+                                type="checkbox"
+                                value="1"
+                                @checked(old('send_welcome_email'))
+                            >
+                            <span>Email the welcome message and temporary password</span>
+                        </label>
+                        @error('send_welcome_email')
+                            <p class="field-error">{{ $message }}</p>
+                        @enderror
                         <p class="field-help">A temporary password will be generated. Site access follows the current account-wide fallback until you scope agents on each site.</p>
+                        <p class="field-help">Use the email option after outbound mail is configured. The password is still shown once here as a fallback.</p>
                         <button class="button" type="submit">Create agent</button>
                     </form>
                 </section>
