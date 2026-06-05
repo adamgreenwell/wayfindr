@@ -152,6 +152,21 @@ class OperatorReadiness
             );
         }
 
+        if ($mailer === 'smtp' && $this->isLocalMailHost((string) config('mail.mailers.smtp.host'))) {
+            return $this->check(
+                key: 'mail_transport',
+                label: 'Mail transport',
+                status: 'attention',
+                summary: 'SMTP is still pointed at a local mail host.',
+                detail: sprintf(
+                    'MAIL_HOST is %s and MAIL_PORT is %s, which usually means mail is still aimed at a local development sink.',
+                    (string) config('mail.mailers.smtp.host', 'not set'),
+                    (string) config('mail.mailers.smtp.port', 'not set')
+                ),
+                action: 'Set MAIL_HOST, MAIL_PORT, and MAIL_FROM_ADDRESS to a real outbound mail provider before relying on email alerts.'
+            );
+        }
+
         if (! $this->hasValue(config('mail.from.address'))) {
             return $this->check(
                 key: 'mail_transport',
@@ -159,6 +174,17 @@ class OperatorReadiness
                 status: 'attention',
                 summary: 'MAIL_FROM_ADDRESS is missing.',
                 detail: 'Outbound support email needs a sender address agents and visitors can recognize.',
+                action: 'Set MAIL_FROM_ADDRESS to a monitored sender before relying on email alerts.'
+            );
+        }
+
+        if ($this->isPlaceholderMailFrom((string) config('mail.from.address'))) {
+            return $this->check(
+                key: 'mail_transport',
+                label: 'Mail transport',
+                status: 'attention',
+                summary: 'MAIL_FROM_ADDRESS still looks like a placeholder.',
+                detail: 'Default sender addresses make outbound support mail harder to trust and easier to lose in delivery checks.',
                 action: 'Set MAIL_FROM_ADDRESS to a monitored sender before relying on email alerts.'
             );
         }
@@ -311,6 +337,20 @@ class OperatorReadiness
     private function isLocalHost(string $host): bool
     {
         return in_array($host, ['localhost', '127.0.0.1', '::1'], true);
+    }
+
+    private function isLocalMailHost(string $host): bool
+    {
+        return $this->isLocalHost(strtolower(trim($host)));
+    }
+
+    private function isPlaceholderMailFrom(string $address): bool
+    {
+        return in_array(strtolower(trim($address)), [
+            'hello@example.com',
+            'hello@example.test',
+            'hello@wayfindr.local',
+        ], true);
     }
 
     private function normalizedPublicUrl(): string

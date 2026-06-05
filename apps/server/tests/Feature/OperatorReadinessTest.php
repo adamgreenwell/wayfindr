@@ -117,6 +117,8 @@ test('readiness diagnostics accept a public https app url and outbound mail tran
     config([
         'app.url' => 'https://support.example.test',
         'mail.default' => 'smtp',
+        'mail.mailers.smtp.host' => 'smtp.example.test',
+        'mail.mailers.smtp.port' => 587,
         'mail.from.address' => 'support@example.test',
     ]);
 
@@ -132,6 +134,25 @@ test('readiness diagnostics accept a public https app url and outbound mail tran
         'label' => 'Mail transport',
         'status' => 'ready',
         'summary' => 'MAIL_MAILER is smtp.',
+    ]);
+});
+
+test('readiness diagnostics flag smtp mail that still points at local defaults', function (): void {
+    config([
+        'mail.default' => 'smtp',
+        'mail.mailers.smtp.host' => '127.0.0.1',
+        'mail.mailers.smtp.port' => 2525,
+        'mail.from.address' => 'hello@example.com',
+    ]);
+
+    $readiness = app(OperatorReadiness::class)->summary();
+    $mail = collect($readiness['checks'])->firstWhere('key', 'mail_transport');
+
+    expect($mail)->toMatchArray([
+        'label' => 'Mail transport',
+        'status' => 'attention',
+        'summary' => 'SMTP is still pointed at a local mail host.',
+        'action' => 'Set MAIL_HOST, MAIL_PORT, and MAIL_FROM_ADDRESS to a real outbound mail provider before relying on email alerts.',
     ]);
 });
 

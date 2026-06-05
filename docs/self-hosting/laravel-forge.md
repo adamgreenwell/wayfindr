@@ -125,7 +125,9 @@ MAIL_FROM_NAME="${APP_NAME}"
 Use `MAIL_MAILER=log` only for smoke installs that should not send email.
 Before real support traffic, configure a real outbound provider such as `smtp`,
 `ses`, `postmark`, or `resend`, set a monitored `MAIL_FROM_ADDRESS`, and send a
-test email from the deployed environment.
+test email from the deployed environment. For SMTP, replace the local
+`MAIL_HOST=127.0.0.1` and `MAIL_PORT=2525` defaults with the provider's real
+host and port.
 
 Keep `BROADCAST_CONNECTION=log` until a Reverb process and WebSocket routing are
 ready. Switch it to `reverb` when the site should publish live conversation
