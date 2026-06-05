@@ -5,11 +5,12 @@ namespace App\Notifications;
 use App\Models\ConversationMessage;
 use App\Models\User;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Str;
 
-class ConversationNeedsReply extends Notification
+class ConversationNeedsReply extends Notification implements ShouldQueue
 {
     use Queueable;
 
@@ -35,6 +36,17 @@ class ConversationNeedsReply extends Notification
         }
 
         return $channels;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function viaConnections(): array
+    {
+        return [
+            'database' => 'sync',
+            'mail' => (string) config('queue.default', 'sync'),
+        ];
     }
 
     public function toMail(object $notifiable): MailMessage

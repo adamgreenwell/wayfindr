@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
 use App\Notifications\TicketAssigned;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Gate;
 
@@ -89,6 +90,32 @@ test('conversation alerts include mail when the assigned agent opts in', functio
         ->and($notification->data)->toMatchArray([
             'support_code' => 'WF-MAIL1',
             'message_preview' => 'The checkout button is still stuck.',
+        ]);
+});
+
+test('conversation alert notifications queue mail while keeping dashboard delivery synchronous', function (): void {
+    config(['queue.default' => 'redis']);
+
+    $account = Account::factory()->create();
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-MAILQ1',
+        'subject' => 'Checkout trouble',
+    ]);
+    $message = ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'The checkout button is still stuck.',
+    ]);
+
+    $notification = new ConversationNeedsReply($message);
+
+    expect($notification)
+        ->toBeInstanceOf(ShouldQueue::class)
+        ->and($notification->viaConnections())->toBe([
+            'database' => 'sync',
+            'mail' => 'redis',
         ]);
 });
 
@@ -435,6 +462,32 @@ test('ticket assignment alerts include mail when the new assignee opts in', func
     expect((new TicketAssigned($ticket->fresh(), $assigningAgent))->via($assignedAgent))
         ->toBe(['database', 'mail'])
         ->and($assignedAgent->fresh()->unreadNotifications)->toHaveCount(1);
+});
+
+test('ticket assignment notifications queue mail while keeping dashboard delivery synchronous', function (): void {
+    config(['queue.default' => 'redis']);
+
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $assigningAgent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $assignedAgent = User::factory()->for($account)->create(['name' => 'Bea Builder']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($assignedAgent, 'assignee')
+        ->create([
+            'subject' => 'Escalated checkout issue',
+            'priority' => 'high',
+        ]);
+
+    $notification = new TicketAssigned($ticket, $assigningAgent);
+
+    expect($notification)
+        ->toBeInstanceOf(ShouldQueue::class)
+        ->and($notification->viaConnections())->toBe([
+            'database' => 'sync',
+            'mail' => 'redis',
+        ]);
 });
 
 test('ticket assignment alerts honor quiet and deactivated agents', function (): void {

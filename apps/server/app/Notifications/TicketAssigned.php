@@ -5,10 +5,11 @@ namespace App\Notifications;
 use App\Models\Ticket;
 use App\Models\User;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class TicketAssigned extends Notification
+class TicketAssigned extends Notification implements ShouldQueue
 {
     use Queueable;
 
@@ -33,6 +34,17 @@ class TicketAssigned extends Notification
         }
 
         return $channels;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function viaConnections(): array
+    {
+        return [
+            'database' => 'sync',
+            'mail' => (string) config('queue.default', 'sync'),
+        ];
     }
 
     public function toMail(object $notifiable): MailMessage
