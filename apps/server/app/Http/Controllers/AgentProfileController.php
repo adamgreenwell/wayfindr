@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\AccountRole;
 use App\Models\AuditEvent;
+use App\Support\OperatorReadiness;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -13,13 +14,15 @@ use Illuminate\Validation\Rules\Password;
 
 class AgentProfileController extends Controller
 {
-    public function show(Request $request): View
+    public function show(Request $request, OperatorReadiness $readiness): View
     {
         $agent = $request->user();
 
         abort_unless($agent?->account_id, 403);
 
         $account = $agent->account()->firstOrFail();
+        $mailReadiness = collect($readiness->summary()['checks'])
+            ->firstWhere('key', 'mail_transport');
 
         return view('agent.profile.show', [
             'agent' => $agent,
@@ -31,6 +34,7 @@ class AgentProfileController extends Controller
             ],
             'alertMode' => $agent->alertMode(),
             'alertModeOptions' => $agent::alertModeOptions(),
+            'mailReadiness' => $mailReadiness,
         ]);
     }
 

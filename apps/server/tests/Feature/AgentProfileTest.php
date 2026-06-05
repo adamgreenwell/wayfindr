@@ -95,6 +95,40 @@ test('agent can update their alert preference mode', function (): void {
     ]);
 });
 
+test('agent profile flags email alerts when mail delivery needs attention', function (): void {
+    config([
+        'mail.default' => 'log',
+        'mail.from.address' => 'support@example.test',
+    ]);
+
+    $agent = User::factory()->for(Account::factory())->create();
+
+    $this->actingAs($agent)
+        ->get('/dashboard/profile')
+        ->assertOk()
+        ->assertSee('Email delivery needs attention')
+        ->assertSee('MAIL_MAILER is log.')
+        ->assertSee('Configure smtp, ses, postmark, resend, or another real outbound mail transport before relying on email alerts.');
+});
+
+test('agent profile confirms email alerts when mail delivery is ready', function (): void {
+    config([
+        'mail.default' => 'smtp',
+        'mail.mailers.smtp.host' => 'smtp.example.test',
+        'mail.mailers.smtp.port' => 587,
+        'mail.from.address' => 'support@example.test',
+    ]);
+
+    $agent = User::factory()->for(Account::factory())->create();
+
+    $this->actingAs($agent)
+        ->get('/dashboard/profile')
+        ->assertOk()
+        ->assertSee('Email delivery ready')
+        ->assertSee('MAIL_MAILER is smtp.')
+        ->assertSee('Send a real test email after deploy so DNS, credentials, and spam controls are verified.');
+});
+
 test('agent alert preference mode must be supported', function (): void {
     $agent = User::factory()->for(Account::factory())->create([
         'alert_preferences' => ['mode' => 'all'],

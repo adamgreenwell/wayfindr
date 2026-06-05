@@ -92,6 +92,12 @@
             </label>
 
             <p class="field-help">Email alerts send the same calm support signals to your inbox when mail is configured. Quiet mode still suppresses new alerts.</p>
+            <p class="field-help">
+                <span class="readiness-status" data-status="{{ $mailReadiness['status'] }}">
+                    {{ $mailReadiness['status'] === 'ready' ? 'Email delivery ready' : 'Email delivery needs attention' }}
+                </span>
+                {{ $mailReadiness['summary'] }} {{ $mailReadiness['action'] }}
+            </p>
 
             <button class="button" type="submit">Save alert preferences</button>
         </form>
