@@ -22,6 +22,12 @@ Forge is recommended, not required. Wayfindr should remain launchable anywhere
 that can run the required Laravel, Postgres, Redis, queue, scheduler, and
 realtime services.
 
+Start with [self-hosting/install.md](docs/self-hosting/install.md). Use the
+[Forge deployment guide](docs/self-hosting/laravel-forge.md) for the current
+first-class path, or the
+[generic runtime requirements](docs/self-hosting/runtime-requirements.md) when
+mapping Wayfindr to another VPS, Docker, Coolify-style, or Laravel-capable host.
+
 ## Repository Layout
 
 ```text

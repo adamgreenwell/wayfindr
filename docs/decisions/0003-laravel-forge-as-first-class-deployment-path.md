@@ -40,3 +40,7 @@ partnership, sponsorship, hosting requirement, or hidden business motive.
   can be translated to other hosts.
 - New runtime requirements should update both the Forge path and the generic
   infrastructure requirements.
+
+The generic runtime contract now lives in
+[runtime-requirements.md](../self-hosting/runtime-requirements.md). Use it as
+the baseline when translating Wayfindr to non-Forge hosts.

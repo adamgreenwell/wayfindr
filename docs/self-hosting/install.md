@@ -19,6 +19,11 @@ Use [laravel-forge.md](laravel-forge.md) for the current Forge deployment
 checklist, deploy script templates, environment values, queue worker, scheduler,
 and smoke test.
 
+Use [runtime-requirements.md](runtime-requirements.md) when translating
+Wayfindr to a non-Forge host. It documents the generic Laravel runtime contract:
+web root, environment shape, queue worker, scheduler, Reverb process, mail,
+storage, backups, and the post-install smoke path.
+
 After the application is deployed and the environment is configured, visit
 `/setup` on the Wayfindr host to create the first account owner and install
 site from the browser. The setup screen is available only while the database has
