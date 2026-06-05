@@ -9,6 +9,7 @@ use App\Models\Site;
 use App\Models\User;
 use App\Support\ExternalIssueCapability;
 use App\Support\ExternalIssueProvider;
+use App\Support\OperatorReadiness;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -78,7 +79,7 @@ class AgentSiteController extends Controller
             ->with('status', 'Site created. Copy the install snippet to finish connecting it.');
     }
 
-    public function show(Request $request, Site $site): View
+    public function show(Request $request, Site $site, OperatorReadiness $readiness): View
     {
         $this->authorizeSiteAbility($request, 'view', $site, 404);
 
@@ -113,6 +114,7 @@ class AgentSiteController extends Controller
             'externalIssueProviderConnections' => $externalIssueProviderConnections,
             'externalIssueProviders' => ExternalIssueProvider::options(),
             'maskSelectors' => $this->maskSelectors($site),
+            'operatorSmokePath' => $readiness->summary()['smoke_path'],
             'site' => $site,
             'siteActivity' => $this->siteActivityItems($site, $agent),
             'siteActivityAuditUrl' => $agent->isAdmin()

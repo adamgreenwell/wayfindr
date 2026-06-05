@@ -493,7 +493,8 @@ test('plain agents can see site access context but cannot manage it', function (
         ->assertSee('Ada Agent')
         ->assertSee('Bea Builder')
         ->assertSee('Account owners and admins manage site support access.')
-        ->assertDontSee('Save site access');
+        ->assertDontSee('Save site access')
+        ->assertDontSee('Post-install smoke path');
 
     $this->actingAs($agent)
         ->put("/dashboard/sites/{$site->id}/support-agents", [

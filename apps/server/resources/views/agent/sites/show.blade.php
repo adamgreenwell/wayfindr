@@ -178,6 +178,10 @@
                 </div>
             </section>
 
+            @if ($agent->isAdmin())
+                <x-operator-smoke-path :smoke-path="$operatorSmokePath" />
+            @endif
+
             <section class="section" aria-labelledby="support-access-heading">
                 <div class="section-header">
                     <h2 id="support-access-heading">Support access</h2>
