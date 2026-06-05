@@ -52,6 +52,7 @@ test('operator console shows safe system identity and documentation links', func
         'broadcasting.default' => 'reverb',
         'queue.default' => 'redis',
         'wayfindr.documentation.forge_url' => 'https://example.test/docs/forge',
+        'wayfindr.documentation.runtime_requirements_url' => 'https://example.test/docs/runtime',
         'wayfindr.documentation.self_hosting_url' => 'https://example.test/docs/self-hosting',
         'wayfindr.release.commit' => 'abc1234',
         'wayfindr.release.version' => '0.1.0',
@@ -83,6 +84,8 @@ test('operator console shows safe system identity and documentation links', func
         ->assertSee('reverb')
         ->assertSee('Self-hosting docs')
         ->assertSee('https://example.test/docs/self-hosting', false)
+        ->assertSee('Runtime requirements')
+        ->assertSee('https://example.test/docs/runtime', false)
         ->assertSee('Forge deploy guide')
         ->assertSee('https://example.test/docs/forge', false);
 });

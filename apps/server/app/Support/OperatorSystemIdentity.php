@@ -32,6 +32,11 @@ class OperatorSystemIdentity
                     'url' => $this->configValue('wayfindr.documentation.self_hosting_url'),
                 ],
                 [
+                    'description' => 'Generic Laravel runtime shape for non-Forge hosts, process managers, and container platforms.',
+                    'label' => 'Runtime requirements',
+                    'url' => $this->configValue('wayfindr.documentation.runtime_requirements_url'),
+                ],
+                [
                     'description' => 'Forge-specific deployment settings, process setup, and smoke-test guidance.',
                     'label' => 'Forge deploy guide',
                     'url' => $this->configValue('wayfindr.documentation.forge_url'),
