@@ -384,7 +384,8 @@ background process reloads the active release.
 19. Confirm database and storage backups are scheduled, retained, monitored,
     and restorable.
 20. Sign in with the generated first agent credentials.
-21. Review `/operator` or `/dashboard/readiness` and resolve any setup gaps.
+21. Review `/operator` or `/dashboard/readiness`, resolve any setup gaps, and
+    follow the post-install smoke path before real visitor traffic.
 
 ## Smoke Test
 

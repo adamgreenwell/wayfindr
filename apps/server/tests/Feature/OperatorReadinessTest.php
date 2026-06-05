@@ -20,6 +20,8 @@ test('account owner can inspect operator readiness diagnostics', function (): vo
         'broadcasting.connections.reverb.options.port' => 443,
         'broadcasting.connections.reverb.options.scheme' => 'https',
         'mail.default' => 'smtp',
+        'mail.mailers.smtp.host' => 'smtp.example.test',
+        'mail.mailers.smtp.port' => 587,
         'mail.from.address' => 'support@wayfindr.example.test',
         'queue.default' => 'database',
     ]);
@@ -43,7 +45,11 @@ test('account owner can inspect operator readiness diagnostics', function (): vo
         ->assertSee('Backups and restore')
         ->assertSee('Ready')
         ->assertSee('php artisan schedule:run')
-        ->assertSee('php artisan reverb:restart');
+        ->assertSee('php artisan reverb:restart')
+        ->assertSee('Post-install smoke path')
+        ->assertSee('Open the public app URL')
+        ->assertSee('Send a widget smoke test')
+        ->assertSee('Confirm backups can restore');
 });
 
 test('plain agents cannot inspect operator readiness diagnostics', function (): void {
@@ -154,6 +160,54 @@ test('readiness diagnostics flag smtp mail that still points at local defaults',
         'summary' => 'SMTP is still pointed at a local mail host.',
         'action' => 'Set MAIL_HOST, MAIL_PORT, and MAIL_FROM_ADDRESS to a real outbound mail provider before relying on email alerts.',
     ]);
+});
+
+test('readiness diagnostics include a guided post install smoke path', function (): void {
+    config([
+        'app.url' => 'https://support.example.test',
+        'mail.default' => 'smtp',
+        'mail.mailers.smtp.host' => 'smtp.example.test',
+        'mail.mailers.smtp.port' => 587,
+        'mail.from.address' => 'support@example.test',
+        'queue.default' => 'database',
+        'broadcasting.default' => 'reverb',
+        'broadcasting.connections.reverb.app_id' => 'wayfindr-production',
+        'broadcasting.connections.reverb.key' => 'wayfindr-key',
+        'broadcasting.connections.reverb.secret' => 'wayfindr-secret',
+        'broadcasting.connections.reverb.options.host' => 'support.example.test',
+        'broadcasting.connections.reverb.options.port' => 443,
+        'broadcasting.connections.reverb.options.scheme' => 'https',
+    ]);
+
+    $readiness = app(OperatorReadiness::class)->summary();
+
+    expect($readiness['smoke_path'])->sequence(
+        fn ($step) => $step->toMatchArray([
+            'key' => 'public_endpoint',
+            'label' => 'Open the public app URL',
+            'status' => 'ready',
+        ]),
+        fn ($step) => $step->toMatchArray([
+            'key' => 'outbound_mail',
+            'label' => 'Send a real email',
+            'status' => 'ready',
+        ]),
+        fn ($step) => $step->toMatchArray([
+            'key' => 'background_processes',
+            'label' => 'Confirm background workers',
+            'status' => 'manual',
+        ]),
+        fn ($step) => $step->toMatchArray([
+            'key' => 'widget_smoke',
+            'label' => 'Send a widget smoke test',
+            'status' => 'ready',
+        ]),
+        fn ($step) => $step->toMatchArray([
+            'key' => 'backup_restore',
+            'label' => 'Confirm backups can restore',
+            'status' => 'manual',
+        ]),
+    );
 });
 
 test('readiness diagnostics require an authenticated agent', function (): void {

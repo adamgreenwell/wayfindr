@@ -17,7 +17,8 @@ class OperatorReadiness
      *     checks: array<int, array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string}>,
      *     label: string,
      *     manual_count: int,
-     *     ready_count: int
+     *     ready_count: int,
+     *     smoke_path: array<int, array{action: string, key: string, label: string, status: string, status_label: string, summary: string}>
      * }
      */
     public function summary(): array
@@ -37,6 +38,7 @@ class OperatorReadiness
         $attentionCount = count(array_filter($checks, fn (array $check): bool => $check['status'] === 'attention'));
         $manualCount = count(array_filter($checks, fn (array $check): bool => $check['status'] === 'manual'));
         $readyCount = count(array_filter($checks, fn (array $check): bool => $check['status'] === 'ready'));
+        $checksByKey = collect($checks)->keyBy('key')->all();
 
         return [
             'attention_count' => $attentionCount,
@@ -44,6 +46,7 @@ class OperatorReadiness
             'label' => $attentionCount > 0 ? 'Needs attention' : 'Ready',
             'manual_count' => $manualCount,
             'ready_count' => $readyCount,
+            'smoke_path' => $this->postInstallSmokePath($checksByKey),
         ];
     }
 
@@ -310,6 +313,55 @@ class OperatorReadiness
     }
 
     /**
+     * @param  array<string, array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string}>  $checks
+     * @return array<int, array{action: string, key: string, label: string, status: string, status_label: string, summary: string}>
+     */
+    private function postInstallSmokePath(array $checks): array
+    {
+        $backgroundStatus = $this->statusFromCheck($checks, 'queue_worker') === 'attention'
+            ? 'attention'
+            : 'manual';
+
+        return [
+            $this->smokeStep(
+                key: 'public_endpoint',
+                label: 'Open the public app URL',
+                status: $this->statusFromCheck($checks, 'public_url'),
+                summary: 'Use the same HTTPS URL agents, visitors, cookies, and widget snippets will use.',
+                action: 'Open APP_URL from outside the server, confirm /up returns 200, then sign in from the public domain.'
+            ),
+            $this->smokeStep(
+                key: 'outbound_mail',
+                label: 'Send a real email',
+                status: $this->statusFromCheck($checks, 'mail_transport'),
+                summary: 'Alerts are only useful after mail leaves the server and lands in a real inbox.',
+                action: 'Trigger an agent alert or send a test message from the deployed environment, then confirm delivery.'
+            ),
+            $this->smokeStep(
+                key: 'background_processes',
+                label: 'Confirm background workers',
+                status: $backgroundStatus,
+                summary: 'Queues and the scheduler need process-manager coverage outside the request lifecycle.',
+                action: 'Verify queue:work and schedule:run are running under Forge, Supervisor, systemd, or your host.'
+            ),
+            $this->smokeStep(
+                key: 'widget_smoke',
+                label: 'Send a widget smoke test',
+                status: $this->statusFromCheck($checks, 'realtime_broadcasting'),
+                summary: 'The real support loop is visitor message, agent reply, and live updates without manual refresh.',
+                action: 'Install the widget on a smoke site, send a visitor message, reply as an agent, and confirm both sides update.'
+            ),
+            $this->smokeStep(
+                key: 'backup_restore',
+                label: 'Confirm backups can restore',
+                status: 'manual',
+                summary: 'Database and storage backups live in the operator infrastructure, not inside Wayfindr.',
+                action: 'Confirm backup schedule, retention, monitoring, and at least one restore drill before real support traffic.'
+            ),
+        ];
+    }
+
+    /**
      * @return array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
      */
     private function check(string $key, string $label, string $status, string $summary, string $detail, string $action): array
@@ -317,6 +369,25 @@ class OperatorReadiness
         return [
             'action' => $action,
             'detail' => $detail,
+            'key' => $key,
+            'label' => $label,
+            'status' => $status,
+            'status_label' => match ($status) {
+                'ready' => 'Ready',
+                'manual' => 'Manual check',
+                default => 'Needs attention',
+            },
+            'summary' => $summary,
+        ];
+    }
+
+    /**
+     * @return array{action: string, key: string, label: string, status: string, status_label: string, summary: string}
+     */
+    private function smokeStep(string $key, string $label, string $status, string $summary, string $action): array
+    {
+        return [
+            'action' => $action,
             'key' => $key,
             'label' => $label,
             'status' => $status,
@@ -351,6 +422,14 @@ class OperatorReadiness
             'hello@example.test',
             'hello@wayfindr.local',
         ], true);
+    }
+
+    /**
+     * @param  array<string, array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string}>  $checks
+     */
+    private function statusFromCheck(array $checks, string $key): string
+    {
+        return $checks[$key]['status'] ?? 'attention';
     }
 
     private function normalizedPublicUrl(): string

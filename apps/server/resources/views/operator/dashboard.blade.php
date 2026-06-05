@@ -69,6 +69,8 @@
         </div>
     </section>
 
+    <x-operator-smoke-path :smoke-path="$readiness['smoke_path']" />
+
     <section class="section" aria-labelledby="operator-readiness-checks-heading">
         <div class="section-header">
             <h2 id="operator-readiness-checks-heading">Checks</h2>
