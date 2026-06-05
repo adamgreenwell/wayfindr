@@ -115,6 +115,22 @@ test('agents can jump to a visible visitor profile by host visitor id', function
         ->assertRedirect(route('dashboard.visitors.show', $visitor));
 });
 
+test('agents can jump to a visible visitor profile by numeric host visitor id', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-numeric-host-context',
+        'external_id' => '12345',
+    ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.support-code.lookup', [
+            'support_code' => '12345',
+        ]))
+        ->assertRedirect(route('dashboard.visitors.show', $visitor));
+});
+
 test('support code lookup does not expose another account record', function (): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create();

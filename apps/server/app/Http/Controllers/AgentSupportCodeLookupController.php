@@ -44,7 +44,9 @@ class AgentSupportCodeLookupController extends Controller
                 return redirect()->route('dashboard.tickets.show', $ticket);
             }
 
-            return $this->notFound($lookupReference);
+            if (! ctype_digit($lookupReference)) {
+                return $this->notFound($lookupReference);
+            }
         }
 
         $supportCode = Str::upper($lookupReference);
