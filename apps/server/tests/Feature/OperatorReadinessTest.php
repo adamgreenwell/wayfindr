@@ -44,6 +44,7 @@ test('account owner can inspect operator readiness diagnostics', function (): vo
         ->assertSee('Scheduler')
         ->assertSee('Backups and restore')
         ->assertSee('Ready')
+        ->assertSee('php artisan wayfindr:mail-test --to=you@example.com')
         ->assertSee('php artisan schedule:run')
         ->assertSee('php artisan reverb:restart')
         ->assertSee('Post-install smoke path')
@@ -140,6 +141,7 @@ test('readiness diagnostics accept a public https app url and outbound mail tran
         'label' => 'Mail transport',
         'status' => 'ready',
         'summary' => 'MAIL_MAILER is smtp.',
+        'action' => 'Run php artisan wayfindr:mail-test --to=you@example.com from apps/server after deploy. For STARTTLS ports such as 587 or 2587, leave MAIL_SCHEME unset; use smtps only for port 465.',
     ]);
 });
 
@@ -211,6 +213,7 @@ test('readiness diagnostics include a guided post install smoke path', function 
             'key' => 'outbound_mail',
             'label' => 'Send a real email',
             'status' => 'ready',
+            'action' => 'Run php artisan wayfindr:mail-test --to=you@example.com from apps/server, then confirm the message lands in a real inbox.',
         ]),
         fn ($step) => $step->toMatchArray([
             'key' => 'background_processes',

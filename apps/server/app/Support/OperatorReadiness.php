@@ -212,7 +212,7 @@ class OperatorReadiness
             status: 'ready',
             summary: sprintf('MAIL_MAILER is %s.', $mailer),
             detail: 'Wayfindr has an outbound mail transport configured.',
-            action: 'Send a real test email after deploy so DNS, credentials, and spam controls are verified.'
+            action: 'Run php artisan wayfindr:mail-test --to=you@example.com from apps/server after deploy. For STARTTLS ports such as 587 or 2587, leave MAIL_SCHEME unset; use smtps only for port 465.'
         );
     }
 
@@ -349,7 +349,7 @@ class OperatorReadiness
                 label: 'Send a real email',
                 status: $this->statusFromCheck($checks, 'mail_transport'),
                 summary: 'Alerts are only useful after mail leaves the server and lands in a real inbox.',
-                action: 'Trigger an agent alert or send a test message from the deployed environment, then confirm delivery.'
+                action: 'Run php artisan wayfindr:mail-test --to=you@example.com from apps/server, then confirm the message lands in a real inbox.'
             ),
             $this->smokeStep(
                 key: 'background_processes',

@@ -126,7 +126,7 @@ test('agent profile confirms email alerts when mail delivery is ready', function
         ->assertOk()
         ->assertSee('Email delivery ready')
         ->assertSee('MAIL_MAILER is smtp.')
-        ->assertSee('Send a real test email after deploy so DNS, credentials, and spam controls are verified.');
+        ->assertSee('php artisan wayfindr:mail-test --to=you@example.com');
 });
 
 test('agent alert preference mode must be supported', function (): void {

@@ -107,6 +107,22 @@ MAIL_FROM_ADDRESS=support@example.com
 MAIL_FROM_NAME="${APP_NAME}"
 ```
 
+For SMTP on STARTTLS ports such as `587` or `2587`, leave `MAIL_SCHEME` unset
+or `null`; Laravel's SMTP transport does not accept `tls` as a scheme. Use
+`MAIL_SCHEME=smtps` only for implicit TLS providers on port `465`.
+
+After configuring outbound mail, run a real smoke test from the Laravel
+application directory:
+
+```bash
+cd apps/server
+php artisan wayfindr:mail-test --to="verified-recipient@example.com"
+```
+
+The command prints the mailer, SMTP host, sender, and recipient without
+printing SMTP credentials. If the provider is still sandboxed, send to a
+verified recipient until the sending domain is approved for normal delivery.
+
 Generate the app key from the Laravel application directory:
 
 ```bash
@@ -236,8 +252,10 @@ After deploy:
 3. Review `/operator` or `/dashboard/readiness`.
 4. Resolve any app key, database, queue, mail, Reverb, storage, scheduler, or
    backup warnings.
-5. Send a test visitor message through the widget or smoke script.
-6. Reply from the agent dashboard and confirm the visitor can see the reply.
+5. Send a real mail smoke test with `php artisan wayfindr:mail-test
+   --to="verified-recipient@example.com"`.
+6. Send a test visitor message through the widget or smoke script.
+7. Reply from the agent dashboard and confirm the visitor can see the reply.
 
 The smoke path is intentionally boring. It should catch wiring mistakes before
 real support traffic starts flowing through the instance.
