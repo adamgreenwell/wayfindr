@@ -12,6 +12,7 @@ use App\Notifications\TicketAssigned;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\URL;
 
 uses(RefreshDatabase::class);
 
@@ -117,6 +118,36 @@ test('conversation alert notifications queue mail while keeping dashboard delive
             'database' => 'sync',
             'mail' => 'redis',
         ]);
+});
+
+test('conversation alert email includes searchable support context', function (): void {
+    URL::useOrigin('https://wayfindr.example.test');
+    URL::forceHttps();
+
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-MAILREF',
+        'subject' => 'Checkout trouble',
+    ]);
+    $message = ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'The checkout button is still stuck.',
+    ]);
+
+    $mail = (new ConversationNeedsReply($message))->toMail($agent);
+
+    expect($mail->subject)->toBe('Wayfindr reply needed: Checkout trouble')
+        ->and($mail->introLines)->toBe([
+            'Acme Docs has a visitor message waiting for you.',
+            'Support code: WF-MAILREF',
+            'The checkout button is still stuck.',
+        ])
+        ->and($mail->actionText)->toBe('Open conversation')
+        ->and($mail->actionUrl)->toBe('https://wayfindr.example.test/dashboard/conversations/WF-MAILREF');
 });
 
 test('conversation alerts stay dashboard only when email alerts are disabled', function (): void {
@@ -488,6 +519,35 @@ test('ticket assignment notifications queue mail while keeping dashboard deliver
             'database' => 'sync',
             'mail' => 'redis',
         ]);
+});
+
+test('ticket assignment email includes searchable ticket context', function (): void {
+    URL::useOrigin('https://wayfindr.example.test');
+    URL::forceHttps();
+
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $assigningAgent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $assignedAgent = User::factory()->for($account)->create(['name' => 'Bea Builder']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($assignedAgent, 'assignee')
+        ->create([
+            'subject' => 'Escalated checkout issue',
+            'priority' => 'high',
+        ]);
+
+    $mail = (new TicketAssigned($ticket, $assigningAgent))->toMail($assignedAgent);
+
+    expect($mail->subject)->toBe('Wayfindr ticket assigned: Escalated checkout issue')
+        ->and($mail->introLines)->toBe([
+            'Ada Agent assigned you a ticket on Acme Docs.',
+            "Ticket: #{$ticket->id}",
+            'Priority: High',
+        ])
+        ->and($mail->actionText)->toBe('Open ticket')
+        ->and($mail->actionUrl)->toBe("https://wayfindr.example.test/dashboard/tickets/{$ticket->id}");
 });
 
 test('ticket assignment alerts honor quiet and deactivated agents', function (): void {

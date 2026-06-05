@@ -52,6 +52,7 @@ class TicketAssigned extends Notification implements ShouldQueue
         return (new MailMessage)
             ->subject('Wayfindr ticket assigned: '.$this->ticket->subject)
             ->line($this->assignedBy->name.' assigned you a ticket on '.$this->ticket->site->name.'.')
+            ->line('Ticket: #'.$this->ticket->id)
             ->line('Priority: '.ucfirst($this->ticket->priority))
             ->action('Open ticket', route('dashboard.tickets.show', $this->ticket));
     }
