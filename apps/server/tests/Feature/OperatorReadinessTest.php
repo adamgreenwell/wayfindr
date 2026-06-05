@@ -45,7 +45,10 @@ test('account owner can inspect operator readiness diagnostics', function (): vo
         ->assertSee('Backups and restore')
         ->assertSee('Ready')
         ->assertSee('php artisan wayfindr:mail-test --to=you@example.com')
+        ->assertSee('php artisan queue:failed')
+        ->assertSee('php artisan queue:work')
         ->assertSee('php artisan schedule:run')
+        ->assertSee('php artisan reverb:start --host=127.0.0.1 --port=8080')
         ->assertSee('php artisan reverb:restart')
         ->assertSee('Post-install smoke path')
         ->assertSee('Open the public app URL')
@@ -219,6 +222,7 @@ test('readiness diagnostics include a guided post install smoke path', function 
             'key' => 'background_processes',
             'label' => 'Confirm background workers',
             'status' => 'manual',
+            'action' => 'Confirm php artisan queue:work is managed by Forge, Supervisor, systemd, or your host; run php artisan queue:failed to inspect failures; and verify * * * * * cd /path/to/apps/server && php artisan schedule:run is configured once per minute.',
         ]),
         fn ($step) => $step->toMatchArray([
             'key' => 'widget_smoke',

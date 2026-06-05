@@ -54,6 +54,26 @@ manager, or separate containers. The scheduler can be cron, a platform
 scheduled task, or a dedicated process that invokes `schedule:run` once per
 minute.
 
+After the first deploy, use a few boring process checks before trusting the
+install with visitor traffic:
+
+```bash
+cd apps/server
+
+# Queue smoke: there should be no failed jobs after a visitor/agent smoke test.
+php artisan queue:failed
+
+# Scheduler shape: configure this once per minute through cron or your host.
+* * * * * cd /path/to/apps/server && php artisan schedule:run
+
+# Reverb shape: keep this under a process manager when realtime is enabled.
+php artisan reverb:start --host=127.0.0.1 --port=8080
+```
+
+If the queue is `sync` or `null`, switch to `database` or `redis` before real
+traffic. If Reverb is enabled, keep `php artisan reverb:restart` in the deploy
+script so long-running WebSocket workers refresh after releases.
+
 ## Environment
 
 Manage secrets in the host platform, not in Git. The important production-like
@@ -254,8 +274,10 @@ After deploy:
    backup warnings.
 5. Send a real mail smoke test with `php artisan wayfindr:mail-test
    --to="verified-recipient@example.com"`.
-6. Send a test visitor message through the widget or smoke script.
-7. Reply from the agent dashboard and confirm the visitor can see the reply.
+6. Confirm `php artisan queue:work`, the one-minute scheduler, and Reverb are
+   managed by the host or process manager.
+7. Send a test visitor message through the widget or smoke script.
+8. Reply from the agent dashboard and confirm the visitor can see the reply.
 
 The smoke path is intentionally boring. It should catch wiring mistakes before
 real support traffic starts flowing through the instance.

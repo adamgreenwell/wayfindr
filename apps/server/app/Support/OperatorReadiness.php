@@ -230,7 +230,7 @@ class OperatorReadiness
                 status: 'attention',
                 summary: sprintf('QUEUE_CONNECTION is %s.', $connection),
                 detail: 'Synchronous queues are useful locally, but production installs should run durable background workers.',
-                action: 'Use database or redis queues and run php artisan queue:work under Supervisor or your process manager.'
+                action: 'Use database or redis queues and run php artisan queue:work under Forge, Supervisor, systemd, or your process manager.'
             );
         }
 
@@ -240,7 +240,7 @@ class OperatorReadiness
             status: 'ready',
             summary: sprintf('QUEUE_CONNECTION is %s.', $connection),
             detail: 'The queue driver is configured for background work.',
-            action: 'Make sure a queue worker is running in Forge, systemd, Supervisor, or your deployment platform.'
+            action: 'Confirm php artisan queue:work is managed by Forge, Supervisor, systemd, or your deployment platform, then run php artisan queue:failed after smoke tests to inspect failures.'
         );
     }
 
@@ -259,7 +259,7 @@ class OperatorReadiness
             summary: $realtime['label'],
             detail: $realtime['message'],
             action: $status === 'ready'
-                ? 'Keep php artisan reverb:restart in the deploy script so long-running Reverb workers refresh cleanly.'
+                ? 'Run php artisan reverb:start --host=127.0.0.1 --port=8080 under your process manager, and keep php artisan reverb:restart in the deploy script so long-running Reverb workers refresh cleanly.'
                 : 'Set BROADCAST_CONNECTION=reverb plus REVERB_APP_ID, REVERB_APP_KEY, REVERB_APP_SECRET, REVERB_HOST, REVERB_PORT, and REVERB_SCHEME.'
         );
     }
@@ -307,7 +307,7 @@ class OperatorReadiness
             status: 'manual',
             summary: 'Confirm the Laravel scheduler is running once per minute.',
             detail: 'Wayfindr cannot safely prove cron or external scheduler setup from inside the request.',
-            action: 'Configure * * * * * php artisan schedule:run or the equivalent scheduled job in your host.'
+            action: 'Configure * * * * * cd /path/to/apps/server && php artisan schedule:run or the equivalent scheduled job in your host.'
         );
     }
 
@@ -356,7 +356,7 @@ class OperatorReadiness
                 label: 'Confirm background workers',
                 status: $backgroundStatus,
                 summary: 'Queues and the scheduler need process-manager coverage outside the request lifecycle.',
-                action: 'Verify queue:work and schedule:run are running under Forge, Supervisor, systemd, or your host.'
+                action: 'Confirm php artisan queue:work is managed by Forge, Supervisor, systemd, or your host; run php artisan queue:failed to inspect failures; and verify * * * * * cd /path/to/apps/server && php artisan schedule:run is configured once per minute.'
             ),
             $this->smokeStep(
                 key: 'widget_smoke',
