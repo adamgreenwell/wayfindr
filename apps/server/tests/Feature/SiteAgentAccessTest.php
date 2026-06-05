@@ -2,6 +2,7 @@
 
 use App\Broadcasting\ConversationChannel;
 use App\Enums\AccountRole;
+use App\Enums\PlatformRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
@@ -504,6 +505,25 @@ test('plain agents can see site access context but cannot manage it', function (
 
     expect($site->fresh()->eligibleSupportAgents()->pluck('users.id')->sort()->values()->all())
         ->toBe([$agent->id, $teammate->id]);
+});
+
+test('site assigned platform operators see the operator smoke path', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $operator = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'platform_role' => PlatformRole::Operator,
+        'name' => 'Olive Operator',
+    ]);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $site->supportAgents()->attach($operator->id);
+
+    $this->actingAs($operator)
+        ->get("/dashboard/sites/{$site->id}")
+        ->assertOk()
+        ->assertSee('Open operator console')
+        ->assertSee('Post-install smoke path')
+        ->assertSee('Confirm background workers')
+        ->assertSee('php artisan queue:failed');
 });
 
 test('admins can review recent site access activity from the site settings page', function (): void {

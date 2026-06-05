@@ -178,7 +178,7 @@
                 </div>
             </section>
 
-            @if ($agent->isAdmin())
+            @if ($agent->isAdmin() || $agent->isPlatformOperator())
                 <x-operator-smoke-path :smoke-path="$operatorSmokePath" />
             @endif
 
