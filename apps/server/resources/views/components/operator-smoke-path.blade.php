@@ -1,4 +1,5 @@
 @props([
+    'confirmationRoute' => null,
     'smokePath' => [],
 ])
 
@@ -26,6 +27,7 @@
                 </div>
 
                 <p class="readiness-action">{{ $step['action'] }}</p>
+                <x-operator-readiness-confirmation-form :action="$confirmationRoute" :item="$step" />
             </article>
         @endforeach
     </div>

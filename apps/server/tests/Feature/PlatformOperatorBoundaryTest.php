@@ -3,6 +3,7 @@
 use App\Enums\AccountRole;
 use App\Enums\PlatformRole;
 use App\Models\Account;
+use App\Models\AuditEvent;
 use App\Models\User;
 use Illuminate\Foundation\Application as LaravelApplication;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -43,6 +44,64 @@ test('explicit platform operators can inspect the operator console', function ()
         ->assertSee('Post-install smoke path')
         ->assertSee('Send a widget smoke test')
         ->assertSee('Platform operator access does not grant support data access.');
+});
+
+test('platform operators can confirm manual readiness items from the operator console', function (): void {
+    $account = Account::factory()->create(['name' => 'Wayfindr Ops']);
+    $operator = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'platform_role' => PlatformRole::Operator,
+        'name' => 'Olive Operator',
+    ]);
+
+    $this->actingAs($operator)
+        ->post('/operator/readiness/confirmations', [
+            'key' => 'backups_restore',
+            'note' => 'Snapshot and database restore tested.',
+        ])
+        ->assertRedirect('/operator');
+
+    $this->assertDatabaseHas('operator_readiness_confirmations', [
+        'key' => 'backups_restore',
+        'confirmed_by_id' => $operator->id,
+        'note' => 'Snapshot and database restore tested.',
+    ]);
+
+    $auditEvent = AuditEvent::query()
+        ->where('action', 'operator_readiness.confirmed')
+        ->firstOrFail();
+
+    expect($auditEvent->account_id)
+        ->toBe($account->id)
+        ->and($auditEvent->actor_id)->toBe($operator->id)
+        ->and($auditEvent->metadata)->toMatchArray([
+            'key' => 'backups_restore',
+            'note' => 'Snapshot and database restore tested.',
+        ]);
+
+    $this->actingAs($operator)
+        ->get('/operator')
+        ->assertOk()
+        ->assertSee('Backups and restore confirmed.')
+        ->assertSee('Confirmed by Olive Operator')
+        ->assertSee('Snapshot and database restore tested.');
+});
+
+test('platform operators cannot confirm unsupported readiness keys', function (): void {
+    $operator = User::factory()->for(Account::factory())->create([
+        'platform_role' => PlatformRole::Operator,
+    ]);
+
+    $this->actingAs($operator)
+        ->post('/operator/readiness/confirmations', [
+            'key' => 'database_connection',
+            'note' => 'Trying to override an automatic check.',
+        ])
+        ->assertInvalid('key');
+
+    $this->assertDatabaseMissing('operator_readiness_confirmations', [
+        'key' => 'database_connection',
+    ]);
 });
 
 test('operator console shows safe system identity and documentation links', function (): void {

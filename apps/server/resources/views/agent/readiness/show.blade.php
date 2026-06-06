@@ -1,4 +1,6 @@
 <x-layouts.app title="Operator Readiness" :agent="$agent" :account="$account">
+            @php($readinessConfirmationRoute = route('dashboard.readiness.confirmations.store'))
+
             <h1>Operator readiness</h1>
             <p class="lede">A calm install checkup for the pieces that usually make self-hosted support feel mysterious.</p>
 
@@ -30,9 +32,9 @@
                 </div>
             </section>
 
-            <x-operator-next-step :next-step="$readiness['next_step']" />
+            <x-operator-next-step :confirmation-route="$readinessConfirmationRoute" :next-step="$readiness['next_step']" />
 
-            <x-operator-smoke-path :smoke-path="$readiness['smoke_path']" />
+            <x-operator-smoke-path :confirmation-route="$readinessConfirmationRoute" :smoke-path="$readiness['smoke_path']" />
 
             <section class="section" aria-labelledby="readiness-checks-heading">
                 <div class="section-header">
@@ -55,6 +57,7 @@
 
                             <p class="lede">{{ $check['detail'] }}</p>
                             <p class="readiness-action">{{ $check['action'] }}</p>
+                            <x-operator-readiness-confirmation-form :action="$readinessConfirmationRoute" :item="$check" />
                         </article>
                     @endforeach
                 </div>

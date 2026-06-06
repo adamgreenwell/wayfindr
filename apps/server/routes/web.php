@@ -23,6 +23,7 @@ use App\Http\Controllers\AgentVisitorController;
 use App\Http\Controllers\Auth\SessionController;
 use App\Http\Controllers\FirstRunSetupController;
 use App\Http\Controllers\OperatorDashboardController;
+use App\Http\Controllers\OperatorReadinessConfirmationController;
 use App\Http\Controllers\Widget\WidgetScriptController;
 use App\Http\Middleware\EnsureAgentIsActive;
 use App\Http\Middleware\EnsurePlatformOperator;
@@ -78,6 +79,8 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.account.reply-templates.archive');
     Route::get('/dashboard/readiness', AgentReadinessController::class)
         ->name('dashboard.readiness.show');
+    Route::post('/dashboard/readiness/confirmations', [OperatorReadinessConfirmationController::class, 'storeFromDashboard'])
+        ->name('dashboard.readiness.confirmations.store');
     Route::post('/dashboard/account/agents', [AgentAccountAgentController::class, 'store'])
         ->name('dashboard.account.agents.store');
     Route::put('/dashboard/account/agents/{agent}/role', AgentAccountAgentRoleController::class)
@@ -164,4 +167,6 @@ Route::middleware(['auth', EnsureAgentIsActive::class, EnsurePlatformOperator::c
     ->name('operator.')
     ->group(function (): void {
         Route::get('/', OperatorDashboardController::class)->name('dashboard');
+        Route::post('/readiness/confirmations', [OperatorReadinessConfirmationController::class, 'storeFromOperator'])
+            ->name('readiness.confirmations.store');
     });

@@ -1,4 +1,6 @@
 <x-layouts.app title="Operator console">
+    @php($readinessConfirmationRoute = route('operator.readiness.confirmations.store'))
+
     <p><a class="text-link" href="{{ route('dashboard') }}">Back to dashboard</a></p>
     <h1>Operator console</h1>
     <p class="lede">
@@ -69,9 +71,9 @@
         </div>
     </section>
 
-    <x-operator-next-step :next-step="$readiness['next_step']" />
+    <x-operator-next-step :confirmation-route="$readinessConfirmationRoute" :next-step="$readiness['next_step']" />
 
-    <x-operator-smoke-path :smoke-path="$readiness['smoke_path']" />
+    <x-operator-smoke-path :confirmation-route="$readinessConfirmationRoute" :smoke-path="$readiness['smoke_path']" />
 
     <section class="section" aria-labelledby="operator-readiness-checks-heading">
         <div class="section-header">
@@ -94,6 +96,7 @@
 
                     <p class="lede">{{ $check['detail'] }}</p>
                     <p class="readiness-action">{{ $check['action'] }}</p>
+                    <x-operator-readiness-confirmation-form :action="$readinessConfirmationRoute" :item="$check" />
                 </article>
             @endforeach
         </div>

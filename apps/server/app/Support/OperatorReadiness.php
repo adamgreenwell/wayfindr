@@ -2,14 +2,30 @@
 
 namespace App\Support;
 
+use App\Models\OperatorReadinessConfirmation;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Throwable;
 
 class OperatorReadiness
 {
+    /** @var array<string, OperatorReadinessConfirmation> */
+    private array $confirmations = [];
+
     public function __construct(
         private readonly RealtimeHealth $realtimeHealth,
     ) {}
+
+    /**
+     * @return array<int, string>
+     */
+    public static function confirmableKeys(): array
+    {
+        return [
+            'scheduler',
+            'backups_restore',
+        ];
+    }
 
     /**
      * @return array{
@@ -24,6 +40,8 @@ class OperatorReadiness
      */
     public function summary(): array
     {
+        $this->loadConfirmations();
+
         $checks = [
             $this->applicationKey(),
             $this->publicUrl(),
@@ -51,6 +69,25 @@ class OperatorReadiness
             'ready_count' => $readyCount,
             'smoke_path' => $smokePath,
         ];
+    }
+
+    private function loadConfirmations(): void
+    {
+        try {
+            if (! Schema::hasTable('operator_readiness_confirmations')) {
+                $this->confirmations = [];
+
+                return;
+            }
+
+            $this->confirmations = OperatorReadinessConfirmation::query()
+                ->with('confirmedBy')
+                ->get()
+                ->keyBy('key')
+                ->all();
+        } catch (Throwable) {
+            $this->confirmations = [];
+        }
     }
 
     /**
@@ -304,10 +341,9 @@ class OperatorReadiness
      */
     private function scheduler(): array
     {
-        return $this->check(
+        return $this->manualCheck(
             key: 'scheduler',
             label: 'Scheduler',
-            status: 'manual',
             summary: 'Confirm the Laravel scheduler is running once per minute.',
             detail: 'Wayfindr cannot safely prove cron or external scheduler setup from inside the request.',
             action: 'Configure * * * * * cd /path/to/apps/server && php artisan schedule:run or the equivalent scheduled job in your host.'
@@ -319,10 +355,9 @@ class OperatorReadiness
      */
     private function backupsRestore(): array
     {
-        return $this->check(
+        return $this->manualCheck(
             key: 'backups_restore',
             label: 'Backups and restore',
-            status: 'manual',
             summary: 'Confirm database and storage backups outside Wayfindr.',
             detail: 'Wayfindr cannot prove host snapshots, database dumps, object storage retention, or restore drills from inside a request.',
             action: 'Confirm database and storage backups are scheduled, retained, monitored, and restorable before real support traffic arrives.'
@@ -337,7 +372,9 @@ class OperatorReadiness
     {
         $backgroundStatus = $this->statusFromCheck($checks, 'queue_worker') === 'attention'
             ? 'attention'
-            : 'manual';
+            : $this->statusFromCheck($checks, 'scheduler');
+        $schedulerCheck = $checks['scheduler'] ?? null;
+        $backupsCheck = $checks['backups_restore'] ?? null;
 
         return [
             $this->smokeStep(
@@ -359,7 +396,10 @@ class OperatorReadiness
                 label: 'Confirm background workers',
                 status: $backgroundStatus,
                 summary: 'Queues and the scheduler need process-manager coverage outside the request lifecycle.',
-                action: 'Confirm php artisan queue:work is managed by Forge, Supervisor, systemd, or your host; run php artisan queue:failed to inspect failures; and verify * * * * * cd /path/to/apps/server && php artisan schedule:run is configured once per minute.'
+                action: 'Confirm php artisan queue:work is managed by Forge, Supervisor, systemd, or your host; run php artisan queue:failed to inspect failures; and verify * * * * * cd /path/to/apps/server && php artisan schedule:run is configured once per minute.',
+                confirmationKey: $backgroundStatus === 'attention' ? null : 'scheduler',
+                confirmable: $backgroundStatus !== 'attention',
+                confirmation: $schedulerCheck['confirmation'] ?? null,
             ),
             $this->smokeStep(
                 key: 'widget_smoke',
@@ -371,10 +411,69 @@ class OperatorReadiness
             $this->smokeStep(
                 key: 'backup_restore',
                 label: 'Confirm backups can restore',
-                status: 'manual',
+                status: $this->statusFromCheck($checks, 'backups_restore'),
                 summary: 'Database and storage backups live in the operator infrastructure, not inside Wayfindr.',
-                action: 'Confirm backup schedule, retention, monitoring, and at least one restore drill before real support traffic.'
+                action: 'Confirm backup schedule, retention, monitoring, and at least one restore drill before real support traffic.',
+                confirmationKey: 'backups_restore',
+                confirmable: true,
+                confirmation: $backupsCheck['confirmation'] ?? null,
             ),
+        ];
+    }
+
+    /**
+     * @return array{action: string, confirmation: array{confirmed_at: string|null, confirmed_by: string, key: string, note: string|null}|null, confirmation_key: string, confirmable: bool, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
+     */
+    private function manualCheck(string $key, string $label, string $summary, string $detail, string $action): array
+    {
+        $confirmation = $this->confirmations[$key] ?? null;
+
+        if ($confirmation) {
+            return $this->check(
+                key: $key,
+                label: $label,
+                status: 'ready',
+                summary: "{$label} confirmed.",
+                detail: $this->confirmationDetail($confirmation),
+                action: 'Refresh this confirmation if the process manager, schedule, backup policy, or restore proof changes.',
+                confirmable: true,
+                confirmation: $this->confirmationPayload($confirmation),
+                confirmationKey: $key,
+            );
+        }
+
+        return $this->check(
+            key: $key,
+            label: $label,
+            status: 'manual',
+            summary: $summary,
+            detail: $detail,
+            action: $action,
+            confirmable: true,
+            confirmationKey: $key,
+        );
+    }
+
+    private function confirmationDetail(OperatorReadinessConfirmation $confirmation): string
+    {
+        $confirmedBy = $confirmation->confirmedBy?->name ?? 'Unknown operator';
+        $note = trim((string) $confirmation->note);
+
+        return $note !== ''
+            ? "Confirmed by {$confirmedBy}. Note: {$note}"
+            : "Confirmed by {$confirmedBy}.";
+    }
+
+    /**
+     * @return array{confirmed_at: string|null, confirmed_by: string, key: string, note: string|null}
+     */
+    private function confirmationPayload(OperatorReadinessConfirmation $confirmation): array
+    {
+        return [
+            'confirmed_at' => $confirmation->confirmed_at?->toIso8601String(),
+            'confirmed_by' => $confirmation->confirmedBy?->name ?? 'Unknown operator',
+            'key' => $confirmation->key,
+            'note' => $confirmation->note,
         ];
     }
 
@@ -397,13 +496,8 @@ class OperatorReadiness
         foreach ($smokePath as $step) {
             if ($step['status'] === 'manual') {
                 return [
-                    'action' => $step['action'],
+                    ...$step,
                     'detail' => $step['summary'],
-                    'key' => $step['key'],
-                    'label' => $step['label'],
-                    'status' => $step['status'],
-                    'status_label' => $step['status_label'],
-                    'summary' => $step['summary'],
                 ];
             }
         }
@@ -421,10 +515,22 @@ class OperatorReadiness
     /**
      * @return array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
      */
-    private function check(string $key, string $label, string $status, string $summary, string $detail, string $action): array
-    {
+    private function check(
+        string $key,
+        string $label,
+        string $status,
+        string $summary,
+        string $detail,
+        string $action,
+        bool $confirmable = false,
+        ?array $confirmation = null,
+        ?string $confirmationKey = null,
+    ): array {
         return [
             'action' => $action,
+            'confirmation' => $confirmation,
+            'confirmation_key' => $confirmationKey ?? $key,
+            'confirmable' => $confirmable,
             'detail' => $detail,
             'key' => $key,
             'label' => $label,
@@ -441,10 +547,21 @@ class OperatorReadiness
     /**
      * @return array{action: string, key: string, label: string, status: string, status_label: string, summary: string}
      */
-    private function smokeStep(string $key, string $label, string $status, string $summary, string $action): array
-    {
+    private function smokeStep(
+        string $key,
+        string $label,
+        string $status,
+        string $summary,
+        string $action,
+        ?string $confirmationKey = null,
+        bool $confirmable = false,
+        ?array $confirmation = null,
+    ): array {
         return [
             'action' => $action,
+            'confirmation' => $confirmation,
+            'confirmation_key' => $confirmationKey ?? $key,
+            'confirmable' => $confirmable,
             'key' => $key,
             'label' => $label,
             'status' => $status,

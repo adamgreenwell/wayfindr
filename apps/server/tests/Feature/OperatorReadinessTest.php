@@ -2,9 +2,12 @@
 
 use App\Enums\AccountRole;
 use App\Models\Account;
+use App\Models\AuditEvent;
+use App\Models\OperatorReadinessConfirmation;
 use App\Models\User;
 use App\Support\OperatorReadiness;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
@@ -141,11 +144,176 @@ test('readiness diagnostics recommend manual smoke confirmation when no attentio
 
     expect($readiness['next_step'])->toMatchArray([
         'key' => 'background_processes',
+        'confirmation_key' => 'scheduler',
+        'confirmable' => true,
         'label' => 'Confirm background workers',
         'status' => 'manual',
         'status_label' => 'Manual check',
         'summary' => 'Queues and the scheduler need process-manager coverage outside the request lifecycle.',
         'action' => 'Confirm php artisan queue:work is managed by Forge, Supervisor, systemd, or your host; run php artisan queue:failed to inspect failures; and verify * * * * * cd /path/to/apps/server && php artisan schedule:run is configured once per minute.',
+    ]);
+});
+
+test('readiness diagnostics treat confirmed manual items as ready', function (): void {
+    config([
+        'app.url' => 'https://support.example.test',
+        'app.key' => 'base64:'.base64_encode(str_repeat('a', 32)),
+        'broadcasting.default' => 'reverb',
+        'broadcasting.connections.reverb.app_id' => 'wayfindr-production',
+        'broadcasting.connections.reverb.key' => 'wayfindr-key',
+        'broadcasting.connections.reverb.secret' => 'wayfindr-secret',
+        'broadcasting.connections.reverb.options.host' => 'support.example.test',
+        'broadcasting.connections.reverb.options.port' => 443,
+        'broadcasting.connections.reverb.options.scheme' => 'https',
+        'mail.default' => 'smtp',
+        'mail.mailers.smtp.host' => 'smtp.example.test',
+        'mail.mailers.smtp.port' => 587,
+        'mail.from.address' => 'support@example.test',
+        'queue.default' => 'database',
+    ]);
+
+    $operator = User::factory()->create(['name' => 'Olive Operator']);
+
+    OperatorReadinessConfirmation::query()->create([
+        'key' => 'scheduler',
+        'confirmed_by_id' => $operator->id,
+        'confirmed_at' => now()->subMinute(),
+        'note' => 'Forge scheduler is running every minute.',
+    ]);
+
+    OperatorReadinessConfirmation::query()->create([
+        'key' => 'backups_restore',
+        'confirmed_by_id' => $operator->id,
+        'confirmed_at' => now(),
+        'note' => 'Database restore was tested.',
+    ]);
+
+    $readiness = app(OperatorReadiness::class)->summary();
+    $scheduler = collect($readiness['checks'])->firstWhere('key', 'scheduler');
+    $backups = collect($readiness['checks'])->firstWhere('key', 'backups_restore');
+    $backgroundProcesses = collect($readiness['smoke_path'])->firstWhere('key', 'background_processes');
+    $backupRestore = collect($readiness['smoke_path'])->firstWhere('key', 'backup_restore');
+
+    expect($readiness)
+        ->attention_count->toBe(0)
+        ->manual_count->toBe(0)
+        ->and($scheduler)->toMatchArray([
+            'status' => 'ready',
+            'status_label' => 'Ready',
+            'summary' => 'Scheduler confirmed.',
+        ])
+        ->and($scheduler['confirmation'])->toMatchArray([
+            'key' => 'scheduler',
+            'confirmed_by' => 'Olive Operator',
+            'note' => 'Forge scheduler is running every minute.',
+        ])
+        ->and($scheduler['confirmation']['confirmed_at'])->not->toBeNull()
+        ->and($backups)->toMatchArray([
+            'status' => 'ready',
+            'summary' => 'Backups and restore confirmed.',
+        ])
+        ->and($backgroundProcesses)->toMatchArray([
+            'status' => 'ready',
+            'confirmation_key' => 'scheduler',
+        ])
+        ->and($backupRestore)->toMatchArray([
+            'status' => 'ready',
+            'confirmation_key' => 'backups_restore',
+        ])
+        ->and($readiness['next_step'])->toMatchArray([
+            'key' => 'ready_for_traffic',
+            'status' => 'ready',
+            'label' => 'Ready for traffic',
+        ]);
+});
+
+test('readiness diagnostics skip confirmation lookup when the confirmation table is unavailable', function (): void {
+    config([
+        'app.url' => 'https://support.example.test',
+        'app.key' => 'base64:'.base64_encode(str_repeat('a', 32)),
+        'broadcasting.default' => 'reverb',
+        'broadcasting.connections.reverb.app_id' => 'wayfindr-production',
+        'broadcasting.connections.reverb.key' => 'wayfindr-key',
+        'broadcasting.connections.reverb.secret' => 'wayfindr-secret',
+        'broadcasting.connections.reverb.options.host' => 'support.example.test',
+        'broadcasting.connections.reverb.options.port' => 443,
+        'broadcasting.connections.reverb.options.scheme' => 'https',
+        'mail.default' => 'smtp',
+        'mail.mailers.smtp.host' => 'smtp.example.test',
+        'mail.mailers.smtp.port' => 587,
+        'mail.from.address' => 'support@example.test',
+        'queue.default' => 'database',
+    ]);
+
+    Schema::drop('operator_readiness_confirmations');
+
+    $readiness = app(OperatorReadiness::class)->summary();
+    $database = collect($readiness['checks'])->firstWhere('key', 'database_connection');
+    $scheduler = collect($readiness['checks'])->firstWhere('key', 'scheduler');
+
+    expect($database)->toMatchArray([
+        'status' => 'ready',
+        'summary' => 'The sqlite connection responded.',
+    ])->and($scheduler)->toMatchArray([
+        'status' => 'manual',
+        'confirmation' => null,
+    ]);
+});
+
+test('account admins can confirm a manual readiness item', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'name' => 'Adam Admin',
+    ]);
+
+    $this->actingAs($agent)
+        ->post('/dashboard/readiness/confirmations', [
+            'key' => 'scheduler',
+            'note' => 'Forge scheduled job is configured.',
+        ])
+        ->assertRedirect('/dashboard/readiness');
+
+    $this->assertDatabaseHas('operator_readiness_confirmations', [
+        'key' => 'scheduler',
+        'confirmed_by_id' => $agent->id,
+        'note' => 'Forge scheduled job is configured.',
+    ]);
+
+    $auditEvent = AuditEvent::query()
+        ->where('action', 'operator_readiness.confirmed')
+        ->firstOrFail();
+
+    expect($auditEvent->account_id)
+        ->toBe($account->id)
+        ->and($auditEvent->actor_id)->toBe($agent->id)
+        ->and($auditEvent->metadata)->toMatchArray([
+            'key' => 'scheduler',
+            'note' => 'Forge scheduled job is configured.',
+        ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/readiness')
+        ->assertOk()
+        ->assertSee('Scheduler confirmed.')
+        ->assertSee('Confirmed by Adam Admin')
+        ->assertSee('Forge scheduled job is configured.');
+});
+
+test('plain agents cannot confirm readiness items', function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'account_role' => AccountRole::Agent,
+    ]);
+
+    $this->actingAs($agent)
+        ->post('/dashboard/readiness/confirmations', [
+            'key' => 'scheduler',
+            'note' => 'Nope.',
+        ])
+        ->assertForbidden();
+
+    $this->assertDatabaseMissing('operator_readiness_confirmations', [
+        'key' => 'scheduler',
     ]);
 });
 
