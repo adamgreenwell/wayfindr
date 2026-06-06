@@ -30,6 +30,8 @@
                 </div>
             </section>
 
+            <x-operator-next-step :next-step="$readiness['next_step']" />
+
             <x-operator-smoke-path :smoke-path="$readiness['smoke_path']" />
 
             <section class="section" aria-labelledby="readiness-checks-heading">

@@ -51,6 +51,8 @@ test('account owner can inspect operator readiness diagnostics', function (): vo
         ->assertSee('php artisan reverb:start --host=127.0.0.1 --port=8080')
         ->assertSee('php artisan reverb:restart')
         ->assertSee('Post-install smoke path')
+        ->assertSee('Recommended next step')
+        ->assertSee('Confirm background workers')
         ->assertSee('Open the public app URL')
         ->assertSee('Send a widget smoke test')
         ->assertSee('Confirm backups can restore');
@@ -91,6 +93,59 @@ test('readiness diagnostics flag missing app key and incomplete realtime setup',
         'label' => 'Realtime broadcasting',
         'status' => 'attention',
         'detail' => 'Add Reverb app credentials and public host settings before enabling live updates.',
+    ]);
+});
+
+test('readiness diagnostics recommend the first attention item as the next step', function (): void {
+    config([
+        'app.key' => null,
+        'app.url' => 'https://support.example.test',
+        'mail.default' => 'smtp',
+        'mail.mailers.smtp.host' => 'smtp.example.test',
+        'mail.mailers.smtp.port' => 587,
+        'mail.from.address' => 'support@example.test',
+        'queue.default' => 'database',
+    ]);
+
+    $readiness = app(OperatorReadiness::class)->summary();
+
+    expect($readiness['next_step'])->toMatchArray([
+        'key' => 'application_key',
+        'label' => 'Fix Application key',
+        'status' => 'attention',
+        'status_label' => 'Needs attention',
+        'summary' => 'APP_KEY is missing.',
+        'action' => 'Run php artisan key:generate and save the generated APP_KEY in the environment.',
+    ]);
+});
+
+test('readiness diagnostics recommend manual smoke confirmation when no attention items remain', function (): void {
+    config([
+        'app.url' => 'https://support.example.test',
+        'app.key' => 'base64:'.base64_encode(str_repeat('a', 32)),
+        'broadcasting.default' => 'reverb',
+        'broadcasting.connections.reverb.app_id' => 'wayfindr-production',
+        'broadcasting.connections.reverb.key' => 'wayfindr-key',
+        'broadcasting.connections.reverb.secret' => 'wayfindr-secret',
+        'broadcasting.connections.reverb.options.host' => 'support.example.test',
+        'broadcasting.connections.reverb.options.port' => 443,
+        'broadcasting.connections.reverb.options.scheme' => 'https',
+        'mail.default' => 'smtp',
+        'mail.mailers.smtp.host' => 'smtp.example.test',
+        'mail.mailers.smtp.port' => 587,
+        'mail.from.address' => 'support@example.test',
+        'queue.default' => 'database',
+    ]);
+
+    $readiness = app(OperatorReadiness::class)->summary();
+
+    expect($readiness['next_step'])->toMatchArray([
+        'key' => 'background_processes',
+        'label' => 'Confirm background workers',
+        'status' => 'manual',
+        'status_label' => 'Manual check',
+        'summary' => 'Queues and the scheduler need process-manager coverage outside the request lifecycle.',
+        'action' => 'Confirm php artisan queue:work is managed by Forge, Supervisor, systemd, or your host; run php artisan queue:failed to inspect failures; and verify * * * * * cd /path/to/apps/server && php artisan schedule:run is configured once per minute.',
     ]);
 });
 

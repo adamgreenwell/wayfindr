@@ -39,6 +39,7 @@ test('explicit platform operators can inspect the operator console', function ()
         ->assertOk()
         ->assertSee('Operator console')
         ->assertSee('Instance readiness')
+        ->assertSee('Recommended next step')
         ->assertSee('Post-install smoke path')
         ->assertSee('Send a widget smoke test')
         ->assertSee('Platform operator access does not grant support data access.');

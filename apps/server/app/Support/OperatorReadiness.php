@@ -17,6 +17,7 @@ class OperatorReadiness
      *     checks: array<int, array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string}>,
      *     label: string,
      *     manual_count: int,
+     *     next_step: array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string},
      *     ready_count: int,
      *     smoke_path: array<int, array{action: string, key: string, label: string, status: string, status_label: string, summary: string}>
      * }
@@ -39,14 +40,16 @@ class OperatorReadiness
         $manualCount = count(array_filter($checks, fn (array $check): bool => $check['status'] === 'manual'));
         $readyCount = count(array_filter($checks, fn (array $check): bool => $check['status'] === 'ready'));
         $checksByKey = collect($checks)->keyBy('key')->all();
+        $smokePath = $this->postInstallSmokePath($checksByKey);
 
         return [
             'attention_count' => $attentionCount,
             'checks' => $checks,
             'label' => $attentionCount > 0 ? 'Needs attention' : 'Ready',
             'manual_count' => $manualCount,
+            'next_step' => $this->nextStep($checks, $smokePath),
             'ready_count' => $readyCount,
-            'smoke_path' => $this->postInstallSmokePath($checksByKey),
+            'smoke_path' => $smokePath,
         ];
     }
 
@@ -373,6 +376,46 @@ class OperatorReadiness
                 action: 'Confirm backup schedule, retention, monitoring, and at least one restore drill before real support traffic.'
             ),
         ];
+    }
+
+    /**
+     * @param  array<int, array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string}>  $checks
+     * @param  array<int, array{action: string, key: string, label: string, status: string, status_label: string, summary: string}>  $smokePath
+     * @return array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
+     */
+    private function nextStep(array $checks, array $smokePath): array
+    {
+        foreach ($checks as $check) {
+            if ($check['status'] === 'attention') {
+                return [
+                    ...$check,
+                    'label' => sprintf('Fix %s', $check['label']),
+                ];
+            }
+        }
+
+        foreach ($smokePath as $step) {
+            if ($step['status'] === 'manual') {
+                return [
+                    'action' => $step['action'],
+                    'detail' => $step['summary'],
+                    'key' => $step['key'],
+                    'label' => $step['label'],
+                    'status' => $step['status'],
+                    'status_label' => $step['status_label'],
+                    'summary' => $step['summary'],
+                ];
+            }
+        }
+
+        return $this->check(
+            key: 'ready_for_traffic',
+            label: 'Ready for traffic',
+            status: 'ready',
+            summary: 'No readiness items need attention.',
+            detail: 'Keep smoke tests, mail checks, queue monitoring, and restore checks in the operator rhythm.',
+            action: 'Onboard real sites gradually, starting with a low-risk support surface.'
+        );
     }
 
     /**
