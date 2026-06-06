@@ -3,12 +3,18 @@
 namespace App\Support;
 
 use App\Models\OperatorReadinessConfirmation;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Throwable;
 
 class OperatorReadiness
 {
+    private const CONFIRMATION_STALE_AFTER_DAYS = [
+        'scheduler' => 7,
+        'backups_restore' => 30,
+    ];
+
     /** @var array<string, OperatorReadinessConfirmation> */
     private array $confirmations = [];
 
@@ -21,10 +27,7 @@ class OperatorReadiness
      */
     public static function confirmableKeys(): array
     {
-        return [
-            'scheduler',
-            'backups_restore',
-        ];
+        return array_keys(self::CONFIRMATION_STALE_AFTER_DAYS);
     }
 
     /**
@@ -400,6 +403,7 @@ class OperatorReadiness
                 confirmationKey: $backgroundStatus === 'attention' ? null : 'scheduler',
                 confirmable: $backgroundStatus !== 'attention',
                 confirmation: $schedulerCheck['confirmation'] ?? null,
+                statusLabel: $backgroundStatus === 'attention' ? null : ($schedulerCheck['status_label'] ?? null),
             ),
             $this->smokeStep(
                 key: 'widget_smoke',
@@ -417,6 +421,7 @@ class OperatorReadiness
                 confirmationKey: 'backups_restore',
                 confirmable: true,
                 confirmation: $backupsCheck['confirmation'] ?? null,
+                statusLabel: $backupsCheck['status_label'] ?? null,
             ),
         ];
     }
@@ -429,16 +434,20 @@ class OperatorReadiness
         $confirmation = $this->confirmations[$key] ?? null;
 
         if ($confirmation) {
+            $confirmationPayload = $this->confirmationPayload($confirmation);
+            $isStale = $confirmationPayload['freshness_status'] === 'stale';
+
             return $this->check(
                 key: $key,
                 label: $label,
-                status: 'ready',
-                summary: "{$label} confirmed.",
-                detail: $this->confirmationDetail($confirmation),
+                status: $isStale ? 'manual' : 'ready',
+                summary: $isStale ? "{$label} confirmation needs refresh." : "{$label} confirmed.",
+                detail: $this->confirmationDetail($confirmation, $confirmationPayload),
                 action: 'Refresh this confirmation if the process manager, schedule, backup policy, or restore proof changes.',
                 confirmable: true,
-                confirmation: $this->confirmationPayload($confirmation),
+                confirmation: $confirmationPayload,
                 confirmationKey: $key,
+                statusLabel: $isStale ? 'Refresh due' : null,
             );
         }
 
@@ -454,27 +463,64 @@ class OperatorReadiness
         );
     }
 
-    private function confirmationDetail(OperatorReadinessConfirmation $confirmation): string
+    /**
+     * @param  array{age_label: string|null, confirmed_at: string|null, confirmed_by: string, freshness_status: string, key: string, note: string|null, stale_after_days: int|null}  $confirmationPayload
+     */
+    private function confirmationDetail(OperatorReadinessConfirmation $confirmation, array $confirmationPayload): string
     {
         $confirmedBy = $confirmation->confirmedBy?->name ?? 'Unknown operator';
+        $ageLabel = $confirmationPayload['age_label'];
         $note = trim((string) $confirmation->note);
-
-        return $note !== ''
-            ? "Confirmed by {$confirmedBy}. Note: {$note}"
+        $detail = $ageLabel
+            ? "Confirmed by {$confirmedBy} {$ageLabel}."
             : "Confirmed by {$confirmedBy}.";
+
+        return $note !== '' ? "{$detail} Note: {$note}" : $detail;
     }
 
     /**
-     * @return array{confirmed_at: string|null, confirmed_by: string, key: string, note: string|null}
+     * @return array{age_label: string|null, confirmed_at: string|null, confirmed_by: string, freshness_status: string, key: string, note: string|null, stale_after_days: int|null}
      */
     private function confirmationPayload(OperatorReadinessConfirmation $confirmation): array
     {
+        $confirmedAt = $confirmation->confirmed_at;
+        $staleAfterDays = self::CONFIRMATION_STALE_AFTER_DAYS[$confirmation->key] ?? null;
+
         return [
-            'confirmed_at' => $confirmation->confirmed_at?->toIso8601String(),
+            'age_label' => $this->confirmationAgeLabel($confirmedAt),
+            'confirmed_at' => $confirmedAt?->toIso8601String(),
             'confirmed_by' => $confirmation->confirmedBy?->name ?? 'Unknown operator',
+            'freshness_status' => $this->isConfirmationStale($confirmation) ? 'stale' : 'fresh',
             'key' => $confirmation->key,
             'note' => $confirmation->note,
+            'stale_after_days' => $staleAfterDays,
         ];
+    }
+
+    private function isConfirmationStale(OperatorReadinessConfirmation $confirmation): bool
+    {
+        $staleAfterDays = self::CONFIRMATION_STALE_AFTER_DAYS[$confirmation->key] ?? null;
+
+        if ($staleAfterDays === null || $confirmation->confirmed_at === null) {
+            return false;
+        }
+
+        return $confirmation->confirmed_at->lt(now()->subDays($staleAfterDays));
+    }
+
+    private function confirmationAgeLabel(?CarbonInterface $confirmedAt): ?string
+    {
+        if (! $confirmedAt) {
+            return null;
+        }
+
+        $days = (int) $confirmedAt->diffInDays(now());
+
+        if ($days > 0 && $days < 30) {
+            return $days === 1 ? '1 day ago' : "{$days} days ago";
+        }
+
+        return $confirmedAt->diffForHumans();
     }
 
     /**
@@ -525,6 +571,7 @@ class OperatorReadiness
         bool $confirmable = false,
         ?array $confirmation = null,
         ?string $confirmationKey = null,
+        ?string $statusLabel = null,
     ): array {
         return [
             'action' => $action,
@@ -535,7 +582,7 @@ class OperatorReadiness
             'key' => $key,
             'label' => $label,
             'status' => $status,
-            'status_label' => match ($status) {
+            'status_label' => $statusLabel ?? match ($status) {
                 'ready' => 'Ready',
                 'manual' => 'Manual check',
                 default => 'Needs attention',
@@ -556,6 +603,7 @@ class OperatorReadiness
         ?string $confirmationKey = null,
         bool $confirmable = false,
         ?array $confirmation = null,
+        ?string $statusLabel = null,
     ): array {
         return [
             'action' => $action,
@@ -565,7 +613,7 @@ class OperatorReadiness
             'key' => $key,
             'label' => $label,
             'status' => $status,
-            'status_label' => match ($status) {
+            'status_label' => $statusLabel ?? match ($status) {
                 'ready' => 'Ready',
                 'manual' => 'Manual check',
                 default => 'Needs attention',

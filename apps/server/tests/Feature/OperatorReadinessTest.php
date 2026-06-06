@@ -7,6 +7,7 @@ use App\Models\OperatorReadinessConfirmation;
 use App\Models\User;
 use App\Support\OperatorReadiness;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
@@ -205,8 +206,11 @@ test('readiness diagnostics treat confirmed manual items as ready', function ():
         ->and($scheduler['confirmation'])->toMatchArray([
             'key' => 'scheduler',
             'confirmed_by' => 'Olive Operator',
+            'freshness_status' => 'fresh',
             'note' => 'Forge scheduler is running every minute.',
+            'stale_after_days' => 7,
         ])
+        ->and($scheduler['confirmation']['age_label'])->not->toBeNull()
         ->and($scheduler['confirmation']['confirmed_at'])->not->toBeNull()
         ->and($backups)->toMatchArray([
             'status' => 'ready',
@@ -225,6 +229,116 @@ test('readiness diagnostics treat confirmed manual items as ready', function ():
             'status' => 'ready',
             'label' => 'Ready for traffic',
         ]);
+});
+
+test('readiness diagnostics mark stale confirmations as refresh due', function (): void {
+    $this->travelTo(Carbon::parse('2026-06-06 12:00:00'));
+
+    config([
+        'app.url' => 'https://support.example.test',
+        'app.key' => 'base64:'.base64_encode(str_repeat('a', 32)),
+        'broadcasting.default' => 'reverb',
+        'broadcasting.connections.reverb.app_id' => 'wayfindr-production',
+        'broadcasting.connections.reverb.key' => 'wayfindr-key',
+        'broadcasting.connections.reverb.secret' => 'wayfindr-secret',
+        'broadcasting.connections.reverb.options.host' => 'support.example.test',
+        'broadcasting.connections.reverb.options.port' => 443,
+        'broadcasting.connections.reverb.options.scheme' => 'https',
+        'mail.default' => 'smtp',
+        'mail.mailers.smtp.host' => 'smtp.example.test',
+        'mail.mailers.smtp.port' => 587,
+        'mail.from.address' => 'support@example.test',
+        'queue.default' => 'database',
+    ]);
+
+    $operator = User::factory()->create(['name' => 'Olive Operator']);
+
+    OperatorReadinessConfirmation::query()->create([
+        'key' => 'scheduler',
+        'confirmed_by_id' => $operator->id,
+        'confirmed_at' => now()->subDays(8),
+        'note' => 'Forge scheduler was checked last week.',
+    ]);
+
+    OperatorReadinessConfirmation::query()->create([
+        'key' => 'backups_restore',
+        'confirmed_by_id' => $operator->id,
+        'confirmed_at' => now()->subDays(31),
+        'note' => 'Restore drill was last month.',
+    ]);
+
+    $readiness = app(OperatorReadiness::class)->summary();
+    $scheduler = collect($readiness['checks'])->firstWhere('key', 'scheduler');
+    $backups = collect($readiness['checks'])->firstWhere('key', 'backups_restore');
+    $backgroundProcesses = collect($readiness['smoke_path'])->firstWhere('key', 'background_processes');
+    $backupRestore = collect($readiness['smoke_path'])->firstWhere('key', 'backup_restore');
+
+    expect($readiness)
+        ->attention_count->toBe(0)
+        ->manual_count->toBe(2)
+        ->and($scheduler)->toMatchArray([
+            'status' => 'manual',
+            'status_label' => 'Refresh due',
+            'summary' => 'Scheduler confirmation needs refresh.',
+        ])
+        ->and($scheduler['confirmation'])->toMatchArray([
+            'age_label' => '8 days ago',
+            'confirmed_by' => 'Olive Operator',
+            'freshness_status' => 'stale',
+            'key' => 'scheduler',
+            'note' => 'Forge scheduler was checked last week.',
+            'stale_after_days' => 7,
+        ])
+        ->and($backups)->toMatchArray([
+            'status' => 'manual',
+            'status_label' => 'Refresh due',
+            'summary' => 'Backups and restore confirmation needs refresh.',
+        ])
+        ->and($backups['confirmation'])->toMatchArray([
+            'age_label' => '1 month ago',
+            'freshness_status' => 'stale',
+            'stale_after_days' => 30,
+        ])
+        ->and($backgroundProcesses)->toMatchArray([
+            'status' => 'manual',
+            'status_label' => 'Refresh due',
+            'confirmation_key' => 'scheduler',
+        ])
+        ->and($backupRestore)->toMatchArray([
+            'status' => 'manual',
+            'status_label' => 'Refresh due',
+            'confirmation_key' => 'backups_restore',
+        ])
+        ->and($readiness['next_step'])->toMatchArray([
+            'key' => 'background_processes',
+            'status' => 'manual',
+            'status_label' => 'Refresh due',
+        ]);
+});
+
+test('dashboard readiness shows stale confirmation refresh guidance', function (): void {
+    $this->travelTo(Carbon::parse('2026-06-06 12:00:00'));
+
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'name' => 'Adam Admin',
+    ]);
+
+    OperatorReadinessConfirmation::query()->create([
+        'key' => 'scheduler',
+        'confirmed_by_id' => $agent->id,
+        'confirmed_at' => now()->subDays(8),
+        'note' => 'Scheduler was checked before a deploy.',
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/readiness')
+        ->assertOk()
+        ->assertSee('Scheduler confirmation needs refresh.')
+        ->assertSee('Confirmed by Adam Admin 8 days ago.')
+        ->assertSee('Scheduler was checked before a deploy.')
+        ->assertSee('Refresh confirmation');
 });
 
 test('readiness diagnostics skip confirmation lookup when the confirmation table is unavailable', function (): void {
