@@ -4,6 +4,7 @@ use App\Enums\AccountRole;
 use App\Enums\PlatformRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
+use App\Models\OperatorReadinessConfirmation;
 use App\Models\User;
 use Illuminate\Foundation\Application as LaravelApplication;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -148,6 +149,74 @@ test('operator console shows safe system identity and documentation links', func
         ->assertSee('https://example.test/docs/runtime', false)
         ->assertSee('Forge deploy guide')
         ->assertSee('https://example.test/docs/forge', false);
+});
+
+test('operator console shows recent safe operator activity', function (): void {
+    $account = Account::factory()->create(['name' => 'Wayfindr Ops']);
+    $operator = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'platform_role' => PlatformRole::Operator,
+        'name' => 'Olive Operator',
+    ]);
+    $otherOperator = User::factory()->for(Account::factory())->create([
+        'account_role' => AccountRole::Agent,
+        'platform_role' => PlatformRole::Operator,
+        'name' => 'Morgan Maintainer',
+    ]);
+    $confirmation = OperatorReadinessConfirmation::query()->create([
+        'key' => 'backups_restore',
+        'confirmed_by_id' => $otherOperator->id,
+        'confirmed_at' => now()->subMinutes(5),
+        'note' => 'Restore smoke passed after the deploy.',
+    ]);
+
+    AuditEvent::query()->create([
+        'account_id' => $otherOperator->account_id,
+        'actor_type' => $otherOperator->getMorphClass(),
+        'actor_id' => $otherOperator->id,
+        'subject_type' => $confirmation->getMorphClass(),
+        'subject_id' => $confirmation->id,
+        'action' => 'operator_readiness.confirmed',
+        'metadata' => [
+            'key' => 'backups_restore',
+            'note' => 'Restore smoke passed after the deploy.',
+        ],
+        'occurred_at' => now()->subMinutes(5),
+    ]);
+
+    AuditEvent::factory()->create([
+        'account_id' => $account->id,
+        'actor_type' => $operator->getMorphClass(),
+        'actor_id' => $operator->id,
+        'action' => 'conversation.created',
+        'metadata' => [
+            'message' => 'Sensitive visitor transcript should stay out of the operator console.',
+        ],
+        'occurred_at' => now()->subMinute(),
+    ]);
+
+    $this->actingAs($operator)
+        ->get('/operator')
+        ->assertOk()
+        ->assertSee('Recent operator activity')
+        ->assertSee('1 safe event')
+        ->assertSee('Morgan Maintainer')
+        ->assertSee('Backups and restore confirmation')
+        ->assertSee('Restore smoke passed after the deploy.')
+        ->assertSee('Only safe instance-level operator actions are shown here.')
+        ->assertDontSee('Sensitive visitor transcript should stay out of the operator console.');
+});
+
+test('operator console shows an empty operator activity state', function (): void {
+    $operator = User::factory()->for(Account::factory())->create([
+        'platform_role' => PlatformRole::Operator,
+    ]);
+
+    $this->actingAs($operator)
+        ->get('/operator')
+        ->assertOk()
+        ->assertSee('Recent operator activity')
+        ->assertSee('No operator activity yet.');
 });
 
 test('deactivated platform operators cannot inspect the operator console', function (): void {

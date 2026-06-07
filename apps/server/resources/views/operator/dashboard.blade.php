@@ -71,6 +71,46 @@
         </div>
     </section>
 
+    <section class="section" aria-labelledby="operator-activity-heading">
+        <div class="section-header">
+            <div>
+                <h2 id="operator-activity-heading">Recent operator activity</h2>
+                <p class="lede">Only safe instance-level operator actions are shown here.</p>
+            </div>
+            <span class="lede">
+                {{ $operatorActivity->count() === 1 ? '1 safe event' : $operatorActivity->count().' safe events' }}
+            </span>
+        </div>
+
+        <div class="notice-copy notice-copy-bordered">
+            <p>
+                Support conversations, tickets, cobrowse snapshots, transcripts, visitor data, and account support
+                queues stay out of this feed.
+            </p>
+        </div>
+
+        @if ($operatorActivity->isEmpty())
+            <p class="empty">No operator activity yet.</p>
+        @else
+            <div class="timeline-list">
+                @foreach ($operatorActivity as $activity)
+                    <article class="timeline-item internal-note">
+                        <div class="timeline-content">
+                            <strong>{{ $activity['label'] }}</strong>
+                            <p class="message-body">{{ $activity['body'] }}</p>
+                            <div class="timeline-meta">
+                                <span>{{ $activity['actor'] }}</span>
+                                @if ($activity['occurred_at'])
+                                    <span>{{ $activity['occurred_at']->diffForHumans() }}</span>
+                                @endif
+                            </div>
+                        </div>
+                    </article>
+                @endforeach
+            </div>
+        @endif
+    </section>
+
     <x-operator-next-step :confirmation-route="$readinessConfirmationRoute" :next-step="$readiness['next_step']" />
 
     <x-operator-smoke-path :confirmation-route="$readinessConfirmationRoute" :smoke-path="$readiness['smoke_path']" />
