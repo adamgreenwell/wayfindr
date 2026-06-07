@@ -167,7 +167,7 @@ test('operator console shows recent safe operator activity', function (): void {
         'key' => 'backups_restore',
         'confirmed_by_id' => $otherOperator->id,
         'confirmed_at' => now()->subMinutes(5),
-        'note' => 'Restore smoke passed after the deploy.',
+        'note' => 'Current restore proof is recorded.',
     ]);
 
     AuditEvent::query()->create([
@@ -179,7 +179,7 @@ test('operator console shows recent safe operator activity', function (): void {
         'action' => 'operator_readiness.confirmed',
         'metadata' => [
             'key' => 'backups_restore',
-            'note' => 'Restore smoke passed after the deploy.',
+            'note' => 'Ticket WF-SENSITIVE had visitor billing details in the note.',
         ],
         'occurred_at' => now()->subMinutes(5),
     ]);
@@ -202,8 +202,9 @@ test('operator console shows recent safe operator activity', function (): void {
         ->assertSee('1 safe event')
         ->assertSee('Morgan Maintainer')
         ->assertSee('Backups and restore confirmation')
-        ->assertSee('Restore smoke passed after the deploy.')
+        ->assertSee('Backups and restore readiness proof was recorded.')
         ->assertSee('Only safe instance-level operator actions are shown here.')
+        ->assertDontSee('Ticket WF-SENSITIVE had visitor billing details in the note.')
         ->assertDontSee('Sensitive visitor transcript should stay out of the operator console.');
 });
 

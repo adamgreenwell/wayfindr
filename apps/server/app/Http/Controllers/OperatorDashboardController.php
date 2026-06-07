@@ -75,13 +75,11 @@ class OperatorDashboardController extends Controller
 
     private function operatorActivityBody(AuditEvent $event): string
     {
-        $note = data_get($event->metadata, 'note');
-
-        if (is_string($note) && trim($note) !== '') {
-            return trim($note);
-        }
-
-        return 'Recorded instance readiness proof.';
+        return match (data_get($event->metadata, 'key')) {
+            'scheduler' => 'Scheduler readiness proof was recorded.',
+            'backups_restore' => 'Backups and restore readiness proof was recorded.',
+            default => 'Instance readiness proof was recorded.',
+        };
     }
 
     private function readinessConfirmationLabel(AuditEvent $event): string
