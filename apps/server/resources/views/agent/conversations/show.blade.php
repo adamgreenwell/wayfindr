@@ -662,48 +662,100 @@
             <section class="section" aria-labelledby="reply-heading">
                 <div class="section-header">
                     <h2 id="reply-heading">Reply</h2>
+                    <span class="lede">{{ $conversation->attentionLabel() }}</span>
                 </div>
 
-                <form
-                    class="section-form"
-                    method="POST"
-                    action="{{ route('dashboard.conversations.messages.store', $conversation->support_code) }}"
-                    data-reply-composer
-                    data-submitting-label="Sending reply..."
-                >
-                    @csrf
+                @php
+                    $selectedReplyTemplate = (string) old('reply_template', '');
+                    $replyAssigneeLabel = 'Unassigned';
 
-                    <div class="field">
-                        <label for="reply_template">Reply helper</label>
-                        <select id="reply_template" name="reply_template" data-template-picker data-target="#body">
-                            <option value="">Write a custom reply</option>
+                    if ((int) $conversation->assigned_agent_id === $agent->id) {
+                        $replyAssigneeLabel = 'Assigned to you';
+                    } elseif ($conversation->assignedAgent) {
+                        $replyAssigneeLabel = 'Assigned to '.$conversation->assignedAgent->name;
+                    }
+                @endphp
+
+                <div class="reply-workspace" data-reply-shell>
+                    <form
+                        class="section-form reply-form"
+                        method="POST"
+                        action="{{ route('dashboard.conversations.messages.store', $conversation->support_code) }}"
+                        data-reply-composer
+                        data-submitting-label="Sending reply..."
+                    >
+                        @csrf
+
+                        <div class="reply-context-strip" aria-label="Reply context">
+                            <div class="reply-context-item">
+                                <span class="meta-label">Reply context</span>
+                                <span class="meta-value">{{ $conversation->attentionLabel() }}</span>
+                            </div>
+                            <div class="reply-context-item">
+                                <span class="meta-label">Owner</span>
+                                <span class="meta-value">{{ $replyAssigneeLabel }}</span>
+                            </div>
+                            <div class="reply-context-item">
+                                <span class="meta-label">Support code</span>
+                                <span class="meta-value">{{ $conversation->support_code }}</span>
+                            </div>
+                        </div>
+
+                        <div class="field">
+                            <label for="reply_template">Reply helper</label>
+                            <select id="reply_template" name="reply_template" data-template-picker data-target="#body">
+                                <option value="">Write a custom reply</option>
+                                @foreach ($replyTemplates as $replyTemplateKey => $replyTemplate)
+                                    <option
+                                        value="{{ $replyTemplateKey }}"
+                                        data-body="{{ $replyTemplate['body'] }}"
+                                        @selected($selectedReplyTemplate === $replyTemplateKey)
+                                    >
+                                        {{ $replyTemplate['label'] }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            @error('reply_template')
+                                <p class="field-error">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <div class="field">
+                            <label for="body">Message</label>
+                            <textarea id="body" name="body" rows="5" placeholder="Write a clear, calm reply." data-reply-body>{{ old('body') }}</textarea>
+                            @error('body')
+                                <p class="field-error">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <p class="sr-only" data-reply-status aria-live="polite"></p>
+
+                        <button class="button" type="submit" data-reply-submit>Send reply</button>
+                    </form>
+
+                    <aside class="reply-assist" aria-labelledby="reply-assist-heading">
+                        <h3 id="reply-assist-heading">Reply assist</h3>
+
+                        <div class="reply-template-preview" data-template-preview>
+                            <div data-template-preview-empty @if ($selectedReplyTemplate !== '') hidden @endif>
+                                <strong>No helper selected</strong>
+                                <p class="lede">Custom replies stay fully agent-written.</p>
+                            </div>
+
                             @foreach ($replyTemplates as $replyTemplateKey => $replyTemplate)
-                                <option
-                                    value="{{ $replyTemplateKey }}"
-                                    data-body="{{ $replyTemplate['body'] }}"
-                                    @selected(old('reply_template') === $replyTemplateKey)
-                                >
-                                    {{ $replyTemplate['label'] }}
-                                </option>
+                                <article data-template-preview-item="{{ $replyTemplateKey }}" @if ($selectedReplyTemplate !== $replyTemplateKey) hidden @endif>
+                                    <strong>{{ $replyTemplate['label'] }}</strong>
+                                    <p>{{ $replyTemplate['body'] }}</p>
+                                </article>
                             @endforeach
-                        </select>
-                        @error('reply_template')
-                            <p class="field-error">{{ $message }}</p>
-                        @enderror
-                    </div>
+                        </div>
 
-                    <div class="field">
-                        <label for="body">Message</label>
-                        <textarea id="body" name="body" rows="4" data-reply-body>{{ old('body') }}</textarea>
-                        @error('body')
-                            <p class="field-error">{{ $message }}</p>
-                        @enderror
-                    </div>
-
-                    <p class="sr-only" data-reply-status aria-live="polite"></p>
-
-                    <button class="button" type="submit" data-reply-submit>Send reply</button>
-                </form>
+                        <div class="notice-list">
+                            <p>Keep sensitive details out of replies unless the visitor supplied them here.</p>
+                            <p>Create or attach a ticket when the next step needs durable follow-up.</p>
+                        </div>
+                    </aside>
+                </div>
             </section>
 
             <script>
@@ -715,9 +767,34 @@
                         var templateTarget = templatePicker.dataset.target
                             ? document.querySelector(templatePicker.dataset.target)
                             : null;
+                        var replyShell = templatePicker.closest('[data-reply-shell]');
+                        var previewEmpty = replyShell
+                            ? replyShell.querySelector('[data-template-preview-empty]')
+                            : null;
+                        var previewItems = replyShell
+                            ? replyShell.querySelectorAll('[data-template-preview-item]')
+                            : [];
+
+                        function updateTemplatePreview(templateKey) {
+                            var hasPreview = false;
+
+                            previewItems.forEach(function (previewItem) {
+                                var isSelected = previewItem.getAttribute('data-template-preview-item') === templateKey;
+
+                                previewItem.hidden = ! isSelected;
+                                hasPreview = hasPreview || isSelected;
+                            });
+
+                            if (previewEmpty) {
+                                previewEmpty.hidden = hasPreview;
+                            }
+                        }
 
                         templatePicker.addEventListener('change', function () {
                             var body = templatePicker.selectedOptions[0]?.dataset.body || '';
+                            var selectedTemplate = templatePicker.value || '';
+
+                            updateTemplatePreview(selectedTemplate);
 
                             if (! body || ! templateTarget) {
                                 return;

@@ -796,6 +796,59 @@
             margin-top: 12px;
         }
 
+        .reply-workspace {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+            gap: 1px;
+            background: var(--border);
+            border-top: 1px solid var(--border);
+        }
+
+        .reply-workspace .section-form {
+            background: var(--surface);
+        }
+
+        .reply-context-strip {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 1px;
+            overflow: hidden;
+            margin-bottom: 18px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--border);
+        }
+
+        .reply-context-item {
+            min-width: 0;
+            padding: 12px;
+            background: var(--surface-muted);
+        }
+
+        .reply-assist {
+            background: var(--surface-muted);
+            padding: 20px;
+        }
+
+        .reply-assist h3 {
+            margin: 0;
+            font-size: 1rem;
+        }
+
+        .reply-template-preview {
+            margin-top: 14px;
+            padding: 14px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--surface);
+        }
+
+        .reply-template-preview p {
+            margin: 8px 0 0;
+            color: var(--muted);
+            white-space: pre-wrap;
+        }
+
         .timeline-list {
             display: grid;
             gap: 0;
@@ -877,6 +930,11 @@
 
             .filter-chips {
                 justify-content: flex-start;
+            }
+
+            .reply-workspace,
+            .reply-context-strip {
+                grid-template-columns: 1fr;
             }
         }
     </style>

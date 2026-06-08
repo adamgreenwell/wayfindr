@@ -215,6 +215,34 @@ test('static reply helpers remain available until an account creates active temp
         ->assertSee('Ticket follow-up');
 });
 
+test('conversation reply surface shows context and helper preview affordances', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'assigned_agent_id' => $agent->id,
+        'support_code' => 'WF-REPLYCOMFORT',
+        'subject' => 'Checkout button stuck',
+        'status' => 'open',
+    ]);
+    ReplyTemplate::factory()->for($account)->create([
+        'name' => 'Billing follow-up',
+        'body' => 'I will check the billing details and follow up shortly.',
+    ]);
+
+    $this->actingAs($agent)
+        ->get("/dashboard/conversations/{$conversation->support_code}")
+        ->assertOk()
+        ->assertSee('Reply assist')
+        ->assertSee('Reply context')
+        ->assertSee('Needs reply')
+        ->assertSee('Assigned to you')
+        ->assertSee('Billing follow-up')
+        ->assertSee('I will check the billing details and follow up shortly.')
+        ->assertSee('Keep sensitive details out of replies unless the visitor supplied them here.');
+});
+
 test('agents can send replies from managed account templates', function (): void {
     Event::fake([ConversationMessageCreated::class]);
 
