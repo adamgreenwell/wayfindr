@@ -23,7 +23,8 @@ foundation now includes:
   labels, notes, replies, queue filters, handoff notes, reference panels, and
   next-action guidance.
 - Alert preferences, dashboard notifications, queued email delivery, welcome
-  emails, and mail readiness warnings.
+  emails, mail readiness warnings, and documented alert digest/escalation
+  guardrails.
 - Provider-neutral external issue connections, site project mappings, external
   ticket links, and GitHub outbound issue creation.
 
@@ -38,6 +39,9 @@ experience without opening broad integration or platform-service work too soon.
 - Ticket workflow comfort: smoother transitions between conversation, ticket,
   visitor, and support-code context; clearer “what needs attention” cues; and
   less page-hopping for common agent moves.
+- Alert calm: per-agent digest planning, metadata-safe email summaries, and
+  [manual escalation paths](alert-digests-and-escalation.md) before automatic
+  urgency rules.
 - Cobrowse transport discipline: payload budgets, throttling, batching,
   reconnect/degraded-mode behavior, and explicit drop policies under pressure.
 - Operator hardening: clearer setup/recovery guidance, safer instance activity,

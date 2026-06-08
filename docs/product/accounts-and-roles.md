@@ -72,6 +72,8 @@ See [Platform Operator Boundary](platform-operator-boundary.md) for the product 
 - Ticket assignment should only target agents who can support the ticket's site.
 - Alerts should notify the smallest useful group: assigned agent first, otherwise agents assigned to the site, otherwise the account-wide fallback.
 - Agent alert preferences can narrow or suppress new unread alerts without changing the underlying site access or assignment rules.
+- Digest and escalation planning should keep those same access boundaries. See
+  [Alert Digests and Escalation](alert-digests-and-escalation.md).
 - Cobrowse access should require both account membership and site access.
 - Self-hosted operators remain responsible for mapping roles to their local policies, employment rules, and data obligations.
 
