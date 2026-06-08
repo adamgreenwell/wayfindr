@@ -66,6 +66,7 @@ The widget currently supports the first visitor loop:
 - send visitor messages,
 - prevent duplicate sends while the visitor composer is busy,
 - preserve visitor drafts after recoverable send failures and retry the same conversation when possible,
+- show calm empty, error, and retry states without hiding the existing conversation,
 - render the visitor-visible conversation message timeline with timestamps, simple message grouping, and sent cues for visitor messages,
 - receive live agent replies over Reverb when configured,
 - fetch the current cobrowse request status,
@@ -75,7 +76,7 @@ The widget currently supports the first visitor loop:
 - report passive page state after consent,
 - report an initial sanitized DOM snapshot after consent,
 - report bounded sanitized DOM mutation batches after consent,
-- poll lightly and manually refresh for agent replies when realtime is unavailable, keeping the current timeline visible if a refresh fails.
+- poll lightly and manually refresh for agent replies when realtime is unavailable, keeping the current timeline visible and offering a retry if a refresh fails.
 
 ```js
 const client = Wayfindr.createClient({

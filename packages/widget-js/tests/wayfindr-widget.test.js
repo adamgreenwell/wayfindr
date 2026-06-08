@@ -39,6 +39,33 @@ test('injects a hidden override for stateful widget sections', () => {
   );
 });
 
+test('shows calm empty-state copy before a widget conversation starts', () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    storage: memoryStorage(),
+    fetch: async () => jsonResponse(404, { message: 'Not used' }),
+  });
+
+  widget.open();
+
+  const timeline = widget.root.querySelector('.wayfindr-widget__timeline');
+  const notice = widget.root.querySelector('.wayfindr-widget__notice');
+
+  assert.equal(timeline.hidden, true);
+  assert.equal(notice.hidden, false);
+  assert.match(notice.textContent, /No messages yet/);
+  assert.match(notice.textContent, /Send a message/);
+});
+
 test('resolves a stable anonymous id from storage when one is not supplied', () => {
   const values = new Map();
   const storage = {
@@ -1650,6 +1677,7 @@ test('preserves failed first message drafts and retries without recreating the c
   const form = widget.root.querySelector('.wayfindr-widget__form');
   const textarea = widget.root.querySelector('.wayfindr-widget__textarea');
   const status = widget.root.querySelector('.wayfindr-widget__status');
+  const notice = widget.root.querySelector('.wayfindr-widget__notice');
 
   textarea.value = 'Can you help me?';
   form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
@@ -1660,6 +1688,9 @@ test('preserves failed first message drafts and retries without recreating the c
   assert.equal(textarea.value, 'Can you help me?');
   assert.match(status.textContent, /Message could not be sent/);
   assert.doesNotMatch(status.textContent, /Database unavailable/);
+  assert.equal(notice.hidden, false);
+  assert.equal(notice.getAttribute('data-state'), 'warning');
+  assert.match(notice.textContent, /Message could not be sent/);
   assert.equal(calls.filter((call) => new URL(call.url).pathname === '/api/conversations').length, 1);
   assert.equal(
     calls.filter((call) => new URL(call.url).pathname === '/api/conversations/WF-RETRY123/messages' && call.options.method === 'GET').length,
@@ -1946,6 +1977,164 @@ test('keeps the current widget timeline visible when manual refresh fails', asyn
   assert.equal(refresh.getAttribute('aria-busy'), 'false');
   assert.match(status.textContent, /Messages could not be refreshed/);
   assert.doesNotMatch(status.textContent, /Upstream timeout/);
+});
+
+test('shows a retry notice after failed refresh and clears it after retry succeeds', async () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+  let timelineFetches = 0;
+  const retryResponse = deferred();
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    storage: memoryStorage(),
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    fetch: async (url, options) => {
+      const path = new URL(url).pathname;
+
+      if (path === '/api/widget/bootstrap') {
+        return jsonResponse(201, {
+          data: {
+            site: { public_key: 'site_public_docs', settings: {} },
+            visitor: { anonymous_id: 'anon-browser-123', token: 'visitor-token-123' },
+          },
+        });
+      }
+
+      if (path === '/api/conversations') {
+        return jsonResponse(201, {
+          data: {
+            support_code: 'WF-RETRYREFRESH',
+            status: 'open',
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-RETRYREFRESH/messages' && options.method === 'POST') {
+        return jsonResponse(201, {
+          data: {
+            conversation: { support_code: 'WF-RETRYREFRESH' },
+            message: {
+              id: 1,
+              sender: { kind: 'visitor', name: 'Visitor' },
+              type: 'text',
+              body: 'Can you help me?',
+              created_at: '2026-05-23T14:00:00.000000Z',
+            },
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-RETRYREFRESH/messages') {
+        timelineFetches += 1;
+
+        if (timelineFetches === 2) {
+          return jsonResponse(503, {
+            message: 'Upstream timeout.',
+          });
+        }
+
+        if (timelineFetches > 2) {
+          return retryResponse.promise;
+        }
+
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-RETRYREFRESH', status: 'open' },
+            messages: [{
+              id: 1,
+              sender: { kind: 'visitor', name: 'Visitor' },
+              type: 'text',
+              body: 'Can you help me?',
+              created_at: '2026-05-23T14:00:00.000000Z',
+            }, ...(timelineFetches > 2
+              ? [{
+                  id: 2,
+                  sender: { kind: 'agent', name: 'Ada Agent' },
+                  type: 'text',
+                  body: 'Still here with you.',
+                  created_at: '2026-05-23T14:01:00.000000Z',
+                }]
+              : [])],
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-RETRYREFRESH/cobrowse') {
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-RETRYREFRESH' },
+            cobrowse: {
+              status: 'unavailable',
+              consent: 'unavailable',
+              requested_by: null,
+            },
+          },
+        });
+      }
+
+      throw new Error('Unexpected request ' + url);
+    },
+  });
+
+  widget.open();
+
+  widget.root.querySelector('.wayfindr-widget__textarea').value = 'Can you help me?';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+    new dom.window.Event('submit', { bubbles: true, cancelable: true }),
+  );
+
+  await settle();
+
+  const notice = widget.root.querySelector('.wayfindr-widget__notice');
+  const retry = widget.root.querySelector('.wayfindr-widget__notice-retry');
+  const refresh = widget.root.querySelector('.wayfindr-widget__refresh');
+
+  refresh.dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+
+  await settle();
+
+  assert.deepEqual(messageSummaries(widget), ['VisitorCan you help me?']);
+  assert.equal(notice.hidden, false);
+  assert.equal(notice.getAttribute('data-state'), 'warning');
+  assert.match(notice.textContent, /Messages could not be refreshed/);
+  assert.equal(retry.hidden, false);
+
+  retry.dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+
+  assert.equal(retry.disabled, true);
+
+  retryResponse.resolve(jsonResponse(200, {
+    data: {
+      conversation: { support_code: 'WF-RETRYREFRESH', status: 'open' },
+      messages: [{
+        id: 1,
+        sender: { kind: 'visitor', name: 'Visitor' },
+        type: 'text',
+        body: 'Can you help me?',
+        created_at: '2026-05-23T14:00:00.000000Z',
+      }, {
+        id: 2,
+        sender: { kind: 'agent', name: 'Ada Agent' },
+        type: 'text',
+        body: 'Still here with you.',
+        created_at: '2026-05-23T14:01:00.000000Z',
+      }],
+    },
+  }));
+
+  await settle();
+
+  assert.deepEqual(messageSummaries(widget), ['VisitorCan you help me?', 'Ada AgentStill here with you.']);
+  assert.equal(notice.hidden, true);
+  assert.equal(retry.hidden, true);
 });
 
 test('polls active conversations so agent replies appear when realtime is unavailable', async () => {

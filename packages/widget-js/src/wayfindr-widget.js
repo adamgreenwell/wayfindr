@@ -353,6 +353,10 @@
       '    <button class="wayfindr-widget__close" type="button" aria-label="Close support chat">&times;</button>',
       '  </header>',
       '  <div class="wayfindr-widget__timeline" role="log" aria-live="polite" aria-label="Conversation messages" hidden></div>',
+      '  <div class="wayfindr-widget__notice" data-state="empty" aria-live="polite">',
+      '    <p class="wayfindr-widget__notice-copy">No messages yet. Send a message and support will see it here.</p>',
+      '    <button class="wayfindr-widget__notice-retry" type="button" hidden>Try again</button>',
+      '  </div>',
       '  <p class="wayfindr-widget__connection" hidden></p>',
       '  <form class="wayfindr-widget__form">',
       '    <label class="wayfindr-widget__label" for="wayfindr-message">How can we help?</label>',
@@ -380,6 +384,9 @@
     var close = rootEl.querySelector('.wayfindr-widget__close');
     var form = rootEl.querySelector('.wayfindr-widget__form');
     var timeline = rootEl.querySelector('.wayfindr-widget__timeline');
+    var notice = rootEl.querySelector('.wayfindr-widget__notice');
+    var noticeCopy = rootEl.querySelector('.wayfindr-widget__notice-copy');
+    var noticeRetry = rootEl.querySelector('.wayfindr-widget__notice-retry');
     var connection = rootEl.querySelector('.wayfindr-widget__connection');
     var textarea = rootEl.querySelector('.wayfindr-widget__textarea');
     var status = rootEl.querySelector('.wayfindr-widget__status');
@@ -419,6 +426,22 @@
     var refreshBusy = false;
     var sendLabel = send.textContent;
     var refreshLabel = refresh.textContent;
+
+    function showNotice(state, copy, options) {
+      options = options || {};
+
+      notice.hidden = false;
+      notice.setAttribute('data-state', state || 'info');
+      noticeCopy.textContent = copy;
+      noticeRetry.hidden = !options.retry;
+      noticeRetry.disabled = false;
+    }
+
+    function hideNotice() {
+      notice.hidden = true;
+      noticeRetry.hidden = true;
+      noticeRetry.disabled = false;
+    }
 
     function renderMessages(nextMessages) {
       messages = Array.isArray(nextMessages) ? nextMessages : messages;
@@ -464,6 +487,15 @@
       });
 
       timeline.hidden = messages.length === 0;
+
+      if (messages.length === 0) {
+        showNotice('empty', supportCode
+          ? 'No messages yet. Replies will show up here.'
+          : 'No messages yet. Send a message and support will see it here.');
+      } else {
+        hideNotice();
+      }
+
       refresh.hidden = false;
     }
 
@@ -852,6 +884,9 @@
       } catch (error) {
         if (!options.silent) {
           status.textContent = MESSAGE_REFRESH_ERROR;
+          showNotice('warning', MESSAGE_REFRESH_ERROR, {
+            retry: true,
+          });
         }
       } finally {
         if (!options.silent) {
@@ -873,6 +908,7 @@
       refresh.setAttribute('aria-busy', refreshBusy ? 'true' : 'false');
       refresh.disabled = refreshBusy;
       refresh.textContent = refreshBusy ? 'Refreshing...' : refreshLabel;
+      noticeRetry.disabled = refreshBusy;
     }
 
     function open() {
@@ -896,6 +932,9 @@
     launcher.addEventListener('click', open);
     close.addEventListener('click', closePanel);
     refresh.addEventListener('click', function () {
+      refreshMessages();
+    });
+    noticeRetry.addEventListener('click', function () {
       refreshMessages();
     });
     cobrowseAllow.addEventListener('click', function () {
@@ -946,6 +985,7 @@
         status.textContent = 'Message sent. Support code ' + supportCode + '.';
       } catch (error) {
         status.textContent = MESSAGE_SEND_ERROR;
+        showNotice('warning', MESSAGE_SEND_ERROR);
       } finally {
         setComposerBusy(false);
       }
@@ -1917,6 +1957,12 @@
       '.wayfindr-widget__header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid #d8dfdc;background:#f7f7f3}',
       '.wayfindr-widget__close{border:0;background:transparent;color:#62706b;cursor:pointer;font:700 24px/1 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:0}',
       '.wayfindr-widget__timeline{display:grid;gap:10px;max-height:280px;overflow:auto;padding:14px 16px;border-bottom:1px solid #eef1ef;background:#fbfbf8}',
+      '.wayfindr-widget__notice{display:grid;gap:10px;margin:0;padding:14px 16px;border-bottom:1px solid #eef1ef;background:#fbfbf8;color:#62706b;font-size:13px;line-height:1.4}',
+      '.wayfindr-widget__notice[data-state="warning"]{background:#fffaf0;color:#5f4b20}',
+      '.wayfindr-widget__notice-copy{margin:0}',
+      '.wayfindr-widget__notice-retry{justify-self:start;min-height:34px;border:1px solid #d8dfdc;border-radius:6px;background:#fff;color:#1d2523;cursor:pointer;padding:0 12px;font:700 13px/1 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}',
+      '.wayfindr-widget__notice-retry:hover{border-color:#0d6f68;color:#0d6f68}',
+      '.wayfindr-widget__notice-retry:disabled{cursor:wait;opacity:.7}',
       '.wayfindr-widget__connection{margin:0;padding:10px 16px 0;color:#62706b;font-size:12px;line-height:1.35}',
       '.wayfindr-widget__message{display:grid;gap:4px;width:88%;border:1px solid #d8dfdc;border-radius:8px;padding:9px 10px;background:#fff}',
       '.wayfindr-widget__message--agent{justify-self:end;background:#eef6f3;border-color:#cfe1dc}',
