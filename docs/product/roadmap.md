@@ -2,55 +2,62 @@
 
 This roadmap is directional and should not include private business strategy.
 
-## Phase 0: Technical Spike
+## Current Alpha Spine
 
-- Laravel core app shell.
-- Realtime channel proof.
-- Minimal visitor widget.
-- Live chat proof.
-- Consent prompt.
-- DOM-based cobrowse proof.
-- Masked fields proof.
-- Support-code lookup.
+The current pre-alpha app has moved beyond the original technical spike. The
+foundation now includes:
 
-## Phase 1: Internal MVP
+- Laravel core app shell, authentication, account roles, site access, and
+  platform operator authority.
+- Browser and CLI first-run setup, operator readiness diagnostics, Forge-first
+  docs, generic runtime docs, mail smoke testing, and recovery for incomplete
+  bootstrap records.
+- A script-tag widget, visitor identity, conversation creation, two-way
+  messaging, Reverb delivery, and manual refresh fallbacks.
+- Support-code lookup, visitor profiles, safe visitor context, and support
+  reference trails across conversations and tickets.
+- Consent-based cobrowse observe-mode foundations: request/consent lifecycle,
+  telemetry, page state, sanitized snapshots, bounded mutation diagnostics, and
+  an inert replay preview.
+- Ticket workflow foundations: assignment, statuses, priorities, categories,
+  labels, notes, replies, queue filters, handoff notes, reference panels, and
+  next-action guidance.
+- Alert preferences, dashboard notifications, queued email delivery, welcome
+  emails, and mail readiness warnings.
+- Provider-neutral external issue connections, site project mappings, external
+  ticket links, and GitHub outbound issue creation.
 
-- Agent authentication.
-- Site-scoped agent access.
-- RBAC permission inventory and policy waypoints.
-- Platform operator boundary documentation.
-- Shared inbox.
-- Visitor list.
-- Visitor context panel.
-- Basic conversations.
-- Basic tickets.
-- Agent-controlled AI reply draft spike.
-- Cobrowse observe mode.
-- Pointer/highlight guidance.
-- WordPress plugin.
-- Laravel integration package.
-- Docker Compose setup.
+## Next Alpha Focus
 
-## Phase 2: Real Support Beta
+These are the nearest product slices because they improve the daily support
+experience without opening broad integration or platform-service work too soon.
 
-- Better ticket views.
-- Assignment, categories, tags, and site access management.
-- Laravel policy-backed authorization.
-- Account roles for owner, admin, and agent authority.
-- First platform operator scaffold for instance readiness and diagnostics.
-- Canned replies.
-- Conversation summaries and ticket suggestions.
-- External ticket integration planning and provider-neutral link model (see
-  [external ticket integrations](external-ticket-integrations.md)).
-- Transcript retention controls.
-- SPA route tracking.
-- Next.js/React package.
-- Webhooks.
-- Self-hosting documentation.
+- Chat UX polish: message grouping, composer states, delivery/read affordances,
+  typing/presence when the base interaction feels calm, and preserved manual
+  refresh fallbacks.
+- Ticket workflow comfort: smoother transitions between conversation, ticket,
+  visitor, and support-code context; clearer “what needs attention” cues; and
+  less page-hopping for common agent moves.
+- Cobrowse transport discipline: payload budgets, throttling, batching,
+  reconnect/degraded-mode behavior, and explicit drop policies under pressure.
+- Operator hardening: clearer setup/recovery guidance, safer instance activity,
+  process-health affordances, and self-host templates that reduce setup
+  guesswork without hiding the underlying Laravel runtime contract.
+- Privacy and retention controls: transcript/message retention visibility,
+  operator-owned defaults, deletion/export planning, and warnings that help
+  self-hosters understand their responsibility.
 
-## Phase 3: Integration Expansion
+## Later Expansion
 
-- GitHub outbound issue creation.
+These remain valid but should wait until the support loop and operator loop feel
+stable.
+
 - GitLab outbound issue creation.
-- Bitbucket Cloud or Jira outbound issue creation based on operator demand.
-- External issue sync health and audit visibility.
+- Bitbucket Cloud, Bitbucket Data Center, or Jira outbound issue creation based
+  on operator demand.
+- External issue sync health, retry state, and deeper audit visibility.
+- Agent-assisted summaries, reply drafts, and ticket suggestions when they
+  improve concrete workflows without becoming AI decoration.
+- SPA route tracking and richer host-app SDKs.
+- WordPress, Laravel, Next.js, React, and plain JavaScript integration polish.
+- Webhooks and broader automation surfaces.

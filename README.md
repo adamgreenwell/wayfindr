@@ -91,16 +91,24 @@ Start with [data-responsibility.md](docs/privacy/data-responsibility.md), the
 
 ## Status
 
-Pre-alpha. The current prototype supports a local first support loop: a plain
-JavaScript widget can create a visitor conversation, and an authenticated agent
-can read and reply to the conversation in the dashboard. The public widget API
-can also retrieve the visitor-visible message timeline, and the embedded widget
-renders that timeline with live Reverb updates when configured and a manual
-refresh fallback when realtime is unavailable. The Laravel app serves the
-classic widget script from `/widget.js`, and agents can create additional site
-install targets from the dashboard. Cobrowsing is beginning with explicit agent
-requests, visitor consent, lightweight connection telemetry, passive page-state
-reporting, sanitized DOM snapshots, bounded mutation stream diagnostics, and an
-inert agent-side replay preview with live Reverb update notices. Agents can turn
-a conversation into a basic ticket; deeper ticket workflow, assignment, and
-production hardening are still ahead.
+Pre-alpha. Wayfindr now has a usable internal alpha spine for the first support
+loop:
+
+- browser and CLI first-run setup;
+- authenticated account owners, admins, agents, and platform operators;
+- site-scoped widget install targets and agent access;
+- visitor identity, live chat, Reverb updates, and manual refresh fallbacks;
+- consent-based cobrowse state, snapshots, mutation diagnostics, telemetry, and
+  an inert agent-side replay preview;
+- durable tickets with assignment, status changes, categories, priorities,
+  labels, notes, replies, queue filters, and support reference panels;
+- visitor profiles, support-code lookup, and safe cross-record context;
+- alert preferences, dashboard alerts, queued email notifications, welcome
+  emails, and mail smoke testing;
+- operator readiness diagnostics, safe operator activity, self-hosting docs,
+  and Forge-first deployment guidance;
+- provider-neutral external issue links plus GitHub outbound issue creation.
+
+The next product work is less about proving that the parts can exist and more
+about making the everyday support experience calm: chat polish, ticket flow
+comfort, cobrowse transport discipline, and continued operator hardening.
