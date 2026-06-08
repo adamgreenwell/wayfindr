@@ -722,7 +722,16 @@
 
                         <div class="field">
                             <label for="body">Message</label>
-                            <textarea id="body" name="body" rows="5" placeholder="Write a clear, calm reply." data-reply-body>{{ old('body') }}</textarea>
+                            <textarea
+                                id="body"
+                                name="body"
+                                rows="5"
+                                placeholder="Write a clear, calm reply."
+                                aria-describedby="reply-shortcut-help"
+                                data-reply-body
+                                data-shortcut-submit
+                            >{{ old('body') }}</textarea>
+                            <p id="reply-shortcut-help" class="sr-only">Command or Control plus Enter sends this reply.</p>
                             @error('body')
                                 <p class="field-error">{{ $message }}</p>
                             @enderror
@@ -810,6 +819,30 @@
                         var body = form.querySelector('[data-reply-body]');
                         var status = form.querySelector('[data-reply-status]');
                         var submittingLabel = form.getAttribute('data-submitting-label') || 'Sending...';
+
+                        if (body && body.hasAttribute('data-shortcut-submit')) {
+                            body.addEventListener('keydown', function (event) {
+                                if (event.key !== 'Enter' || (! event.metaKey && ! event.ctrlKey)) {
+                                    return;
+                                }
+
+                                if (form.getAttribute('data-submitting') === 'true' || body.value.trim() === '') {
+                                    return;
+                                }
+
+                                event.preventDefault();
+
+                                if (typeof form.requestSubmit === 'function') {
+                                    form.requestSubmit(submit || undefined);
+
+                                    return;
+                                }
+
+                                if (submit) {
+                                    submit.click();
+                                }
+                            });
+                        }
 
                         form.addEventListener('submit', function (event) {
                             if (form.getAttribute('data-submitting') === 'true') {

@@ -240,6 +240,9 @@ test('conversation reply surface shows context and helper preview affordances', 
         ->assertSee('Assigned to you')
         ->assertSee('Billing follow-up')
         ->assertSee('I will check the billing details and follow up shortly.')
+        ->assertSee('data-shortcut-submit', false)
+        ->assertSee('aria-describedby="reply-shortcut-help"', false)
+        ->assertSee('Command or Control plus Enter sends this reply.')
         ->assertSee('Keep sensitive details out of replies unless the visitor supplied them here.');
 });
 
