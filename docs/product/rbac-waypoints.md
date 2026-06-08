@@ -144,6 +144,7 @@ Self-hosted setup should remain hard to lock yourself out of:
 
 - the first bootstrap user becomes `owner`,
 - the first bootstrap site is assigned to that user,
+- the browser setup path stays available for incomplete first-run records until an account-scoped user exists,
 - sites with no explicit support agents remain account-wide until site access is configured,
 - once a site has explicit support agents, support queues become site-scoped.
 

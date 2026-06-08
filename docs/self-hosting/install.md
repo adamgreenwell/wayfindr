@@ -26,8 +26,10 @@ storage, backups, and the post-install smoke path.
 
 After the application is deployed and the environment is configured, visit
 `/setup` on the Wayfindr host to create the first account owner and install
-site from the browser. The setup screen is available only while the database has
-no account, account-scoped agent, or site records.
+site from the browser. The setup screen is available until the database has an
+account-scoped user. If an interrupted bootstrap already created account or site
+records but no owner, `/setup` reuses those first-run records so operators do
+not need to clean up SQL by hand.
 
 The first owner is also marked as the initial platform operator so they can use
 `/operator` for instance readiness diagnostics. Platform operator access remains

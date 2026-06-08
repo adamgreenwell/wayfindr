@@ -203,9 +203,11 @@ account, owner, and install site from the browser. This is the preferred
 first-run path because it keeps the normal self-hosting flow in the web
 interface instead of requiring SSH for routine activation.
 
-The setup screen is locked after Wayfindr has any account, account-scoped
-agent, or site records. If you need to create the first records from the
-terminal instead, run the CLI bootstrap command from the Laravel app directory:
+The setup screen is locked after Wayfindr has an account-scoped user. If an
+interrupted deploy or CLI run already created account or site records but no
+owner, `/setup` reuses those first-run records instead of asking the operator to
+perform database cleanup. If you prefer to create the first records from the
+terminal, run the CLI bootstrap command from the Laravel app directory:
 
 ```bash
 cd ~/wayfindr.on-forge.com/current/apps/server

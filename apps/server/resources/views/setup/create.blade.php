@@ -1,8 +1,15 @@
 <x-layouts.app title="Set up Wayfindr">
     <main class="auth-page">
         <section class="panel setup-panel" aria-labelledby="setup-heading">
-            <h1 id="setup-heading">Set up Wayfindr</h1>
+            <h1 id="setup-heading">{{ $hasIncompleteBootstrapRecords ? 'Finish setting up Wayfindr' : 'Set up Wayfindr' }}</h1>
             <p class="lede">Create the first account, owner, and install site.</p>
+
+            @if ($hasIncompleteBootstrapRecords)
+                <div class="notice-copy notice-copy-bordered">
+                    <p><strong>Some first-run records already exist, but no account owner has been created yet.</strong></p>
+                    <p>Use this form to claim the install and reuse the earliest account and site records Wayfindr can find.</p>
+                </div>
+            @endif
 
             <form method="POST" action="{{ route('setup.store') }}">
                 @csrf

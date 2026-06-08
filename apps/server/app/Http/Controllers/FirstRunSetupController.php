@@ -25,7 +25,9 @@ class FirstRunSetupController extends Controller
             return $this->redirectAfterSetup($request);
         }
 
-        return view('setup.create');
+        return view('setup.create', [
+            'hasIncompleteBootstrapRecords' => $firstRunState->hasIncompleteBootstrapRecords(),
+        ]);
     }
 
     public function store(Request $request, FirstRunState $firstRunState): RedirectResponse
@@ -48,10 +50,19 @@ class FirstRunSetupController extends Controller
             $agentName = trim($validated['agent_name']);
             $siteName = trim($validated['site_name']);
 
-            $account = Account::query()->create([
-                'name' => $accountName,
-                'slug' => $this->accountSlug($accountName),
-            ]);
+            $account = Account::query()->oldest('id')->lockForUpdate()->first();
+
+            if ($account) {
+                $account->update([
+                    'name' => $accountName,
+                    'slug' => $this->accountSlug($accountName, $account),
+                ]);
+            } else {
+                $account = Account::query()->create([
+                    'name' => $accountName,
+                    'slug' => $this->accountSlug($accountName),
+                ]);
+            }
 
             $agent = User::query()->create([
                 'account_id' => $account->id,
@@ -62,15 +73,29 @@ class FirstRunSetupController extends Controller
                 'password' => Hash::make($validated['password']),
             ]);
 
-            $site = Site::query()->create([
+            $site = Site::query()
+                ->where('account_id', $account->id)
+                ->oldest('id')
+                ->lockForUpdate()
+                ->first();
+
+            $siteAttributes = [
                 'account_id' => $account->id,
                 'name' => $siteName,
                 'domain' => $this->normalizeDomain($validated['site_domain'] ?? null),
-                'public_key' => $this->publicKey(),
                 'settings' => [
                     'mask_selectors' => ['input[type="password"]', '[data-wayfindr-mask]'],
                 ],
-            ]);
+            ];
+
+            if ($site) {
+                $site->update($siteAttributes);
+            } else {
+                $site = Site::query()->create([
+                    ...$siteAttributes,
+                    'public_key' => $this->publicKey(),
+                ]);
+            }
 
             $site->supportAgents()->syncWithoutDetaching($agent->id);
 
@@ -95,11 +120,23 @@ class FirstRunSetupController extends Controller
         return redirect()->route('login');
     }
 
-    private function accountSlug(string $accountName): string
+    private function accountSlug(string $accountName, ?Account $account = null): string
     {
-        $slug = Str::slug($accountName);
+        $baseSlug = Str::slug($accountName);
+        $baseSlug = $baseSlug !== '' ? $baseSlug : 'wayfindr-support';
+        $slug = $baseSlug;
+        $suffix = 2;
 
-        return $slug !== '' ? $slug : 'wayfindr-support';
+        while (Account::query()
+            ->where('slug', $slug)
+            ->when($account, fn ($query) => $query->whereKeyNot($account->id))
+            ->exists()
+        ) {
+            $slug = "{$baseSlug}-{$suffix}";
+            $suffix++;
+        }
+
+        return $slug;
     }
 
     private function normalizeDomain(?string $value): ?string
