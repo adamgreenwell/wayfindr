@@ -45,12 +45,16 @@ class FirstRunSetupController extends Controller
             'site_domain' => ['nullable', 'string', 'max:255'],
         ]);
 
-        [$agent, $site] = DB::transaction(function () use ($validated): array {
+        $setupRecords = DB::transaction(function () use ($validated, $firstRunState): ?array {
             $accountName = trim($validated['account_name']);
             $agentName = trim($validated['agent_name']);
             $siteName = trim($validated['site_name']);
 
             $account = Account::query()->oldest('id')->lockForUpdate()->first();
+
+            if (! $firstRunState->needsSetup()) {
+                return null;
+            }
 
             if ($account) {
                 $account->update([
@@ -101,6 +105,12 @@ class FirstRunSetupController extends Controller
 
             return [$agent, $site];
         });
+
+        if ($setupRecords === null) {
+            return $this->redirectAfterSetup($request);
+        }
+
+        [$agent, $site] = $setupRecords;
 
         Auth::login($agent);
         $request->session()->regenerate();

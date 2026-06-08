@@ -5,6 +5,7 @@ use App\Enums\PlatformRole;
 use App\Models\Account;
 use App\Models\Site;
 use App\Models\User;
+use App\Support\FirstRunState;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 
@@ -118,6 +119,51 @@ test('first run setup claims incomplete bootstrap records without creating dupli
         ->and($agent->account_role)->toBe(AccountRole::Owner)
         ->and($agent->platform_role)->toBe(PlatformRole::Operator)
         ->and($site->supportAgents()->whereKey($agent->id)->exists())->toBeTrue();
+});
+
+test('first run setup rechecks setup state inside the recovery transaction', function (): void {
+    $account = Account::factory()->create([
+        'name' => 'Half Built Support',
+        'slug' => 'half-built-support',
+    ]);
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Half Built Docs',
+        'domain' => 'half-built.example.test',
+    ]);
+    $existingOwner = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Owner,
+        'platform_role' => PlatformRole::Operator,
+        'email' => 'owner@example.com',
+    ]);
+
+    $this->app->instance(FirstRunState::class, new class extends FirstRunState
+    {
+        private int $checks = 0;
+
+        public function needsSetup(): bool
+        {
+            $this->checks++;
+
+            return $this->checks === 1 || parent::needsSetup();
+        }
+    });
+
+    $this->post('/setup', [
+        'account_name' => 'Acme Support',
+        'agent_name' => 'Ada Agent',
+        'agent_email' => 'ada@example.com',
+        'password' => 'correct-horse-battery-staple',
+        'password_confirmation' => 'correct-horse-battery-staple',
+        'site_name' => 'Acme Docs',
+        'site_domain' => 'docs.example.test',
+    ])
+        ->assertRedirect('/login');
+
+    expect(User::query()->count())->toBe(1)
+        ->and(User::query()->sole()->is($existingOwner))->toBeTrue()
+        ->and($account->refresh()->name)->toBe('Half Built Support')
+        ->and($site->refresh()->name)->toBe('Half Built Docs')
+        ->and($site->supportAgents()->count())->toBe(0);
 });
 
 test('first run setup handoff shows install guidance and operator readiness links', function (): void {
