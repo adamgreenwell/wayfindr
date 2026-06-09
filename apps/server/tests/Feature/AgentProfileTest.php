@@ -95,6 +95,49 @@ test('agent can update their alert preference mode', function (): void {
     ]);
 });
 
+test('agent alert cadence defaults to immediate delivery', function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => null,
+    ]);
+
+    expect($agent->alertCadence())->toBe('immediate');
+});
+
+test('agent can choose their email alert delivery cadence', function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => [
+            'mode' => 'all',
+            'email' => true,
+            'cadence' => 'immediate',
+        ],
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/profile')
+        ->assertOk()
+        ->assertSee('Email cadence')
+        ->assertSee('Send email alerts as they happen')
+        ->assertSee('Prefer digest delivery when available')
+        ->assertSee('Digest delivery is planned.')
+        ->assertSee('still send as they happen.');
+
+    $this->actingAs($agent)
+        ->from('/dashboard/profile')
+        ->put('/dashboard/profile/alerts', [
+            'alert_mode' => 'all',
+            'email_alerts' => '1',
+            'alert_cadence' => 'digest',
+        ])
+        ->assertRedirect('/dashboard/profile')
+        ->assertSessionHas('status', 'Alert preferences updated.');
+
+    expect($agent->fresh()->alert_preferences)->toMatchArray([
+        'mode' => 'all',
+        'email' => true,
+        'cadence' => 'digest',
+    ]);
+});
+
 test('agent profile flags email alerts when mail delivery needs attention', function (): void {
     config([
         'mail.default' => 'log',
@@ -131,7 +174,7 @@ test('agent profile confirms email alerts when mail delivery is ready', function
 
 test('agent alert preference mode must be supported', function (): void {
     $agent = User::factory()->for(Account::factory())->create([
-        'alert_preferences' => ['mode' => 'all'],
+        'alert_preferences' => ['mode' => 'all', 'cadence' => 'immediate'],
     ]);
 
     $this->actingAs($agent)
@@ -144,6 +187,27 @@ test('agent alert preference mode must be supported', function (): void {
 
     expect($agent->fresh()->alert_preferences)->toMatchArray([
         'mode' => 'all',
+        'cadence' => 'immediate',
+    ]);
+});
+
+test('agent alert cadence must be supported', function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => ['mode' => 'all', 'cadence' => 'immediate'],
+    ]);
+
+    $this->actingAs($agent)
+        ->from('/dashboard/profile')
+        ->put('/dashboard/profile/alerts', [
+            'alert_mode' => 'all',
+            'alert_cadence' => 'every-seven-seconds',
+        ])
+        ->assertRedirect('/dashboard/profile')
+        ->assertSessionHasErrors('alert_cadence');
+
+    expect($agent->fresh()->alert_preferences)->toMatchArray([
+        'mode' => 'all',
+        'cadence' => 'immediate',
     ]);
 });
 
@@ -152,6 +216,7 @@ test('agent can disable email alert delivery while keeping dashboard alerts', fu
         'alert_preferences' => [
             'mode' => 'all',
             'email' => true,
+            'cadence' => 'digest',
         ],
     ]);
 
@@ -166,6 +231,7 @@ test('agent can disable email alert delivery while keeping dashboard alerts', fu
     expect($agent->fresh()->alert_preferences)->toMatchArray([
         'mode' => 'all',
         'email' => false,
+        'cadence' => 'digest',
     ]);
 });
 

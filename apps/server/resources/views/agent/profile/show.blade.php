@@ -72,7 +72,9 @@
                 <label for="alert_mode">Alert mode</label>
                 <select id="alert_mode" name="alert_mode" required>
                     @foreach ($alertModeOptions as $modeValue => $modeLabel)
-                        <option value="{{ $modeValue }}" @selected(old('alert_mode', $alertMode) === $modeValue)>{{ $modeLabel }}</option>
+                        <option value="{{ $modeValue }}" @selected(old('alert_mode', $alertMode) === $modeValue)>
+                            {{ $modeLabel }}
+                        </option>
                     @endforeach
                 </select>
                 @error('alert_mode')
@@ -91,7 +93,32 @@
                 <span>Email alerts</span>
             </label>
 
-            <p class="field-help">Email alerts send the same calm support signals to your inbox when mail is configured. Quiet mode still suppresses new alerts.</p>
+            <div class="field">
+                <label for="alert_cadence">Email cadence</label>
+                <select id="alert_cadence" name="alert_cadence" required>
+                    @foreach ($alertCadenceOptions as $cadenceValue => $cadenceLabel)
+                        @php
+                            $isCurrentCadence = old('alert_cadence', $alertCadence) === $cadenceValue;
+                        @endphp
+                        <option value="{{ $cadenceValue }}" @selected($isCurrentCadence)>
+                            {{ $cadenceLabel }}
+                        </option>
+                    @endforeach
+                </select>
+                @error('alert_cadence')
+                    <p class="field-error">{{ $message }}</p>
+                @enderror
+            </div>
+
+            <p class="field-help">
+                Digest delivery is planned. Until it is enabled, email alerts
+                still send as they happen.
+            </p>
+
+            <p class="field-help">
+                Email alerts send the same calm support signals to your inbox
+                when mail is configured. Quiet mode still suppresses new alerts.
+            </p>
             <p class="field-help">
                 <span class="readiness-status" data-status="{{ $mailReadiness['status'] }}">
                     {{ $mailReadiness['status'] === 'ready' ? 'Email delivery ready' : 'Email delivery needs attention' }}

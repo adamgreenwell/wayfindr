@@ -20,7 +20,7 @@ Wayfindr already has the pieces needed for calm alert routing:
 - queued email delivery for configured installs;
 - mail readiness checks and a mail smoke command;
 - agent profile preferences for all supported-site alerts, assigned-only alerts,
-  quiet mode, and email delivery;
+  quiet mode, email delivery, and future email cadence;
 - site access rules that keep alert visibility inside the agent's support scope;
 - deactivated-agent checks so stale assignments do not keep sending actionable
   support alerts.
@@ -31,10 +31,10 @@ access, role policy, quiet mode, or deactivated-agent checks.
 
 ## Delivery Model
 
-The first digest setting should be per-agent because alert fatigue is personal
-and support workloads differ. Account-level defaults can come later when teams
-need a shared operating policy. Site-level overrides should wait until site
-staffing patterns prove they are needed.
+The first digest setting is per-agent because alert fatigue is personal and
+support workloads differ. Account-level defaults can come later when teams need
+a shared operating policy. Site-level overrides should wait until site staffing
+patterns prove they are needed.
 
 Suggested preference shape:
 
@@ -44,8 +44,11 @@ Suggested preference shape:
   alerts into scheduled summaries.
 - `quiet`: suppress new support alerts, matching the current quiet-mode intent.
 
-The current email on/off preference can remain the master switch. A future
-digest cadence should only matter when email alerts are enabled.
+The current email on/off preference remains the master switch. The profile
+screen now stores an email cadence preference, but digest cadence does not change
+delivery until the digest candidate service and scheduled mail path exist.
+Until scheduled digest delivery exists, product copy should describe digest
+cadence as a future preference instead of an active delivery mode.
 
 ## Immediate Alert Candidates
 
@@ -130,7 +133,8 @@ create noisy alerts.
 
 1. Document the digest and escalation boundary.
 2. Add an agent-facing delivery cadence preference without changing delivery
-   behavior.
+   behavior. Done: agents can store immediate or digest cadence while current
+   alert delivery remains unchanged.
 3. Add a digest candidate service with tests for account, site, role,
    quiet-mode, and deactivated-agent boundaries.
 4. Add a dry-run console command that prints which digest items would be sent to

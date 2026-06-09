@@ -56,13 +56,14 @@ test('visitor messages notify the assigned agent', function (): void {
         ]);
 });
 
-test('conversation alerts include mail when the assigned agent opts in', function (): void {
+test('conversation alerts still include mail with digest cadence scaffolded', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $assignedAgent = User::factory()->for($account)->create([
         'name' => 'Ada Agent',
         'alert_preferences' => [
             'mode' => 'assigned',
             'email' => true,
+            'cadence' => 'digest',
         ],
     ]);
     $site = Site::factory()->for($account)->create([
@@ -463,7 +464,7 @@ test('assigning a ticket notifies the new assignee', function (): void {
     ]);
 });
 
-test('ticket assignment alerts include mail when the new assignee opts in', function (): void {
+test('ticket assignment alerts still include mail with digest cadence scaffolded', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $assigningAgent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
     $assignedAgent = User::factory()->for($account)->create([
@@ -471,6 +472,7 @@ test('ticket assignment alerts include mail when the new assignee opts in', func
         'alert_preferences' => [
             'mode' => 'assigned',
             'email' => true,
+            'cadence' => 'digest',
         ],
     ]);
     $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);

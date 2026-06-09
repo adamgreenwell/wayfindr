@@ -29,6 +29,10 @@ class User extends Authenticatable
 
     public const ALERT_MODE_QUIET = 'quiet';
 
+    public const ALERT_CADENCE_IMMEDIATE = 'immediate';
+
+    public const ALERT_CADENCE_DIGEST = 'digest';
+
     /**
      * Get the attributes that should be cast.
      *
@@ -55,6 +59,17 @@ class User extends Authenticatable
             self::ALERT_MODE_ALL => 'All site alerts I can support',
             self::ALERT_MODE_ASSIGNED => 'Only conversations and tickets assigned to me',
             self::ALERT_MODE_QUIET => 'Quiet mode',
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function alertCadenceOptions(): array
+    {
+        return [
+            self::ALERT_CADENCE_IMMEDIATE => 'Send email alerts as they happen',
+            self::ALERT_CADENCE_DIGEST => 'Prefer digest delivery when available',
         ];
     }
 
@@ -105,6 +120,15 @@ class User extends Authenticatable
     public function alertEmailEnabled(): bool
     {
         return data_get($this->alert_preferences, 'email') === true;
+    }
+
+    public function alertCadence(): string
+    {
+        $cadence = data_get($this->alert_preferences, 'cadence');
+
+        return is_string($cadence) && array_key_exists($cadence, self::alertCadenceOptions())
+            ? $cadence
+            : self::ALERT_CADENCE_IMMEDIATE;
     }
 
     public function shouldReceiveConversationAlert(Conversation $conversation): bool

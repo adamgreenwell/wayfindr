@@ -34,6 +34,8 @@ class AgentProfileController extends Controller
             ],
             'alertMode' => $agent->alertMode(),
             'alertModeOptions' => $agent::alertModeOptions(),
+            'alertCadence' => $agent->alertCadence(),
+            'alertCadenceOptions' => $agent::alertCadenceOptions(),
             'mailReadiness' => $mailReadiness,
         ]);
     }
@@ -61,6 +63,7 @@ class AgentProfileController extends Controller
 
         $validated = $request->validate([
             'alert_mode' => ['required', Rule::in(array_keys($request->user()::alertModeOptions()))],
+            'alert_cadence' => ['sometimes', Rule::in(array_keys($request->user()::alertCadenceOptions()))],
         ]);
 
         $alertPreferences = $request->user()->alert_preferences ?? [];
@@ -69,6 +72,7 @@ class AgentProfileController extends Controller
             'alert_preferences' => array_merge($alertPreferences, [
                 'mode' => $validated['alert_mode'],
                 'email' => $request->boolean('email_alerts'),
+                'cadence' => $validated['alert_cadence'] ?? $request->user()->alertCadence(),
             ]),
         ]);
 
