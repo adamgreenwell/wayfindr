@@ -136,7 +136,9 @@ create noisy alerts.
    behavior. Done: agents can store immediate or digest cadence while current
    alert delivery remains unchanged.
 3. Add a digest candidate service with tests for account, site, role,
-   quiet-mode, and deactivated-agent boundaries.
+   quiet-mode, and deactivated-agent boundaries. Done: the collector now
+   gathers visible unread metadata-only candidates for digest-enabled agents
+   without sending mail.
 4. Add a dry-run console command that prints which digest items would be sent to
    which agent.
 5. Add queued digest mail with safe metadata-only content.
