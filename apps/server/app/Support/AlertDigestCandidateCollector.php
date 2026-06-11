@@ -14,6 +14,8 @@ use Illuminate\Support\Facades\Gate;
 
 class AlertDigestCandidateCollector
 {
+    public const DIGEST_QUEUED_AT_KEY = 'digest_queued_at';
+
     /**
      * @return Collection<int, array{
      *     kind: string,
@@ -37,6 +39,7 @@ class AlertDigestCandidateCollector
             ->unreadNotifications()
             ->latest()
             ->get()
+            ->filter(fn (DatabaseNotification $notification): bool => blank(data_get($notification->data, self::DIGEST_QUEUED_AT_KEY)))
             ->filter(fn (DatabaseNotification $notification): bool => Gate::forUser($agent)->allows('view', $notification))
             ->map(fn (DatabaseNotification $notification): ?array => $this->candidateFor($agent, $notification))
             ->filter()

@@ -74,6 +74,20 @@ test('alert digest send command queues metadata-only digest mail', function (): 
             && ! str_contains($renderedMail, 'visitor_anonymous_id')
             && ! str_contains($renderedMail, 'message_preview');
     });
+
+    $agent->fresh()->unreadNotifications->each(function ($notification): void {
+        expect(data_get($notification->data, 'digest_queued_at'))->not->toBeNull();
+    });
+
+    $exitCode = Artisan::call('wayfindr:send-alert-digests', [
+        '--email' => $agent->email,
+    ]);
+
+    expect($exitCode)->toBe(0)
+        ->and(Artisan::output())->toContain('No alert digest emails queued.')
+        ->toContain('Alert digest delivery complete. Agents scanned: 1. Emails queued: 0. Candidates: 0.');
+
+    Mail::assertQueuedCount(1);
 });
 
 test('alert digest send command reports empty and missing-agent states without queueing mail', function (): void {

@@ -5,7 +5,9 @@ namespace App\Console\Commands;
 use App\Mail\AlertDigestMessage;
 use App\Models\User;
 use App\Support\AlertDigestCandidateCollector;
+use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
+use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Mail;
 
@@ -44,11 +46,15 @@ class SendAlertDigestsCommand extends Command
             $candidateCount += $candidates->count();
             $emailsQueued++;
 
+            $queuedAt = now();
+
             Mail::to($agent->email)->queue(new AlertDigestMessage(
                 agentName: $agent->name,
                 candidates: $candidates->all(),
-                generatedAt: now(),
+                generatedAt: $queuedAt,
             ));
+
+            $this->markCandidatesQueued($candidates, $queuedAt);
 
             $this->line("Queued digest for {$agent->name} <{$agent->email}> with {$candidates->count()} candidates.");
         }
@@ -78,5 +84,23 @@ class SendAlertDigestsCommand extends Command
                 && $agent->alertMode() !== User::ALERT_MODE_QUIET
                 && $agent->alertCadence() === User::ALERT_CADENCE_DIGEST)
             ->values();
+    }
+
+    /**
+     * @param  Collection<int, array{notification_id: string}>  $candidates
+     */
+    private function markCandidatesQueued(Collection $candidates, CarbonInterface $queuedAt): void
+    {
+        DatabaseNotification::query()
+            ->whereIn('id', $candidates->pluck('notification_id')->all())
+            ->get()
+            ->each(function (DatabaseNotification $notification) use ($queuedAt): void {
+                $notification->forceFill([
+                    'data' => [
+                        ...$notification->data,
+                        AlertDigestCandidateCollector::DIGEST_QUEUED_AT_KEY => $queuedAt->toISOString(),
+                    ],
+                ])->save();
+            });
     }
 }

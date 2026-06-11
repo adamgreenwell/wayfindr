@@ -48,8 +48,9 @@ The current email on/off preference remains the master switch. Immediate cadence
 sends configured email alerts as events happen. Digest cadence keeps dashboard
 notifications immediate, skips event-by-event email, and lets operators queue
 metadata-only digest email through `php artisan wayfindr:send-alert-digests`.
-A recurring schedule for digest delivery can come later once timing defaults are
-settled.
+Digest delivery records which alert notifications were queued so unchanged
+unread alerts do not resend on every run. A recurring schedule for digest
+delivery can come later once timing defaults are settled.
 
 ## Immediate Alert Candidates
 
