@@ -144,3 +144,41 @@ test('escalation choices omit deactivated agents when site access falls back to 
     expect($site->supportsAgent($targetAgent))->toBeTrue()
         ->and($site->supportsAgent($deactivatedAgent))->toBeFalse();
 });
+
+test('ticket detail highlights the latest recent escalation reason', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Bea Builder']);
+    $escalatingAgent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $site->supportAgents()->attach([$agent->id, $escalatingAgent->id]);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($agent, 'assignee')
+        ->create([
+            'status' => 'open',
+            'subject' => 'Customer needs billing help',
+        ]);
+    $ticket->auditEvents()->create([
+        'account_id' => $account->id,
+        'site_id' => $site->id,
+        'actor_type' => User::class,
+        'actor_id' => $escalatingAgent->id,
+        'action' => 'ticket.escalated',
+        'metadata' => [
+            'old_assignee_name' => 'Ada Agent',
+            'target_agent_id' => $agent->id,
+            'target_agent_name' => 'Bea Builder',
+            'reason' => 'Customer has an enterprise billing question.',
+        ],
+        'occurred_at' => now()->subMinutes(5),
+    ]);
+
+    $this->actingAs($agent)
+        ->get("/dashboard/tickets/{$ticket->id}")
+        ->assertOk()
+        ->assertSee('Escalation')
+        ->assertSee('Ada Agent escalated this ticket to Bea Builder')
+        ->assertSee('Customer has an enterprise billing question.')
+        ->assertSee('Escalated to you');
+});

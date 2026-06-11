@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Database\Eloquent\Relations\MorphOne;
 
 #[Fillable([
     'account_id',
@@ -187,6 +188,46 @@ class Ticket extends Model
     public function auditEvents(): MorphMany
     {
         return $this->morphMany(AuditEvent::class, 'subject');
+    }
+
+    public function latestEscalationEvent(): MorphOne
+    {
+        return $this->morphOne(AuditEvent::class, 'subject')
+            ->where('action', 'ticket.escalated')
+            ->latestOfMany('occurred_at');
+    }
+
+    public function latestRecentEscalationEvent(): ?AuditEvent
+    {
+        if ($this->status === 'closed') {
+            return null;
+        }
+
+        $event = $this->relationLoaded('latestEscalationEvent')
+            ? $this->latestEscalationEvent
+            : $this->latestEscalationEvent()->with('actor')->first();
+
+        if (! $event?->occurred_at) {
+            return null;
+        }
+
+        return $event->occurred_at->greaterThanOrEqualTo(now()->subDay())
+            ? $event
+            : null;
+    }
+
+    public function hasRecentEscalation(): bool
+    {
+        return $this->latestRecentEscalationEvent() !== null;
+    }
+
+    public function escalationAudienceLabelFor(User $agent): string
+    {
+        $targetAgentId = data_get($this->latestRecentEscalationEvent()?->metadata, 'target_agent_id');
+
+        return (int) $targetAgentId === (int) $agent->id
+            ? 'Escalated to you'
+            : 'Recently escalated';
     }
 
     public function externalLinks(): HasMany

@@ -137,7 +137,9 @@
                 </div>
             </section>
 
-            @php($ticketNextAction = $ticket->nextAction())
+            @php
+                $ticketNextAction = $ticket->nextAction();
+            @endphp
             <section class="section" aria-labelledby="ticket-next-action-heading">
                 <div class="section-header">
                     <h2 id="ticket-next-action-heading">Next action</h2>
@@ -154,6 +156,30 @@
                     </p>
                 </div>
             </section>
+
+            @if ($latestTicketEscalation)
+                @php
+                    $escalationActor = $latestTicketEscalation->actor?->name ?? 'An agent';
+                    $escalationTarget = data_get($latestTicketEscalation->metadata, 'target_agent_name')
+                        ?? data_get($latestTicketEscalation->metadata, 'new_assignee_name')
+                        ?? $ticket->assignee?->name
+                        ?? 'Unassigned';
+                    $escalationReason = data_get($latestTicketEscalation->metadata, 'reason');
+                @endphp
+                <section class="section" aria-labelledby="ticket-escalation-heading">
+                    <div class="section-header">
+                        <h2 id="ticket-escalation-heading">Escalation</h2>
+                        <span class="lede">{{ $ticket->escalationAudienceLabelFor($agent) }}</span>
+                    </div>
+
+                    <div class="notice-copy">
+                        <p><strong>{{ $escalationActor }} escalated this ticket to {{ $escalationTarget }}</strong></p>
+                        @if ($escalationReason)
+                            <p>{{ $escalationReason }}</p>
+                        @endif
+                    </div>
+                </section>
+            @endif
 
             <section class="section" aria-labelledby="ticket-labels-heading">
                 <div class="section-header">
@@ -424,7 +450,9 @@
                 </form>
             </section>
 
-            @php($priorSupportRecordCount = $priorVisitorConversations->count() + $priorVisitorTickets->count())
+            @php
+                $priorSupportRecordCount = $priorVisitorConversations->count() + $priorVisitorTickets->count();
+            @endphp
             @if ($visitorContext['has_visitor'] || $visitorContext['last_page_url'] || $visitorContext['started_page_url'] || $visitorContext['host_context'] !== [])
                 <section class="section" aria-labelledby="ticket-visitor-context-heading">
                     <div class="section-header">
@@ -549,7 +577,9 @@
                     <span class="lede">{{ $ticket->assignee?->name ?? 'Unassigned' }}</span>
                 </div>
 
-                @php($escalationAgents = $accountAgents->reject(fn ($accountAgent) => $accountAgent->is($agent))->values())
+                @php
+                    $escalationAgents = $accountAgents->reject(fn ($accountAgent) => $accountAgent->is($agent))->values();
+                @endphp
 
                 <form class="section-form" method="POST" action="{{ route('dashboard.tickets.assignee.update', $ticket) }}">
                     @csrf
@@ -872,7 +902,12 @@
                                         {{ ucfirst(str_replace(['ticket.', '_'], ['', ' '], $activity->action)) }}
                                 @endswitch
                             </p>
-                            @php($activityBody = data_get($activity->metadata, 'resolution_note') ?? data_get($activity->metadata, 'pending_note') ?? data_get($activity->metadata, 'reopen_note') ?? data_get($activity->metadata, 'reason'))
+                            @php
+                                $activityBody = data_get($activity->metadata, 'resolution_note')
+                                    ?? data_get($activity->metadata, 'pending_note')
+                                    ?? data_get($activity->metadata, 'reopen_note')
+                                    ?? data_get($activity->metadata, 'reason');
+                            @endphp
                             @if ($activityBody)
                                 <p class="message-body">{{ $activityBody }}</p>
                             @endif

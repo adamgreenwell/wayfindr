@@ -546,8 +546,14 @@
                                         <td>{{ ucfirst($ticket->priority) }}</td>
                                         <td>{{ $ticket->assignee?->name ?? 'Unassigned' }}</td>
                                         <td>
+                                            @php
+                                                $recentEscalation = $ticket->latestRecentEscalationEvent();
+                                            @endphp
                                             <strong>{{ $ticket->attentionLabel() }}</strong>
                                             <div class="lede">{{ $ticket->attentionDescription() }}</div>
+                                            @if ($recentEscalation)
+                                                <div class="lede">{{ $ticket->escalationAudienceLabelFor($agent) }}</div>
+                                            @endif
                                         </td>
                                         <td>
                                             @if ($ticket->conversation)

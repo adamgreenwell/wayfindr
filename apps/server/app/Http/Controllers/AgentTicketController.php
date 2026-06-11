@@ -43,6 +43,7 @@ class AgentTicketController extends Controller
                 ->latest()
                 ->latest('id'),
             'labels',
+            'latestEscalationEvent.actor',
             'requester',
             'site.externalIssueProjects.providerConnection',
             'auditEvents' => fn ($query) => $query
@@ -59,6 +60,7 @@ class AgentTicketController extends Controller
             'externalIssueProviders' => ExternalIssueProvider::options(),
             'externalIssueSyncStatuses' => ExternalIssueSyncStatus::options(),
             'githubIssueProjects' => $this->githubIssueProjectsForTicket($ticket),
+            'latestTicketEscalation' => $ticket->latestRecentEscalationEvent(),
             'noteTemplates' => AgentNoteTemplate::options(),
             'replyTemplates' => $replyTemplateOptions->forAgent($agent),
             'ticketReturnLink' => $this->ticketReturnLink($request),

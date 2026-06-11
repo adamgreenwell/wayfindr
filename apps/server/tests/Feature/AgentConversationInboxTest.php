@@ -911,6 +911,77 @@ test('dashboard filters tickets by next step', function (): void {
         ->assertDontSee('Needs someone to own it');
 });
 
+test('dashboard filters and labels recently escalated tickets', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Bea Builder']);
+    $escalatingAgent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $site->supportAgents()->attach([$agent->id, $escalatingAgent->id]);
+
+    $escalatedTicket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($agent, 'assignee')
+        ->create([
+            'subject' => 'Escalated billing question',
+            'status' => 'open',
+        ]);
+    $escalatedTicket->auditEvents()->create([
+        'account_id' => $account->id,
+        'site_id' => $site->id,
+        'actor_type' => User::class,
+        'actor_id' => $escalatingAgent->id,
+        'action' => 'ticket.escalated',
+        'metadata' => [
+            'old_assignee_name' => 'Ada Agent',
+            'target_agent_id' => $agent->id,
+            'target_agent_name' => 'Bea Builder',
+            'reason' => 'Customer needs a billing specialist.',
+        ],
+        'occurred_at' => now(),
+    ]);
+
+    Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($agent, 'assignee')
+        ->create([
+            'subject' => 'Ordinary owned issue',
+            'status' => 'open',
+        ]);
+
+    $staleEscalatedTicket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($agent, 'assignee')
+        ->create([
+            'subject' => 'Stale escalated issue',
+            'status' => 'open',
+        ]);
+    $staleEscalatedTicket->auditEvents()->create([
+        'account_id' => $account->id,
+        'site_id' => $site->id,
+        'actor_type' => User::class,
+        'actor_id' => $escalatingAgent->id,
+        'action' => 'ticket.escalated',
+        'metadata' => [
+            'target_agent_id' => $agent->id,
+            'target_agent_name' => 'Bea Builder',
+        ],
+        'occurred_at' => now()->subDays(2),
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard?ticket_attention=escalated')
+        ->assertOk()
+        ->assertSee('Next step: Recently escalated')
+        ->assertSee('Recently escalated: 1')
+        ->assertSee('Escalated billing question')
+        ->assertSee('Escalated to you')
+        ->assertDontSee('Ordinary owned issue')
+        ->assertDontSee('Stale escalated issue');
+});
+
 test('dashboard summarizes the ticket queue next steps before the active next step filter is applied', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);

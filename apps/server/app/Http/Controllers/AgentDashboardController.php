@@ -103,6 +103,7 @@ class AgentDashboardController extends Controller
             : 'all';
         $ticketAttentionFilters = [
             'all' => 'Any next step',
+            'escalated' => 'Recently escalated',
             'needs_reply' => 'Needs reply',
             'needs_owner' => 'Needs owner',
             'needs_agent' => 'Needs agent',
@@ -176,7 +177,7 @@ class AgentDashboardController extends Controller
             ->get();
         $ticketQuery = $this->ticketQueryParams($ticketStatus, $ticketFilter, $ticketSite, $ticketPriority, $ticketCategory, $ticketLabel, $ticketAttention, $ticketSearch);
         $ticketResults = Ticket::query()
-            ->with(['assignee', 'conversation.latestMessage', 'labels', 'site'])
+            ->with(['assignee', 'conversation.latestMessage', 'labels', 'latestEscalationEvent.actor', 'site'])
             ->where('account_id', $account->id)
             ->whereHas('site', fn ($query) => $query->visibleToAgent($agent))
             ->when($ticketStatus !== 'all', fn ($query) => $query->where('status', $ticketStatus))
@@ -214,9 +215,9 @@ class AgentDashboardController extends Controller
             ->get();
         $ticketQueueSummary = $this->ticketQueueSummary($ticketResults, $ticketQuery, $ticketAttentionFilters);
         $tickets = $ticketResults
-            ->filter(fn (Ticket $ticket): bool => $ticketAttention === 'all' || $ticket->attentionState() === $ticketAttention)
+            ->filter(fn (Ticket $ticket): bool => $ticketAttention === 'all' || $this->ticketDashboardAttentionState($ticket) === $ticketAttention)
             ->sortBy(fn (Ticket $ticket): array => [
-                $ticket->attentionSortRank(),
+                $this->ticketDashboardAttentionSortRank($ticket),
                 -$ticket->updated_at->getTimestamp(),
                 -$ticket->created_at->getTimestamp(),
             ])
@@ -509,9 +510,9 @@ class AgentDashboardController extends Controller
      */
     private function ticketQueueSummary(Collection $tickets, array $ticketQuery, array $ticketAttentionFilters): array
     {
-        $counts = $tickets->countBy(fn (Ticket $ticket): string => $ticket->attentionState());
+        $counts = $tickets->countBy(fn (Ticket $ticket): string => $this->ticketDashboardAttentionState($ticket));
 
-        return collect(['needs_reply', 'needs_owner', 'needs_agent', 'waiting_on_customer', 'resolved'])
+        return collect(['escalated', 'needs_reply', 'needs_owner', 'needs_agent', 'waiting_on_customer', 'resolved'])
             ->map(function (string $state) use ($counts, $ticketAttentionFilters, $ticketQuery): array {
                 $query = $ticketQuery;
                 $query['ticket_attention'] = $state;
@@ -528,5 +529,19 @@ class AgentDashboardController extends Controller
                 ];
             })
             ->all();
+    }
+
+    private function ticketDashboardAttentionState(Ticket $ticket): string
+    {
+        return $ticket->hasRecentEscalation()
+            ? 'escalated'
+            : $ticket->attentionState();
+    }
+
+    private function ticketDashboardAttentionSortRank(Ticket $ticket): int
+    {
+        return $this->ticketDashboardAttentionState($ticket) === 'escalated'
+            ? 5
+            : $ticket->attentionSortRank();
     }
 }
