@@ -118,3 +118,29 @@ test('manual escalation notifies the target even when they already own the ticke
         ->and($ticket->auditEvents()->where('action', 'ticket.escalated')->exists())->toBeTrue()
         ->and($targetAgent->fresh()->unreadNotifications)->toHaveCount(1);
 });
+
+test('escalation choices omit deactivated agents when site access falls back to all account agents', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $targetAgent = User::factory()->for($account)->create(['name' => 'Bea Builder']);
+    $deactivatedAgent = User::factory()->for($account)->create([
+        'name' => 'Dana Deactivated',
+        'deactivated_at' => now(),
+    ]);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($agent, 'assignee')
+        ->create(['status' => 'open']);
+
+    $this->actingAs($agent)
+        ->get("/dashboard/tickets/{$ticket->id}")
+        ->assertOk()
+        ->assertSee('Escalate ticket')
+        ->assertSee('Bea Builder')
+        ->assertDontSee('Dana Deactivated');
+
+    expect($site->supportsAgent($targetAgent))->toBeTrue()
+        ->and($site->supportsAgent($deactivatedAgent))->toBeFalse();
+});

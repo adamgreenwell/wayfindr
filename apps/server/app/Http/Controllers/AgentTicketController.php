@@ -529,7 +529,10 @@ class AgentTicketController extends Controller
 
         return $supportAgents->isNotEmpty()
             ? $supportAgents
-            : $site->account->agents()->orderBy('name')->get();
+            : $site->account->agents()
+                ->whereNull('deactivated_at')
+                ->orderBy('name')
+                ->get();
     }
 
     private function redirectAfterUpdate(Ticket $ticket, string $status): RedirectResponse
