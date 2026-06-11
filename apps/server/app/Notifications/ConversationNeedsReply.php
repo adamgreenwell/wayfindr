@@ -31,7 +31,7 @@ class ConversationNeedsReply extends Notification implements ShouldQueue
     {
         $channels = ['database'];
 
-        if ($notifiable instanceof User && $notifiable->alertEmailEnabled()) {
+        if ($notifiable instanceof User && $notifiable->wantsImmediateAlertEmail()) {
             $channels[] = 'mail';
         }
 

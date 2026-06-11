@@ -131,6 +131,12 @@ class User extends Authenticatable
             : self::ALERT_CADENCE_IMMEDIATE;
     }
 
+    public function wantsImmediateAlertEmail(): bool
+    {
+        return $this->alertEmailEnabled()
+            && $this->alertCadence() === self::ALERT_CADENCE_IMMEDIATE;
+    }
+
     public function shouldReceiveConversationAlert(Conversation $conversation): bool
     {
         if ($this->isDeactivated() || $this->alertMode() === self::ALERT_MODE_QUIET) {

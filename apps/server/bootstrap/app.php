@@ -4,6 +4,7 @@ use App\Console\Commands\AlertDigestPreviewCommand;
 use App\Console\Commands\BootstrapWayfindrCommand;
 use App\Console\Commands\CreateAgentCommand;
 use App\Console\Commands\MailTestCommand;
+use App\Console\Commands\SendAlertDigestsCommand;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -21,6 +22,7 @@ return Application::configure(basePath: dirname(__DIR__))
         BootstrapWayfindrCommand::class,
         CreateAgentCommand::class,
         MailTestCommand::class,
+        SendAlertDigestsCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         //

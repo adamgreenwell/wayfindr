@@ -56,7 +56,7 @@ test('visitor messages notify the assigned agent', function (): void {
         ]);
 });
 
-test('conversation alerts still include mail with digest cadence scaffolded', function (): void {
+test('conversation alerts with digest cadence keep dashboard delivery but skip immediate mail', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $assignedAgent = User::factory()->for($account)->create([
         'name' => 'Ada Agent',
@@ -88,7 +88,7 @@ test('conversation alerts still include mail with digest cadence scaffolded', fu
     $notification = $assignedAgent->fresh()->unreadNotifications()->firstOrFail();
 
     expect((new ConversationNeedsReply($conversation->messages()->latest('id')->firstOrFail()))->via($assignedAgent))
-        ->toBe(['database', 'mail'])
+        ->toBe(['database'])
         ->and($notification->data)->toMatchArray([
             'support_code' => 'WF-MAIL1',
             'message_preview' => 'The checkout button is still stuck.',
@@ -464,7 +464,7 @@ test('assigning a ticket notifies the new assignee', function (): void {
     ]);
 });
 
-test('ticket assignment alerts still include mail with digest cadence scaffolded', function (): void {
+test('ticket assignment alerts with digest cadence keep dashboard delivery but skip immediate mail', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $assigningAgent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
     $assignedAgent = User::factory()->for($account)->create([
@@ -493,7 +493,7 @@ test('ticket assignment alerts still include mail with digest cadence scaffolded
         ->assertRedirect("/dashboard/tickets/{$ticket->id}");
 
     expect((new TicketAssigned($ticket->fresh(), $assigningAgent))->via($assignedAgent))
-        ->toBe(['database', 'mail'])
+        ->toBe(['database'])
         ->and($assignedAgent->fresh()->unreadNotifications)->toHaveCount(1);
 });
 

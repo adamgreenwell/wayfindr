@@ -17,7 +17,7 @@ explicit, auditable, and scoped before it becomes automatic.
 Wayfindr already has the pieces needed for calm alert routing:
 
 - dashboard notifications for support work that needs attention;
-- queued email delivery for configured installs;
+- queued email delivery for configured installs, including digest email;
 - mail readiness checks and a mail smoke command;
 - agent profile preferences for all supported-site alerts, assigned-only alerts,
   quiet mode, email delivery, and future email cadence;
@@ -44,11 +44,12 @@ Suggested preference shape:
   alerts into scheduled summaries.
 - `quiet`: suppress new support alerts, matching the current quiet-mode intent.
 
-The current email on/off preference remains the master switch. The profile
-screen now stores an email cadence preference, but digest cadence does not change
-delivery until the digest candidate service and scheduled mail path exist.
-Until scheduled digest delivery exists, product copy should describe digest
-cadence as a future preference instead of an active delivery mode.
+The current email on/off preference remains the master switch. Immediate cadence
+sends configured email alerts as events happen. Digest cadence keeps dashboard
+notifications immediate, skips event-by-event email, and lets operators queue
+metadata-only digest email through `php artisan wayfindr:send-alert-digests`.
+A recurring schedule for digest delivery can come later once timing defaults are
+settled.
 
 ## Immediate Alert Candidates
 
@@ -143,7 +144,9 @@ create noisy alerts.
    which agent. Done: operators can run
    `php artisan wayfindr:alert-digest-preview` to inspect metadata-only digest
    candidates without sending email.
-5. Add queued digest mail with safe metadata-only content.
+5. Add queued digest mail with safe metadata-only content. Done: operators can
+   run `php artisan wayfindr:send-alert-digests` to queue digest email for
+   digest-enabled agents with current candidates.
 6. Add a simple manual escalation event and audit trail.
 7. Add account-level default cadence and escalation timing only after the
    per-agent path is proven.
