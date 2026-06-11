@@ -88,6 +88,32 @@ test('alert digest send command queues metadata-only digest mail', function (): 
         ->toContain('Alert digest delivery complete. Agents scanned: 1. Emails queued: 0. Candidates: 0.');
 
     Mail::assertQueuedCount(1);
+
+    $this->travelTo(now()->addMinutes(5));
+    $ticket->forceFill([
+        'priority' => 'normal',
+    ])->save();
+
+    $exitCode = Artisan::call('wayfindr:send-alert-digests', [
+        '--email' => $agent->email,
+    ]);
+
+    expect($exitCode)->toBe(0)
+        ->and(Artisan::output())->toContain('Queued digest for Digest Agent <digest-agent@example.test> with 1 candidates.')
+        ->toContain('Alert digest delivery complete. Agents scanned: 1. Emails queued: 1. Candidates: 1.');
+
+    Mail::assertQueued(AlertDigestMessage::class, function (AlertDigestMessage $mail) use ($agent, $ticket): bool {
+        $renderedMail = $mail->render();
+
+        return $mail->hasTo($agent->email)
+            && $mail->candidateCount() === 1
+            && str_contains($renderedMail, "Ticket #{$ticket->id}")
+            && str_contains($renderedMail, 'Billing follow-up')
+            && ! str_contains($renderedMail, 'WF-DIGESTMAIL')
+            && ! str_contains($renderedMail, 'Checkout trouble');
+    });
+
+    Mail::assertQueuedCount(2);
 });
 
 test('alert digest send command reports empty and missing-agent states without queueing mail', function (): void {
