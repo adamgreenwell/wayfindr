@@ -549,6 +549,8 @@
                     <span class="lede">{{ $ticket->assignee?->name ?? 'Unassigned' }}</span>
                 </div>
 
+                @php($escalationAgents = $accountAgents->reject(fn ($accountAgent) => $accountAgent->is($agent))->values())
+
                 <form class="section-form" method="POST" action="{{ route('dashboard.tickets.assignee.update', $ticket) }}">
                     @csrf
                     @method('PUT')
@@ -570,6 +572,44 @@
 
                     <button class="button secondary" type="submit">Assign ticket</button>
                 </form>
+
+                <div class="section-form">
+                    <strong>Escalate ticket</strong>
+                    <p class="lede">Send a deliberate handoff to another agent who can support this site.</p>
+
+                    @if ($escalationAgents->isEmpty())
+                        <p class="empty">No other site agents are available for escalation.</p>
+                    @else
+                        <form method="POST" action="{{ route('dashboard.tickets.escalations.store', $ticket) }}">
+                            @csrf
+
+                            <div class="field">
+                                <label for="target_agent_id">Escalate to</label>
+                                <select id="target_agent_id" name="target_agent_id">
+                                    <option value="">Choose an agent</option>
+                                    @foreach ($escalationAgents as $escalationAgent)
+                                        <option value="{{ $escalationAgent->id }}" @selected((int) old('target_agent_id') === $escalationAgent->id)>
+                                            {{ $escalationAgent->name }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                @error('target_agent_id')
+                                    <p class="field-error">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            <div class="field">
+                                <label for="escalation_reason">Reason</label>
+                                <textarea id="escalation_reason" name="reason" rows="3" placeholder="Why does this need another set of eyes?">{{ old('reason') }}</textarea>
+                                @error('reason')
+                                    <p class="field-error">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            <button class="button" type="submit">Escalate ticket</button>
+                        </form>
+                    @endif
+                </div>
 
                 @if ($ticket->status === 'open')
                     <form class="section-form" method="POST" action="{{ route('dashboard.tickets.pending', $ticket) }}">
@@ -802,6 +842,10 @@
                                         Assignee changed from {{ data_get($activity->metadata, 'old_assignee_name') ?? 'Unassigned' }} to {{ data_get($activity->metadata, 'new_assignee_name') ?? 'Unassigned' }}
                                         @break
 
+                                    @case('ticket.escalated')
+                                        Ticket escalated from {{ data_get($activity->metadata, 'old_assignee_name') ?? 'Unassigned' }} to {{ data_get($activity->metadata, 'target_agent_name') ?? data_get($activity->metadata, 'new_assignee_name') ?? 'Unassigned' }}
+                                        @break
+
                                     @case('ticket.label_added')
                                         Label added: {{ data_get($activity->metadata, 'label_name') }}
                                         @break
@@ -828,7 +872,7 @@
                                         {{ ucfirst(str_replace(['ticket.', '_'], ['', ' '], $activity->action)) }}
                                 @endswitch
                             </p>
-                            @php($activityBody = data_get($activity->metadata, 'resolution_note') ?? data_get($activity->metadata, 'pending_note') ?? data_get($activity->metadata, 'reopen_note'))
+                            @php($activityBody = data_get($activity->metadata, 'resolution_note') ?? data_get($activity->metadata, 'pending_note') ?? data_get($activity->metadata, 'reopen_note') ?? data_get($activity->metadata, 'reason'))
                             @if ($activityBody)
                                 <p class="message-body">{{ $activityBody }}</p>
                             @endif

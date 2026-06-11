@@ -155,6 +155,8 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.tickets.reopen');
     Route::put('/dashboard/tickets/{ticket}/assignee', [AgentTicketController::class, 'updateAssignee'])
         ->name('dashboard.tickets.assignee.update');
+    Route::post('/dashboard/tickets/{ticket}/escalations', [AgentTicketController::class, 'storeEscalation'])
+        ->name('dashboard.tickets.escalations.store');
     Route::post('/dashboard/conversations/{supportCode}/cobrowse/request', [AgentConversationController::class, 'requestCobrowse'])
         ->name('dashboard.conversations.cobrowse.request');
     Route::post('/dashboard/conversations/{supportCode}/cobrowse/end', [AgentConversationController::class, 'endCobrowse'])

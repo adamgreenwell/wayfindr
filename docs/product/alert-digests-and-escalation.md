@@ -148,7 +148,9 @@ create noisy alerts.
 5. Add queued digest mail with safe metadata-only content. Done: operators can
    run `php artisan wayfindr:send-alert-digests` to queue digest email for
    digest-enabled agents with current candidates.
-6. Add a simple manual escalation event and audit trail.
+6. Add a simple manual escalation event and audit trail. Done: agents can
+   escalate a ticket to another eligible site agent with a reason, assignment
+   notification, and ticket timeline entry.
 7. Add account-level default cadence and escalation timing only after the
    per-agent path is proven.
 8. Add automatic escalation policies only when there is a clear account setting,

@@ -452,6 +452,70 @@ class AgentTicketController extends Controller
         return $this->redirectAfterUpdate($ticket, 'Ticket assignee updated.');
     }
 
+    public function storeEscalation(Request $request, Ticket $ticket): RedirectResponse
+    {
+        $agent = $request->user();
+
+        $this->authorizeTicketAbility($agent, 'assign', $ticket);
+
+        $validated = $request->validate([
+            'target_agent_id' => [
+                'required',
+                'integer',
+                Rule::exists('users', 'id')->where('account_id', $agent->account_id),
+            ],
+            'reason' => ['nullable', 'string', 'max:4000'],
+        ]);
+
+        $ticket->loadMissing(['assignee', 'site']);
+        $oldAssigneeId = $ticket->assignee_id;
+        $oldAssigneeName = $ticket->assignee?->name;
+        $targetAgent = $agent->account->agents()
+            ->whereKey($validated['target_agent_id'])
+            ->first();
+
+        if (! $targetAgent || ! $ticket->site->supportsAgent($targetAgent)) {
+            throw ValidationException::withMessages([
+                'target_agent_id' => 'Choose an agent assigned to this site.',
+            ]);
+        }
+
+        if ($targetAgent->is($agent)) {
+            throw ValidationException::withMessages([
+                'target_agent_id' => 'Choose another agent to escalate this ticket to.',
+            ]);
+        }
+
+        $ticket->forceFill([
+            'assignee_id' => $targetAgent->id,
+        ])->save();
+
+        $reason = trim((string) ($validated['reason'] ?? ''));
+        $metadata = [
+            'old_assignee_id' => $oldAssigneeId,
+            'old_assignee_name' => $oldAssigneeName,
+            'new_assignee_id' => $targetAgent->id,
+            'new_assignee_name' => $targetAgent->name,
+            'target_agent_id' => $targetAgent->id,
+            'target_agent_name' => $targetAgent->name,
+            'target_had_site_access' => true,
+        ];
+
+        if ($reason !== '') {
+            $metadata['reason'] = $reason;
+        }
+
+        $this->recordActivity($ticket, $agent, 'ticket.escalated', $metadata);
+
+        $freshTicket = $ticket->fresh() ?? $ticket;
+
+        if ($targetAgent->shouldReceiveTicketAssignmentAlert($freshTicket)) {
+            $targetAgent->notify(new TicketAssigned($freshTicket, $agent));
+        }
+
+        return $this->redirectAfterUpdate($ticket, 'Ticket escalated.');
+    }
+
     private function authorizeTicketAbility(User $agent, string $ability, Ticket $ticket): void
     {
         abort_unless(Gate::forUser($agent)->allows($ability, $ticket), 404);
@@ -693,6 +757,7 @@ class AgentTicketController extends Controller
             'ticket.closed',
             'ticket.reopened',
             'ticket.assignee_updated',
+            'ticket.escalated',
             'ticket.label_added',
             'ticket.label_removed',
             'ticket.note_added',
@@ -717,6 +782,7 @@ class AgentTicketController extends Controller
             'ticket.closed',
             'ticket.reopened',
             'ticket.assignee_updated',
+            'ticket.escalated',
             'ticket.label_added',
             'ticket.label_removed',
             'ticket.note_added',
@@ -746,6 +812,7 @@ class AgentTicketController extends Controller
             'ticket.external_link_removed' => 'External link removed: '.ExternalIssueProvider::label(data_get($activity->metadata, 'provider')).' '.(data_get($activity->metadata, 'external_key') ?? data_get($activity->metadata, 'external_id') ?? ''),
             'ticket.external_sync_failed' => 'External sync failed: '.ExternalIssueProvider::label(data_get($activity->metadata, 'provider')),
             'ticket.assignee_updated' => 'Assignee changed from '.(data_get($activity->metadata, 'old_assignee_name') ?? 'Unassigned').' to '.(data_get($activity->metadata, 'new_assignee_name') ?? 'Unassigned'),
+            'ticket.escalated' => 'Ticket escalated from '.(data_get($activity->metadata, 'old_assignee_name') ?? 'Unassigned').' to '.(data_get($activity->metadata, 'target_agent_name') ?? data_get($activity->metadata, 'new_assignee_name') ?? 'Unassigned'),
             'ticket.updated' => $this->ticketUpdatedLabel(data_get($activity->metadata, 'changes', [])),
             default => ucfirst(str_replace(['ticket.', '_'], ['', ' '], $activity->action)),
         };
@@ -767,6 +834,7 @@ class AgentTicketController extends Controller
             'ticket.pending' => data_get($activity->metadata, 'pending_note'),
             'ticket.closed' => data_get($activity->metadata, 'resolution_note'),
             'ticket.reopened' => data_get($activity->metadata, 'reopen_note'),
+            'ticket.escalated' => data_get($activity->metadata, 'reason'),
             default => null,
         };
     }
