@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Support\TicketCategory;
 use Database\Factories\TicketFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -193,8 +194,10 @@ class Ticket extends Model
     public function latestEscalationEvent(): MorphOne
     {
         return $this->morphOne(AuditEvent::class, 'subject')
-            ->where('action', 'ticket.escalated')
-            ->latestOfMany('occurred_at');
+            ->ofMany([
+                'occurred_at' => 'max',
+                'id' => 'max',
+            ], fn (Builder $query) => $query->where('action', 'ticket.escalated'));
     }
 
     public function latestRecentEscalationEvent(): ?AuditEvent

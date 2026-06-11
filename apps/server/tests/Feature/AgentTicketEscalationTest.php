@@ -182,3 +182,59 @@ test('ticket detail highlights the latest recent escalation reason', function ()
         ->assertSee('Customer has an enterprise billing question.')
         ->assertSee('Escalated to you');
 });
+
+test('latest escalation event breaks timestamp ties by newest audit row', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Bea Builder']);
+    $otherAgent = User::factory()->for($account)->create(['name' => 'Charlie Closer']);
+    $escalatingAgent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $site->supportAgents()->attach([$agent->id, $otherAgent->id, $escalatingAgent->id]);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($agent, 'assignee')
+        ->create([
+            'status' => 'open',
+            'subject' => 'Customer needs billing help',
+        ]);
+    $timestamp = now()->setMicrosecond(0);
+
+    $ticket->auditEvents()->create([
+        'account_id' => $account->id,
+        'site_id' => $site->id,
+        'actor_type' => User::class,
+        'actor_id' => $escalatingAgent->id,
+        'action' => 'ticket.escalated',
+        'metadata' => [
+            'target_agent_id' => $agent->id,
+            'target_agent_name' => 'Bea Builder',
+            'reason' => 'First escalation reason.',
+        ],
+        'occurred_at' => $timestamp,
+    ]);
+    $newerEvent = $ticket->auditEvents()->create([
+        'account_id' => $account->id,
+        'site_id' => $site->id,
+        'actor_type' => User::class,
+        'actor_id' => $escalatingAgent->id,
+        'action' => 'ticket.escalated',
+        'metadata' => [
+            'target_agent_id' => $otherAgent->id,
+            'target_agent_name' => 'Charlie Closer',
+            'reason' => 'Second escalation reason.',
+        ],
+        'occurred_at' => $timestamp,
+    ]);
+
+    $ticket = $ticket->fresh();
+
+    expect($ticket->latestRecentEscalationEvent()?->is($newerEvent))->toBeTrue()
+        ->and($ticket->latestRecentEscalationEvent()?->metadata)->toMatchArray([
+            'target_agent_id' => $otherAgent->id,
+            'target_agent_name' => 'Charlie Closer',
+            'reason' => 'Second escalation reason.',
+        ])
+        ->and($ticket->escalationAudienceLabelFor($agent))->toBe('Recently escalated')
+        ->and($ticket->escalationAudienceLabelFor($otherAgent))->toBe('Escalated to you');
+});
