@@ -1,5 +1,6 @@
 <?php
 
+use App\Console\Commands\AlertDigestPreviewCommand;
 use App\Console\Commands\BootstrapWayfindrCommand;
 use App\Console\Commands\CreateAgentCommand;
 use App\Console\Commands\MailTestCommand;
@@ -16,6 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withCommands([
+        AlertDigestPreviewCommand::class,
         BootstrapWayfindrCommand::class,
         CreateAgentCommand::class,
         MailTestCommand::class,

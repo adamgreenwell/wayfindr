@@ -140,7 +140,9 @@ create noisy alerts.
    gathers visible unread metadata-only candidates for digest-enabled agents
    without sending mail.
 4. Add a dry-run console command that prints which digest items would be sent to
-   which agent.
+   which agent. Done: operators can run
+   `php artisan wayfindr:alert-digest-preview` to inspect metadata-only digest
+   candidates without sending email.
 5. Add queued digest mail with safe metadata-only content.
 6. Add a simple manual escalation event and audit trail.
 7. Add account-level default cadence and escalation timing only after the
