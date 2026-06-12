@@ -27,6 +27,9 @@ Start with [self-hosting/install.md](docs/self-hosting/install.md). Use the
 first-class path, or the
 [generic runtime requirements](docs/self-hosting/runtime-requirements.md) when
 mapping Wayfindr to another VPS, Docker, Coolify-style, or Laravel-capable host.
+The [setup-template prototype](docs/self-hosting/setup-templates.md) sketches
+the first Docker Compose / Coolify-style path without hiding operator
+responsibilities.
 
 ## Repository Layout
 

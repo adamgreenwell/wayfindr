@@ -24,6 +24,10 @@ Wayfindr to a non-Forge host. It documents the generic Laravel runtime contract:
 web root, environment shape, queue worker, scheduler, Reverb process, mail,
 storage, backups, and the post-install smoke path.
 
+Use [setup-templates.md](setup-templates.md) for the first Docker Compose and
+Coolify-style setup-template prototype. It is intentionally a process map and
+environment scaffold, not a production installer.
+
 After the application is deployed and the environment is configured, visit
 `/setup` on the Wayfindr host to create the first account owner and install
 site from the browser. The setup screen is available until the database has an
