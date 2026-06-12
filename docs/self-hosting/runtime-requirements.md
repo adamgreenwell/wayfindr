@@ -46,7 +46,7 @@ the Laravel web request process as the whole application.
 | --- | --- | --- |
 | Web | Serves Laravel HTTP routes and the widget script. | Web server to PHP-FPM with root `apps/server/public` |
 | Queue worker | Runs queued jobs outside the request lifecycle. | `php artisan queue:work redis --sleep=3 --tries=3 --timeout=90` |
-| Scheduler | Lets Laravel run scheduled work once per minute. | `* * * * * cd /path/to/apps/server && php artisan schedule:run` |
+| Scheduler | Lets Laravel run scheduled work once per minute, including hourly alert digest delivery. | `* * * * * cd /path/to/apps/server && php artisan schedule:run` |
 | Reverb | Serves WebSocket connections for live chat/cobrowse notices. | `php artisan reverb:start --host=127.0.0.1 --port=8080` |
 
 Run the worker and Reverb under Supervisor, systemd, your host's process
@@ -66,13 +66,21 @@ php artisan queue:failed
 # Scheduler shape: configure this once per minute through cron or your host.
 * * * * * cd /path/to/apps/server && php artisan schedule:run
 
+# Scheduled task inventory: alert digest delivery should be listed.
+php artisan schedule:list
+
 # Reverb shape: keep this under a process manager when realtime is enabled.
 php artisan reverb:start --host=127.0.0.1 --port=8080
 ```
 
 If the queue is `sync` or `null`, switch to `database` or `redis` before real
-traffic. If Reverb is enabled, keep `php artisan reverb:restart` in the deploy
-script so long-running WebSocket workers refresh after releases.
+traffic. If agents choose digest email cadence, confirm
+`php artisan wayfindr:send-alert-digests` appears in `php artisan schedule:list`;
+Laravel will run it hourly once the one-minute scheduler is active. If
+`schedule:list` cannot render, check the configured cache/Redis connection too;
+Laravel inspects scheduler mutex state while building the list. If Reverb is
+enabled, keep `php artisan reverb:restart` in the deploy script so long-running
+WebSocket workers refresh after releases.
 
 ## Environment
 
@@ -275,7 +283,9 @@ After deploy:
 5. Send a real mail smoke test with `php artisan wayfindr:mail-test
    --to="verified-recipient@example.com"`.
 6. Confirm `php artisan queue:work`, the one-minute scheduler, and Reverb are
-   managed by the host or process manager.
+   managed by the host or process manager; then confirm
+   `php artisan wayfindr:send-alert-digests` appears in
+   `php artisan schedule:list`.
 7. Send a test visitor message through the widget or smoke script.
 8. Reply from the agent dashboard and confirm the visitor can see the reply.
 

@@ -147,7 +147,10 @@ create noisy alerts.
    candidates without sending email.
 5. Add queued digest mail with safe metadata-only content. Done: operators can
    run `php artisan wayfindr:send-alert-digests` to queue digest email for
-   digest-enabled agents with current candidates.
+   digest-enabled agents with current candidates. Wayfindr also registers this
+   command with Laravel's scheduler hourly, so self-hosted installs only need
+   the normal one-minute `php artisan schedule:run` job for digest delivery to
+   move.
 6. Add a simple manual escalation event and audit trail. Done: agents can
    escalate a ticket to another eligible site agent with a reason, assignment
    notification, and ticket timeline entry.

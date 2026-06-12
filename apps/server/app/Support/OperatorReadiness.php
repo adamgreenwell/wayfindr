@@ -348,8 +348,8 @@ class OperatorReadiness
             key: 'scheduler',
             label: 'Scheduler',
             summary: 'Confirm the Laravel scheduler is running once per minute.',
-            detail: 'Wayfindr cannot safely prove cron or external scheduler setup from inside the request.',
-            action: 'Configure * * * * * cd /path/to/apps/server && php artisan schedule:run or the equivalent scheduled job in your host.'
+            detail: 'Wayfindr cannot safely prove cron or external scheduler setup from inside the request. Alert digest email depends on the scheduler running the hourly digest command.',
+            action: 'Configure * * * * * cd /path/to/apps/server && php artisan schedule:run or the equivalent scheduled job in your host, then run php artisan schedule:list and confirm php artisan wayfindr:send-alert-digests is listed.'
         );
     }
 
@@ -399,7 +399,7 @@ class OperatorReadiness
                 label: 'Confirm background workers',
                 status: $backgroundStatus,
                 summary: 'Queues and the scheduler need process-manager coverage outside the request lifecycle.',
-                action: 'Confirm php artisan queue:work is managed by Forge, Supervisor, systemd, or your host; run php artisan queue:failed to inspect failures; and verify * * * * * cd /path/to/apps/server && php artisan schedule:run is configured once per minute.',
+                action: 'Confirm php artisan queue:work is managed by Forge, Supervisor, systemd, or your host; run php artisan queue:failed to inspect failures; verify * * * * * cd /path/to/apps/server && php artisan schedule:run is configured once per minute; and confirm php artisan wayfindr:send-alert-digests appears in php artisan schedule:list.',
                 confirmationKey: $backgroundStatus === 'attention' ? null : 'scheduler',
                 confirmable: $backgroundStatus !== 'attention',
                 confirmation: $schedulerCheck['confirmation'] ?? null,

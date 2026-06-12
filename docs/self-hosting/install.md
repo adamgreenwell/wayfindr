@@ -46,7 +46,7 @@ The intended self-hosting baseline is still Docker Compose with:
 
 - Laravel web process,
 - queue worker,
-- scheduler,
+- scheduler for Laravel scheduled work such as alert digest delivery,
 - realtime process,
 - outbound mail transport,
 - Postgres,

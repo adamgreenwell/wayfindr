@@ -151,8 +151,39 @@ test('readiness diagnostics recommend manual smoke confirmation when no attentio
         'status' => 'manual',
         'status_label' => 'Manual check',
         'summary' => 'Queues and the scheduler need process-manager coverage outside the request lifecycle.',
-        'action' => 'Confirm php artisan queue:work is managed by Forge, Supervisor, systemd, or your host; run php artisan queue:failed to inspect failures; and verify * * * * * cd /path/to/apps/server && php artisan schedule:run is configured once per minute.',
+        'action' => 'Confirm php artisan queue:work is managed by Forge, Supervisor, systemd, or your host; run php artisan queue:failed to inspect failures; verify * * * * * cd /path/to/apps/server && php artisan schedule:run is configured once per minute; and confirm php artisan wayfindr:send-alert-digests appears in php artisan schedule:list.',
     ]);
+});
+
+test('readiness scheduler guidance names alert digest delivery', function (): void {
+    config([
+        'app.url' => 'https://support.example.test',
+        'app.key' => 'base64:'.base64_encode(str_repeat('a', 32)),
+        'broadcasting.default' => 'reverb',
+        'broadcasting.connections.reverb.app_id' => 'wayfindr-production',
+        'broadcasting.connections.reverb.key' => 'wayfindr-key',
+        'broadcasting.connections.reverb.secret' => 'wayfindr-secret',
+        'broadcasting.connections.reverb.options.host' => 'support.example.test',
+        'broadcasting.connections.reverb.options.port' => 443,
+        'broadcasting.connections.reverb.options.scheme' => 'https',
+        'mail.default' => 'smtp',
+        'mail.mailers.smtp.host' => 'smtp.example.test',
+        'mail.mailers.smtp.port' => 587,
+        'mail.from.address' => 'support@example.test',
+        'queue.default' => 'database',
+    ]);
+
+    $readiness = app(OperatorReadiness::class)->summary();
+    $scheduler = collect($readiness['checks'])->firstWhere('key', 'scheduler');
+    $backgroundProcesses = collect($readiness['smoke_path'])->firstWhere('key', 'background_processes');
+
+    expect($scheduler)->toMatchArray([
+        'label' => 'Scheduler',
+        'status' => 'manual',
+    ])
+        ->and($scheduler['action'])->toContain('php artisan schedule:run')
+        ->and($scheduler['action'])->toContain('php artisan wayfindr:send-alert-digests')
+        ->and($backgroundProcesses['action'])->toContain('php artisan wayfindr:send-alert-digests');
 });
 
 test('readiness diagnostics treat confirmed manual items as ready', function (): void {
@@ -559,7 +590,7 @@ test('readiness diagnostics include a guided post install smoke path', function 
             'key' => 'background_processes',
             'label' => 'Confirm background workers',
             'status' => 'manual',
-            'action' => 'Confirm php artisan queue:work is managed by Forge, Supervisor, systemd, or your host; run php artisan queue:failed to inspect failures; and verify * * * * * cd /path/to/apps/server && php artisan schedule:run is configured once per minute.',
+            'action' => 'Confirm php artisan queue:work is managed by Forge, Supervisor, systemd, or your host; run php artisan queue:failed to inspect failures; verify * * * * * cd /path/to/apps/server && php artisan schedule:run is configured once per minute; and confirm php artisan wayfindr:send-alert-digests appears in php artisan schedule:list.',
         ]),
         fn ($step) => $step->toMatchArray([
             'key' => 'widget_smoke',

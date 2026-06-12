@@ -274,8 +274,19 @@ php artisan queue:work redis --sleep=3 --tries=3 --timeout=90
 Use the Laravel Scheduler toggle in Forge's Application panel. Forge will
 configure it to run once per minute using the site's selected PHP version.
 
-There are no critical scheduled tasks yet, but enabling the scheduler now keeps
-the staging runtime close to the expected production shape.
+Alert digest email is registered with Laravel's scheduler and runs hourly for
+agents who choose digest cadence. After enabling the scheduler, run this from
+`apps/server` to confirm Forge can see the task:
+
+```bash
+php artisan schedule:list
+```
+
+You should see `php artisan wayfindr:send-alert-digests` in the scheduled task
+list. Dashboard alerts still appear immediately; this scheduled job only moves
+metadata-only digest email. If `schedule:list` cannot run, check the configured
+cache/Redis connection as well as the scheduler itself; Laravel inspects
+scheduler mutex state while rendering the list.
 
 ## Reverb Process
 
@@ -380,7 +391,9 @@ background process reloads the active release.
 13. Enable TLS before testing the widget from another origin.
 14. Enable the deployment health check against `/up`.
 15. Visit `/setup` and create the first account owner and install site.
-16. Add the queue worker and scheduler.
+16. Add the queue worker and scheduler, then confirm
+    `php artisan wayfindr:send-alert-digests` appears in
+    `php artisan schedule:list`.
 17. Add the Reverb process when switching `BROADCAST_CONNECTION` to `reverb`.
 18. Configure real outbound mail when email alerts, password resets, or
     notifications should leave the app, then run `php artisan wayfindr:mail-test
