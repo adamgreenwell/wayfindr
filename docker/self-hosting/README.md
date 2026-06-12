@@ -16,6 +16,11 @@ and the setup-template notes in
 
 The Compose file assumes you provide an application image through
 `WAYFINDR_IMAGE`. Wayfindr does not publish an official server image yet.
+The example HTTP and Reverb ports bind to `127.0.0.1` so public traffic should
+still pass through a host-managed TLS proxy. The application image should make
+`apps/server/bootstrap/cache` writable, but that directory should not be a
+durable volume because cached Laravel artifacts can become stale across image
+or environment changes.
 
 ## Prototype Flow
 
