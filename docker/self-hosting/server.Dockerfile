@@ -13,6 +13,7 @@ RUN apk add --no-cache \
         libxml2 \
         oniguruma \
         tzdata \
+        unzip \
     && apk add --no-cache --virtual .build-deps \
         $PHPIZE_DEPS \
         curl-dev \
