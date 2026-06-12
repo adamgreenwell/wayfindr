@@ -2,6 +2,13 @@ name: wayfindr-self-hosting
 
 x-wayfindr-app: &wayfindr-app
   image: ${WAYFINDR_IMAGE:-wayfindr-server:local}
+  build:
+    context: ../..
+    dockerfile: docker/self-hosting/server.Dockerfile
+    target: runtime
+    args:
+      PHP_VERSION: ${WAYFINDR_PHP_VERSION:-8.4}
+      NODE_VERSION: ${WAYFINDR_NODE_VERSION:-24}
   restart: unless-stopped
   working_dir: /app/apps/server
   env_file:

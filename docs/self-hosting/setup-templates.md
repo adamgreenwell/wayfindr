@@ -34,12 +34,14 @@ those choices responsibly.
 The prototype files live in [`../../docker/self-hosting`](../../docker/self-hosting):
 
 - `compose.prototype.yml` models the required Wayfindr services.
+- `server.Dockerfile` builds a prototype Laravel server image for the Compose
+  process map.
 - `.env.example` lists the environment shape operators need to provide.
 - `README.md` explains how to adapt the template.
 
-The template assumes an application image already exists. Until Wayfindr
-publishes an official image, operators can build their own image or translate
-the process map into a host-specific setup.
+The template can build a local application image. Until Wayfindr publishes an
+official image, operators should treat that image as a prototype and translate
+the process map into a host-specific setup when needed.
 
 ## One-Command-Ish Flow
 
@@ -48,6 +50,7 @@ The aspirational flow should feel like this:
 ```bash
 cp docker/self-hosting/.env.example docker/self-hosting/.env
 $EDITOR docker/self-hosting/.env
+docker compose --env-file docker/self-hosting/.env -f docker/self-hosting/compose.prototype.yml build web
 docker compose --env-file docker/self-hosting/.env -f docker/self-hosting/compose.prototype.yml up -d
 ```
 
@@ -126,9 +129,10 @@ WebSocket paths to Reverb through public HTTPS before enabling
 
 1. Document the first setup-template target and boundaries. Done here.
 2. Add a prototype Compose process map. Done here.
-3. Add a first application image build only after the server packaging path is
-   tested and supportable.
-4. Add host-specific examples such as Coolify only after the generic process
+3. Add a prototype application image build. Done here.
+4. Add registry publishing only after the server packaging path is tested and
+   supportable.
+5. Add host-specific examples such as Coolify only after the generic process
    map survives real smoke tests.
-5. Consider a true one-command installer only after image publishing, backups,
+6. Consider a true one-command installer only after image publishing, backups,
    upgrades, and restore guidance are boring.

@@ -11,7 +11,7 @@ These services support the Laravel scaffold in `apps/server`.
 
 Self-hosting prototype templates live in `docker/self-hosting`. They describe
 the intended Docker Compose and Coolify-style process map for the web, queue,
-scheduler, Reverb, Postgres, and Redis services. They are not production
-installers yet.
+scheduler, Reverb, Postgres, and Redis services, plus a prototype Laravel
+server image build. They are not production installers yet.
 
 License: MIT. See [LICENSE](LICENSE).
