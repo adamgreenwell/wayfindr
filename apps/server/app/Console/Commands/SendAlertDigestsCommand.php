@@ -9,6 +9,7 @@ use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Throwable;
 
@@ -77,11 +78,16 @@ class SendAlertDigestsCommand extends Command
             } catch (Throwable $exception) {
                 $failed++;
 
+                Log::warning('Alert digest delivery failed.', [
+                    'agent_id' => $agent->id,
+                    'agent_email' => $agent->email,
+                    'exception' => $exception,
+                ]);
+
                 $agent->recordAlertDigestDelivery([
                     'status' => User::ALERT_DIGEST_DELIVERY_FAILED,
                     'candidate_count' => $candidates->count(),
                     'message' => 'Digest email could not be queued.',
-                    'error' => $exception->getMessage(),
                     'last_attempted_at' => $attemptedAt->toISOString(),
                 ]);
 

@@ -131,9 +131,6 @@
                     @if ($digestDeliveryStatus['last_attempted_at'])
                         {{ $digestDeliveryStatus['last_attempted_at']->diffForHumans() }}.
                     @endif
-                    @if ($digestDeliveryStatus['error'])
-                        Last error: {{ $digestDeliveryStatus['error'] }}
-                    @endif
                 </p>
             @endif
 

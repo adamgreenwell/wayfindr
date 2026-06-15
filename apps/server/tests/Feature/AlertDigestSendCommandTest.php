@@ -12,6 +12,7 @@ use App\Notifications\ConversationNeedsReply;
 use App\Notifications\TicketAssigned;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
 uses(RefreshDatabase::class);
@@ -182,6 +183,12 @@ test('alert digest send command records failed delivery attempts', function (): 
         ->once()
         ->with($agent->email)
         ->andThrow(new RuntimeException('SMTP cratered'));
+    Log::shouldReceive('warning')
+        ->once()
+        ->with('Alert digest delivery failed.', Mockery::on(fn (array $context): bool => $context['agent_id'] === $agent->id
+            && $context['agent_email'] === $agent->email
+            && $context['exception'] instanceof RuntimeException
+            && $context['exception']->getMessage() === 'SMTP cratered'));
 
     $exitCode = Artisan::call('wayfindr:send-alert-digests', [
         '--email' => $agent->email,
@@ -196,7 +203,7 @@ test('alert digest send command records failed delivery attempts', function (): 
     expect($deliveryStatus['status'])->toBe('failed')
         ->and($deliveryStatus['candidate_count'])->toBe(1)
         ->and($deliveryStatus['message'])->toBe('Digest email could not be queued.')
-        ->and($deliveryStatus['error'])->toBe('SMTP cratered')
+        ->and($deliveryStatus)->not->toHaveKey('error')
         ->and($deliveryStatus['last_attempted_at'])->toBeString()->not->toBe('');
 });
 

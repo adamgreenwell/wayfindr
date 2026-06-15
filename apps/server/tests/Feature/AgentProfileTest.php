@@ -148,6 +148,7 @@ test('agent profile shows the latest alert digest delivery status', function ():
                 'status' => 'queued',
                 'candidate_count' => 2,
                 'message' => 'Queued digest email with 2 alerts.',
+                'error' => 'SMTP cratered',
                 'last_attempted_at' => now()->subMinutes(7)->toISOString(),
             ],
         ],
@@ -159,7 +160,9 @@ test('agent profile shows the latest alert digest delivery status', function ():
         ->assertSee('Last digest')
         ->assertSee('Queued digest email')
         ->assertSee('Queued digest email with 2 alerts.')
-        ->assertSee('7 minutes ago');
+        ->assertSee('7 minutes ago')
+        ->assertDontSee('Last error')
+        ->assertDontSee('SMTP cratered');
 });
 
 test('agent profile flags email alerts when mail delivery needs attention', function (): void {
