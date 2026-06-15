@@ -15,6 +15,8 @@ and the setup-template notes in
 - `server.Dockerfile` builds a prototype Laravel server image for the Compose
   process map.
 - `.env.example` lists the environment values the template expects.
+- `../../scripts/self-host/generate-env.sh` creates a local starter `.env`
+  with fresh application, database, and Reverb secrets.
 - `../../scripts/smoke/self-host-compose.sh` runs a local end-to-end smoke
   check against this template.
 
@@ -58,12 +60,17 @@ after the smoke check.
 ## Prototype Flow
 
 ```bash
-cp docker/self-hosting/.env.example docker/self-hosting/.env
+scripts/self-host/generate-env.sh --app-url https://support.example.com
 $EDITOR docker/self-hosting/.env
 docker compose --env-file docker/self-hosting/.env -f docker/self-hosting/compose.prototype.yml config
 docker compose --env-file docker/self-hosting/.env -f docker/self-hosting/compose.prototype.yml build web
 docker compose --env-file docker/self-hosting/.env -f docker/self-hosting/compose.prototype.yml up -d
 ```
+
+The generator refuses to overwrite an existing env file unless you pass
+`--force`. It uses `MAIL_MAILER=log` by default so the stack can boot before
+mail is configured; set real SMTP values and run the Wayfindr mail smoke test
+before sending production visitor traffic.
 
 After the containers start, run migrations and inspect scheduled tasks:
 

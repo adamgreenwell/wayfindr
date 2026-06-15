@@ -28,6 +28,18 @@ Use [setup-templates.md](setup-templates.md) for the first Docker Compose and
 Coolify-style setup-template prototype. It is intentionally a process map and
 environment scaffold, not a production installer.
 
+For the Compose prototype, start with the local env generator instead of
+hand-copying secrets:
+
+```bash
+scripts/self-host/generate-env.sh --app-url https://support.example.com
+```
+
+Review the generated `docker/self-hosting/.env` before booting the stack. The
+generator creates local application, database, and Reverb secrets, but it leaves
+mail in log mode so a real outbound mail provider still has to be configured
+and smoke-tested deliberately.
+
 After the application is deployed and the environment is configured, visit
 `/setup` on the Wayfindr host to create the first account owner and install
 site from the browser. The setup screen is available until the database has an

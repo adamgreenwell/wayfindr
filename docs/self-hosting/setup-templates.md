@@ -38,6 +38,8 @@ The prototype files live in [`../../docker/self-hosting`](../../docker/self-host
   process map.
 - `.env.example` lists the environment shape operators need to provide.
 - `README.md` explains how to adapt the template.
+- [`../../scripts/self-host/generate-env.sh`](../../scripts/self-host/generate-env.sh)
+  creates a starter env file with fresh local secrets.
 - [`../../scripts/smoke/self-host-compose.sh`](../../scripts/smoke/self-host-compose.sh)
   proves the prototype stack can build, boot, migrate, list scheduled tasks,
   and answer `/up` with throwaway local secrets.
@@ -51,7 +53,7 @@ the process map into a host-specific setup when needed.
 The aspirational flow should feel like this:
 
 ```bash
-cp docker/self-hosting/.env.example docker/self-hosting/.env
+scripts/self-host/generate-env.sh --app-url https://support.example.com
 $EDITOR docker/self-hosting/.env
 docker compose --env-file docker/self-hosting/.env -f docker/self-hosting/compose.prototype.yml build web
 docker compose --env-file docker/self-hosting/.env -f docker/self-hosting/compose.prototype.yml up -d
@@ -59,6 +61,12 @@ docker compose --env-file docker/self-hosting/.env -f docker/self-hosting/compos
 
 That is intentionally not a blind pipe-to-shell one-liner. Operators still need
 to set secrets, DNS, TLS, mail, storage, and backup policy deliberately.
+
+The generator refuses to overwrite an existing env file unless `--force` is
+passed. It creates `APP_KEY`, the shared application/Postgres database password,
+and Reverb credentials locally. It intentionally starts with `MAIL_MAILER=log`
+so operators must still configure and smoke-test a real outbound mail provider
+before accepting production traffic.
 
 For local template verification without touching a real operator `.env`, run:
 
@@ -83,18 +91,15 @@ owner, and follow `/operator` or `/dashboard/readiness`.
 
 ## Secret Generation
 
-Generate secrets locally and paste them into the host secret manager or
-environment file. Do not commit generated secrets.
+Use the generator for the Compose prototype whenever possible:
 
 ```bash
-cd apps/server
-php artisan key:generate --show
-openssl rand -base64 32
+scripts/self-host/generate-env.sh --app-url https://support.example.com
 ```
 
-Use the Artisan key output for `APP_KEY`. Use independent random values for
-`REVERB_APP_SECRET`, database passwords, and mail credentials. The Reverb app
-key can be public browser configuration; the Reverb secret must stay private.
+Generate any extra secrets locally and paste them into the host secret manager
+or environment file. Do not commit generated secrets. The Reverb app key can be
+public browser configuration; the Reverb secret must stay private.
 
 ## What The Template Can Automate
 
@@ -146,9 +151,11 @@ WebSocket paths to Reverb through public HTTPS before enabling
 3. Add a prototype application image build. Done here.
 4. Add a local Compose smoke path that builds, boots, migrates, checks the
    scheduler, and hits `/up`. Done here.
-5. Add registry publishing only after the server packaging path is tested and
+5. Add a starter env generator that creates local secrets without hiding
+   operator follow-up steps. Done here.
+6. Add registry publishing only after the server packaging path is tested and
    supportable.
-6. Add host-specific examples such as Coolify only after the generic process
+7. Add host-specific examples such as Coolify only after the generic process
    map survives real smoke tests.
-7. Consider a true one-command installer only after image publishing, backups,
+8. Consider a true one-command installer only after image publishing, backups,
    upgrades, and restore guidance are boring.
