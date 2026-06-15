@@ -12,7 +12,7 @@ x-wayfindr-app: &wayfindr-app
   restart: unless-stopped
   working_dir: /app/apps/server
   env_file:
-    - .env
+    - ${WAYFINDR_ENV_FILE:-.env}
   environment:
     DB_CONNECTION: pgsql
     DB_HOST: postgres
@@ -32,7 +32,7 @@ services:
     <<: *wayfindr-app
     command: ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000"]
     ports:
-      - "127.0.0.1:8000:8000"
+      - "${WAYFINDR_HTTP_BIND:-127.0.0.1:8000}:8000"
 
   queue:
     <<: *wayfindr-app
@@ -46,7 +46,7 @@ services:
     <<: *wayfindr-app
     command: ["php", "artisan", "reverb:start", "--host=0.0.0.0", "--port=8080"]
     ports:
-      - "127.0.0.1:8080:8080"
+      - "${WAYFINDR_REVERB_BIND:-127.0.0.1:8080}:8080"
 
   postgres:
     image: postgres:17-alpine

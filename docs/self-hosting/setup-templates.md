@@ -38,6 +38,9 @@ The prototype files live in [`../../docker/self-hosting`](../../docker/self-host
   process map.
 - `.env.example` lists the environment shape operators need to provide.
 - `README.md` explains how to adapt the template.
+- [`../../scripts/smoke/self-host-compose.sh`](../../scripts/smoke/self-host-compose.sh)
+  proves the prototype stack can build, boot, migrate, list scheduled tasks,
+  and answer `/up` with throwaway local secrets.
 
 The template can build a local application image. Until Wayfindr publishes an
 official image, operators should treat that image as a prototype and translate
@@ -56,6 +59,17 @@ docker compose --env-file docker/self-hosting/.env -f docker/self-hosting/compos
 
 That is intentionally not a blind pipe-to-shell one-liner. Operators still need
 to set secrets, DNS, TLS, mail, storage, and backup policy deliberately.
+
+For local template verification without touching a real operator `.env`, run:
+
+```bash
+scripts/test-self-host-compose-template.sh
+scripts/smoke/self-host-compose.sh
+```
+
+The smoke runner uses an isolated Compose project, `127.0.0.1:18080` for HTTP,
+`127.0.0.1:18081` for Reverb, and tears down containers and volumes when it
+finishes.
 
 After the stack starts:
 
@@ -130,9 +144,11 @@ WebSocket paths to Reverb through public HTTPS before enabling
 1. Document the first setup-template target and boundaries. Done here.
 2. Add a prototype Compose process map. Done here.
 3. Add a prototype application image build. Done here.
-4. Add registry publishing only after the server packaging path is tested and
+4. Add a local Compose smoke path that builds, boots, migrates, checks the
+   scheduler, and hits `/up`. Done here.
+5. Add registry publishing only after the server packaging path is tested and
    supportable.
-5. Add host-specific examples such as Coolify only after the generic process
+6. Add host-specific examples such as Coolify only after the generic process
    map survives real smoke tests.
-6. Consider a true one-command installer only after image publishing, backups,
+7. Consider a true one-command installer only after image publishing, backups,
    upgrades, and restore guidance are boring.

@@ -15,6 +15,8 @@ and the setup-template notes in
 - `server.Dockerfile` builds a prototype Laravel server image for the Compose
   process map.
 - `.env.example` lists the environment values the template expects.
+- `../../scripts/smoke/self-host-compose.sh` runs a local end-to-end smoke
+  check against this template.
 
 The Compose file can build a local application image through
 `server.Dockerfile` and tags it as `WAYFINDR_IMAGE`. Wayfindr does not publish
@@ -26,6 +28,32 @@ durable volume because cached Laravel artifacts can become stale across image
 or environment changes. The prototype web command uses Laravel's built-in
 server so operators can smoke-test the process map; official images may switch
 to a production web server once packaging and release workflows mature.
+
+Set `WAYFINDR_HTTP_BIND` or `WAYFINDR_REVERB_BIND` when the default local
+ports are already in use. Set `WAYFINDR_ENV_FILE` only for smoke tests or
+other controlled runs that need an env file outside this directory; normal
+operators should keep using `.env`.
+
+## Smoke Test
+
+From the repository root:
+
+```bash
+scripts/test-self-host-compose-template.sh
+scripts/smoke/self-host-compose.sh
+```
+
+The smoke runner creates a temporary env file with throwaway secrets, builds
+the prototype image, starts Postgres, Redis, web, queue, scheduler, and Reverb
+under an isolated Compose project, runs migrations, confirms
+`wayfindr:send-alert-digests` appears in `php artisan schedule:list`, and
+checks `/up`.
+
+By default it binds the web process to `127.0.0.1:18080` and Reverb to
+`127.0.0.1:18081`, then tears the stack down with volumes. Override those
+ports with `WAYFINDR_SMOKE_HTTP_PORT` and `WAYFINDR_SMOKE_REVERB_PORT`. Set
+`WAYFINDR_SMOKE_KEEP=1` only when you want to inspect the running containers
+after the smoke check.
 
 ## Prototype Flow
 
