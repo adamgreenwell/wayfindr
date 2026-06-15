@@ -60,6 +60,43 @@ retry_compose() {
     return 1
 }
 
+compose() {
+    docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+}
+
+assert_services_running() {
+    local missing=()
+    local running_services
+
+    for _ in $(seq 1 30); do
+        missing=()
+
+        for service in "$@"; do
+            running_services="$(compose ps --services --status running "$service")"
+
+            if ! grep -Fx "$service" <<< "$running_services" >/dev/null; then
+                missing+=("$service")
+            fi
+        done
+
+        if [ "${#missing[@]}" -eq 0 ]; then
+            return 0
+        fi
+
+        sleep 1
+    done
+
+    echo "Expected services are not running: ${missing[*]}" >&2
+    compose ps >&2 || true
+
+    for service in "${missing[@]}"; do
+        echo "--- Recent logs for $service ---" >&2
+        compose logs --tail 80 "$service" >&2 || true
+    done
+
+    return 1
+}
+
 require_command docker
 require_command curl
 require_command openssl
@@ -132,6 +169,7 @@ docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOS
 
 echo "Starting the self-host smoke stack."
 docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d postgres redis web queue scheduler reverb
+assert_services_running queue scheduler reverb
 
 echo "Running migrations."
 retry_compose exec -T web php artisan migrate --force
@@ -142,5 +180,6 @@ grep -F "wayfindr:send-alert-digests" "$SCHEDULE_FILE" >/dev/null
 
 echo "Checking /up."
 wait_for_http "http://127.0.0.1:$HTTP_PORT/up"
+assert_services_running queue scheduler reverb
 
 echo "Self-host Compose smoke passed for $PROJECT_NAME."
