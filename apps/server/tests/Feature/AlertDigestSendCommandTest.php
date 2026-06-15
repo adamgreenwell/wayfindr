@@ -59,6 +59,13 @@ test('alert digest send command queues metadata-only digest mail', function (): 
         ->toContain('Queued digest for Digest Agent <digest-agent@example.test> with 2 candidates.')
         ->toContain('Alert digest delivery complete. Agents scanned: 1. Emails queued: 1. Candidates: 2.');
 
+    $deliveryStatus = data_get($agent->fresh()->alert_preferences, 'digest_delivery');
+
+    expect($deliveryStatus['status'])->toBe('queued')
+        ->and($deliveryStatus['candidate_count'])->toBe(2)
+        ->and($deliveryStatus['message'])->toBe('Queued digest email with 2 alerts.')
+        ->and($deliveryStatus['last_attempted_at'])->toBeString()->not->toBe('');
+
     Mail::assertQueued(AlertDigestMessage::class, function (AlertDigestMessage $mail) use ($agent, $ticket): bool {
         $renderedMail = $mail->render();
 
@@ -102,6 +109,13 @@ test('alert digest send command queues metadata-only digest mail', function (): 
         ->and(Artisan::output())->toContain('Queued digest for Digest Agent <digest-agent@example.test> with 1 candidates.')
         ->toContain('Alert digest delivery complete. Agents scanned: 1. Emails queued: 1. Candidates: 1.');
 
+    $deliveryStatus = data_get($agent->fresh()->alert_preferences, 'digest_delivery');
+
+    expect($deliveryStatus['status'])->toBe('queued')
+        ->and($deliveryStatus['candidate_count'])->toBe(1)
+        ->and($deliveryStatus['message'])->toBe('Queued digest email with 1 alert.')
+        ->and($deliveryStatus['last_attempted_at'])->toBeString()->not->toBe('');
+
     Mail::assertQueued(AlertDigestMessage::class, function (AlertDigestMessage $mail) use ($agent, $ticket): bool {
         $renderedMail = $mail->render();
 
@@ -133,6 +147,13 @@ test('alert digest send command reports empty and missing-agent states without q
         ->and(Artisan::output())->toContain('No alert digest emails queued.')
         ->toContain('Alert digest delivery complete. Agents scanned: 1. Emails queued: 0. Candidates: 0.');
 
+    $deliveryStatus = data_get($agent->fresh()->alert_preferences, 'digest_delivery');
+
+    expect($deliveryStatus['status'])->toBe('no_alerts')
+        ->and($deliveryStatus['candidate_count'])->toBe(0)
+        ->and($deliveryStatus['message'])->toBe('No digest-ready alerts found.')
+        ->and($deliveryStatus['last_attempted_at'])->toBeString()->not->toBe('');
+
     Mail::assertNothingQueued();
 
     $exitCode = Artisan::call('wayfindr:send-alert-digests', [
@@ -141,6 +162,42 @@ test('alert digest send command reports empty and missing-agent states without q
 
     expect($exitCode)->toBe(1)
         ->and(Artisan::output())->toContain('No agent found for missing@example.test.');
+});
+
+test('alert digest send command records failed delivery attempts', function (): void {
+    $account = Account::factory()->create();
+    $agent = digestMailAgent($account, [
+        'email' => 'failing-digest@example.test',
+        'name' => 'Failing Digest',
+    ]);
+    $site = Site::factory()->for($account)->create(['name' => 'Failure Docs']);
+
+    createDigestMailConversationAlert(
+        agent: $agent,
+        site: $site,
+        conversationOverrides: ['support_code' => 'WF-FAILMAIL'],
+    );
+
+    Mail::shouldReceive('to')
+        ->once()
+        ->with($agent->email)
+        ->andThrow(new RuntimeException('SMTP cratered'));
+
+    $exitCode = Artisan::call('wayfindr:send-alert-digests', [
+        '--email' => $agent->email,
+    ]);
+
+    expect($exitCode)->toBe(1)
+        ->and(Artisan::output())->toContain('Failed digest for Failing Digest <failing-digest@example.test>.')
+        ->toContain('Alert digest delivery complete. Agents scanned: 1. Emails queued: 0. Candidates: 1. Failed: 1.');
+
+    $deliveryStatus = data_get($agent->fresh()->alert_preferences, 'digest_delivery');
+
+    expect($deliveryStatus['status'])->toBe('failed')
+        ->and($deliveryStatus['candidate_count'])->toBe(1)
+        ->and($deliveryStatus['message'])->toBe('Digest email could not be queued.')
+        ->and($deliveryStatus['error'])->toBe('SMTP cratered')
+        ->and($deliveryStatus['last_attempted_at'])->toBeString()->not->toBe('');
 });
 
 function digestMailAgent(Account $account, array $overrides = []): User

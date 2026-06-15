@@ -111,9 +111,31 @@
             </div>
 
             <p class="field-help">
-                Digest delivery is planned. Until it is enabled, email alerts
-                still send as they happen.
+                Digest delivery bundles eligible email alerts when the scheduler runs. Dashboard alerts stay immediate.
             </p>
+
+            @if ($alertCadence === $agent::ALERT_CADENCE_DIGEST)
+                @php
+                    $digestDeliveryTone = match ($digestDeliveryStatus['status']) {
+                        $agent::ALERT_DIGEST_DELIVERY_QUEUED => 'ready',
+                        $agent::ALERT_DIGEST_DELIVERY_FAILED => 'attention',
+                        default => 'manual',
+                    };
+                @endphp
+                <p class="field-help">
+                    <span class="readiness-status" data-status="{{ $digestDeliveryTone }}">
+                        Last digest
+                    </span>
+                    {{ $digestDeliveryStatus['label'] }}.
+                    {{ $digestDeliveryStatus['message'] }}
+                    @if ($digestDeliveryStatus['last_attempted_at'])
+                        {{ $digestDeliveryStatus['last_attempted_at']->diffForHumans() }}.
+                    @endif
+                    @if ($digestDeliveryStatus['error'])
+                        Last error: {{ $digestDeliveryStatus['error'] }}
+                    @endif
+                </p>
+            @endif
 
             <p class="field-help">
                 Email alerts send the same calm support signals to your inbox

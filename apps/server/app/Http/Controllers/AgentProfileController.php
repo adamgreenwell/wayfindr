@@ -36,6 +36,7 @@ class AgentProfileController extends Controller
             'alertModeOptions' => $agent::alertModeOptions(),
             'alertCadence' => $agent->alertCadence(),
             'alertCadenceOptions' => $agent::alertCadenceOptions(),
+            'digestDeliveryStatus' => $agent->alertDigestDeliveryStatus(),
             'mailReadiness' => $mailReadiness,
         ]);
     }

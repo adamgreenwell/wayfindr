@@ -10,6 +10,7 @@ use Illuminate\Console\Command;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Mail;
+use Throwable;
 
 class SendAlertDigestsCommand extends Command
 {
@@ -33,39 +34,74 @@ class SendAlertDigestsCommand extends Command
         $agentsScanned = 0;
         $emailsQueued = 0;
         $candidateCount = 0;
+        $failed = 0;
 
         foreach ($this->eligibleAgents($email) as $agent) {
             $agentsScanned++;
+            $attemptedAt = now();
 
             $candidates = $collector->forAgent($agent);
 
             if ($candidates->isEmpty()) {
+                $agent->recordAlertDigestDelivery([
+                    'status' => User::ALERT_DIGEST_DELIVERY_NO_ALERTS,
+                    'candidate_count' => 0,
+                    'message' => 'No digest-ready alerts found.',
+                    'last_attempted_at' => $attemptedAt->toISOString(),
+                ]);
+
                 continue;
             }
 
             $candidateCount += $candidates->count();
-            $emailsQueued++;
 
-            $queuedAt = now();
+            try {
+                Mail::to($agent->email)->queue(new AlertDigestMessage(
+                    agentName: $agent->name,
+                    candidates: $candidates->all(),
+                    generatedAt: $attemptedAt,
+                ));
 
-            Mail::to($agent->email)->queue(new AlertDigestMessage(
-                agentName: $agent->name,
-                candidates: $candidates->all(),
-                generatedAt: $queuedAt,
-            ));
+                $emailsQueued++;
 
-            $this->markCandidatesQueued($candidates, $queuedAt);
+                $this->markCandidatesQueued($candidates, $attemptedAt);
 
-            $this->line("Queued digest for {$agent->name} <{$agent->email}> with {$candidates->count()} candidates.");
+                $agent->recordAlertDigestDelivery([
+                    'status' => User::ALERT_DIGEST_DELIVERY_QUEUED,
+                    'candidate_count' => $candidates->count(),
+                    'message' => User::digestQueuedMessage($candidates->count()),
+                    'last_attempted_at' => $attemptedAt->toISOString(),
+                ]);
+
+                $this->line("Queued digest for {$agent->name} <{$agent->email}> with {$candidates->count()} candidates.");
+            } catch (Throwable $exception) {
+                $failed++;
+
+                $agent->recordAlertDigestDelivery([
+                    'status' => User::ALERT_DIGEST_DELIVERY_FAILED,
+                    'candidate_count' => $candidates->count(),
+                    'message' => 'Digest email could not be queued.',
+                    'error' => $exception->getMessage(),
+                    'last_attempted_at' => $attemptedAt->toISOString(),
+                ]);
+
+                $this->error("Failed digest for {$agent->name} <{$agent->email}>.");
+            }
         }
 
         if ($emailsQueued === 0) {
             $this->line('No alert digest emails queued.');
         }
 
-        $this->line("Alert digest delivery complete. Agents scanned: {$agentsScanned}. Emails queued: {$emailsQueued}. Candidates: {$candidateCount}.");
+        $summary = "Alert digest delivery complete. Agents scanned: {$agentsScanned}. Emails queued: {$emailsQueued}. Candidates: {$candidateCount}.";
 
-        return self::SUCCESS;
+        if ($failed > 0) {
+            $summary .= " Failed: {$failed}.";
+        }
+
+        $this->line($summary);
+
+        return $failed > 0 ? self::FAILURE : self::SUCCESS;
     }
 
     /**

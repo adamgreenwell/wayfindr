@@ -5,6 +5,7 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Enums\AccountRole;
 use App\Enums\PlatformRole;
+use Carbon\CarbonImmutable;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -15,6 +16,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Throwable;
 
 #[Fillable(['account_id', 'account_role', 'platform_role', 'name', 'email', 'password', 'deactivated_at', 'alert_preferences'])]
 #[Hidden(['password', 'remember_token'])]
@@ -32,6 +34,14 @@ class User extends Authenticatable
     public const ALERT_CADENCE_IMMEDIATE = 'immediate';
 
     public const ALERT_CADENCE_DIGEST = 'digest';
+
+    public const ALERT_DIGEST_DELIVERY_NOT_RUN = 'not_run';
+
+    public const ALERT_DIGEST_DELIVERY_QUEUED = 'queued';
+
+    public const ALERT_DIGEST_DELIVERY_NO_ALERTS = 'no_alerts';
+
+    public const ALERT_DIGEST_DELIVERY_FAILED = 'failed';
 
     /**
      * Get the attributes that should be cast.
@@ -137,6 +147,77 @@ class User extends Authenticatable
             && $this->alertCadence() === self::ALERT_CADENCE_IMMEDIATE;
     }
 
+    /**
+     * @param  array{status: string, candidate_count?: int, message?: string, error?: string|null, last_attempted_at?: string}  $delivery
+     */
+    public function recordAlertDigestDelivery(array $delivery): void
+    {
+        $preferences = $this->alert_preferences ?? [];
+
+        $this->forceFill([
+            'alert_preferences' => [
+                ...$preferences,
+                'digest_delivery' => array_filter([
+                    'status' => $delivery['status'],
+                    'candidate_count' => (int) ($delivery['candidate_count'] ?? 0),
+                    'message' => $delivery['message'] ?? null,
+                    'error' => $delivery['error'] ?? null,
+                    'last_attempted_at' => $delivery['last_attempted_at'] ?? now()->toISOString(),
+                ], fn ($value): bool => $value !== null),
+            ],
+        ])->save();
+    }
+
+    /**
+     * @return array{status: string, label: string, candidate_count: int, message: string, error: string|null, last_attempted_at: CarbonImmutable|null}
+     */
+    public function alertDigestDeliveryStatus(): array
+    {
+        $delivery = data_get($this->alert_preferences, 'digest_delivery', []);
+        $status = data_get($delivery, 'status');
+        $status = is_string($status) && in_array($status, [
+            self::ALERT_DIGEST_DELIVERY_QUEUED,
+            self::ALERT_DIGEST_DELIVERY_NO_ALERTS,
+            self::ALERT_DIGEST_DELIVERY_FAILED,
+        ], true)
+            ? $status
+            : self::ALERT_DIGEST_DELIVERY_NOT_RUN;
+
+        $candidateCount = (int) data_get($delivery, 'candidate_count', 0);
+        $message = data_get($delivery, 'message');
+
+        if (! is_string($message) || trim($message) === '') {
+            $message = match ($status) {
+                self::ALERT_DIGEST_DELIVERY_QUEUED => $this->digestQueuedMessage($candidateCount),
+                self::ALERT_DIGEST_DELIVERY_NO_ALERTS => 'No digest-ready alerts found.',
+                self::ALERT_DIGEST_DELIVERY_FAILED => 'Digest email could not be queued.',
+                default => 'No digest run has been recorded yet.',
+            };
+        }
+
+        $error = data_get($delivery, 'error');
+        $attemptedAt = data_get($delivery, 'last_attempted_at');
+
+        return [
+            'status' => $status,
+            'label' => match ($status) {
+                self::ALERT_DIGEST_DELIVERY_QUEUED => 'Queued digest email',
+                self::ALERT_DIGEST_DELIVERY_NO_ALERTS => 'No digest-ready alerts',
+                self::ALERT_DIGEST_DELIVERY_FAILED => 'Digest delivery failed',
+                default => 'Not run yet',
+            },
+            'candidate_count' => $candidateCount,
+            'message' => $message,
+            'error' => is_string($error) && trim($error) !== '' ? $error : null,
+            'last_attempted_at' => $this->parseAlertDigestAttemptedAt($attemptedAt),
+        ];
+    }
+
+    public static function digestQueuedMessage(int $candidateCount): string
+    {
+        return 'Queued digest email with '.$candidateCount.' '.str('alert')->plural($candidateCount).'.';
+    }
+
     public function shouldReceiveConversationAlert(Conversation $conversation): bool
     {
         if ($this->isDeactivated() || $this->alertMode() === self::ALERT_MODE_QUIET) {
@@ -190,5 +271,18 @@ class User extends Authenticatable
     public function auditEvents(): MorphMany
     {
         return $this->morphMany(AuditEvent::class, 'actor');
+    }
+
+    private function parseAlertDigestAttemptedAt(mixed $value): ?CarbonImmutable
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        try {
+            return CarbonImmutable::parse($value);
+        } catch (Throwable) {
+            return null;
+        }
     }
 }

@@ -118,8 +118,8 @@ test('agent can choose their email alert delivery cadence', function (): void {
         ->assertSee('Email cadence')
         ->assertSee('Send email alerts as they happen')
         ->assertSee('Prefer digest delivery when available')
-        ->assertSee('Digest delivery is planned.')
-        ->assertSee('still send as they happen.');
+        ->assertSee('Digest delivery bundles eligible email alerts when the scheduler runs.')
+        ->assertDontSee('Digest delivery is planned.');
 
     $this->actingAs($agent)
         ->from('/dashboard/profile')
@@ -136,6 +136,30 @@ test('agent can choose their email alert delivery cadence', function (): void {
         'email' => true,
         'cadence' => 'digest',
     ]);
+});
+
+test('agent profile shows the latest alert digest delivery status', function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => [
+            'mode' => 'all',
+            'email' => true,
+            'cadence' => 'digest',
+            'digest_delivery' => [
+                'status' => 'queued',
+                'candidate_count' => 2,
+                'message' => 'Queued digest email with 2 alerts.',
+                'last_attempted_at' => now()->subMinutes(7)->toISOString(),
+            ],
+        ],
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/profile')
+        ->assertOk()
+        ->assertSee('Last digest')
+        ->assertSee('Queued digest email')
+        ->assertSee('Queued digest email with 2 alerts.')
+        ->assertSee('7 minutes ago');
 });
 
 test('agent profile flags email alerts when mail delivery needs attention', function (): void {
