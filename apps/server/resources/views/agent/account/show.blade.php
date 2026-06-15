@@ -211,6 +211,9 @@
                                 <th scope="col">Agent</th>
                                 <th scope="col">Status</th>
                                 <th scope="col">Role</th>
+                                @if ($canViewAlertDelivery)
+                                    <th scope="col">Alert delivery</th>
+                                @endif
                                 @if ($canManageRoles)
                                     <th scope="col">Manage role</th>
                                 @endif
@@ -234,6 +237,12 @@
                                     ];
                                     $explicitSites = $supportScope['explicitSites'];
                                     $fallbackSites = $supportScope['fallbackSites'];
+                                    $digestDeliveryStatus = $accountAgent->alertDigestDeliveryStatus();
+                                    $digestDeliveryTone = match ($digestDeliveryStatus['status']) {
+                                        \App\Models\User::ALERT_DIGEST_DELIVERY_FAILED => 'attention',
+                                        \App\Models\User::ALERT_DIGEST_DELIVERY_NOT_RUN => 'manual',
+                                        default => 'ready',
+                                    };
                                 @endphp
                                 <tr>
                                     <td>
@@ -242,6 +251,26 @@
                                     </td>
                                     <td>{{ $accountAgent->isDeactivated() ? 'Deactivated' : 'Active' }}</td>
                                     <td>{{ $roleLabels[$accountAgent->account_role?->value] ?? 'Agent' }}</td>
+                                    @if ($canViewAlertDelivery)
+                                        <td>
+                                            @if (! $accountAgent->alertEmailEnabled())
+                                                <strong>Email off</strong>
+                                                <span class="lede">Dashboard alerts only</span>
+                                            @elseif ($accountAgent->alertCadence() === \App\Models\User::ALERT_CADENCE_DIGEST)
+                                                <strong>Digest</strong>
+                                                <span class="lede">
+                                                    <span class="readiness-status" data-status="{{ $digestDeliveryTone }}">{{ $digestDeliveryStatus['label'] }}</span>
+                                                </span>
+                                                <span class="lede">{{ $digestDeliveryStatus['message'] }}</span>
+                                                @if ($digestDeliveryStatus['last_attempted_at'])
+                                                    <span class="lede">Last attempt {{ $digestDeliveryStatus['last_attempted_at']->diffForHumans() }}</span>
+                                                @endif
+                                            @else
+                                                <strong>Immediate</strong>
+                                                <span class="lede">Email alerts as they happen</span>
+                                            @endif
+                                        </td>
+                                    @endif
                                     @if ($canManageRoles)
                                         <td>
                                             @if ($accountAgent->is($agent))

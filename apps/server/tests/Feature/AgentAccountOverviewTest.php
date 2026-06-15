@@ -177,6 +177,89 @@ test('agent roster summarizes explicit and fallback site scope', function (): vo
         ->assertSee(route('dashboard.sites.show', $explicitSite), false);
 });
 
+test('account overview shows agent alert digest delivery status without raw provider errors', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'name' => 'Ada Admin',
+        'email' => 'ada@example.test',
+    ]);
+
+    User::factory()->for($account)->create([
+        'name' => 'Quinn Queued',
+        'email' => 'queued@example.test',
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ALL,
+            'email' => true,
+            'cadence' => User::ALERT_CADENCE_DIGEST,
+            'digest_delivery' => [
+                'status' => User::ALERT_DIGEST_DELIVERY_QUEUED,
+                'candidate_count' => 2,
+                'message' => User::digestQueuedMessage(2),
+                'last_attempted_at' => now()->subMinutes(5)->toISOString(),
+            ],
+        ],
+    ]);
+
+    User::factory()->for($account)->create([
+        'name' => 'Faye Failed',
+        'email' => 'failed@example.test',
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ALL,
+            'email' => true,
+            'cadence' => User::ALERT_CADENCE_DIGEST,
+            'digest_delivery' => [
+                'status' => User::ALERT_DIGEST_DELIVERY_FAILED,
+                'candidate_count' => 1,
+                'message' => 'Digest email could not be queued.',
+                'error' => 'SMTP provider secret stack trace should not render',
+                'last_attempted_at' => now()->subMinutes(9)->toISOString(),
+            ],
+        ],
+    ]);
+
+    User::factory()->for($account)->create([
+        'name' => 'Ivy Immediate',
+        'email' => 'immediate@example.test',
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ALL,
+            'email' => true,
+            'cadence' => User::ALERT_CADENCE_IMMEDIATE,
+        ],
+    ]);
+
+    User::factory()->for(Account::factory())->create([
+        'name' => 'Outside Digest',
+        'email' => 'outside@example.test',
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ALL,
+            'email' => true,
+            'cadence' => User::ALERT_CADENCE_DIGEST,
+            'digest_delivery' => [
+                'status' => User::ALERT_DIGEST_DELIVERY_FAILED,
+                'message' => 'Outside failure should not render.',
+            ],
+        ],
+    ]);
+
+    $this->actingAs($admin)
+        ->get('/dashboard/account')
+        ->assertOk()
+        ->assertSee('Alert delivery')
+        ->assertSee('Quinn Queued')
+        ->assertSee('Digest')
+        ->assertSee('Queued digest email')
+        ->assertSee('Queued digest email with 2 alerts.')
+        ->assertSee('Faye Failed')
+        ->assertSee('Digest delivery failed')
+        ->assertSee('Digest email could not be queued.')
+        ->assertSee('Ivy Immediate')
+        ->assertSee('Immediate')
+        ->assertDontSee('SMTP provider secret stack trace should not render')
+        ->assertDontSee('Outside Digest')
+        ->assertDontSee('Outside failure should not render.');
+});
+
 test('agent can review recent account access activity from the account overview', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $owner = User::factory()->for($account)->create([

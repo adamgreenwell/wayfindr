@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\OperatorReadinessConfirmation;
+use App\Models\User;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -54,6 +55,7 @@ class OperatorReadiness
             $this->realtimeBroadcasting(),
             $this->storagePaths(),
             $this->scheduler(),
+            $this->alertDigestDelivery(),
             $this->backupsRestore(),
         ];
 
@@ -350,6 +352,105 @@ class OperatorReadiness
             summary: 'Confirm the Laravel scheduler is running once per minute.',
             detail: 'Wayfindr cannot safely prove cron or external scheduler setup from inside the request. Alert digest email depends on the scheduler running the hourly digest command.',
             action: 'Configure * * * * * cd /path/to/apps/server && php artisan schedule:run or the equivalent scheduled job in your host, then run php artisan schedule:list and confirm php artisan wayfindr:send-alert-digests is listed.'
+        );
+    }
+
+    /**
+     * @return array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
+     */
+    private function alertDigestDelivery(): array
+    {
+        if (! Schema::hasTable('users')) {
+            return $this->check(
+                key: 'alert_digest_delivery',
+                label: 'Alert digest delivery',
+                status: 'manual',
+                summary: 'Agent alert preferences are not available yet.',
+                detail: 'Run migrations before checking digest delivery state.',
+                action: 'Run php artisan migrate from apps/server, then revisit readiness once agents can opt into digest email.'
+            );
+        }
+
+        $digestAgents = User::query()
+            ->whereNotNull('account_id')
+            ->whereNull('deactivated_at')
+            ->get()
+            ->filter(fn (User $agent): bool => $agent->alertEmailEnabled()
+                && $agent->alertMode() !== User::ALERT_MODE_QUIET
+                && $agent->alertCadence() === User::ALERT_CADENCE_DIGEST)
+            ->values();
+
+        if ($digestAgents->isEmpty()) {
+            return $this->check(
+                key: 'alert_digest_delivery',
+                label: 'Alert digest delivery',
+                status: 'ready',
+                summary: 'No active digest email agents yet.',
+                detail: 'Wayfindr will begin recording digest delivery state after agents opt into digest email.',
+                action: 'Use agent profiles or account settings to enable digest cadence when a team wants quieter email alerts.'
+            );
+        }
+
+        $failedAgents = $digestAgents
+            ->filter(fn (User $agent): bool => $agent->alertDigestDeliveryStatus()['status'] === User::ALERT_DIGEST_DELIVERY_FAILED)
+            ->values();
+
+        if ($failedAgents->isNotEmpty()) {
+            $failedCount = $failedAgents->count();
+
+            return $this->check(
+                key: 'alert_digest_delivery',
+                label: 'Alert digest delivery',
+                status: 'attention',
+                summary: sprintf(
+                    '%d digest-enabled %s %s delivery attention.',
+                    $failedCount,
+                    str('agent')->plural($failedCount),
+                    $failedCount === 1 ? 'needs' : 'need',
+                ),
+                detail: sprintf(
+                    'The latest digest delivery attempt failed for %s. Raw provider errors stay in logs instead of the readiness page.',
+                    $failedAgents->pluck('name')->filter()->join(', '),
+                ),
+                action: 'Check the application logs and mail provider, then run php artisan wayfindr:send-alert-digests from apps/server to record a fresh delivery state.'
+            );
+        }
+
+        $notRunAgents = $digestAgents
+            ->filter(fn (User $agent): bool => $agent->alertDigestDeliveryStatus()['status'] === User::ALERT_DIGEST_DELIVERY_NOT_RUN)
+            ->values();
+
+        if ($notRunAgents->isNotEmpty()) {
+            $notRunCount = $notRunAgents->count();
+
+            return $this->check(
+                key: 'alert_digest_delivery',
+                label: 'Alert digest delivery',
+                status: 'manual',
+                summary: sprintf(
+                    '%d digest-enabled %s %s no recorded digest run yet.',
+                    $notRunCount,
+                    str('agent')->plural($notRunCount),
+                    $notRunCount === 1 ? 'has' : 'have',
+                ),
+                detail: 'The scheduler may not have run since digest cadence was enabled, or the team has not had digest-ready alerts yet.',
+                action: 'Confirm the scheduler is running, then run php artisan wayfindr:send-alert-digests once from apps/server to establish a baseline delivery state.'
+            );
+        }
+
+        $digestCount = $digestAgents->count();
+
+        return $this->check(
+            key: 'alert_digest_delivery',
+            label: 'Alert digest delivery',
+            status: 'ready',
+            summary: sprintf(
+                'Latest digest delivery state is recorded for %d digest-enabled %s.',
+                $digestCount,
+                str('agent')->plural($digestCount),
+            ),
+            detail: 'The latest digest attempts are either queued or found no digest-ready alerts.',
+            action: 'Keep the scheduler confirmed and review this check after mail transport or alert cadence changes.'
         );
     }
 

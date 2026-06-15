@@ -186,6 +186,91 @@ test('readiness scheduler guidance names alert digest delivery', function (): vo
         ->and($backgroundProcesses['action'])->toContain('php artisan wayfindr:send-alert-digests');
 });
 
+test('readiness diagnostics flag failed digest delivery without leaking raw provider errors', function (): void {
+    config([
+        'app.url' => 'https://support.example.test',
+        'app.key' => 'base64:'.base64_encode(str_repeat('a', 32)),
+        'broadcasting.default' => 'reverb',
+        'broadcasting.connections.reverb.app_id' => 'wayfindr-production',
+        'broadcasting.connections.reverb.key' => 'wayfindr-key',
+        'broadcasting.connections.reverb.secret' => 'wayfindr-secret',
+        'broadcasting.connections.reverb.options.host' => 'support.example.test',
+        'broadcasting.connections.reverb.options.port' => 443,
+        'broadcasting.connections.reverb.options.scheme' => 'https',
+        'mail.default' => 'smtp',
+        'mail.mailers.smtp.host' => 'smtp.example.test',
+        'mail.mailers.smtp.port' => 587,
+        'mail.from.address' => 'support@example.test',
+        'queue.default' => 'database',
+    ]);
+
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+
+    User::factory()->for($account)->create([
+        'name' => 'Faye Failed',
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ALL,
+            'email' => true,
+            'cadence' => User::ALERT_CADENCE_DIGEST,
+            'digest_delivery' => [
+                'status' => User::ALERT_DIGEST_DELIVERY_FAILED,
+                'candidate_count' => 2,
+                'message' => 'Digest email could not be queued.',
+                'error' => 'SMTP provider secret stack trace should not render',
+                'last_attempted_at' => now()->subMinutes(9)->toISOString(),
+            ],
+        ],
+    ]);
+
+    User::factory()->for($account)->create([
+        'name' => 'Quinn Queued',
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ALL,
+            'email' => true,
+            'cadence' => User::ALERT_CADENCE_DIGEST,
+            'digest_delivery' => [
+                'status' => User::ALERT_DIGEST_DELIVERY_QUEUED,
+                'candidate_count' => 1,
+                'message' => User::digestQueuedMessage(1),
+                'last_attempted_at' => now()->subMinutes(5)->toISOString(),
+            ],
+        ],
+    ]);
+
+    User::factory()->for($account)->create([
+        'name' => 'Darla Dormant',
+        'deactivated_at' => now(),
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ALL,
+            'email' => true,
+            'cadence' => User::ALERT_CADENCE_DIGEST,
+            'digest_delivery' => [
+                'status' => User::ALERT_DIGEST_DELIVERY_FAILED,
+                'error' => 'Dormant agent failure should not render',
+            ],
+        ],
+    ]);
+
+    $readiness = app(OperatorReadiness::class)->summary();
+    $digestDelivery = collect($readiness['checks'])->firstWhere('key', 'alert_digest_delivery');
+
+    expect($digestDelivery)->toMatchArray([
+        'label' => 'Alert digest delivery',
+        'status' => 'attention',
+        'status_label' => 'Needs attention',
+        'summary' => '1 digest-enabled agent needs delivery attention.',
+    ])
+        ->and($digestDelivery['detail'])->toContain('Faye Failed')
+        ->and($digestDelivery['action'])->toContain('php artisan wayfindr:send-alert-digests')
+        ->and($digestDelivery['detail'])->not->toContain('SMTP provider secret stack trace should not render')
+        ->and($digestDelivery['detail'])->not->toContain('Dormant agent failure should not render')
+        ->and($readiness['next_step'])->toMatchArray([
+            'key' => 'alert_digest_delivery',
+            'label' => 'Fix Alert digest delivery',
+            'status' => 'attention',
+        ]);
+});
+
 test('readiness diagnostics treat confirmed manual items as ready', function (): void {
     config([
         'app.url' => 'https://support.example.test',

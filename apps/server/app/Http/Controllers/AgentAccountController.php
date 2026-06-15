@@ -80,6 +80,7 @@ class AgentAccountController extends Controller
             'agentSupportScopes' => $agentSupportScopes,
             'activeAgentCount' => $agents->reject->isDeactivated()->count(),
             'canCreateAgents' => $agent->isAdmin(),
+            'canViewAlertDelivery' => $agent->isAdmin(),
             'canManageAgentAccess' => $agent->isAdmin(),
             'canManageRoles' => $agent->isOwner(),
             'canViewAudit' => $agent->isAdmin(),
