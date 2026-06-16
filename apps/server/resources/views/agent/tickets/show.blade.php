@@ -274,25 +274,10 @@
                         <span class="lede">{{ $linkedConversationMessages->count() }} shown</span>
                     </div>
 
-                    <div class="message-list">
-                        @forelse ($linkedConversationMessages as $conversationMessage)
-                            <article class="message-card @if ($conversationMessage->sender_type === \App\Models\User::class) agent-message @endif">
-                                <div class="message-meta">
-                                    <strong>
-                                        @if ($conversationMessage->sender_type === \App\Models\User::class)
-                                            {{ $conversationMessage->sender?->name ?? 'Agent' }}
-                                        @else
-                                            Visitor
-                                        @endif
-                                    </strong>
-                                    <span>{{ $conversationMessage->created_at->diffForHumans() }}</span>
-                                </div>
-                                <p>{{ $conversationMessage->body }}</p>
-                            </article>
-                        @empty
-                            <div class="empty-state">No conversation messages yet.</div>
-                        @endforelse
-                    </div>
+                    @include('agent.conversations.partials.message-list', [
+                        'emptyMessage' => 'No conversation messages yet.',
+                        'transcriptMessages' => $linkedConversationMessages,
+                    ])
 
                     <form id="ticket-reply" class="section-form" method="POST" action="{{ route('dashboard.tickets.replies.store', $ticket) }}">
                         @csrf

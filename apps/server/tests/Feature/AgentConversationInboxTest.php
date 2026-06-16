@@ -2407,6 +2407,64 @@ test('ticket detail shows a unified timeline across conversation messages notes 
         ]);
 });
 
+test('ticket detail renders linked conversation messages with agent transcript grouping', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-TICKETCHAT',
+        'subject' => 'Checkout trouble',
+        'status' => 'open',
+    ]);
+
+    ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'The checkout button is stuck.',
+        'created_at' => Carbon::parse('2026-05-30 14:00:00', 'UTC'),
+    ]);
+
+    ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'Still stuck after a refresh.',
+        'created_at' => Carbon::parse('2026-05-30 14:02:00', 'UTC'),
+    ]);
+
+    ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => User::class,
+        'sender_id' => $agent->id,
+        'body' => 'I can help with that.',
+        'created_at' => Carbon::parse('2026-05-30 14:03:00', 'UTC'),
+        'seen_at' => Carbon::parse('2026-05-30 14:04:00', 'UTC'),
+    ]);
+
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($conversation)
+        ->for($visitor, 'requester')
+        ->for($agent, 'assignee')
+        ->create(['subject' => 'Escalated checkout issue']);
+
+    $response = $this->actingAs($agent)
+        ->get("/dashboard/tickets/{$ticket->id}")
+        ->assertOk()
+        ->assertSee('Recent conversation messages')
+        ->assertSee('3 shown')
+        ->assertSee('datetime="2026-05-30T14:00:00.000000Z"', false)
+        ->assertSee('datetime="2026-05-30T14:02:00.000000Z"', false)
+        ->assertSee('Seen by visitor')
+        ->assertSeeInOrder([
+            'The checkout button is stuck.',
+            'Still stuck after a refresh.',
+            'I can help with that.',
+        ]);
+
+    expect(substr_count($response->content(), 'message visitor grouped'))->toBe(1);
+});
+
 test('agent ticket detail explains priority semantics', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);

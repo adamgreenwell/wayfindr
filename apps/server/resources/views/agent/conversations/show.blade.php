@@ -615,48 +615,10 @@
                     <span class="lede">{{ $messages->count() }} total</span>
                 </div>
 
-                @if ($messages->isEmpty())
-                    <p class="empty">No messages yet.</p>
-                @else
-                    <div class="message-list">
-                        @php
-                            $previousMessage = null;
-                        @endphp
-
-                        @foreach ($messages as $message)
-                            @php
-                                $isAgent = $message->sender_type === \App\Models\User::class;
-                                $senderName = $isAgent
-                                    ? ($message->sender?->name ?? 'Agent')
-                                    : 'Visitor';
-                                $secondsSincePrevious = $previousMessage?->created_at?->diffInSeconds($message->created_at, false);
-                                $isGrouped = $previousMessage
-                                    && $previousMessage->sender_type === $message->sender_type
-                                    && (string) $previousMessage->sender_id === (string) $message->sender_id
-                                    && $secondsSincePrevious !== null
-                                    && $secondsSincePrevious >= 0
-                                    && $secondsSincePrevious <= 300;
-                                $messageClasses = 'message '.($isAgent ? 'agent' : 'visitor').($isGrouped ? ' grouped' : '');
-                            @endphp
-                            <article class="{{ $messageClasses }}">
-                                <div class="message-meta">
-                                    <strong class="{{ $isGrouped ? 'sr-only' : 'message-sender' }}">{{ $senderName }}</strong>
-                                    <span class="message-status-line">
-                                        <time class="message-time" datetime="{{ $message->created_at->toJSON() }}">{{ $message->created_at->diffForHumans() }}</time>
-                                        @if ($isAgent && $message->seen_at)
-                                            <span class="message-seen">Seen by visitor</span>
-                                        @endif
-                                    </span>
-                                </div>
-                                <p class="message-body">{{ $message->body }}</p>
-                            </article>
-
-                            @php
-                                $previousMessage = $message;
-                            @endphp
-                        @endforeach
-                    </div>
-                @endif
+                @include('agent.conversations.partials.message-list', [
+                    'emptyMessage' => 'No messages yet.',
+                    'transcriptMessages' => $messages,
+                ])
             </section>
 
             <section class="section" aria-labelledby="reply-heading">
