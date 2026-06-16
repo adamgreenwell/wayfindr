@@ -2906,6 +2906,38 @@ test('ticket detail exposes visitor reply helpers', function (): void {
         ->assertSee('Ticket follow-up');
 });
 
+test('ticket visitor reply composer exposes progressive submission affordances', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-TICKETUX',
+        'subject' => 'Checkout trouble',
+    ]);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($conversation)
+        ->for($visitor, 'requester')
+        ->create([
+            'subject' => 'Escalated checkout issue',
+            'status' => 'open',
+        ]);
+
+    $this->actingAs($agent)
+        ->get("/dashboard/tickets/{$ticket->id}")
+        ->assertOk()
+        ->assertSee('data-reply-composer', false)
+        ->assertSee('data-submitting-label="Sending visitor reply..."', false)
+        ->assertSee('data-reply-body', false)
+        ->assertSee('data-shortcut-submit', false)
+        ->assertSee('data-reply-status', false)
+        ->assertSee('aria-live="polite"', false)
+        ->assertSee('data-reply-submit', false)
+        ->assertSee('Command or Control plus Enter sends this visitor reply.');
+});
+
 test('agent can send a visitor reply from a ticket helper', function (): void {
     Event::fake([ConversationMessageCreated::class]);
 

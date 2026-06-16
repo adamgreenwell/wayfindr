@@ -279,7 +279,14 @@
                         'transcriptMessages' => $linkedConversationMessages,
                     ])
 
-                    <form id="ticket-reply" class="section-form" method="POST" action="{{ route('dashboard.tickets.replies.store', $ticket) }}">
+                    <form
+                        id="ticket-reply"
+                        class="section-form"
+                        method="POST"
+                        action="{{ route('dashboard.tickets.replies.store', $ticket) }}"
+                        data-reply-composer
+                        data-submitting-label="Sending visitor reply..."
+                    >
                         @csrf
 
                         <div class="field">
@@ -303,13 +310,24 @@
 
                         <div class="field">
                             <label for="message">Visitor reply</label>
-                            <textarea id="message" name="message" rows="4" placeholder="Send a reply to the visitor.">{{ old('message') }}</textarea>
+                            <textarea
+                                id="message"
+                                name="message"
+                                rows="4"
+                                placeholder="Send a reply to the visitor."
+                                aria-describedby="ticket-reply-shortcut-help"
+                                data-reply-body
+                                data-shortcut-submit
+                            >{{ old('message') }}</textarea>
+                            <p id="ticket-reply-shortcut-help" class="sr-only">Command or Control plus Enter sends this visitor reply.</p>
                             @error('message')
                                 <p class="field-error">{{ $message }}</p>
                             @enderror
                         </div>
 
-                        <button class="button" type="submit">Send visitor reply</button>
+                        <p class="sr-only" data-reply-status aria-live="polite"></p>
+
+                        <button class="button" type="submit" data-reply-submit>Send visitor reply</button>
                     </form>
                 </section>
             @endif
@@ -902,22 +920,5 @@
                     @endforelse
                 </div>
             </section>
-    <script>
-        document.querySelectorAll('[data-template-picker]').forEach((templatePicker) => {
-            const templateTarget = templatePicker.dataset.target
-                ? document.querySelector(templatePicker.dataset.target)
-                : null;
-
-            templatePicker.addEventListener('change', () => {
-                const body = templatePicker.selectedOptions[0]?.dataset.body || '';
-
-                if (! body || ! templateTarget) {
-                    return;
-                }
-
-                templateTarget.value = body;
-                templateTarget.focus();
-            });
-        });
-    </script>
+    @include('agent.partials.reply-composer-script')
 </x-layouts.app>
