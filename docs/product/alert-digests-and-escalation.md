@@ -1,7 +1,8 @@
 # Alert Digests and Escalation
 
-Status: planning. This is a product boundary for future notification work, not
-a commitment that every self-hosted install needs alert automation on day one.
+Status: foundation implemented. This document records the current alert digest
+and manual escalation boundary, plus the guardrails for future automatic
+escalation work.
 
 ## Principle
 
@@ -20,7 +21,10 @@ Wayfindr already has the pieces needed for calm alert routing:
 - queued email delivery for configured installs, including digest email;
 - mail readiness checks and a mail smoke command;
 - agent profile preferences for all supported-site alerts, assigned-only alerts,
-  quiet mode, email delivery, and future email cadence;
+  quiet mode, email delivery, and email cadence;
+- hourly alert digest scheduling through Laravel's scheduler;
+- digest delivery state on the agent profile, account roster, and operator
+  readiness screens;
 - site access rules that keep alert visibility inside the agent's support scope;
 - deactivated-agent checks so stale assignments do not keep sending actionable
   support alerts.
@@ -49,8 +53,9 @@ sends configured email alerts as events happen. Digest cadence keeps dashboard
 notifications immediate, skips event-by-event email, and lets operators queue
 metadata-only digest email through `php artisan wayfindr:send-alert-digests`.
 Digest delivery records which alert notifications were queued so unchanged
-unread alerts do not resend on every run. A recurring schedule for digest
-delivery can come later once timing defaults are settled.
+unread alerts do not resend on every run. Wayfindr registers the digest command
+hourly with Laravel's scheduler; self-hosted operators still need the normal
+one-minute `php artisan schedule:run` entry or equivalent platform scheduler.
 
 ## Immediate Alert Candidates
 
@@ -131,9 +136,35 @@ create noisy alerts.
 - Let self-hosted operators configure timing without hiding their responsibility
   for mail, queues, and local data handling.
 
+## Current Checkpoint
+
+The first digest path is intentionally modest and useful:
+
+- agents choose immediate or digest email cadence from their profile;
+- dashboard notifications stay immediate so the app remains current;
+- digest-enabled agents skip event-by-event email for eligible support alerts;
+- `php artisan wayfindr:alert-digest-preview` shows metadata-only candidates
+  without sending mail;
+- `php artisan wayfindr:send-alert-digests` queues metadata-only digest email;
+- Laravel's scheduler registers the digest command hourly;
+- the digest runner records queued, no-alerts, and failed delivery states;
+- agents can see their latest digest delivery state on their profile;
+- account admins can review each agent's alert cadence and latest digest state
+  from the account roster;
+- operator readiness flags failed digest delivery without exposing raw provider
+  errors in the UI.
+
+Manual escalation is also in place: agents can escalate a ticket to another
+eligible site agent with a reason, assignment notification, audit event, and
+ticket timeline entry.
+
+This closes the first alert-calm foundation. Automatic account-level escalation
+rules remain a separate future product track in #156.
+
 ## Implementation Waypoints
 
-1. Document the digest and escalation boundary.
+1. Document the digest and escalation boundary. Done: this document records the
+   current foundation, operator expectations, and deferred policy work.
 2. Add an agent-facing delivery cadence preference without changing delivery
    behavior. Done: agents can store immediate or digest cadence while current
    alert delivery remains unchanged.
@@ -151,22 +182,27 @@ create noisy alerts.
    command with Laravel's scheduler hourly, so self-hosted installs only need
    the normal one-minute `php artisan schedule:run` job for digest delivery to
    move.
-6. Add a simple manual escalation event and audit trail. Done: agents can
+6. Record digest delivery state for agents and operators. Done: digest attempts
+   record queued, no-alerts, or failed state; agents can see their own latest
+   state, account admins can review team delivery state, and operator readiness
+   flags failed delivery without leaking provider errors.
+7. Add a simple manual escalation event and audit trail. Done: agents can
    escalate a ticket to another eligible site agent with a reason, assignment
    notification, and ticket timeline entry.
-7. Add account-level default cadence and escalation timing only after the
+8. Add account-level default cadence and escalation timing only after the
    per-agent path is proven.
-8. Add automatic escalation policies only when there is a clear account setting,
+9. Add automatic escalation policies only when there is a clear account setting,
    tests, and UI copy that explains what will happen.
 
 ## Open Questions
 
 - Should the first cadence be daily only, or should Wayfindr also support a
   short working-hours digest?
-- Should manual escalation target one agent, all site agents, or both?
 - Should digest scheduling use local server time, account timezone, or agent
   timezone first?
 - How visible should skipped digest items be when an agent loses site access
   before send time?
 - Should support codes become the primary email reference for conversations so
   agents can search their inbox without exposing more visitor data?
+- When account-level escalation policies arrive, should manual escalation target
+  one agent, all site agents, or a named team?
