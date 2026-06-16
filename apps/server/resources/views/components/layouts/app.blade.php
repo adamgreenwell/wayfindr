@@ -950,12 +950,12 @@
                 ],
                 [
                     'label' => 'Conversations',
-                    'href' => route('dashboard').'#conversations',
+                    'href' => route('dashboard.conversations.index'),
                     'active' => request()->routeIs('dashboard.conversations.*'),
                 ],
                 [
                     'label' => 'Tickets',
-                    'href' => route('dashboard', ['ticket_status' => 'open']).'#tickets',
+                    'href' => route('dashboard.tickets.index'),
                     'active' => request()->routeIs('dashboard.tickets.*'),
                 ],
                 [

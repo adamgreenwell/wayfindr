@@ -33,8 +33,10 @@ test('authenticated agent pages share primary app navigation', function (): void
         ->assertSee('Sites')
         ->assertDontSee('Readiness')
         ->assertSee('Account')
-        ->assertSee('/dashboard#conversations', false)
-        ->assertSee('/dashboard?ticket_status=open#tickets', false)
+        ->assertSee('/dashboard/conversations', false)
+        ->assertSee('/dashboard/tickets', false)
+        ->assertDontSee('/dashboard#conversations', false)
+        ->assertDontSee('/dashboard?ticket_status=open#tickets', false)
         ->assertSee('/dashboard/sites', false)
         ->assertDontSee('/dashboard/readiness', false)
         ->assertDontSee('/dashboard#sites', false)
@@ -48,7 +50,7 @@ test('authenticated agent pages share primary app navigation', function (): void
         ->get("/dashboard/conversations/{$conversation->support_code}")
         ->assertOk()
         ->assertSee('aria-label="Primary navigation"', false)
-        ->assertSee('/dashboard#conversations', false)
+        ->assertSee('/dashboard/conversations', false)
         ->assertSee('aria-current="page"', false);
 });
 

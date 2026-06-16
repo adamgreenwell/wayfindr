@@ -63,7 +63,7 @@ test('dashboard shows conversation read state for the signed in agent', function
     ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/conversations')
         ->assertOk()
         ->assertSee('Read')
         ->assertSeeInOrder(['Needs eyes', 'New activity'])
@@ -119,7 +119,7 @@ test('dashboard filters conversations by new activity for the signed in agent', 
     $seenConversation->markReadFor($agent, now()->subMinute());
 
     $this->actingAs($agent)
-        ->get('/dashboard?conversation_filter=new_activity')
+        ->get('/dashboard/conversations?conversation_filter=new_activity')
         ->assertOk()
         ->assertSee('2 need attention')
         ->assertSee('New activity')
@@ -162,7 +162,7 @@ test('opening a conversation marks it read for the signed in agent', function ()
     expect($recordedReadAt)->not->toBeNull();
     expect(Carbon::parse($recordedReadAt)->equalTo($readAt))->toBeTrue();
 
-    $this->get('/dashboard')
+    $this->get('/dashboard/conversations')
         ->assertOk()
         ->assertSeeInOrder(['Open marks seen', 'Seen'])
         ->assertSee('0 need attention');
@@ -203,7 +203,7 @@ test('new visitor messages after the agent read marker restore new activity stat
     $conversation->forceFill(['last_message_at' => $newMessage->created_at])->save();
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/conversations')
         ->assertOk()
         ->assertSeeInOrder(['Visitor came back', 'New activity']);
 });
@@ -253,7 +253,7 @@ test('ticket replies mark the linked conversation read for the sending agent', f
     expect($recordedReadAt)->not->toBeNull();
     expect(Carbon::parse($recordedReadAt)->greaterThanOrEqualTo($reply->created_at))->toBeTrue();
 
-    $this->get('/dashboard')
+    $this->get('/dashboard/conversations')
         ->assertOk()
         ->assertSeeInOrder(['Ticket-linked conversation', 'Seen'])
         ->assertSee('0 need attention');

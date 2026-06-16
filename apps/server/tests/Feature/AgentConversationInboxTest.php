@@ -56,7 +56,7 @@ test('dashboard lists open conversations for the agent account', function (): vo
     ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/conversations')
         ->assertOk()
         ->assertSee('Conversations')
         ->assertSee('Checkout trouble')
@@ -75,7 +75,7 @@ test('dashboard shows an empty conversation state', function (): void {
     $agent = User::factory()->for($account)->create();
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/conversations')
         ->assertOk()
         ->assertSee('No active conversations yet.');
 });
@@ -102,7 +102,7 @@ test('dashboard shows conversation assignment state', function (): void {
     ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/conversations')
         ->assertOk()
         ->assertSee('Assigned')
         ->assertSee('Assigned checkout trouble')
@@ -150,7 +150,7 @@ test('dashboard shows conversation attention state from the latest message', fun
     ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/conversations')
         ->assertOk()
         ->assertSee('Attention')
         ->assertSeeInOrder(['Visitor latest', 'Needs reply'])
@@ -191,7 +191,7 @@ test('dashboard filters conversations by attention state', function (): void {
     ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard?conversation_filter=needs_reply')
+        ->get('/dashboard/conversations?conversation_filter=needs_reply')
         ->assertOk()
         ->assertSee('Needs reply')
         ->assertSee('Visitor needs a hand')
@@ -227,7 +227,7 @@ test('dashboard filters conversations by assignment state', function (): void {
     ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard?conversation_filter=assigned_to_me')
+        ->get('/dashboard/conversations?conversation_filter=assigned_to_me')
         ->assertOk()
         ->assertSee('Assigned to me')
         ->assertSee('Mine to answer')
@@ -235,7 +235,7 @@ test('dashboard filters conversations by assignment state', function (): void {
         ->assertDontSee('Assigned elsewhere');
 
     $this->actingAs($agent)
-        ->get('/dashboard?conversation_filter=unassigned')
+        ->get('/dashboard/conversations?conversation_filter=unassigned')
         ->assertOk()
         ->assertSee('Unassigned')
         ->assertSee('Ready to claim')
@@ -248,17 +248,17 @@ test('dashboard exposes conversation queue filter links', function (): void {
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/conversations')
         ->assertOk()
         ->assertSee('All open')
         ->assertSee('New activity')
         ->assertSee('Needs reply')
         ->assertSee('Assigned to me')
         ->assertSee('Unassigned')
-        ->assertSee('/dashboard?conversation_filter=new_activity', false)
-        ->assertSee('/dashboard?conversation_filter=needs_reply', false)
-        ->assertSee('/dashboard?conversation_filter=assigned_to_me', false)
-        ->assertSee('/dashboard?conversation_filter=unassigned', false);
+        ->assertSee('/dashboard/conversations?conversation_filter=new_activity', false)
+        ->assertSee('/dashboard/conversations?conversation_filter=needs_reply', false)
+        ->assertSee('/dashboard/conversations?conversation_filter=assigned_to_me', false)
+        ->assertSee('/dashboard/conversations?conversation_filter=unassigned', false);
 });
 
 test('dashboard lists open tickets for the agent account', function (): void {
@@ -305,7 +305,7 @@ test('dashboard lists open tickets for the agent account', function (): void {
         ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/tickets')
         ->assertOk()
         ->assertSee('Tickets')
         ->assertSee('1 open')
@@ -353,7 +353,7 @@ test('dashboard filters tickets by assignee state', function (): void {
         ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard?ticket_filter=assigned_to_me')
+        ->get('/dashboard/tickets?ticket_filter=assigned_to_me')
         ->assertOk()
         ->assertSee('Assigned to me')
         ->assertSee('Mine to resolve')
@@ -361,7 +361,7 @@ test('dashboard filters tickets by assignee state', function (): void {
         ->assertDontSee('Someone else is handling it');
 
     $this->actingAs($agent)
-        ->get('/dashboard?ticket_filter=unassigned')
+        ->get('/dashboard/tickets?ticket_filter=unassigned')
         ->assertOk()
         ->assertSee('Unassigned')
         ->assertSee('Ready for an owner')
@@ -409,7 +409,7 @@ test('dashboard filters tickets by status', function (): void {
         ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/tickets')
         ->assertOk()
         ->assertSee('1 open')
         ->assertSee('Active checkout issue')
@@ -417,7 +417,7 @@ test('dashboard filters tickets by status', function (): void {
         ->assertDontSee('Resolved billing question');
 
     $this->actingAs($agent)
-        ->get('/dashboard?ticket_status=pending')
+        ->get('/dashboard/tickets?ticket_status=pending')
         ->assertOk()
         ->assertSee('1 pending')
         ->assertSee('Pending billing handoff')
@@ -426,7 +426,7 @@ test('dashboard filters tickets by status', function (): void {
         ->assertDontSee('Other account waiting');
 
     $this->actingAs($agent)
-        ->get('/dashboard?ticket_status=closed')
+        ->get('/dashboard/tickets?ticket_status=closed')
         ->assertOk()
         ->assertSee('1 closed')
         ->assertSee('Resolved billing question')
@@ -434,7 +434,7 @@ test('dashboard filters tickets by status', function (): void {
         ->assertDontSee('Pending billing handoff');
 
     $this->actingAs($agent)
-        ->get('/dashboard?ticket_status=all')
+        ->get('/dashboard/tickets?ticket_status=all')
         ->assertOk()
         ->assertSee('3 total')
         ->assertSee('Active checkout issue')
@@ -477,7 +477,7 @@ test('dashboard filters tickets by site without leaking unsupported sites', func
         ]);
 
     $this->actingAs($agent)
-        ->get("/dashboard?ticket_site={$docsSite->id}")
+        ->get("/dashboard/tickets?ticket_site={$docsSite->id}")
         ->assertOk()
         ->assertSee('Docs checkout issue')
         ->assertDontSee('Store order issue')
@@ -485,7 +485,7 @@ test('dashboard filters tickets by site without leaking unsupported sites', func
         ->assertDontSee('Restricted Ops');
 
     $this->actingAs($agent)
-        ->get("/dashboard?ticket_site={$restrictedSite->id}")
+        ->get("/dashboard/tickets?ticket_site={$restrictedSite->id}")
         ->assertOk()
         ->assertDontSee('Restricted escalation')
         ->assertDontSee('Restricted Ops');
@@ -515,7 +515,7 @@ test('dashboard filters tickets by priority', function (): void {
         ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard?ticket_priority=urgent')
+        ->get('/dashboard/tickets?ticket_priority=urgent')
         ->assertOk()
         ->assertSee('Urgent production issue')
         ->assertDontSee('Normal docs question');
@@ -554,14 +554,14 @@ test('dashboard filters tickets by category', function (): void {
         ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard?ticket_category=bug')
+        ->get('/dashboard/tickets?ticket_category=bug')
         ->assertOk()
         ->assertSee('Broken checkout flow')
         ->assertDontSee('How do I export invoices?')
         ->assertDontSee('Needs triage');
 
     $this->actingAs($agent)
-        ->get('/dashboard?ticket_category=uncategorized')
+        ->get('/dashboard/tickets?ticket_category=uncategorized')
         ->assertOk()
         ->assertSee('Needs triage')
         ->assertDontSee('Broken checkout flow')
@@ -602,31 +602,31 @@ test('dashboard searches tickets by subject description support code and request
         ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard?ticket_search=invoice')
+        ->get('/dashboard/tickets?ticket_search=invoice')
         ->assertOk()
         ->assertSee('Checkout handoff')
         ->assertDontSee('Password reset request');
 
     $this->actingAs($agent)
-        ->get('/dashboard?ticket_search=WF-SEARCH777')
+        ->get('/dashboard/tickets?ticket_search=WF-SEARCH777')
         ->assertOk()
         ->assertSee('Checkout handoff')
         ->assertDontSee('Password reset request');
 
     $this->actingAs($agent)
-        ->get('/dashboard?ticket_search=billing-contact@example.test')
+        ->get('/dashboard/tickets?ticket_search=billing-contact@example.test')
         ->assertOk()
         ->assertSee('Checkout handoff')
         ->assertDontSee('Password reset request');
 
     $this->actingAs($agent)
-        ->get('/dashboard?ticket_search=anon-acme')
+        ->get('/dashboard/tickets?ticket_search=anon-acme')
         ->assertOk()
         ->assertSee('Checkout handoff')
         ->assertDontSee('Password reset request');
 
     $this->actingAs($agent)
-        ->get('/dashboard?ticket_search=Ticket+%23'.$ticket->id)
+        ->get('/dashboard/tickets?ticket_search=Ticket+%23'.$ticket->id)
         ->assertOk()
         ->assertSee('Checkout handoff')
         ->assertDontSee('Password reset request');
@@ -649,7 +649,7 @@ test('dashboard summarizes active ticket filters', function (): void {
         ]);
 
     $this->actingAs($agent)
-        ->get("/dashboard?ticket_status=pending&ticket_filter=assigned_to_me&ticket_site={$site->id}&ticket_priority=urgent&ticket_category=bug&ticket_search=checkout")
+        ->get("/dashboard/tickets?ticket_status=pending&ticket_filter=assigned_to_me&ticket_site={$site->id}&ticket_priority=urgent&ticket_category=bug&ticket_search=checkout")
         ->assertOk()
         ->assertSee('Active ticket filters')
         ->assertSee('Status: Pending')
@@ -659,7 +659,7 @@ test('dashboard summarizes active ticket filters', function (): void {
         ->assertSee('Category: Bug')
         ->assertSee('Search: checkout')
         ->assertSee('Clear all ticket filters')
-        ->assertSee('/dashboard#tickets', false);
+        ->assertSee('/dashboard/tickets', false);
 });
 
 test('dashboard explains when ticket filters have no matches', function (): void {
@@ -677,7 +677,7 @@ test('dashboard explains when ticket filters have no matches', function (): void
         ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard?ticket_priority=urgent')
+        ->get('/dashboard/tickets?ticket_priority=urgent')
         ->assertOk()
         ->assertSee('No tickets match those filters.')
         ->assertSee('Clear all ticket filters')
@@ -755,7 +755,7 @@ test('dashboard surfaces ticket attention signals', function (): void {
         ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard?ticket_status=all')
+        ->get('/dashboard/tickets?ticket_status=all')
         ->assertOk()
         ->assertSee('Next step')
         ->assertSee('Needs reply')
@@ -825,7 +825,7 @@ test('dashboard prioritizes tickets that need agent attention', function (): voi
         ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/tickets')
         ->assertOk()
         ->assertSeeInOrder([
             'Visitor response needed',
@@ -887,7 +887,7 @@ test('dashboard filters tickets by next step', function (): void {
         ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard?ticket_attention=needs_reply')
+        ->get('/dashboard/tickets?ticket_attention=needs_reply')
         ->assertOk()
         ->assertSee('Next step: Needs reply')
         ->assertSee('Visitor needs a reply')
@@ -895,7 +895,7 @@ test('dashboard filters tickets by next step', function (): void {
         ->assertDontSee('Waiting on the customer');
 
     $this->actingAs($agent)
-        ->get('/dashboard?ticket_attention=needs_owner')
+        ->get('/dashboard/tickets?ticket_attention=needs_owner')
         ->assertOk()
         ->assertSee('Next step: Needs owner')
         ->assertSee('Needs someone to own it')
@@ -903,7 +903,7 @@ test('dashboard filters tickets by next step', function (): void {
         ->assertDontSee('Waiting on the customer');
 
     $this->actingAs($agent)
-        ->get('/dashboard?ticket_attention=waiting_on_customer')
+        ->get('/dashboard/tickets?ticket_attention=waiting_on_customer')
         ->assertOk()
         ->assertSee('Next step: Waiting on customer')
         ->assertSee('Waiting on the customer')
@@ -972,7 +972,7 @@ test('dashboard filters and labels recently escalated tickets', function (): voi
     ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard?ticket_attention=escalated')
+        ->get('/dashboard/tickets?ticket_attention=escalated')
         ->assertOk()
         ->assertSee('Next step: Recently escalated')
         ->assertSee('Recently escalated: 1')
@@ -1054,7 +1054,7 @@ test('dashboard summarizes the ticket queue next steps before the active next st
         ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard?ticket_status=all&ticket_attention=needs_reply')
+        ->get('/dashboard/tickets?ticket_status=all&ticket_attention=needs_reply')
         ->assertOk()
         ->assertSee('Queue snapshot')
         ->assertSee('Next-step counts respect the current queue filters before the next-step filter narrows the table.')
@@ -1063,7 +1063,7 @@ test('dashboard summarizes the ticket queue next steps before the active next st
         ->assertSee('Needs agent: 1')
         ->assertSee('Waiting on customer: 1')
         ->assertSee('Resolved: 1')
-        ->assertSee(route('dashboard', ['ticket_status' => 'all', 'ticket_attention' => 'needs_owner']).'#tickets')
+        ->assertSee(route('dashboard.tickets.index', ['ticket_status' => 'all', 'ticket_attention' => 'needs_owner']))
         ->assertSee('Visitor needs a reply')
         ->assertDontSee('Needs someone to own it')
         ->assertDontSee('Ready for an agent update')
@@ -1094,7 +1094,7 @@ test('dashboard resolved next step defaults to closed tickets', function (): voi
         ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard?ticket_attention=resolved')
+        ->get('/dashboard/tickets?ticket_attention=resolved')
         ->assertOk()
         ->assertSee('1 closed')
         ->assertSee('Next step: Resolved')
@@ -1107,7 +1107,7 @@ test('dashboard exposes ticket queue filter links', function (): void {
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/tickets')
         ->assertOk()
         ->assertSee('All open')
         ->assertSee('Pending')
@@ -1115,11 +1115,11 @@ test('dashboard exposes ticket queue filter links', function (): void {
         ->assertSee('All tickets')
         ->assertSee('Assigned to me')
         ->assertSee('Unassigned')
-        ->assertSee('/dashboard?ticket_status=pending', false)
-        ->assertSee('/dashboard?ticket_status=closed', false)
-        ->assertSee('/dashboard?ticket_status=all', false)
-        ->assertSee('/dashboard?ticket_filter=assigned_to_me', false)
-        ->assertSee('/dashboard?ticket_filter=unassigned', false);
+        ->assertSee('/dashboard/tickets?ticket_status=pending', false)
+        ->assertSee('/dashboard/tickets?ticket_status=closed', false)
+        ->assertSee('/dashboard/tickets?ticket_status=all', false)
+        ->assertSee('/dashboard/tickets?ticket_filter=assigned_to_me', false)
+        ->assertSee('/dashboard/tickets?ticket_filter=unassigned', false);
 });
 
 test('dashboard lists account agents with active workload counts', function (): void {
@@ -1599,7 +1599,7 @@ test('agent can close an open conversation', function (): void {
         ->and($conversation->closed_at)->not->toBeNull();
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/conversations')
         ->assertOk()
         ->assertDontSee('Checkout trouble');
 });
@@ -2678,7 +2678,7 @@ test('dashboard filters tickets by label', function (): void {
     ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard?ticket_label=needs-dev')
+        ->get('/dashboard/tickets?ticket_label=needs-dev')
         ->assertOk()
         ->assertSee('Checkout outage')
         ->assertSee('Needs Dev')
@@ -3310,7 +3310,7 @@ test('agent can close a linked ticket from their account conversation', function
         ->closed_at->not->toBeNull();
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/tickets')
         ->assertOk()
         ->assertDontSee('Escalated checkout issue');
 
@@ -3474,7 +3474,7 @@ test('agent can reopen a linked ticket from their account conversation', functio
         ->assertSee('Escalated checkout issue');
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/tickets')
         ->assertOk()
         ->assertSee('Escalated checkout issue');
 });
@@ -3535,7 +3535,7 @@ test('agent can reassign a linked ticket to another account agent', function ():
         ->assertSee('Assignee changed from Ada Agent to Bea Builder');
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/tickets')
         ->assertOk()
         ->assertSee('Assignee')
         ->assertSee('Bea Builder');

@@ -572,7 +572,7 @@ class AgentTicketController extends Controller
 
         return [
             'label' => 'Back to ticket queue',
-            'href' => route('dashboard', $query).'#tickets',
+            'href' => route('dashboard.tickets.index', $query),
         ];
     }
 

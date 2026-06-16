@@ -115,17 +115,17 @@ test('managed ticket labels link to the all-status ticket queue filter', functio
         ->get('/dashboard/account/labels')
         ->assertOk()
         ->assertSee('Needs Dev')
-        ->assertSee(route('dashboard', [
+        ->assertSee(route('dashboard.tickets.index', [
             'ticket_status' => 'all',
             'ticket_label' => 'needs-dev',
-        ]).'#tickets')
-        ->assertDontSee(route('dashboard', [
+        ]))
+        ->assertDontSee(route('dashboard.tickets.index', [
             'ticket_status' => 'all',
             'ticket_label' => $otherAccountLabel->slug,
-        ]).'#tickets');
+        ]));
 
     $this->actingAs($admin)
-        ->get(route('dashboard', [
+        ->get(route('dashboard.tickets.index', [
             'ticket_status' => 'all',
             'ticket_label' => 'needs-dev',
         ]))
@@ -164,10 +164,10 @@ test('managed ticket label drill-in links only count tickets visible to the admi
         ->assertSee('Needs Dev')
         ->assertSee('1 ticket')
         ->assertSee('No visible tickets')
-        ->assertDontSee(route('dashboard', [
+        ->assertDontSee(route('dashboard.tickets.index', [
             'ticket_status' => 'all',
             'ticket_label' => 'needs-dev',
-        ]).'#tickets');
+        ]));
 });
 
 test('ticket label creation rejects reserved and duplicate account slugs', function (): void {
@@ -244,11 +244,11 @@ test('dashboard ticket labels link to the matching ticket queue filter', functio
     $ticket->labels()->attach($label);
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/tickets')
         ->assertOk()
         ->assertSee('Checkout outage')
         ->assertSee('Needs Dev')
-        ->assertSee(route('dashboard', ['ticket_label' => 'needs-dev']).'#tickets', false);
+        ->assertSee(route('dashboard.tickets.index', ['ticket_label' => 'needs-dev']), false);
 });
 
 test('dashboard ticket label links preserve the active ticket status queue', function (): void {
@@ -270,13 +270,13 @@ test('dashboard ticket label links preserve the active ticket status queue', fun
     $ticket->labels()->attach($label);
 
     $this->actingAs($agent)
-        ->get('/dashboard?ticket_status=pending')
+        ->get('/dashboard/tickets?ticket_status=pending')
         ->assertOk()
         ->assertSee('Checkout follow-up')
-        ->assertSee(route('dashboard', [
+        ->assertSee(route('dashboard.tickets.index', [
             'ticket_status' => 'pending',
             'ticket_label' => 'needs-dev',
-        ]).'#tickets');
+        ]));
 });
 
 test('ticket detail labels link back to the matching dashboard filter', function (): void {
@@ -301,7 +301,7 @@ test('ticket detail labels link back to the matching dashboard filter', function
         ->get("/dashboard/tickets/{$ticket->id}")
         ->assertOk()
         ->assertSee('Billing')
-        ->assertSee(route('dashboard', ['ticket_label' => 'billing']).'#tickets', false);
+        ->assertSee(route('dashboard.tickets.index', ['ticket_label' => 'billing']), false);
 });
 
 test('ticket detail label links preserve non-open ticket status', function (): void {
@@ -326,10 +326,10 @@ test('ticket detail label links preserve non-open ticket status', function (): v
         ->get("/dashboard/tickets/{$ticket->id}")
         ->assertOk()
         ->assertSee('Follow Up')
-        ->assertSee(route('dashboard', [
+        ->assertSee(route('dashboard.tickets.index', [
             'ticket_status' => 'closed',
             'ticket_label' => 'follow-up',
-        ]).'#tickets');
+        ]));
 });
 
 test('account admins can rename ticket labels', function (): void {

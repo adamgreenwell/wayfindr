@@ -273,7 +273,7 @@ class VisitorSupportReadiness
                 summary: 'A conversation has landed in Wayfindr.',
                 detail: 'The widget-to-agent loop has produced at least one support record.',
                 action: 'Use support codes and tickets to keep future checks traceable.',
-                href: route('dashboard').'#conversations'
+                href: route('dashboard.conversations.index')
             );
         }
 

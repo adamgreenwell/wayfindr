@@ -163,7 +163,7 @@ test('agents can open a hosted tester page for sites they support', function ():
         ->assertSee('apiBaseUrl: "http:\/\/localhost:8000"', false)
         ->assertSee('sitePublicKey: "site_public_docs"', false)
         ->assertSee("wayfindr_source: 'tester'", false)
-        ->assertSee('/dashboard#conversations', false)
+        ->assertSee('/dashboard/conversations', false)
         ->assertSee("/dashboard/sites/{$site->id}", false);
 });
 

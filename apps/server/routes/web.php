@@ -113,6 +113,8 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.sites.external-issue-projects.store');
     Route::delete('/dashboard/sites/{site}/external-issue-projects/{externalIssueProject}', [AgentSiteExternalIssueProjectController::class, 'destroy'])
         ->name('dashboard.sites.external-issue-projects.destroy');
+    Route::get('/dashboard/conversations', [AgentDashboardController::class, 'conversations'])
+        ->name('dashboard.conversations.index');
     Route::get('/dashboard/conversations/{supportCode}', [AgentConversationController::class, 'show'])
         ->name('dashboard.conversations.show');
     Route::get('/dashboard/visitors/{visitor}', [AgentVisitorController::class, 'show'])
@@ -129,6 +131,8 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.conversations.messages.store');
     Route::post('/dashboard/conversations/{supportCode}/tickets', [AgentConversationController::class, 'storeTicket'])
         ->name('dashboard.conversations.tickets.store');
+    Route::get('/dashboard/tickets', [AgentDashboardController::class, 'tickets'])
+        ->name('dashboard.tickets.index');
     Route::get('/dashboard/tickets/{ticket}', [AgentTicketController::class, 'show'])
         ->name('dashboard.tickets.show');
     Route::put('/dashboard/tickets/{ticket}', [AgentTicketController::class, 'update'])

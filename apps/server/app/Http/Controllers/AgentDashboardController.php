@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\Ticket;
@@ -11,6 +12,7 @@ use App\Support\TicketCategory;
 use App\Support\TicketPriority;
 use App\Support\VisitorSupportReadiness;
 use Illuminate\Contracts\View\View;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Collection;
@@ -18,18 +20,13 @@ use Illuminate\Support\Facades\Gate;
 
 class AgentDashboardController extends Controller
 {
-    public function __invoke(Request $request, RealtimeHealth $realtimeHealth, VisitorSupportReadiness $visitorSupportReadiness): View
+    public function __invoke(Request $request, RealtimeHealth $realtimeHealth, VisitorSupportReadiness $visitorSupportReadiness): View|RedirectResponse
     {
-        $agent = $request->user();
+        if ($redirect = $this->legacyQueueRedirect($request)) {
+            return $redirect;
+        }
 
-        abort_unless($agent->account_id, 403);
-
-        $account = $agent->account()->firstOrFail();
-        $sites = $account->sites()
-            ->visibleToAgent($agent)
-            ->with('latestVisitor')
-            ->orderBy('name')
-            ->get();
+        [$agent, $account, $sites] = $this->dashboardContext($request);
         $agents = $account->agents()
             ->withCount([
                 'assignedConversations as open_assigned_conversations_count' => fn ($query) => $query
@@ -43,6 +40,133 @@ class AgentDashboardController extends Controller
             ->orderBy('name')
             ->get();
 
+        $visibleUnreadNotifications = $this->visibleUnreadNotifications($agent);
+        $unreadNotificationCount = $visibleUnreadNotifications->count();
+        $unreadNotifications = $visibleUnreadNotifications->take(5);
+
+        $realtimeHealthSummary = $realtimeHealth->summary();
+
+        return view('agent.dashboard', [
+            'account' => $account,
+            'agent' => $agent,
+            'agents' => $agents,
+            'adminShortcuts' => $this->adminShortcuts($agent),
+            'dataResponsibility' => config('wayfindr.data_responsibility'),
+            'realtimeHealth' => $realtimeHealthSummary,
+            'sites' => $sites,
+            'supportQueues' => $this->supportQueues($agent),
+            'unreadNotificationCount' => $unreadNotificationCount,
+            'unreadNotifications' => $unreadNotifications,
+            'visitorSupportReadiness' => $visitorSupportReadiness->summary(
+                sites: $sites,
+                realtimeHealth: $realtimeHealthSummary,
+                canViewReadiness: $agent->isAdmin(),
+                canManagePrivacy: $agent->isAdmin(),
+            ),
+        ]);
+    }
+
+    public function conversations(Request $request): View
+    {
+        [$agent, $account] = $this->dashboardContext($request);
+
+        return view('agent.conversations.index', [
+            'account' => $account,
+            'agent' => $agent,
+            ...$this->conversationQueueData($agent, $request),
+        ]);
+    }
+
+    public function tickets(Request $request): View
+    {
+        [$agent, $account, $sites] = $this->dashboardContext($request);
+
+        return view('agent.tickets.index', [
+            'account' => $account,
+            'agent' => $agent,
+            'sites' => $sites,
+            ...$this->ticketQueueData($agent, $account, $sites, $request),
+        ]);
+    }
+
+    /**
+     * @return array{0: User, 1: Account, 2: Collection<int, Site>}
+     */
+    private function dashboardContext(Request $request): array
+    {
+        $agent = $request->user();
+
+        abort_unless($agent->account_id, 403);
+
+        $account = $agent->account()->firstOrFail();
+        $sites = $account->sites()
+            ->visibleToAgent($agent)
+            ->with('latestVisitor')
+            ->orderBy('name')
+            ->get();
+
+        return [$agent, $account, $sites];
+    }
+
+    /**
+     * @return array{
+     *     open_conversations_count: int,
+     *     new_activity_conversations_count: int,
+     *     open_tickets_count: int,
+     *     unassigned_tickets_count: int
+     * }
+     */
+    private function supportQueues(User $agent): array
+    {
+        $visibleOpenConversations = Conversation::query()
+            ->where('status', 'open')
+            ->whereHas('site', fn ($query) => $query->visibleToAgent($agent));
+
+        $visibleOpenTickets = Ticket::query()
+            ->where('status', 'open')
+            ->where('account_id', $agent->account_id)
+            ->whereHas('site', fn ($query) => $query->visibleToAgent($agent));
+
+        return [
+            'open_conversations_count' => (clone $visibleOpenConversations)->count(),
+            'new_activity_conversations_count' => (clone $visibleOpenConversations)->withNewActivityFor($agent)->count(),
+            'open_tickets_count' => (clone $visibleOpenTickets)->count(),
+            'unassigned_tickets_count' => (clone $visibleOpenTickets)->whereNull('assignee_id')->count(),
+        ];
+    }
+
+    private function legacyQueueRedirect(Request $request): ?RedirectResponse
+    {
+        $ticketQuery = collect($request->query())
+            ->filter(fn (mixed $_value, string|int $key): bool => str_starts_with((string) $key, 'ticket_'))
+            ->all();
+
+        if ($ticketQuery !== []) {
+            return redirect()->route('dashboard.tickets.index', $ticketQuery);
+        }
+
+        $conversationQuery = collect($request->query())
+            ->filter(fn (mixed $_value, string|int $key): bool => str_starts_with((string) $key, 'conversation_'))
+            ->all();
+
+        if ($conversationQuery !== []) {
+            return redirect()->route('dashboard.conversations.index', $conversationQuery);
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{
+     *     conversationEmptyMessage: string,
+     *     conversationFilter: string,
+     *     conversationFilters: array<string, string>,
+     *     conversations: Collection<int, Conversation>,
+     *     newActivityConversationCount: int
+     * }
+     */
+    private function conversationQueueData(User $agent, Request $request): array
+    {
         $conversationFilters = [
             'all' => 'All open',
             'new_activity' => 'New activity',
@@ -54,6 +178,53 @@ class AgentDashboardController extends Controller
         $conversationFilter = is_string($conversationFilter) && array_key_exists($conversationFilter, $conversationFilters)
             ? $conversationFilter
             : 'all';
+        $conversationEmptyMessage = $conversationFilter === 'new_activity'
+            ? 'No conversations need attention.'
+            : 'No active conversations yet.';
+        $newActivityConversationCount = Conversation::query()
+            ->where('status', 'open')
+            ->whereHas('site', fn ($query) => $query->visibleToAgent($agent))
+            ->withNewActivityFor($agent)
+            ->count();
+
+        $conversations = Conversation::query()
+            ->with([
+                'assignedAgent',
+                'latestMessage',
+                'readStates' => fn ($query) => $query->where('user_id', $agent->id),
+                'site',
+                'visitor',
+            ])
+            ->where('status', 'open')
+            ->whereHas('site', fn ($query) => $query->visibleToAgent($agent))
+            ->when($conversationFilter === 'new_activity', fn ($query) => $query->withNewActivityFor($agent))
+            ->when($conversationFilter === 'needs_reply', function ($query): void {
+                $query->where(function ($query): void {
+                    $query->whereDoesntHave('messages')
+                        ->orWhereHas('latestMessage', fn ($query) => $query->where('sender_type', '!=', User::class));
+                });
+            })
+            ->when($conversationFilter === 'assigned_to_me', fn ($query) => $query->where('assigned_agent_id', $agent->id))
+            ->when($conversationFilter === 'unassigned', fn ($query) => $query->whereNull('assigned_agent_id'))
+            ->orderByDesc('last_message_at')
+            ->orderByDesc('created_at')
+            ->get();
+
+        return [
+            'conversationEmptyMessage' => $conversationEmptyMessage,
+            'conversationFilter' => $conversationFilter,
+            'conversationFilters' => $conversationFilters,
+            'conversations' => $conversations,
+            'newActivityConversationCount' => $newActivityConversationCount,
+        ];
+    }
+
+    /**
+     * @param  Collection<int, Site>  $sites
+     * @return array<string, mixed>
+     */
+    private function ticketQueueData(User $agent, Account $account, Collection $sites, Request $request): array
+    {
         $ticketFilters = [
             'all' => 'Any assignee',
             'assigned_to_me' => 'Assigned to me',
@@ -144,37 +315,6 @@ class AgentDashboardController extends Controller
                 'closed' => 'No closed tickets yet.',
                 default => 'No open tickets yet.',
             };
-        $conversationEmptyMessage = $conversationFilter === 'new_activity'
-            ? 'No conversations need attention.'
-            : 'No active conversations yet.';
-        $newActivityConversationCount = Conversation::query()
-            ->where('status', 'open')
-            ->whereHas('site', fn ($query) => $query->visibleToAgent($agent))
-            ->withNewActivityFor($agent)
-            ->count();
-
-        $conversations = Conversation::query()
-            ->with([
-                'assignedAgent',
-                'latestMessage',
-                'readStates' => fn ($query) => $query->where('user_id', $agent->id),
-                'site',
-                'visitor',
-            ])
-            ->where('status', 'open')
-            ->whereHas('site', fn ($query) => $query->visibleToAgent($agent))
-            ->when($conversationFilter === 'new_activity', fn ($query) => $query->withNewActivityFor($agent))
-            ->when($conversationFilter === 'needs_reply', function ($query): void {
-                $query->where(function ($query): void {
-                    $query->whereDoesntHave('messages')
-                        ->orWhereHas('latestMessage', fn ($query) => $query->where('sender_type', '!=', User::class));
-                });
-            })
-            ->when($conversationFilter === 'assigned_to_me', fn ($query) => $query->where('assigned_agent_id', $agent->id))
-            ->when($conversationFilter === 'unassigned', fn ($query) => $query->whereNull('assigned_agent_id'))
-            ->orderByDesc('last_message_at')
-            ->orderByDesc('created_at')
-            ->get();
         $ticketQuery = $this->ticketQueryParams($ticketStatus, $ticketFilter, $ticketSite, $ticketPriority, $ticketCategory, $ticketLabel, $ticketAttention, $ticketSearch);
         $ticketResults = Ticket::query()
             ->with(['assignee', 'conversation.latestMessage', 'labels', 'latestEscalationEvent.actor', 'site'])
@@ -222,25 +362,8 @@ class AgentDashboardController extends Controller
                 -$ticket->created_at->getTimestamp(),
             ])
             ->values();
-        $visibleUnreadNotifications = $this->visibleUnreadNotifications($agent);
-        $unreadNotificationCount = $visibleUnreadNotifications->count();
-        $unreadNotifications = $visibleUnreadNotifications->take(5);
 
-        $realtimeHealthSummary = $realtimeHealth->summary();
-
-        return view('agent.dashboard', [
-            'account' => $account,
-            'agent' => $agent,
-            'agents' => $agents,
-            'adminShortcuts' => $this->adminShortcuts($agent),
-            'conversationEmptyMessage' => $conversationEmptyMessage,
-            'conversationFilter' => $conversationFilter,
-            'conversationFilters' => $conversationFilters,
-            'conversations' => $conversations,
-            'dataResponsibility' => config('wayfindr.data_responsibility'),
-            'newActivityConversationCount' => $newActivityConversationCount,
-            'realtimeHealth' => $realtimeHealthSummary,
-            'sites' => $sites,
+        return [
             'ticketAttention' => $ticketAttention,
             'ticketAttentionFilters' => $ticketAttentionFilters,
             'ticketCategory' => $ticketCategory,
@@ -278,15 +401,7 @@ class AgentDashboardController extends Controller
             'ticketStatusFilters' => $ticketStatusFilters,
             'ticketStatusSummary' => $ticketStatusSummary,
             'tickets' => $tickets,
-            'unreadNotificationCount' => $unreadNotificationCount,
-            'unreadNotifications' => $unreadNotifications,
-            'visitorSupportReadiness' => $visitorSupportReadiness->summary(
-                sites: $sites,
-                realtimeHealth: $realtimeHealthSummary,
-                canViewReadiness: $agent->isAdmin(),
-                canManagePrivacy: $agent->isAdmin(),
-            ),
-        ]);
+        ];
     }
 
     private function visibleUnreadNotifications(User $agent): Collection
@@ -498,7 +613,7 @@ class AgentDashboardController extends Controller
 
         return [
             'label' => $label,
-            'href' => route('dashboard', $ticketQuery).'#tickets',
+            'href' => route('dashboard.tickets.index', $ticketQuery),
         ];
     }
 
@@ -525,7 +640,7 @@ class AgentDashboardController extends Controller
                     'state' => $state,
                     'label' => $ticketAttentionFilters[$state],
                     'count' => (int) ($counts[$state] ?? 0),
-                    'href' => route('dashboard', $query).'#tickets',
+                    'href' => route('dashboard.tickets.index', $query),
                 ];
             })
             ->all();

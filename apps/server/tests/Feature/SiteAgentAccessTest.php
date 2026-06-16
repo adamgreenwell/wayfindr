@@ -60,11 +60,32 @@ test('dashboard scopes support queues to sites assigned to the agent', function 
     $this->actingAs($agent)
         ->get('/dashboard')
         ->assertOk()
+        ->assertSee('/dashboard/conversations', false)
+        ->assertSee('/dashboard/tickets', false)
+        ->assertSee('2 open')
+        ->assertSee('1 open')
+        ->assertDontSee('Assigned site conversation')
+        ->assertDontSee('Assigned site ticket')
+        ->assertDontSee('Restricted Store')
+        ->assertDontSee('Restricted site conversation')
+        ->assertDontSee('Restricted site ticket');
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations')
+        ->assertOk()
         ->assertSee('Assigned Docs')
         ->assertSee('Assigned site conversation')
-        ->assertSee('Assigned site ticket')
         ->assertSee('Unassigned Site')
         ->assertSee('Open site conversation')
+        ->assertDontSee('Restricted Store')
+        ->assertDontSee('Restricted site conversation')
+        ->assertDontSee('Restricted site ticket');
+
+    $this->actingAs($agent)
+        ->get('/dashboard/tickets')
+        ->assertOk()
+        ->assertSee('Assigned Docs')
+        ->assertSee('Assigned site ticket')
         ->assertDontSee('Restricted Store')
         ->assertDontSee('Restricted site conversation')
         ->assertDontSee('Restricted site ticket');
@@ -154,6 +175,11 @@ test('sites with only deactivated support assignments fall back to account-wide 
         ->get('/dashboard')
         ->assertOk()
         ->assertSee('Dormant Assignment Docs')
+        ->assertDontSee('Dormant assignment conversation');
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations')
+        ->assertOk()
         ->assertSee('Dormant assignment conversation');
 });
 

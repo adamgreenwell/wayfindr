@@ -28,7 +28,7 @@
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">Inbox</span>
-                        <a class="text-link" href="{{ route('dashboard') }}#conversations">Open conversations</a>
+                        <a class="text-link" href="{{ route('dashboard.conversations.index') }}">Open conversations</a>
                     </div>
                 </div>
             </section>
@@ -46,7 +46,7 @@
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">Agent view</span>
-                        <a class="text-link" href="{{ route('dashboard') }}#conversations">Conversations</a>
+                        <a class="text-link" href="{{ route('dashboard.conversations.index') }}">Conversations</a>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">Cobrowse sample</span>

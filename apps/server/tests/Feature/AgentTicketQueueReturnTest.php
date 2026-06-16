@@ -61,10 +61,10 @@ test('ticket links preserve the current ticket queue filters for detail page ret
     ];
 
     $ticketUrl = route('dashboard.tickets.show', ['ticket' => $ticket] + $ticketQueueQuery);
-    $returnUrl = route('dashboard', $ticketQueueQuery).'#tickets';
+    $returnUrl = route('dashboard.tickets.index', $ticketQueueQuery);
 
     $this->actingAs($agent)
-        ->get(route('dashboard', $ticketQueueQuery))
+        ->get(route('dashboard.tickets.index', $ticketQueueQuery))
         ->assertOk()
         ->assertSee('Refund support request')
         ->assertSee('href="'.e($ticketUrl).'"', false);

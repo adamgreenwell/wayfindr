@@ -61,10 +61,10 @@
                             <tbody>
                                 @foreach ($ticketLabels as $ticketLabel)
                                     @php
-                                        $labelTicketsUrl = route('dashboard', [
+                                        $labelTicketsUrl = route('dashboard.tickets.index', [
                                             'ticket_status' => 'all',
                                             'ticket_label' => $ticketLabel->slug,
-                                        ]).'#tickets';
+                                        ]);
                                     @endphp
                                     <tr>
                                         <td><strong>{{ $ticketLabel->name }}</strong></td>

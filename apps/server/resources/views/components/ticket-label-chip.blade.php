@@ -14,6 +14,6 @@
     }
 @endphp
 
-<a class="filter-chip ticket-label-chip" href="{{ route('dashboard', $ticketQuery) }}#tickets">
+<a class="filter-chip ticket-label-chip" href="{{ route('dashboard.tickets.index', $ticketQuery) }}">
     {{ $label->name }}
 </a>
