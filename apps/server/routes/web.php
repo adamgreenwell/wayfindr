@@ -7,6 +7,7 @@ use App\Http\Controllers\AgentAccountAuditController;
 use App\Http\Controllers\AgentAccountController;
 use App\Http\Controllers\AgentAlertController;
 use App\Http\Controllers\AgentConversationController;
+use App\Http\Controllers\AgentConversationQueueController;
 use App\Http\Controllers\AgentDashboardController;
 use App\Http\Controllers\AgentExternalIssueProviderConnectionController;
 use App\Http\Controllers\AgentProfileController;
@@ -19,6 +20,7 @@ use App\Http\Controllers\AgentTicketController;
 use App\Http\Controllers\AgentTicketExternalIssueController;
 use App\Http\Controllers\AgentTicketExternalLinkController;
 use App\Http\Controllers\AgentTicketLabelController;
+use App\Http\Controllers\AgentTicketQueueController;
 use App\Http\Controllers\AgentVisitorController;
 use App\Http\Controllers\Auth\SessionController;
 use App\Http\Controllers\FirstRunSetupController;
@@ -113,7 +115,7 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.sites.external-issue-projects.store');
     Route::delete('/dashboard/sites/{site}/external-issue-projects/{externalIssueProject}', [AgentSiteExternalIssueProjectController::class, 'destroy'])
         ->name('dashboard.sites.external-issue-projects.destroy');
-    Route::get('/dashboard/conversations', [AgentDashboardController::class, 'conversations'])
+    Route::get('/dashboard/conversations', AgentConversationQueueController::class)
         ->name('dashboard.conversations.index');
     Route::get('/dashboard/conversations/{supportCode}', [AgentConversationController::class, 'show'])
         ->name('dashboard.conversations.show');
@@ -131,7 +133,7 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.conversations.messages.store');
     Route::post('/dashboard/conversations/{supportCode}/tickets', [AgentConversationController::class, 'storeTicket'])
         ->name('dashboard.conversations.tickets.store');
-    Route::get('/dashboard/tickets', [AgentDashboardController::class, 'tickets'])
+    Route::get('/dashboard/tickets', AgentTicketQueueController::class)
         ->name('dashboard.tickets.index');
     Route::get('/dashboard/tickets/{ticket}', [AgentTicketController::class, 'show'])
         ->name('dashboard.tickets.show');
