@@ -4,6 +4,7 @@ use App\Broadcasting\ConversationChannel;
 use App\Events\CobrowseStateUpdated;
 use App\Events\ConversationMessageCreated;
 use App\Events\ConversationPresenceUpdated;
+use App\Events\ConversationReadReceiptUpdated;
 use App\Events\ConversationTypingUpdated;
 use App\Models\Account;
 use App\Models\CobrowseSession;
@@ -216,6 +217,60 @@ test('conversation presence updates use a private conversation channel and safe 
                 ],
             ])
             ->and(json_encode($payload))->not->toContain('anon-docs');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+test('conversation read receipt updates use a private conversation channel and safe payload', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00', 'UTC'));
+
+    try {
+        $account = Account::factory()->create();
+        $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+        $site = Site::factory()->for($account)->create(['name' => 'Docs Site']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-READ-LIVE',
+            'status' => 'open',
+        ]);
+
+        ConversationMessage::factory()->for($conversation)->create([
+            'sender_type' => User::class,
+            'sender_id' => $agent->id,
+            'body' => 'Try refreshing the billing page.',
+            'created_at' => now()->subMinute(),
+            'seen_at' => now(),
+        ]);
+
+        expect(class_exists(ConversationReadReceiptUpdated::class))->toBeTrue();
+
+        $event = new ConversationReadReceiptUpdated($conversation->load('latestAgentMessage'));
+        $channels = $event->broadcastOn();
+        $payload = $event->broadcastWith();
+
+        expect($event)
+            ->toBeInstanceOf(ShouldBroadcastNow::class)
+            ->and($event->broadcastAs())->toBe('conversation.read.updated')
+            ->and($channels)->toHaveCount(1)
+            ->and($channels[0])->toBeInstanceOf(PrivateChannel::class)
+            ->and($channels[0]->name)->toBe('private-conversations.WF-READ-LIVE')
+            ->and($payload)->toMatchArray([
+                'conversation' => [
+                    'support_code' => 'WF-READ-LIVE',
+                    'status' => 'open',
+                ],
+                'visitor_read' => [
+                    'state' => 'seen',
+                    'label' => 'Visitor saw reply',
+                    'detail' => 'Seen 0 seconds ago',
+                    'seen_at' => now()->toJSON(),
+                    'seen_label' => '0 seconds ago',
+                ],
+            ])
+            ->and(json_encode($payload))->not->toContain('Try refreshing')
+            ->and(json_encode($payload))->not->toContain('anon-docs')
+            ->and(json_encode($payload))->not->toContain('Ada Agent');
     } finally {
         Carbon::setTestNow();
     }

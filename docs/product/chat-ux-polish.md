@@ -47,7 +47,9 @@ or obligated to answer.
 
 Visitor read receipts are currently tied to explicit widget message fetches that
 include the visitor read signal. Agents can see whether the latest agent reply
-was seen from the conversation queue and reply context.
+was seen from the conversation queue and reply context. When realtime delivery
+is configured, that read signal updates the active conversation view without an
+agent refresh; otherwise the next manual refresh shows the same durable state.
 
 Read labels avoid implying delivery guarantees:
 

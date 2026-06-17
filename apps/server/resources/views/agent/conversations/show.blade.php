@@ -704,8 +704,8 @@
                             </div>
                             <div class="reply-context-item">
                                 <span class="meta-label">Visitor read</span>
-                                <span class="meta-value">{{ $conversation->visitorReadLabel() }}</span>
-                                <span class="lede">{{ $conversation->visitorReadDetail() }}</span>
+                                <span class="meta-value" data-visitor-read-label aria-live="polite">{{ $conversation->visitorReadLabel() }}</span>
+                                <span class="lede" data-visitor-read-detail>{{ $conversation->visitorReadDetail() }}</span>
                             </div>
                         </div>
 
@@ -789,14 +789,18 @@
                 var visitorPresenceLabel = document.querySelector('[data-visitor-presence-label]');
                 var visitorPresenceDetail = document.querySelector('[data-visitor-presence-detail]');
                 var visitorPresenceLastSeen = document.querySelector('[data-visitor-presence-last-seen]');
+                var visitorReadLabel = document.querySelector('[data-visitor-read-label]');
+                var visitorReadDetail = document.querySelector('[data-visitor-read-detail]');
+                var latestAgentMessageSeen = document.querySelector('[data-latest-agent-message-seen]');
                 var csrf = document.querySelector('meta[name="csrf-token"]');
                 var hasCobrowseTargets = Boolean(panel && status);
                 var hasTypingTargets = Boolean(visitorTypingLabel && visitorTypingDetail);
                 var hasPresenceTargets = Boolean(visitorPresenceLabel && visitorPresenceDetail);
+                var hasReadTargets = Boolean(visitorReadLabel && visitorReadDetail);
                 var visitorTypingExpiryTimer = null;
                 var visitorTypingFreshMs = Number(config.visitorTypingFreshMs || 20000);
 
-                if (!config || (!hasCobrowseTargets && !hasTypingTargets && !hasPresenceTargets) || !window.WebSocket) {
+                if (!config || (!hasCobrowseTargets && !hasTypingTargets && !hasPresenceTargets && !hasReadTargets) || !window.WebSocket) {
                     if (status) {
                         status.textContent = 'Live cobrowse updates are unavailable in this browser.';
                     }
@@ -899,6 +903,29 @@
                     }
                 }
 
+                function updateVisitorRead(visitorRead) {
+                    if (!hasReadTargets || !visitorRead) {
+                        return;
+                    }
+
+                    visitorReadLabel.textContent = visitorRead.label || 'No agent reply yet';
+                    visitorReadDetail.textContent = visitorRead.detail || 'No agent reply has been sent.';
+
+                    if (!latestAgentMessageSeen) {
+                        return;
+                    }
+
+                    if (visitorRead.state === 'seen') {
+                        latestAgentMessageSeen.textContent = 'Seen by visitor ' + (visitorRead.seen_label || 'just now');
+
+                        return;
+                    }
+
+                    if (visitorRead.state === 'unseen') {
+                        latestAgentMessageSeen.textContent = 'Not seen yet';
+                    }
+                }
+
                 function parsePayload(payload) {
                     if (typeof payload === 'string') {
                         return JSON.parse(payload);
@@ -982,6 +1009,10 @@
 
                     if (event.event === config.presenceEventName) {
                         updateVisitorPresence(parsePayload(event.data).visitor_presence);
+                    }
+
+                    if (event.event === config.readEventName) {
+                        updateVisitorRead(parsePayload(event.data).visitor_read);
                     }
                 });
 

@@ -1,6 +1,7 @@
 <?php
 
 use App\Events\ConversationPresenceUpdated;
+use App\Events\ConversationReadReceiptUpdated;
 use App\Events\ConversationTypingUpdated;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
@@ -1073,6 +1074,8 @@ test('visitor message creation rejects an invalid token', function (): void {
 });
 
 test('visitor can read their conversation messages', function (): void {
+    Event::fake([ConversationReadReceiptUpdated::class]);
+
     $site = Site::factory()->create(['public_key' => 'site_public_docs']);
     $agent = User::factory()->create(['name' => 'Ada Agent']);
     $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
@@ -1122,9 +1125,16 @@ test('visitor can read their conversation messages', function (): void {
 
     expect($visitorMessage->fresh()->seen_at)->toBeNull();
     expect($agentMessage->fresh()->seen_at?->toJSON())->toBe($seenAt->toJSON());
+
+    Event::assertDispatched(
+        ConversationReadReceiptUpdated::class,
+        fn (ConversationReadReceiptUpdated $event): bool => $event->conversation->id === $conversation->id
+    );
 });
 
 test('visitor message fetch does not mark agent replies seen without a read signal', function (): void {
+    Event::fake([ConversationReadReceiptUpdated::class]);
+
     Carbon::setTestNow(Carbon::parse('2026-06-17 11:00:00', 'UTC'));
 
     try {
@@ -1155,6 +1165,8 @@ test('visitor message fetch does not mark agent replies seen without a read sign
 
         expect($agentMessage->fresh()->seen_at)->toBeNull()
             ->and($visitor->fresh()->last_seen_at?->toJSON())->toBe($seenAt->toJSON());
+
+        Event::assertNotDispatched(ConversationReadReceiptUpdated::class);
     } finally {
         Carbon::setTestNow();
     }

@@ -4080,6 +4080,46 @@ test('agent conversation page can update visitor presence from live events', fun
         ->assertSee('"presenceEventName":"conversation.presence.updated"', false);
 });
 
+test('agent conversation page can update visitor read receipts from live events', function (): void {
+    config()->set('broadcasting.default', 'reverb');
+    config()->set('broadcasting.connections.reverb.key', 'reverb-key');
+    config()->set('broadcasting.connections.reverb.secret', 'reverb-secret');
+    config()->set('broadcasting.connections.reverb.app_id', 'reverb-app');
+    config()->set('broadcasting.connections.reverb.options.host', 'wayfindr.test');
+    config()->set('broadcasting.connections.reverb.options.port', 443);
+    config()->set('broadcasting.connections.reverb.options.scheme', 'https');
+
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-LIVEREAD',
+        'subject' => 'Read receipts should feel fresh',
+        'status' => 'open',
+    ]);
+    ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => User::class,
+        'sender_id' => $agent->id,
+        'body' => 'Can you try signing in again?',
+        'created_at' => now()->subMinute(),
+        'seen_at' => null,
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-LIVEREAD')
+        ->assertOk()
+        ->assertSee('Visitor read')
+        ->assertSee('Not seen yet')
+        ->assertSee('data-visitor-read-label', false)
+        ->assertSee('data-visitor-read-detail', false)
+        ->assertSee('data-latest-agent-message-seen', false)
+        ->assertSee('conversation.read.updated')
+        ->assertSee('seen_label')
+        ->assertSee('updateVisitorRead')
+        ->assertSee('"readEventName":"conversation.read.updated"', false);
+});
+
 test('agent conversation page expires live visitor typing hints locally', function (): void {
     config()->set('broadcasting.default', 'reverb');
     config()->set('broadcasting.connections.reverb.key', 'reverb-key');

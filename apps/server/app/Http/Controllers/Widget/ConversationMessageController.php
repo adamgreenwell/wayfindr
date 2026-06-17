@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Widget;
 
 use App\Events\ConversationMessageCreated;
 use App\Events\ConversationPresenceUpdated;
+use App\Events\ConversationReadReceiptUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\Site;
@@ -33,8 +34,8 @@ class ConversationMessageController extends Controller
         );
         $this->recordVisitorPresence($conversation);
 
-        if ((bool) ($validated['mark_seen'] ?? false)) {
-            $this->markAgentMessagesSeen($conversation);
+        if ((bool) ($validated['mark_seen'] ?? false) && $this->markAgentMessagesSeen($conversation)) {
+            event(new ConversationReadReceiptUpdated($conversation->load('latestAgentMessage')));
         }
 
         $messages = $conversation->messages()
@@ -58,6 +59,7 @@ class ConversationMessageController extends Controller
                 ],
                 'messages' => $messages,
                 'agent_typing' => $conversation->agentTypingPayload(),
+                'visitor_read' => $conversation->visitorReadPayload(),
                 'visitor_presence' => $conversation->visitorPresencePayload(),
             ],
         ]);
@@ -147,12 +149,12 @@ class ConversationMessageController extends Controller
         event(new ConversationPresenceUpdated($conversation));
     }
 
-    private function markAgentMessagesSeen(Conversation $conversation): void
+    private function markAgentMessagesSeen(Conversation $conversation): bool
     {
-        $conversation->messages()
+        return $conversation->messages()
             ->where('sender_type', User::class)
             ->whereNull('seen_at')
-            ->update(['seen_at' => now()]);
+            ->update(['seen_at' => now()]) > 0;
     }
 
     private function senderPayload($message): array

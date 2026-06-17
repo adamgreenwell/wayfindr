@@ -517,6 +517,7 @@ class AgentConversationController extends Controller
             'eventName' => 'conversation.cobrowse.updated',
             'host' => (string) $host,
             'port' => (int) $port,
+            'readEventName' => 'conversation.read.updated',
             'scheme' => (string) $scheme,
             'presenceEventName' => 'conversation.presence.updated',
             'typingEventName' => 'conversation.typing.updated',
