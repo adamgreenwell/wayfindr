@@ -4033,6 +4033,97 @@ test('agent can see cobrowse telemetry on a conversation', function (): void {
         ->assertSee('5');
 });
 
+test('agent can see cobrowse transport health on a conversation', function (array $metadata, string $label, string $message, string $lastReport, string $pressure): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00'));
+
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-TRANSPORT',
+        'subject' => 'Checkout trouble',
+        'status' => 'open',
+    ]);
+
+    CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinute(),
+        'ended_at' => null,
+        'metadata' => $metadata,
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-TRANSPORT')
+        ->assertOk()
+        ->assertSee('Transport health')
+        ->assertSee($label)
+        ->assertSee($message)
+        ->assertSee('Last report')
+        ->assertSee($lastReport)
+        ->assertSee('Pressure')
+        ->assertSee($pressure);
+
+    Carbon::setTestNow();
+})->with([
+    'live' => [
+        [
+            'telemetry' => [
+                'rtt_ms' => 84,
+                'payload_bytes' => 2048,
+                'dropped_batches' => 0,
+                'reconnects' => 0,
+                'samples' => 3,
+                'reported_at' => '2026-06-17T11:59:30.000000Z',
+            ],
+        ],
+        'Live',
+        'Cobrowse reports are arriving normally.',
+        '30 seconds ago',
+        'No drops reported',
+    ],
+    'stale' => [
+        [
+            'page_state' => [
+                'title' => 'Install Guide',
+                'page_url' => 'https://docs.example.test/install',
+                'reported_at' => '2026-06-17T11:55:00.000000Z',
+            ],
+        ],
+        'Stale',
+        'No cobrowse report has arrived in the last 2 minutes.',
+        '5 minutes ago',
+        'No drops reported',
+    ],
+    'reconnecting' => [
+        [
+            'telemetry' => [
+                'rtt_ms' => 184,
+                'payload_bytes' => 4096,
+                'dropped_batches' => 2,
+                'reconnects' => 3,
+                'samples' => 6,
+                'reported_at' => '2026-06-17T11:59:45.000000Z',
+            ],
+            'mutations' => [
+                'skipped_count' => 1,
+                'last_reported_at' => '2026-06-17T11:59:40.000000Z',
+            ],
+        ],
+        'Reconnecting',
+        'The visitor transport has reconnected recently; preview data may briefly lag.',
+        '15 seconds ago',
+        '2 dropped batches, 1 skipped mutation',
+    ],
+    'unavailable' => [
+        [],
+        'Unavailable',
+        'No cobrowse transport reports have arrived yet.',
+        'Not reported',
+        'No drops reported',
+    ],
+]);
+
 test('agent can see cobrowse payload budget guardrails on a conversation', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);

@@ -397,6 +397,34 @@
                     </form>
                 @endif
 
+                @if ($cobrowseConsent['transport'])
+                    <div class="section-header">
+                        <strong>Transport health</strong>
+                        <span class="lede">{{ $cobrowseConsent['transport']['label'] }}</span>
+                    </div>
+
+                    <p class="empty realtime-note">{{ $cobrowseConsent['transport']['message'] }}</p>
+
+                    <div class="meta-grid realtime-grid">
+                        <div class="meta-item">
+                            <span class="meta-label">State</span>
+                            <span class="meta-value">{{ $cobrowseConsent['transport']['label'] }}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Last report</span>
+                            <span class="meta-value">{{ $cobrowseConsent['transport']['last_report'] }}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Reconnects</span>
+                            <span class="meta-value">{{ $cobrowseConsent['transport']['reconnects'] }}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Pressure</span>
+                            <span class="meta-value">{{ $cobrowseConsent['transport']['pressure'] }}</span>
+                        </div>
+                    </div>
+                @endif
+
                 @if ($realtime)
                     <div class="live-update" data-cobrowse-update-panel data-state="idle">
                         <div>

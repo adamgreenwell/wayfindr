@@ -4,13 +4,17 @@ namespace App\Support;
 
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
+use Illuminate\Support\Carbon;
+use Throwable;
 
 class CobrowseConsentState
 {
+    private const TRANSPORT_STALE_AFTER_SECONDS = 120;
+
     public function __construct(private readonly CobrowseReplayPreview $replayPreview) {}
 
     /**
-     * @return array{label: string, message: string, status: string, lifecycle: array<string, string>|null, payload_budget: array<string, string>|null, telemetry: array<string, string>|null, page_state: array<string, string>|null, snapshot: array<string, string>|null, mutation_stream: array<string, string>|null, replay_preview: array<string, string>|null}
+     * @return array{label: string, message: string, status: string, lifecycle: array<string, string>|null, transport: array<string, string>, payload_budget: array<string, string>|null, telemetry: array<string, string>|null, page_state: array<string, string>|null, snapshot: array<string, string>|null, mutation_stream: array<string, string>|null, replay_preview: array<string, string>|null}
      */
     public function forConversation(Conversation $conversation): array
     {
@@ -25,6 +29,7 @@ class CobrowseConsentState
                 'message' => 'Visitor has not granted cobrowse consent.',
                 'status' => 'unavailable',
                 'lifecycle' => null,
+                'transport' => $this->formatTransport(null),
                 'payload_budget' => null,
                 'telemetry' => null,
                 'page_state' => null,
@@ -63,6 +68,7 @@ class CobrowseConsentState
         };
 
         $state['lifecycle'] = $this->formatLifecycle($session);
+        $state['transport'] = $this->formatTransport($session);
         $state['payload_budget'] = $this->formatPayloadBudget($session->metadata['payload_budget'] ?? CobrowsePayloadBudget::limits());
         $state['telemetry'] = $this->formatTelemetry($session->metadata['telemetry'] ?? null);
         $state['page_state'] = $this->formatPageState($session->metadata['page_state'] ?? null);
@@ -71,6 +77,123 @@ class CobrowseConsentState
         $state['replay_preview'] = $this->replayPreview->fromMetadata($session->metadata ?? []);
 
         return $state;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function formatTransport(?CobrowseSession $session): array
+    {
+        if (! $session || $session->status !== 'granted' || $session->ended_at) {
+            return [
+                'label' => 'Unavailable',
+                'message' => 'Cobrowse transport is not active.',
+                'last_report' => 'Not reported',
+                'reconnects' => '0',
+                'pressure' => 'No drops reported',
+            ];
+        }
+
+        $metadata = $session->metadata ?? [];
+        $latestReport = $this->latestReportAt($metadata);
+        $pressure = $this->formatTransportPressure($metadata);
+        $reconnects = (int) ($metadata['telemetry']['reconnects'] ?? 0);
+
+        if (! $latestReport) {
+            return [
+                'label' => 'Unavailable',
+                'message' => 'No cobrowse transport reports have arrived yet.',
+                'last_report' => 'Not reported',
+                'reconnects' => number_format($reconnects),
+                'pressure' => $pressure,
+            ];
+        }
+
+        if ($latestReport->lt(now()->subSeconds(self::TRANSPORT_STALE_AFTER_SECONDS))) {
+            return [
+                'label' => 'Stale',
+                'message' => 'No cobrowse report has arrived in the last 2 minutes.',
+                'last_report' => $latestReport->diffForHumans(),
+                'reconnects' => number_format($reconnects),
+                'pressure' => $pressure,
+            ];
+        }
+
+        if ($reconnects > 0) {
+            return [
+                'label' => 'Reconnecting',
+                'message' => 'The visitor transport has reconnected recently; preview data may briefly lag.',
+                'last_report' => $latestReport->diffForHumans(),
+                'reconnects' => number_format($reconnects),
+                'pressure' => $pressure,
+            ];
+        }
+
+        return [
+            'label' => 'Live',
+            'message' => 'Cobrowse reports are arriving normally.',
+            'last_report' => $latestReport->diffForHumans(),
+            'reconnects' => '0',
+            'pressure' => $pressure,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $metadata
+     */
+    private function latestReportAt(array $metadata): ?Carbon
+    {
+        $timestamps = [
+            $metadata['telemetry']['reported_at'] ?? null,
+            $metadata['page_state']['reported_at'] ?? null,
+            $metadata['snapshot']['reported_at'] ?? null,
+            $metadata['mutations']['last_reported_at'] ?? null,
+        ];
+
+        $latest = null;
+
+        foreach ($timestamps as $timestamp) {
+            $reportedAt = $this->parseReportedAt($timestamp);
+
+            if ($reportedAt && (! $latest || $reportedAt->gt($latest))) {
+                $latest = $reportedAt;
+            }
+        }
+
+        return $latest;
+    }
+
+    private function parseReportedAt(mixed $timestamp): ?Carbon
+    {
+        if (! filled($timestamp)) {
+            return null;
+        }
+
+        try {
+            return Carbon::parse((string) $timestamp);
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $metadata
+     */
+    private function formatTransportPressure(array $metadata): string
+    {
+        $droppedBatches = (int) ($metadata['telemetry']['dropped_batches'] ?? 0);
+        $skippedMutations = (int) ($metadata['mutations']['skipped_count'] ?? 0);
+        $parts = [];
+
+        if ($droppedBatches > 0) {
+            $parts[] = number_format($droppedBatches).' dropped '.str('batch')->plural($droppedBatches);
+        }
+
+        if ($skippedMutations > 0) {
+            $parts[] = number_format($skippedMutations).' skipped '.str('mutation')->plural($skippedMutations);
+        }
+
+        return $parts === [] ? 'No drops reported' : implode(', ', $parts);
     }
 
     /**
