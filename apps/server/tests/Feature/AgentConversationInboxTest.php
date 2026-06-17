@@ -186,6 +186,61 @@ test('dashboard shows visitor presence state in the conversation queue', functio
     }
 });
 
+test('dashboard shows visitor read state for latest agent replies', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00', 'UTC'));
+
+    try {
+        $account = Account::factory()->create(['name' => 'Acme Support']);
+        $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+        $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+
+        $seenConversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-SEEN',
+            'subject' => 'Visitor read the reply',
+            'status' => 'open',
+            'last_message_at' => now()->subMinutes(3),
+        ]);
+        ConversationMessage::factory()->for($seenConversation)->create([
+            'sender_type' => User::class,
+            'sender_id' => $agent->id,
+            'body' => 'Here is the answer.',
+            'created_at' => now()->subMinutes(3),
+            'seen_at' => now()->subMinute(),
+        ]);
+
+        $unseenConversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-UNSEEN',
+            'subject' => 'Visitor has not read the reply',
+            'status' => 'open',
+            'last_message_at' => now()->subMinutes(2),
+        ]);
+        ConversationMessage::factory()->for($unseenConversation)->create([
+            'sender_type' => User::class,
+            'sender_id' => $agent->id,
+            'body' => 'Can you try this?',
+            'created_at' => now()->subMinutes(2),
+        ]);
+
+        Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-NOREPLY',
+            'subject' => 'Visitor needs the first reply',
+            'status' => 'open',
+            'last_message_at' => now()->subMinute(),
+        ]);
+
+        $this->actingAs($agent)
+            ->get('/dashboard/conversations')
+            ->assertOk()
+            ->assertSee('Visitor read')
+            ->assertSeeInOrder(['Visitor needs the first reply', 'No agent reply yet'])
+            ->assertSeeInOrder(['Visitor has not read the reply', 'Not seen yet'])
+            ->assertSeeInOrder(['Visitor read the reply', 'Visitor saw reply']);
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('dashboard filters conversations by attention state', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
@@ -1378,6 +1433,39 @@ test('agent reply composer exposes progressive submission affordances', function
         ->assertSee('data-reply-submit', false)
         ->assertSee('data-reply-status', false)
         ->assertSee('aria-live="polite"', false);
+});
+
+test('agent can see latest reply read state while replying', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00', 'UTC'));
+
+    try {
+        $account = Account::factory()->create(['name' => 'Acme Support']);
+        $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+        $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-READCTX',
+            'subject' => 'Read context check',
+            'last_message_at' => now()->subMinutes(4),
+        ]);
+
+        ConversationMessage::factory()->for($conversation)->create([
+            'sender_type' => User::class,
+            'sender_id' => $agent->id,
+            'body' => 'Can you try this step?',
+            'created_at' => now()->subMinutes(4),
+            'seen_at' => now()->subMinute(),
+        ]);
+
+        $this->actingAs($agent)
+            ->get('/dashboard/conversations/WF-READCTX')
+            ->assertOk()
+            ->assertSee('Visitor read')
+            ->assertSee('Visitor saw reply')
+            ->assertSee('Seen 1 minute ago');
+    } finally {
+        Carbon::setTestNow();
+    }
 });
 
 test('agent can view safe visitor context on a conversation', function (): void {

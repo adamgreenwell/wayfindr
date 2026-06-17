@@ -36,6 +36,7 @@
                                     <th scope="col">Presence</th>
                                     <th scope="col">Assigned</th>
                                     <th scope="col">Attention</th>
+                                    <th scope="col">Visitor read</th>
                                     <th scope="col">Read</th>
                                     <th scope="col">Support Code</th>
                                     <th scope="col">Last Activity</th>
@@ -62,6 +63,11 @@
                                         </td>
                                         <td>{{ $conversation->assignedAgent?->name ?? 'Unassigned' }}</td>
                                         <td>{{ $conversation->attentionLabel() }}</td>
+                                        <td>
+                                            <span class="readiness-status" data-status="{{ $conversation->visitorReadState() === 'seen' ? 'ready' : 'manual' }}">
+                                                {{ $conversation->visitorReadLabel() }}
+                                            </span>
+                                        </td>
                                         <td>
                                             <span class="readiness-status" data-status="{{ $conversation->hasNewActivityFor($agent) ? 'attention' : 'ready' }}">
                                                 {{ $conversation->readStateLabelFor($agent) }}

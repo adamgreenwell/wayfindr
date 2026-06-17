@@ -63,6 +63,13 @@ class Conversation extends Model
         return $this->hasOne(ConversationMessage::class)->latestOfMany();
     }
 
+    public function latestAgentMessage(): HasOne
+    {
+        return $this->hasOne(ConversationMessage::class)
+            ->where('sender_type', User::class)
+            ->latestOfMany('created_at');
+    }
+
     public function readStates(): HasMany
     {
         return $this->hasMany(ConversationReadState::class);
@@ -142,6 +149,41 @@ class Conversation extends Model
         };
     }
 
+    public function visitorReadState(): string
+    {
+        $message = $this->latestAgentMessageForReadReceipt();
+
+        if (! $message) {
+            return 'none';
+        }
+
+        return $message->seen_at ? 'seen' : 'unseen';
+    }
+
+    public function visitorReadLabel(): string
+    {
+        return match ($this->visitorReadState()) {
+            'seen' => 'Visitor saw reply',
+            'unseen' => 'Not seen yet',
+            default => 'No agent reply yet',
+        };
+    }
+
+    public function visitorReadDetail(): string
+    {
+        $message = $this->latestAgentMessageForReadReceipt();
+
+        if (! $message) {
+            return 'No agent reply has been sent.';
+        }
+
+        if ($message->seen_at) {
+            return 'Seen '.$message->seen_at->diffForHumans();
+        }
+
+        return 'Latest agent reply has not been seen.';
+    }
+
     public function tickets(): HasMany
     {
         return $this->hasMany(Ticket::class);
@@ -168,5 +210,18 @@ class Conversation extends Model
         }
 
         return $this->created_at;
+    }
+
+    private function latestAgentMessageForReadReceipt(): ?ConversationMessage
+    {
+        if ($this->relationLoaded('latestAgentMessage')) {
+            return $this->latestAgentMessage;
+        }
+
+        return $this->messages()
+            ->where('sender_type', User::class)
+            ->latest('created_at')
+            ->latest('id')
+            ->first();
     }
 }

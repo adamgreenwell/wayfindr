@@ -21,3 +21,18 @@ Presence labels intentionally avoid hard claims like "online":
 Future typing indicators and read receipts should follow the same rule: show
 only what Wayfindr can prove, expire stale signals quickly, and degrade cleanly
 to manual refresh when realtime delivery is unavailable.
+
+## Read Receipts
+
+Visitor read receipts are currently tied to explicit widget message fetches that
+include the visitor read signal. Agents can see whether the latest agent reply
+was seen from the conversation queue and reply context.
+
+Read labels avoid implying delivery guarantees:
+
+- `Visitor saw reply`: the latest agent reply has a recorded visitor read time.
+- `Not seen yet`: the latest agent reply has not received a visitor read signal.
+- `No agent reply yet`: there is no agent reply to evaluate.
+
+These labels should remain secondary context. They help agents decide whether to
+wait, clarify, or follow up without turning normal visitor silence into an alarm.

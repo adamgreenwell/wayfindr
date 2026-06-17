@@ -696,6 +696,11 @@
                                 <span class="meta-label">Support code</span>
                                 <span class="meta-value">{{ $conversation->support_code }}</span>
                             </div>
+                            <div class="reply-context-item">
+                                <span class="meta-label">Visitor read</span>
+                                <span class="meta-value">{{ $conversation->visitorReadLabel() }}</span>
+                                <span class="lede">{{ $conversation->visitorReadDetail() }}</span>
+                            </div>
                         </div>
 
                         <div class="field">

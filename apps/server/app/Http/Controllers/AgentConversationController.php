@@ -30,7 +30,7 @@ class AgentConversationController extends Controller
         $agent = $request->user();
 
         $conversation = $this->conversationForAgent($agent, $supportCode, 'view')
-            ->load(['assignedAgent', 'latestMessage', 'site', 'visitor']);
+            ->load(['assignedAgent', 'latestAgentMessage', 'latestMessage', 'site', 'visitor']);
 
         $this->markConversationNotificationsRead($agent, $conversation);
         $conversation->markReadFor($agent);

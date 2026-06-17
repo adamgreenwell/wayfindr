@@ -57,6 +57,7 @@ class AgentConversationQueueController extends Controller
         $conversations = Conversation::query()
             ->with([
                 'assignedAgent',
+                'latestAgentMessage',
                 'latestMessage',
                 'readStates' => fn ($query) => $query->where('user_id', $agent->id),
                 'site',
