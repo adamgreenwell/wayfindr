@@ -92,7 +92,7 @@
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">Last seen</span>
-                        <span class="meta-value">{{ $visitorContext['last_seen_at']?->diffForHumans() ?? 'Not reported' }}</span>
+                        <span class="meta-value" data-visitor-presence-last-seen>{{ $visitorContext['last_seen_at']?->diffForHumans() ?? 'Not reported' }}</span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">Latest page</span>
@@ -788,6 +788,7 @@
                 var visitorTypingDetail = document.querySelector('[data-visitor-typing-detail]');
                 var visitorPresenceLabel = document.querySelector('[data-visitor-presence-label]');
                 var visitorPresenceDetail = document.querySelector('[data-visitor-presence-detail]');
+                var visitorPresenceLastSeen = document.querySelector('[data-visitor-presence-last-seen]');
                 var csrf = document.querySelector('meta[name="csrf-token"]');
                 var hasCobrowseTargets = Boolean(panel && status);
                 var hasTypingTargets = Boolean(visitorTypingLabel && visitorTypingDetail);
@@ -892,6 +893,10 @@
                     visitorPresenceLabel.textContent = visitorPresence.label || 'Not reported';
                     visitorPresenceLabel.dataset.status = presenceStatusFor(visitorPresence.state || 'unknown');
                     visitorPresenceDetail.textContent = visitorPresence.detail || 'No visitor heartbeat yet.';
+
+                    if (visitorPresenceLastSeen) {
+                        visitorPresenceLastSeen.textContent = visitorPresence.last_seen_label || 'Not reported';
+                    }
                 }
 
                 function parsePayload(payload) {

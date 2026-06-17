@@ -244,7 +244,7 @@ class Conversation extends Model
     }
 
     /**
-     * @return array{state: string, label: string, detail: string, last_seen_at: string|null}
+     * @return array{state: string, label: string, detail: string, last_seen_at: string|null, last_seen_label: string}
      */
     public function visitorPresencePayload(): array
     {
@@ -257,6 +257,7 @@ class Conversation extends Model
             'label' => $visitor?->presenceLabel() ?? 'Not reported',
             'detail' => $visitor?->presenceDetail() ?? 'No visitor heartbeat yet.',
             'last_seen_at' => $visitor?->last_seen_at?->toJSON(),
+            'last_seen_label' => $visitor?->last_seen_at?->diffForHumans() ?? 'Not reported',
         ];
     }
 

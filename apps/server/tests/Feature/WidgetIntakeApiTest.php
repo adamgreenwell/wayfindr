@@ -370,7 +370,8 @@ test('visitor message fetch broadcasts fresh visitor presence', function (): voi
             ->assertJsonPath('data.visitor_presence.state', 'active')
             ->assertJsonPath('data.visitor_presence.label', 'Active recently')
             ->assertJsonPath('data.visitor_presence.detail', 'Seen in the last 2 minutes')
-            ->assertJsonPath('data.visitor_presence.last_seen_at', now()->toJSON());
+            ->assertJsonPath('data.visitor_presence.last_seen_at', now()->toJSON())
+            ->assertJsonPath('data.visitor_presence.last_seen_label', '0 seconds ago');
 
         Event::assertDispatched(
             ConversationPresenceUpdated::class,
@@ -439,7 +440,8 @@ test('visitor can report a fresh typing signal for their conversation', function
             ->assertJsonPath('data.conversation.support_code', 'WF-TYPING')
             ->assertJsonPath('data.typing.state', 'typing')
             ->assertJsonPath('data.visitor_presence.state', 'active')
-            ->assertJsonPath('data.visitor_presence.last_seen_at', now()->toJSON());
+            ->assertJsonPath('data.visitor_presence.last_seen_at', now()->toJSON())
+            ->assertJsonPath('data.visitor_presence.last_seen_label', '0 seconds ago');
 
         $conversation->refresh();
 

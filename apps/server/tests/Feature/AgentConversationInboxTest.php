@@ -4073,7 +4073,9 @@ test('agent conversation page can update visitor presence from live events', fun
         ->assertSee('No visitor heartbeat yet.')
         ->assertSee('data-visitor-presence-label', false)
         ->assertSee('data-visitor-presence-detail', false)
+        ->assertSee('data-visitor-presence-last-seen', false)
         ->assertSee('conversation.presence.updated')
+        ->assertSee('last_seen_label')
         ->assertSee('updateVisitorPresence')
         ->assertSee('"presenceEventName":"conversation.presence.updated"', false);
 });

@@ -212,6 +212,7 @@ test('conversation presence updates use a private conversation channel and safe 
                     'label' => 'Active recently',
                     'detail' => 'Seen in the last 2 minutes',
                     'last_seen_at' => now()->toJSON(),
+                    'last_seen_label' => '0 seconds ago',
                 ],
             ])
             ->and(json_encode($payload))->not->toContain('anon-docs');
