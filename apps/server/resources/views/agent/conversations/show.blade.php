@@ -789,6 +789,8 @@
                 var csrf = document.querySelector('meta[name="csrf-token"]');
                 var hasCobrowseTargets = Boolean(panel && status);
                 var hasTypingTargets = Boolean(visitorTypingLabel && visitorTypingDetail);
+                var visitorTypingExpiryTimer = null;
+                var visitorTypingFreshMs = Number(config.visitorTypingFreshMs || 20000);
 
                 if (!config || (!hasCobrowseTargets && !hasTypingTargets) || !window.WebSocket) {
                     if (status) {
@@ -813,6 +815,45 @@
                     panel.dataset.state = state || 'idle';
                 }
 
+                function clearVisitorTypingExpiry() {
+                    if (!visitorTypingExpiryTimer) {
+                        return;
+                    }
+
+                    window.clearTimeout(visitorTypingExpiryTimer);
+                    visitorTypingExpiryTimer = null;
+                }
+
+                function expireVisitorTyping() {
+                    if (!hasTypingTargets) {
+                        return;
+                    }
+
+                    visitorTypingLabel.textContent = 'Not typing';
+                    visitorTypingDetail.textContent = 'Visitor paused.';
+                    visitorTypingExpiryTimer = null;
+                }
+
+                function scheduleVisitorTypingExpiry(visitorTyping) {
+                    clearVisitorTypingExpiry();
+
+                    if (!hasTypingTargets || !visitorTyping || visitorTyping.state !== 'typing') {
+                        return;
+                    }
+
+                    var typingAt = Date.parse(visitorTyping.updated_at || '');
+                    var ageMs = Number.isNaN(typingAt) ? 0 : Date.now() - typingAt;
+                    var remainingMs = Math.max(0, visitorTypingFreshMs - ageMs);
+
+                    if (remainingMs === 0) {
+                        expireVisitorTyping();
+
+                        return;
+                    }
+
+                    visitorTypingExpiryTimer = window.setTimeout(expireVisitorTyping, remainingMs);
+                }
+
                 function updateVisitorTyping(visitorTyping) {
                     if (!hasTypingTargets || !visitorTyping) {
                         return;
@@ -822,9 +863,12 @@
 
                     if (visitorTyping.state === 'typing') {
                         visitorTypingDetail.textContent = 'Typing now';
+                        scheduleVisitorTypingExpiry(visitorTyping);
 
                         return;
                     }
+
+                    clearVisitorTypingExpiry();
 
                     visitorTypingDetail.textContent = visitorTyping.updated_at
                         ? 'Visitor paused.'

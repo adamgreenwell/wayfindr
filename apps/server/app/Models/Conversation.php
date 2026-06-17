@@ -34,6 +34,11 @@ class Conversation extends Model
 
     private const VISITOR_TYPING_FRESH_SECONDS = 20;
 
+    public static function visitorTypingFreshMilliseconds(): int
+    {
+        return self::VISITOR_TYPING_FRESH_SECONDS * 1000;
+    }
+
     protected function casts(): array
     {
         return [

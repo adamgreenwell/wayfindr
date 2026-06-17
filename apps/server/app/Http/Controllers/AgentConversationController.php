@@ -519,6 +519,7 @@ class AgentConversationController extends Controller
             'port' => (int) $port,
             'scheme' => (string) $scheme,
             'typingEventName' => 'conversation.typing.updated',
+            'visitorTypingFreshMs' => Conversation::visitorTypingFreshMilliseconds(),
         ];
     }
 
