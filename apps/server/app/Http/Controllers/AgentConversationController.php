@@ -350,7 +350,7 @@ class AgentConversationController extends Controller
     }
 
     /**
-     * @return array{anonymous_id: string, external_id: string|null, last_seen_at: Carbon|null, last_page_url: string|null, started_page_url: string|null, host_context: array<string, string>}
+     * @return array{anonymous_id: string, external_id: string|null, last_seen_at: Carbon|null, presence: array{state: string, label: string, detail: string}, last_page_url: string|null, started_page_url: string|null, host_context: array<string, string>}
      */
     private function visitorContext(Conversation $conversation, VisitorContextSanitizer $visitorContextSanitizer): array
     {
@@ -362,6 +362,11 @@ class AgentConversationController extends Controller
             'anonymous_id' => $visitor?->anonymous_id ?? 'Unknown visitor',
             'external_id' => $visitorContextSanitizer->sanitizeIdentifier($visitor?->external_id),
             'last_seen_at' => $visitor?->last_seen_at,
+            'presence' => [
+                'state' => $visitor?->presenceState() ?? 'unknown',
+                'label' => $visitor?->presenceLabel() ?? 'Not reported',
+                'detail' => $visitor?->presenceDetail() ?? 'No visitor heartbeat yet.',
+            ],
             'last_page_url' => $this->contextString($visitorMetadata['last_page_url'] ?? null),
             'started_page_url' => $this->contextString($conversationMetadata['started_page_url'] ?? null),
             'host_context' => $visitorContextSanitizer->sanitize($visitorMetadata['context'] ?? []),

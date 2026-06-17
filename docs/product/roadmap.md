@@ -34,8 +34,9 @@ These are the nearest product slices because they improve the daily support
 experience without opening broad integration or platform-service work too soon.
 
 - Chat UX polish: message grouping, composer states, delivery/read affordances,
-  typing/presence when the base interaction feels calm, and preserved manual
-  refresh fallbacks.
+  timestamp-based visitor presence, typing/presence when the base interaction
+  feels calm, and preserved manual refresh fallbacks. See
+  [Chat UX Polish](chat-ux-polish.md).
 - Ticket workflow comfort: smoother transitions between conversation, ticket,
   visitor, and support-code context; clearer “what needs attention” cues; and
   less page-hopping for common agent moves.

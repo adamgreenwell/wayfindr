@@ -300,32 +300,44 @@ test('visitor message creation cannot cross site boundaries', function (): void 
 });
 
 test('visitor can add a message to their conversation', function (): void {
-    $site = Site::factory()->create(['public_key' => 'site_public_docs']);
-    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
-    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
-        'support_code' => 'WF-MESSAGE',
-    ]);
-    $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+    Carbon::setTestNow(Carbon::parse('2026-06-17 11:00:00', 'UTC'));
 
-    $response = $this->postJson("/api/conversations/{$conversation->support_code}/messages", [
-        'site_public_key' => 'site_public_docs',
-        'anonymous_id' => 'anon-docs',
-        'visitor_token' => $token,
-        'body' => 'Can you help me with this checkout error?',
-    ]);
+    try {
+        $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+        $visitor = Visitor::factory()->for($site)->create([
+            'anonymous_id' => 'anon-docs',
+            'last_seen_at' => now()->subHour(),
+        ]);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-MESSAGE',
+        ]);
+        $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+        $seenAt = Carbon::parse('2026-06-17 12:00:00', 'UTC');
+        Carbon::setTestNow($seenAt);
 
-    $response
-        ->assertCreated()
-        ->assertJsonPath('data.conversation.support_code', 'WF-MESSAGE')
-        ->assertJsonPath('data.message.type', 'text')
-        ->assertJsonPath('data.message.body', 'Can you help me with this checkout error?');
+        $response = $this->postJson("/api/conversations/{$conversation->support_code}/messages", [
+            'site_public_key' => 'site_public_docs',
+            'anonymous_id' => 'anon-docs',
+            'visitor_token' => $token,
+            'body' => 'Can you help me with this checkout error?',
+        ]);
 
-    $message = ConversationMessage::query()->firstOrFail();
+        $response
+            ->assertCreated()
+            ->assertJsonPath('data.conversation.support_code', 'WF-MESSAGE')
+            ->assertJsonPath('data.message.type', 'text')
+            ->assertJsonPath('data.message.body', 'Can you help me with this checkout error?');
 
-    expect($message->conversation_id)->toBe($conversation->id)
-        ->and($message->sender_type)->toBe(Visitor::class)
-        ->and($message->sender_id)->toBe($visitor->id)
-        ->and($conversation->refresh()->last_message_at)->not->toBeNull();
+        $message = ConversationMessage::query()->firstOrFail();
+
+        expect($message->conversation_id)->toBe($conversation->id)
+            ->and($message->sender_type)->toBe(Visitor::class)
+            ->and($message->sender_id)->toBe($visitor->id)
+            ->and($conversation->refresh()->last_message_at)->not->toBeNull()
+            ->and($visitor->fresh()->last_seen_at?->toJSON())->toBe($seenAt->toJSON());
+    } finally {
+        Carbon::setTestNow();
+    }
 });
 
 test('visitor message reopens a closed conversation', function (): void {
@@ -943,27 +955,39 @@ test('visitor can read their conversation messages', function (): void {
 });
 
 test('visitor message fetch does not mark agent replies seen without a read signal', function (): void {
-    $site = Site::factory()->create(['public_key' => 'site_public_docs']);
-    $agent = User::factory()->create(['name' => 'Ada Agent']);
-    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
-    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
-        'support_code' => 'WF-MESSAGES',
-    ]);
+    Carbon::setTestNow(Carbon::parse('2026-06-17 11:00:00', 'UTC'));
 
-    $agentMessage = ConversationMessage::factory()->for($conversation)->create([
-        'sender_type' => User::class,
-        'sender_id' => $agent->id,
-        'body' => 'Hello from support.',
-        'created_at' => now(),
-    ]);
+    try {
+        $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+        $agent = User::factory()->create(['name' => 'Ada Agent']);
+        $visitor = Visitor::factory()->for($site)->create([
+            'anonymous_id' => 'anon-docs',
+            'last_seen_at' => now()->subHour(),
+        ]);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-MESSAGES',
+        ]);
 
-    $this->getJson('/api/conversations/WF-MESSAGES/messages?'.http_build_query([
-        'site_public_key' => 'site_public_docs',
-        'anonymous_id' => 'anon-docs',
-        'visitor_token' => widgetVisitorToken($this, 'site_public_docs', 'anon-docs'),
-    ]))->assertOk();
+        $agentMessage = ConversationMessage::factory()->for($conversation)->create([
+            'sender_type' => User::class,
+            'sender_id' => $agent->id,
+            'body' => 'Hello from support.',
+            'created_at' => now(),
+        ]);
+        $seenAt = Carbon::parse('2026-06-17 12:00:00', 'UTC');
+        Carbon::setTestNow($seenAt);
 
-    expect($agentMessage->fresh()->seen_at)->toBeNull();
+        $this->getJson('/api/conversations/WF-MESSAGES/messages?'.http_build_query([
+            'site_public_key' => 'site_public_docs',
+            'anonymous_id' => 'anon-docs',
+            'visitor_token' => widgetVisitorToken($this, 'site_public_docs', 'anon-docs'),
+        ]))->assertOk();
+
+        expect($agentMessage->fresh()->seen_at)->toBeNull()
+            ->and($visitor->fresh()->last_seen_at?->toJSON())->toBe($seenAt->toJSON());
+    } finally {
+        Carbon::setTestNow();
+    }
 });
 
 test('visitor message read cannot cross site boundaries', function (): void {

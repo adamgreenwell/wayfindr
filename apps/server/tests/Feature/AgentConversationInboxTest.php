@@ -158,6 +158,34 @@ test('dashboard shows conversation attention state from the latest message', fun
         ->assertSeeInOrder(['Fresh conversation', 'Needs reply']);
 });
 
+test('dashboard shows visitor presence state in the conversation queue', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00', 'UTC'));
+
+    try {
+        $account = Account::factory()->create(['name' => 'Acme Support']);
+        $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+        $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+        $visitor = Visitor::factory()->for($site)->create([
+            'anonymous_id' => 'anon-acme',
+            'last_seen_at' => now()->subMinute(),
+        ]);
+
+        Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-PRESENT',
+            'subject' => 'Visitor is still nearby',
+            'status' => 'open',
+        ]);
+
+        $this->actingAs($agent)
+            ->get('/dashboard/conversations')
+            ->assertOk()
+            ->assertSee('Presence')
+            ->assertSeeInOrder(['Visitor is still nearby', 'Active recently']);
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('dashboard filters conversations by attention state', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
@@ -1376,6 +1404,9 @@ test('agent can view safe visitor context on a conversation', function (): void 
         ->assertOk()
         ->assertSee('Visitor at a glance')
         ->assertSee('Safe context only')
+        ->assertSee('Presence')
+        ->assertSee('Recently active')
+        ->assertSee('Seen 7 minutes ago')
         ->assertSee('Last seen')
         ->assertSee('7 minutes ago')
         ->assertSee('Latest page')

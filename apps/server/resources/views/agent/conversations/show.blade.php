@@ -84,6 +84,13 @@
                         <span class="meta-value">{{ $visitorContext['external_id'] ?? 'Not provided' }}</span>
                     </div>
                     <div class="meta-item">
+                        <span class="meta-label">Presence</span>
+                        <span class="readiness-status" data-status="{{ in_array($visitorContext['presence']['state'], ['active', 'recent'], true) ? 'ready' : 'manual' }}">
+                            {{ $visitorContext['presence']['label'] }}
+                        </span>
+                        <span class="lede">{{ $visitorContext['presence']['detail'] }}</span>
+                    </div>
+                    <div class="meta-item">
                         <span class="meta-label">Last seen</span>
                         <span class="meta-value">{{ $visitorContext['last_seen_at']?->diffForHumans() ?? 'Not reported' }}</span>
                     </div>

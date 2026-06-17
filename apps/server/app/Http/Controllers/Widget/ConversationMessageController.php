@@ -30,6 +30,7 @@ class ConversationMessageController extends Controller
             $validated['site_public_key'],
             $validated['anonymous_id'],
         );
+        $this->recordVisitorPresence($conversation);
 
         if ((bool) ($validated['mark_seen'] ?? false)) {
             $this->markAgentMessagesSeen($conversation);
@@ -75,6 +76,7 @@ class ConversationMessageController extends Controller
             $validated['site_public_key'],
             $validated['anonymous_id'],
         );
+        $this->recordVisitorPresence($conversation);
 
         $message = $conversation->messages()->create([
             'sender_type' => Visitor::class,
@@ -131,6 +133,11 @@ class ConversationMessageController extends Controller
         abort_unless($conversation, 404, 'Conversation not found.');
 
         return $conversation;
+    }
+
+    private function recordVisitorPresence(Conversation $conversation): void
+    {
+        $conversation->visitor()->update(['last_seen_at' => now()]);
     }
 
     private function markAgentMessagesSeen(Conversation $conversation): void

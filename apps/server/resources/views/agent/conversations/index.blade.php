@@ -33,6 +33,7 @@
                                     <th scope="col">Subject</th>
                                     <th scope="col">Site</th>
                                     <th scope="col">Visitor</th>
+                                    <th scope="col">Presence</th>
                                     <th scope="col">Assigned</th>
                                     <th scope="col">Attention</th>
                                     <th scope="col">Read</th>
@@ -54,6 +55,11 @@
                                             </a>
                                         </td>
                                         <td>{{ $conversation->visitor->anonymous_id ?? 'Unknown visitor' }}</td>
+                                        <td>
+                                            <span class="readiness-status" data-status="{{ in_array($conversation->visitor?->presenceState(), ['active', 'recent'], true) ? 'ready' : 'manual' }}">
+                                                {{ $conversation->visitor?->presenceLabel() ?? 'Not reported' }}
+                                            </span>
+                                        </td>
                                         <td>{{ $conversation->assignedAgent?->name ?? 'Unassigned' }}</td>
                                         <td>{{ $conversation->attentionLabel() }}</td>
                                         <td>

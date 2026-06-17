@@ -49,6 +49,46 @@ class Visitor extends Model
         return $this->morphMany(ConversationMessage::class, 'sender');
     }
 
+    public function presenceState(): string
+    {
+        if (! $this->last_seen_at) {
+            return 'unknown';
+        }
+
+        if ($this->last_seen_at->gte(now()->subMinutes(2))) {
+            return 'active';
+        }
+
+        if ($this->last_seen_at->gte(now()->subMinutes(15))) {
+            return 'recent';
+        }
+
+        return 'quiet';
+    }
+
+    public function presenceLabel(): string
+    {
+        return match ($this->presenceState()) {
+            'active' => 'Active recently',
+            'recent' => 'Recently active',
+            'quiet' => 'Quiet',
+            default => 'Not reported',
+        };
+    }
+
+    public function presenceDetail(): string
+    {
+        if (! $this->last_seen_at) {
+            return 'No visitor heartbeat yet.';
+        }
+
+        if ($this->presenceState() === 'active') {
+            return 'Seen in the last 2 minutes';
+        }
+
+        return 'Seen '.$this->last_seen_at->diffForHumans();
+    }
+
     public function auditEvents(): MorphMany
     {
         return $this->morphMany(AuditEvent::class, 'actor');
