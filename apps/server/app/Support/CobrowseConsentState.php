@@ -95,9 +95,11 @@ class CobrowseConsentState
         }
 
         $metadata = $session->metadata ?? [];
+        $telemetry = is_array($metadata['telemetry'] ?? null) ? $metadata['telemetry'] : [];
         $latestReport = $this->latestReportAt($metadata);
+        $telemetryReport = $this->parseReportedAt($telemetry['reported_at'] ?? null);
         $pressure = $this->formatTransportPressure($metadata);
-        $reconnects = (int) ($metadata['telemetry']['reconnects'] ?? 0);
+        $reconnects = (int) ($telemetry['reconnects'] ?? 0);
 
         if (! $latestReport) {
             return [
@@ -119,7 +121,7 @@ class CobrowseConsentState
             ];
         }
 
-        if ($reconnects > 0) {
+        if ($this->hasFreshReconnectWarning($reconnects, $telemetryReport, $latestReport)) {
             return [
                 'label' => 'Reconnecting',
                 'message' => 'The visitor transport has reconnected recently; preview data may briefly lag.',
@@ -136,6 +138,19 @@ class CobrowseConsentState
             'reconnects' => '0',
             'pressure' => $pressure,
         ];
+    }
+
+    private function hasFreshReconnectWarning(int $reconnects, ?Carbon $telemetryReport, ?Carbon $latestReport): bool
+    {
+        if ($reconnects <= 0 || ! $telemetryReport) {
+            return false;
+        }
+
+        if ($telemetryReport->lt(now()->subSeconds(self::TRANSPORT_STALE_AFTER_SECONDS))) {
+            return false;
+        }
+
+        return ! $latestReport || $telemetryReport->gte($latestReport);
     }
 
     /**

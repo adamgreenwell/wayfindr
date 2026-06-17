@@ -4124,6 +4124,52 @@ test('agent can see cobrowse transport health on a conversation', function (arra
     ],
 ]);
 
+test('agent cobrowse transport health does not keep stale reconnect warnings alive after newer reports arrive', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00'));
+
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-RECOVERED',
+        'subject' => 'Recovered cobrowse stream',
+        'status' => 'open',
+    ]);
+
+    CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinutes(5),
+        'ended_at' => null,
+        'metadata' => [
+            'telemetry' => [
+                'rtt_ms' => 184,
+                'payload_bytes' => 4096,
+                'dropped_batches' => 0,
+                'reconnects' => 2,
+                'samples' => 6,
+                'reported_at' => '2026-06-17T11:56:00.000000Z',
+            ],
+            'page_state' => [
+                'title' => 'Recovered Guide',
+                'page_url' => 'https://docs.example.test/recovered',
+                'reported_at' => '2026-06-17T11:59:45.000000Z',
+            ],
+        ],
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-RECOVERED')
+        ->assertOk()
+        ->assertSee('Transport health')
+        ->assertSee('Live')
+        ->assertSee('Cobrowse reports are arriving normally.')
+        ->assertDontSee('Reconnecting')
+        ->assertDontSee('The visitor transport has reconnected recently; preview data may briefly lag.');
+
+    Carbon::setTestNow();
+});
+
 test('agent can see cobrowse payload budget guardrails on a conversation', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
