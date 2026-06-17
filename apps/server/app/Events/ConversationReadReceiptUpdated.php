@@ -36,7 +36,7 @@ class ConversationReadReceiptUpdated implements ShouldBroadcastNow
     }
 
     /**
-     * @return array{conversation: array{support_code: string, status: string}, visitor_read: array{state: string, label: string, detail: string, seen_at: string|null, seen_label: string|null}}
+     * @return array{conversation: array{support_code: string, status: string}, visitor_read: array{message_id: int|null, state: string, label: string, detail: string, seen_at: string|null, seen_label: string|null}}
      */
     public function broadcastWith(): array
     {

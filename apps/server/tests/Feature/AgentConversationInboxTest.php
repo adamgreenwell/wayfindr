@@ -4098,7 +4098,7 @@ test('agent conversation page can update visitor read receipts from live events'
         'subject' => 'Read receipts should feel fresh',
         'status' => 'open',
     ]);
-    ConversationMessage::factory()->for($conversation)->create([
+    $message = ConversationMessage::factory()->for($conversation)->create([
         'sender_type' => User::class,
         'sender_id' => $agent->id,
         'body' => 'Can you try signing in again?',
@@ -4113,10 +4113,12 @@ test('agent conversation page can update visitor read receipts from live events'
         ->assertSee('Not seen yet')
         ->assertSee('data-visitor-read-label', false)
         ->assertSee('data-visitor-read-detail', false)
-        ->assertSee('data-latest-agent-message-seen', false)
+        ->assertSee('data-agent-message-seen-id="'.$message->id.'"', false)
         ->assertSee('conversation.read.updated')
+        ->assertSee('message_id')
         ->assertSee('seen_label')
         ->assertSee('updateVisitorRead')
+        ->assertSee('querySelector(\'[data-agent-message-seen-id="\' + messageId + \'"]\')', false)
         ->assertSee('"readEventName":"conversation.read.updated"', false);
 });
 

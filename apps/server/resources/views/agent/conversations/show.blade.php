@@ -791,7 +791,6 @@
                 var visitorPresenceLastSeen = document.querySelector('[data-visitor-presence-last-seen]');
                 var visitorReadLabel = document.querySelector('[data-visitor-read-label]');
                 var visitorReadDetail = document.querySelector('[data-visitor-read-detail]');
-                var latestAgentMessageSeen = document.querySelector('[data-latest-agent-message-seen]');
                 var csrf = document.querySelector('meta[name="csrf-token"]');
                 var hasCobrowseTargets = Boolean(panel && status);
                 var hasTypingTargets = Boolean(visitorTypingLabel && visitorTypingDetail);
@@ -911,18 +910,23 @@
                     visitorReadLabel.textContent = visitorRead.label || 'No agent reply yet';
                     visitorReadDetail.textContent = visitorRead.detail || 'No agent reply has been sent.';
 
-                    if (!latestAgentMessageSeen) {
+                    var messageId = visitorRead.message_id ? String(visitorRead.message_id) : '';
+                    var agentMessageSeen = messageId
+                        ? document.querySelector('[data-agent-message-seen-id="' + messageId + '"]')
+                        : null;
+
+                    if (!agentMessageSeen) {
                         return;
                     }
 
                     if (visitorRead.state === 'seen') {
-                        latestAgentMessageSeen.textContent = 'Seen by visitor ' + (visitorRead.seen_label || 'just now');
+                        agentMessageSeen.textContent = 'Seen by visitor ' + (visitorRead.seen_label || 'just now');
 
                         return;
                     }
 
                     if (visitorRead.state === 'unseen') {
-                        latestAgentMessageSeen.textContent = 'Not seen yet';
+                        agentMessageSeen.textContent = 'Not seen yet';
                     }
                 }
 

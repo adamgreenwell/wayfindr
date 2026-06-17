@@ -195,13 +195,14 @@ class Conversation extends Model
     }
 
     /**
-     * @return array{state: string, label: string, detail: string, seen_at: string|null, seen_label: string|null}
+     * @return array{message_id: int|null, state: string, label: string, detail: string, seen_at: string|null, seen_label: string|null}
      */
     public function visitorReadPayload(): array
     {
         $message = $this->latestAgentMessageForReadReceipt();
 
         return [
+            'message_id' => $message?->id,
             'state' => $this->visitorReadState(),
             'label' => $this->visitorReadLabel(),
             'detail' => $this->visitorReadDetail(),

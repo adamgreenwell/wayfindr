@@ -235,7 +235,7 @@ test('conversation read receipt updates use a private conversation channel and s
             'status' => 'open',
         ]);
 
-        ConversationMessage::factory()->for($conversation)->create([
+        $message = ConversationMessage::factory()->for($conversation)->create([
             'sender_type' => User::class,
             'sender_id' => $agent->id,
             'body' => 'Try refreshing the billing page.',
@@ -261,6 +261,7 @@ test('conversation read receipt updates use a private conversation channel and s
                     'status' => 'open',
                 ],
                 'visitor_read' => [
+                    'message_id' => $message->id,
                     'state' => 'seen',
                     'label' => 'Visitor saw reply',
                     'detail' => 'Seen 0 seconds ago',

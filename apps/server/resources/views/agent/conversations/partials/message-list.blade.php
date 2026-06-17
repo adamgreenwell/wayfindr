@@ -34,12 +34,12 @@
                         @if ($isAgent && $transcriptMessage->seen_at)
                             <span
                                 class="message-seen"
-                                @if ((string) $transcriptMessage->id === (string) $latestAgentMessageId) data-latest-agent-message-seen @endif
+                                @if ((string) $transcriptMessage->id === (string) $latestAgentMessageId) data-agent-message-seen-id="{{ $transcriptMessage->id }}" @endif
                             >
                                 Seen by visitor {{ $transcriptMessage->seen_at->diffForHumans() }}
                             </span>
                         @elseif ($isAgent && (string) $transcriptMessage->id === (string) $latestAgentMessageId)
-                            <span class="message-seen" data-latest-agent-message-seen>Not seen yet</span>
+                            <span class="message-seen" data-agent-message-seen-id="{{ $transcriptMessage->id }}">Not seen yet</span>
                         @endif
                     </span>
                 </div>
