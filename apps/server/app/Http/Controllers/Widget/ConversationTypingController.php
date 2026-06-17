@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Widget;
 
+use App\Events\ConversationTypingUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\Site;
@@ -47,6 +48,9 @@ class ConversationTypingController extends Controller
         }
 
         $conversation->forceFill(['metadata' => $metadata])->save();
+        $conversation->refresh();
+
+        event(new ConversationTypingUpdated($conversation));
 
         return response()->json([
             'data' => [
@@ -54,11 +58,7 @@ class ConversationTypingController extends Controller
                     'support_code' => $conversation->support_code,
                     'status' => $conversation->status,
                 ],
-                'typing' => [
-                    'state' => $conversation->visitorTypingState(),
-                    'label' => $conversation->visitorTypingLabel(),
-                    'updated_at' => $conversation->metadata['visitor_typing_at'] ?? null,
-                ],
+                'typing' => $conversation->visitorTypingPayload(),
             ],
         ]);
     }

@@ -1,5 +1,6 @@
 <?php
 
+use App\Events\ConversationTypingUpdated;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
@@ -8,6 +9,7 @@ use App\Models\User;
 use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Event;
 
 uses(RefreshDatabase::class);
 
@@ -381,6 +383,8 @@ test('visitor can report a fresh typing signal for their conversation', function
         ]);
         $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
 
+        Event::fake([ConversationTypingUpdated::class]);
+
         $response = $this->postJson("/api/conversations/{$conversation->support_code}/typing", [
             'site_public_key' => 'site_public_docs',
             'anonymous_id' => 'anon-docs',
@@ -397,6 +401,11 @@ test('visitor can report a fresh typing signal for their conversation', function
 
         expect($conversation->metadata['visitor_typing_at'])->toBe(now()->toJSON())
             ->and($visitor->fresh()->last_seen_at?->toJSON())->toBe(now()->toJSON());
+
+        Event::assertDispatched(
+            ConversationTypingUpdated::class,
+            fn (ConversationTypingUpdated $event): bool => $event->conversation->id === $conversation->id,
+        );
     } finally {
         Carbon::setTestNow();
     }

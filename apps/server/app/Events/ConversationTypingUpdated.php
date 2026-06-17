@@ -33,7 +33,7 @@ class ConversationTypingUpdated implements ShouldBroadcastNow
     }
 
     /**
-     * @return array{conversation: array{support_code: string, status: string}, agent_typing: array{state: string, label: string|null, updated_at: string|null}}
+     * @return array{conversation: array{support_code: string, status: string}, agent_typing: array{state: string, label: string|null, updated_at: string|null}, visitor_typing: array{state: string, label: string, updated_at: string|null}}
      */
     public function broadcastWith(): array
     {
@@ -43,6 +43,7 @@ class ConversationTypingUpdated implements ShouldBroadcastNow
                 'status' => $this->conversation->status,
             ],
             'agent_typing' => $this->conversation->agentTypingPayload(),
+            'visitor_typing' => $this->conversation->visitorTypingPayload(),
         ];
     }
 }

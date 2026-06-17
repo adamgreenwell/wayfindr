@@ -288,7 +288,9 @@ test('dashboard shows only fresh visitor typing state', function (): void {
             ->assertOk()
             ->assertSee('Visitor typing')
             ->assertSee('Typing now')
-            ->assertSee('Updated 10 seconds ago');
+            ->assertSee('Updated 10 seconds ago')
+            ->assertSee('data-visitor-typing-label', false)
+            ->assertSee('data-visitor-typing-detail', false);
     } finally {
         Carbon::setTestNow();
     }
@@ -4035,6 +4037,7 @@ test('agent conversation page exposes live cobrowse update readiness when reverb
         ->assertSee('Waiting for live cobrowse updates.')
         ->assertSee('data-cobrowse-update-status', false)
         ->assertSee('conversation.cobrowse.updated')
+        ->assertSee('conversation.typing.updated')
         ->assertSee('private-conversations.WF-LIVECOBROWSE')
         ->assertSee('"appKey":"reverb-key"', false)
         ->assertSee('"host":"wayfindr.test"', false);

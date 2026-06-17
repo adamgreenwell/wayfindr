@@ -134,6 +134,7 @@ test('conversation typing updates use a private conversation channel and safe pa
         'support_code' => 'WF-TYPING-LIVE',
         'status' => 'open',
         'metadata' => [
+            'visitor_typing_at' => $typingAt,
             'agent_typing' => [
                 (string) $agent->id => [
                     'at' => $typingAt,
@@ -161,6 +162,11 @@ test('conversation typing updates use a private conversation channel and safe pa
             'agent_typing' => [
                 'state' => 'typing',
                 'label' => 'Support is typing...',
+                'updated_at' => $typingAt,
+            ],
+            'visitor_typing' => [
+                'state' => 'typing',
+                'label' => 'Typing now',
                 'updated_at' => $typingAt,
             ],
         ])
