@@ -113,6 +113,7 @@ class AgentConversationController extends Controller
             'status' => 'open',
             'closed_at' => null,
             'last_message_at' => $message->created_at,
+            'metadata' => $this->metadataWithoutAgentTypingSignal($conversation, $agent),
         ])->save();
 
         $this->markConversationNotificationsRead($agent, $conversation);
@@ -141,6 +142,31 @@ class AgentConversationController extends Controller
         return [
             'reply_template' => $resolvedTemplate['key'],
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function metadataWithoutAgentTypingSignal(Conversation $conversation, User $agent): array
+    {
+        $metadata = $conversation->metadata ?? [];
+        $typingSignals = $metadata['agent_typing'] ?? [];
+
+        if (! is_array($typingSignals)) {
+            unset($metadata['agent_typing']);
+
+            return $metadata;
+        }
+
+        unset($typingSignals[(string) $agent->id]);
+
+        if ($typingSignals === []) {
+            unset($metadata['agent_typing']);
+        } else {
+            $metadata['agent_typing'] = $typingSignals;
+        }
+
+        return $metadata;
     }
 
     public function close(Request $request, string $supportCode): RedirectResponse

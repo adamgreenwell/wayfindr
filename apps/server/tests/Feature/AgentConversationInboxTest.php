@@ -1883,6 +1883,44 @@ test('agent reply reopens a closed conversation', function (): void {
         ->and($conversation->last_message_at)->not->toBeNull();
 });
 
+test('agent reply clears that agents typing signal', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $otherAgent = User::factory()->for($account)->create(['name' => 'Bea Builder']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-REPLYTYPE',
+        'subject' => 'Checkout trouble',
+        'status' => 'open',
+        'metadata' => [
+            'agent_typing' => [
+                (string) $agent->id => [
+                    'at' => now()->toJSON(),
+                    'name' => 'Ada Agent',
+                ],
+                (string) $otherAgent->id => [
+                    'at' => now()->toJSON(),
+                    'name' => 'Bea Builder',
+                ],
+            ],
+        ],
+    ]);
+
+    $this->actingAs($agent)
+        ->from('/dashboard/conversations/WF-REPLYTYPE')
+        ->post('/dashboard/conversations/WF-REPLYTYPE/messages', [
+            'body' => 'I can help with that.',
+        ])
+        ->assertRedirect('/dashboard/conversations/WF-REPLYTYPE')
+        ->assertSessionHas('status', 'Reply sent.');
+
+    $typingSignals = $conversation->fresh()->metadata['agent_typing'] ?? [];
+
+    expect($typingSignals)->not->toHaveKey((string) $agent->id)
+        ->and($typingSignals)->toHaveKey((string) $otherAgent->id);
+});
+
 test('agent can claim an unassigned conversation', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
