@@ -242,7 +242,7 @@ test('dashboard shows visitor read state for latest agent replies', function ():
     }
 });
 
-test('dashboard shows only fresh visitor typing state', function (): void {
+test('dashboard keeps visitor typing in conversation detail instead of the queue', function (): void {
     Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00', 'UTC'));
 
     try {
@@ -278,10 +278,12 @@ test('dashboard shows only fresh visitor typing state', function (): void {
         $this->actingAs($agent)
             ->get('/dashboard/conversations')
             ->assertOk()
-            ->assertSee('Visitor typing')
-            ->assertSeeInOrder(['Visitor is composing', 'Typing now'])
-            ->assertSeeInOrder(['Visitor paused', 'Not typing'])
-            ->assertSeeInOrder(['Quiet visitor', 'Not typing']);
+            ->assertDontSee('Visitor typing')
+            ->assertSee('Visitor is composing')
+            ->assertSee('Visitor paused')
+            ->assertSee('Quiet visitor')
+            ->assertDontSee('Typing now')
+            ->assertDontSee('Not typing');
 
         $this->actingAs($agent)
             ->get('/dashboard/conversations/WF-TYPING')
