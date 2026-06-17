@@ -28,10 +28,16 @@ Visitor typing is currently a short-lived timestamp reported by the authenticate
 widget session. Agents can see `Typing now` in the conversation queue and reply
 context only while the signal is fresh.
 
+Agent typing is also short-lived. The dashboard composer reports when an agent
+is actively writing, and visitor message refreshes can show `Support is
+typing...` while that signal is fresh. The widget hides stale or unavailable
+agent typing state instead of making promises it cannot keep.
+
 Typing copy should stay calm and disposable:
 
 - `Typing now`: the visitor sent a recent typing signal.
 - `Not typing`: no typing signal exists or the last signal is stale.
+- `Support is typing...`: an agent sent a recent typing signal.
 
 Typing should never be treated as a durable workflow state. It is a gentle cue
 to wait a beat before sending a reply, not proof that a visitor is still present

@@ -365,6 +365,7 @@
       '    <p class="wayfindr-widget__notice-copy">No messages yet. Send a message and support will see it here.</p>',
       '    <button class="wayfindr-widget__notice-retry" type="button" hidden>Try again</button>',
       '  </div>',
+      '  <p class="wayfindr-widget__typing" aria-live="polite" hidden></p>',
       '  <p class="wayfindr-widget__connection" hidden></p>',
       '  <form class="wayfindr-widget__form">',
       '    <label class="wayfindr-widget__label" for="wayfindr-message">How can we help?</label>',
@@ -395,6 +396,7 @@
     var notice = rootEl.querySelector('.wayfindr-widget__notice');
     var noticeCopy = rootEl.querySelector('.wayfindr-widget__notice-copy');
     var noticeRetry = rootEl.querySelector('.wayfindr-widget__notice-retry');
+    var typing = rootEl.querySelector('.wayfindr-widget__typing');
     var connection = rootEl.querySelector('.wayfindr-widget__connection');
     var textarea = rootEl.querySelector('.wayfindr-widget__textarea');
     var status = rootEl.querySelector('.wayfindr-widget__status');
@@ -521,6 +523,13 @@
       }
 
       renderMessages(messages.concat([message]));
+    }
+
+    function renderAgentTyping(agentTyping) {
+      var isTyping = agentTyping && agentTyping.state === 'typing' && agentTyping.label;
+
+      typing.hidden = !isTyping;
+      typing.textContent = isTyping ? agentTyping.label : '';
     }
 
     function connectRealtime() {
@@ -887,6 +896,7 @@
           }),
         });
         renderMessages(result.messages || []);
+        renderAgentTyping(result.agent_typing);
 
         if (!options.silent) {
           status.textContent = 'Messages refreshed.';
@@ -2004,6 +2014,7 @@
       '.wayfindr-widget__notice-retry{justify-self:start;min-height:34px;border:1px solid #d8dfdc;border-radius:6px;background:#fff;color:#1d2523;cursor:pointer;padding:0 12px;font:700 13px/1 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}',
       '.wayfindr-widget__notice-retry:hover{border-color:#0d6f68;color:#0d6f68}',
       '.wayfindr-widget__notice-retry:disabled{cursor:wait;opacity:.7}',
+      '.wayfindr-widget__typing{margin:0;padding:9px 16px;border-bottom:1px solid #eef1ef;background:#fbfbf8;color:#62706b;font-size:13px;line-height:1.35}',
       '.wayfindr-widget__connection{margin:0;padding:10px 16px 0;color:#62706b;font-size:12px;line-height:1.35}',
       '.wayfindr-widget__message{display:grid;gap:4px;width:88%;border:1px solid #d8dfdc;border-radius:8px;padding:9px 10px;background:#fff}',
       '.wayfindr-widget__message--agent{justify-self:end;background:#eef6f3;border-color:#cfe1dc}',

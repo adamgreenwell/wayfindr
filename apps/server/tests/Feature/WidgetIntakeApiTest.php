@@ -421,6 +421,62 @@ test('visitor typing signal cannot cross site boundaries', function (): void {
     expect($conversation->fresh()->metadata ?? [])->not->toHaveKey('visitor_typing_at');
 });
 
+test('visitor message fetch includes only fresh agent typing state', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00', 'UTC'));
+
+    try {
+        $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+        $agent = User::factory()->create(['name' => 'Ada Agent']);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-AGENTTYPE',
+            'metadata' => [
+                'agent_typing' => [
+                    (string) $agent->id => [
+                        'at' => now()->subSeconds(10)->toJSON(),
+                        'name' => 'Ada Agent',
+                    ],
+                ],
+            ],
+        ]);
+
+        $response = $this->getJson("/api/conversations/{$conversation->support_code}/messages?".http_build_query([
+            'site_public_key' => 'site_public_docs',
+            'anonymous_id' => 'anon-docs',
+            'visitor_token' => widgetVisitorToken($this, 'site_public_docs', 'anon-docs'),
+        ]));
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.agent_typing.state', 'typing')
+            ->assertJsonPath('data.agent_typing.label', 'Support is typing...')
+            ->assertJsonPath('data.agent_typing.updated_at', now()->subSeconds(10)->toJSON());
+
+        $conversation->forceFill([
+            'metadata' => [
+                'agent_typing' => [
+                    (string) $agent->id => [
+                        'at' => now()->subMinute()->toJSON(),
+                        'name' => 'Ada Agent',
+                    ],
+                ],
+            ],
+        ])->save();
+
+        $this->getJson("/api/conversations/{$conversation->support_code}/messages?".http_build_query([
+            'site_public_key' => 'site_public_docs',
+            'anonymous_id' => 'anon-docs',
+            'visitor_token' => widgetVisitorToken($this, 'site_public_docs', 'anon-docs'),
+        ]))
+            ->assertOk()
+            ->assertJsonPath('data.agent_typing.state', 'idle')
+            ->assertJsonPath('data.agent_typing.label', null)
+            ->assertJsonPath('data.agent_typing.updated_at', null);
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('visitor can grant cobrowse consent for their conversation', function (): void {
     $site = Site::factory()->create(['public_key' => 'site_public_docs']);
     $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);

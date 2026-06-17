@@ -50,6 +50,46 @@
             var body = form.querySelector('[data-reply-body]');
             var status = form.querySelector('[data-reply-status]');
             var submittingLabel = form.getAttribute('data-submitting-label') || 'Sending...';
+            var typingUrl = form.getAttribute('data-typing-url') || '';
+            var csrf = document.querySelector('meta[name="csrf-token"]');
+            var typingThrottleMs = 5000;
+            var lastTypingSignalAt = 0;
+
+            function reportTyping(isTyping, options) {
+                options = options || {};
+
+                if (! typingUrl) {
+                    return;
+                }
+
+                var nowMs = Date.now();
+
+                if (isTyping) {
+                    if (! options.force && nowMs - lastTypingSignalAt < typingThrottleMs) {
+                        return;
+                    }
+
+                    lastTypingSignalAt = nowMs;
+                } else {
+                    lastTypingSignalAt = 0;
+                }
+
+                var payload = new URLSearchParams();
+                payload.set('is_typing', isTyping ? '1' : '0');
+
+                fetch(typingUrl, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        Accept: 'application/json',
+                        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+                        'X-CSRF-TOKEN': csrf ? csrf.getAttribute('content') : '',
+                    },
+                    body: payload.toString(),
+                }).catch(function () {
+                    // Typing is a disposable hint; reply submission remains the source of truth.
+                });
+            }
 
             if (body && body.hasAttribute('data-shortcut-submit')) {
                 body.addEventListener('keydown', function (event) {
@@ -75,6 +115,12 @@
                 });
             }
 
+            if (body) {
+                body.addEventListener('input', function () {
+                    reportTyping(body.value.trim() !== '');
+                });
+            }
+
             form.addEventListener('submit', function (event) {
                 if (form.getAttribute('data-submitting') === 'true') {
                     event.preventDefault();
@@ -97,6 +143,8 @@
                 if (status) {
                     status.textContent = submittingLabel;
                 }
+
+                reportTyping(false, { force: true });
             });
         });
     })();

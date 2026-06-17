@@ -56,6 +56,7 @@ class ConversationMessageController extends Controller
                     'status' => $conversation->status,
                 ],
                 'messages' => $messages,
+                'agent_typing' => $conversation->agentTypingPayload(),
             ],
         ]);
     }

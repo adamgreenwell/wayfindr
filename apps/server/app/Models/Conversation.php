@@ -30,6 +30,8 @@ class Conversation extends Model
     /** @use HasFactory<ConversationFactory> */
     use HasFactory;
 
+    private const AGENT_TYPING_FRESH_SECONDS = 20;
+
     private const VISITOR_TYPING_FRESH_SECONDS = 20;
 
     protected function casts(): array
@@ -222,6 +224,28 @@ class Conversation extends Model
         return 'Last typing signal '.$typingAt->diffForHumans().'.';
     }
 
+    /**
+     * @return array{state: string, label: string|null, updated_at: string|null}
+     */
+    public function agentTypingPayload(): array
+    {
+        $typingAt = $this->agentTypingAt();
+
+        if (! $typingAt || $typingAt->lt(now()->subSeconds(self::AGENT_TYPING_FRESH_SECONDS))) {
+            return [
+                'state' => 'idle',
+                'label' => null,
+                'updated_at' => null,
+            ];
+        }
+
+        return [
+            'state' => 'typing',
+            'label' => 'Support is typing...',
+            'updated_at' => $typingAt->toJSON(),
+        ];
+    }
+
     public function tickets(): HasMany
     {
         return $this->hasMany(Ticket::class);
@@ -276,5 +300,36 @@ class Conversation extends Model
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    private function agentTypingAt(): ?CarbonInterface
+    {
+        $typingSignals = $this->metadata['agent_typing'] ?? [];
+
+        if (! is_array($typingSignals)) {
+            return null;
+        }
+
+        return collect($typingSignals)
+            ->map(function (mixed $typingSignal): ?CarbonInterface {
+                if (! is_array($typingSignal)) {
+                    return null;
+                }
+
+                $value = $typingSignal['at'] ?? null;
+
+                if (! is_string($value) || $value === '') {
+                    return null;
+                }
+
+                try {
+                    return Carbon::parse($value);
+                } catch (\Throwable) {
+                    return null;
+                }
+            })
+            ->filter()
+            ->sortByDesc(fn (CarbonInterface $typingAt): int => $typingAt->getTimestamp())
+            ->first();
     }
 }

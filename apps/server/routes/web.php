@@ -8,6 +8,7 @@ use App\Http\Controllers\AgentAccountController;
 use App\Http\Controllers\AgentAlertController;
 use App\Http\Controllers\AgentConversationController;
 use App\Http\Controllers\AgentConversationQueueController;
+use App\Http\Controllers\AgentConversationTypingController;
 use App\Http\Controllers\AgentDashboardController;
 use App\Http\Controllers\AgentExternalIssueProviderConnectionController;
 use App\Http\Controllers\AgentProfileController;
@@ -131,6 +132,8 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.conversations.release');
     Route::post('/dashboard/conversations/{supportCode}/messages', [AgentConversationController::class, 'storeMessage'])
         ->name('dashboard.conversations.messages.store');
+    Route::post('/dashboard/conversations/{supportCode}/typing', AgentConversationTypingController::class)
+        ->name('dashboard.conversations.typing.store');
     Route::post('/dashboard/conversations/{supportCode}/tickets', [AgentConversationController::class, 'storeTicket'])
         ->name('dashboard.conversations.tickets.store');
     Route::get('/dashboard/tickets', AgentTicketQueueController::class)

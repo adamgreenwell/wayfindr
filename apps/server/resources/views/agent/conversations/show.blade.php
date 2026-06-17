@@ -680,6 +680,7 @@
                         action="{{ route('dashboard.conversations.messages.store', $conversation->support_code) }}"
                         data-reply-composer
                         data-submitting-label="Sending reply..."
+                        data-typing-url="{{ route('dashboard.conversations.typing.store', $conversation->support_code) }}"
                     >
                         @csrf
 
