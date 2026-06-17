@@ -289,15 +289,24 @@
       getMaskSelectors: function () {
         return maskSelectors.slice();
       },
-      subscribeToConversation: function (supportCode, onMessage, onConnectionState) {
+      subscribeToConversation: function (supportCode, onMessage, onConnectionState, onTyping) {
         if (!realtime) {
           return null;
+        }
+
+        var events = {
+          'conversation.message.created': onMessage,
+        };
+
+        if (typeof onTyping === 'function') {
+          events['conversation.typing.updated'] = onTyping;
         }
 
         return realtime.subscribe({
           supportCode: supportCode,
           channelName: conversationChannelName(supportCode),
           eventName: 'conversation.message.created',
+          events: events,
           authEndpoint: apiBaseUrl + '/api/widget/broadcasting/auth',
           authPayload: {
             site_public_key: sitePublicKey,
@@ -575,6 +584,14 @@
       }, function (state) {
         sawConnectionState = true;
         renderConnectionState(state);
+      }, function (event) {
+        var eventSupportCode = event && event.conversation ? event.conversation.support_code : supportCode;
+
+        if (eventSupportCode !== supportCode) {
+          return;
+        }
+
+        renderAgentTyping(event ? event.agent_typing : null);
       });
 
       if (!realtimeSubscription) {
@@ -1161,11 +1178,28 @@
           },
         });
         var channel = pusher.subscribe(config.channelName);
-        var eventNames = pusherBroadcastEventNames(config.eventName);
+        var eventHandlers = config.events || {};
+        var eventBindings = [];
         var connectionBindings = [];
 
-        eventNames.forEach(function (eventName) {
-          channel.bind(eventName, config.onMessage);
+        if (Object.keys(eventHandlers).length === 0 && config.eventName && config.onMessage) {
+          eventHandlers[config.eventName] = config.onMessage;
+        }
+
+        Object.keys(eventHandlers).forEach(function (baseEventName) {
+          var handler = eventHandlers[baseEventName];
+
+          if (typeof handler !== 'function') {
+            return;
+          }
+
+          pusherBroadcastEventNames(baseEventName).forEach(function (eventName) {
+            channel.bind(eventName, handler);
+            eventBindings.push({
+              eventName: eventName,
+              handler: handler,
+            });
+          });
         });
 
         if (config.onConnectionState && pusher.connection && typeof pusher.connection.bind === 'function') {
@@ -1187,8 +1221,8 @@
 
         return {
           unsubscribe: function () {
-            eventNames.forEach(function (eventName) {
-              channel.unbind(eventName, config.onMessage);
+            eventBindings.forEach(function (binding) {
+              channel.unbind(binding.eventName, binding.handler);
             });
             connectionBindings.forEach(function (binding) {
               if (pusher.connection && typeof pusher.connection.unbind === 'function') {

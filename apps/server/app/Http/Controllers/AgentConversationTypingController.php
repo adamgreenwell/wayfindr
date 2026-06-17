@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\ConversationTypingUpdated;
 use App\Models\Conversation;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -50,6 +51,9 @@ class AgentConversationTypingController extends Controller
         }
 
         $conversation->forceFill(['metadata' => $metadata])->save();
+        $conversation->refresh();
+
+        event(new ConversationTypingUpdated($conversation));
 
         return response()->json([
             'data' => [

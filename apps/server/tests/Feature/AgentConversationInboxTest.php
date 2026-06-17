@@ -2,6 +2,7 @@
 
 use App\Events\CobrowseStateUpdated;
 use App\Events\ConversationMessageCreated;
+use App\Events\ConversationTypingUpdated;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\CobrowseSession;
@@ -307,6 +308,8 @@ test('agent can report a fresh typing signal for a conversation they can reply t
             'status' => 'open',
         ]);
 
+        Event::fake([ConversationTypingUpdated::class]);
+
         $this->actingAs($agent)
             ->postJson('/dashboard/conversations/WF-AGENTTYPE/typing', [
                 'is_typing' => true,
@@ -320,6 +323,11 @@ test('agent can report a fresh typing signal for a conversation they can reply t
 
         expect($typing['at'] ?? null)->toBe(now()->toJSON())
             ->and($typing['name'] ?? null)->toBe('Ada Agent');
+
+        Event::assertDispatched(
+            ConversationTypingUpdated::class,
+            fn (ConversationTypingUpdated $event): bool => $event->conversation->id === $conversation->id,
+        );
     } finally {
         Carbon::setTestNow();
     }

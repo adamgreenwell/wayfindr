@@ -931,6 +931,7 @@ test('infers and masks sensitive cobrowse mutation content before export', () =>
 test('prepares private conversation subscriptions for realtime adapters', () => {
   let subscriptionPayload = null;
   const received = [];
+  const typingUpdates = [];
   const client = Wayfindr.createClient({
     apiBaseUrl: 'http://127.0.0.1:8000/',
     sitePublicKey: 'site_public_docs',
@@ -950,9 +951,11 @@ test('prepares private conversation subscriptions for realtime adapters', () => 
 
   const subscription = client.subscribeToConversation('WF-TEST123', (event) => {
     received.push(event);
+  }, undefined, (event) => {
+    typingUpdates.push(event);
   });
 
-  subscriptionPayload.onMessage({
+  subscriptionPayload.events['conversation.message.created']({
     conversation: { support_code: 'WF-TEST123' },
     message: {
       id: 2,
@@ -962,10 +965,22 @@ test('prepares private conversation subscriptions for realtime adapters', () => 
       created_at: '2026-05-23T14:01:00.000000Z',
     },
   });
+  subscriptionPayload.events['conversation.typing.updated']({
+    conversation: { support_code: 'WF-TEST123' },
+    agent_typing: {
+      state: 'typing',
+      label: 'Support is typing...',
+      updated_at: '2026-05-23T14:01:01.000000Z',
+    },
+  });
 
   assert.equal(typeof subscription.unsubscribe, 'function');
   assert.equal(subscriptionPayload.channelName, 'private-conversations.WF-TEST123');
   assert.equal(subscriptionPayload.eventName, 'conversation.message.created');
+  assert.deepEqual(Object.keys(subscriptionPayload.events), [
+    'conversation.message.created',
+    'conversation.typing.updated',
+  ]);
   assert.equal(subscriptionPayload.authEndpoint, 'http://127.0.0.1:8000/api/widget/broadcasting/auth');
   assert.deepEqual(subscriptionPayload.authPayload, {
     site_public_key: 'site_public_docs',
@@ -974,6 +989,8 @@ test('prepares private conversation subscriptions for realtime adapters', () => 
   });
   assert.equal(received.length, 1);
   assert.equal(received[0].message.body, 'Live hello.');
+  assert.equal(typingUpdates.length, 1);
+  assert.equal(typingUpdates[0].agent_typing.state, 'typing');
 });
 
 test('authorizes built-in Pusher subscriptions through the widget endpoint', async () => {
@@ -1126,11 +1143,13 @@ test('binds Laravel custom broadcast names for built-in Pusher subscriptions', (
     }),
   });
 
-  const subscription = client.subscribeToConversation('WF-TEST123', () => {});
+  const subscription = client.subscribeToConversation('WF-TEST123', () => {}, undefined, () => {});
 
   assert.deepEqual(boundEvents, [
     'conversation.message.created',
     '.conversation.message.created',
+    'conversation.typing.updated',
+    '.conversation.typing.updated',
   ]);
 
   subscription.unsubscribe();
@@ -1138,6 +1157,8 @@ test('binds Laravel custom broadcast names for built-in Pusher subscriptions', (
   assert.deepEqual(unboundEvents, [
     'conversation.message.created',
     '.conversation.message.created',
+    'conversation.typing.updated',
+    '.conversation.typing.updated',
   ]);
 });
 
@@ -2875,6 +2896,121 @@ test('appends live agent messages from the realtime subscription', async () => {
   widget.destroy();
 
   assert.equal(unsubscribed, true);
+});
+
+test('renders live support typing updates from the realtime subscription', async () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+  let subscriptionPayload = null;
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    storage: memoryStorage(),
+    realtime: {
+      subscribe: (payload) => {
+        subscriptionPayload = payload;
+
+        return {
+          unsubscribe: () => {},
+        };
+      },
+    },
+    fetch: async (url) => {
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return jsonResponse(201, {
+          data: {
+            site: { public_key: 'site_public_docs', settings: {} },
+            visitor: { anonymous_id: 'anon-browser-123', token: 'visitor-token-123' },
+          },
+        });
+      }
+
+      if (url.endsWith('/api/conversations')) {
+        return jsonResponse(201, {
+          data: {
+            support_code: 'WF-TEST123',
+            status: 'open',
+          },
+        });
+      }
+
+      if (url.endsWith('/api/conversations/WF-TEST123/messages')) {
+        return jsonResponse(201, {
+          data: {
+            conversation: { support_code: 'WF-TEST123' },
+            message: {
+              id: 1,
+              sender: { kind: 'visitor', name: 'Visitor' },
+              type: 'text',
+              body: 'Can you help me?',
+              created_at: '2026-05-23T14:00:00.000000Z',
+            },
+          },
+        });
+      }
+
+      return jsonResponse(200, {
+        data: {
+          conversation: {
+            support_code: 'WF-TEST123',
+            status: 'open',
+          },
+          messages: [
+            {
+              id: 1,
+              sender: { kind: 'visitor', name: 'Visitor' },
+              type: 'text',
+              body: 'Can you help me?',
+              created_at: '2026-05-23T14:00:00.000000Z',
+            },
+          ],
+        },
+      });
+    },
+  });
+
+  widget.open();
+
+  widget.root.querySelector('.wayfindr-widget__textarea').value = 'Can you help me?';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+    new dom.window.Event('submit', { bubbles: true, cancelable: true }),
+  );
+
+  await settle();
+
+  subscriptionPayload.events['conversation.typing.updated']({
+    conversation: { support_code: 'WF-TEST123' },
+    agent_typing: {
+      state: 'typing',
+      label: 'Support is typing...',
+      updated_at: '2026-05-23T14:01:00.000000Z',
+    },
+  });
+
+  const typing = widget.root.querySelector('.wayfindr-widget__typing');
+
+  assert.equal(typing.hidden, false);
+  assert.equal(typing.textContent, 'Support is typing...');
+
+  subscriptionPayload.events['conversation.typing.updated']({
+    conversation: { support_code: 'WF-TEST123' },
+    agent_typing: {
+      state: 'idle',
+      label: null,
+      updated_at: null,
+    },
+  });
+
+  assert.equal(typing.hidden, true);
+  assert.equal(typing.textContent, '');
+
+  widget.destroy();
 });
 
 test('renders widget cobrowse prompt only after support requests consent', async () => {

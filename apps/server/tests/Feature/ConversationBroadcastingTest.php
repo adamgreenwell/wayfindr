@@ -3,6 +3,7 @@
 use App\Broadcasting\ConversationChannel;
 use App\Events\CobrowseStateUpdated;
 use App\Events\ConversationMessageCreated;
+use App\Events\ConversationTypingUpdated;
 use App\Models\Account;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
@@ -121,6 +122,49 @@ test('cobrowse state updates use a private conversation channel and safe payload
         ->and($payload['summary']['page_url'])->toBe('https://docs.example.test/install')
         ->and(json_encode($payload))->not->toContain('<main>')
         ->and(json_encode($payload))->not->toContain('Fresh copy.');
+});
+
+test('conversation typing updates use a private conversation channel and safe payload', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Docs Site']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+    $typingAt = now()->toJSON();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-TYPING-LIVE',
+        'status' => 'open',
+        'metadata' => [
+            'agent_typing' => [
+                (string) $agent->id => [
+                    'at' => $typingAt,
+                    'name' => 'Ada Agent',
+                ],
+            ],
+        ],
+    ]);
+
+    $event = new ConversationTypingUpdated($conversation->fresh());
+    $channels = $event->broadcastOn();
+    $payload = $event->broadcastWith();
+
+    expect($event)
+        ->toBeInstanceOf(ShouldBroadcastNow::class)
+        ->and($event->broadcastAs())->toBe('conversation.typing.updated')
+        ->and($channels)->toHaveCount(1)
+        ->and($channels[0])->toBeInstanceOf(PrivateChannel::class)
+        ->and($channels[0]->name)->toBe('private-conversations.WF-TYPING-LIVE')
+        ->and($payload)->toMatchArray([
+            'conversation' => [
+                'support_code' => 'WF-TYPING-LIVE',
+                'status' => 'open',
+            ],
+            'agent_typing' => [
+                'state' => 'typing',
+                'label' => 'Support is typing...',
+                'updated_at' => $typingAt,
+            ],
+        ])
+        ->and(json_encode($payload))->not->toContain('Ada Agent');
 });
 
 test('agent replies dispatch conversation message broadcasts', function (): void {
