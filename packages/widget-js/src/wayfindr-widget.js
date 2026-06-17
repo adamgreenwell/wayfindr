@@ -20,6 +20,7 @@
     mutationQueueMaxRecords: 250,
   };
   var MESSAGE_GROUP_WINDOW_MS = 5 * 60 * 1000;
+  var AGENT_TYPING_FRESH_MS = 20 * 1000;
   var DEFAULT_MASK_SELECTORS = [
     'input[type="password"]',
     'input[type="hidden"]',
@@ -433,6 +434,7 @@
     var cobrowseStatusTimer = null;
     var typingSignalThrottleMs = typeof options.typingSignalThrottleMs === 'number' ? Math.max(0, options.typingSignalThrottleMs) : 5000;
     var lastTypingSignalAt = 0;
+    var agentTypingExpiryTimer = null;
     var visitorContext = options.visitorContext || null;
     var composerBusy = false;
     var refreshBusy = false;
@@ -528,8 +530,32 @@
     function renderAgentTyping(agentTyping) {
       var isTyping = agentTyping && agentTyping.state === 'typing' && agentTyping.label;
 
+      clearAgentTypingExpiry();
       typing.hidden = !isTyping;
       typing.textContent = isTyping ? agentTyping.label : '';
+
+      if (!isTyping) {
+        return;
+      }
+
+      var typingAt = Date.parse(agentTyping.updated_at || '');
+      var ageMs = Number.isNaN(typingAt) ? 0 : Date.now() - typingAt;
+      var remainingMs = Math.max(0, AGENT_TYPING_FRESH_MS - ageMs);
+
+      agentTypingExpiryTimer = setTimeout(function () {
+        typing.hidden = true;
+        typing.textContent = '';
+        agentTypingExpiryTimer = null;
+      }, remainingMs);
+    }
+
+    function clearAgentTypingExpiry() {
+      if (!agentTypingExpiryTimer) {
+        return;
+      }
+
+      clearTimeout(agentTypingExpiryTimer);
+      agentTypingExpiryTimer = null;
     }
 
     function connectRealtime() {
@@ -1056,6 +1082,7 @@
 
         stopCobrowseStatusPoll();
         stopMessagePoll();
+        clearAgentTypingExpiry();
         stopMutationStream();
         rootEl.remove();
       },
