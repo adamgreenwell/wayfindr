@@ -10,6 +10,7 @@ use App\Http\Controllers\Widget\CobrowseStatusController;
 use App\Http\Controllers\Widget\CobrowseTelemetryController;
 use App\Http\Controllers\Widget\ConversationController;
 use App\Http\Controllers\Widget\ConversationMessageController;
+use App\Http\Controllers\Widget\ConversationTypingController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/widget/bootstrap', BootstrapController::class)->name('widget.bootstrap');
@@ -31,3 +32,5 @@ Route::get('/conversations/{supportCode}/messages', [ConversationMessageControll
     ->name('conversations.messages.index');
 Route::post('/conversations/{supportCode}/messages', [ConversationMessageController::class, 'store'])
     ->name('conversations.messages.store');
+Route::post('/conversations/{supportCode}/typing', ConversationTypingController::class)
+    ->name('conversations.typing.store');

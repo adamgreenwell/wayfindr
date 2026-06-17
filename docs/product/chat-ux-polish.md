@@ -18,9 +18,24 @@ Presence labels intentionally avoid hard claims like "online":
 - `Quiet`: the visitor has not been seen for more than 15 minutes.
 - `Not reported`: no visitor heartbeat has been recorded.
 
-Future typing indicators and read receipts should follow the same rule: show
-only what Wayfindr can prove, expire stale signals quickly, and degrade cleanly
-to manual refresh when realtime delivery is unavailable.
+Typing indicators and read receipts should follow the same rule: show only what
+Wayfindr can prove, expire stale signals quickly, and degrade cleanly to manual
+refresh when realtime delivery is unavailable.
+
+## Typing Indicators
+
+Visitor typing is currently a short-lived timestamp reported by the authenticated
+widget session. Agents can see `Typing now` in the conversation queue and reply
+context only while the signal is fresh.
+
+Typing copy should stay calm and disposable:
+
+- `Typing now`: the visitor sent a recent typing signal.
+- `Not typing`: no typing signal exists or the last signal is stale.
+
+Typing should never be treated as a durable workflow state. It is a gentle cue
+to wait a beat before sending a reply, not proof that a visitor is still present
+or obligated to answer.
 
 ## Read Receipts
 

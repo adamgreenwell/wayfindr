@@ -241,6 +241,58 @@ test('dashboard shows visitor read state for latest agent replies', function ():
     }
 });
 
+test('dashboard shows only fresh visitor typing state', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00', 'UTC'));
+
+    try {
+        $account = Account::factory()->create(['name' => 'Acme Support']);
+        $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+        $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+
+        Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-TYPING',
+            'subject' => 'Visitor is composing',
+            'status' => 'open',
+            'metadata' => [
+                'visitor_typing_at' => now()->subSeconds(10)->toJSON(),
+            ],
+        ]);
+
+        Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-STALETYP',
+            'subject' => 'Visitor paused',
+            'status' => 'open',
+            'metadata' => [
+                'visitor_typing_at' => now()->subMinute()->toJSON(),
+            ],
+        ]);
+
+        Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-NOTYPING',
+            'subject' => 'Quiet visitor',
+            'status' => 'open',
+        ]);
+
+        $this->actingAs($agent)
+            ->get('/dashboard/conversations')
+            ->assertOk()
+            ->assertSee('Visitor typing')
+            ->assertSeeInOrder(['Visitor is composing', 'Typing now'])
+            ->assertSeeInOrder(['Visitor paused', 'Not typing'])
+            ->assertSeeInOrder(['Quiet visitor', 'Not typing']);
+
+        $this->actingAs($agent)
+            ->get('/dashboard/conversations/WF-TYPING')
+            ->assertOk()
+            ->assertSee('Visitor typing')
+            ->assertSee('Typing now')
+            ->assertSee('Updated 10 seconds ago');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('dashboard filters conversations by attention state', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);

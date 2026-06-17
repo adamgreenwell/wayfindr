@@ -189,6 +189,14 @@
           body: body,
         });
       },
+      reportTyping: function (supportCode, isTyping) {
+        return postJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/typing', {
+          site_public_key: sitePublicKey,
+          anonymous_id: anonymousId,
+          visitor_token: requireVisitorToken(visitorToken),
+          is_typing: Boolean(isTyping),
+        });
+      },
       fetchMessages: function (supportCode, details) {
         details = details || {};
         var params = {
@@ -421,6 +429,8 @@
     var messagePollTimer = null;
     var cobrowseStatusPollMs = typeof options.cobrowseStatusPollMs === 'number' ? Math.max(0, options.cobrowseStatusPollMs) : 5000;
     var cobrowseStatusTimer = null;
+    var typingSignalThrottleMs = typeof options.typingSignalThrottleMs === 'number' ? Math.max(0, options.typingSignalThrottleMs) : 5000;
+    var lastTypingSignalAt = 0;
     var visitorContext = options.visitorContext || null;
     var composerBusy = false;
     var refreshBusy = false;
@@ -929,6 +939,32 @@
       launcher.focus();
     }
 
+    async function reportTyping(isTyping, options) {
+      options = options || {};
+
+      if (!supportCode) {
+        return;
+      }
+
+      var nowMs = Date.now();
+
+      if (isTyping) {
+        if (!options.force && typingSignalThrottleMs > 0 && nowMs - lastTypingSignalAt < typingSignalThrottleMs) {
+          return;
+        }
+
+        lastTypingSignalAt = nowMs;
+      } else {
+        lastTypingSignalAt = 0;
+      }
+
+      try {
+        await client.reportTyping(supportCode, isTyping);
+      } catch (error) {
+        // Typing is a transient hint. Message send/refresh should remain the real path.
+      }
+    }
+
     launcher.addEventListener('click', open);
     close.addEventListener('click', closePanel);
     refresh.addEventListener('click', function () {
@@ -942,6 +978,11 @@
     });
     cobrowseDecline.addEventListener('click', function () {
       updateCobrowseConsent(false);
+    });
+    textarea.addEventListener('input', function () {
+      if (textarea.value.trim()) {
+        reportTyping(true);
+      }
     });
     form.addEventListener('submit', async function (event) {
       event.preventDefault();

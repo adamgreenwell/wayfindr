@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Database\Factories\ConversationFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -28,6 +29,8 @@ class Conversation extends Model
 {
     /** @use HasFactory<ConversationFactory> */
     use HasFactory;
+
+    private const VISITOR_TYPING_FRESH_SECONDS = 20;
 
     protected function casts(): array
     {
@@ -184,6 +187,41 @@ class Conversation extends Model
         return 'Latest agent reply has not been seen.';
     }
 
+    public function visitorTypingState(): string
+    {
+        $typingAt = $this->visitorTypingAt();
+
+        if (! $typingAt) {
+            return 'idle';
+        }
+
+        return $typingAt->gte(now()->subSeconds(self::VISITOR_TYPING_FRESH_SECONDS))
+            ? 'typing'
+            : 'idle';
+    }
+
+    public function visitorTypingLabel(): string
+    {
+        return $this->visitorTypingState() === 'typing'
+            ? 'Typing now'
+            : 'Not typing';
+    }
+
+    public function visitorTypingDetail(): string
+    {
+        $typingAt = $this->visitorTypingAt();
+
+        if (! $typingAt) {
+            return 'No typing signal reported.';
+        }
+
+        if ($this->visitorTypingState() === 'typing') {
+            return 'Updated '.$typingAt->diffForHumans();
+        }
+
+        return 'Last typing signal '.$typingAt->diffForHumans().'.';
+    }
+
     public function tickets(): HasMany
     {
         return $this->hasMany(Ticket::class);
@@ -223,5 +261,20 @@ class Conversation extends Model
             ->latest('created_at')
             ->latest('id')
             ->first();
+    }
+
+    private function visitorTypingAt(): ?CarbonInterface
+    {
+        $value = $this->metadata['visitor_typing_at'] ?? null;
+
+        if (! is_string($value) || $value === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($value);
+        } catch (\Throwable) {
+            return null;
+        }
     }
 }

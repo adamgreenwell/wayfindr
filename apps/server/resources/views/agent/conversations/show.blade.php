@@ -697,6 +697,11 @@
                                 <span class="meta-value">{{ $conversation->support_code }}</span>
                             </div>
                             <div class="reply-context-item">
+                                <span class="meta-label">Visitor typing</span>
+                                <span class="meta-value">{{ $conversation->visitorTypingLabel() }}</span>
+                                <span class="lede">{{ $conversation->visitorTypingDetail() }}</span>
+                            </div>
+                            <div class="reply-context-item">
                                 <span class="meta-label">Visitor read</span>
                                 <span class="meta-value">{{ $conversation->visitorReadLabel() }}</span>
                                 <span class="lede">{{ $conversation->visitorReadDetail() }}</span>

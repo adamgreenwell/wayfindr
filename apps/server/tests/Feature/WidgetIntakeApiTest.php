@@ -367,6 +367,60 @@ test('visitor message reopens a closed conversation', function (): void {
         ->and($conversation->last_message_at)->not->toBeNull();
 });
 
+test('visitor can report a fresh typing signal for their conversation', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00', 'UTC'));
+
+    try {
+        $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+        $visitor = Visitor::factory()->for($site)->create([
+            'anonymous_id' => 'anon-docs',
+            'last_seen_at' => now()->subHour(),
+        ]);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-TYPING',
+        ]);
+        $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+
+        $response = $this->postJson("/api/conversations/{$conversation->support_code}/typing", [
+            'site_public_key' => 'site_public_docs',
+            'anonymous_id' => 'anon-docs',
+            'visitor_token' => $token,
+            'is_typing' => true,
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.conversation.support_code', 'WF-TYPING')
+            ->assertJsonPath('data.typing.state', 'typing');
+
+        $conversation->refresh();
+
+        expect($conversation->metadata['visitor_typing_at'])->toBe(now()->toJSON())
+            ->and($visitor->fresh()->last_seen_at?->toJSON())->toBe(now()->toJSON());
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+test('visitor typing signal cannot cross site boundaries', function (): void {
+    $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+    $otherSite = Site::factory()->create(['public_key' => 'site_public_other']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+    Visitor::factory()->for($otherSite)->create(['anonymous_id' => 'anon-other']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-TYPING',
+    ]);
+
+    $this->postJson("/api/conversations/{$conversation->support_code}/typing", [
+        'site_public_key' => 'site_public_other',
+        'anonymous_id' => 'anon-other',
+        'visitor_token' => widgetVisitorToken($this, 'site_public_other', 'anon-other'),
+        'is_typing' => true,
+    ])->assertNotFound();
+
+    expect($conversation->fresh()->metadata ?? [])->not->toHaveKey('visitor_typing_at');
+});
+
 test('visitor can grant cobrowse consent for their conversation', function (): void {
     $site = Site::factory()->create(['public_key' => 'site_public_docs']);
     $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
