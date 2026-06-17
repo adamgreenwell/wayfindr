@@ -244,6 +244,23 @@ class Conversation extends Model
     }
 
     /**
+     * @return array{state: string, label: string, detail: string, last_seen_at: string|null}
+     */
+    public function visitorPresencePayload(): array
+    {
+        $visitor = $this->relationLoaded('visitor')
+            ? $this->visitor
+            : $this->visitor()->first();
+
+        return [
+            'state' => $visitor?->presenceState() ?? 'unknown',
+            'label' => $visitor?->presenceLabel() ?? 'Not reported',
+            'detail' => $visitor?->presenceDetail() ?? 'No visitor heartbeat yet.',
+            'last_seen_at' => $visitor?->last_seen_at?->toJSON(),
+        ];
+    }
+
+    /**
      * @return array{state: string, label: string|null, updated_at: string|null}
      */
     public function agentTypingPayload(): array

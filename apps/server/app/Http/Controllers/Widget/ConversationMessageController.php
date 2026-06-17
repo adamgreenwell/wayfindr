@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Widget;
 
 use App\Events\ConversationMessageCreated;
+use App\Events\ConversationPresenceUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\Site;
@@ -57,6 +58,7 @@ class ConversationMessageController extends Controller
                 ],
                 'messages' => $messages,
                 'agent_typing' => $conversation->agentTypingPayload(),
+                'visitor_presence' => $conversation->visitorPresencePayload(),
             ],
         ]);
     }
@@ -106,6 +108,7 @@ class ConversationMessageController extends Controller
                     'body' => $message->body,
                     'created_at' => $message->created_at?->toJSON(),
                 ],
+                'visitor_presence' => $conversation->visitorPresencePayload(),
             ],
         ], 201);
     }
@@ -139,6 +142,9 @@ class ConversationMessageController extends Controller
     private function recordVisitorPresence(Conversation $conversation): void
     {
         $conversation->visitor()->update(['last_seen_at' => now()]);
+        $conversation->load('visitor');
+
+        event(new ConversationPresenceUpdated($conversation));
     }
 
     private function markAgentMessagesSeen(Conversation $conversation): void

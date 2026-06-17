@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Widget;
 
+use App\Events\ConversationPresenceUpdated;
 use App\Events\ConversationTypingUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
@@ -49,7 +50,9 @@ class ConversationTypingController extends Controller
 
         $conversation->forceFill(['metadata' => $metadata])->save();
         $conversation->refresh();
+        $conversation->load('visitor');
 
+        event(new ConversationPresenceUpdated($conversation));
         event(new ConversationTypingUpdated($conversation));
 
         return response()->json([
@@ -59,6 +62,7 @@ class ConversationTypingController extends Controller
                     'status' => $conversation->status,
                 ],
                 'typing' => $conversation->visitorTypingPayload(),
+                'visitor_presence' => $conversation->visitorPresencePayload(),
             ],
         ]);
     }

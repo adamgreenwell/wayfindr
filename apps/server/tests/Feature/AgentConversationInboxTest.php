@@ -4043,6 +4043,41 @@ test('agent conversation page exposes live cobrowse update readiness when reverb
         ->assertSee('"host":"wayfindr.test"', false);
 });
 
+test('agent conversation page can update visitor presence from live events', function (): void {
+    config()->set('broadcasting.default', 'reverb');
+    config()->set('broadcasting.connections.reverb.key', 'reverb-key');
+    config()->set('broadcasting.connections.reverb.secret', 'reverb-secret');
+    config()->set('broadcasting.connections.reverb.app_id', 'reverb-app');
+    config()->set('broadcasting.connections.reverb.options.host', 'wayfindr.test');
+    config()->set('broadcasting.connections.reverb.options.port', 443);
+    config()->set('broadcasting.connections.reverb.options.scheme', 'https');
+
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-acme',
+        'last_seen_at' => null,
+    ]);
+    Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-LIVEPRES',
+        'subject' => 'Presence should feel fresh',
+        'status' => 'open',
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-LIVEPRES')
+        ->assertOk()
+        ->assertSee('Visitor at a glance')
+        ->assertSee('Not reported')
+        ->assertSee('No visitor heartbeat yet.')
+        ->assertSee('data-visitor-presence-label', false)
+        ->assertSee('data-visitor-presence-detail', false)
+        ->assertSee('conversation.presence.updated')
+        ->assertSee('updateVisitorPresence')
+        ->assertSee('"presenceEventName":"conversation.presence.updated"', false);
+});
+
 test('agent conversation page expires live visitor typing hints locally', function (): void {
     config()->set('broadcasting.default', 'reverb');
     config()->set('broadcasting.connections.reverb.key', 'reverb-key');

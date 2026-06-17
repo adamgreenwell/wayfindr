@@ -518,6 +518,7 @@ class AgentConversationController extends Controller
             'host' => (string) $host,
             'port' => (int) $port,
             'scheme' => (string) $scheme,
+            'presenceEventName' => 'conversation.presence.updated',
             'typingEventName' => 'conversation.typing.updated',
             'visitorTypingFreshMs' => Conversation::visitorTypingFreshMilliseconds(),
         ];

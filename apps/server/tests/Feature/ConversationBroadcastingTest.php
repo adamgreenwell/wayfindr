@@ -3,6 +3,7 @@
 use App\Broadcasting\ConversationChannel;
 use App\Events\CobrowseStateUpdated;
 use App\Events\ConversationMessageCreated;
+use App\Events\ConversationPresenceUpdated;
 use App\Events\ConversationTypingUpdated;
 use App\Models\Account;
 use App\Models\CobrowseSession;
@@ -15,6 +16,7 @@ use App\Support\VisitorSessionToken;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Event;
 
@@ -171,6 +173,51 @@ test('conversation typing updates use a private conversation channel and safe pa
             ],
         ])
         ->and(json_encode($payload))->not->toContain('Ada Agent');
+});
+
+test('conversation presence updates use a private conversation channel and safe payload', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00', 'UTC'));
+
+    try {
+        $account = Account::factory()->create();
+        $site = Site::factory()->for($account)->create(['name' => 'Docs Site']);
+        $visitor = Visitor::factory()->for($site)->create([
+            'anonymous_id' => 'anon-docs',
+            'last_seen_at' => now(),
+        ]);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-PRESENCE',
+            'status' => 'open',
+        ]);
+
+        expect(class_exists(ConversationPresenceUpdated::class))->toBeTrue();
+
+        $event = new ConversationPresenceUpdated($conversation->load('visitor'));
+        $channels = $event->broadcastOn();
+        $payload = $event->broadcastWith();
+
+        expect($event)
+            ->toBeInstanceOf(ShouldBroadcastNow::class)
+            ->and($event->broadcastAs())->toBe('conversation.presence.updated')
+            ->and($channels)->toHaveCount(1)
+            ->and($channels[0])->toBeInstanceOf(PrivateChannel::class)
+            ->and($channels[0]->name)->toBe('private-conversations.WF-PRESENCE')
+            ->and($payload)->toMatchArray([
+                'conversation' => [
+                    'support_code' => 'WF-PRESENCE',
+                    'status' => 'open',
+                ],
+                'visitor_presence' => [
+                    'state' => 'active',
+                    'label' => 'Active recently',
+                    'detail' => 'Seen in the last 2 minutes',
+                    'last_seen_at' => now()->toJSON(),
+                ],
+            ])
+            ->and(json_encode($payload))->not->toContain('anon-docs');
+    } finally {
+        Carbon::setTestNow();
+    }
 });
 
 test('agent replies dispatch conversation message broadcasts', function (): void {

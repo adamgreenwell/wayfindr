@@ -1,5 +1,6 @@
 <?php
 
+use App\Events\ConversationPresenceUpdated;
 use App\Events\ConversationTypingUpdated;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
@@ -342,6 +343,44 @@ test('visitor can add a message to their conversation', function (): void {
     }
 });
 
+test('visitor message fetch broadcasts fresh visitor presence', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00', 'UTC'));
+
+    try {
+        $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+        $visitor = Visitor::factory()->for($site)->create([
+            'anonymous_id' => 'anon-docs',
+            'last_seen_at' => now()->subHour(),
+        ]);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-PRESENCE',
+        ]);
+
+        Event::fake([ConversationPresenceUpdated::class]);
+
+        $response = $this->getJson("/api/conversations/{$conversation->support_code}/messages?".http_build_query([
+            'site_public_key' => 'site_public_docs',
+            'anonymous_id' => 'anon-docs',
+            'visitor_token' => widgetVisitorToken($this, 'site_public_docs', 'anon-docs'),
+        ]));
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.conversation.support_code', 'WF-PRESENCE')
+            ->assertJsonPath('data.visitor_presence.state', 'active')
+            ->assertJsonPath('data.visitor_presence.label', 'Active recently')
+            ->assertJsonPath('data.visitor_presence.detail', 'Seen in the last 2 minutes')
+            ->assertJsonPath('data.visitor_presence.last_seen_at', now()->toJSON());
+
+        Event::assertDispatched(
+            ConversationPresenceUpdated::class,
+            fn (ConversationPresenceUpdated $event): bool => $event->conversation->id === $conversation->id,
+        );
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('visitor message reopens a closed conversation', function (): void {
     $site = Site::factory()->create(['public_key' => 'site_public_docs']);
     $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
@@ -383,7 +422,10 @@ test('visitor can report a fresh typing signal for their conversation', function
         ]);
         $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
 
-        Event::fake([ConversationTypingUpdated::class]);
+        Event::fake([
+            ConversationPresenceUpdated::class,
+            ConversationTypingUpdated::class,
+        ]);
 
         $response = $this->postJson("/api/conversations/{$conversation->support_code}/typing", [
             'site_public_key' => 'site_public_docs',
@@ -395,7 +437,9 @@ test('visitor can report a fresh typing signal for their conversation', function
         $response
             ->assertOk()
             ->assertJsonPath('data.conversation.support_code', 'WF-TYPING')
-            ->assertJsonPath('data.typing.state', 'typing');
+            ->assertJsonPath('data.typing.state', 'typing')
+            ->assertJsonPath('data.visitor_presence.state', 'active')
+            ->assertJsonPath('data.visitor_presence.last_seen_at', now()->toJSON());
 
         $conversation->refresh();
 
@@ -405,6 +449,11 @@ test('visitor can report a fresh typing signal for their conversation', function
         Event::assertDispatched(
             ConversationTypingUpdated::class,
             fn (ConversationTypingUpdated $event): bool => $event->conversation->id === $conversation->id,
+        );
+
+        Event::assertDispatched(
+            ConversationPresenceUpdated::class,
+            fn (ConversationPresenceUpdated $event): bool => $event->conversation->id === $conversation->id,
         );
     } finally {
         Carbon::setTestNow();
