@@ -1,6 +1,9 @@
 @php
     $emptyMessage = $emptyMessage ?? 'No messages yet.';
     $transcriptMessages = $transcriptMessages ?? collect();
+    $latestAgentMessageId = $transcriptMessages
+        ->filter(fn ($message) => $message->sender_type === \App\Models\User::class)
+        ->last()?->id;
     $previousTranscriptMessage = null;
 @endphp
 
@@ -29,7 +32,9 @@
                     <span class="message-status-line">
                         <time class="message-time" datetime="{{ $transcriptMessage->created_at->toJSON() }}">{{ $transcriptMessage->created_at->diffForHumans() }}</time>
                         @if ($isAgent && $transcriptMessage->seen_at)
-                            <span class="message-seen">Seen by visitor</span>
+                            <span class="message-seen">Seen by visitor {{ $transcriptMessage->seen_at->diffForHumans() }}</span>
+                        @elseif ($isAgent && (string) $transcriptMessage->id === (string) $latestAgentMessageId)
+                            <span class="message-seen">Not seen yet</span>
                         @endif
                     </span>
                 </div>

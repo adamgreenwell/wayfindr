@@ -1459,63 +1459,70 @@ test('dashboard reminds operators to respect retained visitor data', function ()
 });
 
 test('agent can view their account conversation timeline', function (): void {
-    $account = Account::factory()->create(['name' => 'Acme Support']);
-    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
-    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
-    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
-    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
-        'support_code' => 'WF-DETAIL1',
-        'subject' => 'Checkout trouble',
-        'status' => 'open',
-    ]);
+    Carbon::setTestNow(Carbon::parse('2026-05-30 14:11:00', 'UTC'));
 
-    ConversationMessage::factory()->for($conversation)->create([
-        'sender_type' => Visitor::class,
-        'sender_id' => $visitor->id,
-        'body' => 'First visitor message.',
-        'created_at' => Carbon::parse('2026-05-30 14:00:00', 'UTC'),
-    ]);
+    try {
+        $account = Account::factory()->create(['name' => 'Acme Support']);
+        $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+        $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-DETAIL1',
+            'subject' => 'Checkout trouble',
+            'status' => 'open',
+        ]);
 
-    ConversationMessage::factory()->for($conversation)->create([
-        'sender_type' => Visitor::class,
-        'sender_id' => $visitor->id,
-        'body' => 'Visitor follow-up.',
-        'created_at' => Carbon::parse('2026-05-30 14:02:00', 'UTC'),
-    ]);
+        ConversationMessage::factory()->for($conversation)->create([
+            'sender_type' => Visitor::class,
+            'sender_id' => $visitor->id,
+            'body' => 'First visitor message.',
+            'created_at' => Carbon::parse('2026-05-30 14:00:00', 'UTC'),
+        ]);
 
-    ConversationMessage::factory()->for($conversation)->create([
-        'sender_type' => User::class,
-        'sender_id' => $agent->id,
-        'body' => 'First agent note.',
-        'created_at' => Carbon::parse('2026-05-30 14:03:00', 'UTC'),
-        'seen_at' => Carbon::parse('2026-05-30 14:04:00', 'UTC'),
-    ]);
+        ConversationMessage::factory()->for($conversation)->create([
+            'sender_type' => Visitor::class,
+            'sender_id' => $visitor->id,
+            'body' => 'Visitor follow-up.',
+            'created_at' => Carbon::parse('2026-05-30 14:02:00', 'UTC'),
+        ]);
 
-    ConversationMessage::factory()->for($conversation)->create([
-        'sender_type' => User::class,
-        'sender_id' => $agent->id,
-        'body' => 'Later agent follow-up.',
-        'created_at' => Carbon::parse('2026-05-30 14:10:00', 'UTC'),
-    ]);
+        ConversationMessage::factory()->for($conversation)->create([
+            'sender_type' => User::class,
+            'sender_id' => $agent->id,
+            'body' => 'First agent note.',
+            'created_at' => Carbon::parse('2026-05-30 14:03:00', 'UTC'),
+            'seen_at' => Carbon::parse('2026-05-30 14:04:00', 'UTC'),
+        ]);
 
-    $response = $this->actingAs($agent)
-        ->get('/dashboard/conversations/WF-DETAIL1')
-        ->assertOk()
-        ->assertSee('Checkout trouble')
-        ->assertSee('Acme Docs')
-        ->assertSee('anon-acme')
-        ->assertSee('WF-DETAIL1')
-        ->assertSee('Send reply')
-        ->assertSee('name="body"', false)
-        ->assertSee('datetime="2026-05-30T14:00:00.000000Z"', false)
-        ->assertSee('datetime="2026-05-30T14:02:00.000000Z"', false)
-        ->assertSee('Seen by visitor')
-        ->assertSee('message visitor grouped', false)
-        ->assertSeeInOrder(['First visitor message.', 'Visitor follow-up.', 'First agent note.', 'Later agent follow-up.']);
+        ConversationMessage::factory()->for($conversation)->create([
+            'sender_type' => User::class,
+            'sender_id' => $agent->id,
+            'body' => 'Later agent follow-up.',
+            'created_at' => Carbon::parse('2026-05-30 14:10:00', 'UTC'),
+        ]);
 
-    expect(substr_count($response->content(), 'message visitor grouped'))->toBe(1);
-    expect(substr_count($response->content(), 'message agent grouped'))->toBe(0);
-    expect(substr_count($response->content(), 'Seen by visitor'))->toBe(1);
+        $response = $this->actingAs($agent)
+            ->get('/dashboard/conversations/WF-DETAIL1')
+            ->assertOk()
+            ->assertSee('Checkout trouble')
+            ->assertSee('Acme Docs')
+            ->assertSee('anon-acme')
+            ->assertSee('WF-DETAIL1')
+            ->assertSee('Send reply')
+            ->assertSee('name="body"', false)
+            ->assertSee('datetime="2026-05-30T14:00:00.000000Z"', false)
+            ->assertSee('datetime="2026-05-30T14:02:00.000000Z"', false)
+            ->assertSee('Seen by visitor 7 minutes ago')
+            ->assertSee('message visitor grouped', false)
+            ->assertSeeInOrder(['First visitor message.', 'Visitor follow-up.', 'First agent note.', 'Later agent follow-up.']);
+
+        expect(substr_count($response->content(), 'message visitor grouped'))->toBe(1);
+        expect(substr_count($response->content(), 'message agent grouped'))->toBe(0);
+        expect(substr_count($response->content(), 'Seen by visitor 7 minutes ago'))->toBe(1);
+        expect(substr_count($response->content(), 'Not seen yet'))->toBe(2);
+    } finally {
+        Carbon::setTestNow();
+    }
 });
 
 test('agent reply composer exposes progressive submission affordances', function (): void {
