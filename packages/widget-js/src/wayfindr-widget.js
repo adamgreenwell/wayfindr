@@ -735,6 +735,8 @@
     }
 
     async function confirmRenderedReadReceipt(messageId) {
+      var shouldScheduleNextReadReceipt = false;
+
       if (!supportCode || !canMarkRenderedMessagesSeen() || latestRenderedAgentMessageId() !== String(messageId)) {
         if (pendingReadReceiptMessageId === String(messageId)) {
           pendingReadReceiptMessageId = null;
@@ -755,11 +757,15 @@
         lastReadReceiptMessageId = String(messageId);
         renderMessages(result.messages || []);
         renderAgentTyping(result.agent_typing);
+        shouldScheduleNextReadReceipt = true;
       } catch (error) {
         // Read receipts are a hint. A later render/open/visibility pass can retry.
       } finally {
         readReceiptBusy = false;
-        scheduleRenderedReadReceipt();
+
+        if (shouldScheduleNextReadReceipt) {
+          scheduleRenderedReadReceipt();
+        }
       }
     }
 

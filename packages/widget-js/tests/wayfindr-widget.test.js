@@ -2912,6 +2912,146 @@ test('marks agent replies read only after the rendered message has been visible'
   widget.destroy();
 });
 
+test('does not retry failed read receipts in a dwell loop', async () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+  const calls = [];
+  let includeAgentReply = false;
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    storage: memoryStorage(),
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    readReceiptDwellMs: 10,
+    fetch: async (url, options) => {
+      const parsed = new URL(url);
+      const path = parsed.pathname;
+      calls.push({ url, options });
+
+      if (path === '/api/widget/bootstrap') {
+        return jsonResponse(201, {
+          data: {
+            site: { public_key: 'site_public_docs', settings: {} },
+            visitor: { anonymous_id: 'anon-browser-123', token: 'visitor-token-123' },
+          },
+        });
+      }
+
+      if (path === '/api/conversations') {
+        return jsonResponse(201, {
+          data: {
+            support_code: 'WF-TEST123',
+            status: 'open',
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-TEST123/messages' && options.method === 'POST') {
+        return jsonResponse(201, {
+          data: {
+            conversation: { support_code: 'WF-TEST123' },
+            message: {
+              id: 1,
+              sender: { kind: 'visitor', name: 'Visitor' },
+              type: 'text',
+              body: 'Can you help me?',
+              created_at: '2026-05-23T14:00:00.000000Z',
+            },
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-TEST123/messages') {
+        if (parsed.searchParams.get('mark_seen') === '1') {
+          return jsonResponse(503, { message: 'Read receipt temporarily unavailable.' });
+        }
+
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-TEST123', status: 'open' },
+            messages: [
+              {
+                id: 1,
+                sender: { kind: 'visitor', name: 'Visitor' },
+                type: 'text',
+                body: 'Can you help me?',
+                created_at: '2026-05-23T14:00:00.000000Z',
+              },
+              ...(includeAgentReply
+                ? [{
+                    id: 2,
+                    sender: { kind: 'agent', name: 'Ada Agent' },
+                    type: 'text',
+                    body: 'I can help with that.',
+                    created_at: '2026-05-23T14:01:00.000000Z',
+                  }]
+                : []),
+            ],
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-TEST123/cobrowse') {
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-TEST123' },
+            cobrowse: {
+              status: 'unavailable',
+              consent: 'unavailable',
+              requested_by: null,
+            },
+          },
+        });
+      }
+
+      throw new Error('Unexpected request ' + url);
+    },
+  });
+
+  widget.open();
+
+  widget.root.querySelector('.wayfindr-widget__textarea').value = 'Can you help me?';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+    new dom.window.Event('submit', { bubbles: true, cancelable: true }),
+  );
+
+  await settle();
+
+  includeAgentReply = true;
+  widget.root.querySelector('.wayfindr-widget__refresh').dispatchEvent(
+    new dom.window.Event('click', { bubbles: true }),
+  );
+
+  await wait(45);
+  await settle();
+
+  let readReceiptCalls = calls
+    .filter((call) => new URL(call.url).pathname === '/api/conversations/WF-TEST123/messages')
+    .filter((call) => new URL(call.url).searchParams.get('mark_seen') === '1');
+
+  assert.equal(readReceiptCalls.length, 1);
+
+  dom.window.document.dispatchEvent(new dom.window.Event('visibilitychange'));
+
+  await wait(15);
+  await settle();
+
+  readReceiptCalls = calls
+    .filter((call) => new URL(call.url).pathname === '/api/conversations/WF-TEST123/messages')
+    .filter((call) => new URL(call.url).searchParams.get('mark_seen') === '1');
+
+  assert.equal(readReceiptCalls.length, 2);
+
+  widget.destroy();
+});
+
 test('appends live agent messages from the realtime subscription', async () => {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
     url: 'https://docs.example.test/install',
