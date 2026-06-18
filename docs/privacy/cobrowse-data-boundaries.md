@@ -69,6 +69,8 @@ The widget also caps the pending mutation queue at 250 records between flushes.
 When a page changes faster than the widget can report, older queued records are
 skipped and newer page state is preferred. That keeps noisy pages from building
 an unbounded browser backlog while still reporting skipped-count diagnostics.
+After reporting dropped or skipped mutation pressure, the stock widget sends a
+fresh sanitized snapshot to give the agent preview a clean recovery point.
 
 Under pressure, Wayfindr should prefer dropping or skipping lower-value mutation
 details over sending raw sensitive values, unbounded snapshots, or oversized
@@ -112,6 +114,6 @@ or ended. They should also see when no snapshot or telemetry has arrived yet.
 When telemetry or mutation diagnostics show reconnects, dropped batches, skipped
 records, or stale reports, Wayfindr should tell agents how much to trust the
 preview and when to confirm fast-changing details through chat. Fresh reports
-with dropped or skipped page changes should be treated as degraded rather than
-fully live. The visitor experience should stay simple: allow, decline, stop,
-and clear copy about sensitive fields being masked.
+with recent dropped or skipped page changes should be treated as degraded rather
+than fully live. The visitor experience should stay simple: allow, decline,
+stop, and clear copy about sensitive fields being masked.

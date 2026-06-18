@@ -4482,7 +4482,7 @@ test('agent can see cobrowse transport health on a conversation', function (arra
         'Live',
         'Cobrowse reports are arriving normally.',
         '30 seconds ago',
-        'No drops reported',
+        'No recent drops reported',
         'Preview is current enough to use alongside chat.',
     ],
     'degraded' => [
@@ -4498,6 +4498,17 @@ test('agent can see cobrowse transport health on a conversation', function (arra
             'mutations' => [
                 'skipped_count' => 3,
                 'last_reported_at' => '2026-06-17T11:59:40.000000Z',
+                'recent_batches' => [
+                    [
+                        'sequence' => 8,
+                        'mutation_count' => 5,
+                        'dropped_count' => 0,
+                        'skipped_count' => 3,
+                        'page_url' => 'https://docs.example.test/noisy',
+                        'reported_at' => '2026-06-17T11:59:40.000000Z',
+                        'mutations' => [],
+                    ],
+                ],
             ],
         ],
         'Degraded',
@@ -4517,7 +4528,7 @@ test('agent can see cobrowse transport health on a conversation', function (arra
         'Stale',
         'No cobrowse report has arrived in the last 2 minutes.',
         '5 minutes ago',
-        'No drops reported',
+        'No recent drops reported',
         'Ask the visitor to confirm what they see before relying on the preview.',
     ],
     'reconnecting' => [
@@ -4533,6 +4544,17 @@ test('agent can see cobrowse transport health on a conversation', function (arra
             'mutations' => [
                 'skipped_count' => 1,
                 'last_reported_at' => '2026-06-17T11:59:40.000000Z',
+                'recent_batches' => [
+                    [
+                        'sequence' => 12,
+                        'mutation_count' => 3,
+                        'dropped_count' => 0,
+                        'skipped_count' => 1,
+                        'page_url' => 'https://docs.example.test/reconnecting',
+                        'reported_at' => '2026-06-17T11:59:40.000000Z',
+                        'mutations' => [],
+                    ],
+                ],
             ],
         ],
         'Reconnecting',
@@ -4593,6 +4615,70 @@ test('agent cobrowse transport health does not keep stale reconnect warnings ali
         ->assertSee('Cobrowse reports are arriving normally.')
         ->assertDontSee('Reconnecting')
         ->assertDontSee('The visitor transport has reconnected recently; preview data may briefly lag.');
+
+    Carbon::setTestNow();
+});
+
+test('agent cobrowse transport health recovers after a clean mutation report', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00'));
+
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-RECOVERED-LOSS',
+        'subject' => 'Recovered cobrowse pressure',
+        'status' => 'open',
+    ]);
+
+    CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinutes(5),
+        'ended_at' => null,
+        'metadata' => [
+            'mutations' => [
+                'last_sequence' => 12,
+                'batch_count' => 2,
+                'mutation_count' => 8,
+                'dropped_count' => 0,
+                'skipped_count' => 3,
+                'last_page_url' => 'https://docs.example.test/recovered',
+                'last_reported_at' => '2026-06-17T11:59:45.000000Z',
+                'recent_batches' => [
+                    [
+                        'sequence' => 11,
+                        'mutation_count' => 4,
+                        'dropped_count' => 0,
+                        'skipped_count' => 3,
+                        'page_url' => 'https://docs.example.test/recovered',
+                        'reported_at' => '2026-06-17T11:58:00.000000Z',
+                        'mutations' => [],
+                    ],
+                    [
+                        'sequence' => 12,
+                        'mutation_count' => 4,
+                        'dropped_count' => 0,
+                        'skipped_count' => 0,
+                        'page_url' => 'https://docs.example.test/recovered',
+                        'reported_at' => '2026-06-17T11:59:45.000000Z',
+                        'mutations' => [],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-RECOVERED-LOSS')
+        ->assertOk()
+        ->assertSee('Transport health')
+        ->assertSee('Live')
+        ->assertSee('Cobrowse reports are arriving normally.')
+        ->assertSee('No recent drops reported')
+        ->assertSee('3 skipped')
+        ->assertDontSee('Degraded')
+        ->assertDontSee('Cobrowse reports are arriving, but the visitor page is changing faster than Wayfindr can fully replay.');
 
     Carbon::setTestNow();
 });
