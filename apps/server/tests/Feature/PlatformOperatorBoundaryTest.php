@@ -151,6 +151,25 @@ test('operator console shows safe system identity and documentation links', func
         ->assertSee('https://example.test/docs/forge', false);
 });
 
+test('operator console explains the platform support data boundary', function (): void {
+    $operator = User::factory()->for(Account::factory())->create([
+        'platform_role' => PlatformRole::Operator,
+    ]);
+
+    $this->actingAs($operator)
+        ->get('/operator')
+        ->assertOk()
+        ->assertSee('Boundary inventory')
+        ->assertSee('Instance health')
+        ->assertSee('Safe for operators')
+        ->assertSee('Support data')
+        ->assertSee('Not available here')
+        ->assertSee('Break-glass access')
+        ->assertSee('Future scoped workflow')
+        ->assertSee('Conversations, tickets, cobrowse snapshots, transcripts, and visitor page data stay out of operator screens.')
+        ->assertSee('Any future customer-data access must be explicit, time-bound, and audited.');
+});
+
 test('operator console shows recent safe operator activity', function (): void {
     $account = Account::factory()->create(['name' => 'Wayfindr Ops']);
     $operator = User::factory()->for($account)->create([

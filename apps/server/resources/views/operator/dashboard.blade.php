@@ -71,6 +71,39 @@
         </div>
     </section>
 
+    <section class="section" aria-labelledby="operator-boundary-inventory-heading">
+        <div class="section-header">
+            <div>
+                <h2 id="operator-boundary-inventory-heading">Boundary inventory</h2>
+                <p class="lede">A quick map of what platform operators can inspect here.</p>
+            </div>
+        </div>
+
+        <div class="meta-grid readiness-summary-grid">
+            <div class="meta-item">
+                <span class="meta-label">Instance health</span>
+                <span class="meta-value">Safe for operators</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Support data</span>
+                <span class="meta-value">Not available here</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Break-glass access</span>
+                <span class="meta-value">Future scoped workflow</span>
+            </div>
+        </div>
+
+        <div class="notice-copy">
+            <p>
+                Conversations, tickets, cobrowse snapshots, transcripts, and visitor page data stay out of operator screens.
+            </p>
+            <p>
+                Any future customer-data access must be explicit, time-bound, and audited.
+            </p>
+        </div>
+    </section>
+
     <section class="section" aria-labelledby="operator-activity-heading">
         <div class="section-header">
             <div>
