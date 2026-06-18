@@ -331,16 +331,18 @@ class AgentConversationController extends Controller
                 ->with('status', 'No active cobrowse session.');
         }
 
-        $metadata = $cobrowseSession->metadata ?? [];
-        $metadata['ended_by_id'] = $agent->id;
-        $metadata['ended_by_name'] = $agent->name;
-        $metadata['ended_by_type'] = 'agent';
+        $cobrowseSession = $cobrowseSession->updateAtomically(function (CobrowseSession $session) use ($agent): void {
+            $metadata = $session->metadata ?? [];
+            $metadata['ended_by_id'] = $agent->id;
+            $metadata['ended_by_name'] = $agent->name;
+            $metadata['ended_by_type'] = 'agent';
 
-        $cobrowseSession->forceFill([
-            'status' => 'ended',
-            'metadata' => $metadata,
-            'ended_at' => now(),
-        ])->save();
+            $session->forceFill([
+                'status' => 'ended',
+                'metadata' => $metadata,
+                'ended_at' => now(),
+            ]);
+        });
 
         event(new CobrowseStateUpdated($cobrowseSession, 'ended'));
 
@@ -361,18 +363,31 @@ class AgentConversationController extends Controller
                 ->with('status', 'Cobrowse must be active before requesting a fresh snapshot.');
         }
 
-        $metadata = $cobrowseSession->metadata ?? [];
-        $metadata['resync_request'] = [
-            'id' => 'resync_'.Str::lower((string) Str::ulid()),
-            'requested_by_id' => $agent->id,
-            'requested_by_name' => $agent->name,
-            'requested_at' => now()->toJSON(),
-            'fulfilled_at' => null,
-        ];
+        $isActive = true;
 
-        $cobrowseSession->forceFill([
-            'metadata' => $metadata,
-        ])->save();
+        $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata, CobrowseSession $session) use ($agent, &$isActive): array {
+            if ($session->status !== 'granted' || $session->ended_at) {
+                $isActive = false;
+
+                return $metadata;
+            }
+
+            $metadata['resync_request'] = [
+                'id' => 'resync_'.Str::lower((string) Str::ulid()),
+                'requested_by_id' => $agent->id,
+                'requested_by_name' => $agent->name,
+                'requested_at' => now()->toJSON(),
+                'fulfilled_at' => null,
+            ];
+
+            return $metadata;
+        });
+
+        if (! $isActive) {
+            return redirect()
+                ->route('dashboard.conversations.show', $conversation->support_code)
+                ->with('status', 'Cobrowse must be active before requesting a fresh snapshot.');
+        }
 
         event(new CobrowseStateUpdated($cobrowseSession, 'resync_requested'));
 

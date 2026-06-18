@@ -52,32 +52,32 @@ class CobrowseTelemetryController extends Controller
 
         abort_unless($cobrowseSession, 404, 'Cobrowse session not active.');
 
-        $metadata = $cobrowseSession->metadata ?? [];
-        $previousTelemetry = $metadata['telemetry'] ?? [];
         $rttMs = $validated['rtt_ms'] ?? null;
         $payloadBytes = $validated['payload_bytes'] ?? null;
+        $telemetry = [];
 
-        $telemetry = [
-            'rtt_ms' => $rttMs,
-            'max_rtt_ms' => $rttMs === null
-                ? ($previousTelemetry['max_rtt_ms'] ?? null)
-                : max((int) ($previousTelemetry['max_rtt_ms'] ?? $rttMs), $rttMs),
-            'payload_bytes' => $payloadBytes,
-            'max_payload_bytes' => $payloadBytes === null
-                ? ($previousTelemetry['max_payload_bytes'] ?? null)
-                : max((int) ($previousTelemetry['max_payload_bytes'] ?? $payloadBytes), $payloadBytes),
-            'dropped_batches' => $validated['dropped_batches'] ?? 0,
-            'reconnects' => $validated['reconnects'] ?? 0,
-            'samples' => ((int) ($previousTelemetry['samples'] ?? 0)) + 1,
-            'reported_at' => now()->toJSON(),
-        ];
+        $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata) use ($validated, $rttMs, $payloadBytes, &$telemetry): array {
+            $previousTelemetry = is_array($metadata['telemetry'] ?? null) ? $metadata['telemetry'] : [];
+            $telemetry = [
+                'rtt_ms' => $rttMs,
+                'max_rtt_ms' => $rttMs === null
+                    ? ($previousTelemetry['max_rtt_ms'] ?? null)
+                    : max((int) ($previousTelemetry['max_rtt_ms'] ?? $rttMs), $rttMs),
+                'payload_bytes' => $payloadBytes,
+                'max_payload_bytes' => $payloadBytes === null
+                    ? ($previousTelemetry['max_payload_bytes'] ?? null)
+                    : max((int) ($previousTelemetry['max_payload_bytes'] ?? $payloadBytes), $payloadBytes),
+                'dropped_batches' => $validated['dropped_batches'] ?? 0,
+                'reconnects' => $validated['reconnects'] ?? 0,
+                'samples' => ((int) ($previousTelemetry['samples'] ?? 0)) + 1,
+                'reported_at' => now()->toJSON(),
+            ];
 
-        $metadata['telemetry'] = $telemetry;
-        $metadata['payload_budget'] = CobrowsePayloadBudget::limits();
+            $metadata['telemetry'] = $telemetry;
+            $metadata['payload_budget'] = CobrowsePayloadBudget::limits();
 
-        $cobrowseSession->forceFill([
-            'metadata' => $metadata,
-        ])->save();
+            return $metadata;
+        });
 
         return response()->json([
             'data' => [

@@ -77,14 +77,12 @@ class CobrowseSnapshotController extends Controller
             $snapshot['resync_request_id'] = (string) $validated['resync_request_id'];
         }
 
-        $metadata = $cobrowseSession->metadata ?? [];
-        $metadata['snapshot'] = $snapshot;
-        $metadata['payload_budget'] = CobrowsePayloadBudget::limits();
-        $metadata = $this->markResyncRequestFulfilled($metadata, $snapshot['resync_request_id'] ?? null, $snapshot['reported_at']);
+        $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata) use ($snapshot): array {
+            $metadata['snapshot'] = $snapshot;
+            $metadata['payload_budget'] = CobrowsePayloadBudget::limits();
 
-        $cobrowseSession->forceFill([
-            'metadata' => $metadata,
-        ])->save();
+            return $this->markResyncRequestFulfilled($metadata, $snapshot['resync_request_id'] ?? null, $snapshot['reported_at']);
+        });
 
         event(new CobrowseStateUpdated($cobrowseSession, 'snapshot'));
 

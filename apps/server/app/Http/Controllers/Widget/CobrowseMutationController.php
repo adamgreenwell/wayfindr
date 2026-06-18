@@ -63,15 +63,15 @@ class CobrowseMutationController extends Controller
 
         abort_unless($cobrowseSession, 404, 'Cobrowse session not active.');
 
-        $mutationSummary = $this->mutationSummary($cobrowseSession, $validated);
+        $mutationSummary = [];
 
-        $metadata = $cobrowseSession->metadata ?? [];
-        $metadata['mutations'] = $mutationSummary;
-        $metadata['payload_budget'] = CobrowsePayloadBudget::limits();
+        $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata) use ($validated, &$mutationSummary): array {
+            $mutationSummary = $this->mutationSummary($metadata, $validated);
+            $metadata['mutations'] = $mutationSummary;
+            $metadata['payload_budget'] = CobrowsePayloadBudget::limits();
 
-        $cobrowseSession->forceFill([
-            'metadata' => $metadata,
-        ])->save();
+            return $metadata;
+        });
 
         event(new CobrowseStateUpdated($cobrowseSession, 'mutations'));
 
@@ -100,9 +100,9 @@ class CobrowseMutationController extends Controller
      * @param  array<string, mixed>  $validated
      * @return array<string, mixed>
      */
-    private function mutationSummary(CobrowseSession $cobrowseSession, array $validated): array
+    private function mutationSummary(array $metadata, array $validated): array
     {
-        $previous = $cobrowseSession->metadata['mutations'] ?? [];
+        $previous = $metadata['mutations'] ?? [];
         $mutations = $this->normalizeMutations($validated['mutations']);
         $droppedCount = (int) ($validated['dropped_count'] ?? 0);
         $skippedCount = (int) ($validated['skipped_count'] ?? 0);

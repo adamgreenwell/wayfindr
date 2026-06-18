@@ -680,6 +680,56 @@ test('visitor cobrowse status includes a pending agent snapshot resync request',
     }
 });
 
+test('cobrowse metadata updates merge against current metadata before saving', function (): void {
+    $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+    $agent = User::factory()->create(['name' => 'Ada Agent']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-RESYNC',
+    ]);
+    $session = CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinute(),
+        'ended_at' => null,
+        'metadata' => [
+            'telemetry' => [
+                'samples' => 1,
+            ],
+        ],
+    ]);
+
+    $staleSession = CobrowseSession::query()->findOrFail($session->id);
+
+    $session->forceFill([
+        'metadata' => [
+            'telemetry' => [
+                'samples' => 1,
+            ],
+            'resync_request' => [
+                'id' => 'resync_123',
+                'requested_by_id' => $agent->id,
+                'requested_by_name' => 'Ada Agent',
+                'requested_at' => now()->toJSON(),
+                'fulfilled_at' => null,
+            ],
+        ],
+    ])->save();
+
+    $staleSession->updateMetadataAtomically(function (array $metadata): array {
+        $metadata['page_state'] = [
+            'page_url' => 'https://docs.example.test/install',
+            'reported_at' => now()->toJSON(),
+        ];
+
+        return $metadata;
+    });
+
+    expect($session->fresh()->metadata)
+        ->toHaveKey('resync_request')
+        ->toHaveKey('page_state')
+        ->and($session->fresh()->metadata['resync_request']['id'])->toBe('resync_123');
+});
+
 test('visitor cobrowse snapshot fulfills a matching agent resync request', function (): void {
     Carbon::setTestNow(Carbon::parse('2026-06-18 15:15:00', 'UTC'));
 

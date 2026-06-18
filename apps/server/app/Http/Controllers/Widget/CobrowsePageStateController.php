@@ -68,12 +68,11 @@ class CobrowsePageStateController extends Controller
             'reported_at' => now()->toJSON(),
         ];
 
-        $metadata = $cobrowseSession->metadata ?? [];
-        $metadata['page_state'] = $pageState;
+        $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata) use ($pageState): array {
+            $metadata['page_state'] = $pageState;
 
-        $cobrowseSession->forceFill([
-            'metadata' => $metadata,
-        ])->save();
+            return $metadata;
+        });
 
         event(new CobrowseStateUpdated($cobrowseSession, 'page_state'));
 

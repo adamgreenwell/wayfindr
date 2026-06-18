@@ -48,21 +48,25 @@ class CobrowseConsentController extends Controller
         abort_unless($cobrowseSession, 404, 'Cobrowse session not active.');
 
         if ($validated['granted']) {
-            $cobrowseSession->forceFill([
-                'status' => 'granted',
-                'consented_at' => now(),
-                'ended_at' => null,
-            ])->save();
+            $cobrowseSession = $cobrowseSession->updateAtomically(function (CobrowseSession $session): void {
+                $session->forceFill([
+                    'status' => 'granted',
+                    'consented_at' => now(),
+                    'ended_at' => null,
+                ]);
+            });
         } else {
-            $metadata = $cobrowseSession->metadata ?? [];
-            $metadata['ended_by_name'] = 'Visitor';
-            $metadata['ended_by_type'] = 'visitor';
+            $cobrowseSession = $cobrowseSession->updateAtomically(function (CobrowseSession $session): void {
+                $metadata = $session->metadata ?? [];
+                $metadata['ended_by_name'] = 'Visitor';
+                $metadata['ended_by_type'] = 'visitor';
 
-            $cobrowseSession->forceFill([
-                'status' => 'revoked',
-                'metadata' => $metadata,
-                'ended_at' => now(),
-            ])->save();
+                $session->forceFill([
+                    'status' => 'revoked',
+                    'metadata' => $metadata,
+                    'ended_at' => now(),
+                ]);
+            });
         }
 
         return response()->json([
