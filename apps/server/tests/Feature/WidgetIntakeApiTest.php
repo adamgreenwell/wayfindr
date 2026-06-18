@@ -847,6 +847,7 @@ test('visitor can report a cobrowse snapshot for their active session', function
         'text' => 'Install Guide Hello visitor. [masked]',
         'node_count' => 4,
         'masked_count' => 1,
+        'mutation_sequence' => 7,
     ]);
 
     $response
@@ -861,6 +862,7 @@ test('visitor can report a cobrowse snapshot for their active session', function
         ->assertJsonPath('data.snapshot.title', 'Install Guide')
         ->assertJsonPath('data.snapshot.node_count', 4)
         ->assertJsonPath('data.snapshot.masked_count', 1)
+        ->assertJsonPath('data.snapshot.mutation_sequence', 7)
         ->assertJsonPath('data.snapshot.html_length', 80)
         ->assertJsonPath('data.snapshot.text_length', 37);
 
@@ -872,6 +874,7 @@ test('visitor can report a cobrowse snapshot for their active session', function
         ->snapshot->text->toBe('Install Guide Hello visitor. [masked]')
         ->snapshot->node_count->toBe(4)
         ->snapshot->masked_count->toBe(1)
+        ->snapshot->mutation_sequence->toBe(7)
         ->snapshot->reported_at->not->toBeNull()
         ->payload_budget->snapshot_html_max_characters->toBe(65535)
         ->payload_budget->snapshot_text_max_characters->toBe(10000)

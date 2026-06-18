@@ -70,7 +70,9 @@ When a page changes faster than the widget can report, older queued records are
 skipped and newer page state is preferred. That keeps noisy pages from building
 an unbounded browser backlog while still reporting skipped-count diagnostics.
 After reporting dropped or skipped mutation pressure, the stock widget sends a
-fresh sanitized snapshot to give the agent preview a clean recovery point.
+fresh sanitized snapshot to give the agent preview a clean recovery point. That
+snapshot includes the last reported mutation sequence so replay can ignore
+already-covered batches and apply only newer page changes.
 
 Under pressure, Wayfindr should prefer dropping or skipping lower-value mutation
 details over sending raw sensitive values, unbounded snapshots, or oversized

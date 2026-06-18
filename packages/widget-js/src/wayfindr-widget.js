@@ -265,7 +265,7 @@
       reportCobrowseSnapshot: function (supportCode, snapshot) {
         snapshot = snapshot || {};
 
-        return postJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/cobrowse-snapshot', {
+        return postJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/cobrowse-snapshot', withoutNullValues({
           site_public_key: sitePublicKey,
           anonymous_id: anonymousId,
           visitor_token: requireVisitorToken(visitorToken),
@@ -275,7 +275,8 @@
           text: snapshot.text,
           node_count: snapshot.nodeCount,
           masked_count: snapshot.maskedCount,
-        });
+          mutation_sequence: snapshot.mutationSequence,
+        }));
       },
       reportCobrowseMutations: function (supportCode, batch) {
         batch = batch || {};
@@ -994,10 +995,14 @@
       lastCobrowsePressureResyncAt = nowMs;
 
       try {
-        await client.reportCobrowseSnapshot(supportCode, createCobrowseSnapshot(doc, {
+        var snapshot = createCobrowseSnapshot(doc, {
           location: location,
           maskSelectors: client.getMaskSelectors(),
-        }));
+        });
+
+        snapshot.mutationSequence = batch.sequence;
+
+        await client.reportCobrowseSnapshot(supportCode, snapshot);
       } catch (error) {
         // Snapshot re-sync is a recovery affordance; mutation diagnostics remain the source of truth.
       }

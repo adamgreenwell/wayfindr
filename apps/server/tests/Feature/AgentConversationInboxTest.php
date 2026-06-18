@@ -4987,6 +4987,102 @@ test('agent can see a sandboxed cobrowse replay preview on a conversation', func
         ->assertDontSee('mutation-token');
 });
 
+test('agent cobrowse replay preview skips mutations already covered by a recovery snapshot', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-REPLAY-RECOVERY',
+        'subject' => 'Checkout trouble',
+        'status' => 'open',
+    ]);
+
+    CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinute(),
+        'ended_at' => null,
+        'metadata' => [
+            'snapshot' => [
+                'page_url' => 'https://docs.example.test/install?step=2',
+                'title' => 'Install Guide',
+                'html' => '<main><p>Recovered public copy.</p></main>',
+                'text' => 'Recovered public copy.',
+                'node_count' => 2,
+                'masked_count' => 0,
+                'mutation_sequence' => 2,
+                'reported_at' => now()->toJSON(),
+            ],
+            'mutations' => [
+                'batch_count' => 3,
+                'mutation_count' => 3,
+                'dropped_count' => 0,
+                'skipped_count' => 0,
+                'last_sequence' => 3,
+                'last_page_url' => 'https://docs.example.test/install?step=2',
+                'last_reported_at' => now()->toJSON(),
+                'recent_batches' => [
+                    [
+                        'sequence' => 1,
+                        'mutation_count' => 1,
+                        'dropped_count' => 0,
+                        'skipped_count' => 0,
+                        'page_url' => 'https://docs.example.test/install?step=2',
+                        'reported_at' => now()->subSeconds(20)->toJSON(),
+                        'mutations' => [
+                            [
+                                'type' => 'text',
+                                'path' => 'body:nth-of-type(1) > main:nth-of-type(1) > p:nth-of-type(1)',
+                                'text' => 'Stale duplicate copy.',
+                            ],
+                        ],
+                    ],
+                    [
+                        'sequence' => 2,
+                        'mutation_count' => 1,
+                        'dropped_count' => 0,
+                        'skipped_count' => 0,
+                        'page_url' => 'https://docs.example.test/install?step=2',
+                        'reported_at' => now()->subSeconds(10)->toJSON(),
+                        'mutations' => [
+                            [
+                                'type' => 'added',
+                                'path' => 'body:nth-of-type(1) > main:nth-of-type(1)',
+                                'html' => '<p>Duplicate covered hint.</p>',
+                            ],
+                        ],
+                    ],
+                    [
+                        'sequence' => 3,
+                        'mutation_count' => 1,
+                        'dropped_count' => 0,
+                        'skipped_count' => 0,
+                        'page_url' => 'https://docs.example.test/install?step=2',
+                        'reported_at' => now()->toJSON(),
+                        'mutations' => [
+                            [
+                                'type' => 'added',
+                                'path' => 'body:nth-of-type(1) > main:nth-of-type(1)',
+                                'html' => '<p>Fresh later hint.</p>',
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-REPLAY-RECOVERY')
+        ->assertOk()
+        ->assertSee('Replay preview')
+        ->assertSee('Recovered public copy.')
+        ->assertSee('Fresh later hint.')
+        ->assertSee('1 applied')
+        ->assertDontSee('Stale duplicate copy.')
+        ->assertDontSee('Duplicate covered hint.');
+});
+
 test('agent can reply to their account conversation', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);

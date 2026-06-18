@@ -73,7 +73,12 @@ class CobrowseReplayPreview
             'skipped' => 0,
         ];
 
-        $this->applyRecentMutations($document, $metadata['mutations']['recent_batches'] ?? null, $counts);
+        $this->applyRecentMutations(
+            $document,
+            $metadata['mutations']['recent_batches'] ?? null,
+            $counts,
+            $this->snapshotMutationSequence($snapshot)
+        );
         $this->sanitizeDocument($document);
 
         return [
@@ -160,7 +165,7 @@ class CobrowseReplayPreview
     /**
      * @param  array{applied: int, skipped: int}  $counts
      */
-    private function applyRecentMutations(DOMDocument $document, mixed $batches, array &$counts): void
+    private function applyRecentMutations(DOMDocument $document, mixed $batches, array &$counts, ?int $snapshotMutationSequence): void
     {
         if (! is_array($batches)) {
             return;
@@ -168,6 +173,10 @@ class CobrowseReplayPreview
 
         foreach ($batches as $batch) {
             if (! is_array($batch) || ! is_array($batch['mutations'] ?? null)) {
+                continue;
+            }
+
+            if ($this->batchIsCoveredBySnapshot($batch, $snapshotMutationSequence)) {
                 continue;
             }
 
@@ -181,6 +190,30 @@ class CobrowseReplayPreview
                 $this->applyMutation($document, $mutation) ? $counts['applied']++ : $counts['skipped']++;
             }
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $snapshot
+     */
+    private function snapshotMutationSequence(array $snapshot): ?int
+    {
+        if (! is_numeric($snapshot['mutation_sequence'] ?? null)) {
+            return null;
+        }
+
+        return (int) $snapshot['mutation_sequence'];
+    }
+
+    /**
+     * @param  array<string, mixed>  $batch
+     */
+    private function batchIsCoveredBySnapshot(array $batch, ?int $snapshotMutationSequence): bool
+    {
+        if ($snapshotMutationSequence === null || ! is_numeric($batch['sequence'] ?? null)) {
+            return false;
+        }
+
+        return (int) $batch['sequence'] <= $snapshotMutationSequence;
     }
 
     /**

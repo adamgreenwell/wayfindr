@@ -684,6 +684,7 @@ test('reports cobrowse snapshots through the public visitor API', async () => {
     text: 'Hello visitor. [masked]',
     nodeCount: 4,
     maskedCount: 1,
+    mutationSequence: 7,
   });
 
   assert.equal(calls.length, 1);
@@ -698,6 +699,7 @@ test('reports cobrowse snapshots through the public visitor API', async () => {
     text: 'Hello visitor. [masked]',
     node_count: 4,
     masked_count: 1,
+    mutation_sequence: 7,
   });
   assert.equal(result.snapshot.masked_count, 1);
 });
@@ -4084,6 +4086,7 @@ test('resyncs a sanitized cobrowse snapshot after skipped mutation pressure', as
 
   assert.equal(JSON.parse(mutationCall.options.body).skipped_count >= 1, true);
   assert.equal(snapshotCalls.length, 2);
+  assert.equal(resyncSnapshotPayload.mutation_sequence, JSON.parse(mutationCall.options.body).sequence);
   assert.match(resyncSnapshotPayload.html, /Huge public update/);
   assert.match(resyncSnapshotPayload.html, /\[masked\]/);
   assert.equal(resyncSnapshotPayload.html.includes('secret-password'), false);
