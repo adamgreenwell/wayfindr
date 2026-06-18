@@ -4485,6 +4485,27 @@ test('agent can see cobrowse transport health on a conversation', function (arra
         'No drops reported',
         'Preview is current enough to use alongside chat.',
     ],
+    'degraded' => [
+        [
+            'telemetry' => [
+                'rtt_ms' => 120,
+                'payload_bytes' => 8192,
+                'dropped_batches' => 1,
+                'reconnects' => 0,
+                'samples' => 4,
+                'reported_at' => '2026-06-17T11:59:35.000000Z',
+            ],
+            'mutations' => [
+                'skipped_count' => 3,
+                'last_reported_at' => '2026-06-17T11:59:40.000000Z',
+            ],
+        ],
+        'Degraded',
+        'Cobrowse reports are arriving, but the visitor page is changing faster than Wayfindr can fully replay.',
+        '20 seconds ago',
+        '1 dropped batch, 3 skipped mutations',
+        'Use the preview for orientation and confirm fast-changing details through chat.',
+    ],
     'stale' => [
         [
             'page_state' => [

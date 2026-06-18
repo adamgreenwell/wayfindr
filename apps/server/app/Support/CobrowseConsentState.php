@@ -135,6 +135,17 @@ class CobrowseConsentState
             ];
         }
 
+        if ($pressure !== 'No drops reported') {
+            return [
+                'label' => 'Degraded',
+                'message' => 'Cobrowse reports are arriving, but the visitor page is changing faster than Wayfindr can fully replay.',
+                'last_report' => $latestReport->diffForHumans(),
+                'reconnects' => number_format($reconnects),
+                'pressure' => $pressure,
+                'guidance' => 'Use the preview for orientation and confirm fast-changing details through chat.',
+            ];
+        }
+
         return [
             'label' => 'Live',
             'message' => 'Cobrowse reports are arriving normally.',

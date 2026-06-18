@@ -111,6 +111,7 @@ Agents should see whether cobrowse is unavailable, requested, granted, revoked,
 or ended. They should also see when no snapshot or telemetry has arrived yet.
 When telemetry or mutation diagnostics show reconnects, dropped batches, skipped
 records, or stale reports, Wayfindr should tell agents how much to trust the
-preview and when to confirm fast-changing details through chat. The visitor
-experience should stay simple: allow, decline, stop, and clear copy about
-sensitive fields being masked.
+preview and when to confirm fast-changing details through chat. Fresh reports
+with dropped or skipped page changes should be treated as degraded rather than
+fully live. The visitor experience should stay simple: allow, decline, stop,
+and clear copy about sensitive fields being masked.
