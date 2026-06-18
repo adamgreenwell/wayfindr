@@ -159,7 +159,8 @@ eligible site agent with a reason, assignment notification, audit event, and
 ticket timeline entry.
 
 This closes the first alert-calm foundation. Automatic account-level escalation
-rules remain a separate future product track in #156.
+rules remain a separate future product track documented in
+[Account Escalation Policies](account-escalation-policies.md).
 
 ## Implementation Waypoints
 
@@ -190,7 +191,9 @@ rules remain a separate future product track in #156.
    escalate a ticket to another eligible site agent with a reason, assignment
    notification, and ticket timeline entry.
 8. Add account-level default cadence and escalation timing only after the
-   per-agent path is proven.
+   per-agent path is proven and the
+   [account escalation policy](account-escalation-policies.md) contract is
+   implemented.
 9. Add automatic escalation policies only when there is a clear account setting,
    tests, and UI copy that explains what will happen.
 

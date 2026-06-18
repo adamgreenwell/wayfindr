@@ -41,7 +41,8 @@ experience without opening broad integration or platform-service work too soon.
   visitor, and support-code context; clearer “what needs attention” cues; and
   less page-hopping for common agent moves.
 - Alert calm: keep the implemented digest/manual-escalation foundation stable,
-  observable, and metadata-safe before adding automatic urgency rules.
+  observable, and metadata-safe before adding automatic urgency rules. See
+  [Account Escalation Policies](account-escalation-policies.md).
 - Cobrowse transport discipline: payload budgets, throttling, batching,
   reconnect/degraded-mode behavior, and explicit drop policies under pressure.
 - Operator hardening: clearer setup/recovery guidance, safer instance activity,
