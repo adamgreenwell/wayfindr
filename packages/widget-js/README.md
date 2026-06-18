@@ -74,6 +74,7 @@ The widget currently supports the first visitor loop:
 - receive live agent replies over Reverb when configured,
 - fetch the current cobrowse request status,
 - show explicit allow/decline controls only after support requests cobrowse,
+- focus the cobrowse consent choice when a new request appears without repeatedly stealing focus during status polls,
 - grant, decline, or revoke cobrowse consent,
 - report lightweight cobrowse connection telemetry after consent,
 - report passive page state after consent,

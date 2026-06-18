@@ -12,6 +12,12 @@ visitor granting cobrowse consent means Wayfindr may send sanitized page state
 for that session. It does not mean the visitor has agreed to disclose passwords,
 payment details, tokens, or unrelated personal data.
 
+The visitor consent prompt should be easy to reach by keyboard and assistive
+technology. When a new cobrowse request appears in the open widget, Wayfindr can
+move focus to the consent choice so the visitor can allow or decline without
+hunting for controls. Status polling should not repeatedly steal focus while the
+same request remains visible.
+
 ## Before Consent
 
 Before cobrowse consent, the widget may:

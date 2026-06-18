@@ -3574,8 +3574,16 @@ test('renders widget cobrowse prompt only after support requests consent', async
   const cobrowseCopy = widget.root.querySelector('.wayfindr-widget__cobrowse-copy');
   const allowButton = widget.root.querySelector('.wayfindr-widget__cobrowse-allow');
   const declineButton = widget.root.querySelector('.wayfindr-widget__cobrowse-decline');
+  const textarea = widget.root.querySelector('.wayfindr-widget__textarea');
 
   assert.equal(cobrowse.hidden, true);
+  assert.equal(cobrowse.getAttribute('role'), 'group');
+  assert.equal(cobrowse.getAttribute('aria-label'), 'Cobrowse request');
+  assert.equal(cobrowse.getAttribute('aria-describedby'), cobrowseCopy.id);
+  assert.ok(cobrowseCopy.id);
+  assert.equal(cobrowseCopy.getAttribute('role'), 'status');
+  assert.equal(cobrowseCopy.getAttribute('aria-live'), 'polite');
+  assert.equal(cobrowseCopy.getAttribute('aria-atomic'), 'true');
 
   cobrowseStatus = {
     status: 'requested',
@@ -3592,6 +3600,13 @@ test('renders widget cobrowse prompt only after support requests consent', async
   assert.equal(allowButton.textContent, 'Allow cobrowse');
   assert.equal(declineButton.textContent, 'Decline');
   assert.equal(declineButton.hidden, false);
+  assert.equal(dom.window.document.activeElement, allowButton);
+
+  textarea.focus();
+  await widget.refreshCobrowseStatus();
+  await settle();
+
+  assert.equal(dom.window.document.activeElement, textarea);
 
   allowButton.dispatchEvent(new dom.window.Event('click', { bubbles: true }));
 
