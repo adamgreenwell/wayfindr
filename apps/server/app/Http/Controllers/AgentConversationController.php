@@ -20,6 +20,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -346,6 +347,38 @@ class AgentConversationController extends Controller
         return redirect()
             ->route('dashboard.conversations.show', $conversation->support_code)
             ->with('status', 'Cobrowse session ended.');
+    }
+
+    public function requestCobrowseResync(Request $request, string $supportCode): RedirectResponse
+    {
+        $agent = $request->user();
+        $conversation = $this->conversationForAgent($agent, $supportCode, 'requestCobrowse');
+        $cobrowseSession = $this->activeCobrowseSession($conversation);
+
+        if (! $cobrowseSession || $cobrowseSession->status !== 'granted') {
+            return redirect()
+                ->route('dashboard.conversations.show', $conversation->support_code)
+                ->with('status', 'Cobrowse must be active before requesting a fresh snapshot.');
+        }
+
+        $metadata = $cobrowseSession->metadata ?? [];
+        $metadata['resync_request'] = [
+            'id' => 'resync_'.Str::lower((string) Str::ulid()),
+            'requested_by_id' => $agent->id,
+            'requested_by_name' => $agent->name,
+            'requested_at' => now()->toJSON(),
+            'fulfilled_at' => null,
+        ];
+
+        $cobrowseSession->forceFill([
+            'metadata' => $metadata,
+        ])->save();
+
+        event(new CobrowseStateUpdated($cobrowseSession, 'resync_requested'));
+
+        return redirect()
+            ->route('dashboard.conversations.show', $conversation->support_code)
+            ->with('status', 'Fresh cobrowse snapshot requested.');
     }
 
     private function conversationForAgent(User $agent, string $supportCode, string $ability): Conversation

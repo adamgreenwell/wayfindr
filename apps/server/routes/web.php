@@ -168,6 +168,8 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.tickets.escalations.store');
     Route::post('/dashboard/conversations/{supportCode}/cobrowse/request', [AgentConversationController::class, 'requestCobrowse'])
         ->name('dashboard.conversations.cobrowse.request');
+    Route::post('/dashboard/conversations/{supportCode}/cobrowse/resync', [AgentConversationController::class, 'requestCobrowseResync'])
+        ->name('dashboard.conversations.cobrowse.resync');
     Route::post('/dashboard/conversations/{supportCode}/cobrowse/end', [AgentConversationController::class, 'endCobrowse'])
         ->name('dashboard.conversations.cobrowse.end');
     Route::post('/logout', [SessionController::class, 'destroy'])->name('logout');

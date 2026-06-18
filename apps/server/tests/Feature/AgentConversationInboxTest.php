@@ -4366,6 +4366,89 @@ test('agent can end an active cobrowse session', function (): void {
         ->assertSee('Request cobrowse');
 });
 
+test('agent can request a fresh cobrowse snapshot for a granted session', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-18 15:00:00', 'UTC'));
+    Event::fake([CobrowseStateUpdated::class]);
+
+    try {
+        $account = Account::factory()->create(['name' => 'Acme Support']);
+        $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+        $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-RESYNC',
+            'subject' => 'Cobrowse drifted',
+        ]);
+        $session = CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+            'requested_by_id' => $agent->id,
+            'status' => 'granted',
+            'consented_at' => now()->subMinute(),
+            'ended_at' => null,
+            'metadata' => [
+                'snapshot' => [
+                    'page_url' => 'https://docs.example.test/old',
+                    'title' => 'Old page',
+                    'reported_at' => now()->subMinutes(3)->toJSON(),
+                ],
+            ],
+        ]);
+
+        $this->actingAs($agent)
+            ->from('/dashboard/conversations/WF-RESYNC')
+            ->post('/dashboard/conversations/WF-RESYNC/cobrowse/resync')
+            ->assertRedirect('/dashboard/conversations/WF-RESYNC')
+            ->assertSessionHas('status', 'Fresh cobrowse snapshot requested.');
+
+        $session->refresh();
+
+        expect($session->metadata['resync_request'])
+            ->requested_by_id->toBe($agent->id)
+            ->requested_by_name->toBe('Ada Agent')
+            ->requested_at->toBe(now()->toJSON())
+            ->fulfilled_at->toBeNull()
+            ->and($session->metadata['resync_request']['id'])->toBeString()->not->toBeEmpty();
+
+        Event::assertDispatched(
+            CobrowseStateUpdated::class,
+            fn (CobrowseStateUpdated $event): bool => $event->cobrowseSession->id === $session->id
+                && $event->kind === 'resync_requested'
+        );
+
+        $this->actingAs($agent)
+            ->get('/dashboard/conversations/WF-RESYNC')
+            ->assertOk()
+            ->assertSee('Request fresh snapshot')
+            ->assertSee('Fresh snapshot requested')
+            ->assertSee('Waiting for the visitor widget to send a clean page snapshot.');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+test('agent cannot request a fresh cobrowse snapshot before consent is granted', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-NORESYNC',
+    ]);
+    $session = CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'requested_by_id' => $agent->id,
+        'status' => 'requested',
+        'consented_at' => null,
+        'ended_at' => null,
+    ]);
+
+    $this->actingAs($agent)
+        ->from('/dashboard/conversations/WF-NORESYNC')
+        ->post('/dashboard/conversations/WF-NORESYNC/cobrowse/resync')
+        ->assertRedirect('/dashboard/conversations/WF-NORESYNC')
+        ->assertSessionHas('status', 'Cobrowse must be active before requesting a fresh snapshot.');
+
+    expect($session->fresh()->metadata ?? [])->not->toHaveKey('resync_request');
+});
+
 test('agent cannot request cobrowse for another account conversation', function (): void {
     $account = Account::factory()->create();
     $otherAccount = Account::factory()->create();

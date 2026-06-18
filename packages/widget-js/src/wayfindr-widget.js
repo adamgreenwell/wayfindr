@@ -276,6 +276,7 @@
           node_count: snapshot.nodeCount,
           masked_count: snapshot.maskedCount,
           mutation_sequence: snapshot.mutationSequence,
+          resync_request_id: snapshot.resyncRequestId,
         }));
       },
       reportCobrowseMutations: function (supportCode, batch) {
@@ -442,6 +443,8 @@
     var mutationFlushMs = typeof options.mutationFlushMs === 'number' ? options.mutationFlushMs : 50;
     var cobrowsePressureResyncMs = typeof options.cobrowsePressureResyncMs === 'number' ? Math.max(0, options.cobrowsePressureResyncMs) : 30000;
     var lastCobrowsePressureResyncAt = 0;
+    var lastCobrowseResyncRequestId = null;
+    var cobrowseResyncInFlight = false;
     var mutationPayloadMaxBytes = typeof options.mutationPayloadMaxBytes === 'number'
       ? Math.max(0, options.mutationPayloadMaxBytes)
       : DEFAULT_COBROWSE_PAYLOAD_BUDGET.mutationBatchMaxBytes;
@@ -824,14 +827,54 @@
 
       if (!cobrowseGranted) {
         stopMutationStream();
+        lastCobrowseResyncRequestId = null;
+        cobrowseResyncInFlight = false;
       }
 
       renderCobrowseConsent();
+      handleCobrowseResyncRequest(nextCobrowse.resync);
 
       if ((previousGranted || previousState === 'requested') && cobrowseState === 'ended') {
         status.textContent = 'Cobrowse stopped by support.';
       } else if ((previousGranted || previousState === 'requested') && cobrowseState === 'revoked') {
         status.textContent = previousGranted ? 'Cobrowse stopped.' : 'Cobrowse request declined.';
+      }
+    }
+
+    function pendingCobrowseResyncId(resync) {
+      if (!resync || resync.requested !== true || !resync.request_id) {
+        return null;
+      }
+
+      return String(resync.request_id);
+    }
+
+    async function handleCobrowseResyncRequest(resync) {
+      var requestId = pendingCobrowseResyncId(resync);
+
+      if (!supportCode || !cobrowseGranted || !requestId || cobrowseResyncInFlight || lastCobrowseResyncRequestId === requestId) {
+        return;
+      }
+
+      cobrowseResyncInFlight = true;
+
+      try {
+        await client.reportCobrowsePageState(supportCode, collectPageState());
+
+        var snapshot = createCobrowseSnapshot(doc, {
+          location: location,
+          maskSelectors: client.getMaskSelectors(),
+        });
+
+        snapshot.resyncRequestId = requestId;
+
+        await client.reportCobrowseSnapshot(supportCode, snapshot);
+
+        lastCobrowseResyncRequestId = requestId;
+      } catch (error) {
+        // Leave the request unmarked so the next status refresh can retry the clean snapshot.
+      } finally {
+        cobrowseResyncInFlight = false;
       }
     }
 

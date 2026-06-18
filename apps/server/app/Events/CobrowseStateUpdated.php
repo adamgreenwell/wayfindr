@@ -65,6 +65,7 @@ class CobrowseStateUpdated implements ShouldBroadcastNow
         $pageState = is_array($metadata['page_state'] ?? null) ? $metadata['page_state'] : [];
         $snapshot = is_array($metadata['snapshot'] ?? null) ? $metadata['snapshot'] : [];
         $mutations = is_array($metadata['mutations'] ?? null) ? $metadata['mutations'] : [];
+        $resyncRequest = is_array($metadata['resync_request'] ?? null) ? $metadata['resync_request'] : [];
 
         return array_filter([
             'page_url' => $pageState['page_url'] ?? $snapshot['page_url'] ?? $mutations['last_page_url'] ?? null,
@@ -72,6 +73,7 @@ class CobrowseStateUpdated implements ShouldBroadcastNow
             'batch_count' => $mutations['batch_count'] ?? null,
             'mutation_count' => $mutations['mutation_count'] ?? null,
             'last_sequence' => $mutations['last_sequence'] ?? null,
+            'resync_request_id' => $resyncRequest['id'] ?? null,
         ], fn (mixed $value): bool => $value !== null);
     }
 
@@ -81,11 +83,13 @@ class CobrowseStateUpdated implements ShouldBroadcastNow
         $pageState = is_array($metadata['page_state'] ?? null) ? $metadata['page_state'] : [];
         $snapshot = is_array($metadata['snapshot'] ?? null) ? $metadata['snapshot'] : [];
         $mutations = is_array($metadata['mutations'] ?? null) ? $metadata['mutations'] : [];
+        $resyncRequest = is_array($metadata['resync_request'] ?? null) ? $metadata['resync_request'] : [];
 
         return match ($this->kind) {
             'page_state' => $pageState['reported_at'] ?? null,
             'snapshot' => $snapshot['reported_at'] ?? null,
             'mutations' => $mutations['last_reported_at'] ?? null,
+            'resync_requested' => $resyncRequest['requested_at'] ?? null,
             default => null,
         };
     }

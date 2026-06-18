@@ -74,6 +74,13 @@ fresh sanitized snapshot to give the agent preview a clean recovery point. That
 snapshot includes the last reported mutation sequence so replay can ignore
 already-covered batches and apply only newer page changes.
 
+Agents can also request a fresh sanitized snapshot when the preview appears
+stale or confusing. The visitor widget should answer a single pending request
+once with fresh page state and a masked snapshot, then wait for another explicit
+request ID before sending another agent-requested resync. This is a recovery
+control for the current consented session, not permission to send raw values or
+unbounded page history.
+
 Under pressure, Wayfindr should prefer dropping or skipping lower-value mutation
 details over sending raw sensitive values, unbounded snapshots, or oversized
 session metadata.

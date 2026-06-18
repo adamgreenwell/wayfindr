@@ -396,12 +396,31 @@
                         <button class="button" type="submit">Request cobrowse</button>
                     </form>
                 @elseif (in_array($cobrowseConsent['status'], ['pending', 'granted'], true))
+                    @if ($cobrowseConsent['status'] === 'granted')
+                        <form class="section-form" method="POST" action="{{ route('dashboard.conversations.cobrowse.resync', $conversation->support_code) }}">
+                            @csrf
+                            <button class="button secondary" type="submit">Request fresh snapshot</button>
+                        </form>
+                    @endif
                     <form class="section-form" method="POST" action="{{ route('dashboard.conversations.cobrowse.end', $conversation->support_code) }}">
                         @csrf
                         <button class="button secondary" type="submit">
                             {{ $cobrowseConsent['status'] === 'pending' ? 'Cancel request' : 'End cobrowse' }}
                         </button>
                     </form>
+                @endif
+
+                @if ($cobrowseConsent['resync_request'])
+                    <div class="live-update" data-state="pending">
+                        <div>
+                            <strong>{{ $cobrowseConsent['resync_request']['label'] }}</strong>
+                            <p class="lede">{{ $cobrowseConsent['resync_request']['message'] }}</p>
+                        </div>
+                        <span class="lede">
+                            {{ $cobrowseConsent['resync_request']['requested_by'] }}
+                            {{ $cobrowseConsent['resync_request']['requested_at'] }}
+                        </span>
+                    </div>
                 @endif
 
                 @if ($cobrowseConsent['transport'])

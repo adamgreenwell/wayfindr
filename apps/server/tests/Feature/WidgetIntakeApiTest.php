@@ -637,6 +637,110 @@ test('visitor can read their cobrowse request status', function (): void {
         ->assertJsonPath('data.cobrowse.ended_at', null);
 });
 
+test('visitor cobrowse status includes a pending agent snapshot resync request', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-18 15:10:00', 'UTC'));
+
+    try {
+        $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+        $agent = User::factory()->create(['name' => 'Ada Agent']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-RESYNC',
+        ]);
+        CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->for($agent, 'requestedBy')->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinute(),
+            'ended_at' => null,
+            'metadata' => [
+                'resync_request' => [
+                    'id' => 'resync_123',
+                    'requested_by_id' => $agent->id,
+                    'requested_by_name' => 'Ada Agent',
+                    'requested_at' => now()->toJSON(),
+                    'fulfilled_at' => null,
+                ],
+            ],
+        ]);
+
+        $response = $this->getJson('/api/conversations/WF-RESYNC/cobrowse?'.http_build_query([
+            'site_public_key' => 'site_public_docs',
+            'anonymous_id' => 'anon-docs',
+            'visitor_token' => widgetVisitorToken($this, 'site_public_docs', 'anon-docs'),
+        ]));
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.cobrowse.status', 'granted')
+            ->assertJsonPath('data.cobrowse.resync.requested', true)
+            ->assertJsonPath('data.cobrowse.resync.request_id', 'resync_123')
+            ->assertJsonPath('data.cobrowse.resync.requested_by.name', 'Ada Agent')
+            ->assertJsonPath('data.cobrowse.resync.requested_at', now()->toJSON());
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+test('visitor cobrowse snapshot fulfills a matching agent resync request', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-18 15:15:00', 'UTC'));
+
+    try {
+        $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+        $agent = User::factory()->create(['name' => 'Ada Agent']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-RESYNC',
+        ]);
+        $session = CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinute(),
+            'ended_at' => null,
+            'metadata' => [
+                'resync_request' => [
+                    'id' => 'resync_123',
+                    'requested_by_id' => $agent->id,
+                    'requested_by_name' => 'Ada Agent',
+                    'requested_at' => now()->subSeconds(10)->toJSON(),
+                    'fulfilled_at' => null,
+                ],
+            ],
+        ]);
+        $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+
+        $response = $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-snapshot", [
+            'site_public_key' => 'site_public_docs',
+            'anonymous_id' => 'anon-docs',
+            'visitor_token' => $token,
+            'page_url' => 'https://docs.example.test/install?step=2',
+            'title' => 'Install Guide',
+            'html' => '<main><h1>Install Guide</h1><p>Hello visitor.</p></main>',
+            'text' => 'Install Guide Hello visitor.',
+            'node_count' => 3,
+            'masked_count' => 0,
+            'resync_request_id' => 'resync_123',
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.snapshot.resync_request_id', 'resync_123');
+
+        expect($session->fresh()->metadata['resync_request'])
+            ->id->toBe('resync_123')
+            ->fulfilled_at->toBe(now()->toJSON())
+            ->fulfilled_snapshot_reported_at->toBe(now()->toJSON());
+
+        $this->getJson('/api/conversations/WF-RESYNC/cobrowse?'.http_build_query([
+            'site_public_key' => 'site_public_docs',
+            'anonymous_id' => 'anon-docs',
+            'visitor_token' => $token,
+        ]))
+            ->assertOk()
+            ->assertJsonPath('data.cobrowse.resync.requested', false)
+            ->assertJsonPath('data.cobrowse.resync.request_id', null);
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('visitor cobrowse status is unavailable without a request', function (): void {
     $site = Site::factory()->create(['public_key' => 'site_public_docs']);
     $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);

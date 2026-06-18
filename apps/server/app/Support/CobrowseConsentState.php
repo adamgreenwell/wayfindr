@@ -16,7 +16,7 @@ class CobrowseConsentState
     public function __construct(private readonly CobrowseReplayPreview $replayPreview) {}
 
     /**
-     * @return array{label: string, message: string, status: string, lifecycle: array<string, string>|null, transport: array<string, string>, payload_budget: array<string, string>|null, telemetry: array<string, string>|null, page_state: array<string, string>|null, snapshot: array<string, string>|null, mutation_stream: array<string, string>|null, replay_preview: array<string, string>|null}
+     * @return array{label: string, message: string, status: string, lifecycle: array<string, string>|null, transport: array<string, string>, payload_budget: array<string, string>|null, telemetry: array<string, string>|null, page_state: array<string, string>|null, snapshot: array<string, string>|null, mutation_stream: array<string, string>|null, replay_preview: array<string, string>|null, resync_request: array<string, string>|null}
      */
     public function forConversation(Conversation $conversation): array
     {
@@ -38,6 +38,7 @@ class CobrowseConsentState
                 'snapshot' => null,
                 'mutation_stream' => null,
                 'replay_preview' => null,
+                'resync_request' => null,
             ];
         }
 
@@ -77,6 +78,7 @@ class CobrowseConsentState
         $state['snapshot'] = $this->formatSnapshot($session->metadata['snapshot'] ?? null);
         $state['mutation_stream'] = $this->formatMutationStream($session->metadata['mutations'] ?? null);
         $state['replay_preview'] = $this->replayPreview->fromMetadata($session->metadata ?? []);
+        $state['resync_request'] = $this->formatResyncRequest($session);
 
         return $state;
     }
@@ -412,6 +414,29 @@ class CobrowseConsentState
             'skipped_count' => number_format((int) ($mutations['skipped_count'] ?? 0)).' skipped',
             'last_sequence' => 'Sequence '.number_format((int) ($mutations['last_sequence'] ?? 0)),
             'last_page_url' => filled($mutations['last_page_url'] ?? null) ? (string) $mutations['last_page_url'] : 'Not reported',
+        ];
+    }
+
+    /**
+     * @return array<string, string>|null
+     */
+    private function formatResyncRequest(CobrowseSession $session): ?array
+    {
+        if ($session->status !== 'granted' || $session->ended_at) {
+            return null;
+        }
+
+        $request = $session->metadata['resync_request'] ?? null;
+
+        if (! is_array($request) || filled($request['fulfilled_at'] ?? null)) {
+            return null;
+        }
+
+        return [
+            'label' => 'Fresh snapshot requested',
+            'message' => 'Waiting for the visitor widget to send a clean page snapshot.',
+            'requested_by' => filled($request['requested_by_name'] ?? null) ? (string) $request['requested_by_name'] : 'Support',
+            'requested_at' => $this->formatMoment($this->parseReportedAt($request['requested_at'] ?? null), 'Just requested'),
         ];
     }
 

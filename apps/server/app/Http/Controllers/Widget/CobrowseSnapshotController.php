@@ -27,6 +27,7 @@ class CobrowseSnapshotController extends Controller
             'node_count' => ['required', 'integer', 'min:0', 'max:100000'],
             'masked_count' => ['required', 'integer', 'min:0', 'max:100000'],
             'mutation_sequence' => ['nullable', 'integer', 'min:0', 'max:1000000000'],
+            'resync_request_id' => ['nullable', 'string', 'max:120'],
         ]);
 
         $site = Site::query()
@@ -72,9 +73,14 @@ class CobrowseSnapshotController extends Controller
             $snapshot['mutation_sequence'] = (int) $validated['mutation_sequence'];
         }
 
+        if (filled($validated['resync_request_id'] ?? null)) {
+            $snapshot['resync_request_id'] = (string) $validated['resync_request_id'];
+        }
+
         $metadata = $cobrowseSession->metadata ?? [];
         $metadata['snapshot'] = $snapshot;
         $metadata['payload_budget'] = CobrowsePayloadBudget::limits();
+        $metadata = $this->markResyncRequestFulfilled($metadata, $snapshot['resync_request_id'] ?? null, $snapshot['reported_at']);
 
         $cobrowseSession->forceFill([
             'metadata' => $metadata,
@@ -94,5 +100,32 @@ class CobrowseSnapshotController extends Controller
                 'snapshot' => $snapshot,
             ],
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $metadata
+     * @return array<string, mixed>
+     */
+    private function markResyncRequestFulfilled(array $metadata, ?string $requestId, string $reportedAt): array
+    {
+        if (! filled($requestId)) {
+            return $metadata;
+        }
+
+        $request = $metadata['resync_request'] ?? null;
+
+        if (
+            ! is_array($request)
+            || (string) ($request['id'] ?? '') !== $requestId
+            || filled($request['fulfilled_at'] ?? null)
+        ) {
+            return $metadata;
+        }
+
+        $request['fulfilled_at'] = $reportedAt;
+        $request['fulfilled_snapshot_reported_at'] = $reportedAt;
+        $metadata['resync_request'] = $request;
+
+        return $metadata;
     }
 }
