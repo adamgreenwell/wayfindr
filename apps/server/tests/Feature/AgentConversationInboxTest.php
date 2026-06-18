@@ -187,7 +187,7 @@ test('dashboard shows visitor presence state in the conversation queue', functio
     }
 });
 
-test('dashboard shows visitor read state for latest agent replies', function (): void {
+test('dashboard keeps visitor read state in conversation detail instead of the queue', function (): void {
     Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00', 'UTC'));
 
     try {
@@ -198,7 +198,7 @@ test('dashboard shows visitor read state for latest agent replies', function ():
 
         $seenConversation = Conversation::factory()->for($site)->for($visitor)->create([
             'support_code' => 'WF-SEEN',
-            'subject' => 'Visitor read the reply',
+            'subject' => 'Reply was reviewed',
             'status' => 'open',
             'last_message_at' => now()->subMinutes(3),
         ]);
@@ -233,10 +233,20 @@ test('dashboard shows visitor read state for latest agent replies', function ():
         $this->actingAs($agent)
             ->get('/dashboard/conversations')
             ->assertOk()
+            ->assertDontSee('Visitor read')
+            ->assertSee('Visitor needs the first reply')
+            ->assertSee('Visitor has not read the reply')
+            ->assertSee('Reply was reviewed')
+            ->assertDontSee('No agent reply yet')
+            ->assertDontSee('Not seen yet')
+            ->assertDontSee('Visitor saw reply');
+
+        $this->actingAs($agent)
+            ->get('/dashboard/conversations/WF-SEEN')
+            ->assertOk()
             ->assertSee('Visitor read')
-            ->assertSeeInOrder(['Visitor needs the first reply', 'No agent reply yet'])
-            ->assertSeeInOrder(['Visitor has not read the reply', 'Not seen yet'])
-            ->assertSeeInOrder(['Visitor read the reply', 'Visitor saw reply']);
+            ->assertSee('Visitor saw reply')
+            ->assertSee('Seen 1 minute ago');
     } finally {
         Carbon::setTestNow();
     }
