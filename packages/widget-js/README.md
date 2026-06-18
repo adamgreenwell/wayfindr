@@ -69,6 +69,7 @@ The widget currently supports the first visitor loop:
 - show calm empty, error, and retry states without hiding the existing conversation,
 - render the visitor-visible conversation message timeline with timestamps, simple message grouping, and sent cues for visitor messages,
 - expose the timeline, notices, typing hints, and delivery status through polite live regions so assistive technology can announce new context without rereading the whole widget,
+- expose the launcher/panel state to assistive technology and let keyboard visitors close the panel with Escape,
 - show fresh support typing hints and expire them locally when they become stale,
 - receive live agent replies over Reverb when configured,
 - fetch the current cobrowse request status,

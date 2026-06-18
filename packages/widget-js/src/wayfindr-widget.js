@@ -21,6 +21,7 @@
   };
   var MESSAGE_GROUP_WINDOW_MS = 5 * 60 * 1000;
   var AGENT_TYPING_FRESH_MS = 20 * 1000;
+  var widgetInstanceCount = 0;
   var DEFAULT_MASK_SELECTORS = [
     'input[type="password"]',
     'input[type="hidden"]',
@@ -365,11 +366,12 @@
     injectStyles(doc);
 
     var mount = resolveMount(doc, options.mount);
+    var panelId = 'wayfindr-support-panel-' + (++widgetInstanceCount);
     var rootEl = doc.createElement('div');
     rootEl.className = 'wayfindr-widget';
     rootEl.innerHTML = [
-      '<button class="wayfindr-widget__launcher" type="button">' + escapeHtml(options.launcherLabel || 'Chat with support') + '</button>',
-      '<section class="wayfindr-widget__panel" aria-label="Support chat" hidden>',
+      '<button class="wayfindr-widget__launcher" type="button" aria-controls="' + escapeHtml(panelId) + '" aria-expanded="false">' + escapeHtml(options.launcherLabel || 'Chat with support') + '</button>',
+      '<section id="' + escapeHtml(panelId) + '" class="wayfindr-widget__panel" aria-label="Support chat" hidden>',
       '  <header class="wayfindr-widget__header">',
       '    <strong>' + escapeHtml(options.title || 'Wayfindr Support') + '</strong>',
       '    <button class="wayfindr-widget__close" type="button" aria-label="Close support chat">&times;</button>',
@@ -1101,6 +1103,7 @@
 
       panel.hidden = false;
       launcher.hidden = true;
+      launcher.setAttribute('aria-expanded', 'true');
       textarea.focus();
 
       if (wasHidden && supportCode) {
@@ -1114,6 +1117,7 @@
       cancelPendingReadReceipt();
       panel.hidden = true;
       launcher.hidden = false;
+      launcher.setAttribute('aria-expanded', 'false');
       launcher.focus();
     }
 
@@ -1145,6 +1149,12 @@
 
     launcher.addEventListener('click', open);
     close.addEventListener('click', closePanel);
+    panel.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closePanel();
+      }
+    });
     refresh.addEventListener('click', function () {
       refreshMessages();
     });

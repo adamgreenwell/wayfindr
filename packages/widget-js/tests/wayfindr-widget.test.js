@@ -108,6 +108,45 @@ test('marks visitor chat regions for calm assistive announcements', () => {
   assert.equal(status.getAttribute('aria-atomic'), 'true');
 });
 
+test('exposes the widget shell state and closes with Escape', () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    storage: memoryStorage(),
+    fetch: async () => jsonResponse(404, { message: 'Not used' }),
+  });
+
+  const launcher = widget.root.querySelector('.wayfindr-widget__launcher');
+  const panel = widget.root.querySelector('.wayfindr-widget__panel');
+  const textarea = widget.root.querySelector('.wayfindr-widget__textarea');
+
+  assert.equal(launcher.getAttribute('aria-expanded'), 'false');
+  assert.equal(launcher.getAttribute('aria-controls'), panel.id);
+  assert.ok(panel.id);
+
+  launcher.click();
+
+  assert.equal(panel.hidden, false);
+  assert.equal(launcher.hidden, true);
+  assert.equal(launcher.getAttribute('aria-expanded'), 'true');
+  assert.equal(dom.window.document.activeElement, textarea);
+
+  panel.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+  assert.equal(panel.hidden, true);
+  assert.equal(launcher.hidden, false);
+  assert.equal(launcher.getAttribute('aria-expanded'), 'false');
+  assert.equal(dom.window.document.activeElement, launcher);
+});
+
 test('resolves a stable anonymous id from storage when one is not supplied', () => {
   const values = new Map();
   const storage = {
