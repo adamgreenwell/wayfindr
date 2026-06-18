@@ -431,6 +431,7 @@
     var cobrowseGranted = false;
     var cobrowseState = 'unavailable';
     var cobrowseRequestedBy = null;
+    var pendingCobrowseConsentFocus = false;
     var mutationObserver = null;
     var pendingMutationRecords = [];
     var skippedMutationRecords = 0;
@@ -796,7 +797,13 @@
         : requester + ' wants to view this page with sensitive fields masked.';
 
       if (requested && wasHidden && !cobrowse.hidden) {
-        cobrowseAllow.focus();
+        if (isPanelReadable({ panel: panel, document: doc })) {
+          cobrowseAllow.focus();
+        } else {
+          pendingCobrowseConsentFocus = true;
+        }
+      } else if (!requested) {
+        pendingCobrowseConsentFocus = false;
       }
     }
 
@@ -1110,7 +1117,13 @@
       panel.hidden = false;
       launcher.hidden = true;
       launcher.setAttribute('aria-expanded', 'true');
-      textarea.focus();
+
+      if (pendingCobrowseConsentFocus && cobrowseState === 'requested' && !cobrowse.hidden) {
+        pendingCobrowseConsentFocus = false;
+        cobrowseAllow.focus();
+      } else {
+        textarea.focus();
+      }
 
       if (wasHidden && supportCode) {
         refreshMessages({ silent: true });
