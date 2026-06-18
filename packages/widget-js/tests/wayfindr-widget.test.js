@@ -66,6 +66,48 @@ test('shows calm empty-state copy before a widget conversation starts', () => {
   assert.match(notice.textContent, /Send a message/);
 });
 
+test('marks visitor chat regions for calm assistive announcements', () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    storage: memoryStorage(),
+    fetch: async () => jsonResponse(404, { message: 'Not used' }),
+  });
+
+  widget.open();
+
+  const timeline = widget.root.querySelector('.wayfindr-widget__timeline');
+  const notice = widget.root.querySelector('.wayfindr-widget__notice');
+  const typing = widget.root.querySelector('.wayfindr-widget__typing');
+  const status = widget.root.querySelector('.wayfindr-widget__status');
+
+  assert.equal(timeline.getAttribute('role'), 'log');
+  assert.equal(timeline.getAttribute('aria-live'), 'polite');
+  assert.equal(timeline.getAttribute('aria-relevant'), 'additions text');
+  assert.equal(timeline.getAttribute('aria-atomic'), 'false');
+  assert.equal(timeline.getAttribute('aria-label'), 'Conversation messages');
+
+  assert.equal(notice.getAttribute('role'), 'status');
+  assert.equal(notice.getAttribute('aria-live'), 'polite');
+  assert.equal(notice.getAttribute('aria-atomic'), 'true');
+
+  assert.equal(typing.getAttribute('role'), 'status');
+  assert.equal(typing.getAttribute('aria-live'), 'polite');
+  assert.equal(typing.getAttribute('aria-atomic'), 'true');
+
+  assert.equal(status.getAttribute('role'), 'status');
+  assert.equal(status.getAttribute('aria-live'), 'polite');
+  assert.equal(status.getAttribute('aria-atomic'), 'true');
+});
+
 test('resolves a stable anonymous id from storage when one is not supplied', () => {
   const values = new Map();
   const storage = {

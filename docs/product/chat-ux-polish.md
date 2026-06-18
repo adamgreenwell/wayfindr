@@ -43,6 +43,19 @@ Typing should never be treated as a durable workflow state. It is a gentle cue
 to wait a beat before sending a reply, not proof that a visitor is still present
 or obligated to answer.
 
+## Assistive Announcements
+
+The visitor widget exposes new chat context through polite live regions. The
+message timeline uses a `log` region that announces additions and text changes
+without rereading the whole widget. Empty states, retry notices, typing hints,
+and delivery/status copy use atomic `status` regions so each update is coherent
+when announced.
+
+Wayfindr should avoid assertive announcements for routine chat activity. New
+messages, typing hints, and refresh problems matter, but they should not yank
+focus away from the visitor's current task or make transient network issues
+sound like emergencies.
+
 ## Read Receipts
 
 Visitor read receipts are currently tied to explicit widget message fetches that
