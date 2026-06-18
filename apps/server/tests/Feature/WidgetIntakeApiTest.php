@@ -1132,6 +1132,55 @@ test('visitor can read their conversation messages', function (): void {
     );
 });
 
+test('visitor read receipt can be limited to a rendered agent message', function (): void {
+    Event::fake([ConversationReadReceiptUpdated::class]);
+
+    Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00', 'UTC'));
+
+    try {
+        $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+        $agent = User::factory()->create(['name' => 'Ada Agent']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-MESSAGES',
+        ]);
+
+        $seenAgentMessage = ConversationMessage::factory()->for($conversation)->create([
+            'sender_type' => User::class,
+            'sender_id' => $agent->id,
+            'body' => 'This reply was rendered.',
+            'created_at' => now()->subMinute(),
+        ]);
+
+        $unrenderedAgentMessage = ConversationMessage::factory()->for($conversation)->create([
+            'sender_type' => User::class,
+            'sender_id' => $agent->id,
+            'body' => 'This reply is newer but was not rendered.',
+            'created_at' => now(),
+        ]);
+
+        $response = $this->getJson('/api/conversations/WF-MESSAGES/messages?'.http_build_query([
+            'site_public_key' => 'site_public_docs',
+            'anonymous_id' => 'anon-docs',
+            'visitor_token' => widgetVisitorToken($this, 'site_public_docs', 'anon-docs'),
+            'mark_seen' => true,
+            'seen_message_id' => $seenAgentMessage->id,
+        ]));
+
+        $response->assertOk();
+
+        expect($seenAgentMessage->fresh()->seen_at?->toJSON())->toBe(now()->toJSON())
+            ->and($unrenderedAgentMessage->fresh()->seen_at)->toBeNull();
+
+        Event::assertDispatched(
+            ConversationReadReceiptUpdated::class,
+            fn (ConversationReadReceiptUpdated $event): bool => $event->conversation->id === $conversation->id
+        );
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('visitor message fetch does not mark agent replies seen without a read signal', function (): void {
     Event::fake([ConversationReadReceiptUpdated::class]);
 

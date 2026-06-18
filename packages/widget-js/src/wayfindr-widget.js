@@ -208,6 +208,10 @@
 
         if (details.markSeen) {
           params.mark_seen = '1';
+
+          if (details.seenMessageId) {
+            params.seen_message_id = String(details.seenMessageId);
+          }
         }
 
         return getJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/messages?' + toQueryString(params));
@@ -439,6 +443,11 @@
       : DEFAULT_COBROWSE_PAYLOAD_BUDGET.mutationQueueMaxRecords;
     var messagePollMs = typeof options.messagePollMs === 'number' ? Math.max(0, options.messagePollMs) : 5000;
     var messagePollTimer = null;
+    var readReceiptDwellMs = typeof options.readReceiptDwellMs === 'number' ? Math.max(0, options.readReceiptDwellMs) : 1200;
+    var readReceiptTimer = null;
+    var pendingReadReceiptMessageId = null;
+    var lastReadReceiptMessageId = null;
+    var readReceiptBusy = false;
     var cobrowseStatusPollMs = typeof options.cobrowseStatusPollMs === 'number' ? Math.max(0, options.cobrowseStatusPollMs) : 5000;
     var cobrowseStatusTimer = null;
     var typingSignalThrottleMs = typeof options.typingSignalThrottleMs === 'number' ? Math.max(0, options.typingSignalThrottleMs) : 5000;
@@ -487,6 +496,10 @@
           item.className += ' wayfindr-widget__message--grouped';
         }
 
+        if (message.id) {
+          item.setAttribute('data-wayfindr-message-id', String(message.id));
+        }
+
         meta.className = 'wayfindr-widget__message-meta';
         name.className = 'wayfindr-widget__message-name';
         name.textContent = sender.name || (senderKind === 'agent' ? 'Support' : 'Visitor');
@@ -520,6 +533,7 @@
       }
 
       refresh.hidden = false;
+      scheduleRenderedReadReceipt();
     }
 
     function appendMessage(message) {
@@ -649,6 +663,114 @@
 
       clearTimeout(messagePollTimer);
       messagePollTimer = null;
+    }
+
+    function clearReadReceiptTimer() {
+      if (!readReceiptTimer) {
+        return;
+      }
+
+      clearTimeout(readReceiptTimer);
+      readReceiptTimer = null;
+    }
+
+    function cancelPendingReadReceipt() {
+      clearReadReceiptTimer();
+      pendingReadReceiptMessageId = null;
+    }
+
+    function renderedMessageExists(messageId) {
+      var rendered = timeline.querySelectorAll('[data-wayfindr-message-id]');
+
+      return Array.prototype.slice.call(rendered).some(function (item) {
+        return item.getAttribute('data-wayfindr-message-id') === String(messageId);
+      });
+    }
+
+    function latestRenderedAgentMessageId() {
+      var index;
+
+      for (index = messages.length - 1; index >= 0; index -= 1) {
+        var message = messages[index] || {};
+        var sender = message.sender || {};
+
+        if (sender.kind === 'agent' && message.id && renderedMessageExists(message.id)) {
+          return String(message.id);
+        }
+      }
+
+      return null;
+    }
+
+    function canMarkRenderedMessagesSeen() {
+      return isPanelReadable({
+        panel: panel,
+        document: doc,
+      });
+    }
+
+    function scheduleRenderedReadReceipt() {
+      var messageId;
+
+      if (!supportCode || readReceiptBusy || !canMarkRenderedMessagesSeen()) {
+        return;
+      }
+
+      messageId = latestRenderedAgentMessageId();
+
+      if (!messageId || messageId === pendingReadReceiptMessageId || messageId === lastReadReceiptMessageId) {
+        return;
+      }
+
+      clearReadReceiptTimer();
+      pendingReadReceiptMessageId = messageId;
+      readReceiptTimer = setTimeout(function () {
+        readReceiptTimer = null;
+        confirmRenderedReadReceipt(messageId);
+      }, readReceiptDwellMs);
+
+      if (typeof readReceiptTimer.unref === 'function') {
+        readReceiptTimer.unref();
+      }
+    }
+
+    async function confirmRenderedReadReceipt(messageId) {
+      if (!supportCode || !canMarkRenderedMessagesSeen() || latestRenderedAgentMessageId() !== String(messageId)) {
+        if (pendingReadReceiptMessageId === String(messageId)) {
+          pendingReadReceiptMessageId = null;
+        }
+
+        return;
+      }
+
+      readReceiptBusy = true;
+      pendingReadReceiptMessageId = null;
+
+      try {
+        var result = await client.fetchMessages(supportCode, {
+          markSeen: true,
+          seenMessageId: messageId,
+        });
+
+        lastReadReceiptMessageId = String(messageId);
+        renderMessages(result.messages || []);
+        renderAgentTyping(result.agent_typing);
+      } catch (error) {
+        // Read receipts are a hint. A later render/open/visibility pass can retry.
+      } finally {
+        readReceiptBusy = false;
+        scheduleRenderedReadReceipt();
+      }
+    }
+
+    function handleVisibilityChange() {
+      if (canMarkRenderedMessagesSeen()) {
+        scheduleRenderedReadReceipt();
+
+        return;
+      }
+
+      cancelPendingReadReceipt();
     }
 
     function renderCobrowseConsent() {
@@ -931,13 +1053,7 @@
       }
 
       try {
-        var result = await client.fetchMessages(supportCode, {
-          markSeen: shouldMarkMessagesSeen({
-            markSeen: options.markSeen,
-            panel: panel,
-            document: doc,
-          }),
-        });
+        var result = await client.fetchMessages(supportCode);
         renderMessages(result.messages || []);
         renderAgentTyping(result.agent_typing);
 
@@ -982,11 +1098,14 @@
       textarea.focus();
 
       if (wasHidden && supportCode) {
-        refreshMessages({ silent: true, markSeen: true });
+        refreshMessages({ silent: true });
       }
+
+      scheduleRenderedReadReceipt();
     }
 
     function closePanel() {
+      cancelPendingReadReceipt();
       panel.hidden = true;
       launcher.hidden = false;
       launcher.focus();
@@ -1037,6 +1156,7 @@
         reportTyping(true);
       }
     });
+    doc.addEventListener('visibilitychange', handleVisibilityChange);
     form.addEventListener('submit', async function (event) {
       event.preventDefault();
 
@@ -1099,25 +1219,13 @@
 
         stopCobrowseStatusPoll();
         stopMessagePoll();
+        cancelPendingReadReceipt();
         clearAgentTypingExpiry();
         stopMutationStream();
+        doc.removeEventListener('visibilitychange', handleVisibilityChange);
         rootEl.remove();
       },
     };
-  }
-
-  function shouldMarkMessagesSeen(options) {
-    options = options || {};
-
-    if (options.markSeen === true) {
-      return true;
-    }
-
-    if (options.markSeen === false) {
-      return false;
-    }
-
-    return isPanelReadable(options);
   }
 
   function isPanelReadable(options) {

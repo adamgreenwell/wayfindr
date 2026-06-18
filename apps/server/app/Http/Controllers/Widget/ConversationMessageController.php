@@ -23,6 +23,7 @@ class ConversationMessageController extends Controller
             'anonymous_id' => ['required', 'string', 'max:255'],
             'visitor_token' => ['nullable', 'string', 'max:4096'],
             'mark_seen' => ['nullable', 'boolean'],
+            'seen_message_id' => ['nullable', 'integer', 'min:1'],
         ]);
 
         $conversation = $this->conversationForVisitor(
@@ -34,7 +35,7 @@ class ConversationMessageController extends Controller
         );
         $this->recordVisitorPresence($conversation);
 
-        if ((bool) ($validated['mark_seen'] ?? false) && $this->markAgentMessagesSeen($conversation)) {
+        if ((bool) ($validated['mark_seen'] ?? false) && $this->markAgentMessagesSeen($conversation, $validated['seen_message_id'] ?? null)) {
             event(new ConversationReadReceiptUpdated($conversation->load('latestAgentMessage')));
         }
 
@@ -149,12 +150,34 @@ class ConversationMessageController extends Controller
         event(new ConversationPresenceUpdated($conversation));
     }
 
-    private function markAgentMessagesSeen(Conversation $conversation): bool
+    private function markAgentMessagesSeen(Conversation $conversation, ?int $seenMessageId = null): bool
     {
-        return $conversation->messages()
+        $query = $conversation->messages()
             ->where('sender_type', User::class)
-            ->whereNull('seen_at')
-            ->update(['seen_at' => now()]) > 0;
+            ->whereNull('seen_at');
+
+        if ($seenMessageId) {
+            $seenMessage = $conversation->messages()
+                ->whereKey($seenMessageId)
+                ->where('sender_type', User::class)
+                ->first();
+
+            if (! $seenMessage) {
+                return false;
+            }
+
+            $query->where(function ($query) use ($seenMessage): void {
+                $query
+                    ->where('created_at', '<', $seenMessage->created_at)
+                    ->orWhere(function ($query) use ($seenMessage): void {
+                        $query
+                            ->where('created_at', $seenMessage->created_at)
+                            ->where('id', '<=', $seenMessage->id);
+                    });
+            });
+        }
+
+        return $query->update(['seen_at' => now()]) > 0;
     }
 
     private function senderPayload($message): array
