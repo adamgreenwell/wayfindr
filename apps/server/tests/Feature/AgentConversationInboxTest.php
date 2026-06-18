@@ -4433,7 +4433,7 @@ test('agent can see cobrowse telemetry on a conversation', function (): void {
         ->assertSee('5');
 });
 
-test('agent can see cobrowse transport health on a conversation', function (array $metadata, string $label, string $message, string $lastReport, string $pressure): void {
+test('agent can see cobrowse transport health on a conversation', function (array $metadata, string $label, string $message, string $lastReport, string $pressure, string $guidance): void {
     Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00'));
 
     $account = Account::factory()->create(['name' => 'Acme Support']);
@@ -4462,7 +4462,9 @@ test('agent can see cobrowse transport health on a conversation', function (arra
         ->assertSee('Last report')
         ->assertSee($lastReport)
         ->assertSee('Pressure')
-        ->assertSee($pressure);
+        ->assertSee($pressure)
+        ->assertSee('Agent guidance')
+        ->assertSee($guidance);
 
     Carbon::setTestNow();
 })->with([
@@ -4481,6 +4483,7 @@ test('agent can see cobrowse transport health on a conversation', function (arra
         'Cobrowse reports are arriving normally.',
         '30 seconds ago',
         'No drops reported',
+        'Preview is current enough to use alongside chat.',
     ],
     'stale' => [
         [
@@ -4494,6 +4497,7 @@ test('agent can see cobrowse transport health on a conversation', function (arra
         'No cobrowse report has arrived in the last 2 minutes.',
         '5 minutes ago',
         'No drops reported',
+        'Ask the visitor to confirm what they see before relying on the preview.',
     ],
     'reconnecting' => [
         [
@@ -4514,6 +4518,7 @@ test('agent can see cobrowse transport health on a conversation', function (arra
         'The visitor transport has reconnected recently; preview data may briefly lag.',
         '15 seconds ago',
         '2 dropped batches, 1 skipped mutation',
+        'Use chat to confirm anything that depends on fast-changing page state.',
     ],
     'unavailable' => [
         [],
@@ -4521,6 +4526,7 @@ test('agent can see cobrowse transport health on a conversation', function (arra
         'No cobrowse transport reports have arrived yet.',
         'Not reported',
         'No drops reported',
+        'Wait for the visitor page to report before relying on cobrowse.',
     ],
 ]);
 

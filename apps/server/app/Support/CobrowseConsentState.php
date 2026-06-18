@@ -91,6 +91,7 @@ class CobrowseConsentState
                 'last_report' => 'Not reported',
                 'reconnects' => '0',
                 'pressure' => 'No drops reported',
+                'guidance' => 'Wait for an active cobrowse session before relying on cobrowse.',
             ];
         }
 
@@ -108,6 +109,7 @@ class CobrowseConsentState
                 'last_report' => 'Not reported',
                 'reconnects' => number_format($reconnects),
                 'pressure' => $pressure,
+                'guidance' => 'Wait for the visitor page to report before relying on cobrowse.',
             ];
         }
 
@@ -118,6 +120,7 @@ class CobrowseConsentState
                 'last_report' => $latestReport->diffForHumans(),
                 'reconnects' => number_format($reconnects),
                 'pressure' => $pressure,
+                'guidance' => 'Ask the visitor to confirm what they see before relying on the preview.',
             ];
         }
 
@@ -128,6 +131,7 @@ class CobrowseConsentState
                 'last_report' => $latestReport->diffForHumans(),
                 'reconnects' => number_format($reconnects),
                 'pressure' => $pressure,
+                'guidance' => 'Use chat to confirm anything that depends on fast-changing page state.',
             ];
         }
 
@@ -137,6 +141,9 @@ class CobrowseConsentState
             'last_report' => $latestReport->diffForHumans(),
             'reconnects' => '0',
             'pressure' => $pressure,
+            'guidance' => $pressure === 'No drops reported'
+                ? 'Preview is current enough to use alongside chat.'
+                : 'Use chat to confirm anything that depends on fast-changing page state.',
         ];
     }
 

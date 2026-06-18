@@ -429,6 +429,10 @@
                             <span class="meta-label">Pressure</span>
                             <span class="meta-value">{{ $cobrowseConsent['transport']['pressure'] }}</span>
                         </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Agent guidance</span>
+                            <span class="meta-value">{{ $cobrowseConsent['transport']['guidance'] }}</span>
+                        </div>
                     </div>
                 @endif
 
