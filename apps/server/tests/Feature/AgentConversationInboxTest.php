@@ -4426,6 +4426,105 @@ test('agent can request a fresh cobrowse snapshot for a granted session', functi
     }
 });
 
+test('agent cannot replace a fresh pending cobrowse resync request with another click', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-18 15:00:00', 'UTC'));
+    Event::fake([CobrowseStateUpdated::class]);
+
+    try {
+        $account = Account::factory()->create(['name' => 'Acme Support']);
+        $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+        $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-RESYNC4',
+            'subject' => 'Cobrowse double click',
+        ]);
+        $session = CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+            'requested_by_id' => $agent->id,
+            'status' => 'granted',
+            'consented_at' => now()->subMinute(),
+            'ended_at' => null,
+            'metadata' => [
+                'resync_request' => [
+                    'id' => 'resync_existing',
+                    'requested_by_id' => $agent->id,
+                    'requested_by_name' => 'Ada Agent',
+                    'requested_at' => now()->subSeconds(15)->toJSON(),
+                    'fulfilled_at' => null,
+                ],
+            ],
+        ]);
+
+        $this->actingAs($agent)
+            ->from('/dashboard/conversations/WF-RESYNC4')
+            ->post('/dashboard/conversations/WF-RESYNC4/cobrowse/resync')
+            ->assertRedirect('/dashboard/conversations/WF-RESYNC4')
+            ->assertSessionHas('status', 'Fresh cobrowse snapshot already requested.');
+
+        expect($session->fresh()->metadata['resync_request'])
+            ->id->toBe('resync_existing')
+            ->requested_at->toBe(now()->subSeconds(15)->toJSON())
+            ->fulfilled_at->toBeNull();
+
+        Event::assertNotDispatched(CobrowseStateUpdated::class);
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+test('agent can replace a delayed pending cobrowse resync request', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-18 15:00:00', 'UTC'));
+    Event::fake([CobrowseStateUpdated::class]);
+
+    try {
+        $account = Account::factory()->create(['name' => 'Acme Support']);
+        $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+        $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-RESYNC5',
+            'subject' => 'Cobrowse retry',
+        ]);
+        $session = CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+            'requested_by_id' => $agent->id,
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(3),
+            'ended_at' => null,
+            'metadata' => [
+                'resync_request' => [
+                    'id' => 'resync_delayed',
+                    'requested_by_id' => $agent->id,
+                    'requested_by_name' => 'Ada Agent',
+                    'requested_at' => now()->subMinutes(2)->toJSON(),
+                    'fulfilled_at' => null,
+                ],
+            ],
+        ]);
+
+        $this->actingAs($agent)
+            ->from('/dashboard/conversations/WF-RESYNC5')
+            ->post('/dashboard/conversations/WF-RESYNC5/cobrowse/resync')
+            ->assertRedirect('/dashboard/conversations/WF-RESYNC5')
+            ->assertSessionHas('status', 'Fresh cobrowse snapshot requested.');
+
+        $session->refresh();
+
+        expect($session->metadata['resync_request'])
+            ->id->not->toBe('resync_delayed')
+            ->requested_by_id->toBe($agent->id)
+            ->requested_at->toBe(now()->toJSON())
+            ->fulfilled_at->toBeNull();
+
+        Event::assertDispatched(
+            CobrowseStateUpdated::class,
+            fn (CobrowseStateUpdated $event): bool => $event->cobrowseSession->id === $session->id
+                && $event->kind === 'resync_requested'
+        );
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('agent can see a fulfilled cobrowse resync request', function (): void {
     Carbon::setTestNow(Carbon::parse('2026-06-18 15:00:00', 'UTC'));
 

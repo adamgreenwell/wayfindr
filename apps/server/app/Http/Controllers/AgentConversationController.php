@@ -26,6 +26,8 @@ use Illuminate\Validation\ValidationException;
 
 class AgentConversationController extends Controller
 {
+    private const RESYNC_DUPLICATE_WINDOW_SECONDS = 60;
+
     public function show(Request $request, string $supportCode, CobrowseConsentState $cobrowseConsentState, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions): View
     {
         $agent = $request->user();
@@ -364,12 +366,33 @@ class AgentConversationController extends Controller
         }
 
         $isActive = true;
+        $alreadyPending = false;
 
-        $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata, CobrowseSession $session) use ($agent, &$isActive): array {
+        $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata, CobrowseSession $session) use ($agent, &$isActive, &$alreadyPending): array {
             if ($session->status !== 'granted' || $session->ended_at) {
                 $isActive = false;
 
                 return $metadata;
+            }
+
+            $currentRequest = $metadata['resync_request'] ?? null;
+
+            if (is_array($currentRequest) && blank($currentRequest['fulfilled_at'] ?? null)) {
+                $requestedAt = null;
+
+                try {
+                    $requestedAt = filled($currentRequest['requested_at'] ?? null)
+                        ? Carbon::parse((string) $currentRequest['requested_at'])
+                        : null;
+                } catch (\Throwable) {
+                    $requestedAt = null;
+                }
+
+                if ($requestedAt && $requestedAt->gte(now()->subSeconds(self::RESYNC_DUPLICATE_WINDOW_SECONDS))) {
+                    $alreadyPending = true;
+
+                    return $metadata;
+                }
             }
 
             $metadata['resync_request'] = [
@@ -387,6 +410,12 @@ class AgentConversationController extends Controller
             return redirect()
                 ->route('dashboard.conversations.show', $conversation->support_code)
                 ->with('status', 'Cobrowse must be active before requesting a fresh snapshot.');
+        }
+
+        if ($alreadyPending) {
+            return redirect()
+                ->route('dashboard.conversations.show', $conversation->support_code)
+                ->with('status', 'Fresh cobrowse snapshot already requested.');
         }
 
         event(new CobrowseStateUpdated($cobrowseSession, 'resync_requested'));

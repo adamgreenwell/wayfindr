@@ -84,6 +84,8 @@ unbounded page history.
 Agents may see whether that recovery request is pending, delayed, or fulfilled
 so they know when to retry or confirm details through chat. Those status cues do
 not change consent, masking, payload limits, or retention boundaries.
+Fresh duplicate requests may be coalesced briefly so repeated clicks do not
+force the visitor widget to answer overlapping recovery requests.
 
 Under pressure, Wayfindr should prefer dropping or skipping lower-value mutation
 details over sending raw sensitive values, unbounded snapshots, or oversized
