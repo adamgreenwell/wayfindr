@@ -411,14 +411,18 @@
                 @endif
 
                 @if ($cobrowseConsent['resync_request'])
-                    <div class="live-update" data-state="pending">
+                    <div class="live-update" data-state="{{ $cobrowseConsent['resync_request']['status'] }}">
                         <div>
                             <strong>{{ $cobrowseConsent['resync_request']['label'] }}</strong>
                             <p class="lede">{{ $cobrowseConsent['resync_request']['message'] }}</p>
                         </div>
                         <span class="lede">
-                            {{ $cobrowseConsent['resync_request']['requested_by'] }}
+                            Requested by {{ $cobrowseConsent['resync_request']['requested_by'] }}
                             {{ $cobrowseConsent['resync_request']['requested_at'] }}
+                            @if (filled($cobrowseConsent['resync_request']['fulfilled_at'] ?? null))
+                                <br>
+                                Received {{ $cobrowseConsent['resync_request']['fulfilled_at'] }}
+                            @endif
                         </span>
                     </div>
                 @endif

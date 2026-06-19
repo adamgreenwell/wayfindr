@@ -13,6 +13,8 @@ class CobrowseConsentState
 
     private const TRANSPORT_RECENT_LOSS_WINDOW_SECONDS = 30;
 
+    private const RESYNC_DELAYED_AFTER_SECONDS = 60;
+
     public function __construct(private readonly CobrowseReplayPreview $replayPreview) {}
 
     /**
@@ -428,15 +430,42 @@ class CobrowseConsentState
 
         $request = $session->metadata['resync_request'] ?? null;
 
-        if (! is_array($request) || filled($request['fulfilled_at'] ?? null)) {
+        if (! is_array($request)) {
             return null;
         }
 
+        $requestedAt = $this->parseReportedAt($request['requested_at'] ?? null);
+        $fulfilledAt = $this->parseReportedAt($request['fulfilled_at'] ?? null);
+        $snapshotReportedAt = $this->parseReportedAt($request['fulfilled_snapshot_reported_at'] ?? null);
+
+        if ($fulfilledAt) {
+            return [
+                'status' => 'fulfilled',
+                'label' => 'Fresh snapshot received',
+                'message' => 'The visitor widget sent a clean masked snapshot.',
+                'requested_by' => filled($request['requested_by_name'] ?? null) ? (string) $request['requested_by_name'] : 'Support',
+                'requested_at' => $this->formatMoment($requestedAt, 'Request time unavailable'),
+                'fulfilled_at' => $this->formatMoment($fulfilledAt, 'Receipt time unavailable'),
+                'snapshot_reported_at' => $this->formatMoment($snapshotReportedAt, 'Snapshot report time unavailable'),
+            ];
+        }
+
+        if ($requestedAt && $requestedAt->lt(now()->subSeconds(self::RESYNC_DELAYED_AFTER_SECONDS))) {
+            return [
+                'status' => 'delayed',
+                'label' => 'Fresh snapshot delayed',
+                'message' => 'The visitor widget has not answered yet. Request another clean snapshot or confirm the page state through chat.',
+                'requested_by' => filled($request['requested_by_name'] ?? null) ? (string) $request['requested_by_name'] : 'Support',
+                'requested_at' => $this->formatMoment($requestedAt, 'Request time unavailable'),
+            ];
+        }
+
         return [
+            'status' => 'pending',
             'label' => 'Fresh snapshot requested',
             'message' => 'Waiting for the visitor widget to send a clean page snapshot.',
             'requested_by' => filled($request['requested_by_name'] ?? null) ? (string) $request['requested_by_name'] : 'Support',
-            'requested_at' => $this->formatMoment($this->parseReportedAt($request['requested_at'] ?? null), 'Just requested'),
+            'requested_at' => $this->formatMoment($requestedAt, 'Just requested'),
         ];
     }
 

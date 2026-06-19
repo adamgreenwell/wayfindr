@@ -723,6 +723,18 @@
             background: var(--surface-muted);
         }
 
+        .live-update[data-state="pending"] {
+            background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+        }
+
+        .live-update[data-state="fulfilled"] {
+            background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+        }
+
+        .live-update[data-state="delayed"] {
+            background: #fff8e4;
+        }
+
         [hidden] {
             display: none !important;
         }

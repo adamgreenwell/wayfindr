@@ -81,6 +81,10 @@ request ID before sending another agent-requested resync. This is a recovery
 control for the current consented session, not permission to send raw values or
 unbounded page history.
 
+Agents may see whether that recovery request is pending, delayed, or fulfilled
+so they know when to retry or confirm details through chat. Those status cues do
+not change consent, masking, payload limits, or retention boundaries.
+
 Under pressure, Wayfindr should prefer dropping or skipping lower-value mutation
 details over sending raw sensitive values, unbounded snapshots, or oversized
 session metadata.

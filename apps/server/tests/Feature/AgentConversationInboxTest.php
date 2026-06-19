@@ -4418,8 +4418,91 @@ test('agent can request a fresh cobrowse snapshot for a granted session', functi
             ->get('/dashboard/conversations/WF-RESYNC')
             ->assertOk()
             ->assertSee('Request fresh snapshot')
+            ->assertSee('data-state="pending"', false)
             ->assertSee('Fresh snapshot requested')
             ->assertSee('Waiting for the visitor widget to send a clean page snapshot.');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+test('agent can see a fulfilled cobrowse resync request', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-18 15:00:00', 'UTC'));
+
+    try {
+        $account = Account::factory()->create(['name' => 'Acme Support']);
+        $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+        $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-RESYNC2',
+            'subject' => 'Cobrowse recovered',
+        ]);
+
+        CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+            'requested_by_id' => $agent->id,
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(2),
+            'ended_at' => null,
+            'metadata' => [
+                'resync_request' => [
+                    'id' => 'resync_received',
+                    'requested_by_id' => $agent->id,
+                    'requested_by_name' => 'Ada Agent',
+                    'requested_at' => now()->subMinute()->toJSON(),
+                    'fulfilled_at' => now()->subSeconds(20)->toJSON(),
+                    'fulfilled_snapshot_reported_at' => now()->subSeconds(22)->toJSON(),
+                ],
+            ],
+        ]);
+
+        $this->actingAs($agent)
+            ->get('/dashboard/conversations/WF-RESYNC2')
+            ->assertOk()
+            ->assertSee('data-state="fulfilled"', false)
+            ->assertSee('Fresh snapshot received')
+            ->assertSee('The visitor widget sent a clean masked snapshot.')
+            ->assertSee('Received 20 seconds ago');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+test('agent can see delayed cobrowse resync guidance', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-18 15:00:00', 'UTC'));
+
+    try {
+        $account = Account::factory()->create(['name' => 'Acme Support']);
+        $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+        $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-RESYNC3',
+            'subject' => 'Cobrowse still stale',
+        ]);
+
+        CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+            'requested_by_id' => $agent->id,
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(4),
+            'ended_at' => null,
+            'metadata' => [
+                'resync_request' => [
+                    'id' => 'resync_delayed',
+                    'requested_by_id' => $agent->id,
+                    'requested_by_name' => 'Ada Agent',
+                    'requested_at' => now()->subMinutes(2)->toJSON(),
+                    'fulfilled_at' => null,
+                ],
+            ],
+        ]);
+
+        $this->actingAs($agent)
+            ->get('/dashboard/conversations/WF-RESYNC3')
+            ->assertOk()
+            ->assertSee('data-state="delayed"', false)
+            ->assertSee('Fresh snapshot delayed')
+            ->assertSee('The visitor widget has not answered yet. Request another clean snapshot or confirm the page state through chat.');
     } finally {
         Carbon::setTestNow();
     }
