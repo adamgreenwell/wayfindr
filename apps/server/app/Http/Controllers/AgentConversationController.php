@@ -10,6 +10,7 @@ use App\Models\Site;
 use App\Models\User;
 use App\Notifications\ConversationNeedsReply;
 use App\Support\CobrowseConsentState;
+use App\Support\CobrowseResyncRequestPolicy;
 use App\Support\ReplyTemplateOptions;
 use App\Support\TicketCategory;
 use App\Support\TicketPriority;
@@ -26,8 +27,6 @@ use Illuminate\Validation\ValidationException;
 
 class AgentConversationController extends Controller
 {
-    private const RESYNC_DUPLICATE_WINDOW_SECONDS = 60;
-
     public function show(Request $request, string $supportCode, CobrowseConsentState $cobrowseConsentState, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions): View
     {
         $agent = $request->user();
@@ -353,7 +352,7 @@ class AgentConversationController extends Controller
             ->with('status', 'Cobrowse session ended.');
     }
 
-    public function requestCobrowseResync(Request $request, string $supportCode): RedirectResponse
+    public function requestCobrowseResync(Request $request, string $supportCode, CobrowseResyncRequestPolicy $resyncRequestPolicy): RedirectResponse
     {
         $agent = $request->user();
         $conversation = $this->conversationForAgent($agent, $supportCode, 'requestCobrowse');
@@ -368,7 +367,7 @@ class AgentConversationController extends Controller
         $isActive = true;
         $alreadyPending = false;
 
-        $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata, CobrowseSession $session) use ($agent, &$isActive, &$alreadyPending): array {
+        $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata, CobrowseSession $session) use ($agent, $resyncRequestPolicy, &$isActive, &$alreadyPending): array {
             if ($session->status !== 'granted' || $session->ended_at) {
                 $isActive = false;
 
@@ -377,22 +376,10 @@ class AgentConversationController extends Controller
 
             $currentRequest = $metadata['resync_request'] ?? null;
 
-            if (is_array($currentRequest) && blank($currentRequest['fulfilled_at'] ?? null)) {
-                $requestedAt = null;
+            if (is_array($currentRequest) && $resyncRequestPolicy->isFreshPending($currentRequest)) {
+                $alreadyPending = true;
 
-                try {
-                    $requestedAt = filled($currentRequest['requested_at'] ?? null)
-                        ? Carbon::parse((string) $currentRequest['requested_at'])
-                        : null;
-                } catch (\Throwable) {
-                    $requestedAt = null;
-                }
-
-                if ($requestedAt && $requestedAt->gte(now()->subSeconds(self::RESYNC_DUPLICATE_WINDOW_SECONDS))) {
-                    $alreadyPending = true;
-
-                    return $metadata;
-                }
+                return $metadata;
             }
 
             $metadata['resync_request'] = [

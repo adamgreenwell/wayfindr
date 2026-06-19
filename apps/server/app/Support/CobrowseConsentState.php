@@ -13,9 +13,10 @@ class CobrowseConsentState
 
     private const TRANSPORT_RECENT_LOSS_WINDOW_SECONDS = 30;
 
-    private const RESYNC_DELAYED_AFTER_SECONDS = 60;
-
-    public function __construct(private readonly CobrowseReplayPreview $replayPreview) {}
+    public function __construct(
+        private readonly CobrowseReplayPreview $replayPreview,
+        private readonly CobrowseResyncRequestPolicy $resyncRequestPolicy,
+    ) {}
 
     /**
      * @return array{label: string, message: string, status: string, lifecycle: array<string, string>|null, transport: array<string, string>, payload_budget: array<string, string>|null, telemetry: array<string, string>|null, page_state: array<string, string>|null, snapshot: array<string, string>|null, mutation_stream: array<string, string>|null, replay_preview: array<string, string>|null, resync_request: array<string, string>|null}
@@ -450,7 +451,7 @@ class CobrowseConsentState
             ];
         }
 
-        if ($requestedAt && $requestedAt->lt(now()->subSeconds(self::RESYNC_DELAYED_AFTER_SECONDS))) {
+        if ($this->resyncRequestPolicy->isDelayedPending($request)) {
             return [
                 'status' => 'delayed',
                 'label' => 'Fresh snapshot delayed',
