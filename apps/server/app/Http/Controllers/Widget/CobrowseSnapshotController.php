@@ -8,12 +8,15 @@ use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Models\Site;
 use App\Support\CobrowsePayloadBudget;
+use App\Support\CobrowseResyncRequestPolicy;
 use App\Support\VisitorSessionToken;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class CobrowseSnapshotController extends Controller
 {
+    public function __construct(private readonly CobrowseResyncRequestPolicy $resyncRequestPolicy) {}
+
     public function store(Request $request, string $supportCode, VisitorSessionToken $visitorSessionToken): JsonResponse
     {
         $validated = $request->validate([
@@ -116,6 +119,7 @@ class CobrowseSnapshotController extends Controller
             ! is_array($request)
             || (string) ($request['id'] ?? '') !== $requestId
             || filled($request['fulfilled_at'] ?? null)
+            || ! $this->resyncRequestPolicy->canBeFulfilled($request)
         ) {
             return $metadata;
         }

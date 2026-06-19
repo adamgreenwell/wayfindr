@@ -833,6 +833,56 @@ test('visitor cobrowse snapshot fulfills a matching agent resync request', funct
     }
 });
 
+test('visitor cobrowse snapshot does not fulfill an expired agent resync request', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-18 15:15:00', 'UTC'));
+
+    try {
+        $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+        $agent = User::factory()->create(['name' => 'Ada Agent']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-RESYNC-LATE',
+        ]);
+        $session = CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(8),
+            'ended_at' => null,
+            'metadata' => [
+                'resync_request' => [
+                    'id' => 'resync_late',
+                    'requested_by_id' => $agent->id,
+                    'requested_by_name' => 'Ada Agent',
+                    'requested_at' => now()->subMinutes(6)->toJSON(),
+                    'fulfilled_at' => null,
+                ],
+            ],
+        ]);
+        $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+
+        $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-snapshot", [
+            'site_public_key' => 'site_public_docs',
+            'anonymous_id' => 'anon-docs',
+            'visitor_token' => $token,
+            'page_url' => 'https://docs.example.test/install?step=3',
+            'title' => 'Install Guide',
+            'html' => '<main><h1>Install Guide</h1><p>Late page.</p></main>',
+            'text' => 'Install Guide Late page.',
+            'node_count' => 3,
+            'masked_count' => 0,
+            'resync_request_id' => 'resync_late',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.snapshot.resync_request_id', 'resync_late');
+
+        expect($session->fresh()->metadata['resync_request'])
+            ->id->toBe('resync_late')
+            ->fulfilled_at->toBeNull()
+            ->fulfilled_snapshot_reported_at->toBeNull();
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('visitor cobrowse status is unavailable without a request', function (): void {
     $site = Site::factory()->create(['public_key' => 'site_public_docs']);
     $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);

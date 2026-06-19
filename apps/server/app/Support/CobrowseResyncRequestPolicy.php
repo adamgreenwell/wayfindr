@@ -51,6 +51,18 @@ class CobrowseResyncRequestPolicy
     /**
      * @param  array<string, mixed>  $request
      */
+    public function canBeFulfilled(array $request): bool
+    {
+        $requestedAt = $this->requestedAt($request);
+
+        return $this->isPending($request)
+            && $requestedAt
+            && $requestedAt->gte(now()->subSeconds(self::EXPIRES_AFTER_SECONDS));
+    }
+
+    /**
+     * @param  array<string, mixed>  $request
+     */
     public function isPending(array $request): bool
     {
         return blank($request['fulfilled_at'] ?? null);
