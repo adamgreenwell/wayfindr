@@ -735,6 +735,10 @@
             background: #fff8e4;
         }
 
+        .live-update[data-state="expired"] {
+            background: color-mix(in srgb, var(--danger) 7%, var(--surface));
+        }
+
         [hidden] {
             display: none !important;
         }

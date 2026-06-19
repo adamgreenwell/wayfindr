@@ -9,6 +9,8 @@ class CobrowseResyncRequestPolicy
 {
     public const DELAYED_AFTER_SECONDS = 60;
 
+    public const EXPIRES_AFTER_SECONDS = 300;
+
     /**
      * @param  array<string, mixed>  $request
      */
@@ -30,7 +32,20 @@ class CobrowseResyncRequestPolicy
 
         return $this->isPending($request)
             && $requestedAt
-            && $requestedAt->lt(now()->subSeconds(self::DELAYED_AFTER_SECONDS));
+            && $requestedAt->lt(now()->subSeconds(self::DELAYED_AFTER_SECONDS))
+            && ! $this->isExpired($request);
+    }
+
+    /**
+     * @param  array<string, mixed>  $request
+     */
+    public function isExpired(array $request): bool
+    {
+        $requestedAt = $this->requestedAt($request);
+
+        return $this->isPending($request)
+            && $requestedAt
+            && $requestedAt->lt(now()->subSeconds(self::EXPIRES_AFTER_SECONDS));
     }
 
     /**

@@ -6,12 +6,15 @@ use App\Http\Controllers\Controller;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Models\Site;
+use App\Support\CobrowseResyncRequestPolicy;
 use App\Support\VisitorSessionToken;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class CobrowseStatusController extends Controller
 {
+    public function __construct(private readonly CobrowseResyncRequestPolicy $resyncRequestPolicy) {}
+
     public function __invoke(Request $request, string $supportCode, VisitorSessionToken $visitorSessionToken): JsonResponse
     {
         $validated = $request->validate([
@@ -103,6 +106,7 @@ class CobrowseStatusController extends Controller
             || ! is_array($request)
             || ! filled($request['id'] ?? null)
             || filled($request['fulfilled_at'] ?? null)
+            || $this->resyncRequestPolicy->isExpired($request)
         ) {
             return [
                 'requested' => false,

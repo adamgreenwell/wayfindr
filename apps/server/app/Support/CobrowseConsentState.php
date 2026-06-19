@@ -451,6 +451,16 @@ class CobrowseConsentState
             ];
         }
 
+        if ($this->resyncRequestPolicy->isExpired($request)) {
+            return [
+                'status' => 'expired',
+                'label' => 'Fresh snapshot expired',
+                'message' => 'The visitor widget did not answer in time. Request another clean snapshot or continue through chat.',
+                'requested_by' => filled($request['requested_by_name'] ?? null) ? (string) $request['requested_by_name'] : 'Support',
+                'requested_at' => $this->formatMoment($requestedAt, 'Request time unavailable'),
+            ];
+        }
+
         if ($this->resyncRequestPolicy->isDelayedPending($request)) {
             return [
                 'status' => 'delayed',

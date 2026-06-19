@@ -4607,6 +4607,46 @@ test('agent can see delayed cobrowse resync guidance', function (): void {
     }
 });
 
+test('agent can see expired cobrowse resync guidance', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-18 15:00:00', 'UTC'));
+
+    try {
+        $account = Account::factory()->create(['name' => 'Acme Support']);
+        $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+        $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-RESYNC6',
+            'subject' => 'Cobrowse went quiet',
+        ]);
+
+        CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+            'requested_by_id' => $agent->id,
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(8),
+            'ended_at' => null,
+            'metadata' => [
+                'resync_request' => [
+                    'id' => 'resync_expired',
+                    'requested_by_id' => $agent->id,
+                    'requested_by_name' => 'Ada Agent',
+                    'requested_at' => now()->subMinutes(6)->toJSON(),
+                    'fulfilled_at' => null,
+                ],
+            ],
+        ]);
+
+        $this->actingAs($agent)
+            ->get('/dashboard/conversations/WF-RESYNC6')
+            ->assertOk()
+            ->assertSee('data-state="expired"', false)
+            ->assertSee('Fresh snapshot expired')
+            ->assertSee('The visitor widget did not answer in time. Request another clean snapshot or continue through chat.');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('agent cannot request a fresh cobrowse snapshot before consent is granted', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);

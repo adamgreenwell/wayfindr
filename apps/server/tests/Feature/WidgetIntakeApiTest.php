@@ -680,6 +680,48 @@ test('visitor cobrowse status includes a pending agent snapshot resync request',
     }
 });
 
+test('visitor cobrowse status omits expired agent snapshot resync requests', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-18 15:10:00', 'UTC'));
+
+    try {
+        $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+        $agent = User::factory()->create(['name' => 'Ada Agent']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-RESYNC-OLD',
+        ]);
+        CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->for($agent, 'requestedBy')->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(8),
+            'ended_at' => null,
+            'metadata' => [
+                'resync_request' => [
+                    'id' => 'resync_old',
+                    'requested_by_id' => $agent->id,
+                    'requested_by_name' => 'Ada Agent',
+                    'requested_at' => now()->subMinutes(6)->toJSON(),
+                    'fulfilled_at' => null,
+                ],
+            ],
+        ]);
+
+        $response = $this->getJson('/api/conversations/WF-RESYNC-OLD/cobrowse?'.http_build_query([
+            'site_public_key' => 'site_public_docs',
+            'anonymous_id' => 'anon-docs',
+            'visitor_token' => widgetVisitorToken($this, 'site_public_docs', 'anon-docs'),
+        ]));
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.cobrowse.status', 'granted')
+            ->assertJsonPath('data.cobrowse.resync.requested', false)
+            ->assertJsonPath('data.cobrowse.resync.request_id', null)
+            ->assertJsonPath('data.cobrowse.resync.requested_at', null);
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('cobrowse metadata updates merge against current metadata before saving', function (): void {
     $site = Site::factory()->create(['public_key' => 'site_public_docs']);
     $agent = User::factory()->create(['name' => 'Ada Agent']);

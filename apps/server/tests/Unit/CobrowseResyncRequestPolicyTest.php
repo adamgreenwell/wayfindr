@@ -37,6 +37,25 @@ test('delayed cobrowse resync requests can be retried', function (): void {
     }
 });
 
+test('expired cobrowse resync requests are no longer pending', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-19 16:00:00', 'UTC'));
+
+    try {
+        $policy = new CobrowseResyncRequestPolicy;
+
+        $request = [
+            'requested_at' => now()->subMinutes(6)->toJSON(),
+            'fulfilled_at' => null,
+        ];
+
+        expect($policy->isExpired($request))->toBeTrue()
+            ->and($policy->isFreshPending($request))->toBeFalse()
+            ->and($policy->isDelayedPending($request))->toBeFalse();
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('fulfilled cobrowse resync requests are not pending', function (): void {
     Carbon::setTestNow(Carbon::parse('2026-06-19 16:00:00', 'UTC'));
 
