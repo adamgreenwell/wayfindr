@@ -4420,7 +4420,8 @@ test('agent can request a fresh cobrowse snapshot for a granted session', functi
             ->assertSee('Request fresh snapshot')
             ->assertSee('data-state="pending"', false)
             ->assertSee('Fresh snapshot requested')
-            ->assertSee('Waiting for the visitor widget to send a clean page snapshot.');
+            ->assertSee('Waiting for the visitor widget to send a clean page snapshot.')
+            ->assertSee('Expires 5 minutes from now');
     } finally {
         Carbon::setTestNow();
     }
@@ -4601,7 +4602,8 @@ test('agent can see delayed cobrowse resync guidance', function (): void {
             ->assertOk()
             ->assertSee('data-state="delayed"', false)
             ->assertSee('Fresh snapshot delayed')
-            ->assertSee('The visitor widget has not answered yet. Request another clean snapshot or confirm the page state through chat.');
+            ->assertSee('The visitor widget has not answered yet. Request another clean snapshot or confirm the page state through chat.')
+            ->assertSee('Expires 3 minutes from now');
     } finally {
         Carbon::setTestNow();
     }
@@ -4641,7 +4643,8 @@ test('agent can see expired cobrowse resync guidance', function (): void {
             ->assertOk()
             ->assertSee('data-state="expired"', false)
             ->assertSee('Fresh snapshot expired')
-            ->assertSee('The visitor widget did not answer in time. Request another clean snapshot or continue through chat.');
+            ->assertSee('The visitor widget did not answer in time. Request another clean snapshot or continue through chat.')
+            ->assertSee('Expired 1 minute ago');
     } finally {
         Carbon::setTestNow();
     }

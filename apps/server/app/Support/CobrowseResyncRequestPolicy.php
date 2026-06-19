@@ -63,6 +63,16 @@ class CobrowseResyncRequestPolicy
     /**
      * @param  array<string, mixed>  $request
      */
+    public function expiresAt(array $request): ?Carbon
+    {
+        $requestedAt = $this->requestedAt($request);
+
+        return $requestedAt?->copy()->addSeconds(self::EXPIRES_AFTER_SECONDS);
+    }
+
+    /**
+     * @param  array<string, mixed>  $request
+     */
     public function isPending(array $request): bool
     {
         return blank($request['fulfilled_at'] ?? null);

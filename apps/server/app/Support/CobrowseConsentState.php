@@ -438,6 +438,7 @@ class CobrowseConsentState
         $requestedAt = $this->parseReportedAt($request['requested_at'] ?? null);
         $fulfilledAt = $this->parseReportedAt($request['fulfilled_at'] ?? null);
         $snapshotReportedAt = $this->parseReportedAt($request['fulfilled_snapshot_reported_at'] ?? null);
+        $expiresAt = $this->resyncRequestPolicy->expiresAt($request);
 
         if ($fulfilledAt) {
             return [
@@ -458,6 +459,7 @@ class CobrowseConsentState
                 'message' => 'The visitor widget did not answer in time. Request another clean snapshot or continue through chat.',
                 'requested_by' => filled($request['requested_by_name'] ?? null) ? (string) $request['requested_by_name'] : 'Support',
                 'requested_at' => $this->formatMoment($requestedAt, 'Request time unavailable'),
+                'expired_at' => $this->formatMoment($expiresAt, 'Expiry unavailable'),
             ];
         }
 
@@ -468,6 +470,7 @@ class CobrowseConsentState
                 'message' => 'The visitor widget has not answered yet. Request another clean snapshot or confirm the page state through chat.',
                 'requested_by' => filled($request['requested_by_name'] ?? null) ? (string) $request['requested_by_name'] : 'Support',
                 'requested_at' => $this->formatMoment($requestedAt, 'Request time unavailable'),
+                'expires_at' => $this->formatMoment($expiresAt, 'Expiry unavailable'),
             ];
         }
 
@@ -477,6 +480,7 @@ class CobrowseConsentState
             'message' => 'Waiting for the visitor widget to send a clean page snapshot.',
             'requested_by' => filled($request['requested_by_name'] ?? null) ? (string) $request['requested_by_name'] : 'Support',
             'requested_at' => $this->formatMoment($requestedAt, 'Just requested'),
+            'expires_at' => $this->formatMoment($expiresAt, 'Expiry unavailable'),
         ];
     }
 

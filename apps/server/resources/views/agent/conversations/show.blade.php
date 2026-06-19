@@ -423,6 +423,14 @@
                                 <br>
                                 Received {{ $cobrowseConsent['resync_request']['fulfilled_at'] }}
                             @endif
+                            @if (filled($cobrowseConsent['resync_request']['expires_at'] ?? null))
+                                <br>
+                                Expires {{ $cobrowseConsent['resync_request']['expires_at'] }}
+                            @endif
+                            @if (filled($cobrowseConsent['resync_request']['expired_at'] ?? null))
+                                <br>
+                                Expired {{ $cobrowseConsent['resync_request']['expired_at'] }}
+                            @endif
                         </span>
                     </div>
                 @endif

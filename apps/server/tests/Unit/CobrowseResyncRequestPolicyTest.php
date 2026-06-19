@@ -83,6 +83,25 @@ test('only unexpired pending cobrowse resync requests can be fulfilled', functio
     }
 });
 
+test('cobrowse resync requests expose their expiration time', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-19 16:00:00', 'UTC'));
+
+    try {
+        $policy = new CobrowseResyncRequestPolicy;
+
+        expect($policy->expiresAt([
+            'requested_at' => now()->subMinute()->toJSON(),
+            'fulfilled_at' => null,
+        ])?->toJSON())->toBe(now()->addMinutes(4)->toJSON())
+            ->and($policy->expiresAt([
+                'requested_at' => 'not-a-date',
+                'fulfilled_at' => null,
+            ]))->toBeNull();
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('fulfilled cobrowse resync requests are not pending', function (): void {
     Carbon::setTestNow(Carbon::parse('2026-06-19 16:00:00', 'UTC'));
 
