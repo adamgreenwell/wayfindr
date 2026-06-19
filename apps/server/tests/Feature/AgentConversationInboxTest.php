@@ -4419,6 +4419,10 @@ test('agent can request a fresh cobrowse snapshot for a granted session', functi
             ->assertOk()
             ->assertSee('Fresh snapshot already requested')
             ->assertSee('Waiting for the visitor widget before requesting another snapshot.')
+            ->assertSee('data-resync-retry-form', false)
+            ->assertSee('data-retry-at="'.now()->addMinute()->toJSON().'"', false)
+            ->assertSee('data-retry-label="Request another fresh snapshot"', false)
+            ->assertSee('data-retry-ready-help="Still waiting. You can request another fresh snapshot now."', false)
             ->assertDontSee('<button class="button secondary" type="submit">Request fresh snapshot</button>', false)
             ->assertSee('data-state="pending"', false)
             ->assertSee('Fresh snapshot requested')
@@ -4474,6 +4478,10 @@ test('agent cannot replace a fresh pending cobrowse resync request with another 
             ->assertOk()
             ->assertSee('Fresh snapshot already requested')
             ->assertSee('Waiting for the visitor widget before requesting another snapshot.')
+            ->assertSee('data-resync-retry-form', false)
+            ->assertSee('data-retry-at="'.now()->addSeconds(45)->toJSON().'"', false)
+            ->assertSee('data-retry-label="Request another fresh snapshot"', false)
+            ->assertSee('data-retry-ready-help="Still waiting. You can request another fresh snapshot now."', false)
             ->assertDontSee('<button class="button secondary" type="submit">Request fresh snapshot</button>', false);
 
         Event::assertNotDispatched(CobrowseStateUpdated::class);

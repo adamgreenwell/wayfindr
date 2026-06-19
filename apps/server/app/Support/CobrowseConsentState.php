@@ -439,6 +439,7 @@ class CobrowseConsentState
         $fulfilledAt = $this->parseReportedAt($request['fulfilled_at'] ?? null);
         $snapshotReportedAt = $this->parseReportedAt($request['fulfilled_snapshot_reported_at'] ?? null);
         $expiresAt = $this->resyncRequestPolicy->expiresAt($request);
+        $retryAt = $this->resyncRequestPolicy->retryAt($request);
 
         if ($fulfilledAt) {
             return [
@@ -481,6 +482,7 @@ class CobrowseConsentState
             'requested_by' => filled($request['requested_by_name'] ?? null) ? (string) $request['requested_by_name'] : 'Support',
             'requested_at' => $this->formatMoment($requestedAt, 'Just requested'),
             'expires_at' => $this->formatMoment($expiresAt, 'Expiry unavailable'),
+            'retry_at' => $retryAt?->toJSON() ?? '',
         ];
     }
 

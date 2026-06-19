@@ -102,6 +102,25 @@ test('cobrowse resync requests expose their expiration time', function (): void 
     }
 });
 
+test('cobrowse resync requests expose their retry time', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-19 16:00:00', 'UTC'));
+
+    try {
+        $policy = new CobrowseResyncRequestPolicy;
+
+        expect($policy->retryAt([
+            'requested_at' => now()->subSeconds(15)->toJSON(),
+            'fulfilled_at' => null,
+        ])?->toJSON())->toBe(now()->addSeconds(45)->toJSON())
+            ->and($policy->retryAt([
+                'requested_at' => 'not-a-date',
+                'fulfilled_at' => null,
+            ]))->toBeNull();
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('fulfilled cobrowse resync requests are not pending', function (): void {
     Carbon::setTestNow(Carbon::parse('2026-06-19 16:00:00', 'UTC'));
 

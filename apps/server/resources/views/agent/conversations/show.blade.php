@@ -405,10 +405,19 @@
                         @endphp
 
                         @if ($resyncStatus === 'pending')
-                            <div class="section-form">
-                                <button class="button secondary" type="button" disabled>Fresh snapshot already requested</button>
-                                <p class="field-help">Waiting for the visitor widget before requesting another snapshot.</p>
-                            </div>
+                            <form
+                                class="section-form"
+                                method="POST"
+                                action="{{ route('dashboard.conversations.cobrowse.resync', $conversation->support_code) }}"
+                                data-resync-retry-form
+                                data-retry-at="{{ $cobrowseConsent['resync_request']['retry_at'] ?? '' }}"
+                                data-retry-label="Request another fresh snapshot"
+                                data-retry-ready-help="Still waiting. You can request another fresh snapshot now."
+                            >
+                                @csrf
+                                <button class="button secondary" type="submit" disabled data-resync-retry-button>Fresh snapshot already requested</button>
+                                <p class="field-help" data-resync-retry-help>Waiting for the visitor widget before requesting another snapshot.</p>
+                            </form>
                         @else
                             <form class="section-form" method="POST" action="{{ route('dashboard.conversations.cobrowse.resync', $conversation->support_code) }}">
                                 @csrf
@@ -825,6 +834,41 @@
             </section>
 
             @include('agent.partials.reply-composer-script')
+
+            <script>
+                (function () {
+                    var retryForms = document.querySelectorAll('[data-resync-retry-form]');
+
+                    retryForms.forEach(function (form) {
+                        var retryAt = Date.parse(form.getAttribute('data-retry-at') || '');
+                        var button = form.querySelector('[data-resync-retry-button]');
+                        var help = form.querySelector('[data-resync-retry-help]');
+
+                        if (!button || Number.isNaN(retryAt)) {
+                            return;
+                        }
+
+                        function enableRetry() {
+                            button.disabled = false;
+                            button.textContent = form.getAttribute('data-retry-label') || 'Request another fresh snapshot';
+
+                            if (help) {
+                                help.textContent = form.getAttribute('data-retry-ready-help') || 'You can request another fresh snapshot now.';
+                            }
+                        }
+
+                        var delay = retryAt - Date.now();
+
+                        if (delay <= 0) {
+                            enableRetry();
+
+                            return;
+                        }
+
+                        window.setTimeout(enableRetry, delay);
+                    });
+                })();
+            </script>
 
     @if ($realtime)
         <script>
