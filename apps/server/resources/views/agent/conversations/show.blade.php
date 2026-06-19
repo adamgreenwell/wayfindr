@@ -397,10 +397,24 @@
                     </form>
                 @elseif (in_array($cobrowseConsent['status'], ['pending', 'granted'], true))
                     @if ($cobrowseConsent['status'] === 'granted')
-                        <form class="section-form" method="POST" action="{{ route('dashboard.conversations.cobrowse.resync', $conversation->support_code) }}">
-                            @csrf
-                            <button class="button secondary" type="submit">Request fresh snapshot</button>
-                        </form>
+                        @php
+                            $resyncStatus = $cobrowseConsent['resync_request']['status'] ?? null;
+                            $resyncActionLabel = in_array($resyncStatus, ['delayed', 'expired'], true)
+                                ? 'Request another fresh snapshot'
+                                : 'Request fresh snapshot';
+                        @endphp
+
+                        @if ($resyncStatus === 'pending')
+                            <div class="section-form">
+                                <button class="button secondary" type="button" disabled>Fresh snapshot already requested</button>
+                                <p class="field-help">Waiting for the visitor widget before requesting another snapshot.</p>
+                            </div>
+                        @else
+                            <form class="section-form" method="POST" action="{{ route('dashboard.conversations.cobrowse.resync', $conversation->support_code) }}">
+                                @csrf
+                                <button class="button secondary" type="submit">{{ $resyncActionLabel }}</button>
+                            </form>
+                        @endif
                     @endif
                     <form class="section-form" method="POST" action="{{ route('dashboard.conversations.cobrowse.end', $conversation->support_code) }}">
                         @csrf

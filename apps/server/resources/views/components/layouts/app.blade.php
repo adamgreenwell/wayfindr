@@ -265,6 +265,14 @@
             background: var(--surface-muted);
         }
 
+        .button:disabled,
+        .button:disabled:hover {
+            background: var(--surface-muted);
+            border-color: var(--border);
+            color: var(--muted);
+            cursor: not-allowed;
+        }
+
         .button.danger {
             background: transparent;
             border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
