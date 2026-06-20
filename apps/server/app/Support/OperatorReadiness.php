@@ -481,6 +481,7 @@ class OperatorReadiness
             : $this->statusFromCheck($checks, 'scheduler');
         $schedulerCheck = $checks['scheduler'] ?? null;
         $backupsCheck = $checks['backups_restore'] ?? null;
+        $cobrowseTransportCheck = $checks['cobrowse_transport'] ?? null;
 
         return [
             $this->smokeStep(
@@ -514,6 +515,16 @@ class OperatorReadiness
                 status: $this->statusFromCheck($checks, 'realtime_broadcasting'),
                 summary: 'The real support loop is visitor message, agent reply, and live updates without manual refresh.',
                 action: 'Install the widget on a smoke site, send a visitor message, reply as an agent, and confirm both sides update.'
+            ),
+            $this->smokeStep(
+                key: 'cobrowse_transport_smoke',
+                label: 'Run cobrowse transport smoke',
+                status: $this->statusFromCheck($checks, 'cobrowse_transport'),
+                summary: $cobrowseTransportCheck['summary'] ?? 'Confirm aggregate cobrowse transport state before relying on cobrowse.',
+                action: ($cobrowseTransportCheck['status'] ?? null) === 'manual'
+                    ? $cobrowseTransportCheck['action']
+                    : 'Run php artisan wayfindr:cobrowse-transport-smoke from apps/server after a consented widget smoke test, then review aggregate transport state before relying on cobrowse.',
+                statusLabel: $cobrowseTransportCheck['status_label'] ?? null,
             ),
             $this->smokeStep(
                 key: 'backup_restore',

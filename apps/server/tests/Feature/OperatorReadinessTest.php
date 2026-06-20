@@ -63,6 +63,8 @@ test('account owner can inspect operator readiness diagnostics', function (): vo
         ->assertSee('Confirm background workers')
         ->assertSee('Open the public app URL')
         ->assertSee('Send a widget smoke test')
+        ->assertSee('Run cobrowse transport smoke')
+        ->assertSee('php artisan wayfindr:cobrowse-transport-smoke')
         ->assertSee('Confirm backups can restore');
 });
 
@@ -828,11 +830,125 @@ test('readiness diagnostics include a guided post install smoke path', function 
             'status' => 'ready',
         ]),
         fn ($step) => $step->toMatchArray([
+            'key' => 'cobrowse_transport_smoke',
+            'label' => 'Run cobrowse transport smoke',
+            'status' => 'ready',
+            'status_label' => 'No data yet',
+            'action' => 'Run php artisan wayfindr:cobrowse-transport-smoke from apps/server after a consented widget smoke test, then review aggregate transport state before relying on cobrowse.',
+        ]),
+        fn ($step) => $step->toMatchArray([
             'key' => 'backup_restore',
             'label' => 'Confirm backups can restore',
             'status' => 'manual',
         ]),
     );
+});
+
+test('readiness smoke path reflects cobrowse transport attention without leaking support data', function (): void {
+    $this->travelTo(Carbon::parse('2026-06-20 12:00:00'));
+
+    config([
+        'app.url' => 'https://support.example.test',
+        'mail.default' => 'smtp',
+        'mail.mailers.smtp.host' => 'smtp.example.test',
+        'mail.mailers.smtp.port' => 587,
+        'mail.from.address' => 'support@example.test',
+        'queue.default' => 'database',
+        'broadcasting.default' => 'reverb',
+        'broadcasting.connections.reverb.app_id' => 'wayfindr-production',
+        'broadcasting.connections.reverb.key' => 'wayfindr-key',
+        'broadcasting.connections.reverb.secret' => 'wayfindr-secret',
+        'broadcasting.connections.reverb.options.host' => 'support.example.test',
+        'broadcasting.connections.reverb.options.port' => 443,
+        'broadcasting.connections.reverb.options.scheme' => 'https',
+    ]);
+
+    $site = Site::factory()->create(['name' => 'Sensitive Smoke Site']);
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-smoke-path',
+    ]);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-SMOKEPATH',
+        'subject' => 'Private cobrowse subject',
+    ]);
+
+    CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinute(),
+        'metadata' => [
+            'telemetry' => [
+                'reported_at' => now()->toJSON(),
+                'dropped_batches' => 1,
+                'reconnects' => 0,
+            ],
+            'snapshot' => [
+                'reported_at' => now()->toJSON(),
+                'title' => 'Private smoke page',
+                'page_url' => 'https://customer.example.test/private-smoke',
+                'text' => 'Private smoke contents',
+            ],
+        ],
+    ]);
+
+    $readiness = app(OperatorReadiness::class)->summary();
+    $step = collect($readiness['smoke_path'])->firstWhere('key', 'cobrowse_transport_smoke');
+
+    expect($step)->toMatchArray([
+        'label' => 'Run cobrowse transport smoke',
+        'status' => 'attention',
+        'status_label' => 'Needs attention',
+        'summary' => '1 active cobrowse session needs transport attention.',
+    ])
+        ->and($step['action'])->toContain('php artisan wayfindr:cobrowse-transport-smoke')
+        ->and($step['action'])->not->toContain('WF-SMOKEPATH')
+        ->and($step['action'])->not->toContain('Private cobrowse subject')
+        ->and($step['action'])->not->toContain('Sensitive Smoke Site')
+        ->and($step['action'])->not->toContain('anon-smoke-path')
+        ->and($step['action'])->not->toContain('Private smoke page')
+        ->and($step['action'])->not->toContain('customer.example.test')
+        ->and($step['action'])->not->toContain('Private smoke contents');
+});
+
+test('readiness smoke path preserves cobrowse manual remediation when transport cannot be inspected', function (): void {
+    config([
+        'app.url' => 'https://support.example.test',
+        'mail.default' => 'smtp',
+        'mail.mailers.smtp.host' => 'smtp.example.test',
+        'mail.mailers.smtp.port' => 587,
+        'mail.from.address' => 'support@example.test',
+        'queue.default' => 'database',
+        'broadcasting.default' => 'reverb',
+        'broadcasting.connections.reverb.app_id' => 'wayfindr-production',
+        'broadcasting.connections.reverb.key' => 'wayfindr-key',
+        'broadcasting.connections.reverb.secret' => 'wayfindr-secret',
+        'broadcasting.connections.reverb.options.host' => 'support.example.test',
+        'broadcasting.connections.reverb.options.port' => 443,
+        'broadcasting.connections.reverb.options.scheme' => 'https',
+    ]);
+
+    Schema::shouldReceive('hasTable')
+        ->byDefault()
+        ->andReturn(true);
+    Schema::shouldReceive('hasTable')
+        ->with('cobrowse_sessions')
+        ->once()
+        ->andReturn(false);
+
+    $readiness = app(OperatorReadiness::class)->summary();
+    $step = collect($readiness['smoke_path'])->firstWhere('key', 'cobrowse_transport_smoke');
+
+    expect($step)->toMatchArray([
+        'label' => 'Run cobrowse transport smoke',
+        'status' => 'manual',
+        'status_label' => 'Manual check',
+        'summary' => 'Cobrowse transport readiness could not inspect active sessions.',
+        'action' => 'Confirm the database is reachable, run php artisan migrate --force if needed, then rerun php artisan wayfindr:cobrowse-transport-smoke.',
+    ])
+        ->and($readiness['next_step'])->toMatchArray([
+            'key' => 'background_processes',
+            'label' => 'Confirm background workers',
+            'status' => 'manual',
+        ]);
 });
 
 test('readiness diagnostics require an authenticated agent', function (): void {
