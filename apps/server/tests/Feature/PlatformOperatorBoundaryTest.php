@@ -281,6 +281,64 @@ test('operator console shows aggregate cobrowse transport readiness without supp
         ->assertDontSee('Hidden account number');
 });
 
+test('operator console shows cobrowse budget defaults without support data', function (): void {
+    $operator = User::factory()->for(Account::factory())->create([
+        'platform_role' => PlatformRole::Operator,
+    ]);
+    $site = Site::factory()->create(['name' => 'Sensitive Budget Site']);
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-budget-operator',
+    ]);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-BUDGETSECRET',
+        'subject' => 'Private payment form is changing quickly',
+    ]);
+
+    CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinute(),
+        'metadata' => [
+            'snapshot' => [
+                'title' => 'Private payment page',
+                'page_url' => 'https://customer.example.test/private-payment',
+                'html' => '<main>Cardholder details</main>',
+                'text' => 'Cardholder details',
+            ],
+        ],
+    ]);
+
+    $this->actingAs($operator)
+        ->get('/operator')
+        ->assertOk()
+        ->assertSee('Cobrowse budget defaults')
+        ->assertSee('Safe default limits for stock widget payloads and server intake.')
+        ->assertSee('Snapshot HTML')
+        ->assertSee('65,535 characters')
+        ->assertSee('Server mutation batch')
+        ->assertSee('50 items')
+        ->assertSee('Server telemetry payload')
+        ->assertSee('10,485,760 bytes')
+        ->assertSee('Stock widget batch payload')
+        ->assertSee('60,000 bytes')
+        ->assertSee('Stock widget queue')
+        ->assertSee('250 pending')
+        ->assertSee('Mutation flush')
+        ->assertSee('50 ms')
+        ->assertSee('Pressure resync')
+        ->assertSee('30,000 ms')
+        ->assertSee('Status poll')
+        ->assertSee('5,000 ms')
+        ->assertSee('Resync attempts')
+        ->assertSee('3 attempts')
+        ->assertDontSee('WF-BUDGETSECRET')
+        ->assertDontSee('Private payment form is changing quickly')
+        ->assertDontSee('Sensitive Budget Site')
+        ->assertDontSee('anon-budget-operator')
+        ->assertDontSee('Private payment page')
+        ->assertDontSee('customer.example.test')
+        ->assertDontSee('Cardholder details');
+});
+
 test('operator console shows an empty operator activity state', function (): void {
     $operator = User::factory()->for(Account::factory())->create([
         'platform_role' => PlatformRole::Operator,

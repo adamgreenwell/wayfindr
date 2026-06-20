@@ -148,6 +148,8 @@
 
     <x-operator-smoke-path :confirmation-route="$readinessConfirmationRoute" :smoke-path="$readiness['smoke_path']" />
 
+    <x-operator-cobrowse-budget-defaults :budget-defaults="$readiness['cobrowse_budget_defaults']" />
+
     <section class="section" aria-labelledby="operator-readiness-checks-heading">
         <div class="section-header">
             <h2 id="operator-readiness-checks-heading">Checks</h2>

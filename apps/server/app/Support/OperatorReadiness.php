@@ -36,6 +36,7 @@ class OperatorReadiness
      * @return array{
      *     attention_count: int,
      *     checks: array<int, array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string}>,
+     *     cobrowse_budget_defaults: array<int, array{description: string, items: array<int, array{label: string, value: string}>, label: string}>,
      *     label: string,
      *     manual_count: int,
      *     next_step: array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string},
@@ -70,6 +71,7 @@ class OperatorReadiness
         return [
             'attention_count' => $attentionCount,
             'checks' => $checks,
+            'cobrowse_budget_defaults' => CobrowsePayloadBudget::readinessDefaults(),
             'label' => $attentionCount > 0 ? 'Needs attention' : 'Ready',
             'manual_count' => $manualCount,
             'next_step' => $this->nextStep($checks, $smokePath),

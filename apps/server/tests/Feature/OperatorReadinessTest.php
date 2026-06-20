@@ -370,6 +370,65 @@ test('readiness diagnostics show no-data cobrowse transport as ready before traf
     ]);
 });
 
+test('dashboard readiness shows cobrowse budget defaults without support data', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Owner,
+    ]);
+    $site = Site::factory()->for($account)->create(['name' => 'Sensitive Budget Site']);
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-budget-readiness',
+    ]);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-READYSECRET',
+        'subject' => 'Private checkout snapshot should stay hidden',
+    ]);
+
+    CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinute(),
+        'metadata' => [
+            'snapshot' => [
+                'title' => 'Private checkout',
+                'page_url' => 'https://customer.example.test/private-checkout',
+                'html' => '<main>Private checkout fields</main>',
+                'text' => 'Private checkout fields',
+            ],
+        ],
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/readiness')
+        ->assertOk()
+        ->assertSee('Cobrowse budget defaults')
+        ->assertSee('Safe default limits for stock widget payloads and server intake.')
+        ->assertSee('Snapshot HTML')
+        ->assertSee('65,535 characters')
+        ->assertSee('Server mutation batch')
+        ->assertSee('50 items')
+        ->assertSee('Server telemetry payload')
+        ->assertSee('10,485,760 bytes')
+        ->assertSee('Stock widget batch payload')
+        ->assertSee('60,000 bytes')
+        ->assertSee('Stock widget queue')
+        ->assertSee('250 pending')
+        ->assertSee('Mutation flush')
+        ->assertSee('50 ms')
+        ->assertSee('Pressure resync')
+        ->assertSee('30,000 ms')
+        ->assertSee('Status poll')
+        ->assertSee('5,000 ms')
+        ->assertSee('Resync attempts')
+        ->assertSee('3 attempts')
+        ->assertDontSee('WF-READYSECRET')
+        ->assertDontSee('Private checkout snapshot should stay hidden')
+        ->assertDontSee('Sensitive Budget Site')
+        ->assertDontSee('anon-budget-readiness')
+        ->assertDontSee('Private checkout')
+        ->assertDontSee('customer.example.test')
+        ->assertDontSee('Private checkout fields');
+});
+
 test('readiness diagnostics include older active cobrowse transport pressure beyond the newest sessions', function (): void {
     $this->travelTo(Carbon::parse('2026-06-20 12:00:00'));
 
