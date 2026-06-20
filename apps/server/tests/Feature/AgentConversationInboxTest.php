@@ -425,7 +425,7 @@ test('dashboard keeps visitor read state in conversation detail instead of the q
     }
 });
 
-test('dashboard keeps visitor typing in conversation detail instead of the queue', function (): void {
+test('dashboard keeps visitor typing out of queue and conversation detail context', function (): void {
     Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00', 'UTC'));
 
     try {
@@ -471,11 +471,12 @@ test('dashboard keeps visitor typing in conversation detail instead of the queue
         $this->actingAs($agent)
             ->get('/dashboard/conversations/WF-TYPING')
             ->assertOk()
-            ->assertSee('Visitor typing')
-            ->assertSee('Typing now')
-            ->assertSee('Updated 10 seconds ago')
-            ->assertSee('data-visitor-typing-label', false)
-            ->assertSee('data-visitor-typing-detail', false);
+            ->assertSee('Visitor is composing')
+            ->assertDontSee('Visitor typing')
+            ->assertDontSee('Typing now')
+            ->assertDontSee('Updated 10 seconds ago')
+            ->assertDontSee('data-visitor-typing-label', false)
+            ->assertDontSee('data-visitor-typing-detail', false);
     } finally {
         Carbon::setTestNow();
     }
@@ -4549,7 +4550,7 @@ test('agent conversation page can update visitor read receipts from live events'
         ->assertSee('"readEventName":"conversation.read.updated"', false);
 });
 
-test('agent conversation page expires live visitor typing hints locally', function (): void {
+test('agent conversation page omits visitor typing detail targets', function (): void {
     config()->set('broadcasting.default', 'reverb');
     config()->set('broadcasting.connections.reverb.key', 'reverb-key');
     config()->set('broadcasting.connections.reverb.secret', 'reverb-secret');
@@ -4571,12 +4572,11 @@ test('agent conversation page expires live visitor typing hints locally', functi
     $this->actingAs($agent)
         ->get('/dashboard/conversations/WF-TYPEEXPIRE')
         ->assertOk()
-        ->assertSee('data-visitor-typing-label', false)
-        ->assertSee('data-visitor-typing-detail', false)
-        ->assertSee('"visitorTypingFreshMs":20000', false)
-        ->assertSee('clearVisitorTypingExpiry')
-        ->assertSee('scheduleVisitorTypingExpiry')
-        ->assertSee('visitorTypingExpiryTimer');
+        ->assertDontSee('data-visitor-typing-label', false)
+        ->assertDontSee('data-visitor-typing-detail', false)
+        ->assertDontSee('clearVisitorTypingExpiry')
+        ->assertDontSee('scheduleVisitorTypingExpiry')
+        ->assertDontSee('visitorTypingExpiryTimer');
 });
 
 test('agent can see cobrowse consent state on a conversation', function (?array $sessionAttributes, string $label, string $message): void {
