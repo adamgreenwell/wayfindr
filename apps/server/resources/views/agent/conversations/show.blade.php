@@ -481,33 +481,33 @@
                 @endif
 
                 @if ($cobrowseConsent['transport'])
-                    <div class="section-header">
+                    <div class="section-header" data-cobrowse-transport-panel data-state="{{ $cobrowseConsent['transport']['state'] }}">
                         <strong>Transport health</strong>
-                        <span class="lede">{{ $cobrowseConsent['transport']['label'] }}</span>
+                        <span class="lede" data-cobrowse-transport-label>{{ $cobrowseConsent['transport']['label'] }}</span>
                     </div>
 
-                    <p class="empty realtime-note">{{ $cobrowseConsent['transport']['message'] }}</p>
+                    <p class="empty realtime-note" data-cobrowse-transport-message>{{ $cobrowseConsent['transport']['message'] }}</p>
 
                     <div class="meta-grid realtime-grid">
                         <div class="meta-item">
                             <span class="meta-label">State</span>
-                            <span class="meta-value">{{ $cobrowseConsent['transport']['label'] }}</span>
+                            <span class="meta-value" data-cobrowse-transport-state-label>{{ $cobrowseConsent['transport']['label'] }}</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">Last report</span>
-                            <span class="meta-value">{{ $cobrowseConsent['transport']['last_report'] }}</span>
+                            <span class="meta-value" data-cobrowse-transport-last-report>{{ $cobrowseConsent['transport']['last_report'] }}</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">Reconnects</span>
-                            <span class="meta-value">{{ $cobrowseConsent['transport']['reconnects'] }}</span>
+                            <span class="meta-value" data-cobrowse-transport-reconnects>{{ $cobrowseConsent['transport']['reconnects'] }}</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">Pressure</span>
-                            <span class="meta-value">{{ $cobrowseConsent['transport']['pressure'] }}</span>
+                            <span class="meta-value" data-cobrowse-transport-pressure>{{ $cobrowseConsent['transport']['pressure'] }}</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">Agent guidance</span>
-                            <span class="meta-value">{{ $cobrowseConsent['transport']['guidance'] }}</span>
+                            <span class="meta-value" data-cobrowse-transport-guidance>{{ $cobrowseConsent['transport']['guidance'] }}</span>
                         </div>
                     </div>
                 @endif
@@ -684,44 +684,42 @@
                     </div>
                 @endif
 
-                @if ($cobrowseConsent['telemetry'])
-                    <div class="section-header">
-                        <strong>Connection telemetry</strong>
-                    </div>
+                <div class="section-header" data-cobrowse-telemetry-heading @if (! $cobrowseConsent['telemetry']) hidden @endif>
+                    <strong>Connection telemetry</strong>
+                </div>
 
-                    <div class="meta-grid realtime-grid">
-                        <div class="meta-item">
-                            <span class="meta-label">RTT</span>
-                            <span class="meta-value">{{ $cobrowseConsent['telemetry']['rtt'] }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Max RTT</span>
-                            <span class="meta-value">{{ $cobrowseConsent['telemetry']['max_rtt'] }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Payload</span>
-                            <span class="meta-value">{{ $cobrowseConsent['telemetry']['payload'] }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Max payload</span>
-                            <span class="meta-value">{{ $cobrowseConsent['telemetry']['max_payload'] }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Dropped batches</span>
-                            <span class="meta-value">{{ $cobrowseConsent['telemetry']['dropped_batches'] }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Reconnects</span>
-                            <span class="meta-value">{{ $cobrowseConsent['telemetry']['reconnects'] }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Samples</span>
-                            <span class="meta-value">{{ $cobrowseConsent['telemetry']['samples'] }}</span>
-                        </div>
+                <div class="meta-grid realtime-grid" data-cobrowse-telemetry-grid @if (! $cobrowseConsent['telemetry']) hidden @endif>
+                    <div class="meta-item">
+                        <span class="meta-label">RTT</span>
+                        <span class="meta-value" data-cobrowse-telemetry-rtt>{{ $cobrowseConsent['telemetry']['rtt'] ?? 'Not reported' }}</span>
                     </div>
-                @else
-                    <p class="empty realtime-note">No cobrowse connection telemetry yet.</p>
-                @endif
+                    <div class="meta-item">
+                        <span class="meta-label">Max RTT</span>
+                        <span class="meta-value" data-cobrowse-telemetry-max-rtt>{{ $cobrowseConsent['telemetry']['max_rtt'] ?? 'Not reported' }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Payload</span>
+                        <span class="meta-value" data-cobrowse-telemetry-payload>{{ $cobrowseConsent['telemetry']['payload'] ?? 'Not reported' }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Max payload</span>
+                        <span class="meta-value" data-cobrowse-telemetry-max-payload>{{ $cobrowseConsent['telemetry']['max_payload'] ?? 'Not reported' }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Dropped batches</span>
+                        <span class="meta-value" data-cobrowse-telemetry-dropped-batches>{{ $cobrowseConsent['telemetry']['dropped_batches'] ?? '0' }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Reconnects</span>
+                        <span class="meta-value" data-cobrowse-telemetry-reconnects>{{ $cobrowseConsent['telemetry']['reconnects'] ?? '0' }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Samples</span>
+                        <span class="meta-value" data-cobrowse-telemetry-samples>{{ $cobrowseConsent['telemetry']['samples'] ?? '0' }}</span>
+                    </div>
+                </div>
+
+                <p class="empty realtime-note" data-cobrowse-telemetry-empty @if ($cobrowseConsent['telemetry']) hidden @endif>No cobrowse connection telemetry yet.</p>
             </section>
 
             <section class="section" aria-labelledby="messages-heading">
@@ -906,15 +904,35 @@
                 var visitorPresenceLastSeen = document.querySelector('[data-visitor-presence-last-seen]');
                 var visitorReadLabel = document.querySelector('[data-visitor-read-label]');
                 var visitorReadDetail = document.querySelector('[data-visitor-read-detail]');
+                var transportPanel = document.querySelector('[data-cobrowse-transport-panel]');
+                var transportLabel = document.querySelector('[data-cobrowse-transport-label]');
+                var transportMessage = document.querySelector('[data-cobrowse-transport-message]');
+                var transportStateLabel = document.querySelector('[data-cobrowse-transport-state-label]');
+                var transportLastReport = document.querySelector('[data-cobrowse-transport-last-report]');
+                var transportReconnects = document.querySelector('[data-cobrowse-transport-reconnects]');
+                var transportPressure = document.querySelector('[data-cobrowse-transport-pressure]');
+                var transportGuidance = document.querySelector('[data-cobrowse-transport-guidance]');
+                var telemetryHeading = document.querySelector('[data-cobrowse-telemetry-heading]');
+                var telemetryEmpty = document.querySelector('[data-cobrowse-telemetry-empty]');
+                var telemetryGrid = document.querySelector('[data-cobrowse-telemetry-grid]');
+                var telemetryRtt = document.querySelector('[data-cobrowse-telemetry-rtt]');
+                var telemetryMaxRtt = document.querySelector('[data-cobrowse-telemetry-max-rtt]');
+                var telemetryPayload = document.querySelector('[data-cobrowse-telemetry-payload]');
+                var telemetryMaxPayload = document.querySelector('[data-cobrowse-telemetry-max-payload]');
+                var telemetryDroppedBatches = document.querySelector('[data-cobrowse-telemetry-dropped-batches]');
+                var telemetryReconnects = document.querySelector('[data-cobrowse-telemetry-reconnects]');
+                var telemetrySamples = document.querySelector('[data-cobrowse-telemetry-samples]');
                 var csrf = document.querySelector('meta[name="csrf-token"]');
                 var hasCobrowseTargets = Boolean(panel && status);
                 var hasTypingTargets = Boolean(visitorTypingLabel && visitorTypingDetail);
                 var hasPresenceTargets = Boolean(visitorPresenceLabel && visitorPresenceDetail);
                 var hasReadTargets = Boolean(visitorReadLabel && visitorReadDetail);
+                var hasTransportTargets = Boolean(transportLabel && transportMessage && transportStateLabel);
+                var hasTelemetryTargets = Boolean(telemetryGrid && telemetryRtt);
                 var visitorTypingExpiryTimer = null;
                 var visitorTypingFreshMs = Number(config.visitorTypingFreshMs || 20000);
 
-                if (!config || (!hasCobrowseTargets && !hasTypingTargets && !hasPresenceTargets && !hasReadTargets) || !window.WebSocket) {
+                if (!config || (!hasCobrowseTargets && !hasTypingTargets && !hasPresenceTargets && !hasReadTargets && !hasTransportTargets && !hasTelemetryTargets) || !window.WebSocket) {
                     if (status) {
                         status.textContent = 'Live cobrowse updates are unavailable in this browser.';
                     }
@@ -1045,6 +1063,145 @@
                     }
                 }
 
+                function setText(target, value) {
+                    if (!target) {
+                        return;
+                    }
+
+                    target.textContent = value;
+                }
+
+                function numericValue(value) {
+                    var number = Number(value);
+
+                    return Number.isFinite(number) && number >= 0 ? number : null;
+                }
+
+                function formatNumber(value) {
+                    var number = numericValue(value);
+
+                    return number === null ? '0' : Math.round(number).toLocaleString();
+                }
+
+                function formatMilliseconds(value) {
+                    var number = numericValue(value);
+
+                    return number === null ? 'Not reported' : Math.round(number).toLocaleString() + ' ms';
+                }
+
+                function formatBytes(value) {
+                    var number = numericValue(value);
+
+                    return number === null ? 'Not reported' : Math.round(number).toLocaleString() + ' bytes';
+                }
+
+                function droppedBatchPressure(telemetry) {
+                    var droppedBatches = numericValue(telemetry.dropped_batches) || 0;
+
+                    if (droppedBatches <= 0) {
+                        return 'No recent drops reported';
+                    }
+
+                    return Math.round(droppedBatches).toLocaleString() + ' dropped ' + (droppedBatches === 1 ? 'batch' : 'batches');
+                }
+
+                function transportHealthFromTelemetry(telemetry) {
+                    var droppedBatches = numericValue(telemetry.dropped_batches) || 0;
+                    var reconnects = numericValue(telemetry.reconnects) || 0;
+
+                    if (telemetry.resync_attempts_exhausted === true) {
+                        return {
+                            state: 'exhausted',
+                            label: 'Retry limit reached',
+                            message: 'Fresh snapshot retry limit reached.',
+                            guidance: 'Request another fresh snapshot when the visitor transport settles.',
+                        };
+                    }
+
+                    if (reconnects > 0) {
+                        return {
+                            state: 'reconnecting',
+                            label: 'Reconnecting',
+                            message: 'The visitor transport has reconnected recently; preview data may briefly lag.',
+                            guidance: 'Use chat to confirm anything that depends on fast-changing page state.',
+                        };
+                    }
+
+                    if (droppedBatches > 0) {
+                        return {
+                            state: 'degraded',
+                            label: 'Degraded',
+                            message: 'Cobrowse reports are arriving, but the visitor page is changing faster than Wayfindr can fully replay.',
+                            guidance: 'Use the preview for orientation and confirm fast-changing details through chat.',
+                        };
+                    }
+
+                    return {
+                        state: 'live',
+                        label: 'Live',
+                        message: 'Cobrowse reports are arriving normally.',
+                        guidance: 'Preview is current enough to use alongside chat.',
+                    };
+                }
+
+                function updateTransportHealth(telemetry) {
+                    if (!hasTransportTargets || !telemetry) {
+                        return;
+                    }
+
+                    var health = transportHealthFromTelemetry(telemetry);
+
+                    if (transportPanel) {
+                        transportPanel.dataset.state = health.state;
+                    }
+
+                    setText(transportLabel, health.label);
+                    setText(transportMessage, health.message);
+                    setText(transportStateLabel, health.label);
+                    setText(transportLastReport, 'just now');
+                    setText(transportReconnects, formatNumber(telemetry.reconnects));
+                    setText(transportPressure, droppedBatchPressure(telemetry));
+                    setText(transportGuidance, health.guidance);
+                }
+
+                function updateConnectionTelemetry(telemetry) {
+                    if (!hasTelemetryTargets || !telemetry) {
+                        return;
+                    }
+
+                    if (telemetryHeading) {
+                        telemetryHeading.hidden = false;
+                    }
+
+                    if (telemetryEmpty) {
+                        telemetryEmpty.hidden = true;
+                    }
+
+                    telemetryGrid.hidden = false;
+
+                    setText(telemetryRtt, formatMilliseconds(telemetry.rtt_ms));
+                    setText(telemetryMaxRtt, formatMilliseconds(telemetry.max_rtt_ms));
+                    setText(telemetryPayload, formatBytes(telemetry.payload_bytes));
+                    setText(telemetryMaxPayload, formatBytes(telemetry.max_payload_bytes));
+                    setText(telemetryDroppedBatches, formatNumber(telemetry.dropped_batches));
+                    setText(telemetryReconnects, formatNumber(telemetry.reconnects));
+                    setText(telemetrySamples, formatNumber(telemetry.samples));
+                }
+
+                function updateLiveCobrowseTelemetry(payload) {
+                    var summary = payload.summary || {};
+                    var telemetry = summary.telemetry || null;
+
+                    if (!telemetry) {
+                        return null;
+                    }
+
+                    updateTransportHealth(telemetry);
+                    updateConnectionTelemetry(telemetry);
+
+                    return telemetry;
+                }
+
                 function parsePayload(payload) {
                     if (typeof payload === 'string') {
                         return JSON.parse(payload);
@@ -1115,6 +1272,21 @@
                     }
 
                     if (event.event === config.eventName) {
+                        var cobrowsePayload = parsePayload(event.data);
+                        var telemetry = updateLiveCobrowseTelemetry(cobrowsePayload);
+                        var updateKind = cobrowsePayload.update ? cobrowsePayload.update.kind : '';
+
+                        if (updateKind === 'telemetry') {
+                            setStatus(
+                                telemetry && telemetry.resync_attempts_exhausted === true
+                                    ? 'Fresh snapshot retry limit reached. Request another fresh snapshot when you are ready.'
+                                    : 'Connection telemetry updated live.',
+                                telemetry && telemetry.resync_attempts_exhausted === true ? 'exhausted' : 'listening'
+                            );
+
+                            return;
+                        }
+
                         setStatus('New cobrowse update available. Refresh the preview when you are ready.', 'available');
 
                         if (refresh) {

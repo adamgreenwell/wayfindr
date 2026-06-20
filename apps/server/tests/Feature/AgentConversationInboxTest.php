@@ -4420,6 +4420,54 @@ test('agent conversation page exposes live cobrowse update readiness when reverb
         ->assertSee('"host":"wayfindr.test"', false);
 });
 
+test('agent conversation page exposes live cobrowse transport health targets when reverb is configured', function (): void {
+    config()->set('broadcasting.default', 'reverb');
+    config()->set('broadcasting.connections.reverb.key', 'reverb-key');
+    config()->set('broadcasting.connections.reverb.secret', 'reverb-secret');
+    config()->set('broadcasting.connections.reverb.app_id', 'reverb-app');
+    config()->set('broadcasting.connections.reverb.options.host', 'wayfindr.test');
+    config()->set('broadcasting.connections.reverb.options.port', 443);
+    config()->set('broadcasting.connections.reverb.options.scheme', 'https');
+
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-LIVEHEALTH',
+        'subject' => 'Transport should feel alive',
+        'status' => 'open',
+    ]);
+
+    CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinute(),
+        'ended_at' => null,
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-LIVEHEALTH')
+        ->assertOk()
+        ->assertSee('data-cobrowse-transport-label', false)
+        ->assertSee('data-cobrowse-transport-message', false)
+        ->assertSee('data-cobrowse-transport-state-label', false)
+        ->assertSee('data-cobrowse-transport-last-report', false)
+        ->assertSee('data-cobrowse-transport-reconnects', false)
+        ->assertSee('data-cobrowse-transport-pressure', false)
+        ->assertSee('data-cobrowse-transport-guidance', false)
+        ->assertSee('data-cobrowse-telemetry-empty', false)
+        ->assertSee('data-cobrowse-telemetry-grid', false)
+        ->assertSee('data-cobrowse-telemetry-rtt', false)
+        ->assertSee('data-cobrowse-telemetry-max-rtt', false)
+        ->assertSee('data-cobrowse-telemetry-payload', false)
+        ->assertSee('data-cobrowse-telemetry-max-payload', false)
+        ->assertSee('data-cobrowse-telemetry-dropped-batches', false)
+        ->assertSee('data-cobrowse-telemetry-reconnects', false)
+        ->assertSee('data-cobrowse-telemetry-samples', false)
+        ->assertSee('Connection telemetry updated live.', false)
+        ->assertSee('Fresh snapshot retry limit reached.', false);
+});
+
 test('agent conversation page can update visitor presence from live events', function (): void {
     config()->set('broadcasting.default', 'reverb');
     config()->set('broadcasting.connections.reverb.key', 'reverb-key');
