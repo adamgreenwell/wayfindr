@@ -405,6 +405,25 @@ test('dashboard shows cobrowse transport health in the conversation queue', func
         $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
         $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
 
+        $degradedConversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-COBDEGRADE',
+            'subject' => 'Degraded cobrowse session',
+            'status' => 'open',
+            'last_message_at' => now()->subSeconds(30),
+        ]);
+        CobrowseSession::factory()->for($degradedConversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(3),
+            'ended_at' => null,
+            'metadata' => [
+                'telemetry' => [
+                    'reported_at' => now()->subSeconds(12)->toJSON(),
+                    'reconnects' => 0,
+                    'dropped_batches' => 2,
+                ],
+            ],
+        ]);
+
         $liveConversation = Conversation::factory()->for($site)->for($visitor)->create([
             'support_code' => 'WF-COBLIVE',
             'subject' => 'Live cobrowse session',
@@ -454,6 +473,7 @@ test('dashboard shows cobrowse transport health in the conversation queue', func
             ->get('/dashboard/conversations')
             ->assertOk()
             ->assertSee('Cobrowse')
+            ->assertSeeInOrder(['Degraded cobrowse session', 'Degraded', 'Pressure 2 dropped batches'])
             ->assertSeeInOrder(['Live cobrowse session', 'Live', '20 seconds ago'])
             ->assertSeeInOrder(['Stale cobrowse session', 'Stale', '4 minutes ago'])
             ->assertSeeInOrder(['No cobrowse session', 'Unavailable', 'Not reported']);

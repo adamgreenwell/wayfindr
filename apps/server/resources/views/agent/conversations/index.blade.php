@@ -126,6 +126,8 @@
                                             'label' => 'Unavailable',
                                             'message' => 'Cobrowse transport is not active.',
                                             'last_report' => 'Not reported',
+                                            'pressure' => 'No drops reported',
+                                            'guidance' => 'Wait for an active cobrowse session before relying on cobrowse.',
                                             'tone' => 'manual',
                                         ]);
                                     @endphp
@@ -150,12 +152,15 @@
                                             <span
                                                 class="readiness-status"
                                                 data-status="{{ $cobrowseTransport['tone'] }}"
-                                                aria-label="Cobrowse {{ $cobrowseTransport['label'] }}. {{ $cobrowseTransport['message'] }}"
+                                                aria-label="Cobrowse {{ $cobrowseTransport['label'] }}. {{ $cobrowseTransport['message'] }} {{ $cobrowseTransport['guidance'] }}"
                                                 title="{{ $cobrowseTransport['message'] }}"
                                             >
                                                 {{ $cobrowseTransport['label'] }}
                                             </span>
                                             <span class="table-note">Last report {{ $cobrowseTransport['last_report'] }}</span>
+                                            @if (! in_array($cobrowseTransport['pressure'], ['No drops reported', 'No recent drops reported'], true))
+                                                <span class="table-note">Pressure {{ $cobrowseTransport['pressure'] }}</span>
+                                            @endif
                                         </td>
                                         <td>{{ $conversation->assignedAgent?->name ?? 'Unassigned' }}</td>
                                         <td>{{ $conversation->attentionLabel() }}</td>

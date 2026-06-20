@@ -86,7 +86,7 @@ class CobrowseConsentState
     }
 
     /**
-     * @return array{state: string, label: string, message: string, last_report: string, tone: string}
+     * @return array{state: string, label: string, message: string, last_report: string, pressure: string, guidance: string, tone: string}
      */
     public function queueTransportForConversation(Conversation $conversation): array
     {
@@ -103,6 +103,8 @@ class CobrowseConsentState
             'label' => $transport['label'],
             'message' => $transport['message'],
             'last_report' => $transport['last_report'],
+            'pressure' => $transport['pressure'],
+            'guidance' => $transport['guidance'],
             'tone' => $this->transportTone($transport['state']),
         ];
     }

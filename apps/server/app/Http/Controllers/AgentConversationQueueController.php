@@ -36,7 +36,7 @@ class AgentConversationQueueController extends Controller
      * @param  Collection<int, Site>  $sites
      * @return array{
      *     activeConversationFilters: array<int, array{label: string, href: string}>,
-     *     cobrowseTransportByConversationId: Collection<int, array{label: string, message: string, last_report: string, tone: string}>,
+     *     cobrowseTransportByConversationId: Collection<int, array{label: string, message: string, last_report: string, pressure: string, guidance: string, tone: string}>,
      *     cobrowseAttentionConversationCount: int,
      *     conversationEmptyMessage: string,
      *     conversationFilter: string,
