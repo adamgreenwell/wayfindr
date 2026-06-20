@@ -27,6 +27,7 @@ class AgentConversationQueueController extends Controller
     /**
      * @return array{
      *     cobrowseTransportByConversationId: Collection<int, array{label: string, message: string, last_report: string, tone: string}>,
+     *     cobrowseAttentionConversationCount: int,
      *     conversationEmptyMessage: string,
      *     conversationFilter: string,
      *     conversationFilters: array<string, string>,
@@ -57,6 +58,14 @@ class AgentConversationQueueController extends Controller
             ->where('status', 'open')
             ->whereHas('site', fn ($query) => $query->visibleToAgent($agent))
             ->withNewActivityFor($agent)
+            ->count();
+        $cobrowseAttentionConversationCount = Conversation::query()
+            ->with('latestCobrowseSession')
+            ->where('status', 'open')
+            ->whereHas('site', fn ($query) => $query->visibleToAgent($agent))
+            ->get()
+            ->map(fn (Conversation $conversation): array => $cobrowseConsentState->queueTransportForConversation($conversation))
+            ->filter(fn (array $transport): bool => $transport['tone'] === 'attention')
             ->count();
 
         $conversations = Conversation::query()
@@ -96,6 +105,7 @@ class AgentConversationQueueController extends Controller
         }
 
         return [
+            'cobrowseAttentionConversationCount' => $cobrowseAttentionConversationCount,
             'cobrowseTransportByConversationId' => $cobrowseTransportByConversationId,
             'conversationEmptyMessage' => $conversationEmptyMessage,
             'conversationFilter' => $conversationFilter,

@@ -9,7 +9,8 @@
                     <div class="section-actions">
                         <span class="lede">
                             {{ $conversations->count() }} open ·
-                            {{ $newActivityConversationCount === 1 ? '1 needs attention' : $newActivityConversationCount.' need attention' }}
+                            {{ $newActivityConversationCount === 1 ? '1 needs attention' : $newActivityConversationCount.' need attention' }} ·
+                            {{ $cobrowseAttentionConversationCount === 1 ? '1 cobrowse session needs attention' : $cobrowseAttentionConversationCount.' cobrowse sessions need attention' }}
                         </span>
                         @foreach ($conversationFilters as $filterValue => $filterLabel)
                             <a

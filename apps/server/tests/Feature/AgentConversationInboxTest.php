@@ -627,6 +627,88 @@ test('dashboard filters conversations by cobrowse transport attention', function
     }
 });
 
+test('dashboard shows cobrowse transport attention counts', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00', 'UTC'));
+
+    try {
+        $account = Account::factory()->create(['name' => 'Acme Support']);
+        $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+        $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+
+        $liveConversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-COUNTLIVE',
+            'subject' => 'Live cobrowse should not count',
+            'status' => 'open',
+            'last_message_at' => now()->subMinute(),
+        ]);
+        CobrowseSession::factory()->for($liveConversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(2),
+            'ended_at' => null,
+            'metadata' => [
+                'telemetry' => [
+                    'reported_at' => now()->subSeconds(15)->toJSON(),
+                    'reconnects' => 0,
+                    'dropped_batches' => 0,
+                ],
+            ],
+        ]);
+
+        $staleConversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-COUNTSTALE',
+            'subject' => 'Stale cobrowse should count',
+            'status' => 'open',
+            'last_message_at' => now()->subMinutes(2),
+        ]);
+        CobrowseSession::factory()->for($staleConversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(10),
+            'ended_at' => null,
+            'metadata' => [
+                'telemetry' => [
+                    'reported_at' => now()->subMinutes(4)->toJSON(),
+                    'reconnects' => 0,
+                    'dropped_batches' => 0,
+                ],
+            ],
+        ]);
+
+        $degradedConversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-COUNTDEGRADE',
+            'subject' => 'Degraded cobrowse should count',
+            'status' => 'open',
+            'last_message_at' => now()->subMinutes(3),
+        ]);
+        CobrowseSession::factory()->for($degradedConversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(5),
+            'ended_at' => null,
+            'metadata' => [
+                'telemetry' => [
+                    'reported_at' => now()->subSeconds(12)->toJSON(),
+                    'reconnects' => 0,
+                    'dropped_batches' => 2,
+                ],
+            ],
+        ]);
+
+        Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-COUNTNOCOB',
+            'subject' => 'No cobrowse should not count',
+            'status' => 'open',
+            'last_message_at' => now()->subMinutes(4),
+        ]);
+
+        $this->actingAs($agent)
+            ->get('/dashboard/conversations')
+            ->assertOk()
+            ->assertSee('2 cobrowse sessions need attention');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('dashboard exposes conversation queue filter links', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
