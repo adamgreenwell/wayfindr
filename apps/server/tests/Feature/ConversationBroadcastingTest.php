@@ -136,6 +136,7 @@ test('cobrowse telemetry broadcasts safe transport and resync summary hints', fu
         'status' => 'open',
     ]);
     $reportedAt = now()->subSeconds(20)->toJSON();
+    $mutationReportedAt = now()->subSeconds(15)->toJSON();
     $exhaustedAt = now()->toJSON();
     $session = CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
         'status' => 'granted',
@@ -147,7 +148,12 @@ test('cobrowse telemetry broadcasts safe transport and resync summary hints', fu
             ],
             'mutations' => [
                 'recent_batches' => [
-                    ['mutations' => [['type' => 'text', 'text' => 'Private mutation body.']]],
+                    [
+                        'dropped_count' => 1,
+                        'skipped_count' => 3,
+                        'reported_at' => $mutationReportedAt,
+                        'mutations' => [['type' => 'text', 'text' => 'Private mutation body.']],
+                    ],
                 ],
             ],
             'telemetry' => [
@@ -188,6 +194,11 @@ test('cobrowse telemetry broadcasts safe transport and resync summary hints', fu
         ],
         'summary' => [
             'resync_request_id' => 'resync_exhausted',
+            'transport_pressure' => [
+                'dropped_batches' => 3,
+                'skipped_mutations' => 3,
+                'reported_at' => $mutationReportedAt,
+            ],
             'telemetry' => [
                 'rtt_ms' => 240,
                 'max_rtt_ms' => 480,

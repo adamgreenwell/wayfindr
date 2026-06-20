@@ -1053,18 +1053,43 @@
                     return elapsedMinutes.toLocaleString() + ' minutes ago';
                 }
 
-                function droppedBatchPressure(telemetry) {
-                    var droppedBatches = numericValue(telemetry.dropped_batches) || 0;
+                function transportPressureFromSummary(summary) {
+                    var pressure = summary.transport_pressure || null;
 
-                    if (droppedBatches <= 0) {
+                    if (!pressure) {
+                        return null;
+                    }
+
+                    return {
+                        dropped_batches: numericValue(pressure.dropped_batches) || 0,
+                        skipped_mutations: numericValue(pressure.skipped_mutations) || 0,
+                        reported_at: pressure.reported_at || null,
+                    };
+                }
+
+                function droppedBatchPressure(telemetry, pressure) {
+                    var droppedBatches = pressure ? pressure.dropped_batches : numericValue(telemetry.dropped_batches) || 0;
+                    var skippedMutations = pressure ? pressure.skipped_mutations : 0;
+                    var parts = [];
+
+                    if (droppedBatches > 0) {
+                        parts.push(Math.round(droppedBatches).toLocaleString() + ' dropped ' + (droppedBatches === 1 ? 'batch' : 'batches'));
+                    }
+
+                    if (skippedMutations > 0) {
+                        parts.push(Math.round(skippedMutations).toLocaleString() + ' skipped ' + (skippedMutations === 1 ? 'mutation' : 'mutations'));
+                    }
+
+                    if (parts.length === 0) {
                         return 'No recent drops reported';
                     }
 
-                    return Math.round(droppedBatches).toLocaleString() + ' dropped ' + (droppedBatches === 1 ? 'batch' : 'batches');
+                    return parts.join(', ');
                 }
 
-                function transportHealthFromTelemetry(telemetry) {
-                    var droppedBatches = numericValue(telemetry.dropped_batches) || 0;
+                function transportHealthFromTelemetry(telemetry, pressure) {
+                    var droppedBatches = pressure ? pressure.dropped_batches : numericValue(telemetry.dropped_batches) || 0;
+                    var skippedMutations = pressure ? pressure.skipped_mutations : 0;
                     var reconnects = numericValue(telemetry.reconnects) || 0;
 
                     if (telemetry.resync_attempts_exhausted === true) {
@@ -1085,7 +1110,7 @@
                         };
                     }
 
-                    if (droppedBatches > 0) {
+                    if (droppedBatches > 0 || skippedMutations > 0) {
                         return {
                             state: 'degraded',
                             label: 'Degraded',
@@ -1102,12 +1127,12 @@
                     };
                 }
 
-                function updateTransportHealth(telemetry) {
+                function updateTransportHealth(telemetry, pressure) {
                     if (!hasTransportTargets || !telemetry) {
                         return;
                     }
 
-                    var health = transportHealthFromTelemetry(telemetry);
+                    var health = transportHealthFromTelemetry(telemetry, pressure);
 
                     if (transportPanel) {
                         transportPanel.dataset.state = health.state;
@@ -1116,9 +1141,9 @@
                     setText(transportLabel, health.label);
                     setText(transportMessage, health.message);
                     setText(transportStateLabel, health.label);
-                    setText(transportLastReport, formatRelativeTimestamp(telemetry.reported_at));
+                    setText(transportLastReport, formatRelativeTimestamp(pressure && pressure.reported_at ? pressure.reported_at : telemetry.reported_at));
                     setText(transportReconnects, formatNumber(telemetry.reconnects));
-                    setText(transportPressure, droppedBatchPressure(telemetry));
+                    setText(transportPressure, droppedBatchPressure(telemetry, pressure));
                     setText(transportGuidance, health.guidance);
                 }
 
@@ -1160,20 +1185,45 @@
                     return telemetryAt !== null && updateAt !== null && telemetryAt >= updateAt;
                 }
 
+                function pressureIsFreshForUpdate(pressure, payload) {
+                    if (!pressure) {
+                        return false;
+                    }
+
+                    var update = payload.update || {};
+                    var updateKind = update.kind || '';
+
+                    if (updateKind === 'telemetry') {
+                        return true;
+                    }
+
+                    var pressureAt = timestampValue(pressure.reported_at);
+                    var updateAt = timestampValue(update.reported_at);
+
+                    return pressureAt !== null && updateAt !== null && pressureAt >= updateAt;
+                }
+
                 function updateLiveCobrowseTelemetry(payload) {
                     var summary = payload.summary || {};
                     var telemetry = summary.telemetry || null;
+                    var pressure = transportPressureFromSummary(summary);
 
                     if (!telemetry) {
                         return null;
                     }
 
-                    if (!telemetryIsFreshForUpdate(telemetry, payload)) {
+                    var telemetryFresh = telemetryIsFreshForUpdate(telemetry, payload);
+                    var pressureFresh = pressureIsFreshForUpdate(pressure, payload);
+
+                    if (!telemetryFresh && !pressureFresh) {
                         return null;
                     }
 
-                    updateTransportHealth(telemetry);
-                    updateConnectionTelemetry(telemetry);
+                    updateTransportHealth(telemetry, pressureFresh ? pressure : null);
+
+                    if (telemetryFresh) {
+                        updateConnectionTelemetry(telemetry);
+                    }
 
                     return telemetry;
                 }
