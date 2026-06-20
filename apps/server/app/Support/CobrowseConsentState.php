@@ -11,11 +11,10 @@ class CobrowseConsentState
 {
     private const TRANSPORT_STALE_AFTER_SECONDS = 120;
 
-    private const TRANSPORT_RECENT_LOSS_WINDOW_SECONDS = 30;
-
     public function __construct(
         private readonly CobrowseReplayPreview $replayPreview,
         private readonly CobrowseResyncRequestPolicy $resyncRequestPolicy,
+        private readonly CobrowseTransportPressure $transportPressure,
     ) {}
 
     /**
@@ -135,9 +134,9 @@ class CobrowseConsentState
 
         $metadata = $session->metadata ?? [];
         $telemetry = is_array($metadata['telemetry'] ?? null) ? $metadata['telemetry'] : [];
-        $latestReport = $this->latestReportAt($metadata);
-        $telemetryReport = $this->parseReportedAt($telemetry['reported_at'] ?? null);
-        $pressure = $this->formatTransportPressure($metadata, $latestReport);
+        $latestReport = $this->transportPressure->latestReportAt($metadata);
+        $telemetryReport = $this->transportPressure->parseReportedAt($telemetry['reported_at'] ?? null);
+        $pressure = $this->transportPressure->format($metadata, $latestReport);
         $reconnects = (int) ($telemetry['reconnects'] ?? 0);
 
         if (! $latestReport) {
@@ -228,31 +227,6 @@ class CobrowseConsentState
         return ! $latestReport || $telemetryReport->gte($latestReport);
     }
 
-    /**
-     * @param  array<string, mixed>  $metadata
-     */
-    private function latestReportAt(array $metadata): ?Carbon
-    {
-        $timestamps = [
-            $metadata['telemetry']['reported_at'] ?? null,
-            $metadata['page_state']['reported_at'] ?? null,
-            $metadata['snapshot']['reported_at'] ?? null,
-            $metadata['mutations']['last_reported_at'] ?? null,
-        ];
-
-        $latest = null;
-
-        foreach ($timestamps as $timestamp) {
-            $reportedAt = $this->parseReportedAt($timestamp);
-
-            if ($reportedAt && (! $latest || $reportedAt->gt($latest))) {
-                $latest = $reportedAt;
-            }
-        }
-
-        return $latest;
-    }
-
     private function parseReportedAt(mixed $timestamp): ?Carbon
     {
         if (! filled($timestamp)) {
@@ -264,70 +238,6 @@ class CobrowseConsentState
         } catch (Throwable) {
             return null;
         }
-    }
-
-    /**
-     * @param  array<string, mixed>  $metadata
-     */
-    private function formatTransportPressure(array $metadata, ?Carbon $latestReport): string
-    {
-        $telemetry = is_array($metadata['telemetry'] ?? null) ? $metadata['telemetry'] : [];
-        $mutations = is_array($metadata['mutations'] ?? null) ? $metadata['mutations'] : [];
-        $droppedBatches = 0;
-        $skippedMutations = 0;
-        $parts = [];
-
-        if ($this->isRecentTransportReport($this->parseReportedAt($telemetry['reported_at'] ?? null), $latestReport)) {
-            $droppedBatches += (int) ($telemetry['dropped_batches'] ?? 0);
-        }
-
-        foreach ($this->recentMutationBatches($mutations) as $batch) {
-            if (! $this->isRecentTransportReport($this->parseReportedAt($batch['reported_at'] ?? null), $latestReport)) {
-                continue;
-            }
-
-            $droppedBatches += (int) ($batch['dropped_count'] ?? 0);
-            $skippedMutations += (int) ($batch['skipped_count'] ?? 0);
-        }
-
-        if ($droppedBatches > 0) {
-            $parts[] = number_format($droppedBatches).' dropped '.str('batch')->plural($droppedBatches);
-        }
-
-        if ($skippedMutations > 0) {
-            $parts[] = number_format($skippedMutations).' skipped '.str('mutation')->plural($skippedMutations);
-        }
-
-        if ($parts !== []) {
-            return implode(', ', $parts);
-        }
-
-        return $latestReport ? 'No recent drops reported' : 'No drops reported';
-    }
-
-    private function isRecentTransportReport(?Carbon $reportedAt, ?Carbon $latestReport): bool
-    {
-        if (! $reportedAt || ! $latestReport) {
-            return false;
-        }
-
-        return $reportedAt->gte($latestReport->copy()->subSeconds(self::TRANSPORT_RECENT_LOSS_WINDOW_SECONDS));
-    }
-
-    /**
-     * @param  array<string, mixed>  $mutations
-     * @return array<int, array<string, mixed>>
-     */
-    private function recentMutationBatches(array $mutations): array
-    {
-        if (! is_array($mutations['recent_batches'] ?? null)) {
-            return [];
-        }
-
-        return collect($mutations['recent_batches'])
-            ->filter(fn (mixed $batch): bool => is_array($batch))
-            ->values()
-            ->all();
     }
 
     /**
