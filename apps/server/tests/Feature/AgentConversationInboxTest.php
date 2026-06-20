@@ -132,7 +132,7 @@ test('dashboard searches conversations by subject support code and visitor refer
 
     $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
     $visitor = Visitor::factory()->for($site)->create([
-        'anonymous_id' => 'anon-conversation-search',
+        'anonymous_id' => 'anon_conversation_search',
         'external_id' => 'customer-lookup-42',
         'name' => 'Casey Conversation',
         'email' => 'billing-contact@example.test',
@@ -154,6 +154,14 @@ test('dashboard searches conversations by subject support code and visitor refer
     Conversation::factory()->for($site)->for($visitor)->create([
         'support_code' => 'WF-PASSWORD',
         'subject' => 'Password reset request',
+        'status' => 'open',
+    ]);
+    $wildcardVisitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anonXconversationXsearch',
+    ]);
+    Conversation::factory()->for($site)->for($wildcardVisitor)->create([
+        'support_code' => 'WF-WILDCARD',
+        'subject' => 'Wildcard visitor mismatch',
         'status' => 'open',
     ]);
 
@@ -196,6 +204,12 @@ test('dashboard searches conversations by subject support code and visitor refer
         ->assertOk()
         ->assertSee('Invoice export problem')
         ->assertDontSee('Private invoice issue');
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations?conversation_search=anon_conversation_search')
+        ->assertOk()
+        ->assertSee('Invoice export problem')
+        ->assertDontSee('Wildcard visitor mismatch');
 
     $this->actingAs($agent)
         ->get('/dashboard/conversations?conversation_filter=closed&conversation_search=closed')

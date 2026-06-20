@@ -94,17 +94,17 @@ class AgentConversationQueueController extends Controller
             ->where('status', $conversationStatus)
             ->whereHas('site', fn ($query) => $query->visibleToAgent($agent))
             ->when($conversationSearch !== '', function ($query) use ($conversationSearch): void {
-                $searchPattern = '%'.$conversationSearch.'%';
+                $searchPattern = $this->conversationSearchPattern($conversationSearch);
 
                 $query->where(function ($query) use ($searchPattern): void {
-                    $query
-                        ->whereLike('subject', $searchPattern)
-                        ->orWhereLike('support_code', $searchPattern)
-                        ->orWhereHas('visitor', fn ($query) => $query
-                            ->whereLike('anonymous_id', $searchPattern)
-                            ->orWhereLike('external_id', $searchPattern)
-                            ->orWhereLike('name', $searchPattern)
-                            ->orWhereLike('email', $searchPattern));
+                    $this->whereLiteralLike($query, 'subject', $searchPattern);
+                    $this->whereLiteralLike($query, 'support_code', $searchPattern, 'or');
+                    $query->orWhereHas('visitor', function ($query) use ($searchPattern): void {
+                        $this->whereLiteralLike($query, 'anonymous_id', $searchPattern);
+                        $this->whereLiteralLike($query, 'external_id', $searchPattern, 'or');
+                        $this->whereLiteralLike($query, 'name', $searchPattern, 'or');
+                        $this->whereLiteralLike($query, 'email', $searchPattern, 'or');
+                    });
                 });
             })
             ->when($conversationFilter === 'new_activity', fn ($query) => $query->withNewActivityFor($agent))
@@ -163,5 +163,21 @@ class AgentConversationQueueController extends Controller
         }
 
         return $params;
+    }
+
+    private function conversationSearchPattern(string $conversationSearch): string
+    {
+        return '%'.str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $conversationSearch).'%';
+    }
+
+    private function whereLiteralLike($query, string $column, string $pattern, string $boolean = 'and'): void
+    {
+        $wrappedColumn = $query->getQuery()->getGrammar()->wrap($column);
+
+        $query->whereRaw(
+            'LOWER('.$wrappedColumn.') LIKE LOWER(?) ESCAPE ?',
+            [$pattern, '\\'],
+            $boolean,
+        );
     }
 }
