@@ -2,6 +2,7 @@
 
 use App\Console\Commands\AlertDigestPreviewCommand;
 use App\Console\Commands\BootstrapWayfindrCommand;
+use App\Console\Commands\CobrowseTransportSmokeCommand;
 use App\Console\Commands\CreateAgentCommand;
 use App\Console\Commands\MailTestCommand;
 use App\Console\Commands\SendAlertDigestsCommand;
@@ -20,6 +21,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withCommands([
         AlertDigestPreviewCommand::class,
         BootstrapWayfindrCommand::class,
+        CobrowseTransportSmokeCommand::class,
         CreateAgentCommand::class,
         MailTestCommand::class,
         SendAlertDigestsCommand::class,

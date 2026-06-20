@@ -24,6 +24,16 @@ class CobrowseTransportReadiness
     public function check(): array
     {
         $states = $this->activeTransportStates();
+
+        if ($states === null) {
+            return $this->readinessCheck(
+                status: 'manual',
+                summary: 'Cobrowse transport readiness could not inspect active sessions.',
+                detail: 'The cobrowse session table could not be inspected. Check database connectivity and run migrations before relying on cobrowse diagnostics.',
+                action: 'Confirm the database is reachable, run php artisan migrate --force if needed, then rerun php artisan wayfindr:cobrowse-transport-smoke.',
+            );
+        }
+
         $activeCount = array_sum($states);
 
         if ($activeCount === 0) {
@@ -81,17 +91,17 @@ class CobrowseTransportReadiness
     }
 
     /**
-     * @return array<string, int>
+     * @return array<string, int>|null
      */
-    private function activeTransportStates(): array
+    private function activeTransportStates(): ?array
     {
-        if (! Schema::hasTable('cobrowse_sessions')) {
-            return [];
-        }
-
         $states = [];
 
         try {
+            if (! Schema::hasTable('cobrowse_sessions')) {
+                return null;
+            }
+
             CobrowseSession::query()
                 ->with('conversation')
                 ->where('status', 'granted')
@@ -111,7 +121,7 @@ class CobrowseTransportReadiness
                     }
                 });
         } catch (Throwable) {
-            return [];
+            return null;
         }
 
         return $states;

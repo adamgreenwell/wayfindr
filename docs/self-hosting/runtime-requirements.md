@@ -71,6 +71,9 @@ php artisan schedule:list
 
 # Reverb shape: keep this under a process manager when realtime is enabled.
 php artisan reverb:start --host=127.0.0.1 --port=8080
+
+# Cobrowse transport shape: aggregate-only, safe to run on production-like installs.
+php artisan wayfindr:cobrowse-transport-smoke
 ```
 
 If the queue is `sync` or `null`, switch to `database` or `redis` before real
@@ -81,6 +84,16 @@ Laravel will run it hourly once the one-minute scheduler is active. If
 Laravel inspects scheduler mutex state while building the list. If Reverb is
 enabled, keep `php artisan reverb:restart` in the deploy script so long-running
 WebSocket workers refresh after releases.
+
+The cobrowse transport smoke command prints the same aggregate transport status
+used by operator readiness. It does not print support codes, visitor
+identifiers, account or site names, page URLs, snapshots, transcripts, or
+mutation payloads. A no-data result is successful but means no active consented
+cobrowse session has reported telemetry yet. A needs-attention result exits
+non-zero so deployment or operational checks can flag stale, reconnecting, or
+degraded active sessions. If the command cannot inspect the cobrowse session
+table, it reports a manual check so the operator can fix database connectivity
+or pending migrations before trusting cobrowse diagnostics.
 
 ## Environment
 
