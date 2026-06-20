@@ -93,7 +93,9 @@ cobrowse session has reported telemetry yet. A needs-attention result exits
 non-zero so deployment or operational checks can flag stale, reconnecting, or
 degraded active sessions. If the command cannot inspect the cobrowse session
 table, it reports a manual check so the operator can fix database connectivity
-or pending migrations before trusting cobrowse diagnostics.
+or pending migrations before trusting cobrowse diagnostics. Add `--json` when a
+deploy script or external monitor needs machine-readable aggregate status and
+the same static cobrowse payload budget defaults.
 
 ## Environment
 

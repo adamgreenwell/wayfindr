@@ -73,6 +73,81 @@ test('cobrowse smoke command prints static payload budgets without leaking suppo
         ->not->toContain('Private account number');
 });
 
+test('cobrowse smoke command can print machine readable readiness without leaking support data', function (): void {
+    $this->travelTo(Carbon::parse('2026-06-20 12:00:00'));
+
+    $site = Site::factory()->create(['name' => 'Sensitive JSON Site']);
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-json-budget',
+    ]);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-JSONSECRET',
+        'subject' => 'Private JSON checkout failure',
+    ]);
+
+    CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinute(),
+        'metadata' => [
+            'snapshot' => [
+                'reported_at' => now()->toJSON(),
+                'title' => 'Private JSON account dashboard',
+                'page_url' => 'https://customer.example.test/private-json-account',
+                'text' => 'Private JSON account number 12345',
+            ],
+            'telemetry' => [
+                'reported_at' => now()->toJSON(),
+                'dropped_batches' => 1,
+                'reconnects' => 0,
+            ],
+        ],
+    ]);
+
+    $exitCode = null;
+    $exception = null;
+
+    try {
+        $exitCode = Artisan::call('wayfindr:cobrowse-transport-smoke --json');
+    } catch (Throwable $caught) {
+        $exception = $caught;
+    }
+
+    expect($exception?->getMessage())->toBeNull();
+
+    if ($exception !== null) {
+        return;
+    }
+
+    $output = Artisan::output();
+    $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(1)
+        ->and($payload)->toMatchArray([
+            'action' => 'Use chat to confirm fast-changing page state, request a fresh snapshot when the visitor transport settles, and review the conversation-level cobrowse health panel for the assigned support team.',
+            'key' => 'cobrowse_transport',
+            'status' => 'attention',
+            'status_label' => 'Needs attention',
+            'summary' => '1 active cobrowse session needs transport attention.',
+        ])
+        ->and($payload['budget_defaults'][0]['label'])->toBe('Server intake')
+        ->and($payload['budget_defaults'][0]['items'][0])->toBe([
+            'label' => 'Snapshot HTML',
+            'value' => '65,535 characters',
+        ])
+        ->and($payload['budget_defaults'][1]['label'])->toBe('Stock widget')
+        ->and($payload['budget_defaults'][1]['items'][0])->toBe([
+            'label' => 'Stock widget batch payload',
+            'value' => '60,000 bytes',
+        ])
+        ->and($output)->not->toContain('WF-JSONSECRET')
+        ->not->toContain('Private JSON checkout failure')
+        ->not->toContain('Sensitive JSON Site')
+        ->not->toContain('anon-json-budget')
+        ->not->toContain('Private JSON account dashboard')
+        ->not->toContain('customer.example.test')
+        ->not->toContain('Private JSON account number');
+});
+
 test('cobrowse smoke command fails on active transport attention without leaking support data', function (): void {
     $this->travelTo(Carbon::parse('2026-06-20 12:00:00'));
 
