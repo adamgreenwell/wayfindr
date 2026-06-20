@@ -18,6 +18,10 @@
   var DEFAULT_COBROWSE_PAYLOAD_BUDGET = {
     mutationBatchMaxBytes: 60000,
     mutationQueueMaxRecords: 250,
+    mutationFlushMs: 50,
+    pressureResyncMs: 30000,
+    statusPollMs: 5000,
+    resyncMaxAttempts: 3,
   };
   var MESSAGE_GROUP_WINDOW_MS = 5 * 60 * 1000;
   var AGENT_TYPING_FRESH_MS = 20 * 1000;
@@ -442,11 +446,11 @@
     var mutationFlushTimer = null;
     var mutationSequence = 0;
     var droppedMutationBatches = 0;
-    var mutationFlushMs = typeof options.mutationFlushMs === 'number' ? options.mutationFlushMs : 50;
-    var cobrowsePressureResyncMs = typeof options.cobrowsePressureResyncMs === 'number' ? Math.max(0, options.cobrowsePressureResyncMs) : 30000;
+    var mutationFlushMs = typeof options.mutationFlushMs === 'number' ? options.mutationFlushMs : DEFAULT_COBROWSE_PAYLOAD_BUDGET.mutationFlushMs;
+    var cobrowsePressureResyncMs = typeof options.cobrowsePressureResyncMs === 'number' ? Math.max(0, options.cobrowsePressureResyncMs) : DEFAULT_COBROWSE_PAYLOAD_BUDGET.pressureResyncMs;
     var lastCobrowsePressureResyncAt = 0;
     var lastCobrowseResyncRequestId = null;
-    var cobrowseResyncMaxAttempts = typeof options.cobrowseResyncMaxAttempts === 'number' ? Math.max(0, Math.floor(options.cobrowseResyncMaxAttempts)) : 3;
+    var cobrowseResyncMaxAttempts = typeof options.cobrowseResyncMaxAttempts === 'number' ? Math.max(0, Math.floor(options.cobrowseResyncMaxAttempts)) : DEFAULT_COBROWSE_PAYLOAD_BUDGET.resyncMaxAttempts;
     var cobrowseResyncAttemptRequestId = null;
     var cobrowseResyncAttemptCount = 0;
     var cobrowseResyncExhaustionReportedRequestId = null;
@@ -464,7 +468,7 @@
     var pendingReadReceiptMessageId = null;
     var lastReadReceiptMessageId = null;
     var readReceiptBusy = false;
-    var cobrowseStatusPollMs = typeof options.cobrowseStatusPollMs === 'number' ? Math.max(0, options.cobrowseStatusPollMs) : 5000;
+    var cobrowseStatusPollMs = typeof options.cobrowseStatusPollMs === 'number' ? Math.max(0, options.cobrowseStatusPollMs) : DEFAULT_COBROWSE_PAYLOAD_BUDGET.statusPollMs;
     var cobrowseStatusTimer = null;
     var typingSignalThrottleMs = typeof options.typingSignalThrottleMs === 'number' ? Math.max(0, options.typingSignalThrottleMs) : 5000;
     var lastTypingSignalAt = 0;
@@ -2433,6 +2437,7 @@
   var api = {
     version: VERSION,
     createClient: createClient,
+    cobrowsePayloadBudget: Object.freeze(Object.assign({}, DEFAULT_COBROWSE_PAYLOAD_BUDGET)),
     createCobrowseSnapshot: createCobrowseSnapshot,
     createCobrowseMutationBatch: createCobrowseMutationBatch,
     init: init,

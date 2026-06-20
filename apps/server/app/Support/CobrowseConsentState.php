@@ -296,6 +296,12 @@ class CobrowseConsentState
             'mutation_html' => $this->formatCharacters($payloadBudget['mutation_html_max_characters'] ?? null),
             'recent_batches' => $this->formatRetained($payloadBudget['mutation_recent_batches_retained'] ?? null),
             'telemetry_payload' => $this->formatBytes($payloadBudget['telemetry_payload_max_bytes'] ?? null),
+            'widget_batch_payload' => $this->formatBytes($payloadBudget['widget_mutation_batch_max_bytes'] ?? null),
+            'widget_queue' => $this->formatPending($payloadBudget['widget_mutation_queue_max_records'] ?? null),
+            'widget_mutation_flush' => $this->formatMilliseconds($payloadBudget['widget_mutation_flush_ms'] ?? null),
+            'widget_pressure_resync' => $this->formatMilliseconds($payloadBudget['widget_pressure_resync_ms'] ?? null),
+            'widget_status_poll' => $this->formatMilliseconds($payloadBudget['widget_status_poll_ms'] ?? null),
+            'widget_resync_attempts' => $this->formatAttempts($payloadBudget['widget_resync_max_attempts'] ?? null),
         ];
     }
 
@@ -645,6 +651,26 @@ class CobrowseConsentState
         }
 
         return number_format((int) $value).' retained';
+    }
+
+    private function formatPending(mixed $value): string
+    {
+        if (! is_numeric($value)) {
+            return 'Not reported';
+        }
+
+        return number_format((int) $value).' pending';
+    }
+
+    private function formatAttempts(mixed $value): string
+    {
+        if (! is_numeric($value)) {
+            return 'Not reported';
+        }
+
+        $attempts = (int) $value;
+
+        return number_format($attempts).' '.str('attempt')->plural($attempts);
     }
 
     private function formatBytes(mixed $value): string

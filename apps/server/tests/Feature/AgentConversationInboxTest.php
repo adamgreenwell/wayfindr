@@ -5622,6 +5622,12 @@ test('agent can see cobrowse payload budget guardrails on a conversation', funct
                 'mutation_html_max_characters' => 10000,
                 'mutation_recent_batches_retained' => 20,
                 'telemetry_payload_max_bytes' => 10485760,
+                'widget_mutation_batch_max_bytes' => 60000,
+                'widget_mutation_queue_max_records' => 250,
+                'widget_mutation_flush_ms' => 50,
+                'widget_pressure_resync_ms' => 30000,
+                'widget_status_poll_ms' => 5000,
+                'widget_resync_max_attempts' => 3,
             ],
         ],
     ]);
@@ -5643,7 +5649,19 @@ test('agent can see cobrowse payload budget guardrails on a conversation', funct
         ->assertSee('Recent batches')
         ->assertSee('20 retained')
         ->assertSee('Telemetry payload')
-        ->assertSee('10,485,760 bytes');
+        ->assertSee('10,485,760 bytes')
+        ->assertSee('Stock widget batch payload')
+        ->assertSee('60,000 bytes')
+        ->assertSee('Stock widget queue')
+        ->assertSee('250 pending')
+        ->assertSee('Mutation flush')
+        ->assertSee('50 ms')
+        ->assertSee('Pressure resync')
+        ->assertSee('30,000 ms')
+        ->assertSee('Status poll')
+        ->assertSee('5,000 ms')
+        ->assertSee('Resync attempts')
+        ->assertSee('3 attempts');
 });
 
 test('agent can see cobrowse payload budget guardrails before intake metadata exists', function (): void {
@@ -5673,7 +5691,13 @@ test('agent can see cobrowse payload budget guardrails before intake metadata ex
         ->assertSee('Mutation batch')
         ->assertSee('50 items')
         ->assertSee('Telemetry payload')
-        ->assertSee('10,485,760 bytes');
+        ->assertSee('10,485,760 bytes')
+        ->assertSee('Stock widget batch payload')
+        ->assertSee('60,000 bytes')
+        ->assertSee('Stock widget queue')
+        ->assertSee('250 pending')
+        ->assertSee('Resync attempts')
+        ->assertSee('3 attempts');
 });
 
 test('agent can see cobrowse page state on a conversation', function (): void {

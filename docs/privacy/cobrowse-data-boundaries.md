@@ -69,6 +69,11 @@ The widget also caps the pending mutation queue at 250 records between flushes.
 When a page changes faster than the widget can report, older queued records are
 skipped and newer page state is preferred. That keeps noisy pages from building
 an unbounded browser backlog while still reporting skipped-count diagnostics.
+The stock widget flushes mutation batches every 50 ms, checks cobrowse status
+every 5,000 ms, and waits at least 30,000 ms between pressure-triggered
+snapshot resync attempts. Agent-requested snapshot resyncs retry up to 3 times
+for the same request ID before reporting exhaustion.
+
 After reporting dropped or skipped mutation pressure, the stock widget sends a
 fresh sanitized snapshot to give the agent preview a clean recovery point. That
 snapshot includes the last reported mutation sequence so replay can ignore

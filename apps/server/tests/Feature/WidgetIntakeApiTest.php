@@ -1133,6 +1133,9 @@ test('visitor can report cobrowse telemetry for their active session', function 
         ->assertJsonPath('data.payload_budget.snapshot_html_max_characters', 65535)
         ->assertJsonPath('data.payload_budget.mutation_batch_max_items', 50)
         ->assertJsonPath('data.payload_budget.telemetry_payload_max_bytes', 10485760)
+        ->assertJsonPath('data.payload_budget.widget_mutation_batch_max_bytes', 60000)
+        ->assertJsonPath('data.payload_budget.widget_mutation_queue_max_records', 250)
+        ->assertJsonPath('data.payload_budget.widget_resync_max_attempts', 3)
         ->assertJsonPath('data.telemetry.rtt_ms', 184)
         ->assertJsonPath('data.telemetry.max_rtt_ms', 184)
         ->assertJsonPath('data.telemetry.payload_bytes', 8192)
@@ -1368,6 +1371,9 @@ test('visitor can report a cobrowse snapshot for their active session', function
         ->assertJsonPath('data.payload_budget.snapshot_text_max_characters', 10000)
         ->assertJsonPath('data.payload_budget.mutation_batch_max_items', 50)
         ->assertJsonPath('data.payload_budget.telemetry_payload_max_bytes', 10485760)
+        ->assertJsonPath('data.payload_budget.widget_mutation_batch_max_bytes', 60000)
+        ->assertJsonPath('data.payload_budget.widget_mutation_queue_max_records', 250)
+        ->assertJsonPath('data.payload_budget.widget_resync_max_attempts', 3)
         ->assertJsonPath('data.snapshot.page_url', 'https://docs.example.test/install?step=2')
         ->assertJsonPath('data.snapshot.title', 'Install Guide')
         ->assertJsonPath('data.snapshot.node_count', 4)
@@ -1389,7 +1395,10 @@ test('visitor can report a cobrowse snapshot for their active session', function
         ->payload_budget->snapshot_html_max_characters->toBe(65535)
         ->payload_budget->snapshot_text_max_characters->toBe(10000)
         ->payload_budget->mutation_batch_max_items->toBe(50)
-        ->payload_budget->telemetry_payload_max_bytes->toBe(10485760);
+        ->payload_budget->telemetry_payload_max_bytes->toBe(10485760)
+        ->payload_budget->widget_mutation_batch_max_bytes->toBe(60000)
+        ->payload_budget->widget_mutation_queue_max_records->toBe(250)
+        ->payload_budget->widget_resync_max_attempts->toBe(3);
 });
 
 test('cobrowse snapshot rejects oversized html payloads', function (): void {
@@ -1492,6 +1501,9 @@ test('visitor can report bounded cobrowse mutation batches for their active sess
         ->assertJsonPath('data.payload_budget.mutation_text_max_characters', 5000)
         ->assertJsonPath('data.payload_budget.mutation_html_max_characters', 10000)
         ->assertJsonPath('data.payload_budget.mutation_recent_batches_retained', 20)
+        ->assertJsonPath('data.payload_budget.widget_mutation_batch_max_bytes', 60000)
+        ->assertJsonPath('data.payload_budget.widget_mutation_queue_max_records', 250)
+        ->assertJsonPath('data.payload_budget.widget_resync_max_attempts', 3)
         ->assertJsonPath('data.mutations.last_sequence', 21)
         ->assertJsonPath('data.mutations.batch_count', 21)
         ->assertJsonPath('data.mutations.mutation_count', 22)
@@ -1514,7 +1526,10 @@ test('visitor can report bounded cobrowse mutation batches for their active sess
         ->and($mutations['recent_batches'][19]['sequence'])->toBe(21)
         ->and($mutations['recent_batches'][19]['mutations'][0]['text'])->toBe('Public copy changed.')
         ->and($session->fresh()->metadata['payload_budget']['mutation_batch_max_items'])->toBe(50)
-        ->and($session->fresh()->metadata['payload_budget']['mutation_recent_batches_retained'])->toBe(20);
+        ->and($session->fresh()->metadata['payload_budget']['mutation_recent_batches_retained'])->toBe(20)
+        ->and($session->fresh()->metadata['payload_budget']['widget_mutation_batch_max_bytes'])->toBe(60000)
+        ->and($session->fresh()->metadata['payload_budget']['widget_mutation_queue_max_records'])->toBe(250)
+        ->and($session->fresh()->metadata['payload_budget']['widget_resync_max_attempts'])->toBe(3);
 });
 
 test('cobrowse mutations reject oversized batches', function (): void {

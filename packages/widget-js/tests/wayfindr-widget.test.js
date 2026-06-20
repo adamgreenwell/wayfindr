@@ -17,6 +17,18 @@ test('attaches the public API to window for classic script tags', () => {
   assert.equal(typeof sandbox.window.Wayfindr.createClient, 'function');
 });
 
+test('exposes stock cobrowse payload budget defaults', () => {
+  assert.deepEqual(Wayfindr.cobrowsePayloadBudget, {
+    mutationBatchMaxBytes: 60000,
+    mutationQueueMaxRecords: 250,
+    mutationFlushMs: 50,
+    pressureResyncMs: 30000,
+    statusPollMs: 5000,
+    resyncMaxAttempts: 3,
+  });
+  assert.equal(Object.isFrozen(Wayfindr.cobrowsePayloadBudget), true);
+});
+
 test('injects a hidden override for stateful widget sections', () => {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
     url: 'https://docs.example.test/install',

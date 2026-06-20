@@ -681,6 +681,30 @@
                             <span class="meta-label">Telemetry payload</span>
                             <span class="meta-value">{{ $cobrowseConsent['payload_budget']['telemetry_payload'] }}</span>
                         </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Stock widget batch payload</span>
+                            <span class="meta-value">{{ $cobrowseConsent['payload_budget']['widget_batch_payload'] }}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Stock widget queue</span>
+                            <span class="meta-value">{{ $cobrowseConsent['payload_budget']['widget_queue'] }}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Mutation flush</span>
+                            <span class="meta-value">{{ $cobrowseConsent['payload_budget']['widget_mutation_flush'] }}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Pressure resync</span>
+                            <span class="meta-value">{{ $cobrowseConsent['payload_budget']['widget_pressure_resync'] }}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Status poll</span>
+                            <span class="meta-value">{{ $cobrowseConsent['payload_budget']['widget_status_poll'] }}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Resync attempts</span>
+                            <span class="meta-value">{{ $cobrowseConsent['payload_budget']['widget_resync_attempts'] }}</span>
+                        </div>
                     </div>
                 @endif
 

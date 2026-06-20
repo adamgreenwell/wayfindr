@@ -125,6 +125,9 @@ browser. The default cap is 60,000 serialized bytes, and host pages can lower
 or raise it with `mutationPayloadMaxBytes` when calling `Wayfindr.init`. The
 widget keeps at most 250 pending mutation records between flushes by default;
 `mutationQueueMaxRecords` can tune that queue for especially noisy pages.
+The stock defaults are exposed as `Wayfindr.cobrowsePayloadBudget` so host pages
+and smoke tests can inspect the browser-side budget without hard-coding magic
+numbers.
 When an agent requests a fresh cobrowse snapshot, the widget retries a failing
 request ID up to 3 times by default and then waits for a new request ID;
 `cobrowseResyncMaxAttempts` can tune that bound for unusual environments.
