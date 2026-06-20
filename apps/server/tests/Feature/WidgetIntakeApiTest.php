@@ -874,10 +874,129 @@ test('visitor cobrowse snapshot does not fulfill an expired agent resync request
             ->assertOk()
             ->assertJsonPath('data.snapshot.resync_request_id', 'resync_late');
 
-        expect($session->fresh()->metadata['resync_request'])
+        $resyncRequest = $session->fresh()->metadata['resync_request'];
+
+        expect($resyncRequest)
             ->id->toBe('resync_late')
             ->fulfilled_at->toBeNull()
-            ->fulfilled_snapshot_reported_at->toBeNull();
+            ->fulfilled_snapshot_reported_at->toBeNull()
+            ->and($resyncRequest['ignored_responses'])->toHaveCount(1)
+            ->and($resyncRequest['ignored_responses'][0]['request_id'])->toBe('resync_late')
+            ->and($resyncRequest['ignored_responses'][0]['reason'])->toBe('expired')
+            ->and($resyncRequest['ignored_responses'][0]['ignored_at'])->toBe(now()->toJSON());
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+test('visitor cobrowse snapshot records mismatched resync responses without fulfilling the request', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-18 15:20:00', 'UTC'));
+
+    try {
+        $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+        $agent = User::factory()->create(['name' => 'Ada Agent']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-RESYNC-MISMATCH',
+        ]);
+        $session = CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(2),
+            'ended_at' => null,
+            'metadata' => [
+                'resync_request' => [
+                    'id' => 'resync_current',
+                    'requested_by_id' => $agent->id,
+                    'requested_by_name' => 'Ada Agent',
+                    'requested_at' => now()->subSeconds(30)->toJSON(),
+                    'fulfilled_at' => null,
+                ],
+            ],
+        ]);
+        $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+
+        $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-snapshot", [
+            'site_public_key' => 'site_public_docs',
+            'anonymous_id' => 'anon-docs',
+            'visitor_token' => $token,
+            'page_url' => 'https://docs.example.test/install?step=4',
+            'title' => 'Install Guide',
+            'html' => '<main><h1>Install Guide</h1><p>Wrong request.</p></main>',
+            'text' => 'Install Guide Wrong request.',
+            'node_count' => 3,
+            'masked_count' => 0,
+            'resync_request_id' => 'resync_wrong',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.snapshot.resync_request_id', 'resync_wrong');
+
+        $resyncRequest = $session->fresh()->metadata['resync_request'];
+
+        expect($resyncRequest)
+            ->id->toBe('resync_current')
+            ->fulfilled_at->toBeNull()
+            ->fulfilled_snapshot_reported_at->toBeNull()
+            ->and($resyncRequest['ignored_responses'])->toHaveCount(1)
+            ->and($resyncRequest['ignored_responses'][0]['request_id'])->toBe('resync_wrong')
+            ->and($resyncRequest['ignored_responses'][0]['reason'])->toBe('mismatched')
+            ->and($resyncRequest['ignored_responses'][0]['ignored_at'])->toBe(now()->toJSON());
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+test('visitor cobrowse snapshot records duplicate fulfilled resync responses without replacing the fulfillment', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-18 15:25:00', 'UTC'));
+
+    try {
+        $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+        $agent = User::factory()->create(['name' => 'Ada Agent']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-RESYNC-DUPE',
+        ]);
+        $session = CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(2),
+            'ended_at' => null,
+            'metadata' => [
+                'resync_request' => [
+                    'id' => 'resync_done',
+                    'requested_by_id' => $agent->id,
+                    'requested_by_name' => 'Ada Agent',
+                    'requested_at' => now()->subMinute()->toJSON(),
+                    'fulfilled_at' => now()->subSeconds(20)->toJSON(),
+                    'fulfilled_snapshot_reported_at' => now()->subSeconds(20)->toJSON(),
+                ],
+            ],
+        ]);
+        $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+
+        $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-snapshot", [
+            'site_public_key' => 'site_public_docs',
+            'anonymous_id' => 'anon-docs',
+            'visitor_token' => $token,
+            'page_url' => 'https://docs.example.test/install?step=5',
+            'title' => 'Install Guide',
+            'html' => '<main><h1>Install Guide</h1><p>Duplicate request.</p></main>',
+            'text' => 'Install Guide Duplicate request.',
+            'node_count' => 3,
+            'masked_count' => 0,
+            'resync_request_id' => 'resync_done',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.snapshot.resync_request_id', 'resync_done');
+
+        $resyncRequest = $session->fresh()->metadata['resync_request'];
+
+        expect($resyncRequest)
+            ->id->toBe('resync_done')
+            ->fulfilled_at->toBe(now()->subSeconds(20)->toJSON())
+            ->fulfilled_snapshot_reported_at->toBe(now()->subSeconds(20)->toJSON())
+            ->and($resyncRequest['ignored_responses'])->toHaveCount(1)
+            ->and($resyncRequest['ignored_responses'][0]['request_id'])->toBe('resync_done')
+            ->and($resyncRequest['ignored_responses'][0]['reason'])->toBe('already_fulfilled')
+            ->and($resyncRequest['ignored_responses'][0]['ignored_at'])->toBe(now()->toJSON());
     } finally {
         Carbon::setTestNow();
     }

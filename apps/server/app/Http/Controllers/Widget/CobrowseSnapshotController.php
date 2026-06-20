@@ -115,12 +115,25 @@ class CobrowseSnapshotController extends Controller
 
         $request = $metadata['resync_request'] ?? null;
 
-        if (
-            ! is_array($request)
-            || (string) ($request['id'] ?? '') !== $requestId
-            || filled($request['fulfilled_at'] ?? null)
-            || ! $this->resyncRequestPolicy->canBeFulfilled($request)
-        ) {
+        if (! is_array($request)) {
+            return $metadata;
+        }
+
+        if ((string) ($request['id'] ?? '') !== $requestId) {
+            $metadata['resync_request'] = $this->recordIgnoredResyncResponse($request, $requestId, $reportedAt, 'mismatched');
+
+            return $metadata;
+        }
+
+        if (filled($request['fulfilled_at'] ?? null)) {
+            $metadata['resync_request'] = $this->recordIgnoredResyncResponse($request, $requestId, $reportedAt, 'already_fulfilled');
+
+            return $metadata;
+        }
+
+        if (! $this->resyncRequestPolicy->canBeFulfilled($request)) {
+            $metadata['resync_request'] = $this->recordIgnoredResyncResponse($request, $requestId, $reportedAt, 'expired');
+
             return $metadata;
         }
 
@@ -129,5 +142,26 @@ class CobrowseSnapshotController extends Controller
         $metadata['resync_request'] = $request;
 
         return $metadata;
+    }
+
+    /**
+     * @param  array<string, mixed>  $request
+     * @return array<string, mixed>
+     */
+    private function recordIgnoredResyncResponse(array $request, string $requestId, string $reportedAt, string $reason): array
+    {
+        $ignoredResponses = is_array($request['ignored_responses'] ?? null)
+            ? array_values(array_filter($request['ignored_responses'], 'is_array'))
+            : [];
+
+        $ignoredResponses[] = [
+            'request_id' => $requestId,
+            'reason' => $reason,
+            'ignored_at' => $reportedAt,
+        ];
+
+        $request['ignored_responses'] = array_slice($ignoredResponses, -5);
+
+        return $request;
     }
 }

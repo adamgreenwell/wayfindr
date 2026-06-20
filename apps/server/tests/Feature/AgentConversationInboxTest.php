@@ -5029,6 +5029,13 @@ test('agent can see expired cobrowse resync guidance', function (): void {
                     'requested_by_name' => 'Ada Agent',
                     'requested_at' => now()->subMinutes(6)->toJSON(),
                     'fulfilled_at' => null,
+                    'ignored_responses' => [
+                        [
+                            'request_id' => 'resync_expired',
+                            'reason' => 'expired',
+                            'ignored_at' => now()->subSeconds(20)->toJSON(),
+                        ],
+                    ],
                 ],
             ],
         ]);
@@ -5042,6 +5049,8 @@ test('agent can see expired cobrowse resync guidance', function (): void {
             ->assertSee('Expired 1 minute ago')
             ->assertSee('Recovery timeline')
             ->assertSee('Snapshot requested')
+            ->assertSee('Snapshot response ignored')
+            ->assertSee('A widget response arrived after the recovery window closed.')
             ->assertSee('Request expired')
             ->assertSee('Request another fresh snapshot');
     } finally {

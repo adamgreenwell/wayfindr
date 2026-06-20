@@ -81,9 +81,11 @@ request ID before sending another agent-requested resync. This is a recovery
 control for the current consented session, not permission to send raw values or
 unbounded page history.
 
-Agents may see whether that recovery request is pending, delayed, or fulfilled
-so they know when to retry or confirm details through chat. Those status cues do
-not change consent, masking, payload limits, or retention boundaries.
+Agents may see whether that recovery request is pending, delayed, fulfilled, or
+ignored because it arrived late, matched an older request, or duplicated an
+already accepted response. Those status cues help agents retry or confirm
+details through chat, but they do not change consent, masking, payload limits,
+or retention boundaries.
 Fresh duplicate requests may be coalesced briefly so repeated clicks do not
 force the visitor widget to answer overlapping recovery requests.
 

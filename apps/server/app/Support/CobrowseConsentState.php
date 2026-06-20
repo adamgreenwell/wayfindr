@@ -572,7 +572,7 @@ class CobrowseConsentState
                 ];
             }
 
-            return $timeline;
+            return $this->appendIgnoredResyncResponses($timeline, $request);
         }
 
         if ($this->resyncRequestPolicy->isExpired($request)) {
@@ -584,7 +584,7 @@ class CobrowseConsentState
                 'badge' => 'Expired',
             ];
 
-            return $timeline;
+            return $this->appendIgnoredResyncResponses($timeline, $request);
         }
 
         if ($this->resyncRequestPolicy->isDelayedPending($request)) {
@@ -604,7 +604,7 @@ class CobrowseConsentState
                 'badge' => 'Guardrail',
             ];
 
-            return $timeline;
+            return $this->appendIgnoredResyncResponses($timeline, $request);
         }
 
         $timeline[] = [
@@ -615,7 +615,46 @@ class CobrowseConsentState
             'badge' => 'Pending',
         ];
 
+        return $this->appendIgnoredResyncResponses($timeline, $request);
+    }
+
+    /**
+     * @param  list<array{state: string, label: string, detail: string, occurred_at: string, badge: string}>  $timeline
+     * @param  array<string, mixed>  $request
+     * @return list<array{state: string, label: string, detail: string, occurred_at: string, badge: string}>
+     */
+    private function appendIgnoredResyncResponses(array $timeline, array $request): array
+    {
+        $ignoredResponses = is_array($request['ignored_responses'] ?? null) ? $request['ignored_responses'] : [];
+
+        foreach ($ignoredResponses as $ignoredResponse) {
+            if (! is_array($ignoredResponse)) {
+                continue;
+            }
+
+            $timeline[] = [
+                'state' => 'ignored',
+                'label' => 'Snapshot response ignored',
+                'detail' => $this->ignoredResyncResponseDetail((string) ($ignoredResponse['reason'] ?? 'unknown')),
+                'occurred_at' => $this->formatMoment(
+                    $this->parseReportedAt($ignoredResponse['ignored_at'] ?? null),
+                    'Ignored response time unavailable'
+                ),
+                'badge' => 'Ignored',
+            ];
+        }
+
         return $timeline;
+    }
+
+    private function ignoredResyncResponseDetail(string $reason): string
+    {
+        return match ($reason) {
+            'expired' => 'A widget response arrived after the recovery window closed.',
+            'mismatched' => 'A widget response arrived for a different recovery request.',
+            'already_fulfilled' => 'A duplicate widget response arrived after Wayfindr had already accepted a fresh snapshot.',
+            default => 'A widget response could not be matched to the active recovery request.',
+        };
     }
 
     private function formatDimensions(mixed $width, mixed $height): string
