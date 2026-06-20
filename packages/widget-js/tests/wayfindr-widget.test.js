@@ -1610,6 +1610,156 @@ test('shows sent delivery status only for visitor messages', async () => {
   assert.equal(messages[1].querySelector('.wayfindr-widget__message-delivery'), null);
 });
 
+test('explains that visitor follow-ups reopen closed conversations', async () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+  let conversationStatus = 'open';
+  let messageCount = 2;
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    storage: memoryStorage(),
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    fetch: async (url, options) => {
+      const path = new URL(url).pathname;
+
+      if (path === '/api/widget/bootstrap') {
+        return jsonResponse(201, {
+          data: {
+            site: { public_key: 'site_public_docs', settings: {} },
+            visitor: { anonymous_id: 'anon-browser-123', token: 'visitor-token-123' },
+          },
+        });
+      }
+
+      if (path === '/api/conversations') {
+        return jsonResponse(201, {
+          data: {
+            support_code: 'WF-CLOSED1',
+            status: 'open',
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-CLOSED1/messages' && options.method === 'POST') {
+        const payload = JSON.parse(options.body);
+        const isFollowUp = payload.body === 'Following up.';
+
+        conversationStatus = 'open';
+        messageCount = isFollowUp ? 3 : 2;
+
+        return jsonResponse(201, {
+          data: {
+            conversation: { support_code: 'WF-CLOSED1', status: conversationStatus },
+            message: {
+              id: isFollowUp ? 3 : 1,
+              sender: { kind: 'visitor', name: 'Visitor' },
+              type: 'text',
+              body: payload.body,
+              created_at: isFollowUp ? '2026-05-23T14:05:00.000000Z' : '2026-05-23T13:55:00.000000Z',
+            },
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-CLOSED1/messages') {
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-CLOSED1', status: conversationStatus },
+            messages: [
+              {
+                id: 1,
+                sender: { kind: 'visitor', name: 'Visitor' },
+                type: 'text',
+                body: 'Original question.',
+                created_at: '2026-05-23T13:55:00.000000Z',
+              },
+              {
+                id: 2,
+                sender: { kind: 'agent', name: 'Ada Agent' },
+                type: 'text',
+                body: 'I closed this out for now.',
+                created_at: '2026-05-23T14:00:00.000000Z',
+              },
+              {
+                id: 3,
+                sender: { kind: 'visitor', name: 'Visitor' },
+                type: 'text',
+                body: 'Following up.',
+                created_at: '2026-05-23T14:05:00.000000Z',
+              },
+            ].slice(0, messageCount),
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-CLOSED1/cobrowse') {
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-CLOSED1' },
+            cobrowse: {
+              status: 'unavailable',
+              consent: 'unavailable',
+              requested_by: null,
+            },
+          },
+        });
+      }
+
+      throw new Error('Unexpected request ' + url);
+    },
+  });
+
+  widget.open();
+
+  widget.root.querySelector('.wayfindr-widget__textarea').value = 'Original question.';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+    new dom.window.Event('submit', { bubbles: true, cancelable: true }),
+  );
+
+  await settle();
+
+  conversationStatus = 'closed';
+  widget.root.querySelector('.wayfindr-widget__refresh').dispatchEvent(
+    new dom.window.Event('click', { bubbles: true }),
+  );
+
+  await settle();
+
+  const notice = widget.root.querySelector('.wayfindr-widget__notice');
+
+  assert.equal(notice.hidden, false);
+  assert.equal(notice.getAttribute('data-state'), 'closed');
+  assert.match(notice.textContent, /This conversation was closed/);
+  assert.match(notice.textContent, /Send a new message to reopen it/);
+  assert.deepEqual(
+    messageSummaries(widget),
+    ['VisitorOriginal question.', 'Ada AgentI closed this out for now.'],
+  );
+
+  widget.root.querySelector('.wayfindr-widget__textarea').value = 'Following up.';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+    new dom.window.Event('submit', { bubbles: true, cancelable: true }),
+  );
+
+  await settle();
+
+  assert.equal(notice.hidden, true);
+  assert.deepEqual(
+    messageSummaries(widget),
+    ['VisitorOriginal question.', 'Ada AgentI closed this out for now.', 'VisitorFollowing up.'],
+  );
+
+  widget.destroy();
+});
+
 test('keeps the widget composer busy and ignores duplicate submits while sending', async () => {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
     url: 'https://docs.example.test/install',

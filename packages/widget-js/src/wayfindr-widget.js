@@ -434,6 +434,7 @@
     var bootstrapped = false;
     var supportCode = null;
     var conversationActivated = false;
+    var conversationStatus = null;
     var messages = [];
     var realtimeSubscription = null;
     var cobrowseGranted = false;
@@ -495,6 +496,30 @@
       noticeRetry.disabled = false;
     }
 
+    function applyConversationStatus(conversation) {
+      if (!conversation || !conversation.status) {
+        return;
+      }
+
+      conversationStatus = String(conversation.status).toLowerCase();
+    }
+
+    function renderConversationNotice() {
+      if (conversationStatus === 'closed') {
+        showNotice('closed', 'This conversation was closed. Send a new message to reopen it.');
+
+        return;
+      }
+
+      if (messages.length === 0) {
+        showNotice('empty', supportCode
+          ? 'No messages yet. Replies will show up here.'
+          : 'No messages yet. Send a message and support will see it here.');
+      } else {
+        hideNotice();
+      }
+    }
+
     function renderMessages(nextMessages) {
       messages = Array.isArray(nextMessages) ? nextMessages : messages;
       timeline.textContent = '';
@@ -543,14 +568,7 @@
       });
 
       timeline.hidden = messages.length === 0;
-
-      if (messages.length === 0) {
-        showNotice('empty', supportCode
-          ? 'No messages yet. Replies will show up here.'
-          : 'No messages yet. Send a message and support will see it here.');
-      } else {
-        hideNotice();
-      }
+      renderConversationNotice();
 
       refresh.hidden = false;
       scheduleRenderedReadReceipt();
@@ -1256,6 +1274,7 @@
 
       try {
         var result = await client.fetchMessages(supportCode);
+        applyConversationStatus(result.conversation);
         renderMessages(result.messages || []);
         renderAgentTyping(result.agent_typing);
 
@@ -1396,7 +1415,9 @@
         }
 
         if (supportCode) {
-          await client.sendMessage(supportCode, body);
+          var sentMessage = await client.sendMessage(supportCode, body);
+          applyConversationStatus(sentMessage.conversation);
+          renderConversationNotice();
           activateConversation();
         } else {
           var conversation = await client.startConversation(body, {
@@ -1404,8 +1425,11 @@
             context: visitorContext,
           });
 
+          applyConversationStatus(conversation);
           supportCode = conversation.support_code;
-          await client.sendMessage(supportCode, body);
+          var firstMessage = await client.sendMessage(supportCode, body);
+          applyConversationStatus(firstMessage.conversation);
+          renderConversationNotice();
           activateConversation();
         }
 
