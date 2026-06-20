@@ -518,6 +518,115 @@ test('dashboard filters conversations by assignment state', function (): void {
         ->assertDontSee('Assigned elsewhere');
 });
 
+test('dashboard filters conversations by cobrowse transport attention', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00', 'UTC'));
+
+    try {
+        $account = Account::factory()->create(['name' => 'Acme Support']);
+        $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+        $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+
+        $liveConversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-LIVEFILTER',
+            'subject' => 'Live cobrowse is fine',
+            'status' => 'open',
+            'last_message_at' => now()->subMinute(),
+        ]);
+        CobrowseSession::factory()->for($liveConversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(2),
+            'ended_at' => null,
+            'metadata' => [
+                'telemetry' => [
+                    'reported_at' => now()->subSeconds(15)->toJSON(),
+                    'reconnects' => 0,
+                    'dropped_batches' => 0,
+                ],
+            ],
+        ]);
+
+        $staleConversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-STALEFILTER',
+            'subject' => 'Stale cobrowse needs a look',
+            'status' => 'open',
+            'last_message_at' => now()->subMinutes(2),
+        ]);
+        CobrowseSession::factory()->for($staleConversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(10),
+            'ended_at' => null,
+            'metadata' => [
+                'telemetry' => [
+                    'reported_at' => now()->subMinutes(4)->toJSON(),
+                    'reconnects' => 0,
+                    'dropped_batches' => 0,
+                ],
+            ],
+        ]);
+
+        $reconnectingConversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-RECONNECTFILTER',
+            'subject' => 'Reconnecting cobrowse needs patience',
+            'status' => 'open',
+            'last_message_at' => now()->subMinutes(3),
+        ]);
+        CobrowseSession::factory()->for($reconnectingConversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(5),
+            'ended_at' => null,
+            'metadata' => [
+                'telemetry' => [
+                    'reported_at' => now()->subSeconds(10)->toJSON(),
+                    'reconnects' => 1,
+                    'dropped_batches' => 0,
+                ],
+            ],
+        ]);
+
+        $degradedConversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-DEGRADEFILTER',
+            'subject' => 'Degraded cobrowse needs confirmation',
+            'status' => 'open',
+            'last_message_at' => now()->subMinutes(4),
+        ]);
+        CobrowseSession::factory()->for($degradedConversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(5),
+            'ended_at' => null,
+            'metadata' => [
+                'telemetry' => [
+                    'reported_at' => now()->subSeconds(12)->toJSON(),
+                    'reconnects' => 0,
+                    'dropped_batches' => 2,
+                ],
+            ],
+        ]);
+
+        Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-NOCOBFILTER',
+            'subject' => 'No cobrowse requested',
+            'status' => 'open',
+            'last_message_at' => now()->subMinutes(4),
+        ]);
+
+        $this->actingAs($agent)
+            ->get('/dashboard/conversations?conversation_filter=cobrowse_attention')
+            ->assertOk()
+            ->assertSee('Cobrowse attention')
+            ->assertSee('Stale cobrowse needs a look')
+            ->assertSee('Stale')
+            ->assertSee('Reconnecting cobrowse needs patience')
+            ->assertSee('Reconnecting')
+            ->assertSee('Degraded cobrowse needs confirmation')
+            ->assertSee('Degraded')
+            ->assertDontSee('Live cobrowse is fine')
+            ->assertDontSee('No cobrowse requested');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('dashboard exposes conversation queue filter links', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
@@ -533,7 +642,8 @@ test('dashboard exposes conversation queue filter links', function (): void {
         ->assertSee('/dashboard/conversations?conversation_filter=new_activity', false)
         ->assertSee('/dashboard/conversations?conversation_filter=needs_reply', false)
         ->assertSee('/dashboard/conversations?conversation_filter=assigned_to_me', false)
-        ->assertSee('/dashboard/conversations?conversation_filter=unassigned', false);
+        ->assertSee('/dashboard/conversations?conversation_filter=unassigned', false)
+        ->assertSee('/dashboard/conversations?conversation_filter=cobrowse_attention', false);
 });
 
 test('dashboard lists open tickets for the agent account', function (): void {

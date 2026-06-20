@@ -42,14 +42,17 @@ class AgentConversationQueueController extends Controller
             'needs_reply' => 'Needs reply',
             'assigned_to_me' => 'Assigned to me',
             'unassigned' => 'Unassigned',
+            'cobrowse_attention' => 'Cobrowse attention',
         ];
         $conversationFilter = $request->query('conversation_filter', 'all');
         $conversationFilter = is_string($conversationFilter) && array_key_exists($conversationFilter, $conversationFilters)
             ? $conversationFilter
             : 'all';
-        $conversationEmptyMessage = $conversationFilter === 'new_activity'
-            ? 'No conversations need attention.'
-            : 'No active conversations yet.';
+        $conversationEmptyMessage = match ($conversationFilter) {
+            'new_activity' => 'No conversations need attention.',
+            'cobrowse_attention' => 'No active cobrowse sessions need attention.',
+            default => 'No active conversations yet.',
+        };
         $newActivityConversationCount = Conversation::query()
             ->where('status', 'open')
             ->whereHas('site', fn ($query) => $query->visibleToAgent($agent))
@@ -85,6 +88,12 @@ class AgentConversationQueueController extends Controller
             ->mapWithKeys(fn (Conversation $conversation): array => [
                 $conversation->id => $cobrowseConsentState->queueTransportForConversation($conversation),
             ]);
+
+        if ($conversationFilter === 'cobrowse_attention') {
+            $conversations = $conversations
+                ->filter(fn (Conversation $conversation): bool => ($cobrowseTransportByConversationId->get($conversation->id)['tone'] ?? null) === 'attention')
+                ->values();
+        }
 
         return [
             'cobrowseTransportByConversationId' => $cobrowseTransportByConversationId,
