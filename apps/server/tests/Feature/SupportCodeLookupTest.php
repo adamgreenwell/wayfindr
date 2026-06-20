@@ -24,6 +24,19 @@ test('agents can see the support code lookup on the dashboard', function (): voi
         ->assertSee(route('dashboard.support-code.lookup'), false);
 });
 
+test('agents can use support trail lookup from the shared app shell', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/profile')
+        ->assertOk()
+        ->assertSee('aria-label="Find support trail"', false)
+        ->assertSee('name="support_code"', false)
+        ->assertSee('placeholder="Support code or ticket"', false)
+        ->assertSee(route('dashboard.support-code.lookup'), false);
+});
+
 test('agents can jump to a visible conversation by support code', function (): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create();

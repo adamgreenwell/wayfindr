@@ -66,7 +66,7 @@
         .topbar-inner {
             min-height: 72px;
             display: grid;
-            grid-template-columns: minmax(168px, 1fr) auto minmax(168px, 1fr);
+            grid-template-columns: minmax(150px, 0.7fr) auto minmax(440px, 1.3fr);
             align-items: center;
             gap: 16px;
         }
@@ -493,6 +493,19 @@
 
         .compact-form .button {
             min-height: 38px;
+        }
+
+        .support-lookup-form {
+            flex: 0 1 220px;
+            flex-wrap: nowrap;
+            max-width: 220px;
+            min-width: min(100%, 220px);
+        }
+
+        .support-lookup-form input {
+            flex: 1 1 145px;
+            min-width: 145px;
+            width: 145px;
         }
 
         .realtime-grid {
@@ -930,7 +943,7 @@
             font-size: 0.85rem;
         }
 
-        @media (max-width: 820px) {
+        @media (max-width: 1100px) {
             .topbar-inner {
                 grid-template-columns: 1fr;
                 padding: 16px 0;
@@ -1036,6 +1049,11 @@
                     </nav>
 
                     <div class="topbar-actions">
+                        <form class="compact-form support-lookup-form" method="GET" action="{{ route('dashboard.support-code.lookup') }}" aria-label="Find support trail">
+                            <label class="sr-only" for="shell_support_code">Support code, ticket, or visitor ID</label>
+                            <input id="shell_support_code" name="support_code" type="search" placeholder="Support code or ticket" autocomplete="off">
+                            <button class="button secondary" type="submit">Find</button>
+                        </form>
                         <a class="button secondary" href="{{ route('dashboard.profile.show') }}">Profile</a>
                         <form method="POST" action="{{ route('logout') }}">
                             @csrf
