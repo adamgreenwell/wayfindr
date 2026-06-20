@@ -14,6 +14,7 @@ use App\Models\TicketExternalLink;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
+use App\Support\CobrowseConsentState;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -248,6 +249,112 @@ test('dashboard shows cobrowse transport health in the conversation queue', func
             ->assertSeeInOrder(['Live cobrowse session', 'Live', '20 seconds ago'])
             ->assertSeeInOrder(['Stale cobrowse session', 'Stale', '4 minutes ago'])
             ->assertSeeInOrder(['No cobrowse session', 'Unavailable', 'Not reported']);
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+test('cobrowse queue transport exposes stable machine states', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00', 'UTC'));
+
+    try {
+        $account = Account::factory()->create(['name' => 'Acme Support']);
+        $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+        $transportState = app(CobrowseConsentState::class);
+
+        $makeConversation = fn (string $supportCode): Conversation => Conversation::factory()
+            ->for($site)
+            ->for($visitor)
+            ->create([
+                'support_code' => $supportCode,
+                'subject' => $supportCode,
+                'status' => 'open',
+            ]);
+
+        $noSessionConversation = $makeConversation('WF-STATE-NONE');
+
+        $endedConversation = $makeConversation('WF-STATE-END');
+        CobrowseSession::factory()->for($endedConversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(5),
+            'ended_at' => now()->subMinute(),
+            'metadata' => [
+                'telemetry' => [
+                    'reported_at' => now()->subSeconds(15)->toJSON(),
+                ],
+            ],
+        ]);
+
+        $unreportedConversation = $makeConversation('WF-STATE-UNREP');
+        CobrowseSession::factory()->for($unreportedConversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(5),
+            'ended_at' => null,
+            'metadata' => [],
+        ]);
+
+        $staleConversation = $makeConversation('WF-STATE-STALE');
+        CobrowseSession::factory()->for($staleConversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(10),
+            'ended_at' => null,
+            'metadata' => [
+                'telemetry' => [
+                    'reported_at' => now()->subMinutes(4)->toJSON(),
+                ],
+            ],
+        ]);
+
+        $reconnectingConversation = $makeConversation('WF-STATE-RECON');
+        CobrowseSession::factory()->for($reconnectingConversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(5),
+            'ended_at' => null,
+            'metadata' => [
+                'telemetry' => [
+                    'reported_at' => now()->subSeconds(12)->toJSON(),
+                    'reconnects' => 1,
+                    'dropped_batches' => 0,
+                ],
+            ],
+        ]);
+
+        $degradedConversation = $makeConversation('WF-STATE-DEGRADE');
+        CobrowseSession::factory()->for($degradedConversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(5),
+            'ended_at' => null,
+            'metadata' => [
+                'telemetry' => [
+                    'reported_at' => now()->subSeconds(12)->toJSON(),
+                    'reconnects' => 0,
+                    'dropped_batches' => 2,
+                ],
+            ],
+        ]);
+
+        $liveConversation = $makeConversation('WF-STATE-LIVE');
+        CobrowseSession::factory()->for($liveConversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(5),
+            'ended_at' => null,
+            'metadata' => [
+                'telemetry' => [
+                    'reported_at' => now()->subSeconds(12)->toJSON(),
+                    'reconnects' => 0,
+                    'dropped_batches' => 0,
+                ],
+            ],
+        ]);
+
+        expect($transportState->queueTransportForConversation($noSessionConversation)['state'])->toBe('unavailable')
+            ->and($transportState->queueTransportForConversation($endedConversation)['state'])->toBe('unavailable')
+            ->and($transportState->queueTransportForConversation($unreportedConversation)['state'])->toBe('unavailable')
+            ->and($transportState->queueTransportForConversation($staleConversation)['state'])->toBe('stale')
+            ->and($transportState->queueTransportForConversation($reconnectingConversation)['state'])->toBe('reconnecting')
+            ->and($transportState->queueTransportForConversation($degradedConversation)['state'])->toBe('degraded')
+            ->and($transportState->queueTransportForConversation($liveConversation)['state'])->toBe('live');
     } finally {
         Carbon::setTestNow();
     }

@@ -63,9 +63,10 @@ class AgentConversationQueueController extends Controller
             ->with('latestCobrowseSession')
             ->where('status', 'open')
             ->whereHas('site', fn ($query) => $query->visibleToAgent($agent))
+            ->withActiveCobrowseSession()
             ->get()
             ->map(fn (Conversation $conversation): array => $cobrowseConsentState->queueTransportForConversation($conversation))
-            ->filter(fn (array $transport): bool => $transport['tone'] === 'attention')
+            ->filter(fn (array $transport): bool => $cobrowseConsentState->transportNeedsAttention($transport))
             ->count();
 
         $conversations = Conversation::query()
@@ -89,6 +90,7 @@ class AgentConversationQueueController extends Controller
             })
             ->when($conversationFilter === 'assigned_to_me', fn ($query) => $query->where('assigned_agent_id', $agent->id))
             ->when($conversationFilter === 'unassigned', fn ($query) => $query->whereNull('assigned_agent_id'))
+            ->when($conversationFilter === 'cobrowse_attention', fn ($query) => $query->withActiveCobrowseSession())
             ->orderByDesc('last_message_at')
             ->orderByDesc('created_at')
             ->get();
@@ -100,7 +102,9 @@ class AgentConversationQueueController extends Controller
 
         if ($conversationFilter === 'cobrowse_attention') {
             $conversations = $conversations
-                ->filter(fn (Conversation $conversation): bool => ($cobrowseTransportByConversationId->get($conversation->id)['tone'] ?? null) === 'attention')
+                ->filter(fn (Conversation $conversation): bool => $cobrowseConsentState->transportNeedsAttention(
+                    $cobrowseTransportByConversationId->get($conversation->id, [])
+                ))
                 ->values();
         }
 

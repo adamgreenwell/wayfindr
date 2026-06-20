@@ -137,6 +137,17 @@ class Conversation extends Model
         });
     }
 
+    /**
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeWithActiveCobrowseSession(Builder $query): Builder
+    {
+        return $query->whereHas('cobrowseSessions', fn (Builder $query) => $query
+            ->where('status', 'granted')
+            ->whereNull('ended_at'));
+    }
+
     public function attentionState(): string
     {
         $latestMessage = $this->relationLoaded('latestMessage')

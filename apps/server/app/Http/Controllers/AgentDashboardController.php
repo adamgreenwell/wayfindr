@@ -107,13 +107,11 @@ class AgentDashboardController extends Controller
             'open_conversations_count' => (clone $visibleOpenConversations)->count(),
             'new_activity_conversations_count' => (clone $visibleOpenConversations)->withNewActivityFor($agent)->count(),
             'cobrowse_attention_conversations_count' => (clone $visibleOpenConversations)
-                ->whereHas('cobrowseSessions', fn ($query) => $query
-                    ->where('status', 'granted')
-                    ->whereNull('ended_at'))
+                ->withActiveCobrowseSession()
                 ->with('latestCobrowseSession')
                 ->get()
                 ->map(fn (Conversation $conversation): array => $cobrowseConsentState->queueTransportForConversation($conversation))
-                ->filter(fn (array $transport): bool => $transport['tone'] === 'attention')
+                ->filter(fn (array $transport): bool => $cobrowseConsentState->transportNeedsAttention($transport))
                 ->count(),
             'open_tickets_count' => (clone $visibleOpenTickets)->count(),
             'unassigned_tickets_count' => (clone $visibleOpenTickets)->whereNull('assignee_id')->count(),

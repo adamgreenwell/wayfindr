@@ -87,7 +87,7 @@ class CobrowseConsentState
     }
 
     /**
-     * @return array{label: string, message: string, last_report: string, tone: string}
+     * @return array{state: string, label: string, message: string, last_report: string, tone: string}
      */
     public function queueTransportForConversation(Conversation $conversation): array
     {
@@ -100,11 +100,20 @@ class CobrowseConsentState
         $transport = $this->formatTransport($session);
 
         return [
+            'state' => $transport['state'],
             'label' => $transport['label'],
             'message' => $transport['message'],
             'last_report' => $transport['last_report'],
-            'tone' => $this->transportTone($transport['label']),
+            'tone' => $this->transportTone($transport['state']),
         ];
+    }
+
+    /**
+     * @param  array{state?: string}  $transport
+     */
+    public function transportNeedsAttention(array $transport): bool
+    {
+        return in_array($transport['state'] ?? null, ['stale', 'reconnecting', 'degraded'], true);
     }
 
     /**
@@ -114,6 +123,7 @@ class CobrowseConsentState
     {
         if (! $session || $session->status !== 'granted' || $session->ended_at) {
             return [
+                'state' => 'unavailable',
                 'label' => 'Unavailable',
                 'message' => 'Cobrowse transport is not active.',
                 'last_report' => 'Not reported',
@@ -132,6 +142,7 @@ class CobrowseConsentState
 
         if (! $latestReport) {
             return [
+                'state' => 'unavailable',
                 'label' => 'Unavailable',
                 'message' => 'No cobrowse transport reports have arrived yet.',
                 'last_report' => 'Not reported',
@@ -143,6 +154,7 @@ class CobrowseConsentState
 
         if ($latestReport->lt(now()->subSeconds(self::TRANSPORT_STALE_AFTER_SECONDS))) {
             return [
+                'state' => 'stale',
                 'label' => 'Stale',
                 'message' => 'No cobrowse report has arrived in the last 2 minutes.',
                 'last_report' => $latestReport->diffForHumans(),
@@ -154,6 +166,7 @@ class CobrowseConsentState
 
         if ($this->hasFreshReconnectWarning($reconnects, $telemetryReport, $latestReport)) {
             return [
+                'state' => 'reconnecting',
                 'label' => 'Reconnecting',
                 'message' => 'The visitor transport has reconnected recently; preview data may briefly lag.',
                 'last_report' => $latestReport->diffForHumans(),
@@ -165,6 +178,7 @@ class CobrowseConsentState
 
         if ($this->hasTransportPressure($pressure)) {
             return [
+                'state' => 'degraded',
                 'label' => 'Degraded',
                 'message' => 'Cobrowse reports are arriving, but the visitor page is changing faster than Wayfindr can fully replay.',
                 'last_report' => $latestReport->diffForHumans(),
@@ -175,6 +189,7 @@ class CobrowseConsentState
         }
 
         return [
+            'state' => 'live',
             'label' => 'Live',
             'message' => 'Cobrowse reports are arriving normally.',
             'last_report' => $latestReport->diffForHumans(),
@@ -186,11 +201,11 @@ class CobrowseConsentState
         ];
     }
 
-    private function transportTone(string $label): string
+    private function transportTone(string $state): string
     {
-        return match ($label) {
-            'Live' => 'ready',
-            'Stale', 'Reconnecting', 'Degraded' => 'attention',
+        return match ($state) {
+            'live' => 'ready',
+            'stale', 'reconnecting', 'degraded' => 'attention',
             default => 'manual',
         };
     }
