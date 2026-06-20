@@ -175,6 +175,53 @@ test('operator console explains the platform support data boundary', function ()
         ->assertSee('Any future customer-data access must be explicit, time-bound, and audited.');
 });
 
+test('operator console shows a platform action inventory without support data', function (): void {
+    $operator = User::factory()->for(Account::factory())->create([
+        'platform_role' => PlatformRole::Operator,
+    ]);
+    $site = Site::factory()->create(['name' => 'Sensitive Action Site']);
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-action-boundary',
+    ]);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-ACTIONSECRET',
+        'subject' => 'Private account audit request',
+    ]);
+
+    CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinute(),
+        'metadata' => [
+            'snapshot' => [
+                'title' => 'Private action page',
+                'page_url' => 'https://customer.example.test/private-action',
+                'html' => '<main>Private operator action detail</main>',
+                'text' => 'Private operator action detail',
+            ],
+        ],
+    ]);
+
+    $this->actingAs($operator)
+        ->get('/operator')
+        ->assertOk()
+        ->assertSee('Platform action inventory')
+        ->assertSee('Current safe actions')
+        ->assertSee('System identity and release checks')
+        ->assertSee('Read-only')
+        ->assertSee('Instance readiness confirmations')
+        ->assertSee('Audited manual proof')
+        ->assertSee('Future break-glass actions')
+        ->assertSee('Not enabled')
+        ->assertSee('Customer-data access requires explicit scope, expiry, approval, and audit before it exists.')
+        ->assertDontSee('WF-ACTIONSECRET')
+        ->assertDontSee('Private account audit request')
+        ->assertDontSee('Sensitive Action Site')
+        ->assertDontSee('anon-action-boundary')
+        ->assertDontSee('Private action page')
+        ->assertDontSee('customer.example.test')
+        ->assertDontSee('Private operator action detail');
+});
+
 test('operator console shows recent safe operator activity', function (): void {
     $account = Account::factory()->create(['name' => 'Wayfindr Ops']);
     $operator = User::factory()->for($account)->create([

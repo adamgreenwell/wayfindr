@@ -104,6 +104,44 @@
         </div>
     </section>
 
+    <section class="section" aria-labelledby="operator-action-inventory-heading">
+        <div class="section-header">
+            <div>
+                <h2 id="operator-action-inventory-heading">Platform action inventory</h2>
+                <p class="lede">The operator console lists instance-level actions without making support data an input.</p>
+            </div>
+        </div>
+
+        <div class="meta-grid readiness-summary-grid">
+            <div class="meta-item">
+                <span class="meta-label">Current safe actions</span>
+                <span class="meta-value">Read-only</span>
+                <p class="lede">System identity and release checks help operators verify what is running.</p>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Instance readiness confirmations</span>
+                <span class="meta-value">Audited manual proof</span>
+                <p class="lede">Manual backup, scheduler, and restore confirmations record safe operator evidence.</p>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Future break-glass actions</span>
+                <span class="meta-value">Not enabled</span>
+                <p class="lede">Customer-data access requires explicit scope, expiry, approval, and audit before it exists.</p>
+            </div>
+        </div>
+
+        <div class="notice-copy">
+            <p>
+                Operator actions should affect availability, readiness, retention, integrations, or instance
+                configuration; normal support data stays behind account and site access.
+            </p>
+            <p>
+                Conversations, tickets, cobrowse snapshots, transcripts, visitor identifiers, and site queues are
+                not platform action inputs.
+            </p>
+        </div>
+    </section>
+
     <section class="section" aria-labelledby="operator-activity-heading">
         <div class="section-header">
             <div>
