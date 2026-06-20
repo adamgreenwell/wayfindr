@@ -399,7 +399,7 @@
                     @if ($cobrowseConsent['status'] === 'granted')
                         @php
                             $resyncStatus = $cobrowseConsent['resync_request']['status'] ?? null;
-                            $resyncActionLabel = in_array($resyncStatus, ['delayed', 'expired'], true)
+                            $resyncActionLabel = in_array($resyncStatus, ['delayed', 'exhausted', 'expired'], true)
                                 ? 'Request another fresh snapshot'
                                 : 'Request fresh snapshot';
                         @endphp

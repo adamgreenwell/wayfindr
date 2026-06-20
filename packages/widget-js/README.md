@@ -77,6 +77,7 @@ The widget currently supports the first visitor loop:
 - focus the cobrowse consent choice when a new request appears without repeatedly stealing focus during status polls,
 - grant, decline, or revoke cobrowse consent,
 - report lightweight cobrowse connection telemetry after consent,
+- report when an agent-requested cobrowse snapshot reaches its bounded retry limit,
 - report passive page state after consent,
 - report an initial sanitized DOM snapshot after consent,
 - report bounded sanitized DOM mutation batches after consent,

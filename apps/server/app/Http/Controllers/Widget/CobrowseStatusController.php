@@ -106,6 +106,7 @@ class CobrowseStatusController extends Controller
             || ! is_array($request)
             || ! filled($request['id'] ?? null)
             || filled($request['fulfilled_at'] ?? null)
+            || $this->resyncRequestPolicy->isAttemptExhausted($request)
             || $this->resyncRequestPolicy->isExpired($request)
         ) {
             return [

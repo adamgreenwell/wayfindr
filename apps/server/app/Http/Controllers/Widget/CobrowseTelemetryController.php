@@ -23,6 +23,8 @@ class CobrowseTelemetryController extends Controller
             'payload_bytes' => ['nullable', 'integer', 'min:0', 'max:'.CobrowsePayloadBudget::TELEMETRY_PAYLOAD_MAX_BYTES],
             'dropped_batches' => ['nullable', 'integer', 'min:0', 'max:1000000'],
             'reconnects' => ['nullable', 'integer', 'min:0', 'max:1000000'],
+            'resync_request_id' => ['nullable', 'string', 'max:120'],
+            'resync_attempts_exhausted' => ['nullable', 'boolean'],
         ]);
 
         $site = Site::query()
@@ -54,9 +56,11 @@ class CobrowseTelemetryController extends Controller
 
         $rttMs = $validated['rtt_ms'] ?? null;
         $payloadBytes = $validated['payload_bytes'] ?? null;
+        $resyncRequestId = filled($validated['resync_request_id'] ?? null) ? (string) $validated['resync_request_id'] : null;
+        $resyncAttemptsExhausted = (bool) ($validated['resync_attempts_exhausted'] ?? false);
         $telemetry = [];
 
-        $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata) use ($validated, $rttMs, $payloadBytes, &$telemetry): array {
+        $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata) use ($validated, $rttMs, $payloadBytes, $resyncRequestId, $resyncAttemptsExhausted, &$telemetry): array {
             $previousTelemetry = is_array($metadata['telemetry'] ?? null) ? $metadata['telemetry'] : [];
             $telemetry = [
                 'rtt_ms' => $rttMs,
@@ -71,10 +75,25 @@ class CobrowseTelemetryController extends Controller
                 'reconnects' => $validated['reconnects'] ?? 0,
                 'samples' => ((int) ($previousTelemetry['samples'] ?? 0)) + 1,
                 'reported_at' => now()->toJSON(),
+                'resync_request_id' => $resyncRequestId,
+                'resync_attempts_exhausted' => $resyncAttemptsExhausted,
             ];
 
             $metadata['telemetry'] = $telemetry;
             $metadata['payload_budget'] = CobrowsePayloadBudget::limits();
+
+            if ($resyncAttemptsExhausted && $resyncRequestId !== null) {
+                $resyncRequest = is_array($metadata['resync_request'] ?? null) ? $metadata['resync_request'] : null;
+
+                if (
+                    $resyncRequest !== null
+                    && ($resyncRequest['id'] ?? null) === $resyncRequestId
+                    && blank($resyncRequest['fulfilled_at'] ?? null)
+                ) {
+                    $resyncRequest['attempts_exhausted_at'] = now()->toJSON();
+                    $metadata['resync_request'] = $resyncRequest;
+                }
+            }
 
             return $metadata;
         });

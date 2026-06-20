@@ -4912,6 +4912,61 @@ test('agent can replace a delayed pending cobrowse resync request', function ():
     }
 });
 
+test('agent can replace an exhausted cobrowse resync request', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-18 15:00:00', 'UTC'));
+    Event::fake([CobrowseStateUpdated::class]);
+
+    try {
+        $account = Account::factory()->create(['name' => 'Acme Support']);
+        $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+        $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-RESYNC-EXHAUSTED-RETRY',
+            'subject' => 'Cobrowse exhausted retry',
+        ]);
+        $session = CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+            'requested_by_id' => $agent->id,
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(3),
+            'ended_at' => null,
+            'metadata' => [
+                'resync_request' => [
+                    'id' => 'resync_exhausted',
+                    'requested_by_id' => $agent->id,
+                    'requested_by_name' => 'Ada Agent',
+                    'requested_at' => now()->subSeconds(30)->toJSON(),
+                    'fulfilled_at' => null,
+                    'attempts_exhausted_at' => now()->subSeconds(5)->toJSON(),
+                ],
+            ],
+        ]);
+
+        $this->actingAs($agent)
+            ->from('/dashboard/conversations/WF-RESYNC-EXHAUSTED-RETRY')
+            ->post('/dashboard/conversations/WF-RESYNC-EXHAUSTED-RETRY/cobrowse/resync')
+            ->assertRedirect('/dashboard/conversations/WF-RESYNC-EXHAUSTED-RETRY')
+            ->assertSessionHas('status', 'Fresh cobrowse snapshot requested.');
+
+        $session->refresh();
+
+        expect($session->metadata['resync_request'])
+            ->id->not->toBe('resync_exhausted')
+            ->requested_by_id->toBe($agent->id)
+            ->requested_at->toBe(now()->toJSON())
+            ->fulfilled_at->toBeNull()
+            ->and($session->metadata['resync_request'])->not->toHaveKey('attempts_exhausted_at');
+
+        Event::assertDispatched(
+            CobrowseStateUpdated::class,
+            fn (CobrowseStateUpdated $event): bool => $event->cobrowseSession->id === $session->id
+                && $event->kind === 'resync_requested'
+        );
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('agent can see a fulfilled cobrowse resync request', function (): void {
     Carbon::setTestNow(Carbon::parse('2026-06-18 15:00:00', 'UTC'));
 
@@ -4998,6 +5053,52 @@ test('agent can see delayed cobrowse resync guidance', function (): void {
             ->assertSee('Snapshot requested')
             ->assertSee('Retry available')
             ->assertSee('Request expires')
+            ->assertSee('Request another fresh snapshot');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+test('agent can see exhausted cobrowse resync guidance', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-18 15:00:00', 'UTC'));
+
+    try {
+        $account = Account::factory()->create(['name' => 'Acme Support']);
+        $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+        $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-RESYNC7',
+            'subject' => 'Cobrowse retry limit reached',
+        ]);
+
+        CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+            'requested_by_id' => $agent->id,
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(4),
+            'ended_at' => null,
+            'metadata' => [
+                'resync_request' => [
+                    'id' => 'resync_exhausted',
+                    'requested_by_id' => $agent->id,
+                    'requested_by_name' => 'Ada Agent',
+                    'requested_at' => now()->subSeconds(30)->toJSON(),
+                    'fulfilled_at' => null,
+                    'attempts_exhausted_at' => now()->subSeconds(10)->toJSON(),
+                ],
+            ],
+        ]);
+
+        $this->actingAs($agent)
+            ->get('/dashboard/conversations/WF-RESYNC7')
+            ->assertOk()
+            ->assertSee('data-state="exhausted"', false)
+            ->assertSee('Fresh snapshot retry limit reached')
+            ->assertSee('The visitor widget tried to send a clean snapshot but could not complete it. Request another clean snapshot or confirm the page state through chat.')
+            ->assertSee('Recovery timeline')
+            ->assertSee('Snapshot requested')
+            ->assertSee('Retry limit reached')
+            ->assertSee('The visitor widget stopped retrying this request ID after repeated failures.')
             ->assertSee('Request another fresh snapshot');
     } finally {
         Carbon::setTestNow();

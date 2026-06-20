@@ -19,6 +19,7 @@ class CobrowseResyncRequestPolicy
         $requestedAt = $this->requestedAt($request);
 
         return $this->isPending($request)
+            && ! $this->isAttemptExhausted($request)
             && $requestedAt
             && $requestedAt->gte(now()->subSeconds(self::DELAYED_AFTER_SECONDS));
     }
@@ -31,6 +32,7 @@ class CobrowseResyncRequestPolicy
         $requestedAt = $this->requestedAt($request);
 
         return $this->isPending($request)
+            && ! $this->isAttemptExhausted($request)
             && $requestedAt
             && $requestedAt->lt(now()->subSeconds(self::DELAYED_AFTER_SECONDS))
             && ! $this->isExpired($request);
@@ -56,6 +58,7 @@ class CobrowseResyncRequestPolicy
         $requestedAt = $this->requestedAt($request);
 
         return $this->isPending($request)
+            && ! $this->isAttemptExhausted($request)
             && $requestedAt
             && $requestedAt->gte(now()->subSeconds(self::EXPIRES_AFTER_SECONDS));
     }
@@ -86,6 +89,15 @@ class CobrowseResyncRequestPolicy
     public function isPending(array $request): bool
     {
         return blank($request['fulfilled_at'] ?? null);
+    }
+
+    /**
+     * @param  array<string, mixed>  $request
+     */
+    public function isAttemptExhausted(array $request): bool
+    {
+        return $this->isPending($request)
+            && filled($request['attempts_exhausted_at'] ?? null);
     }
 
     /**

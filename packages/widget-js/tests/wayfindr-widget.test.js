@@ -4463,16 +4463,26 @@ test('stops retrying one failing agent cobrowse resync request after the configu
   await settle();
   await widget.refreshCobrowseStatus();
   await settle();
+  await widget.refreshCobrowseStatus();
+  await settle();
 
   const resyncSnapshotPayloads = calls
     .filter((call) => call.url.endsWith('/api/conversations/WF-TEST123/cobrowse-snapshot'))
     .map((call) => JSON.parse(call.options.body))
     .filter((payload) => payload.resync_request_id === 'resync_retry');
+  const exhaustedTelemetryPayloads = calls
+    .filter((call) => call.url.endsWith('/api/conversations/WF-TEST123/cobrowse-telemetry'))
+    .map((call) => JSON.parse(call.options.body))
+    .filter((payload) => payload.resync_attempts_exhausted === true);
 
   assert.equal(resyncSnapshotPayloads.length, 2);
   assert.match(resyncSnapshotPayloads[0].html, /Public install content/);
   assert.match(resyncSnapshotPayloads[0].html, /\[masked\]/);
   assert.equal(resyncSnapshotPayloads[0].html.includes('secret-password'), false);
+  assert.deepEqual(
+    exhaustedTelemetryPayloads.map((payload) => payload.resync_request_id),
+    ['resync_retry'],
+  );
 
   widget.destroy();
 });

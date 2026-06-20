@@ -243,6 +243,8 @@
           payload_bytes: telemetry.payloadBytes,
           dropped_batches: telemetry.droppedBatches,
           reconnects: telemetry.reconnects,
+          resync_request_id: telemetry.resyncRequestId,
+          resync_attempts_exhausted: telemetry.resyncAttemptsExhausted,
         });
       },
       reportCobrowsePageState: function (supportCode, pageState) {
@@ -447,6 +449,7 @@
     var cobrowseResyncMaxAttempts = typeof options.cobrowseResyncMaxAttempts === 'number' ? Math.max(0, Math.floor(options.cobrowseResyncMaxAttempts)) : 3;
     var cobrowseResyncAttemptRequestId = null;
     var cobrowseResyncAttemptCount = 0;
+    var cobrowseResyncExhaustionReportedRequestId = null;
     var cobrowseResyncInFlight = false;
     var mutationPayloadMaxBytes = typeof options.mutationPayloadMaxBytes === 'number'
       ? Math.max(0, options.mutationPayloadMaxBytes)
@@ -856,12 +859,14 @@
     function resetCobrowseResyncAttempts() {
       cobrowseResyncAttemptRequestId = null;
       cobrowseResyncAttemptCount = 0;
+      cobrowseResyncExhaustionReportedRequestId = null;
     }
 
     function canAttemptCobrowseResync(requestId) {
       if (cobrowseResyncAttemptRequestId !== requestId) {
         cobrowseResyncAttemptRequestId = requestId;
         cobrowseResyncAttemptCount = 0;
+        cobrowseResyncExhaustionReportedRequestId = null;
       }
 
       return cobrowseResyncAttemptCount < cobrowseResyncMaxAttempts;
@@ -884,6 +889,8 @@
       }
 
       if (!canAttemptCobrowseResync(requestId)) {
+        await reportCobrowseResyncExhausted(requestId);
+
         return;
       }
 
@@ -907,6 +914,23 @@
         // Leave the request unmarked so the next status refresh can retry the clean snapshot.
       } finally {
         cobrowseResyncInFlight = false;
+      }
+    }
+
+    async function reportCobrowseResyncExhausted(requestId) {
+      if (cobrowseResyncExhaustionReportedRequestId === requestId) {
+        return;
+      }
+
+      cobrowseResyncExhaustionReportedRequestId = requestId;
+
+      try {
+        await client.reportCobrowseTelemetry(supportCode, {
+          resyncRequestId: requestId,
+          resyncAttemptsExhausted: true,
+        });
+      } catch (error) {
+        // Exhaustion is a recovery hint; delayed and expired states still protect the agent path.
       }
     }
 

@@ -82,14 +82,14 @@ control for the current consented session, not permission to send raw values or
 unbounded page history.
 If the widget cannot deliver that recovery snapshot, it may retry the same
 request ID a small bounded number of times. After the retry bound is exhausted,
-it waits for a new explicit request ID instead of creating an unbounded recovery
-loop.
+it reports that exhaustion once for the matching request ID and waits for a new
+explicit request ID instead of creating an unbounded recovery loop.
 
-Agents may see whether that recovery request is pending, delayed, fulfilled, or
-ignored because it arrived late, matched an older request, or duplicated an
-already accepted response. Those status cues help agents retry or confirm
-details through chat, but they do not change consent, masking, payload limits,
-or retention boundaries.
+Agents may see whether that recovery request is pending, delayed, fulfilled,
+exhausted, or ignored because it arrived late, matched an older request, or
+duplicated an already accepted response. Those status cues help agents retry or
+confirm details through chat, but they do not change consent, masking, payload
+limits, or retention boundaries.
 Fresh duplicate requests may be coalesced briefly so repeated clicks do not
 force the visitor widget to answer overlapping recovery requests.
 
