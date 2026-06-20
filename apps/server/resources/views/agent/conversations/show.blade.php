@@ -1,5 +1,5 @@
 <x-layouts.app title="Conversation {{ $conversation->support_code }}" :agent="$agent" :account="$account">
-            <a class="text-link" href="{{ route('dashboard') }}">Back to dashboard</a>
+            <a class="text-link" href="{{ $conversationBackUrl }}">Back to conversations</a>
             <h1>{{ $conversation->subject ?? 'Untitled conversation' }}</h1>
             <p class="lede">Support code {{ $conversation->support_code }}</p>
 
@@ -43,12 +43,14 @@
                 @if (! $conversation->assigned_agent_id)
                     <form class="section-form" method="POST" action="{{ route('dashboard.conversations.claim', $conversation->support_code) }}">
                         @csrf
+                        @include('agent.conversations.partials.return-query-fields')
 
                         <button class="button" type="submit">Claim conversation</button>
                     </form>
                 @elseif ($conversation->assigned_agent_id === $agent->id)
                     <form class="section-form" method="POST" action="{{ route('dashboard.conversations.release', $conversation->support_code) }}">
                         @csrf
+                        @include('agent.conversations.partials.return-query-fields')
 
                         <button class="button secondary" type="submit">Release conversation</button>
                     </form>
@@ -56,6 +58,7 @@
 
                 <form class="section-form" method="POST" action="{{ route($conversation->status === 'closed' ? 'dashboard.conversations.reopen' : 'dashboard.conversations.close', $conversation->support_code) }}">
                     @csrf
+                    @include('agent.conversations.partials.return-query-fields')
 
                     <button class="button {{ $conversation->status === 'closed' ? '' : 'secondary' }}" type="submit">
                         {{ $conversation->status === 'closed' ? 'Reopen conversation' : 'Close conversation' }}
@@ -233,6 +236,7 @@
                 @if ($tickets->isEmpty())
                     <form class="section-form" method="POST" action="{{ route('dashboard.conversations.tickets.store', $conversation->support_code) }}">
                         @csrf
+                        @include('agent.conversations.partials.return-query-fields')
 
                         <div class="field">
                             <label for="category">Category</label>
@@ -393,6 +397,8 @@
                 @if (in_array($cobrowseConsent['status'], ['unavailable', 'revoked', 'ended'], true))
                     <form class="section-form" method="POST" action="{{ route('dashboard.conversations.cobrowse.request', $conversation->support_code) }}">
                         @csrf
+                        @include('agent.conversations.partials.return-query-fields')
+
                         <button class="button" type="submit">Request cobrowse</button>
                     </form>
                 @elseif (in_array($cobrowseConsent['status'], ['pending', 'granted'], true))
@@ -415,18 +421,24 @@
                                 data-retry-ready-help="Still waiting. You can request another fresh snapshot now."
                             >
                                 @csrf
+                                @include('agent.conversations.partials.return-query-fields')
+
                                 <button class="button secondary" type="submit" disabled data-resync-retry-button>Fresh snapshot already requested</button>
                                 <p class="field-help" data-resync-retry-help>Waiting for the visitor widget before requesting another snapshot.</p>
                             </form>
                         @else
                             <form class="section-form" method="POST" action="{{ route('dashboard.conversations.cobrowse.resync', $conversation->support_code) }}">
                                 @csrf
+                                @include('agent.conversations.partials.return-query-fields')
+
                                 <button class="button secondary" type="submit">{{ $resyncActionLabel }}</button>
                             </form>
                         @endif
                     @endif
                     <form class="section-form" method="POST" action="{{ route('dashboard.conversations.cobrowse.end', $conversation->support_code) }}">
                         @csrf
+                        @include('agent.conversations.partials.return-query-fields')
+
                         <button class="button secondary" type="submit">
                             {{ $cobrowseConsent['status'] === 'pending' ? 'Cancel request' : 'End cobrowse' }}
                         </button>
@@ -785,6 +797,7 @@
                         data-typing-url="{{ route('dashboard.conversations.typing.store', $conversation->support_code) }}"
                     >
                         @csrf
+                        @include('agent.conversations.partials.return-query-fields')
 
                         <div class="reply-context-strip" aria-label="Reply context">
                             <div class="reply-context-item">

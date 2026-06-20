@@ -133,7 +133,7 @@
                                     @endphp
                                     <tr>
                                         <td>
-                                            <a class="text-link" href="{{ route('dashboard.conversations.show', $conversation->support_code) }}">
+                                            <a class="text-link" href="{{ route('dashboard.conversations.show', ['supportCode' => $conversation->support_code] + $conversationQuery) }}">
                                                 {{ $conversation->subject ?? 'Untitled conversation' }}
                                             </a>
                                         </td>

@@ -47,6 +47,7 @@ class AgentConversationController extends Controller
             ->with('assignee')
             ->latest()
             ->get();
+        $conversationReturnQuery = $this->conversationQueueReturnQuery($request);
 
         return view('agent.conversations.show', [
             'account' => $agent->account()->firstOrFail(),
@@ -54,6 +55,8 @@ class AgentConversationController extends Controller
             'agent' => $agent,
             'cobrowseConsent' => $cobrowseConsentState->forConversation($conversation),
             'conversation' => $conversation,
+            'conversationBackUrl' => route('dashboard.conversations.index', $conversationReturnQuery),
+            'conversationReturnQuery' => $conversationReturnQuery,
             'messages' => $messages,
             'priorConversations' => $this->priorConversations($conversation),
             'realtime' => $this->realtimeConfig($conversation),
@@ -65,6 +68,55 @@ class AgentConversationController extends Controller
             'ticketPriorityGuidance' => TicketPriority::guidanceOptions(),
             'visitorContext' => $this->visitorContext($conversation, $visitorContextSanitizer),
         ]);
+    }
+
+    /**
+     * @return array<string, string|int>
+     */
+    private function conversationQueueReturnQuery(Request $request): array
+    {
+        $params = [];
+        $conversationFilters = [
+            'new_activity',
+            'needs_reply',
+            'assigned_to_me',
+            'unassigned',
+            'cobrowse_attention',
+            'closed',
+        ];
+
+        $conversationFilter = $request->input('conversation_filter');
+
+        if (is_string($conversationFilter) && in_array($conversationFilter, $conversationFilters, true)) {
+            $params['conversation_filter'] = $conversationFilter;
+        }
+
+        $conversationSearch = $request->input('conversation_search');
+        $conversationSearch = is_string($conversationSearch)
+            ? mb_substr(trim($conversationSearch), 0, 120)
+            : '';
+
+        if ($conversationSearch !== '') {
+            $params['conversation_search'] = $conversationSearch;
+        }
+
+        $conversationSite = $request->input('conversation_site');
+
+        if (is_int($conversationSite) && $conversationSite > 0) {
+            $params['conversation_site'] = $conversationSite;
+        } elseif (is_string($conversationSite) && ctype_digit($conversationSite)) {
+            $params['conversation_site'] = (int) $conversationSite;
+        }
+
+        return $params;
+    }
+
+    /**
+     * @return array<string, string|int>
+     */
+    private function conversationShowRouteParams(Conversation $conversation, Request $request): array
+    {
+        return ['supportCode' => $conversation->support_code] + $this->conversationQueueReturnQuery($request);
     }
 
     public function storeMessage(Request $request, string $supportCode, ReplyTemplateOptions $replyTemplateOptions): RedirectResponse
@@ -125,7 +177,7 @@ class AgentConversationController extends Controller
         event(new ConversationMessageCreated($message));
 
         return redirect()
-            ->route('dashboard.conversations.show', $conversation->support_code)
+            ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
             ->with('status', 'Reply sent.');
     }
 
@@ -183,7 +235,7 @@ class AgentConversationController extends Controller
         ])->save();
 
         return redirect()
-            ->route('dashboard.conversations.show', $conversation->support_code)
+            ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
             ->with('status', 'Conversation closed.');
     }
 
@@ -198,7 +250,7 @@ class AgentConversationController extends Controller
         ])->save();
 
         return redirect()
-            ->route('dashboard.conversations.show', $conversation->support_code)
+            ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
             ->with('status', 'Conversation reopened.');
     }
 
@@ -214,7 +266,7 @@ class AgentConversationController extends Controller
         ])->save();
 
         return redirect()
-            ->route('dashboard.conversations.show', $conversation->support_code)
+            ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
             ->with('status', 'Conversation claimed.');
     }
 
@@ -230,7 +282,7 @@ class AgentConversationController extends Controller
         ])->save();
 
         return redirect()
-            ->route('dashboard.conversations.show', $conversation->support_code)
+            ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
             ->with('status', 'Conversation released.');
     }
 
@@ -247,7 +299,7 @@ class AgentConversationController extends Controller
 
         if ($conversation->tickets()->exists()) {
             return redirect()
-                ->route('dashboard.conversations.show', $conversation->support_code)
+                ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
                 ->with('status', 'Ticket already exists.');
         }
 
@@ -288,7 +340,7 @@ class AgentConversationController extends Controller
         }
 
         return redirect()
-            ->route('dashboard.conversations.show', $conversation->support_code)
+            ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
             ->with('status', 'Ticket created.');
     }
 
@@ -300,7 +352,7 @@ class AgentConversationController extends Controller
 
         if ($this->activeCobrowseSession($conversation)) {
             return redirect()
-                ->route('dashboard.conversations.show', $conversation->support_code)
+                ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
                 ->with('status', 'Cobrowse request already active.');
         }
 
@@ -317,7 +369,7 @@ class AgentConversationController extends Controller
         event(new CobrowseStateUpdated($cobrowseSession, 'consent_requested'));
 
         return redirect()
-            ->route('dashboard.conversations.show', $conversation->support_code)
+            ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
             ->with('status', 'Cobrowse requested.');
     }
 
@@ -329,7 +381,7 @@ class AgentConversationController extends Controller
 
         if (! $cobrowseSession) {
             return redirect()
-                ->route('dashboard.conversations.show', $conversation->support_code)
+                ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
                 ->with('status', 'No active cobrowse session.');
         }
 
@@ -349,7 +401,7 @@ class AgentConversationController extends Controller
         event(new CobrowseStateUpdated($cobrowseSession, 'ended'));
 
         return redirect()
-            ->route('dashboard.conversations.show', $conversation->support_code)
+            ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
             ->with('status', 'Cobrowse session ended.');
     }
 
@@ -361,7 +413,7 @@ class AgentConversationController extends Controller
 
         if (! $cobrowseSession || $cobrowseSession->status !== 'granted') {
             return redirect()
-                ->route('dashboard.conversations.show', $conversation->support_code)
+                ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
                 ->with('status', 'Cobrowse must be active before requesting a fresh snapshot.');
         }
 
@@ -400,13 +452,13 @@ class AgentConversationController extends Controller
 
         if (! $isActive) {
             return redirect()
-                ->route('dashboard.conversations.show', $conversation->support_code)
+                ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
                 ->with('status', 'Cobrowse must be active before requesting a fresh snapshot.');
         }
 
         if ($alreadyPending) {
             return redirect()
-                ->route('dashboard.conversations.show', $conversation->support_code)
+                ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
                 ->with('status', 'Fresh cobrowse snapshot already requested.');
         }
 
@@ -417,7 +469,7 @@ class AgentConversationController extends Controller
         event(new CobrowseStateUpdated($cobrowseSession, 'resync_requested'));
 
         return redirect()
-            ->route('dashboard.conversations.show', $conversation->support_code)
+            ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
             ->with('status', 'Fresh cobrowse snapshot requested.');
     }
 

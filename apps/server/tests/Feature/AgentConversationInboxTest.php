@@ -290,6 +290,144 @@ test('dashboard filters conversations by visible site', function (): void {
         ->assertDontSee('Restricted site question');
 });
 
+test('conversation detail links preserve conversation queue return context', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Store']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-return']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-RETURN',
+        'subject' => 'Return context question',
+        'status' => 'closed',
+        'closed_at' => now()->subMinute(),
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations?conversation_filter=closed&conversation_site='.$site->id.'&conversation_search=return&ignored=yes')
+        ->assertOk()
+        ->assertSee('/dashboard/conversations/WF-RETURN?conversation_filter=closed&amp;conversation_search=return&amp;conversation_site='.$site->id, false)
+        ->assertDontSee('ignored=yes', false);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/'.$conversation->support_code.'?conversation_filter=closed&conversation_site='.$site->id.'&conversation_search=return&ignored=yes')
+        ->assertOk()
+        ->assertSee('Back to conversations')
+        ->assertSee('/dashboard/conversations?conversation_filter=closed&amp;conversation_search=return&amp;conversation_site='.$site->id, false)
+        ->assertDontSee('ignored=yes', false);
+});
+
+test('conversation actions preserve conversation queue return context', function (): void {
+    Event::fake([
+        CobrowseStateUpdated::class,
+        ConversationMessageCreated::class,
+    ]);
+
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Store']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-return']);
+    $returnQuery = [
+        'conversation_filter' => 'closed',
+        'conversation_search' => 'return',
+        'conversation_site' => $site->id,
+    ];
+    $expectedRedirect = fn (string $supportCode): string => route('dashboard.conversations.show', ['supportCode' => $supportCode] + $returnQuery);
+    $makeConversation = fn (string $supportCode, array $attributes = []): Conversation => Conversation::factory()
+        ->for($site)
+        ->for($visitor)
+        ->create(array_merge([
+            'support_code' => $supportCode,
+            'subject' => 'Return context question',
+            'status' => 'open',
+            'closed_at' => null,
+        ], $attributes));
+
+    $makeConversation('WF-RETACT', [
+        'status' => 'closed',
+        'closed_at' => now()->subMinute(),
+    ]);
+
+    $this->actingAs($agent)
+        ->post('/dashboard/conversations/WF-RETACT/messages', $returnQuery + [
+            'body' => 'I can keep helping here.',
+        ])
+        ->assertRedirect($expectedRedirect('WF-RETACT'));
+
+    $makeConversation('WF-RETCLOSE');
+
+    $this->actingAs($agent)
+        ->post('/dashboard/conversations/WF-RETCLOSE/close', $returnQuery)
+        ->assertRedirect($expectedRedirect('WF-RETCLOSE'));
+
+    $makeConversation('WF-RETREOPEN', [
+        'status' => 'closed',
+        'closed_at' => now()->subMinute(),
+    ]);
+
+    $this->actingAs($agent)
+        ->post('/dashboard/conversations/WF-RETREOPEN/reopen', $returnQuery)
+        ->assertRedirect($expectedRedirect('WF-RETREOPEN'));
+
+    $makeConversation('WF-RETCLAIM', [
+        'assigned_agent_id' => null,
+    ]);
+
+    $this->actingAs($agent)
+        ->post('/dashboard/conversations/WF-RETCLAIM/claim', $returnQuery)
+        ->assertRedirect($expectedRedirect('WF-RETCLAIM'));
+
+    $makeConversation('WF-RETRELEASE', [
+        'assigned_agent_id' => $agent->id,
+    ]);
+
+    $this->actingAs($agent)
+        ->post('/dashboard/conversations/WF-RETRELEASE/release', $returnQuery)
+        ->assertRedirect($expectedRedirect('WF-RETRELEASE'));
+
+    $makeConversation('WF-RETTICKET');
+
+    $this->actingAs($agent)
+        ->post('/dashboard/conversations/WF-RETTICKET/tickets', $returnQuery + [
+            'category' => 'bug',
+            'priority' => 'high',
+        ])
+        ->assertRedirect($expectedRedirect('WF-RETTICKET'));
+
+    $requestConversation = $makeConversation('WF-RETCOBRO');
+
+    $this->actingAs($agent)
+        ->post('/dashboard/conversations/WF-RETCOBRO/cobrowse/request', $returnQuery)
+        ->assertRedirect($expectedRedirect('WF-RETCOBRO'));
+
+    $endConversation = $makeConversation('WF-RETEND');
+
+    CobrowseSession::factory()->for($endConversation)->for($site)->for($visitor)->create([
+        'requested_by_id' => $agent->id,
+        'status' => 'granted',
+        'consented_at' => now()->subMinute(),
+        'ended_at' => null,
+    ]);
+
+    $this->actingAs($agent)
+        ->post('/dashboard/conversations/WF-RETEND/cobrowse/end', $returnQuery)
+        ->assertRedirect($expectedRedirect('WF-RETEND'));
+
+    $resyncConversation = $makeConversation('WF-RETRESYNC');
+
+    CobrowseSession::factory()->for($resyncConversation)->for($site)->for($visitor)->create([
+        'requested_by_id' => $agent->id,
+        'status' => 'granted',
+        'consented_at' => now()->subMinute(),
+        'ended_at' => null,
+    ]);
+
+    $this->actingAs($agent)
+        ->post('/dashboard/conversations/WF-RETRESYNC/cobrowse/resync', $returnQuery)
+        ->assertRedirect($expectedRedirect('WF-RETRESYNC'));
+
+    expect($requestConversation->fresh()->cobrowseSessions()->exists())->toBeTrue();
+});
+
 test('dashboard shows conversation assignment state', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
