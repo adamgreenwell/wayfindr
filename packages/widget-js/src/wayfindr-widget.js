@@ -1002,7 +1002,15 @@
       }
 
       mutationObserver = new Observer(function (records) {
-        pendingMutationRecords = pendingMutationRecords.concat(Array.prototype.slice.call(records || []));
+        var pageRecords = Array.prototype.slice.call(records || []).filter(function (record) {
+          return !mutationRecordTouchesElement(record, rootEl);
+        });
+
+        if (pageRecords.length === 0) {
+          return;
+        }
+
+        pendingMutationRecords = pendingMutationRecords.concat(pageRecords);
 
         if (pendingMutationRecords.length > mutationQueueMaxRecords) {
           var overflow = pendingMutationRecords.length - mutationQueueMaxRecords;
@@ -1019,6 +1027,36 @@
         childList: true,
         subtree: true,
       });
+    }
+
+    function mutationRecordTouchesElement(record, element) {
+      if (!record || !element) {
+        return false;
+      }
+
+      if (nodeBelongsToElement(record.target, element)) {
+        return true;
+      }
+
+      return Array.prototype.slice.call(record.addedNodes || []).some(function (node) {
+        return nodeBelongsToElement(node, element);
+      }) || Array.prototype.slice.call(record.removedNodes || []).some(function (node) {
+        return nodeBelongsToElement(node, element);
+      });
+    }
+
+    function nodeBelongsToElement(node, element) {
+      if (!node || !element) {
+        return false;
+      }
+
+      if (node === element) {
+        return true;
+      }
+
+      var ownerElement = node.nodeType === 1 ? node : node.parentElement;
+
+      return Boolean(ownerElement && element.contains && element.contains(ownerElement));
     }
 
     function stopMutationStream() {
@@ -1096,6 +1134,7 @@
       }
 
       lastCobrowsePressureResyncAt = nowMs;
+      cobrowseCopy.textContent = 'Wayfindr is catching up with recent page changes. Sensitive fields stay masked.';
 
       try {
         var snapshot = createCobrowseSnapshot(doc, {
@@ -1108,6 +1147,8 @@
         await client.reportCobrowseSnapshot(supportCode, snapshot);
       } catch (error) {
         // Snapshot re-sync is a recovery affordance; mutation diagnostics remain the source of truth.
+      } finally {
+        renderCobrowseConsent();
       }
     }
 

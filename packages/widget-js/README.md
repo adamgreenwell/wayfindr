@@ -128,6 +128,9 @@ widget keeps at most 250 pending mutation records between flushes by default;
 The stock defaults are exposed as `Wayfindr.cobrowsePayloadBudget` so host pages
 and smoke tests can inspect the browser-side budget without hard-coding magic
 numbers.
+When mutation pressure forces a recovery snapshot, the visitor widget shows calm
+catch-up copy while sensitive fields remain masked; it does not expose dropped
+or skipped transport counters to visitors.
 When an agent requests a fresh cobrowse snapshot, the widget retries a failing
 request ID up to 3 times by default and then waits for a new request ID;
 `cobrowseResyncMaxAttempts` can tune that bound for unusual environments.
