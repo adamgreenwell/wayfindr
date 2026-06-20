@@ -65,7 +65,18 @@ class CobrowseStateUpdated implements ShouldBroadcastNow
         $pageState = is_array($metadata['page_state'] ?? null) ? $metadata['page_state'] : [];
         $snapshot = is_array($metadata['snapshot'] ?? null) ? $metadata['snapshot'] : [];
         $mutations = is_array($metadata['mutations'] ?? null) ? $metadata['mutations'] : [];
+        $telemetry = is_array($metadata['telemetry'] ?? null) ? $metadata['telemetry'] : [];
         $resyncRequest = is_array($metadata['resync_request'] ?? null) ? $metadata['resync_request'] : [];
+        $transportTelemetry = array_filter([
+            'rtt_ms' => $telemetry['rtt_ms'] ?? null,
+            'max_rtt_ms' => $telemetry['max_rtt_ms'] ?? null,
+            'payload_bytes' => $telemetry['payload_bytes'] ?? null,
+            'max_payload_bytes' => $telemetry['max_payload_bytes'] ?? null,
+            'dropped_batches' => $telemetry['dropped_batches'] ?? null,
+            'reconnects' => $telemetry['reconnects'] ?? null,
+            'samples' => $telemetry['samples'] ?? null,
+            'resync_attempts_exhausted' => $telemetry['resync_attempts_exhausted'] ?? null,
+        ], fn (mixed $value): bool => $value !== null);
 
         return array_filter([
             'page_url' => $pageState['page_url'] ?? $snapshot['page_url'] ?? $mutations['last_page_url'] ?? null,
@@ -74,6 +85,7 @@ class CobrowseStateUpdated implements ShouldBroadcastNow
             'mutation_count' => $mutations['mutation_count'] ?? null,
             'last_sequence' => $mutations['last_sequence'] ?? null,
             'resync_request_id' => $resyncRequest['id'] ?? null,
+            'telemetry' => $transportTelemetry === [] ? null : $transportTelemetry,
         ], fn (mixed $value): bool => $value !== null);
     }
 
@@ -83,12 +95,14 @@ class CobrowseStateUpdated implements ShouldBroadcastNow
         $pageState = is_array($metadata['page_state'] ?? null) ? $metadata['page_state'] : [];
         $snapshot = is_array($metadata['snapshot'] ?? null) ? $metadata['snapshot'] : [];
         $mutations = is_array($metadata['mutations'] ?? null) ? $metadata['mutations'] : [];
+        $telemetry = is_array($metadata['telemetry'] ?? null) ? $metadata['telemetry'] : [];
         $resyncRequest = is_array($metadata['resync_request'] ?? null) ? $metadata['resync_request'] : [];
 
         return match ($this->kind) {
             'page_state' => $pageState['reported_at'] ?? null,
             'snapshot' => $snapshot['reported_at'] ?? null,
             'mutations' => $mutations['last_reported_at'] ?? null,
+            'telemetry' => $resyncRequest['attempts_exhausted_at'] ?? $telemetry['reported_at'] ?? null,
             'resync_requested' => $resyncRequest['requested_at'] ?? null,
             default => null,
         };

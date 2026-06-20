@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Widget;
 
+use App\Events\CobrowseStateUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
@@ -107,6 +108,8 @@ class CobrowseTelemetryController extends Controller
 
             return $metadata;
         });
+
+        event(new CobrowseStateUpdated($cobrowseSession, 'telemetry'));
 
         return response()->json([
             'data' => [

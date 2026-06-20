@@ -127,6 +127,84 @@ test('cobrowse state updates use a private conversation channel and safe payload
         ->and(json_encode($payload))->not->toContain('Fresh copy.');
 });
 
+test('cobrowse telemetry broadcasts safe transport and resync summary hints', function (): void {
+    $account = Account::factory()->create();
+    $site = Site::factory()->for($account)->create(['name' => 'Docs Site']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-TELEMETRY-LIVE',
+        'status' => 'open',
+    ]);
+    $reportedAt = now()->subSeconds(20)->toJSON();
+    $exhaustedAt = now()->toJSON();
+    $session = CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'metadata' => [
+            'snapshot' => [
+                'html' => '<main><p>Sensitive page copy should stay local.</p></main>',
+                'text' => 'Sensitive page copy should stay local.',
+                'reported_at' => $reportedAt,
+            ],
+            'mutations' => [
+                'recent_batches' => [
+                    ['mutations' => [['type' => 'text', 'text' => 'Private mutation body.']]],
+                ],
+            ],
+            'telemetry' => [
+                'rtt_ms' => 240,
+                'max_rtt_ms' => 480,
+                'payload_bytes' => 8192,
+                'max_payload_bytes' => 16384,
+                'dropped_batches' => 2,
+                'reconnects' => 1,
+                'samples' => 4,
+                'reported_at' => $reportedAt,
+                'resync_request_id' => 'resync_exhausted',
+                'resync_attempts_exhausted' => true,
+            ],
+            'resync_request' => [
+                'id' => 'resync_exhausted',
+                'requested_at' => now()->subMinute()->toJSON(),
+                'attempts_exhausted_at' => $exhaustedAt,
+                'fulfilled_at' => null,
+            ],
+        ],
+    ]);
+
+    $event = new CobrowseStateUpdated($session->load('conversation'), 'telemetry');
+    $payload = $event->broadcastWith();
+
+    expect($payload)->toMatchArray([
+        'conversation' => [
+            'support_code' => 'WF-TELEMETRY-LIVE',
+            'status' => 'open',
+        ],
+        'cobrowse' => [
+            'status' => 'granted',
+        ],
+        'update' => [
+            'kind' => 'telemetry',
+            'reported_at' => $exhaustedAt,
+        ],
+        'summary' => [
+            'resync_request_id' => 'resync_exhausted',
+            'telemetry' => [
+                'rtt_ms' => 240,
+                'max_rtt_ms' => 480,
+                'payload_bytes' => 8192,
+                'max_payload_bytes' => 16384,
+                'dropped_batches' => 2,
+                'reconnects' => 1,
+                'samples' => 4,
+                'resync_attempts_exhausted' => true,
+            ],
+        ],
+    ])
+        ->and(json_encode($payload))->not->toContain('<main>')
+        ->and(json_encode($payload))->not->toContain('Sensitive page copy')
+        ->and(json_encode($payload))->not->toContain('Private mutation body');
+});
+
 test('conversation typing updates use a private conversation channel and safe payload', function (): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
@@ -372,6 +450,16 @@ test('visitor cobrowse updates dispatch cobrowse state broadcasts', function (st
             ],
         ],
         'mutations',
+    ],
+    'telemetry' => [
+        'cobrowse-telemetry',
+        [
+            'rtt_ms' => 120,
+            'payload_bytes' => 2048,
+            'dropped_batches' => 1,
+            'reconnects' => 2,
+        ],
+        'telemetry',
     ],
 ]);
 
