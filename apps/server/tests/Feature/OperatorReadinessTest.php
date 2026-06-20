@@ -3,8 +3,12 @@
 use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
+use App\Models\CobrowseSession;
+use App\Models\Conversation;
 use App\Models\OperatorReadinessConfirmation;
+use App\Models\Site;
 use App\Models\User;
+use App\Models\Visitor;
 use App\Support\OperatorReadiness;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -269,6 +273,147 @@ test('readiness diagnostics flag failed digest delivery without leaking raw prov
             'label' => 'Fix Alert digest delivery',
             'status' => 'attention',
         ]);
+});
+
+test('readiness diagnostics summarize cobrowse transport pressure without leaking support data', function (): void {
+    $this->travelTo(Carbon::parse('2026-06-20 12:00:00'));
+
+    config([
+        'app.url' => 'https://support.example.test',
+        'app.key' => 'base64:'.base64_encode(str_repeat('a', 32)),
+        'broadcasting.default' => 'reverb',
+        'broadcasting.connections.reverb.app_id' => 'wayfindr-production',
+        'broadcasting.connections.reverb.key' => 'wayfindr-key',
+        'broadcasting.connections.reverb.secret' => 'wayfindr-secret',
+        'broadcasting.connections.reverb.options.host' => 'support.example.test',
+        'broadcasting.connections.reverb.options.port' => 443,
+        'broadcasting.connections.reverb.options.scheme' => 'https',
+        'mail.default' => 'smtp',
+        'mail.mailers.smtp.host' => 'smtp.example.test',
+        'mail.mailers.smtp.port' => 587,
+        'mail.from.address' => 'support@example.test',
+        'queue.default' => 'database',
+    ]);
+
+    $site = Site::factory()->create(['name' => 'Sensitive Support Site']);
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-sensitive-cobrowse',
+    ]);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-SECRET',
+        'subject' => 'Billing details are visible on the checkout page',
+    ]);
+
+    CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinute(),
+        'metadata' => [
+            'telemetry' => [
+                'reported_at' => now()->toJSON(),
+                'rtt_ms' => 950,
+                'max_rtt_ms' => 1250,
+                'payload_bytes' => 59000,
+                'max_payload_bytes' => 60000,
+                'dropped_batches' => 3,
+                'reconnects' => 1,
+            ],
+            'snapshot' => [
+                'reported_at' => now()->toJSON(),
+                'title' => 'Private billing checkout',
+                'page_url' => 'https://customer.example.test/private-billing',
+                'html' => '<main>Private invoice contents</main>',
+                'text' => 'Private invoice contents',
+            ],
+            'mutations' => [
+                'last_reported_at' => now()->toJSON(),
+                'dropped_count' => 4,
+                'skipped_count' => 5,
+            ],
+        ],
+    ]);
+
+    $readiness = app(OperatorReadiness::class)->summary();
+    $cobrowseTransport = collect($readiness['checks'])->firstWhere('key', 'cobrowse_transport');
+
+    expect($cobrowseTransport)->toMatchArray([
+        'label' => 'Cobrowse transport',
+        'status' => 'attention',
+        'status_label' => 'Needs attention',
+        'summary' => '1 active cobrowse session needs transport attention.',
+    ])
+        ->and($cobrowseTransport['detail'])->toContain('1 reconnecting')
+        ->and($cobrowseTransport['action'])->toContain('Use chat to confirm fast-changing page state')
+        ->and($cobrowseTransport['detail'])->not->toContain('WF-SECRET')
+        ->and($cobrowseTransport['detail'])->not->toContain('Billing details are visible')
+        ->and($cobrowseTransport['detail'])->not->toContain('anon-sensitive-cobrowse')
+        ->and($cobrowseTransport['detail'])->not->toContain('Private billing checkout')
+        ->and($cobrowseTransport['detail'])->not->toContain('customer.example.test')
+        ->and($readiness['next_step'])->toMatchArray([
+            'key' => 'cobrowse_transport',
+            'label' => 'Fix Cobrowse transport',
+            'status' => 'attention',
+        ]);
+});
+
+test('readiness diagnostics show no-data cobrowse transport as ready before traffic exists', function (): void {
+    $readiness = app(OperatorReadiness::class)->summary();
+    $cobrowseTransport = collect($readiness['checks'])->firstWhere('key', 'cobrowse_transport');
+
+    expect($cobrowseTransport)->toMatchArray([
+        'label' => 'Cobrowse transport',
+        'status' => 'ready',
+        'status_label' => 'No data yet',
+        'summary' => 'No active cobrowse transport samples yet.',
+        'detail' => 'Cobrowse health will appear after a visitor grants consent and the widget reports telemetry.',
+    ]);
+});
+
+test('readiness diagnostics include older active cobrowse transport pressure beyond the newest sessions', function (): void {
+    $this->travelTo(Carbon::parse('2026-06-20 12:00:00'));
+
+    $site = Site::factory()->create();
+    $visitor = Visitor::factory()->for($site)->create();
+
+    $degradedConversation = Conversation::factory()->for($site)->for($visitor)->create();
+    CobrowseSession::factory()->for($degradedConversation)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinutes(5),
+        'metadata' => [
+            'telemetry' => [
+                'reported_at' => now()->toJSON(),
+                'dropped_batches' => 1,
+                'reconnects' => 0,
+            ],
+        ],
+    ]);
+
+    for ($index = 0; $index < 50; $index++) {
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create();
+
+        CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinute(),
+            'metadata' => [
+                'telemetry' => [
+                    'reported_at' => now()->toJSON(),
+                    'dropped_batches' => 0,
+                    'reconnects' => 0,
+                ],
+            ],
+        ]);
+    }
+
+    $readiness = app(OperatorReadiness::class)->summary();
+    $cobrowseTransport = collect($readiness['checks'])->firstWhere('key', 'cobrowse_transport');
+
+    expect($cobrowseTransport)->toMatchArray([
+        'label' => 'Cobrowse transport',
+        'status' => 'attention',
+        'status_label' => 'Needs attention',
+        'summary' => '1 active cobrowse session needs transport attention.',
+    ])
+        ->and($cobrowseTransport['detail'])->toContain('50 live')
+        ->and($cobrowseTransport['detail'])->toContain('1 degraded');
 });
 
 test('readiness diagnostics treat confirmed manual items as ready', function (): void {

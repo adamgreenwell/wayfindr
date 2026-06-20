@@ -138,3 +138,22 @@ preview and when to confirm fast-changing details through chat. Fresh reports
 with recent dropped or skipped page changes should be treated as degraded rather
 than fully live. The visitor experience should stay simple: allow, decline,
 stop, and clear copy about sensitive fields being masked.
+
+## Operator Readiness Boundary
+
+Platform operator readiness may summarize aggregate cobrowse transport health
+so an instance operator can spot broken Reverb, queue, deploy, or widget
+configuration before agents depend on cobrowse. That surface should stay
+aggregate-only.
+
+Operator readiness may show:
+
+- counts of active cobrowse sessions grouped by transport state,
+- whether active sessions are live, degraded, reconnecting, stale, or waiting
+  for their first report,
+- generic recovery guidance for operators and agents.
+
+Operator readiness must not show support codes, visitor identifiers, account or
+site names, page URLs, sanitized snapshots, transcripts, mutation payloads, or
+conversation subjects. Those details belong in scoped account support surfaces
+where normal account, role, and site-access policies apply.

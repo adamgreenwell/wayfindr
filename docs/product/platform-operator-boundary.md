@@ -34,6 +34,8 @@ Platform operator surfaces may eventually include:
 
 - install readiness, environment diagnostics, and version/build visibility;
 - queue, scheduler, Reverb, cache, mail, storage, and database health;
+- aggregate cobrowse transport readiness without support codes, visitor
+  identifiers, page URLs, snapshots, transcripts, or account/site names;
 - setup/bootstrap recovery for misconfigured installs;
 - account creation, suspension, or lifecycle controls for hosted operations;
 - global retention-default visibility and warnings;

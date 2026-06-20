@@ -21,6 +21,7 @@ class OperatorReadiness
 
     public function __construct(
         private readonly RealtimeHealth $realtimeHealth,
+        private readonly CobrowseTransportReadiness $cobrowseTransportReadiness,
     ) {}
 
     /**
@@ -53,6 +54,7 @@ class OperatorReadiness
             $this->mailTransport(),
             $this->queueWorker(),
             $this->realtimeBroadcasting(),
+            $this->cobrowseTransportReadiness->check(),
             $this->storagePaths(),
             $this->scheduler(),
             $this->alertDigestDelivery(),

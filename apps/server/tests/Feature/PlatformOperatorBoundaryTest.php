@@ -4,10 +4,15 @@ use App\Enums\AccountRole;
 use App\Enums\PlatformRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
+use App\Models\CobrowseSession;
+use App\Models\Conversation;
 use App\Models\OperatorReadinessConfirmation;
+use App\Models\Site;
 use App\Models\User;
+use App\Models\Visitor;
 use Illuminate\Foundation\Application as LaravelApplication;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 
 uses(RefreshDatabase::class);
 
@@ -225,6 +230,55 @@ test('operator console shows recent safe operator activity', function (): void {
         ->assertSee('Only safe instance-level operator actions are shown here.')
         ->assertDontSee('Ticket WF-SENSITIVE had visitor billing details in the note.')
         ->assertDontSee('Sensitive visitor transcript should stay out of the operator console.');
+});
+
+test('operator console shows aggregate cobrowse transport readiness without support data', function (): void {
+    $this->travelTo(Carbon::parse('2026-06-20 12:00:00'));
+
+    $operator = User::factory()->for(Account::factory())->create([
+        'platform_role' => PlatformRole::Operator,
+    ]);
+    $site = Site::factory()->create(['name' => 'Sensitive Customer Site']);
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-operator-cobrowse',
+    ]);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-PRIVATE',
+        'subject' => 'Checkout account number is wrong',
+    ]);
+
+    CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinute(),
+        'metadata' => [
+            'telemetry' => [
+                'reported_at' => now()->toJSON(),
+                'dropped_batches' => 2,
+                'reconnects' => 0,
+            ],
+            'snapshot' => [
+                'reported_at' => now()->toJSON(),
+                'title' => 'Private checkout',
+                'page_url' => 'https://customer.example.test/account',
+                'html' => '<main>Hidden account number</main>',
+                'text' => 'Hidden account number',
+            ],
+        ],
+    ]);
+
+    $this->actingAs($operator)
+        ->get('/operator')
+        ->assertOk()
+        ->assertSee('Cobrowse transport')
+        ->assertSee('1 active cobrowse session needs transport attention.')
+        ->assertSee('1 degraded')
+        ->assertDontSee('WF-PRIVATE')
+        ->assertDontSee('Checkout account number is wrong')
+        ->assertDontSee('Sensitive Customer Site')
+        ->assertDontSee('anon-operator-cobrowse')
+        ->assertDontSee('Private checkout')
+        ->assertDontSee('customer.example.test')
+        ->assertDontSee('Hidden account number');
 });
 
 test('operator console shows an empty operator activity state', function (): void {
