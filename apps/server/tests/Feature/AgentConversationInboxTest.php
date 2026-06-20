@@ -4427,6 +4427,10 @@ test('agent can request a fresh cobrowse snapshot for a granted session', functi
             ->assertSee('data-state="pending"', false)
             ->assertSee('Fresh snapshot requested')
             ->assertSee('Waiting for the visitor widget to send a clean page snapshot.')
+            ->assertSee('Recovery timeline')
+            ->assertSee('Snapshot requested')
+            ->assertSee('Waiting on visitor widget')
+            ->assertSee('Retry opens 1 minute from now.')
             ->assertSee('Expires 5 minutes from now');
     } finally {
         Carbon::setTestNow();
@@ -4579,7 +4583,11 @@ test('agent can see a fulfilled cobrowse resync request', function (): void {
             ->assertSee('data-state="fulfilled"', false)
             ->assertSee('Fresh snapshot received')
             ->assertSee('The visitor widget sent a clean masked snapshot.')
-            ->assertSee('Received 20 seconds ago');
+            ->assertSee('Received 20 seconds ago')
+            ->assertSee('Recovery timeline')
+            ->assertSee('Snapshot requested')
+            ->assertSee('Visitor widget responded')
+            ->assertSee('Masked snapshot refreshed');
     } finally {
         Carbon::setTestNow();
     }
@@ -4621,6 +4629,10 @@ test('agent can see delayed cobrowse resync guidance', function (): void {
             ->assertSee('Fresh snapshot delayed')
             ->assertSee('The visitor widget has not answered yet. Request another clean snapshot or confirm the page state through chat.')
             ->assertSee('Expires 3 minutes from now')
+            ->assertSee('Recovery timeline')
+            ->assertSee('Snapshot requested')
+            ->assertSee('Retry available')
+            ->assertSee('Request expires')
             ->assertSee('Request another fresh snapshot');
     } finally {
         Carbon::setTestNow();
@@ -4663,6 +4675,9 @@ test('agent can see expired cobrowse resync guidance', function (): void {
             ->assertSee('Fresh snapshot expired')
             ->assertSee('The visitor widget did not answer in time. Request another clean snapshot or continue through chat.')
             ->assertSee('Expired 1 minute ago')
+            ->assertSee('Recovery timeline')
+            ->assertSee('Snapshot requested')
+            ->assertSee('Request expired')
             ->assertSee('Request another fresh snapshot');
     } finally {
         Carbon::setTestNow();

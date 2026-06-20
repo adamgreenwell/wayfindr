@@ -456,6 +456,28 @@
                             @endif
                         </span>
                     </div>
+
+                    @if (! empty($cobrowseConsent['resync_request']['recovery_timeline'] ?? []))
+                        <div class="section-header">
+                            <strong>Recovery timeline</strong>
+                            <span class="lede">Fresh snapshot path</span>
+                        </div>
+
+                        <div class="timeline-list">
+                            @foreach ($cobrowseConsent['resync_request']['recovery_timeline'] as $timelineItem)
+                                <article class="timeline-item internal-note" data-recovery-state="{{ $timelineItem['state'] }}">
+                                    <div class="timeline-content">
+                                        <strong>{{ $timelineItem['label'] }}</strong>
+                                        <p class="message-body">{{ $timelineItem['detail'] }}</p>
+                                        <div class="timeline-meta">
+                                            <span>{{ $timelineItem['occurred_at'] }}</span>
+                                            <span>{{ $timelineItem['badge'] }}</span>
+                                        </div>
+                                    </div>
+                                </article>
+                            @endforeach
+                        </div>
+                    @endif
                 @endif
 
                 @if ($cobrowseConsent['transport'])

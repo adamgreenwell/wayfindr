@@ -19,7 +19,7 @@ class CobrowseConsentState
     ) {}
 
     /**
-     * @return array{label: string, message: string, status: string, lifecycle: array<string, string>|null, transport: array<string, string>, payload_budget: array<string, string>|null, telemetry: array<string, string>|null, page_state: array<string, string>|null, snapshot: array<string, string>|null, mutation_stream: array<string, string>|null, replay_preview: array<string, string>|null, resync_request: array<string, string>|null}
+     * @return array{label: string, message: string, status: string, lifecycle: array<string, string>|null, transport: array<string, string>, payload_budget: array<string, string>|null, telemetry: array<string, string>|null, page_state: array<string, string>|null, snapshot: array<string, string>|null, mutation_stream: array<string, string>|null, replay_preview: array<string, string>|null, resync_request: array<string, mixed>|null}
      */
     public function forConversation(Conversation $conversation): array
     {
@@ -421,7 +421,7 @@ class CobrowseConsentState
     }
 
     /**
-     * @return array<string, string>|null
+     * @return array<string, mixed>|null
      */
     private function formatResyncRequest(CobrowseSession $session): ?array
     {
@@ -440,6 +440,7 @@ class CobrowseConsentState
         $snapshotReportedAt = $this->parseReportedAt($request['fulfilled_snapshot_reported_at'] ?? null);
         $expiresAt = $this->resyncRequestPolicy->expiresAt($request);
         $retryAt = $this->resyncRequestPolicy->retryAt($request);
+        $timeline = $this->formatResyncRecoveryTimeline($request, $requestedAt, $fulfilledAt, $snapshotReportedAt, $expiresAt, $retryAt);
 
         if ($fulfilledAt) {
             return [
@@ -450,6 +451,7 @@ class CobrowseConsentState
                 'requested_at' => $this->formatMoment($requestedAt, 'Request time unavailable'),
                 'fulfilled_at' => $this->formatMoment($fulfilledAt, 'Receipt time unavailable'),
                 'snapshot_reported_at' => $this->formatMoment($snapshotReportedAt, 'Snapshot report time unavailable'),
+                'recovery_timeline' => $timeline,
             ];
         }
 
@@ -461,6 +463,7 @@ class CobrowseConsentState
                 'requested_by' => filled($request['requested_by_name'] ?? null) ? (string) $request['requested_by_name'] : 'Support',
                 'requested_at' => $this->formatMoment($requestedAt, 'Request time unavailable'),
                 'expired_at' => $this->formatMoment($expiresAt, 'Expiry unavailable'),
+                'recovery_timeline' => $timeline,
             ];
         }
 
@@ -472,6 +475,7 @@ class CobrowseConsentState
                 'requested_by' => filled($request['requested_by_name'] ?? null) ? (string) $request['requested_by_name'] : 'Support',
                 'requested_at' => $this->formatMoment($requestedAt, 'Request time unavailable'),
                 'expires_at' => $this->formatMoment($expiresAt, 'Expiry unavailable'),
+                'recovery_timeline' => $timeline,
             ];
         }
 
@@ -483,7 +487,90 @@ class CobrowseConsentState
             'requested_at' => $this->formatMoment($requestedAt, 'Just requested'),
             'expires_at' => $this->formatMoment($expiresAt, 'Expiry unavailable'),
             'retry_at' => $retryAt?->toJSON() ?? '',
+            'recovery_timeline' => $timeline,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $request
+     * @return list<array{state: string, label: string, detail: string, occurred_at: string, badge: string}>
+     */
+    private function formatResyncRecoveryTimeline(array $request, ?Carbon $requestedAt, ?Carbon $fulfilledAt, ?Carbon $snapshotReportedAt, ?Carbon $expiresAt, ?Carbon $retryAt): array
+    {
+        $requestedBy = filled($request['requested_by_name'] ?? null) ? (string) $request['requested_by_name'] : 'Support';
+        $timeline = [
+            [
+                'state' => 'complete',
+                'label' => 'Snapshot requested',
+                'detail' => $requestedBy.' asked the visitor widget for a clean masked snapshot.',
+                'occurred_at' => $this->formatMoment($requestedAt, 'Request time unavailable'),
+                'badge' => 'Requested',
+            ],
+        ];
+
+        if ($fulfilledAt) {
+            $timeline[] = [
+                'state' => 'complete',
+                'label' => 'Visitor widget responded',
+                'detail' => 'A fresh cobrowse snapshot response arrived from the visitor page.',
+                'occurred_at' => $this->formatMoment($fulfilledAt, 'Receipt time unavailable'),
+                'badge' => 'Recovered',
+            ];
+
+            if ($snapshotReportedAt) {
+                $timeline[] = [
+                    'state' => 'complete',
+                    'label' => 'Masked snapshot refreshed',
+                    'detail' => 'The clean page snapshot is available in the agent preview.',
+                    'occurred_at' => $this->formatMoment($snapshotReportedAt, 'Snapshot report time unavailable'),
+                    'badge' => 'Preview updated',
+                ];
+            }
+
+            return $timeline;
+        }
+
+        if ($this->resyncRequestPolicy->isExpired($request)) {
+            $timeline[] = [
+                'state' => 'expired',
+                'label' => 'Request expired',
+                'detail' => 'No widget response arrived before the recovery window closed.',
+                'occurred_at' => $this->formatMoment($expiresAt, 'Expiry unavailable'),
+                'badge' => 'Expired',
+            ];
+
+            return $timeline;
+        }
+
+        if ($this->resyncRequestPolicy->isDelayedPending($request)) {
+            $timeline[] = [
+                'state' => 'delayed',
+                'label' => 'Retry available',
+                'detail' => 'Support can request another clean snapshot without waiting on the first request.',
+                'occurred_at' => $this->formatMoment($retryAt, 'Retry time unavailable'),
+                'badge' => 'Retry',
+            ];
+
+            $timeline[] = [
+                'state' => 'pending',
+                'label' => 'Request expires',
+                'detail' => 'Wayfindr will stop advertising this stale request after the expiration window.',
+                'occurred_at' => $this->formatMoment($expiresAt, 'Expiry unavailable'),
+                'badge' => 'Guardrail',
+            ];
+
+            return $timeline;
+        }
+
+        $timeline[] = [
+            'state' => 'pending',
+            'label' => 'Waiting on visitor widget',
+            'detail' => 'Retry opens '.$this->formatMoment($retryAt, 'when the retry window opens').'.',
+            'occurred_at' => $this->formatMoment($retryAt, 'Retry time unavailable'),
+            'badge' => 'Pending',
+        ];
+
+        return $timeline;
     }
 
     private function formatDimensions(mixed $width, mixed $height): string
