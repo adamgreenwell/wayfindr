@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Models\Site;
+use App\Support\CobrowseAuditTrail;
 use App\Support\CobrowsePayloadBudget;
 use App\Support\CobrowseResyncRequestPolicy;
 use App\Support\VisitorSessionToken;
@@ -15,7 +16,10 @@ use Illuminate\Http\Request;
 
 class CobrowseSnapshotController extends Controller
 {
-    public function __construct(private readonly CobrowseResyncRequestPolicy $resyncRequestPolicy) {}
+    public function __construct(
+        private readonly CobrowseResyncRequestPolicy $resyncRequestPolicy,
+        private readonly CobrowseAuditTrail $cobrowseAuditTrail,
+    ) {}
 
     public function store(Request $request, string $supportCode, VisitorSessionToken $visitorSessionToken): JsonResponse
     {
@@ -80,12 +84,26 @@ class CobrowseSnapshotController extends Controller
             $snapshot['resync_request_id'] = (string) $validated['resync_request_id'];
         }
 
-        $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata) use ($snapshot): array {
+        $resyncAuditTransition = null;
+
+        $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata) use ($snapshot, &$resyncAuditTransition): array {
             $metadata['snapshot'] = $snapshot;
             $metadata['payload_budget'] = CobrowsePayloadBudget::limits();
 
-            return $this->markResyncRequestFulfilled($metadata, $snapshot['resync_request_id'] ?? null, $snapshot['reported_at']);
+            [$metadata, $resyncAuditTransition] = $this->markResyncRequestFulfilled($metadata, $snapshot['resync_request_id'] ?? null, $snapshot['reported_at']);
+
+            return $metadata;
         });
+
+        if (is_array($resyncAuditTransition)) {
+            if (($resyncAuditTransition['state'] ?? null) === 'fulfilled') {
+                $this->cobrowseAuditTrail->resyncFulfilled($cobrowseSession, $visitor, $resyncAuditTransition);
+            }
+
+            if (($resyncAuditTransition['state'] ?? null) === 'ignored') {
+                $this->cobrowseAuditTrail->resyncIgnored($cobrowseSession, $visitor, $resyncAuditTransition);
+            }
+        }
 
         event(new CobrowseStateUpdated($cobrowseSession, 'snapshot'));
 
@@ -105,43 +123,48 @@ class CobrowseSnapshotController extends Controller
 
     /**
      * @param  array<string, mixed>  $metadata
-     * @return array<string, mixed>
+     * @return array{0: array<string, mixed>, 1: array<string, mixed>|null}
      */
     private function markResyncRequestFulfilled(array $metadata, ?string $requestId, string $reportedAt): array
     {
         if (! filled($requestId)) {
-            return $metadata;
+            return [$metadata, null];
         }
 
         $request = $metadata['resync_request'] ?? null;
 
         if (! is_array($request)) {
-            return $metadata;
+            return [$metadata, null];
         }
 
         if ((string) ($request['id'] ?? '') !== $requestId) {
             $metadata['resync_request'] = $this->recordIgnoredResyncResponse($request, $requestId, $reportedAt, 'mismatched');
 
-            return $metadata;
+            return [$metadata, $this->ignoredResyncTransition($request, $requestId, $reportedAt, 'mismatched')];
         }
 
         if (filled($request['fulfilled_at'] ?? null)) {
             $metadata['resync_request'] = $this->recordIgnoredResyncResponse($request, $requestId, $reportedAt, 'already_fulfilled');
 
-            return $metadata;
+            return [$metadata, $this->ignoredResyncTransition($request, $requestId, $reportedAt, 'already_fulfilled')];
         }
 
         if (! $this->resyncRequestPolicy->canBeFulfilled($request)) {
             $metadata['resync_request'] = $this->recordIgnoredResyncResponse($request, $requestId, $reportedAt, 'expired');
 
-            return $metadata;
+            return [$metadata, $this->ignoredResyncTransition($request, $requestId, $reportedAt, 'expired')];
         }
 
         $request['fulfilled_at'] = $reportedAt;
         $request['fulfilled_snapshot_reported_at'] = $reportedAt;
         $metadata['resync_request'] = $request;
 
-        return $metadata;
+        return [$metadata, [
+            'state' => 'fulfilled',
+            'request_id' => $requestId,
+            'fulfilled_at' => $reportedAt,
+            'snapshot_reported_at' => $reportedAt,
+        ]];
     }
 
     /**
@@ -163,5 +186,20 @@ class CobrowseSnapshotController extends Controller
         $request['ignored_responses'] = array_slice($ignoredResponses, -5);
 
         return $request;
+    }
+
+    /**
+     * @param  array<string, mixed>  $request
+     * @return array<string, mixed>
+     */
+    private function ignoredResyncTransition(array $request, string $requestId, string $reportedAt, string $reason): array
+    {
+        return [
+            'state' => 'ignored',
+            'active_request_id' => is_string($request['id'] ?? null) ? $request['id'] : null,
+            'response_request_id' => $requestId,
+            'reason' => $reason,
+            'ignored_at' => $reportedAt,
+        ];
     }
 }

@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Models\Site;
+use App\Support\CobrowseAuditTrail;
 use App\Support\CobrowsePayloadBudget;
 use App\Support\VisitorSessionToken;
 use Illuminate\Http\JsonResponse;
@@ -14,7 +15,7 @@ use Illuminate\Http\Request;
 
 class CobrowseTelemetryController extends Controller
 {
-    public function store(Request $request, string $supportCode, VisitorSessionToken $visitorSessionToken): JsonResponse
+    public function store(Request $request, string $supportCode, VisitorSessionToken $visitorSessionToken, CobrowseAuditTrail $cobrowseAuditTrail): JsonResponse
     {
         $validated = $request->validate([
             'site_public_key' => ['required', 'string', 'max:255'],
@@ -64,8 +65,9 @@ class CobrowseTelemetryController extends Controller
             || array_key_exists('dropped_batches', $validated)
             || array_key_exists('reconnects', $validated);
         $telemetry = [];
+        $resyncExhaustedTransition = null;
 
-        $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata) use ($validated, $rttMs, $payloadBytes, $resyncRequestId, $resyncAttemptsExhausted, $hasTransportMetrics, &$telemetry): array {
+        $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata) use ($validated, $rttMs, $payloadBytes, $resyncRequestId, $resyncAttemptsExhausted, $hasTransportMetrics, &$telemetry, &$resyncExhaustedTransition): array {
             $previousTelemetry = is_array($metadata['telemetry'] ?? null) ? $metadata['telemetry'] : [];
 
             if ($hasTransportMetrics) {
@@ -100,14 +102,26 @@ class CobrowseTelemetryController extends Controller
                     $resyncRequest !== null
                     && ($resyncRequest['id'] ?? null) === $resyncRequestId
                     && blank($resyncRequest['fulfilled_at'] ?? null)
+                    && blank($resyncRequest['attempts_exhausted_at'] ?? null)
                 ) {
-                    $resyncRequest['attempts_exhausted_at'] = now()->toJSON();
+                    $attemptsExhaustedAt = now()->toJSON();
+                    $resyncRequest['attempts_exhausted_at'] = $attemptsExhaustedAt;
                     $metadata['resync_request'] = $resyncRequest;
+                    $resyncExhaustedTransition = [
+                        'request_id' => $resyncRequestId,
+                        'attempts_exhausted_at' => $attemptsExhaustedAt,
+                        'dropped_batches' => $validated['dropped_batches'] ?? null,
+                        'reconnects' => $validated['reconnects'] ?? null,
+                    ];
                 }
             }
 
             return $metadata;
         });
+
+        if (is_array($resyncExhaustedTransition)) {
+            $cobrowseAuditTrail->resyncExhausted($cobrowseSession, $visitor, $resyncExhaustedTransition);
+        }
 
         event(new CobrowseStateUpdated($cobrowseSession, 'telemetry'));
 

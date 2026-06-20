@@ -4,8 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Models\Account;
 use App\Models\AuditEvent;
+use App\Models\CobrowseSession;
 use App\Models\Site;
 use App\Models\User;
+use App\Models\Visitor;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -227,12 +229,19 @@ class AgentAccountAuditController extends Controller
                         ->orWhereHasMorph('actor', [User::class], fn (Builder $query) => $query
                             ->whereLike('name', $searchPattern)
                             ->orWhereLike('email', $searchPattern))
+                        ->orWhereHasMorph('actor', [Visitor::class], fn (Builder $query) => $query
+                            ->whereLike('name', $searchPattern)
+                            ->orWhereLike('email', $searchPattern)
+                            ->orWhereLike('external_id', $searchPattern)
+                            ->orWhereLike('anonymous_id', $searchPattern))
                         ->orWhereHasMorph('subject', [User::class], fn (Builder $query) => $query
                             ->whereLike('name', $searchPattern)
                             ->orWhereLike('email', $searchPattern))
                         ->orWhereHasMorph('subject', [Site::class], fn (Builder $query) => $query
                             ->whereLike('name', $searchPattern)
-                            ->orWhereLike('domain', $searchPattern));
+                            ->orWhereLike('domain', $searchPattern))
+                        ->orWhereHasMorph('subject', [CobrowseSession::class], fn (Builder $query) => $query
+                            ->whereHas('conversation', fn (Builder $query) => $query->whereLike('support_code', $searchPattern)));
                 });
             });
     }
@@ -268,6 +277,10 @@ class AgentAccountAuditController extends Controller
             return $event->actor->name;
         }
 
+        if ($event->actor instanceof Visitor) {
+            return 'Visitor '.$this->visitorLabel($event->actor);
+        }
+
         return 'System';
     }
 
@@ -281,6 +294,24 @@ class AgentAccountAuditController extends Controller
             return $event->subject->name;
         }
 
+        if ($event->subject instanceof CobrowseSession) {
+            $event->subject->loadMissing('conversation');
+
+            return 'Cobrowse '.($event->subject->conversation?->support_code ?? '#'.$event->subject->id);
+        }
+
         return 'Account';
+    }
+
+    private function visitorLabel(Visitor $visitor): string
+    {
+        return collect([
+            $visitor->name,
+            $visitor->email,
+            $visitor->external_id,
+            $visitor->anonymous_id,
+        ])
+            ->filter(fn ($value): bool => is_string($value) && trim($value) !== '')
+            ->first() ?? '#'.$visitor->id;
     }
 }

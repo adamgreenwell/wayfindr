@@ -3,8 +3,11 @@
 use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
+use App\Models\CobrowseSession;
+use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\User;
+use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -224,4 +227,47 @@ test('account audit export neutralizes spreadsheet formula values', function ():
     expect($rows[1][3])->toBe('\'=HYPERLINK("https://bad.test","click")')
         ->and($rows[1][4])->toBe('\'+SUM(1,1)')
         ->and($rows[1][5])->toBe('\'@Bad Site');
+});
+
+test('admins can find cobrowse audit activity by support code without exposing metadata', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['name' => 'Docs Site']);
+    $site->supportAgents()->attach($admin);
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-cobrowse',
+        'name' => null,
+        'email' => null,
+    ]);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-AUDITUI',
+    ]);
+    $session = CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+    ]);
+
+    $session->auditEvents()->create([
+        'account_id' => $account->id,
+        'site_id' => $site->id,
+        'actor_type' => Visitor::class,
+        'actor_id' => $visitor->id,
+        'action' => 'cobrowse.resync_fulfilled',
+        'metadata' => [
+            'support_code' => 'WF-AUDITUI',
+            'request_id' => 'resync_visible',
+            'html' => '<main>Do not render me.</main>',
+            'page_url' => 'https://docs.example.test/private',
+        ],
+        'occurred_at' => now(),
+    ]);
+
+    $this->actingAs($admin)
+        ->get('/dashboard/account/audit?audit_search=WF-AUDITUI')
+        ->assertOk()
+        ->assertSee('Cobrowse Resync Fulfilled')
+        ->assertSee('Visitor anon-cobrowse')
+        ->assertSee('Cobrowse WF-AUDITUI')
+        ->assertSee('Docs Site')
+        ->assertDontSee('Do not render me')
+        ->assertDontSee('https://docs.example.test/private');
 });

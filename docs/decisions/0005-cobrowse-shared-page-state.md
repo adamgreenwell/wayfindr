@@ -29,5 +29,6 @@ Shared page state gives Wayfindr better defaults for:
 - Mutation batches are compact and capped so small self-hosted installs can observe change pressure while the agent preview applies the safe mutation types it understands.
 - Agents receive live Reverb notices when cobrowse page state, snapshots, or mutation batches arrive, then refresh the inert preview when they are ready.
 - Transport telemetry is first-class so hosts can see latency, payload size, reconnects, and dropped updates before tuning infrastructure.
+- Resync and transport audit events stay metadata-only. They may record request IDs, outcomes, reasons, timestamps, and safe counters, but never raw snapshot HTML, page text, mutation payloads, or visitor-entered content.
 - Reverb can carry early cobrowse events while traffic is modest.
 - A separate cobrowse relay may be introduced later for high-throughput, ephemeral streams without moving auth, consent, audit, or account ownership out of Laravel.

@@ -9,6 +9,7 @@ use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\User;
 use App\Notifications\ConversationNeedsReply;
+use App\Support\CobrowseAuditTrail;
 use App\Support\CobrowseConsentState;
 use App\Support\CobrowseResyncRequestPolicy;
 use App\Support\ReplyTemplateOptions;
@@ -352,7 +353,7 @@ class AgentConversationController extends Controller
             ->with('status', 'Cobrowse session ended.');
     }
 
-    public function requestCobrowseResync(Request $request, string $supportCode, CobrowseResyncRequestPolicy $resyncRequestPolicy): RedirectResponse
+    public function requestCobrowseResync(Request $request, string $supportCode, CobrowseResyncRequestPolicy $resyncRequestPolicy, CobrowseAuditTrail $cobrowseAuditTrail): RedirectResponse
     {
         $agent = $request->user();
         $conversation = $this->conversationForAgent($agent, $supportCode, 'requestCobrowse');
@@ -366,8 +367,10 @@ class AgentConversationController extends Controller
 
         $isActive = true;
         $alreadyPending = false;
+        $newRequest = null;
+        $previousRequest = null;
 
-        $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata, CobrowseSession $session) use ($agent, $resyncRequestPolicy, &$isActive, &$alreadyPending): array {
+        $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata, CobrowseSession $session) use ($agent, $resyncRequestPolicy, &$isActive, &$alreadyPending, &$newRequest, &$previousRequest): array {
             if ($session->status !== 'granted' || $session->ended_at) {
                 $isActive = false;
 
@@ -382,13 +385,15 @@ class AgentConversationController extends Controller
                 return $metadata;
             }
 
-            $metadata['resync_request'] = [
+            $previousRequest = is_array($currentRequest) ? $currentRequest : null;
+            $newRequest = [
                 'id' => 'resync_'.Str::lower((string) Str::ulid()),
                 'requested_by_id' => $agent->id,
                 'requested_by_name' => $agent->name,
                 'requested_at' => now()->toJSON(),
                 'fulfilled_at' => null,
             ];
+            $metadata['resync_request'] = $newRequest;
 
             return $metadata;
         });
@@ -403,6 +408,10 @@ class AgentConversationController extends Controller
             return redirect()
                 ->route('dashboard.conversations.show', $conversation->support_code)
                 ->with('status', 'Fresh cobrowse snapshot already requested.');
+        }
+
+        if (is_array($newRequest)) {
+            $cobrowseAuditTrail->resyncRequested($cobrowseSession, $agent, $newRequest, $previousRequest);
         }
 
         event(new CobrowseStateUpdated($cobrowseSession, 'resync_requested'));
