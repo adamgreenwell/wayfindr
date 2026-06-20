@@ -124,6 +124,9 @@ browser. The default cap is 60,000 serialized bytes, and host pages can lower
 or raise it with `mutationPayloadMaxBytes` when calling `Wayfindr.init`. The
 widget keeps at most 250 pending mutation records between flushes by default;
 `mutationQueueMaxRecords` can tune that queue for especially noisy pages.
+When an agent requests a fresh cobrowse snapshot, the widget retries a failing
+request ID up to 3 times by default and then waits for a new request ID;
+`cobrowseResyncMaxAttempts` can tune that bound for unusual environments.
 `createCobrowseSnapshot` masks password fields, hidden fields, configured mask
 selectors, and common sensitive-looking fields before snapshot data leaves the
 visitor browser. Host pages can mark sensitive regions with

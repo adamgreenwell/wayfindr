@@ -80,6 +80,10 @@ once with fresh page state and a masked snapshot, then wait for another explicit
 request ID before sending another agent-requested resync. This is a recovery
 control for the current consented session, not permission to send raw values or
 unbounded page history.
+If the widget cannot deliver that recovery snapshot, it may retry the same
+request ID a small bounded number of times. After the retry bound is exhausted,
+it waits for a new explicit request ID instead of creating an unbounded recovery
+loop.
 
 Agents may see whether that recovery request is pending, delayed, fulfilled, or
 ignored because it arrived late, matched an older request, or duplicated an

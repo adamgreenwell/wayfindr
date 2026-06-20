@@ -444,6 +444,9 @@
     var cobrowsePressureResyncMs = typeof options.cobrowsePressureResyncMs === 'number' ? Math.max(0, options.cobrowsePressureResyncMs) : 30000;
     var lastCobrowsePressureResyncAt = 0;
     var lastCobrowseResyncRequestId = null;
+    var cobrowseResyncMaxAttempts = typeof options.cobrowseResyncMaxAttempts === 'number' ? Math.max(0, Math.floor(options.cobrowseResyncMaxAttempts)) : 3;
+    var cobrowseResyncAttemptRequestId = null;
+    var cobrowseResyncAttemptCount = 0;
     var cobrowseResyncInFlight = false;
     var mutationPayloadMaxBytes = typeof options.mutationPayloadMaxBytes === 'number'
       ? Math.max(0, options.mutationPayloadMaxBytes)
@@ -828,6 +831,7 @@
       if (!cobrowseGranted) {
         stopMutationStream();
         lastCobrowseResyncRequestId = null;
+        resetCobrowseResyncAttempts();
         cobrowseResyncInFlight = false;
       }
 
@@ -849,6 +853,29 @@
       return String(resync.request_id);
     }
 
+    function resetCobrowseResyncAttempts() {
+      cobrowseResyncAttemptRequestId = null;
+      cobrowseResyncAttemptCount = 0;
+    }
+
+    function canAttemptCobrowseResync(requestId) {
+      if (cobrowseResyncAttemptRequestId !== requestId) {
+        cobrowseResyncAttemptRequestId = requestId;
+        cobrowseResyncAttemptCount = 0;
+      }
+
+      return cobrowseResyncAttemptCount < cobrowseResyncMaxAttempts;
+    }
+
+    function markCobrowseResyncAttempt(requestId) {
+      if (cobrowseResyncAttemptRequestId !== requestId) {
+        cobrowseResyncAttemptRequestId = requestId;
+        cobrowseResyncAttemptCount = 0;
+      }
+
+      cobrowseResyncAttemptCount += 1;
+    }
+
     async function handleCobrowseResyncRequest(resync) {
       var requestId = pendingCobrowseResyncId(resync);
 
@@ -856,6 +883,11 @@
         return;
       }
 
+      if (!canAttemptCobrowseResync(requestId)) {
+        return;
+      }
+
+      markCobrowseResyncAttempt(requestId);
       cobrowseResyncInFlight = true;
 
       try {
