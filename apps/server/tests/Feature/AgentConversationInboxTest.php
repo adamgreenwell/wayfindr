@@ -180,7 +180,7 @@ test('dashboard searches conversations by subject support code and visitor refer
         ->get('/dashboard/conversations?conversation_search=invoice')
         ->assertOk()
         ->assertSee('1 open matching')
-        ->assertSee('Active conversation search')
+        ->assertSee('Active conversation filters')
         ->assertSee('Invoice export problem')
         ->assertSee($matchingConversation->support_code)
         ->assertDontSee('Password reset request')
@@ -218,6 +218,76 @@ test('dashboard searches conversations by subject support code and visitor refer
         ->assertSee('Closed billing conversation')
         ->assertSee($closedConversation->support_code)
         ->assertDontSee('Invoice export problem');
+});
+
+test('dashboard filters conversations by visible site', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $otherAccount = Account::factory()->create(['name' => 'Other Support']);
+    $agent = User::factory()->for($account)->create();
+    $otherAgent = User::factory()->for($account)->create();
+
+    $docsSite = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $storeSite = Site::factory()->for($account)->create(['name' => 'Acme Store']);
+    $restrictedSite = Site::factory()->for($account)->create(['name' => 'Restricted Site']);
+    $restrictedSite->supportAgents()->attach($otherAgent);
+
+    $docsVisitor = Visitor::factory()->for($docsSite)->create(['anonymous_id' => 'anon-docs']);
+    $storeVisitor = Visitor::factory()->for($storeSite)->create(['anonymous_id' => 'anon-store']);
+    $restrictedVisitor = Visitor::factory()->for($restrictedSite)->create(['anonymous_id' => 'anon-restricted']);
+
+    Conversation::factory()->for($docsSite)->for($docsVisitor)->create([
+        'support_code' => 'WF-DOCSITE',
+        'subject' => 'Docs checkout question',
+        'status' => 'open',
+    ]);
+    Conversation::factory()->for($storeSite)->for($storeVisitor)->create([
+        'support_code' => 'WF-STORESITE',
+        'subject' => 'Store checkout question',
+        'status' => 'open',
+    ]);
+    $closedStoreConversation = Conversation::factory()->for($storeSite)->for($storeVisitor)->create([
+        'support_code' => 'WF-STORECLOSED',
+        'subject' => 'Closed store question',
+        'status' => 'closed',
+        'closed_at' => now()->subMinute(),
+    ]);
+    Conversation::factory()->for($restrictedSite)->for($restrictedVisitor)->create([
+        'support_code' => 'WF-RESTRICTED',
+        'subject' => 'Restricted site question',
+        'status' => 'open',
+    ]);
+
+    $otherSite = Site::factory()->for($otherAccount)->create(['name' => 'Other Account Site']);
+    $otherVisitor = Visitor::factory()->for($otherSite)->create(['anonymous_id' => 'anon-other-site']);
+    Conversation::factory()->for($otherSite)->for($otherVisitor)->create([
+        'support_code' => 'WF-OTHERSITE',
+        'subject' => 'Other account site question',
+        'status' => 'open',
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations?conversation_site='.$storeSite->id)
+        ->assertOk()
+        ->assertSee('Store checkout question')
+        ->assertSee('Acme Store')
+        ->assertDontSee('Docs checkout question')
+        ->assertDontSee('Restricted site question')
+        ->assertDontSee('Other account site question');
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations?conversation_filter=closed&conversation_site='.$storeSite->id.'&conversation_search=closed')
+        ->assertOk()
+        ->assertSee('1 closed')
+        ->assertSee('Closed store question')
+        ->assertSee($closedStoreConversation->support_code)
+        ->assertDontSee('Docs checkout question');
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations?conversation_site='.$restrictedSite->id)
+        ->assertOk()
+        ->assertSee('Docs checkout question')
+        ->assertSee('Store checkout question')
+        ->assertDontSee('Restricted site question');
 });
 
 test('dashboard shows conversation assignment state', function (): void {

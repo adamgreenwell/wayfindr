@@ -12,7 +12,7 @@
                         <span class="lede">
                             @if ($conversationFilter === 'closed')
                                 {{ $conversations->count() === 1 ? '1 closed' : $conversations->count().' closed' }}
-                            @elseif ($conversationSearch !== '')
+                            @elseif ($activeConversationFilters !== [])
                                 {{ $conversations->count() === 1 ? '1 open matching' : $conversations->count().' open matching' }}
                             @else
                                 {{ $conversations->count() }} open ·
@@ -48,6 +48,18 @@
 
                     <div class="meta-grid">
                         <div class="meta-item">
+                            <label class="meta-label" for="conversation_site">Site</label>
+                            <select id="conversation_site" name="conversation_site">
+                                <option value="">Any site</option>
+                                @foreach ($sites as $site)
+                                    <option value="{{ $site->id }}" @selected($conversationSite === $site->id)>
+                                        {{ $site->name }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div class="meta-item">
                             <label class="meta-label" for="conversation_search">Search</label>
                             <input
                                 id="conversation_search"
@@ -63,28 +75,27 @@
                             <button class="button" type="submit">Search conversations</button>
                             @php
                                 $clearParams = $conversationQuery;
-                                unset($clearParams['conversation_search']);
+                                unset($clearParams['conversation_search'], $clearParams['conversation_site']);
                             @endphp
-                            <a class="button secondary" href="{{ route('dashboard.conversations.index', $clearParams) }}">Clear search</a>
+                            <a class="button secondary" href="{{ route('dashboard.conversations.index', $clearParams) }}">Clear filters</a>
                         </div>
                     </div>
                 </form>
 
-                @if ($conversationSearch !== '')
-                    <div class="filter-summary" aria-label="Active conversation search">
+                @if ($activeConversationFilters !== [])
+                    <div class="filter-summary" aria-label="Active conversation filters">
                         <div>
-                            <strong>Active conversation search</strong>
-                            <p class="lede">Queue narrowed to matching subjects, support codes, and visitor references.</p>
+                            <strong>Active conversation filters</strong>
+                            <p class="lede">Queue narrowed to conversations matching this view.</p>
                         </div>
                         <div class="filter-chips">
-                            @php
-                                $clearSearchParams = $conversationQuery;
-                                unset($clearSearchParams['conversation_search']);
-                            @endphp
-                            <a class="filter-chip" href="{{ route('dashboard.conversations.index', $clearSearchParams) }}">
-                                Search: {{ $conversationSearch }}
-                                <span aria-hidden="true">x</span>
-                            </a>
+                            @foreach ($activeConversationFilters as $activeFilter)
+                                <a class="filter-chip" href="{{ $activeFilter['href'] }}">
+                                    {{ $activeFilter['label'] }}
+                                    <span aria-hidden="true">x</span>
+                                </a>
+                            @endforeach
+                            <a class="filter-chip filter-chip-clear" href="{{ route('dashboard.conversations.index') }}">Clear all conversation filters</a>
                         </div>
                     </div>
                 @endif
