@@ -88,6 +88,7 @@ class CobrowseStateUpdated implements ShouldBroadcastNow
             'dropped_batches' => $telemetry['dropped_batches'] ?? null,
             'reconnects' => $telemetry['reconnects'] ?? null,
             'samples' => $telemetry['samples'] ?? null,
+            'reported_at' => $telemetry['reported_at'] ?? null,
             'resync_attempts_exhausted' => $resyncAttemptsExhausted,
         ], fn (mixed $value): bool => $value !== null);
 

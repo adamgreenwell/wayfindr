@@ -4464,6 +4464,8 @@ test('agent conversation page exposes live cobrowse transport health targets whe
         ->assertSee('data-cobrowse-telemetry-dropped-batches', false)
         ->assertSee('data-cobrowse-telemetry-reconnects', false)
         ->assertSee('data-cobrowse-telemetry-samples', false)
+        ->assertSee('function telemetryIsFreshForUpdate', false)
+        ->assertSee('telemetry.reported_at', false)
         ->assertSee('Connection telemetry updated live.', false)
         ->assertSee('Fresh snapshot retry limit reached.', false);
 });

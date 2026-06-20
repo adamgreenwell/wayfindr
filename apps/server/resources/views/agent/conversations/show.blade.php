@@ -1095,6 +1095,34 @@
                     return number === null ? 'Not reported' : Math.round(number).toLocaleString() + ' bytes';
                 }
 
+                function timestampValue(value) {
+                    var timestamp = Date.parse(value || '');
+
+                    return Number.isNaN(timestamp) ? null : timestamp;
+                }
+
+                function formatRelativeTimestamp(value) {
+                    var timestamp = timestampValue(value);
+
+                    if (timestamp === null) {
+                        return 'just now';
+                    }
+
+                    var elapsedSeconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+
+                    if (elapsedSeconds < 45) {
+                        return 'just now';
+                    }
+
+                    var elapsedMinutes = Math.round(elapsedSeconds / 60);
+
+                    if (elapsedMinutes <= 1) {
+                        return '1 minute ago';
+                    }
+
+                    return elapsedMinutes.toLocaleString() + ' minutes ago';
+                }
+
                 function droppedBatchPressure(telemetry) {
                     var droppedBatches = numericValue(telemetry.dropped_batches) || 0;
 
@@ -1158,7 +1186,7 @@
                     setText(transportLabel, health.label);
                     setText(transportMessage, health.message);
                     setText(transportStateLabel, health.label);
-                    setText(transportLastReport, 'just now');
+                    setText(transportLastReport, formatRelativeTimestamp(telemetry.reported_at));
                     setText(transportReconnects, formatNumber(telemetry.reconnects));
                     setText(transportPressure, droppedBatchPressure(telemetry));
                     setText(transportGuidance, health.guidance);
@@ -1188,11 +1216,29 @@
                     setText(telemetrySamples, formatNumber(telemetry.samples));
                 }
 
+                function telemetryIsFreshForUpdate(telemetry, payload) {
+                    var update = payload.update || {};
+                    var updateKind = update.kind || '';
+
+                    if (updateKind === 'telemetry') {
+                        return true;
+                    }
+
+                    var telemetryAt = timestampValue(telemetry.reported_at);
+                    var updateAt = timestampValue(update.reported_at);
+
+                    return telemetryAt !== null && updateAt !== null && telemetryAt >= updateAt;
+                }
+
                 function updateLiveCobrowseTelemetry(payload) {
                     var summary = payload.summary || {};
                     var telemetry = summary.telemetry || null;
 
                     if (!telemetry) {
+                        return null;
+                    }
+
+                    if (!telemetryIsFreshForUpdate(telemetry, payload)) {
                         return null;
                     }
 

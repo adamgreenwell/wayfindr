@@ -196,6 +196,7 @@ test('cobrowse telemetry broadcasts safe transport and resync summary hints', fu
                 'dropped_batches' => 2,
                 'reconnects' => 1,
                 'samples' => 4,
+                'reported_at' => $reportedAt,
                 'resync_attempts_exhausted' => true,
             ],
         ],
