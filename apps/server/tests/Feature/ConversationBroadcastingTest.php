@@ -205,6 +205,37 @@ test('cobrowse telemetry broadcasts safe transport and resync summary hints', fu
         ->and(json_encode($payload))->not->toContain('Private mutation body');
 });
 
+test('cobrowse broadcasts do not carry stale resync exhaustion onto replacement requests', function (): void {
+    $account = Account::factory()->create();
+    $site = Site::factory()->for($account)->create(['name' => 'Docs Site']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-RESYNC-FRESH',
+        'status' => 'open',
+    ]);
+    $session = CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'metadata' => [
+            'telemetry' => [
+                'rtt_ms' => 240,
+                'resync_request_id' => 'resync_old',
+                'resync_attempts_exhausted' => true,
+            ],
+            'resync_request' => [
+                'id' => 'resync_new',
+                'requested_at' => now()->toJSON(),
+                'fulfilled_at' => null,
+            ],
+        ],
+    ]);
+
+    $payload = (new CobrowseStateUpdated($session->load('conversation'), 'resync_requested'))->broadcastWith();
+
+    expect($payload['summary']['resync_request_id'])->toBe('resync_new')
+        ->and($payload['summary']['telemetry'])->toHaveKey('rtt_ms')
+        ->and($payload['summary']['telemetry'])->not->toHaveKey('resync_attempts_exhausted');
+});
+
 test('conversation typing updates use a private conversation channel and safe payload', function (): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);

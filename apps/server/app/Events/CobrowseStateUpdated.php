@@ -67,6 +67,19 @@ class CobrowseStateUpdated implements ShouldBroadcastNow
         $mutations = is_array($metadata['mutations'] ?? null) ? $metadata['mutations'] : [];
         $telemetry = is_array($metadata['telemetry'] ?? null) ? $metadata['telemetry'] : [];
         $resyncRequest = is_array($metadata['resync_request'] ?? null) ? $metadata['resync_request'] : [];
+        $resyncRequestId = $resyncRequest['id'] ?? null;
+        $resyncAttemptsExhausted = null;
+
+        if ($resyncRequestId !== null && filled($resyncRequest['attempts_exhausted_at'] ?? null)) {
+            $resyncAttemptsExhausted = true;
+        } elseif (
+            $resyncRequestId !== null
+            && ($telemetry['resync_request_id'] ?? null) === $resyncRequestId
+            && ($telemetry['resync_attempts_exhausted'] ?? false) === true
+        ) {
+            $resyncAttemptsExhausted = true;
+        }
+
         $transportTelemetry = array_filter([
             'rtt_ms' => $telemetry['rtt_ms'] ?? null,
             'max_rtt_ms' => $telemetry['max_rtt_ms'] ?? null,
@@ -75,7 +88,7 @@ class CobrowseStateUpdated implements ShouldBroadcastNow
             'dropped_batches' => $telemetry['dropped_batches'] ?? null,
             'reconnects' => $telemetry['reconnects'] ?? null,
             'samples' => $telemetry['samples'] ?? null,
-            'resync_attempts_exhausted' => $telemetry['resync_attempts_exhausted'] ?? null,
+            'resync_attempts_exhausted' => $resyncAttemptsExhausted,
         ], fn (mixed $value): bool => $value !== null);
 
         return array_filter([
@@ -84,7 +97,7 @@ class CobrowseStateUpdated implements ShouldBroadcastNow
             'batch_count' => $mutations['batch_count'] ?? null,
             'mutation_count' => $mutations['mutation_count'] ?? null,
             'last_sequence' => $mutations['last_sequence'] ?? null,
-            'resync_request_id' => $resyncRequest['id'] ?? null,
+            'resync_request_id' => $resyncRequestId,
             'telemetry' => $transportTelemetry === [] ? null : $transportTelemetry,
         ], fn (mixed $value): bool => $value !== null);
     }
