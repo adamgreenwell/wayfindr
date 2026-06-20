@@ -36,6 +36,7 @@
                             <span class="lede">
                                 {{ $supportQueues['open_conversations_count'] }} open
                                 · {{ $supportQueues['new_activity_conversations_count'] }} {{ $supportQueues['new_activity_conversations_count'] === 1 ? 'needs' : 'need' }} attention
+                                · {{ $supportQueues['cobrowse_attention_conversations_count'] === 1 ? '1 cobrowse session needs attention' : $supportQueues['cobrowse_attention_conversations_count'].' cobrowse sessions need attention' }}
                             </span>
                         </span>
                         <span class="management-action">Open queue</span>

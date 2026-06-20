@@ -6,6 +6,7 @@ use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Support\CobrowseConsentState;
 use App\Support\RealtimeHealth;
 use App\Support\VisitorSupportReadiness;
 use Illuminate\Contracts\View\View;
@@ -17,7 +18,7 @@ use Illuminate\Support\Facades\Gate;
 
 class AgentDashboardController extends Controller
 {
-    public function __invoke(Request $request, RealtimeHealth $realtimeHealth, VisitorSupportReadiness $visitorSupportReadiness): View|RedirectResponse
+    public function __invoke(Request $request, RealtimeHealth $realtimeHealth, VisitorSupportReadiness $visitorSupportReadiness, CobrowseConsentState $cobrowseConsentState): View|RedirectResponse
     {
         if ($redirect = $this->legacyQueueRedirect($request)) {
             return $redirect;
@@ -51,7 +52,7 @@ class AgentDashboardController extends Controller
             'dataResponsibility' => config('wayfindr.data_responsibility'),
             'realtimeHealth' => $realtimeHealthSummary,
             'sites' => $sites,
-            'supportQueues' => $this->supportQueues($agent),
+            'supportQueues' => $this->supportQueues($agent, $cobrowseConsentState),
             'unreadNotificationCount' => $unreadNotificationCount,
             'unreadNotifications' => $unreadNotifications,
             'visitorSupportReadiness' => $visitorSupportReadiness->summary(
@@ -86,11 +87,12 @@ class AgentDashboardController extends Controller
      * @return array{
      *     open_conversations_count: int,
      *     new_activity_conversations_count: int,
+     *     cobrowse_attention_conversations_count: int,
      *     open_tickets_count: int,
      *     unassigned_tickets_count: int
      * }
      */
-    private function supportQueues(User $agent): array
+    private function supportQueues(User $agent, CobrowseConsentState $cobrowseConsentState): array
     {
         $visibleOpenConversations = Conversation::query()
             ->where('status', 'open')
@@ -104,6 +106,15 @@ class AgentDashboardController extends Controller
         return [
             'open_conversations_count' => (clone $visibleOpenConversations)->count(),
             'new_activity_conversations_count' => (clone $visibleOpenConversations)->withNewActivityFor($agent)->count(),
+            'cobrowse_attention_conversations_count' => (clone $visibleOpenConversations)
+                ->whereHas('cobrowseSessions', fn ($query) => $query
+                    ->where('status', 'granted')
+                    ->whereNull('ended_at'))
+                ->with('latestCobrowseSession')
+                ->get()
+                ->map(fn (Conversation $conversation): array => $cobrowseConsentState->queueTransportForConversation($conversation))
+                ->filter(fn (array $transport): bool => $transport['tone'] === 'attention')
+                ->count(),
             'open_tickets_count' => (clone $visibleOpenTickets)->count(),
             'unassigned_tickets_count' => (clone $visibleOpenTickets)->whereNull('assignee_id')->count(),
         ];
