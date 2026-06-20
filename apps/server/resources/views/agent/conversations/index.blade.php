@@ -1,16 +1,22 @@
 <x-layouts.app title="Conversations" :agent="$agent" :account="$account">
             <p><a class="text-link" href="{{ route('dashboard') }}">Back to dashboard</a></p>
             <h1>Conversations</h1>
-            <p class="lede">Active visitor conversations for {{ $account->name }}.</p>
+            <p class="lede">
+                {{ $conversationFilter === 'closed' ? 'Closed visitor conversations' : 'Active visitor conversations' }} for {{ $account->name }}.
+            </p>
 
             <section id="conversations" class="section" aria-labelledby="conversations-heading">
                 <div class="section-header">
                     <h2 id="conversations-heading">Conversation queue</h2>
                     <div class="section-actions">
                         <span class="lede">
-                            {{ $conversations->count() }} open ·
-                            {{ $newActivityConversationCount === 1 ? '1 needs attention' : $newActivityConversationCount.' need attention' }} ·
-                            {{ $cobrowseAttentionConversationCount === 1 ? '1 cobrowse session needs attention' : $cobrowseAttentionConversationCount.' cobrowse sessions need attention' }}
+                            @if ($conversationFilter === 'closed')
+                                {{ $conversations->count() === 1 ? '1 closed' : $conversations->count().' closed' }}
+                            @else
+                                {{ $conversations->count() }} open ·
+                                {{ $newActivityConversationCount === 1 ? '1 needs attention' : $newActivityConversationCount.' need attention' }} ·
+                                {{ $cobrowseAttentionConversationCount === 1 ? '1 cobrowse session needs attention' : $cobrowseAttentionConversationCount.' cobrowse sessions need attention' }}
+                            @endif
                         </span>
                         @foreach ($conversationFilters as $filterValue => $filterLabel)
                             <a

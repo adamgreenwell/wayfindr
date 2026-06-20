@@ -44,14 +44,17 @@ class AgentConversationQueueController extends Controller
             'assigned_to_me' => 'Assigned to me',
             'unassigned' => 'Unassigned',
             'cobrowse_attention' => 'Cobrowse attention',
+            'closed' => 'Closed',
         ];
         $conversationFilter = $request->query('conversation_filter', 'all');
         $conversationFilter = is_string($conversationFilter) && array_key_exists($conversationFilter, $conversationFilters)
             ? $conversationFilter
             : 'all';
+        $conversationStatus = $conversationFilter === 'closed' ? 'closed' : 'open';
         $conversationEmptyMessage = match ($conversationFilter) {
             'new_activity' => 'No conversations need attention.',
             'cobrowse_attention' => 'No active cobrowse sessions need attention.',
+            'closed' => 'No closed conversations yet.',
             default => 'No active conversations yet.',
         };
         $newActivityConversationCount = Conversation::query()
@@ -79,7 +82,7 @@ class AgentConversationQueueController extends Controller
                 'site',
                 'visitor',
             ])
-            ->where('status', 'open')
+            ->where('status', $conversationStatus)
             ->whereHas('site', fn ($query) => $query->visibleToAgent($agent))
             ->when($conversationFilter === 'new_activity', fn ($query) => $query->withNewActivityFor($agent))
             ->when($conversationFilter === 'needs_reply', function ($query): void {

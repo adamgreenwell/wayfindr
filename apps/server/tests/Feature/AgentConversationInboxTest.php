@@ -82,6 +82,49 @@ test('dashboard shows an empty conversation state', function (): void {
         ->assertSee('No active conversations yet.');
 });
 
+test('dashboard can filter closed conversations', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $otherAccount = Account::factory()->create(['name' => 'Other Support']);
+    $agent = User::factory()->for($account)->create();
+
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+    $openConversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-OPEN1',
+        'subject' => 'Open checkout trouble',
+        'status' => 'open',
+        'last_message_at' => now()->subMinutes(10),
+    ]);
+    $closedConversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-CLOSED1',
+        'subject' => 'Closed checkout trouble',
+        'status' => 'closed',
+        'closed_at' => now()->subMinute(),
+        'last_message_at' => now()->subMinute(),
+    ]);
+
+    $otherSite = Site::factory()->for($otherAccount)->create(['name' => 'Other Docs']);
+    $otherVisitor = Visitor::factory()->for($otherSite)->create(['anonymous_id' => 'anon-other']);
+    Conversation::factory()->for($otherSite)->for($otherVisitor)->create([
+        'support_code' => 'WF-OTHERCLOSED',
+        'subject' => 'Other closed problem',
+        'status' => 'closed',
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations?conversation_filter=closed')
+        ->assertOk()
+        ->assertSee('1 closed')
+        ->assertSee('Closed checkout trouble')
+        ->assertSee('Acme Docs')
+        ->assertSee('WF-CLOSED1')
+        ->assertSee(route('dashboard.support-code.lookup', ['support_code' => $closedConversation->support_code]), false)
+        ->assertDontSee('Open checkout trouble')
+        ->assertDontSee($openConversation->support_code)
+        ->assertDontSee('Other closed problem')
+        ->assertDontSee('Other Docs');
+});
+
 test('dashboard shows conversation assignment state', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
