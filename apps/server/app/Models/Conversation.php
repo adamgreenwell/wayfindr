@@ -310,6 +310,11 @@ class Conversation extends Model
         return $this->hasMany(CobrowseSession::class);
     }
 
+    public function latestCobrowseSession(): HasOne
+    {
+        return $this->hasOne(CobrowseSession::class)->latestOfMany();
+    }
+
     public function auditEvents(): MorphMany
     {
         return $this->morphMany(AuditEvent::class, 'subject');

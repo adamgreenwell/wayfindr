@@ -187,6 +187,72 @@ test('dashboard shows visitor presence state in the conversation queue', functio
     }
 });
 
+test('dashboard shows cobrowse transport health in the conversation queue', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00', 'UTC'));
+
+    try {
+        $account = Account::factory()->create(['name' => 'Acme Support']);
+        $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+        $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+
+        $liveConversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-COBLIVE',
+            'subject' => 'Live cobrowse session',
+            'status' => 'open',
+            'last_message_at' => now()->subMinute(),
+        ]);
+        CobrowseSession::factory()->for($liveConversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(3),
+            'ended_at' => null,
+            'metadata' => [
+                'telemetry' => [
+                    'reported_at' => now()->subSeconds(20)->toJSON(),
+                    'reconnects' => 0,
+                    'dropped_batches' => 0,
+                ],
+            ],
+        ]);
+
+        $staleConversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-COBSTALE',
+            'subject' => 'Stale cobrowse session',
+            'status' => 'open',
+            'last_message_at' => now()->subMinutes(2),
+        ]);
+        CobrowseSession::factory()->for($staleConversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(10),
+            'ended_at' => null,
+            'metadata' => [
+                'telemetry' => [
+                    'reported_at' => now()->subMinutes(4)->toJSON(),
+                    'reconnects' => 0,
+                    'dropped_batches' => 0,
+                ],
+            ],
+        ]);
+
+        Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-NOCOB',
+            'subject' => 'No cobrowse session',
+            'status' => 'open',
+            'last_message_at' => now()->subMinutes(3),
+        ]);
+
+        $this->actingAs($agent)
+            ->get('/dashboard/conversations')
+            ->assertOk()
+            ->assertSee('Cobrowse')
+            ->assertSeeInOrder(['Live cobrowse session', 'Live', '20 seconds ago'])
+            ->assertSeeInOrder(['Stale cobrowse session', 'Stale', '4 minutes ago'])
+            ->assertSeeInOrder(['No cobrowse session', 'Unavailable', 'Not reported']);
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('dashboard keeps visitor read state in conversation detail instead of the queue', function (): void {
     Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00', 'UTC'));
 

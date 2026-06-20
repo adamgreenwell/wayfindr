@@ -34,6 +34,7 @@
                                     <th scope="col">Site</th>
                                     <th scope="col">Visitor</th>
                                     <th scope="col">Presence</th>
+                                    <th scope="col">Cobrowse</th>
                                     <th scope="col">Assigned</th>
                                     <th scope="col">Attention</th>
                                     <th scope="col">Read</th>
@@ -43,6 +44,14 @@
                             </thead>
                             <tbody>
                                 @foreach ($conversations as $conversation)
+                                    @php
+                                        $cobrowseTransport = $cobrowseTransportByConversationId->get($conversation->id, [
+                                            'label' => 'Unavailable',
+                                            'message' => 'Cobrowse transport is not active.',
+                                            'last_report' => 'Not reported',
+                                            'tone' => 'manual',
+                                        ]);
+                                    @endphp
                                     <tr>
                                         <td>
                                             <a class="text-link" href="{{ route('dashboard.conversations.show', $conversation->support_code) }}">
@@ -59,6 +68,17 @@
                                             <span class="readiness-status" data-status="{{ in_array($conversation->visitor?->presenceState(), ['active', 'recent'], true) ? 'ready' : 'manual' }}">
                                                 {{ $conversation->visitor?->presenceLabel() ?? 'Not reported' }}
                                             </span>
+                                        </td>
+                                        <td>
+                                            <span
+                                                class="readiness-status"
+                                                data-status="{{ $cobrowseTransport['tone'] }}"
+                                                aria-label="Cobrowse {{ $cobrowseTransport['label'] }}. {{ $cobrowseTransport['message'] }}"
+                                                title="{{ $cobrowseTransport['message'] }}"
+                                            >
+                                                {{ $cobrowseTransport['label'] }}
+                                            </span>
+                                            <span class="table-note">Last report {{ $cobrowseTransport['last_report'] }}</span>
                                         </td>
                                         <td>{{ $conversation->assignedAgent?->name ?? 'Unassigned' }}</td>
                                         <td>{{ $conversation->attentionLabel() }}</td>

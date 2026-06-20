@@ -4,13 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Models\Conversation;
 use App\Models\User;
+use App\Support\CobrowseConsentState;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 
 class AgentConversationQueueController extends Controller
 {
-    public function __invoke(Request $request): View
+    public function __invoke(Request $request, CobrowseConsentState $cobrowseConsentState): View
     {
         $agent = $request->user();
 
@@ -19,12 +20,13 @@ class AgentConversationQueueController extends Controller
         return view('agent.conversations.index', [
             'account' => $agent->account()->firstOrFail(),
             'agent' => $agent,
-            ...$this->conversationQueueData($agent, $request),
+            ...$this->conversationQueueData($agent, $request, $cobrowseConsentState),
         ]);
     }
 
     /**
      * @return array{
+     *     cobrowseTransportByConversationId: Collection<int, array{label: string, message: string, last_report: string, tone: string}>,
      *     conversationEmptyMessage: string,
      *     conversationFilter: string,
      *     conversationFilters: array<string, string>,
@@ -32,7 +34,7 @@ class AgentConversationQueueController extends Controller
      *     newActivityConversationCount: int
      * }
      */
-    private function conversationQueueData(User $agent, Request $request): array
+    private function conversationQueueData(User $agent, Request $request, CobrowseConsentState $cobrowseConsentState): array
     {
         $conversationFilters = [
             'all' => 'All open',
@@ -57,6 +59,7 @@ class AgentConversationQueueController extends Controller
         $conversations = Conversation::query()
             ->with([
                 'assignedAgent',
+                'latestCobrowseSession',
                 'latestAgentMessage',
                 'latestMessage',
                 'readStates' => fn ($query) => $query->where('user_id', $agent->id),
@@ -78,7 +81,13 @@ class AgentConversationQueueController extends Controller
             ->orderByDesc('created_at')
             ->get();
 
+        $cobrowseTransportByConversationId = $conversations
+            ->mapWithKeys(fn (Conversation $conversation): array => [
+                $conversation->id => $cobrowseConsentState->queueTransportForConversation($conversation),
+            ]);
+
         return [
+            'cobrowseTransportByConversationId' => $cobrowseTransportByConversationId,
             'conversationEmptyMessage' => $conversationEmptyMessage,
             'conversationFilter' => $conversationFilter,
             'conversationFilters' => $conversationFilters,

@@ -362,6 +362,14 @@
             text-transform: uppercase;
         }
 
+        .table-note {
+            color: var(--muted);
+            display: block;
+            font-size: 0.82rem;
+            margin-top: 4px;
+            white-space: nowrap;
+        }
+
         .empty {
             padding: 20px;
             color: var(--muted);

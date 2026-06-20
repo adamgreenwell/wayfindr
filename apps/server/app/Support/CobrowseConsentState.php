@@ -87,6 +87,27 @@ class CobrowseConsentState
     }
 
     /**
+     * @return array{label: string, message: string, last_report: string, tone: string}
+     */
+    public function queueTransportForConversation(Conversation $conversation): array
+    {
+        $session = $conversation->relationLoaded('latestCobrowseSession')
+            ? $conversation->latestCobrowseSession
+            : $conversation->cobrowseSessions()
+                ->latest('id')
+                ->first();
+
+        $transport = $this->formatTransport($session);
+
+        return [
+            'label' => $transport['label'],
+            'message' => $transport['message'],
+            'last_report' => $transport['last_report'],
+            'tone' => $this->transportTone($transport['label']),
+        ];
+    }
+
+    /**
      * @return array<string, string>
      */
     private function formatTransport(?CobrowseSession $session): array
@@ -163,6 +184,15 @@ class CobrowseConsentState
                 ? 'Preview is current enough to use alongside chat.'
                 : 'Use chat to confirm anything that depends on fast-changing page state.',
         ];
+    }
+
+    private function transportTone(string $label): string
+    {
+        return match ($label) {
+            'Live' => 'ready',
+            'Stale', 'Reconnecting', 'Degraded' => 'attention',
+            default => 'manual',
+        };
     }
 
     private function hasTransportPressure(string $pressure): bool
