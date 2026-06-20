@@ -21,6 +21,58 @@ test('cobrowse smoke command reports no-data readiness without failing', functio
         ->toContain('Next step: Run the widget smoke path with cobrowse consent before relying on cobrowse for real visitor support.');
 });
 
+test('cobrowse smoke command prints static payload budgets without leaking support data', function (): void {
+    $this->travelTo(Carbon::parse('2026-06-20 12:00:00'));
+
+    $site = Site::factory()->create(['name' => 'Sensitive Customer Site']);
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-cobrowse-budget',
+    ]);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-BUDGETSECRET',
+        'subject' => 'Private checkout failure',
+    ]);
+
+    CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinute(),
+        'metadata' => [
+            'snapshot' => [
+                'reported_at' => now()->toJSON(),
+                'title' => 'Private account dashboard',
+                'page_url' => 'https://customer.example.test/private-account',
+                'text' => 'Private account number 12345',
+            ],
+            'telemetry' => [
+                'reported_at' => now()->toJSON(),
+                'dropped_batches' => 1,
+                'reconnects' => 0,
+            ],
+        ],
+    ]);
+
+    Artisan::call('wayfindr:cobrowse-transport-smoke');
+    $output = Artisan::output();
+
+    expect($output)->toContain('Cobrowse budget defaults')
+        ->toContain('Server intake')
+        ->toContain('Snapshot HTML: 65,535 characters')
+        ->toContain('Server mutation batch: 50 items')
+        ->toContain('Server telemetry payload: 10,485,760 bytes')
+        ->toContain('Stock widget')
+        ->toContain('Stock widget batch payload: 60,000 bytes')
+        ->toContain('Stock widget queue: 250 pending')
+        ->toContain('Status poll: 5,000 ms')
+        ->toContain('Resync attempts: 3 attempts')
+        ->not->toContain('WF-BUDGETSECRET')
+        ->not->toContain('Private checkout failure')
+        ->not->toContain('Sensitive Customer Site')
+        ->not->toContain('anon-cobrowse-budget')
+        ->not->toContain('Private account dashboard')
+        ->not->toContain('customer.example.test')
+        ->not->toContain('Private account number');
+});
+
 test('cobrowse smoke command fails on active transport attention without leaking support data', function (): void {
     $this->travelTo(Carbon::parse('2026-06-20 12:00:00'));
 

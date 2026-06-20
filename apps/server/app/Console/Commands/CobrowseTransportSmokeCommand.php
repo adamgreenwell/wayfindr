@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Support\CobrowsePayloadBudget;
 use App\Support\CobrowseTransportReadiness;
 use Illuminate\Console\Command;
 
@@ -20,9 +21,24 @@ class CobrowseTransportSmokeCommand extends Command
         $this->line('Summary: '.$check['summary']);
         $this->line('Detail: '.$check['detail']);
         $this->line('Next step: '.$check['action']);
+        $this->newLine();
+        $this->printBudgetDefaults();
 
         return $check['status'] === 'attention'
             ? self::FAILURE
             : self::SUCCESS;
+    }
+
+    private function printBudgetDefaults(): void
+    {
+        $this->line('Cobrowse budget defaults');
+
+        foreach (CobrowsePayloadBudget::readinessDefaults() as $group) {
+            $this->line($group['label']);
+
+            foreach ($group['items'] as $item) {
+                $this->line(sprintf('%s: %s', $item['label'], $item['value']));
+            }
+        }
     }
 }
