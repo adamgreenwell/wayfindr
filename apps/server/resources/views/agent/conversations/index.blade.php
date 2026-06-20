@@ -12,6 +12,8 @@
                         <span class="lede">
                             @if ($conversationFilter === 'closed')
                                 {{ $conversations->count() === 1 ? '1 closed' : $conversations->count().' closed' }}
+                            @elseif ($conversationSearch !== '')
+                                {{ $conversations->count() === 1 ? '1 open matching' : $conversations->count().' open matching' }}
                             @else
                                 {{ $conversations->count() }} open ·
                                 {{ $newActivityConversationCount === 1 ? '1 needs attention' : $newActivityConversationCount.' need attention' }} ·
@@ -19,9 +21,18 @@
                             @endif
                         </span>
                         @foreach ($conversationFilters as $filterValue => $filterLabel)
+                            @php
+                                $filterParams = $conversationQuery;
+
+                                if ($filterValue === 'all') {
+                                    unset($filterParams['conversation_filter']);
+                                } else {
+                                    $filterParams['conversation_filter'] = $filterValue;
+                                }
+                            @endphp
                             <a
                                 class="button {{ $conversationFilter === $filterValue ? '' : 'secondary' }}"
-                                href="{{ route('dashboard.conversations.index', $filterValue === 'all' ? [] : ['conversation_filter' => $filterValue]) }}"
+                                href="{{ route('dashboard.conversations.index', $filterParams) }}"
                                 @if ($conversationFilter === $filterValue) aria-current="page" @endif
                             >
                                 {{ $filterLabel }}
@@ -29,6 +40,54 @@
                         @endforeach
                     </div>
                 </div>
+
+                <form class="section-form" method="GET" action="{{ route('dashboard.conversations.index') }}">
+                    @if ($conversationFilter !== 'all')
+                        <input type="hidden" name="conversation_filter" value="{{ $conversationFilter }}">
+                    @endif
+
+                    <div class="meta-grid">
+                        <div class="meta-item">
+                            <label class="meta-label" for="conversation_search">Search</label>
+                            <input
+                                id="conversation_search"
+                                name="conversation_search"
+                                type="search"
+                                value="{{ $conversationSearch }}"
+                                placeholder="Subject, support code, or visitor"
+                            >
+                        </div>
+
+                        <div class="meta-item">
+                            <span class="meta-label">Queue</span>
+                            <button class="button" type="submit">Search conversations</button>
+                            @php
+                                $clearParams = $conversationQuery;
+                                unset($clearParams['conversation_search']);
+                            @endphp
+                            <a class="button secondary" href="{{ route('dashboard.conversations.index', $clearParams) }}">Clear search</a>
+                        </div>
+                    </div>
+                </form>
+
+                @if ($conversationSearch !== '')
+                    <div class="filter-summary" aria-label="Active conversation search">
+                        <div>
+                            <strong>Active conversation search</strong>
+                            <p class="lede">Queue narrowed to matching subjects, support codes, and visitor references.</p>
+                        </div>
+                        <div class="filter-chips">
+                            @php
+                                $clearSearchParams = $conversationQuery;
+                                unset($clearSearchParams['conversation_search']);
+                            @endphp
+                            <a class="filter-chip" href="{{ route('dashboard.conversations.index', $clearSearchParams) }}">
+                                Search: {{ $conversationSearch }}
+                                <span aria-hidden="true">x</span>
+                            </a>
+                        </div>
+                    </div>
+                @endif
 
                 @if ($conversations->isEmpty())
                     <p class="empty">{{ $conversationEmptyMessage }}</p>

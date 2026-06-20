@@ -125,6 +125,87 @@ test('dashboard can filter closed conversations', function (): void {
         ->assertDontSee('Other Docs');
 });
 
+test('dashboard searches conversations by subject support code and visitor references', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $otherAccount = Account::factory()->create(['name' => 'Other Support']);
+    $agent = User::factory()->for($account)->create();
+
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-conversation-search',
+        'external_id' => 'customer-lookup-42',
+        'name' => 'Casey Conversation',
+        'email' => 'billing-contact@example.test',
+    ]);
+    $matchingConversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-CONVSEARCH',
+        'subject' => 'Invoice export problem',
+        'status' => 'open',
+        'last_message_at' => now()->subMinute(),
+    ]);
+    $closedConversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-CONVCLOSED',
+        'subject' => 'Closed billing conversation',
+        'status' => 'closed',
+        'closed_at' => now()->subMinute(),
+        'last_message_at' => now()->subMinute(),
+    ]);
+
+    Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-PASSWORD',
+        'subject' => 'Password reset request',
+        'status' => 'open',
+    ]);
+
+    $otherSite = Site::factory()->for($otherAccount)->create(['name' => 'Other Docs']);
+    $otherVisitor = Visitor::factory()->for($otherSite)->create([
+        'anonymous_id' => 'anon-private-search',
+        'email' => 'billing-contact@example.test',
+    ]);
+    Conversation::factory()->for($otherSite)->for($otherVisitor)->create([
+        'support_code' => 'WF-PRIVATESEARCH',
+        'subject' => 'Private invoice issue',
+        'status' => 'open',
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations?conversation_search=invoice')
+        ->assertOk()
+        ->assertSee('1 open matching')
+        ->assertSee('Active conversation search')
+        ->assertSee('Invoice export problem')
+        ->assertSee($matchingConversation->support_code)
+        ->assertDontSee('Password reset request')
+        ->assertDontSee('Private invoice issue')
+        ->assertDontSee('WF-PRIVATESEARCH');
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations?conversation_search=WF-CONVSEARCH')
+        ->assertOk()
+        ->assertSee('Invoice export problem')
+        ->assertDontSee('Password reset request');
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations?conversation_search=billing-contact@example.test')
+        ->assertOk()
+        ->assertSee('Invoice export problem')
+        ->assertDontSee('Private invoice issue');
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations?conversation_search=customer-lookup-42')
+        ->assertOk()
+        ->assertSee('Invoice export problem')
+        ->assertDontSee('Private invoice issue');
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations?conversation_filter=closed&conversation_search=closed')
+        ->assertOk()
+        ->assertSee('1 closed')
+        ->assertSee('Closed billing conversation')
+        ->assertSee($closedConversation->support_code)
+        ->assertDontSee('Invoice export problem');
+});
+
 test('dashboard shows conversation assignment state', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
