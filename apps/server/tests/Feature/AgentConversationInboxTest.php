@@ -5105,6 +5105,49 @@ test('agent can see exhausted cobrowse resync guidance', function (): void {
     }
 });
 
+test('agent can see exhausted cobrowse resync guidance after the request expires', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-18 15:00:00', 'UTC'));
+
+    try {
+        $account = Account::factory()->create(['name' => 'Acme Support']);
+        $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+        $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-RESYNC8',
+            'subject' => 'Cobrowse expired retry limit reached',
+        ]);
+
+        CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+            'requested_by_id' => $agent->id,
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(10),
+            'ended_at' => null,
+            'metadata' => [
+                'resync_request' => [
+                    'id' => 'resync_exhausted',
+                    'requested_by_id' => $agent->id,
+                    'requested_by_name' => 'Ada Agent',
+                    'requested_at' => now()->subMinutes(6)->toJSON(),
+                    'fulfilled_at' => null,
+                    'attempts_exhausted_at' => now()->subMinutes(5)->toJSON(),
+                ],
+            ],
+        ]);
+
+        $this->actingAs($agent)
+            ->get('/dashboard/conversations/WF-RESYNC8')
+            ->assertOk()
+            ->assertSee('data-state="exhausted"', false)
+            ->assertSee('Fresh snapshot retry limit reached')
+            ->assertSee('Retry limit reached')
+            ->assertSee('The visitor widget stopped retrying this request ID after repeated failures.')
+            ->assertDontSee('Fresh snapshot expired');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('agent can see expired cobrowse resync guidance', function (): void {
     Carbon::setTestNow(Carbon::parse('2026-06-18 15:00:00', 'UTC'));
 

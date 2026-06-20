@@ -1215,6 +1215,66 @@ test('visitor telemetry can mark a matching cobrowse resync request as attempt e
     }
 });
 
+test('resync exhaustion telemetry does not overwrite existing cobrowse transport metrics', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-20 15:00:00', 'UTC'));
+
+    try {
+        $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-RESYNC-EXHAUSTED-METRICS',
+        ]);
+        $session = CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinute(),
+            'ended_at' => null,
+            'metadata' => [
+                'telemetry' => [
+                    'rtt_ms' => 184,
+                    'max_rtt_ms' => 240,
+                    'payload_bytes' => 8192,
+                    'max_payload_bytes' => 9000,
+                    'dropped_batches' => 3,
+                    'reconnects' => 2,
+                    'samples' => 5,
+                    'reported_at' => now()->subSeconds(20)->toJSON(),
+                ],
+                'resync_request' => [
+                    'id' => 'resync_exhausted',
+                    'requested_at' => now()->subSeconds(30)->toJSON(),
+                    'fulfilled_at' => null,
+                ],
+            ],
+        ]);
+        $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+
+        $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-telemetry", [
+            'site_public_key' => 'site_public_docs',
+            'anonymous_id' => 'anon-docs',
+            'visitor_token' => $token,
+            'resync_request_id' => 'resync_exhausted',
+            'resync_attempts_exhausted' => true,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.telemetry.resync_attempts_exhausted', true)
+            ->assertJsonPath('data.telemetry.rtt_ms', 184)
+            ->assertJsonPath('data.telemetry.samples', 5);
+
+        expect($session->fresh()->metadata)
+            ->telemetry->rtt_ms->toBe(184)
+            ->telemetry->max_rtt_ms->toBe(240)
+            ->telemetry->payload_bytes->toBe(8192)
+            ->telemetry->max_payload_bytes->toBe(9000)
+            ->telemetry->dropped_batches->toBe(3)
+            ->telemetry->reconnects->toBe(2)
+            ->telemetry->samples->toBe(5)
+            ->telemetry->reported_at->toBe(now()->subSeconds(20)->toJSON())
+            ->resync_request->attempts_exhausted_at->toBe(now()->toJSON());
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('visitor can report cobrowse page state for their active session', function (): void {
     $site = Site::factory()->create(['public_key' => 'site_public_docs']);
     $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);

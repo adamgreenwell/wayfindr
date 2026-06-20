@@ -58,26 +58,36 @@ class CobrowseTelemetryController extends Controller
         $payloadBytes = $validated['payload_bytes'] ?? null;
         $resyncRequestId = filled($validated['resync_request_id'] ?? null) ? (string) $validated['resync_request_id'] : null;
         $resyncAttemptsExhausted = (bool) ($validated['resync_attempts_exhausted'] ?? false);
+        $hasTransportMetrics = array_key_exists('rtt_ms', $validated)
+            || array_key_exists('payload_bytes', $validated)
+            || array_key_exists('dropped_batches', $validated)
+            || array_key_exists('reconnects', $validated);
         $telemetry = [];
 
-        $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata) use ($validated, $rttMs, $payloadBytes, $resyncRequestId, $resyncAttemptsExhausted, &$telemetry): array {
+        $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata) use ($validated, $rttMs, $payloadBytes, $resyncRequestId, $resyncAttemptsExhausted, $hasTransportMetrics, &$telemetry): array {
             $previousTelemetry = is_array($metadata['telemetry'] ?? null) ? $metadata['telemetry'] : [];
-            $telemetry = [
-                'rtt_ms' => $rttMs,
-                'max_rtt_ms' => $rttMs === null
-                    ? ($previousTelemetry['max_rtt_ms'] ?? null)
-                    : max((int) ($previousTelemetry['max_rtt_ms'] ?? $rttMs), $rttMs),
-                'payload_bytes' => $payloadBytes,
-                'max_payload_bytes' => $payloadBytes === null
-                    ? ($previousTelemetry['max_payload_bytes'] ?? null)
-                    : max((int) ($previousTelemetry['max_payload_bytes'] ?? $payloadBytes), $payloadBytes),
-                'dropped_batches' => $validated['dropped_batches'] ?? 0,
-                'reconnects' => $validated['reconnects'] ?? 0,
-                'samples' => ((int) ($previousTelemetry['samples'] ?? 0)) + 1,
-                'reported_at' => now()->toJSON(),
-                'resync_request_id' => $resyncRequestId,
-                'resync_attempts_exhausted' => $resyncAttemptsExhausted,
-            ];
+
+            if ($hasTransportMetrics) {
+                $telemetry = [
+                    'rtt_ms' => $rttMs,
+                    'max_rtt_ms' => $rttMs === null
+                        ? ($previousTelemetry['max_rtt_ms'] ?? null)
+                        : max((int) ($previousTelemetry['max_rtt_ms'] ?? $rttMs), $rttMs),
+                    'payload_bytes' => $payloadBytes,
+                    'max_payload_bytes' => $payloadBytes === null
+                        ? ($previousTelemetry['max_payload_bytes'] ?? null)
+                        : max((int) ($previousTelemetry['max_payload_bytes'] ?? $payloadBytes), $payloadBytes),
+                    'dropped_batches' => $validated['dropped_batches'] ?? 0,
+                    'reconnects' => $validated['reconnects'] ?? 0,
+                    'samples' => ((int) ($previousTelemetry['samples'] ?? 0)) + 1,
+                    'reported_at' => now()->toJSON(),
+                ];
+            } else {
+                $telemetry = $previousTelemetry;
+            }
+
+            $telemetry['resync_request_id'] = $resyncRequestId;
+            $telemetry['resync_attempts_exhausted'] = $resyncAttemptsExhausted;
 
             $metadata['telemetry'] = $telemetry;
             $metadata['payload_budget'] = CobrowsePayloadBudget::limits();

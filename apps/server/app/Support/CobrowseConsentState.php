@@ -501,18 +501,6 @@ class CobrowseConsentState
             ];
         }
 
-        if ($this->resyncRequestPolicy->isExpired($request)) {
-            return [
-                'status' => 'expired',
-                'label' => 'Fresh snapshot expired',
-                'message' => 'The visitor widget did not answer in time. Request another clean snapshot or continue through chat.',
-                'requested_by' => filled($request['requested_by_name'] ?? null) ? (string) $request['requested_by_name'] : 'Support',
-                'requested_at' => $this->formatMoment($requestedAt, 'Request time unavailable'),
-                'expired_at' => $this->formatMoment($expiresAt, 'Expiry unavailable'),
-                'recovery_timeline' => $timeline,
-            ];
-        }
-
         if ($attemptsExhaustedAt) {
             return [
                 'status' => 'exhausted',
@@ -522,6 +510,18 @@ class CobrowseConsentState
                 'requested_at' => $this->formatMoment($requestedAt, 'Request time unavailable'),
                 'expires_at' => $this->formatMoment($expiresAt, 'Expiry unavailable'),
                 'attempts_exhausted_at' => $this->formatMoment($attemptsExhaustedAt, 'Retry limit time unavailable'),
+                'recovery_timeline' => $timeline,
+            ];
+        }
+
+        if ($this->resyncRequestPolicy->isExpired($request)) {
+            return [
+                'status' => 'expired',
+                'label' => 'Fresh snapshot expired',
+                'message' => 'The visitor widget did not answer in time. Request another clean snapshot or continue through chat.',
+                'requested_by' => filled($request['requested_by_name'] ?? null) ? (string) $request['requested_by_name'] : 'Support',
+                'requested_at' => $this->formatMoment($requestedAt, 'Request time unavailable'),
+                'expired_at' => $this->formatMoment($expiresAt, 'Expiry unavailable'),
                 'recovery_timeline' => $timeline,
             ];
         }
@@ -589,18 +589,6 @@ class CobrowseConsentState
             return $this->appendIgnoredResyncResponses($timeline, $request);
         }
 
-        if ($this->resyncRequestPolicy->isExpired($request)) {
-            $timeline[] = [
-                'state' => 'expired',
-                'label' => 'Request expired',
-                'detail' => 'No widget response arrived before the recovery window closed.',
-                'occurred_at' => $this->formatMoment($expiresAt, 'Expiry unavailable'),
-                'badge' => 'Expired',
-            ];
-
-            return $this->appendIgnoredResyncResponses($timeline, $request);
-        }
-
         if ($attemptsExhaustedAt) {
             $timeline[] = [
                 'state' => 'exhausted',
@@ -608,6 +596,18 @@ class CobrowseConsentState
                 'detail' => 'The visitor widget stopped retrying this request ID after repeated failures.',
                 'occurred_at' => $this->formatMoment($attemptsExhaustedAt, 'Retry limit time unavailable'),
                 'badge' => 'Exhausted',
+            ];
+
+            return $this->appendIgnoredResyncResponses($timeline, $request);
+        }
+
+        if ($this->resyncRequestPolicy->isExpired($request)) {
+            $timeline[] = [
+                'state' => 'expired',
+                'label' => 'Request expired',
+                'detail' => 'No widget response arrived before the recovery window closed.',
+                'occurred_at' => $this->formatMoment($expiresAt, 'Expiry unavailable'),
+                'badge' => 'Expired',
             ];
 
             return $this->appendIgnoredResyncResponses($timeline, $request);
