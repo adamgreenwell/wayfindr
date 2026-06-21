@@ -184,9 +184,10 @@
                                             </span>
                                         </td>
                                         <td>
-                                            <a class="text-link" href="{{ route('dashboard.support-code.lookup', ['support_code' => $conversation->support_code]) }}" aria-label="Open support record {{ $conversation->support_code }}">
-                                                <code>{{ $conversation->support_code }}</code>
-                                            </a>
+                                            <x-support-code-reference
+                                                :code="$conversation->support_code"
+                                                :href="route('dashboard.support-code.lookup', ['support_code' => $conversation->support_code])"
+                                            />
                                         </td>
                                         <td>{{ $conversation->last_message_at?->diffForHumans() ?? $conversation->created_at->diffForHumans() }}</td>
                                     </tr>

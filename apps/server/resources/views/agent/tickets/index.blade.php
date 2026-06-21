@@ -246,9 +246,10 @@
                                         </td>
                                         <td>
                                             @if ($ticket->conversation)
-                                                <a class="text-link" href="{{ route('dashboard.support-code.lookup', ['support_code' => $ticket->conversation->support_code]) }}" aria-label="Open support record {{ $ticket->conversation->support_code }}">
-                                                    <code>{{ $ticket->conversation->support_code }}</code>
-                                                </a>
+                                                <x-support-code-reference
+                                                    :code="$ticket->conversation->support_code"
+                                                    :href="route('dashboard.support-code.lookup', ['support_code' => $ticket->conversation->support_code])"
+                                                />
                                             @else
                                                 Not linked
                                             @endif

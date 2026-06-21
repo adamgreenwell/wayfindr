@@ -139,9 +139,10 @@
                     <div class="meta-item">
                         <span class="meta-label">Current support code</span>
                         <span class="meta-value">
-                            <a class="text-link" href="{{ route('dashboard.support-code.lookup', ['support_code' => $conversation->support_code]) }}">
-                                {{ $conversation->support_code }}
-                            </a>
+                            <x-support-code-reference
+                                :code="$conversation->support_code"
+                                :href="route('dashboard.support-code.lookup', ['support_code' => $conversation->support_code])"
+                            />
                         </span>
                     </div>
                     <div class="meta-item">

@@ -713,6 +713,39 @@
             padding: 1px 4px;
         }
 
+        .support-reference {
+            align-items: center;
+            display: inline-flex;
+            gap: 6px;
+            white-space: nowrap;
+        }
+
+        .support-reference-copy {
+            align-items: center;
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--muted);
+            cursor: pointer;
+            display: inline-flex;
+            font-size: 0.76rem;
+            font-weight: 700;
+            min-height: 28px;
+            padding: 0 8px;
+        }
+
+        .support-reference-copy:hover,
+        .support-reference-copy:focus-visible {
+            background: var(--surface-muted);
+            color: var(--accent-strong);
+            outline: none;
+        }
+
+        .support-reference-copy[data-copy-state="copied"] {
+            border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+            color: var(--accent-strong);
+        }
+
         .code-block {
             margin: 0;
             overflow-x: auto;
@@ -1099,5 +1132,74 @@
     @else
         {{ $slot }}
     @endif
+    <script>
+        (function () {
+            function fallbackCopy(value) {
+                var textarea = document.createElement('textarea');
+                textarea.value = value;
+                textarea.setAttribute('readonly', 'readonly');
+                textarea.style.position = 'fixed';
+                textarea.style.top = '-9999px';
+                document.body.appendChild(textarea);
+                textarea.select();
+
+                try {
+                    document.execCommand('copy');
+                } finally {
+                    document.body.removeChild(textarea);
+                }
+            }
+
+            function markCopied(button) {
+                var defaultLabel = button.getAttribute('data-copy-default-label') || 'Copy';
+                var successLabel = button.getAttribute('data-copy-success-label') || 'Copied';
+
+                button.textContent = successLabel;
+                button.setAttribute('data-copy-state', 'copied');
+
+                window.setTimeout(function () {
+                    button.textContent = defaultLabel;
+                    button.removeAttribute('data-copy-state');
+                }, 1800);
+            }
+
+            function copyValue(value) {
+                if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+                    return Promise.race([
+                        navigator.clipboard.writeText(value),
+                        new Promise(function (_resolve, reject) {
+                            window.setTimeout(function () {
+                                reject(new Error('Clipboard write timed out.'));
+                            }, 250);
+                        }),
+                    ]).catch(function () {
+                        fallbackCopy(value);
+                    });
+                }
+
+                fallbackCopy(value);
+
+                return Promise.resolve();
+            }
+
+            document.addEventListener('click', function (event) {
+                var button = event.target.closest('[data-copy-value]');
+
+                if (! button) {
+                    return;
+                }
+
+                var value = button.getAttribute('data-copy-value') || '';
+
+                if (! value) {
+                    return;
+                }
+
+                copyValue(value).then(function () {
+                    markCopied(button);
+                });
+            });
+        })();
+    </script>
 </body>
 </html>

@@ -101,9 +101,10 @@
                         <span class="meta-label">Support code</span>
                         <span class="meta-value">
                             @if ($ticket->conversation)
-                                <a class="text-link" href="{{ route('dashboard.conversations.show', $ticket->conversation->support_code) }}">
-                                    {{ $ticket->conversation->support_code }}
-                                </a>
+                                <x-support-code-reference
+                                    :code="$ticket->conversation->support_code"
+                                    :href="route('dashboard.conversations.show', $ticket->conversation->support_code)"
+                                />
                             @else
                                 No linked conversation
                             @endif
