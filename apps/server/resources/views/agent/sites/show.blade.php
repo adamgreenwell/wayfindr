@@ -7,6 +7,36 @@
                 <p class="status-message">{{ session('status') }}</p>
             @endif
 
+            <section class="section" aria-labelledby="site-support-readiness-heading">
+                <div class="section-header">
+                    <div>
+                        <h2 id="site-support-readiness-heading">Support readiness</h2>
+                        <p class="lede">Site support loop</p>
+                    </div>
+                    <a class="button secondary" href="{{ route('dashboard.sites.tester', $site) }}">Open tester</a>
+                </div>
+
+                <div class="readiness-list">
+                    @foreach ($siteSupportReadiness as $readinessItem)
+                        <article class="readiness-check" data-status="{{ $readinessItem['tone'] }}">
+                            <div class="readiness-check-main">
+                                <div>
+                                    <span class="meta-label">{{ $readinessItem['label'] }}</span>
+                                    <h3>{{ $readinessItem['value'] }}</h3>
+                                    <p>{{ $readinessItem['detail'] }}</p>
+                                </div>
+                                <span class="readiness-status" data-status="{{ $readinessItem['tone'] }}">
+                                    {{ ucfirst($readinessItem['tone']) }}
+                                </span>
+                            </div>
+                            <p class="readiness-action">
+                                <a class="text-link" href="{{ $readinessItem['href'] }}">Review {{ strtolower($readinessItem['label']) }}</a>
+                            </p>
+                        </article>
+                    @endforeach
+                </div>
+            </section>
+
             @php
                 $latestVisitor = $site->latestVisitor;
                 $lastSeenAt = $latestVisitor?->last_seen_at;

@@ -1,7 +1,10 @@
 <?php
 
+use App\Enums\AccountRole;
 use App\Models\Account;
+use App\Models\ExternalIssueProviderConnection;
 use App\Models\Site;
+use App\Models\SiteExternalIssueProject;
 use App\Models\User;
 use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -243,6 +246,64 @@ test('site settings show the latest widget check in details', function (): void 
         ->assertDontSee('Setup attention')
         ->assertSee("/dashboard/sites/{$site->id}?verify=", false)
         ->assertDontSee("href=\"http://localhost/dashboard/sites/{$site->id}#install-verification\"", false);
+});
+
+test('site settings summarize support readiness from existing site signals', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Wayfindr Public Site',
+        'domain' => 'wayfindr.cc',
+        'settings' => [
+            'mask_selectors' => ['[data-secret]', 'input[name="token"]'],
+        ],
+    ]);
+    $site->supportAgents()->attach([$admin->id, $agent->id]);
+    $disabledConnection = ExternalIssueProviderConnection::factory()
+        ->for($account)
+        ->create([
+            'is_enabled' => false,
+            'capabilities' => [
+                'create_issue' => true,
+                'add_comment' => false,
+                'sync_status' => false,
+            ],
+        ]);
+    SiteExternalIssueProject::factory()
+        ->for($account)
+        ->for($site)
+        ->for($disabledConnection, 'providerConnection')
+        ->create(['project_key' => 'adamgreenwell/disabled-wayfindr']);
+
+    Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-current',
+        'last_seen_at' => now()->subMinutes(4),
+        'metadata' => [
+            'last_page_url' => 'https://wayfindr.cc/docs',
+        ],
+    ]);
+
+    $this->actingAs($admin)
+        ->get("/dashboard/sites/{$site->id}")
+        ->assertOk()
+        ->assertSee('Support readiness')
+        ->assertSee('Site support loop')
+        ->assertSee('Widget install')
+        ->assertSee('Live')
+        ->assertSee('The widget has checked in recently.')
+        ->assertSee('Support coverage')
+        ->assertSee('Explicit access')
+        ->assertSee('2 assigned')
+        ->assertSee('Privacy masking')
+        ->assertSee('2 selectors configured')
+        ->assertSee('External routing')
+        ->assertSee('Not mapped')
+        ->assertSee('Map external issue routing if tickets should leave Wayfindr.')
+        ->assertSee('#support-access-heading', false)
+        ->assertSee('#privacy-settings-heading', false)
+        ->assertSee('#external-issue-routing-heading', false)
+        ->assertSee("/dashboard/sites/{$site->id}/tester", false);
 });
 
 test('site settings guide agents when the widget has not checked in yet', function (): void {

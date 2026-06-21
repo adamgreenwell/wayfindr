@@ -11,6 +11,7 @@ use App\Support\ExternalIssueCapability;
 use App\Support\ExternalIssueProvider;
 use App\Support\ExternalIssueSyncStatus;
 use App\Support\OperatorReadiness;
+use App\Support\SiteInstallHealth;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -108,6 +109,8 @@ class AgentSiteController extends Controller
             ->orderBy('name')
             ->get();
         $supportAgentIds = $this->eligibleSupportAgentIds($site);
+        $maskSelectors = $this->maskSelectors($site);
+        $externalIssueHealth = $this->externalIssueHealth($site);
 
         return view('agent.sites.show', [
             'account' => $account,
@@ -119,10 +122,10 @@ class AgentSiteController extends Controller
             'canUpdatePrivacy' => Gate::forUser($agent)->allows('updatePrivacy', $site),
             'dataResponsibility' => config('wayfindr.data_responsibility'),
             'externalIssueCapabilities' => ExternalIssueCapability::options(),
-            'externalIssueHealth' => $this->externalIssueHealth($site),
+            'externalIssueHealth' => $externalIssueHealth,
             'externalIssueProviderConnections' => $externalIssueProviderConnections,
             'externalIssueProviders' => ExternalIssueProvider::options(),
-            'maskSelectors' => $this->maskSelectors($site),
+            'maskSelectors' => $maskSelectors,
             'operatorSmokePath' => $readiness->summary()['smoke_path'],
             'site' => $site,
             'siteActivity' => $this->siteActivityItems($site, $agent),
@@ -134,6 +137,7 @@ class AgentSiteController extends Controller
                 : null,
             'siteExternalIssueProjects' => $site->externalIssueProjects,
             'siteHasExplicitSupportAgents' => $site->hasExplicitSupportAgents(),
+            'siteSupportReadiness' => $this->siteSupportReadiness($site, $supportAgentIds, $maskSelectors, $externalIssueHealth),
             'supportAgentIds' => $supportAgentIds,
             'supportAgents' => $accountAgents->whereIn('id', $supportAgentIds)->values(),
             'widgetInstallSnippet' => $this->widgetInstallSnippet($site),
@@ -178,6 +182,67 @@ class AgentSiteController extends Controller
                 'body' => 'Updated support access',
                 'occurred_at' => $event->occurred_at,
             ]);
+    }
+
+    /**
+     * @param  array<int, int>  $supportAgentIds
+     * @param  array<int, string>  $maskSelectors
+     * @param  array{label: string, tone: string, status_counts: Collection<int, array{key: string, label: string, count: int}>, recent_failures: Collection<int, array{provider: string, project_key: string, status: string|null, occurred_at: Carbon|null}>}  $externalIssueHealth
+     * @return Collection<int, array{label: string, value: string, tone: string, detail: string, href: string}>
+     */
+    private function siteSupportReadiness(Site $site, array $supportAgentIds, array $maskSelectors, array $externalIssueHealth): Collection
+    {
+        $installHealth = SiteInstallHealth::fromVisitor($site->latestVisitor);
+        $explicitSupport = $site->hasExplicitSupportAgents();
+        $handoffProjectCount = $this->externalIssueHandoffProjectCount($site);
+
+        return collect([
+            [
+                'label' => 'Widget install',
+                'value' => $installHealth['label'],
+                'tone' => $installHealth['tone'],
+                'detail' => $installHealth['needs_attention']
+                    ? $installHealth['detail']
+                    : 'The widget has checked in recently.',
+                'href' => route('dashboard.sites.show', $site).'#install-verification',
+            ],
+            [
+                'label' => 'Support coverage',
+                'value' => $explicitSupport ? 'Explicit access' : 'Account-wide fallback',
+                'tone' => $explicitSupport ? 'ready' : 'manual',
+                'detail' => $explicitSupport
+                    ? count($supportAgentIds).' assigned'
+                    : 'All account agents can support this site until explicit access is configured.',
+                'href' => route('dashboard.sites.show', $site).'#support-access-heading',
+            ],
+            [
+                'label' => 'Privacy masking',
+                'value' => count($maskSelectors) > 0 ? count($maskSelectors).' selectors configured' : 'No custom selectors',
+                'tone' => count($maskSelectors) > 0 ? 'ready' : 'manual',
+                'detail' => count($maskSelectors) > 0
+                    ? 'Custom selectors are sent as public widget configuration.'
+                    : 'Known sensitive fields still use built-in masking patterns.',
+                'href' => route('dashboard.sites.show', $site).'#privacy-settings-heading',
+            ],
+            [
+                'label' => 'External routing',
+                'value' => $handoffProjectCount > 0 ? $handoffProjectCount.' mapped' : 'Not mapped',
+                'tone' => $handoffProjectCount > 0 ? $externalIssueHealth['tone'] : 'manual',
+                'detail' => $handoffProjectCount > 0
+                    ? 'Ticket handoff can use mapped external issue projects.'
+                    : 'Map external issue routing if tickets should leave Wayfindr.',
+                'href' => route('dashboard.sites.show', $site).'#external-issue-routing-heading',
+            ],
+        ]);
+    }
+
+    private function externalIssueHandoffProjectCount(Site $site): int
+    {
+        return $site->externalIssueProjects
+            ->filter(fn ($project): bool => in_array($project->providerConnection?->provider, ['github', 'gitlab'], true)
+                && $project->providerConnection?->is_enabled === true
+                && $project->hasCapability('create_issue'))
+            ->count();
     }
 
     /**
