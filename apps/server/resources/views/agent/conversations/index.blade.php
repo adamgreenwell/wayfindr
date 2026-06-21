@@ -60,6 +60,17 @@
                         </div>
 
                         <div class="meta-item">
+                            <label class="meta-label" for="conversation_presence">Presence</label>
+                            <select id="conversation_presence" name="conversation_presence">
+                                @foreach ($conversationPresenceFilters as $presenceValue => $presenceLabel)
+                                    <option value="{{ $presenceValue === 'all' ? '' : $presenceValue }}" @selected($conversationPresence === $presenceValue)>
+                                        {{ $presenceLabel }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div class="meta-item">
                             <label class="meta-label" for="conversation_search">Search</label>
                             <input
                                 id="conversation_search"
@@ -75,7 +86,7 @@
                             <button class="button" type="submit">Search conversations</button>
                             @php
                                 $clearParams = $conversationQuery;
-                                unset($clearParams['conversation_search'], $clearParams['conversation_site']);
+                                unset($clearParams['conversation_search'], $clearParams['conversation_site'], $clearParams['conversation_presence']);
                             @endphp
                             <a class="button secondary" href="{{ route('dashboard.conversations.index', $clearParams) }}">Clear filters</a>
                         </div>

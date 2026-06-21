@@ -108,6 +108,18 @@ class AgentConversationController extends Controller
             $params['conversation_site'] = (int) $conversationSite;
         }
 
+        $conversationPresenceFilters = [
+            'active',
+            'recent',
+            'quiet',
+            'not_reported',
+        ];
+        $conversationPresence = $request->input('conversation_presence');
+
+        if (is_string($conversationPresence) && in_array($conversationPresence, $conversationPresenceFilters, true)) {
+            $params['conversation_presence'] = $conversationPresence;
+        }
+
         return $params;
     }
 

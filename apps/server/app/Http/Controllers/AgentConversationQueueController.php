@@ -41,6 +41,8 @@ class AgentConversationQueueController extends Controller
      *     conversationEmptyMessage: string,
      *     conversationFilter: string,
      *     conversationFilters: array<string, string>,
+     *     conversationPresence: string,
+     *     conversationPresenceFilters: array<string, string>,
      *     conversationQuery: array<string, string|int>,
      *     conversationSearch: string,
      *     conversationSite: int|null,
@@ -59,9 +61,20 @@ class AgentConversationQueueController extends Controller
             'cobrowse_attention' => 'Cobrowse attention',
             'closed' => 'Closed',
         ];
+        $conversationPresenceFilters = [
+            'all' => 'Any presence',
+            'active' => 'Active recently',
+            'recent' => 'Recently active',
+            'quiet' => 'Quiet',
+            'not_reported' => 'Not reported',
+        ];
         $conversationFilter = $request->query('conversation_filter', 'all');
         $conversationFilter = is_string($conversationFilter) && array_key_exists($conversationFilter, $conversationFilters)
             ? $conversationFilter
+            : 'all';
+        $conversationPresence = $request->query('conversation_presence', 'all');
+        $conversationPresence = is_string($conversationPresence) && array_key_exists($conversationPresence, $conversationPresenceFilters)
+            ? $conversationPresence
             : 'all';
         $conversationSearch = $request->query('conversation_search', '');
         $conversationSearch = is_string($conversationSearch)
@@ -72,7 +85,7 @@ class AgentConversationQueueController extends Controller
             ? (int) $requestedConversationSite
             : null;
         $conversationStatus = $conversationFilter === 'closed' ? 'closed' : 'open';
-        $conversationHasActiveRefinement = $conversationSearch !== '' || $conversationSite;
+        $conversationHasActiveRefinement = $conversationSearch !== '' || $conversationSite || $conversationPresence !== 'all';
         $conversationEmptyMessage = $conversationHasActiveRefinement
             ? 'No conversations match those filters.'
             : match ($conversationFilter) {
@@ -81,7 +94,7 @@ class AgentConversationQueueController extends Controller
                 'closed' => 'No closed conversations yet.',
                 default => 'No active conversations yet.',
             };
-        $conversationQuery = $this->conversationQueryParams($conversationFilter, $conversationSearch, $conversationSite);
+        $conversationQuery = $this->conversationQueryParams($conversationFilter, $conversationSearch, $conversationSite, $conversationPresence);
         $newActivityConversationCount = Conversation::query()
             ->where('status', 'open')
             ->whereHas('site', fn ($query) => $query->visibleToAgent($agent))
@@ -110,6 +123,7 @@ class AgentConversationQueueController extends Controller
             ->where('status', $conversationStatus)
             ->whereHas('site', fn ($query) => $query->visibleToAgent($agent))
             ->when($conversationSite, fn ($query) => $query->where('site_id', $conversationSite))
+            ->when($conversationPresence !== 'all', fn ($query) => $this->applyConversationPresenceFilter($query, $conversationPresence))
             ->when($conversationSearch !== '', function ($query) use ($conversationSearch): void {
                 $searchPattern = $this->conversationSearchPattern($conversationSearch);
 
@@ -152,12 +166,14 @@ class AgentConversationQueueController extends Controller
         }
 
         return [
-            'activeConversationFilters' => $this->activeConversationFilters($conversationQuery, $conversationSite, $sites, $conversationSearch),
+            'activeConversationFilters' => $this->activeConversationFilters($conversationQuery, $conversationSite, $sites, $conversationSearch, $conversationPresence, $conversationPresenceFilters),
             'cobrowseAttentionConversationCount' => $cobrowseAttentionConversationCount,
             'cobrowseTransportByConversationId' => $cobrowseTransportByConversationId,
             'conversationEmptyMessage' => $conversationEmptyMessage,
             'conversationFilter' => $conversationFilter,
             'conversationFilters' => $conversationFilters,
+            'conversationPresence' => $conversationPresence,
+            'conversationPresenceFilters' => $conversationPresenceFilters,
             'conversationQuery' => $conversationQuery,
             'conversationSearch' => $conversationSearch,
             'conversationSite' => $conversationSite,
@@ -169,7 +185,7 @@ class AgentConversationQueueController extends Controller
     /**
      * @return array<string, string|int>
      */
-    private function conversationQueryParams(string $conversationFilter, string $conversationSearch, ?int $conversationSite): array
+    private function conversationQueryParams(string $conversationFilter, string $conversationSearch, ?int $conversationSite, string $conversationPresence): array
     {
         $params = [];
 
@@ -185,6 +201,10 @@ class AgentConversationQueueController extends Controller
             $params['conversation_site'] = $conversationSite;
         }
 
+        if ($conversationPresence !== 'all') {
+            $params['conversation_presence'] = $conversationPresence;
+        }
+
         return $params;
     }
 
@@ -193,7 +213,7 @@ class AgentConversationQueueController extends Controller
      * @param  Collection<int, Site>  $sites
      * @return array<int, array{label: string, href: string}>
      */
-    private function activeConversationFilters(array $conversationQuery, ?int $conversationSite, Collection $sites, string $conversationSearch): array
+    private function activeConversationFilters(array $conversationQuery, ?int $conversationSite, Collection $sites, string $conversationSearch, string $conversationPresence, array $conversationPresenceFilters): array
     {
         $filters = [];
 
@@ -207,6 +227,10 @@ class AgentConversationQueueController extends Controller
 
         if ($conversationSearch !== '') {
             $filters[] = $this->conversationFilterChip('conversation_search', 'Search: '.$conversationSearch, $conversationQuery);
+        }
+
+        if ($conversationPresence !== 'all' && isset($conversationPresenceFilters[$conversationPresence])) {
+            $filters[] = $this->conversationFilterChip('conversation_presence', 'Presence: '.$conversationPresenceFilters[$conversationPresence], $conversationQuery);
         }
 
         return $filters;
@@ -240,5 +264,22 @@ class AgentConversationQueueController extends Controller
             [$pattern, '\\'],
             $boolean,
         );
+    }
+
+    private function applyConversationPresenceFilter($query, string $conversationPresence): void
+    {
+        $activeCutoff = now()->subMinutes(2);
+        $recentCutoff = now()->subMinutes(15);
+
+        $query->whereHas('visitor', function ($query) use ($activeCutoff, $conversationPresence, $recentCutoff): void {
+            match ($conversationPresence) {
+                'active' => $query->where('last_seen_at', '>=', $activeCutoff),
+                'recent' => $query->where('last_seen_at', '<', $activeCutoff)
+                    ->where('last_seen_at', '>=', $recentCutoff),
+                'quiet' => $query->where('last_seen_at', '<', $recentCutoff),
+                'not_reported' => $query->whereNull('last_seen_at'),
+                default => null,
+            };
+        });
     }
 }

@@ -535,6 +535,130 @@ test('dashboard shows visitor presence state in the conversation queue', functio
     }
 });
 
+test('dashboard can filter the conversation queue by visitor presence', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00', 'UTC'));
+
+    try {
+        $account = Account::factory()->create(['name' => 'Acme Support']);
+        $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+        $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+
+        $activeVisitor = Visitor::factory()->for($site)->create([
+            'anonymous_id' => 'anon-active',
+            'last_seen_at' => now()->subMinute(),
+        ]);
+        Conversation::factory()->for($site)->for($activeVisitor)->create([
+            'support_code' => 'WF-ACTIVE',
+            'subject' => 'Active visitor question',
+            'status' => 'open',
+            'last_message_at' => now()->subMinute(),
+        ]);
+
+        $recentVisitor = Visitor::factory()->for($site)->create([
+            'anonymous_id' => 'anon-recent',
+            'last_seen_at' => now()->subMinutes(8),
+        ]);
+        Conversation::factory()->for($site)->for($recentVisitor)->create([
+            'support_code' => 'WF-RECENT',
+            'subject' => 'Recently active visitor question',
+            'status' => 'open',
+            'last_message_at' => now()->subMinutes(2),
+        ]);
+
+        $quietVisitor = Visitor::factory()->for($site)->create([
+            'anonymous_id' => 'anon-quiet',
+            'last_seen_at' => now()->subMinutes(30),
+        ]);
+        Conversation::factory()->for($site)->for($quietVisitor)->create([
+            'support_code' => 'WF-QUIET',
+            'subject' => 'Quiet visitor question',
+            'status' => 'open',
+            'last_message_at' => now()->subMinutes(3),
+        ]);
+
+        $unknownVisitor = Visitor::factory()->for($site)->create([
+            'anonymous_id' => 'anon-unknown',
+            'last_seen_at' => null,
+        ]);
+        Conversation::factory()->for($site)->for($unknownVisitor)->create([
+            'support_code' => 'WF-UNKNOWN',
+            'subject' => 'Unreported visitor question',
+            'status' => 'open',
+            'last_message_at' => now()->subMinutes(4),
+        ]);
+
+        $this->actingAs($agent)
+            ->get('/dashboard/conversations?conversation_presence=active')
+            ->assertOk()
+            ->assertSee('Presence: Active recently')
+            ->assertSee('Active visitor question')
+            ->assertDontSee('Recently active visitor question')
+            ->assertDontSee('Quiet visitor question')
+            ->assertDontSee('Unreported visitor question');
+
+        $this->actingAs($agent)
+            ->get('/dashboard/conversations?conversation_presence=recent')
+            ->assertOk()
+            ->assertSee('Presence: Recently active')
+            ->assertSee('Recently active visitor question')
+            ->assertDontSee('Active visitor question')
+            ->assertDontSee('Quiet visitor question')
+            ->assertDontSee('Unreported visitor question');
+
+        $this->actingAs($agent)
+            ->get('/dashboard/conversations?conversation_presence=quiet')
+            ->assertOk()
+            ->assertSee('Presence: Quiet')
+            ->assertSee('Quiet visitor question')
+            ->assertDontSee('Active visitor question')
+            ->assertDontSee('Recently active visitor question')
+            ->assertDontSee('Unreported visitor question');
+
+        $this->actingAs($agent)
+            ->get('/dashboard/conversations?conversation_presence=not_reported')
+            ->assertOk()
+            ->assertSee('Presence: Not reported')
+            ->assertSee('Unreported visitor question')
+            ->assertDontSee('Active visitor question')
+            ->assertDontSee('Recently active visitor question')
+            ->assertDontSee('Quiet visitor question');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+test('dashboard preserves visitor presence filters when opening a conversation', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00', 'UTC'));
+
+    try {
+        $account = Account::factory()->create(['name' => 'Acme Support']);
+        $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+        $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+        $visitor = Visitor::factory()->for($site)->create([
+            'anonymous_id' => 'anon-active',
+            'last_seen_at' => now()->subMinute(),
+        ]);
+
+        Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-PRESERVE',
+            'subject' => 'Active filtered conversation',
+            'status' => 'open',
+        ]);
+
+        $this->actingAs($agent)
+            ->get('/dashboard/conversations?conversation_filter=needs_reply&conversation_site='.$site->id.'&conversation_presence=active&conversation_search=Active')
+            ->assertOk()
+            ->assertSee('/dashboard/conversations/WF-PRESERVE?conversation_filter=needs_reply&amp;conversation_search=Active&amp;conversation_site='.$site->id.'&amp;conversation_presence=active', false);
+
+        $this->actingAs($agent)
+            ->get('/dashboard/conversations/WF-PRESERVE?conversation_filter=needs_reply&conversation_site='.$site->id.'&conversation_presence=active&conversation_search=Active')
+            ->assertOk()
+            ->assertSee('/dashboard/conversations?conversation_filter=needs_reply&amp;conversation_search=Active&amp;conversation_site='.$site->id.'&amp;conversation_presence=active', false);
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('dashboard shows cobrowse transport health in the conversation queue', function (): void {
     Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00', 'UTC'));
 
