@@ -170,6 +170,65 @@ test('site index summarizes active support coverage for explicitly assigned site
         ->assertDontSee('Gabe Gone');
 });
 
+test('site index summarizes visible workload without exposing restricted sites', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'name' => 'Ada Active',
+    ]);
+    $teammate = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'name' => 'Mara Mentor',
+    ]);
+
+    $assignedSite = Site::factory()->for($account)->create(['name' => 'Assigned Docs']);
+    $assignedSite->supportAgents()->attach($agent);
+    $assignedVisitor = Visitor::factory()->for($assignedSite)->create(['anonymous_id' => 'anon-assigned']);
+    Conversation::factory()->for($assignedSite)->for($assignedVisitor)->count(2)->create(['status' => 'open']);
+    Conversation::factory()->for($assignedSite)->for($assignedVisitor)->create(['status' => 'closed']);
+    Ticket::factory()->for($account)->for($assignedSite)->create(['status' => 'open']);
+    Ticket::factory()->for($account)->for($assignedSite)->count(2)->create(['status' => 'pending']);
+    Ticket::factory()->for($account)->for($assignedSite)->create(['status' => 'closed']);
+
+    $openSite = Site::factory()->for($account)->create(['name' => 'Quiet Knowledge Base']);
+
+    $restrictedSite = Site::factory()->for($account)->create(['name' => 'Restricted Store']);
+    $restrictedSite->supportAgents()->attach($teammate);
+    $restrictedVisitor = Visitor::factory()->for($restrictedSite)->create(['anonymous_id' => 'anon-restricted']);
+    Conversation::factory()->for($restrictedSite)->for($restrictedVisitor)->create([
+        'status' => 'open',
+        'subject' => 'Restricted site conversation',
+    ]);
+    Ticket::factory()->for($account)->for($restrictedSite)->create([
+        'status' => 'open',
+        'subject' => 'Restricted site ticket',
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/sites')
+        ->assertOk()
+        ->assertSee('Workload')
+        ->assertSeeInOrder([
+            'Assigned Docs',
+            '2 open conversations',
+            '1 open ticket',
+            '2 pending tickets',
+        ])
+        ->assertSee(route('dashboard.conversations.index', ['conversation_site' => $assignedSite->id]), false)
+        ->assertSee(route('dashboard.tickets.index', ['ticket_site' => $assignedSite->id]), false)
+        ->assertSee(str_replace('&', '&amp;', route('dashboard.tickets.index', [
+            'ticket_status' => 'pending',
+            'ticket_site' => $assignedSite->id,
+        ])), false)
+        ->assertSeeInOrder([
+            'Quiet Knowledge Base',
+            'No active support work',
+        ])
+        ->assertDontSee('Restricted Store')
+        ->assertDontSee('Restricted site conversation')
+        ->assertDontSee('Restricted site ticket');
+});
+
 test('sites with only deactivated support assignments fall back to account-wide access', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create([

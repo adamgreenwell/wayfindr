@@ -30,6 +30,7 @@
                             <thead>
                                 <tr>
                                     <th scope="col">Site</th>
+                                    <th scope="col">Workload</th>
                                     <th scope="col">Access</th>
                                     <th scope="col">Install health</th>
                                     <th scope="col">Last page</th>
@@ -41,6 +42,10 @@
                                         $latestVisitor = $site->latestVisitor;
                                         $installHealth = \App\Support\SiteInstallHealth::fromVisitor($latestVisitor);
                                         $lastPageUrl = data_get($latestVisitor?->metadata, 'last_page_url');
+                                        $openConversationCount = (int) $site->open_conversations_count;
+                                        $openTicketCount = (int) $site->open_tickets_count;
+                                        $pendingTicketCount = (int) $site->pending_tickets_count;
+                                        $hasWorkload = $openConversationCount > 0 || $openTicketCount > 0 || $pendingTicketCount > 0;
                                         $supportAgentCount = (int) $site->support_agents_count;
                                         $supportAgentNames = $site->supportAgents->pluck('name')->values();
                                         $supportCoverageSummary = $supportAgentNames
@@ -56,6 +61,27 @@
                                             <a class="text-link" href="{{ route('dashboard.sites.show', $site) }}">{{ $site->name }}</a>
                                             <span class="lede">{{ $site->domain ?? 'Not set' }}</span>
                                             <div class="lede"><a class="text-link" href="{{ route('dashboard.sites.tester', $site) }}">Open tester</a></div>
+                                        </td>
+                                        <td>
+                                            @if ($hasWorkload)
+                                                @if ($openConversationCount > 0)
+                                                    <a class="text-link" href="{{ route('dashboard.conversations.index', ['conversation_site' => $site->id]) }}">
+                                                        {{ $openConversationCount }} open {{ \Illuminate\Support\Str::plural('conversation', $openConversationCount) }}
+                                                    </a>
+                                                @endif
+                                                @if ($openTicketCount > 0)
+                                                    <a class="table-note text-link" href="{{ route('dashboard.tickets.index', ['ticket_site' => $site->id]) }}">
+                                                        {{ $openTicketCount }} open {{ \Illuminate\Support\Str::plural('ticket', $openTicketCount) }}
+                                                    </a>
+                                                @endif
+                                                @if ($pendingTicketCount > 0)
+                                                    <a class="table-note text-link" href="{{ route('dashboard.tickets.index', ['ticket_status' => 'pending', 'ticket_site' => $site->id]) }}">
+                                                        {{ $pendingTicketCount }} pending {{ \Illuminate\Support\Str::plural('ticket', $pendingTicketCount) }}
+                                                    </a>
+                                                @endif
+                                            @else
+                                                <span class="lede">No active support work</span>
+                                            @endif
                                         </td>
                                         <td>
                                             @if ($supportAgentCount > 0)

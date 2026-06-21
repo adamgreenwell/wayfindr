@@ -39,9 +39,15 @@ class AgentSiteController extends Controller
                     ->orderBy('email'),
             ])
             ->withCount([
+                'conversations as open_conversations_count' => fn ($query) => $query
+                    ->where('status', 'open'),
                 'supportAgents as support_agents_count' => fn ($query) => $query
                     ->where('users.account_id', $account->id)
                     ->whereNull('users.deactivated_at'),
+                'tickets as open_tickets_count' => fn ($query) => $query
+                    ->where('status', 'open'),
+                'tickets as pending_tickets_count' => fn ($query) => $query
+                    ->where('status', 'pending'),
             ])
             ->orderBy('name')
             ->get();
