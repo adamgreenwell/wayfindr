@@ -167,7 +167,7 @@
                 </div>
             </section>
 
-            <section class="section" aria-labelledby="alerts-heading">
+            <section id="alerts" class="section" aria-labelledby="alerts-heading">
                 <div class="section-header">
                     <h2 id="alerts-heading">Alerts</h2>
                     <div class="section-actions">
@@ -184,6 +184,17 @@
                 @if ($unreadNotifications->isEmpty())
                     <p class="empty">You’re caught up.</p>
                 @else
+                    @php
+                        $hiddenUnreadNotificationCount = max(0, $unreadNotificationCount - $unreadNotifications->count());
+                    @endphp
+                    @if ($hiddenUnreadNotificationCount > 0)
+                        <div class="notice-copy notice-copy-bordered">
+                            <p><strong>Showing {{ $unreadNotifications->count() }} latest alerts</strong></p>
+                            <p>{{ $hiddenUnreadNotificationCount }} more unread {{ \Illuminate\Support\Str::plural('alert', $hiddenUnreadNotificationCount) }} are waiting outside this panel.</p>
+                            <p>Open the linked queue items or mark alerts read once handled.</p>
+                        </div>
+                    @endif
+
                     <div class="message-list">
                         @foreach ($unreadNotifications as $notification)
                             @php

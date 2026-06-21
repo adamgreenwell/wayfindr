@@ -696,6 +696,35 @@ test('dashboard exposes calm alert controls and empty state', function (): void 
         ->assertSee('You’re caught up.');
 });
 
+test('dashboard explains when unread alerts overflow the visible panel', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+
+    foreach (range(1, 7) as $index) {
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-OVER'.$index,
+            'subject' => 'Overflow alert '.$index,
+        ]);
+        $message = ConversationMessage::factory()->for($conversation)->create([
+            'sender_type' => Visitor::class,
+            'sender_id' => $visitor->id,
+            'body' => 'Overflow message '.$index,
+        ]);
+
+        $agent->notify(new ConversationNeedsReply($message));
+    }
+
+    $this->actingAs($agent)
+        ->get('/dashboard')
+        ->assertOk()
+        ->assertSee('7 unread')
+        ->assertSee('Showing 5 latest alerts')
+        ->assertSee('2 more unread alerts are waiting outside this panel.')
+        ->assertSee('Open the linked queue items or mark alerts read once handled.');
+});
+
 test('agent can mark one alert as read', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
@@ -733,7 +762,7 @@ test('agent can mark one alert as read', function (): void {
 
     $this->actingAs($agent)
         ->post("/dashboard/alerts/{$firstNotification->id}/read")
-        ->assertRedirect('/dashboard');
+        ->assertRedirect('/dashboard#alerts');
 
     expect($firstNotification->fresh()->read())->toBeTrue()
         ->and($secondNotification->fresh()->unread())->toBeTrue();
@@ -760,7 +789,7 @@ test('agent can mark all conversation alerts as read', function (): void {
 
     $this->actingAs($agent)
         ->post('/dashboard/alerts/read')
-        ->assertRedirect('/dashboard');
+        ->assertRedirect('/dashboard#alerts');
 
     expect($agent->fresh()->unreadNotifications)->toHaveCount(0)
         ->and($agent->fresh()->readNotifications)->toHaveCount(2)
@@ -879,7 +908,7 @@ test('agent mark all read skips stale alerts after losing site access', function
 
     $this->actingAs($agent)
         ->post('/dashboard/alerts/read')
-        ->assertRedirect('/dashboard');
+        ->assertRedirect('/dashboard#alerts');
 
     expect($visibleNotification->fresh()->read())->toBeTrue()
         ->and($hiddenNotification->fresh()->unread())->toBeTrue();

@@ -17,7 +17,7 @@ class AgentAlertController extends Controller
 
         $notification->markAsRead();
 
-        return redirect()->route('dashboard');
+        return redirect()->to(route('dashboard').'#alerts');
     }
 
     public function markAllRead(Request $request): RedirectResponse
@@ -31,6 +31,6 @@ class AgentAlertController extends Controller
             ->each
             ->markAsRead();
 
-        return redirect()->route('dashboard');
+        return redirect()->to(route('dashboard').'#alerts');
     }
 }
