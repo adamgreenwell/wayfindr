@@ -22,12 +22,14 @@ class AgentVisitorController extends Controller
 
         $visitor->loadMissing('site.account');
         $conversations = $this->visitorConversations($visitor);
+        $tickets = $this->visitorTickets($visitor);
 
         return view('agent.visitors.show', [
             'account' => $agent->account()->firstOrFail(),
             'agent' => $agent,
             'conversations' => $conversations,
-            'tickets' => $this->visitorTickets($visitor),
+            'supportReferences' => $this->supportReferences($visitor, $tickets, $visitorContextSanitizer),
+            'tickets' => $tickets,
             'visitor' => $visitor,
             'visitorContext' => $this->visitorContext($visitor, $visitorContextSanitizer),
         ]);
@@ -81,6 +83,30 @@ class AgentVisitorController extends Controller
             'first_started_page_url' => $this->firstStartedPageUrl($visitor),
             'host_context' => $visitorContextSanitizer->sanitize($visitorMetadata['context'] ?? []),
         ];
+    }
+
+    /**
+     * @param  Collection<int, Ticket>  $tickets
+     * @return array{visitor_reference: string, host_visitor_id: string|null, latest_conversation: Conversation|null, latest_ticket: Ticket|null}
+     */
+    private function supportReferences(Visitor $visitor, Collection $tickets, VisitorContextSanitizer $visitorContextSanitizer): array
+    {
+        return [
+            'visitor_reference' => $visitor->anonymous_id,
+            'host_visitor_id' => $visitorContextSanitizer->sanitizeIdentifier($visitor->external_id),
+            'latest_conversation' => $this->latestConversationReference($visitor),
+            'latest_ticket' => $tickets->first(),
+        ];
+    }
+
+    private function latestConversationReference(Visitor $visitor): ?Conversation
+    {
+        return Conversation::query()
+            ->where('site_id', $visitor->site_id)
+            ->where('visitor_id', $visitor->id)
+            ->orderByRaw('COALESCE(last_message_at, created_at) DESC')
+            ->latest('id')
+            ->first();
     }
 
     private function firstStartedPageUrl(Visitor $visitor): ?string

@@ -36,6 +36,58 @@
                     </div>
                 </div>
 
+                <div class="section-header">
+                    <strong>Support references</strong>
+                    <span class="lede">Stable anchors for search, handoff, and follow-up.</span>
+                </div>
+
+                <div class="meta-grid">
+                    <div class="meta-item">
+                        <span class="meta-label">Visitor lookup reference</span>
+                        <span class="meta-value">
+                            <a class="text-link" href="{{ route('dashboard.support-code.lookup', ['support_code' => $supportReferences['visitor_reference']]) }}">
+                                {{ $supportReferences['visitor_reference'] }}
+                            </a>
+                        </span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Host visitor ID</span>
+                        <span class="meta-value">
+                            @if ($supportReferences['host_visitor_id'])
+                                <a class="text-link" href="{{ route('dashboard.support-code.lookup', ['support_code' => $supportReferences['host_visitor_id']]) }}">
+                                    {{ $supportReferences['host_visitor_id'] }}
+                                </a>
+                            @else
+                                Not provided
+                            @endif
+                        </span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Latest support code</span>
+                        <span class="meta-value">
+                            @if ($supportReferences['latest_conversation'])
+                                <a class="text-link" href="{{ route('dashboard.conversations.show', $supportReferences['latest_conversation']->support_code) }}">
+                                    {{ $supportReferences['latest_conversation']->support_code }}
+                                </a>
+                            @else
+                                No conversations yet
+                            @endif
+                        </span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Latest ticket</span>
+                        <span class="meta-value">
+                            @if ($supportReferences['latest_ticket'])
+                                <a class="text-link" href="{{ route('dashboard.tickets.show', $supportReferences['latest_ticket']) }}">
+                                    Ticket #{{ $supportReferences['latest_ticket']->id }}
+                                </a>
+                            @else
+                                No tickets yet
+                            @endif
+                        </span>
+                    </div>
+                </div>
+
                 <div class="notice-copy notice-copy-bordered">
                     <p><strong>Data boundary</strong></p>
                     <p>Use this page to understand the support trail. Do not collect, export, or infer extra visitor data without consent.</p>

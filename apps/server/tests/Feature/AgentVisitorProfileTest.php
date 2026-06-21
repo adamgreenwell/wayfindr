@@ -55,7 +55,7 @@ test('agent can view a safe visitor profile with same-site support history', fun
             'support_code' => 'WF-OTHERPROFILE',
             'subject' => 'Other visitor question',
         ]);
-    Ticket::factory()
+    $currentTicket = Ticket::factory()
         ->for($account)
         ->for($site)
         ->for($currentConversation)
@@ -104,6 +104,17 @@ test('agent can view a safe visitor profile with same-site support history', fun
         ->assertSee('EU')
         ->assertDontSee('super-secret')
         ->assertSee('Support history')
+        ->assertSee('Support references')
+        ->assertSee('Stable anchors for search, handoff, and follow-up.')
+        ->assertSee('Visitor lookup reference')
+        ->assertSee(route('dashboard.support-code.lookup', ['support_code' => 'anon-profile']), false)
+        ->assertSee('Host visitor ID')
+        ->assertSee(route('dashboard.support-code.lookup', ['support_code' => 'customer-123']), false)
+        ->assertSee('Latest support code')
+        ->assertSee(route('dashboard.conversations.show', 'WF-PROFILE1'), false)
+        ->assertSee('Latest ticket')
+        ->assertSee('Ticket #')
+        ->assertSee(route('dashboard.tickets.show', $currentTicket), false)
         ->assertSee('Current profile question')
         ->assertSee('WF-PROFILE1')
         ->assertSee('Earlier profile question')
@@ -156,6 +167,41 @@ test('visitor profile finds the first entry page beyond the recent history limit
         ->assertOk()
         ->assertSee('First captured entry page')
         ->assertSee('https://docs.example.test/original-entry');
+});
+
+test('visitor support references prefer the newest conversation even when recent history is message heavy', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-reference-depth']);
+
+    foreach (range(1, 11) as $index) {
+        Conversation::factory()
+            ->for($site)
+            ->for($visitor)
+            ->create([
+                'support_code' => 'WF-OLD'.str_pad((string) $index, 2, '0', STR_PAD_LEFT),
+                'subject' => 'Older message-heavy conversation '.$index,
+                'created_at' => now()->subDays(2)->addMinutes($index),
+                'last_message_at' => now()->subMinutes($index),
+            ]);
+    }
+
+    $newConversation = Conversation::factory()
+        ->for($site)
+        ->for($visitor)
+        ->create([
+            'support_code' => 'WF-NEWREF',
+            'subject' => 'Newest quiet conversation',
+            'created_at' => now(),
+            'last_message_at' => null,
+        ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.visitors.show', $visitor))
+        ->assertOk()
+        ->assertSee('Latest support code')
+        ->assertSee(route('dashboard.conversations.show', $newConversation->support_code), false);
 });
 
 test('conversation and ticket context panels link to the visitor profile', function (): void {
