@@ -148,6 +148,34 @@ class Ticket extends Model
     }
 
     /**
+     * @return array{label: string, detail: string, tone: string}
+     */
+    public function replyVisibility(): array
+    {
+        $conversation = $this->relationLoaded('conversation')
+            ? $this->conversation
+            : $this->conversation()->first();
+
+        if (! $conversation) {
+            return [
+                'detail' => 'Reply visibility starts once this ticket is connected to a conversation.',
+                'label' => 'No linked conversation',
+                'tone' => 'manual',
+            ];
+        }
+
+        return [
+            'detail' => $conversation->visitorReadDetail(),
+            'label' => $conversation->visitorReadLabel(),
+            'tone' => match ($conversation->visitorReadState()) {
+                'seen' => 'ready',
+                'unseen' => 'attention',
+                default => 'manual',
+            },
+        ];
+    }
+
+    /**
      * @return array{title: string, body: string, cta: string, href: string}
      */
     public function nextAction(): array

@@ -11,6 +11,7 @@
                 $ticketActivityPreview = $ticket->queueActivityPreview();
                 $ticketTiming = $ticket->queueTimingContext();
                 $ticketNextAction = $ticket->nextAction();
+                $ticketReplyVisibility = $ticket->replyVisibility();
                 $requesterReference = $ticket->requester?->email
                     ?? $ticket->requester?->name
                     ?? $ticket->requester?->anonymous_id
@@ -44,6 +45,12 @@
                         @if ($ticketActivityPreview['occurred_at'])
                             <span class="table-note">{{ $ticketActivityPreview['occurred_at']->diffForHumans() }}</span>
                         @endif
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Reply visibility</span>
+                        <span class="meta-value">{{ $ticketReplyVisibility['label'] }}</span>
+                        <span class="readiness-status" data-status="{{ $ticketReplyVisibility['tone'] }}">{{ ucfirst($ticketReplyVisibility['tone']) }}</span>
+                        <span class="lede">{{ $ticketReplyVisibility['detail'] }}</span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">Next action</span>

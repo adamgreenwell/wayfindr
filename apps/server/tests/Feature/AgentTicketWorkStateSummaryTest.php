@@ -78,6 +78,9 @@ test('ticket detail work state summarizes latest agent activity and status actio
             'Work state',
             'Agent reply',
             'I sent the workaround and will wait for confirmation.',
+            'Reply visibility',
+            'Not seen yet',
+            'Latest agent reply has not been seen.',
             'Next action',
             'Wait on customer',
             'Support reference',
@@ -183,6 +186,69 @@ test('ticket detail work state shows graceful standalone timing context', functi
     } finally {
         Carbon::setTestNow();
     }
+});
+
+test('ticket detail work state shows whether the visitor has seen the latest agent reply', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-21 16:00:00', 'UTC'));
+
+    try {
+        [$agent, $site, $visitor, $conversation] = ticketWorkStateContext();
+
+        ConversationMessage::factory()->for($conversation)->create([
+            'body' => 'I sent the next troubleshooting step.',
+            'created_at' => now()->subMinutes(4),
+            'seen_at' => now()->subMinute(),
+            'sender_id' => $agent->id,
+            'sender_type' => User::class,
+        ]);
+
+        $ticket = Ticket::factory()
+            ->for($agent->account)
+            ->for($site)
+            ->for($conversation)
+            ->for($visitor, 'requester')
+            ->for($agent, 'assignee')
+            ->create([
+                'subject' => 'Reply visibility context',
+            ]);
+
+        $this->actingAs($agent)
+            ->get(route('dashboard.tickets.show', $ticket))
+            ->assertOk()
+            ->assertSeeInOrder([
+                'Work state',
+                'Reply visibility',
+                'Visitor saw reply',
+                'Seen 1 minute ago',
+                'Support reference',
+            ]);
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+test('ticket detail work state explains when no linked reply visibility exists', function (): void {
+    [$agent, $site, $visitor] = ticketWorkStateContext(false);
+
+    $ticket = Ticket::factory()
+        ->for($agent->account)
+        ->for($site)
+        ->for($visitor, 'requester')
+        ->for($agent, 'assignee')
+        ->create([
+            'subject' => 'Standalone reply visibility context',
+        ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.tickets.show', $ticket))
+        ->assertOk()
+        ->assertSeeInOrder([
+            'Work state',
+            'Reply visibility',
+            'No linked conversation',
+            'Reply visibility starts once this ticket is connected to a conversation.',
+            'Support reference',
+        ]);
 });
 
 test('ticket detail work state keeps internal notes out of the summary preview', function (): void {

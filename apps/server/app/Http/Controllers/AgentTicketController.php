@@ -42,6 +42,7 @@ class AgentTicketController extends Controller
         $ticket->loadMissing('site');
         $ticket->load([
             'assignee',
+            'conversation.latestAgentMessage',
             'conversation.latestMessage',
             'externalLinks' => fn ($query) => $query
                 ->latest()
