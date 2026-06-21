@@ -213,8 +213,14 @@ class Ticket extends Model
 
     private function queueWaitLabel(?ConversationMessage $latestMessage): string
     {
-        if ($this->status === 'closed') {
+        $attentionState = $this->attentionState();
+
+        if ($attentionState === 'resolved') {
             return 'Closed '.($this->closed_at ?? $this->updated_at)->diffForHumans();
+        }
+
+        if ($attentionState === 'needs_owner') {
+            return 'Waiting on owner for '.$this->elapsedQueueTime($latestMessage?->created_at ?? $this->created_at);
         }
 
         if ($latestMessage?->created_at) {
@@ -227,8 +233,7 @@ class Ticket extends Model
             };
         }
 
-        return match ($this->attentionState()) {
-            'needs_owner' => 'Waiting on owner since ticket opened',
+        return match ($attentionState) {
             'waiting_on_customer' => 'Waiting on customer since ticket opened',
             default => 'Waiting on agent update since ticket opened',
         };

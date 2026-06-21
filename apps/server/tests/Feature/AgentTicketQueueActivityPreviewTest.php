@@ -230,6 +230,42 @@ test('ticket queue shows graceful timing context for standalone tickets', functi
     }
 });
 
+test('ticket queue keeps timing context aligned for unassigned linked tickets', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-21 16:00:00', 'UTC'));
+
+    try {
+        [$agent, $site, $visitor, $conversation] = ticketQueuePreviewContext();
+
+        ConversationMessage::factory()->for($conversation)->create([
+            'body' => 'I am still waiting for help with this.',
+            'created_at' => now()->subHours(4),
+            'sender_id' => $visitor->id,
+            'sender_type' => Visitor::class,
+        ]);
+
+        Ticket::factory()
+            ->for($agent->account)
+            ->for($site)
+            ->for($conversation)
+            ->for($visitor, 'requester')
+            ->create([
+                'assignee_id' => null,
+                'created_at' => now()->subDay(),
+                'subject' => 'Unassigned timing context',
+                'updated_at' => now()->subHours(4),
+            ]);
+
+        $this->actingAs($agent)
+            ->get(route('dashboard.tickets.index', ['ticket_attention' => 'needs_owner']))
+            ->assertOk()
+            ->assertSee('Needs owner')
+            ->assertSee('Waiting on owner for 4 hours')
+            ->assertDontSee('Waiting on reply for 4 hours');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 /**
  * @return array{0: User, 1: Site, 2: Visitor, 3?: Conversation}
  */
