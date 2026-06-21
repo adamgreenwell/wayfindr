@@ -19,6 +19,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Notification;
 
 uses(RefreshDatabase::class);
 
@@ -3180,6 +3181,146 @@ test('agent can view a durable ticket record for their account', function (): vo
         ->assertSee('Assign ticket')
         ->assertSee('Close ticket')
         ->assertSee('/dashboard/conversations/WF-TICKETSHOW', false);
+});
+
+test('ticket detail and actions preserve ticket queue return context', function (): void {
+    Event::fake([ConversationMessageCreated::class]);
+    Notification::fake();
+
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $assignee = User::factory()->for($account)->create(['name' => 'Bea Builder']);
+    $escalationAgent = User::factory()->for($account)->create(['name' => 'Cory Closer']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-TICKETRETURN',
+        'subject' => 'Smoke checkout trouble',
+        'status' => 'open',
+    ]);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($conversation)
+        ->for($visitor, 'requester')
+        ->for($agent, 'assignee')
+        ->create([
+            'category' => 'billing',
+            'description' => 'The smoke checkout path needs a steady follow-up.',
+            'priority' => 'high',
+            'status' => 'open',
+            'subject' => 'Smoke checkout follow-up',
+        ]);
+    $labelId = DB::table('ticket_labels')->insertGetId([
+        'account_id' => $account->id,
+        'name' => 'VIP',
+        'slug' => 'vip',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    DB::table('ticket_label_ticket')->insert([
+        'ticket_id' => $ticket->id,
+        'ticket_label_id' => $labelId,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $returnQuery = [
+        'ticket_status' => 'all',
+        'ticket_filter' => 'assigned_to_me',
+        'ticket_site' => $site->id,
+        'ticket_priority' => 'high',
+        'ticket_category' => 'billing',
+        'ticket_label' => 'vip',
+        'ticket_attention' => 'needs_reply',
+        'ticket_search' => 'smoke',
+    ];
+    $expectedDetailUrl = route('dashboard.tickets.show', ['ticket' => $ticket] + $returnQuery);
+
+    $this->actingAs($agent)
+        ->get($expectedDetailUrl.'&ignored=yes')
+        ->assertOk()
+        ->assertSee('Back to ticket queue')
+        ->assertSee(str_replace('&', '&amp;', route('dashboard.tickets.index', $returnQuery)), false)
+        ->assertDontSee('ignored=yes', false);
+
+    $this->actingAs($agent)
+        ->post("/dashboard/tickets/{$ticket->id}/notes", $returnQuery + [
+            'body' => 'Customer needs a careful follow-up.',
+        ])
+        ->assertRedirect($expectedDetailUrl)
+        ->assertSessionHas('status', 'Ticket note added.');
+
+    $this->actingAs($agent)
+        ->post("/dashboard/tickets/{$ticket->id}/labels", $returnQuery + [
+            'label_name' => 'Needs Dev',
+        ])
+        ->assertRedirect($expectedDetailUrl)
+        ->assertSessionHas('status', 'Ticket label added.');
+
+    $newLabelId = DB::table('ticket_labels')
+        ->where('account_id', $account->id)
+        ->where('slug', 'needs-dev')
+        ->value('id');
+
+    $this->actingAs($agent)
+        ->delete("/dashboard/tickets/{$ticket->id}/labels/{$newLabelId}", $returnQuery)
+        ->assertRedirect($expectedDetailUrl)
+        ->assertSessionHas('status', 'Ticket label removed.');
+
+    $this->actingAs($agent)
+        ->post("/dashboard/tickets/{$ticket->id}/replies", $returnQuery + [
+            'message' => 'I can keep helping from the ticket.',
+        ])
+        ->assertRedirect($expectedDetailUrl)
+        ->assertSessionHas('status', 'Reply sent.');
+
+    $this->actingAs($agent)
+        ->put("/dashboard/tickets/{$ticket->id}", $returnQuery + [
+            'subject' => 'Smoke checkout follow-up updated',
+            'description' => 'The smoke checkout path still needs a steady follow-up.',
+            'category' => 'billing',
+            'priority' => 'high',
+        ])
+        ->assertRedirect($expectedDetailUrl)
+        ->assertSessionHas('status', 'Ticket updated.');
+
+    $this->actingAs($agent)
+        ->put("/dashboard/tickets/{$ticket->id}/assignee", $returnQuery + [
+            'assignee_id' => $assignee->id,
+        ])
+        ->assertRedirect($expectedDetailUrl)
+        ->assertSessionHas('status', 'Ticket assignee updated.');
+
+    $this->actingAs($agent)
+        ->post("/dashboard/tickets/{$ticket->id}/pending", $returnQuery + [
+            'pending_note' => 'Waiting on customer confirmation.',
+        ])
+        ->assertRedirect($expectedDetailUrl)
+        ->assertSessionHas('status', 'Ticket marked pending.');
+
+    $this->actingAs($agent)
+        ->post("/dashboard/tickets/{$ticket->id}/close", $returnQuery + [
+            'resolution_note' => 'Confirmed the support path is covered.',
+        ])
+        ->assertRedirect($expectedDetailUrl)
+        ->assertSessionHas('status', 'Ticket closed.');
+
+    $this->actingAs($agent)
+        ->post("/dashboard/tickets/{$ticket->id}/reopen", $returnQuery + [
+            'reopen_note' => 'Need one more pass.',
+        ])
+        ->assertRedirect($expectedDetailUrl)
+        ->assertSessionHas('status', 'Ticket reopened.');
+
+    $this->actingAs($agent)
+        ->post("/dashboard/tickets/{$ticket->id}/escalations", $returnQuery + [
+            'target_agent_id' => $escalationAgent->id,
+            'reason' => 'Needs another site-aware agent.',
+        ])
+        ->assertRedirect($expectedDetailUrl)
+        ->assertSessionHas('status', 'Ticket escalated.');
 });
 
 test('agent can add a provider neutral external link to a ticket', function (): void {

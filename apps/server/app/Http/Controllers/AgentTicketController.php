@@ -53,6 +53,8 @@ class AgentTicketController extends Controller
                 ->latest('id'),
         ]);
 
+        $ticketReturnQuery = $this->ticketQueueReturnQuery($request);
+
         return view('agent.tickets.show', [
             'account' => $agent->account()->firstOrFail(),
             'accountAgents' => $this->supportAgentsForSite($ticket->site),
@@ -63,7 +65,8 @@ class AgentTicketController extends Controller
             'latestTicketEscalation' => $ticket->latestRecentEscalationEvent(),
             'noteTemplates' => AgentNoteTemplate::options(),
             'replyTemplates' => $replyTemplateOptions->forAgent($agent),
-            'ticketReturnLink' => $this->ticketReturnLink($request),
+            'ticketReturnLink' => $this->ticketReturnLink($ticketReturnQuery),
+            'ticketReturnQuery' => $ticketReturnQuery,
             'ticketLabelOptions' => $agent->account->ticketLabels()
                 ->orderBy('name')
                 ->get(),
@@ -120,7 +123,7 @@ class AgentTicketController extends Controller
 
         $this->recordActivity($ticket, $agent, 'ticket.note_added', $metadata);
 
-        return $this->redirectAfterUpdate($ticket, 'Ticket note added.');
+        return $this->redirectAfterUpdate($ticket, $request, 'Ticket note added.');
     }
 
     public function storeLabel(Request $request, Ticket $ticket): RedirectResponse
@@ -163,7 +166,7 @@ class AgentTicketController extends Controller
             'label_slug' => $label->slug,
         ]);
 
-        return $this->redirectAfterUpdate($ticket, 'Ticket label added.');
+        return $this->redirectAfterUpdate($ticket, $request, 'Ticket label added.');
     }
 
     public function destroyLabel(Request $request, Ticket $ticket, TicketLabel $ticketLabel): RedirectResponse
@@ -186,7 +189,7 @@ class AgentTicketController extends Controller
             'label_slug' => $ticketLabel->slug,
         ]);
 
-        return $this->redirectAfterUpdate($ticket, 'Ticket label removed.');
+        return $this->redirectAfterUpdate($ticket, $request, 'Ticket label removed.');
     }
 
     public function storeReply(Request $request, Ticket $ticket, ReplyTemplateOptions $replyTemplateOptions): RedirectResponse
@@ -273,7 +276,7 @@ class AgentTicketController extends Controller
 
         event(new ConversationMessageCreated($message));
 
-        return $this->redirectAfterUpdate($ticket, 'Reply sent.');
+        return $this->redirectAfterUpdate($ticket, $request, 'Reply sent.');
     }
 
     /**
@@ -317,7 +320,7 @@ class AgentTicketController extends Controller
             ]);
         }
 
-        return $this->redirectAfterUpdate($ticket, 'Ticket updated.');
+        return $this->redirectAfterUpdate($ticket, $request, 'Ticket updated.');
     }
 
     public function pending(Request $request, Ticket $ticket): RedirectResponse
@@ -344,7 +347,7 @@ class AgentTicketController extends Controller
             $pendingNote === '' ? [] : ['pending_note' => $pendingNote],
         );
 
-        return $this->redirectAfterUpdate($ticket, 'Ticket marked pending.');
+        return $this->redirectAfterUpdate($ticket, $request, 'Ticket marked pending.');
     }
 
     public function close(Request $request, Ticket $ticket): RedirectResponse
@@ -371,7 +374,7 @@ class AgentTicketController extends Controller
             $resolutionNote === '' ? [] : ['resolution_note' => $resolutionNote],
         );
 
-        return $this->redirectAfterUpdate($ticket, 'Ticket closed.');
+        return $this->redirectAfterUpdate($ticket, $request, 'Ticket closed.');
     }
 
     public function reopen(Request $request, Ticket $ticket): RedirectResponse
@@ -398,7 +401,7 @@ class AgentTicketController extends Controller
             $reopenNote === '' ? [] : ['reopen_note' => $reopenNote],
         );
 
-        return $this->redirectAfterUpdate($ticket, 'Ticket reopened.');
+        return $this->redirectAfterUpdate($ticket, $request, 'Ticket reopened.');
     }
 
     public function updateAssignee(Request $request, Ticket $ticket): RedirectResponse
@@ -451,7 +454,7 @@ class AgentTicketController extends Controller
             $newAssignee->notify(new TicketAssigned($freshTicket, $agent));
         }
 
-        return $this->redirectAfterUpdate($ticket, 'Ticket assignee updated.');
+        return $this->redirectAfterUpdate($ticket, $request, 'Ticket assignee updated.');
     }
 
     public function storeEscalation(Request $request, Ticket $ticket): RedirectResponse
@@ -515,7 +518,7 @@ class AgentTicketController extends Controller
             $targetAgent->notify(new TicketAssigned($freshTicket, $agent));
         }
 
-        return $this->redirectAfterUpdate($ticket, 'Ticket escalated.');
+        return $this->redirectAfterUpdate($ticket, $request, 'Ticket escalated.');
     }
 
     private function authorizeTicketAbility(User $agent, string $ability, Ticket $ticket): void
@@ -537,32 +540,27 @@ class AgentTicketController extends Controller
                 ->get();
     }
 
-    private function redirectAfterUpdate(Ticket $ticket, string $status): RedirectResponse
+    private function redirectAfterUpdate(Ticket $ticket, Request $request, string $status): RedirectResponse
     {
+        $ticketReturnQuery = $this->ticketQueueReturnQuery($request);
+
+        if ($ticketReturnQuery !== []) {
+            return redirect()
+                ->route('dashboard.tickets.show', ['ticket' => $ticket] + $ticketReturnQuery)
+                ->with('status', $status);
+        }
+
         return redirect()
-            ->back(302, [], route('dashboard'))
+            ->back(302, [], route('dashboard.tickets.show', $ticket))
             ->with('status', $status);
     }
 
     /**
+     * @param  array<string, int|string>  $query
      * @return array{label: string, href: string}
      */
-    private function ticketReturnLink(Request $request): array
+    private function ticketReturnLink(array $query): array
     {
-        $query = collect($request->only([
-            'ticket_status',
-            'ticket_filter',
-            'ticket_site',
-            'ticket_priority',
-            'ticket_category',
-            'ticket_label',
-            'ticket_attention',
-            'ticket_search',
-        ]))
-            ->filter(fn (mixed $value): bool => is_scalar($value) && trim((string) $value) !== '')
-            ->map(fn (mixed $value): string => mb_substr(trim((string) $value), 0, 120))
-            ->all();
-
         if ($query === []) {
             return [
                 'label' => 'Back to dashboard',
@@ -574,6 +572,70 @@ class AgentTicketController extends Controller
             'label' => 'Back to ticket queue',
             'href' => route('dashboard.tickets.index', $query),
         ];
+    }
+
+    /**
+     * @return array<string, int|string>
+     */
+    private function ticketQueueReturnQuery(Request $request): array
+    {
+        $query = [];
+        $ticketStatus = $request->input('ticket_status');
+
+        if (is_string($ticketStatus) && in_array($ticketStatus, ['pending', 'closed', 'all'], true)) {
+            $query['ticket_status'] = $ticketStatus;
+        }
+
+        $ticketFilter = $request->input('ticket_filter');
+
+        if (is_string($ticketFilter) && in_array($ticketFilter, ['assigned_to_me', 'unassigned'], true)) {
+            $query['ticket_filter'] = $ticketFilter;
+        }
+
+        $ticketSite = $request->input('ticket_site');
+
+        if (is_int($ticketSite) && $ticketSite > 0) {
+            $query['ticket_site'] = $ticketSite;
+        } elseif (is_string($ticketSite) && ctype_digit($ticketSite) && (int) $ticketSite > 0) {
+            $query['ticket_site'] = (int) $ticketSite;
+        }
+
+        $ticketPriority = $request->input('ticket_priority');
+
+        if (is_string($ticketPriority) && in_array($ticketPriority, TicketPriority::values(), true)) {
+            $query['ticket_priority'] = $ticketPriority;
+        }
+
+        $ticketCategory = $request->input('ticket_category');
+
+        if (is_string($ticketCategory) && ($ticketCategory === 'uncategorized' || in_array($ticketCategory, TicketCategory::values(), true))) {
+            $query['ticket_category'] = $ticketCategory;
+        }
+
+        $ticketLabel = $request->input('ticket_label');
+
+        if (
+            is_string($ticketLabel)
+            && ! TicketLabel::isReservedSlug($ticketLabel)
+            && preg_match('/^[a-z0-9][a-z0-9-]{0,63}$/', $ticketLabel) === 1
+        ) {
+            $query['ticket_label'] = $ticketLabel;
+        }
+
+        $ticketAttention = $request->input('ticket_attention');
+
+        if (is_string($ticketAttention) && in_array($ticketAttention, ['escalated', 'needs_reply', 'needs_owner', 'needs_agent', 'waiting_on_customer', 'resolved'], true)) {
+            $query['ticket_attention'] = $ticketAttention;
+        }
+
+        $ticketSearch = $request->input('ticket_search');
+        $ticketSearch = is_string($ticketSearch) ? mb_substr(trim($ticketSearch), 0, 120) : '';
+
+        if ($ticketSearch !== '') {
+            $query['ticket_search'] = $ticketSearch;
+        }
+
+        return $query;
     }
 
     private function markTicketAssignmentNotificationsRead(User $agent, Ticket $ticket): void

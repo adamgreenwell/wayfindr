@@ -195,6 +195,7 @@
                                 <form method="POST" action="{{ route('dashboard.tickets.labels.destroy', [$ticket, $label]) }}">
                                     @csrf
                                     @method('DELETE')
+                                    @include('agent.tickets.partials.return-query-fields')
                                     <button class="button secondary" type="submit">Remove label</button>
                                 </form>
                             </div>
@@ -206,6 +207,7 @@
 
                 <form class="section-form" method="POST" action="{{ route('dashboard.tickets.labels.store', $ticket) }}">
                     @csrf
+                    @include('agent.tickets.partials.return-query-fields')
 
                     <div class="field">
                         <label for="label_name">Add label</label>
@@ -288,6 +290,7 @@
                         data-submitting-label="Sending visitor reply..."
                     >
                         @csrf
+                        @include('agent.tickets.partials.return-query-fields')
 
                         <div class="field">
                             <label for="reply_template">Reply helper</label>
@@ -587,6 +590,7 @@
                 <form class="section-form" method="POST" action="{{ route('dashboard.tickets.assignee.update', $ticket) }}">
                     @csrf
                     @method('PUT')
+                    @include('agent.tickets.partials.return-query-fields')
 
                     <div class="field">
                         <label for="assignee_id">Assign ticket</label>
@@ -615,6 +619,7 @@
                     @else
                         <form method="POST" action="{{ route('dashboard.tickets.escalations.store', $ticket) }}">
                             @csrf
+                            @include('agent.tickets.partials.return-query-fields')
 
                             <div class="field">
                                 <label for="target_agent_id">Escalate to</label>
@@ -647,6 +652,7 @@
                 @if ($ticket->status === 'open')
                     <form class="section-form" method="POST" action="{{ route('dashboard.tickets.pending', $ticket) }}">
                         @csrf
+                        @include('agent.tickets.partials.return-query-fields')
                         <div class="field">
                             <label for="pending_note">Pending note</label>
                             <textarea id="pending_note" name="pending_note" rows="3" placeholder="What are we waiting on from the customer?">{{ old('pending_note') }}</textarea>
@@ -661,6 +667,7 @@
                 @if (in_array($ticket->status, ['closed', 'pending'], true))
                     <form class="section-form" method="POST" action="{{ route('dashboard.tickets.reopen', $ticket) }}">
                         @csrf
+                        @include('agent.tickets.partials.return-query-fields')
                         <div class="field">
                             <label for="reopen_note">Reopen note</label>
                             <textarea id="reopen_note" name="reopen_note" rows="3" placeholder="What changed or why does this need attention again?">{{ old('reopen_note') }}</textarea>
@@ -675,6 +682,7 @@
                 @if ($ticket->status !== 'closed')
                     <form class="section-form" method="POST" action="{{ route('dashboard.tickets.close', $ticket) }}">
                         @csrf
+                        @include('agent.tickets.partials.return-query-fields')
                         <div class="field">
                             <label for="resolution_note">Resolution note</label>
                             <textarea id="resolution_note" name="resolution_note" rows="3" placeholder="What changed, what was confirmed, or why this can be closed.">{{ old('resolution_note') }}</textarea>
@@ -696,6 +704,7 @@
                 <form class="section-form" method="POST" action="{{ route('dashboard.tickets.update', $ticket) }}">
                     @csrf
                     @method('PUT')
+                    @include('agent.tickets.partials.return-query-fields')
 
                     <div class="field">
                         <label for="subject">Subject</label>
@@ -770,6 +779,7 @@
 
                 <form class="section-form" method="POST" action="{{ route('dashboard.tickets.notes.store', $ticket) }}">
                     @csrf
+                    @include('agent.tickets.partials.return-query-fields')
 
                     <div class="field">
                         <label for="note_template">Note helper</label>
