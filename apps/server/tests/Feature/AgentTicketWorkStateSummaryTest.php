@@ -224,6 +224,87 @@ test('ticket detail work state keeps internal notes out of the summary preview',
         ->not->toContain('private escalation note for agents only');
 });
 
+test('ticket detail timeline summarizes conversation, internal note, and activity visibility', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-21 17:00:00', 'UTC'));
+
+    try {
+        [$agent, $site, $visitor, $conversation] = ticketWorkStateContext();
+
+        ConversationMessage::factory()->for($conversation)->create([
+            'body' => 'The export still fails on the last step.',
+            'created_at' => now()->subMinutes(7),
+            'sender_id' => $visitor->id,
+            'sender_type' => Visitor::class,
+        ]);
+        ConversationMessage::factory()->for($conversation)->create([
+            'body' => 'I can reproduce that and will keep digging.',
+            'created_at' => now()->subMinutes(6),
+            'sender_id' => $agent->id,
+            'sender_type' => User::class,
+        ]);
+
+        $ticket = Ticket::factory()
+            ->for($agent->account)
+            ->for($site)
+            ->for($conversation)
+            ->for($visitor, 'requester')
+            ->for($agent, 'assignee')
+            ->create([
+                'subject' => 'Export failure follow-up',
+            ]);
+
+        AuditEvent::factory()
+            ->for($agent->account)
+            ->for($ticket, 'subject')
+            ->create([
+                'action' => 'ticket.note_added',
+                'actor_id' => $agent->id,
+                'actor_type' => User::class,
+                'metadata' => [
+                    'body' => 'private vendor escalation detail',
+                ],
+                'occurred_at' => now()->subMinutes(5),
+                'site_id' => $site->id,
+            ]);
+        AuditEvent::factory()
+            ->for($agent->account)
+            ->for($ticket, 'subject')
+            ->create([
+                'action' => 'ticket.pending',
+                'actor_id' => $agent->id,
+                'actor_type' => User::class,
+                'metadata' => [
+                    'pending_note' => 'Waiting on export logs.',
+                ],
+                'occurred_at' => now()->subMinutes(4),
+                'site_id' => $site->id,
+            ]);
+
+        $response = $this->actingAs($agent)
+            ->get(route('dashboard.tickets.show', $ticket))
+            ->assertOk()
+            ->assertSeeInOrder([
+                'Timeline',
+                '4 events',
+                'Conversation',
+                '2 items',
+                'Internal notes',
+                '1 note',
+                'Ticket activity',
+                '1 update',
+            ])
+            ->assertSee('Visitor messages and customer-visible replies.')
+            ->assertSee('Private agent context for handoff.')
+            ->assertSee('Status, assignment, label, and integration events.')
+            ->assertSee('private vendor escalation detail');
+
+        expect(Str::between($response->content(), 'Timeline', 'Visitor message'))
+            ->not->toContain('private vendor escalation detail');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 /**
  * @return array{0: User, 1: Site, 2: Visitor, 3?: Conversation}
  */

@@ -273,6 +273,16 @@
                     <span class="lede">{{ $ticketTimeline->count() }} events</span>
                 </div>
 
+                <div class="meta-grid">
+                    @foreach ($ticketTimelineSummary as $timelineSummaryItem)
+                        <div class="meta-item">
+                            <span class="meta-label">{{ $timelineSummaryItem['label'] }}</span>
+                            <span class="meta-value">{{ $timelineSummaryItem['value'] }}</span>
+                            <span class="lede">{{ $timelineSummaryItem['description'] }}</span>
+                        </div>
+                    @endforeach
+                </div>
+
                 <div class="timeline-list">
                     @forelse ($ticketTimeline as $timelineItem)
                         <article class="timeline-item {{ $timelineItem['type'] }}">

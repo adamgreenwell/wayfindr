@@ -58,6 +58,7 @@ class AgentTicketController extends Controller
         ]);
 
         $ticketReturnQuery = $this->ticketQueueReturnQuery($request);
+        $ticketTimeline = $this->ticketTimeline($ticket);
 
         return view('agent.tickets.show', [
             'account' => $agent->account()->firstOrFail(),
@@ -92,7 +93,8 @@ class AgentTicketController extends Controller
             'priorVisitorConversations' => $this->priorVisitorConversations($ticket),
             'priorVisitorTickets' => $this->priorVisitorTickets($ticket),
             'linkedConversationMessages' => $this->linkedConversationMessages($ticket),
-            'ticketTimeline' => $this->ticketTimeline($ticket),
+            'ticketTimeline' => $ticketTimeline,
+            'ticketTimelineSummary' => $this->ticketTimelineSummary($ticketTimeline),
         ]);
     }
 
@@ -778,6 +780,36 @@ class AgentTicketController extends Controller
             ->merge($activityItems)
             ->sortBy(fn (array $item): string => ($item['occurred_at']?->format('U.u') ?? '0').'-'.str_pad((string) $item['sequence'], 10, '0', STR_PAD_LEFT))
             ->values();
+    }
+
+    /**
+     * @param  Collection<int, array{type: string, label: string, actor: string, badge: string, body: string|null, occurred_at: CarbonInterface|null, sequence: int}>  $ticketTimeline
+     * @return Collection<int, array{label: string, value: string, description: string}>
+     */
+    private function ticketTimelineSummary(Collection $ticketTimeline): Collection
+    {
+        $counts = $ticketTimeline->countBy('type');
+        $conversationCount = (int) $counts->get('agent-message', 0) + (int) $counts->get('visitor-message', 0);
+        $internalNoteCount = (int) $counts->get('internal-note', 0);
+        $ticketActivityCount = (int) $counts->get('ticket-activity', 0);
+
+        return collect([
+            [
+                'label' => 'Conversation',
+                'value' => $conversationCount.' '.Str::plural('item', $conversationCount),
+                'description' => 'Visitor messages and customer-visible replies.',
+            ],
+            [
+                'label' => 'Internal notes',
+                'value' => $internalNoteCount.' '.Str::plural('note', $internalNoteCount),
+                'description' => 'Private agent context for handoff.',
+            ],
+            [
+                'label' => 'Ticket activity',
+                'value' => $ticketActivityCount.' '.Str::plural('update', $ticketActivityCount),
+                'description' => 'Status, assignment, label, and integration events.',
+            ],
+        ]);
     }
 
     private function githubIssueProjectsForTicket(Ticket $ticket): Collection
