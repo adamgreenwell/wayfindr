@@ -370,6 +370,16 @@
             white-space: nowrap;
         }
 
+        .ticket-activity-preview {
+            max-width: 340px;
+            min-width: 260px;
+            white-space: normal;
+        }
+
+        .ticket-activity-preview .lede {
+            margin-top: 4px;
+        }
+
         .empty {
             padding: 20px;
             color: var(--muted);

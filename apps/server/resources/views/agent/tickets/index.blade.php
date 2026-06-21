@@ -176,6 +176,7 @@
                             <thead>
                                 <tr>
                                     <th scope="col">Subject</th>
+                                    <th scope="col">Latest activity</th>
                                     <th scope="col">Site</th>
                                     <th scope="col">Status</th>
                                     <th scope="col">Category</th>
@@ -194,6 +195,16 @@
                                             <a class="text-link" href="{{ route('dashboard.tickets.show', ['ticket' => $ticket] + $ticketQuery) }}">
                                                 {{ $ticket->subject }}
                                             </a>
+                                        </td>
+                                        <td class="ticket-activity-preview">
+                                            @php
+                                                $activityPreview = $ticket->queueActivityPreview();
+                                            @endphp
+                                            <strong>{{ $activityPreview['label'] }}</strong>
+                                            <div class="lede">{{ $activityPreview['body'] }}</div>
+                                            @if ($activityPreview['occurred_at'])
+                                                <span class="table-note">{{ $activityPreview['occurred_at']->diffForHumans() }}</span>
+                                            @endif
                                         </td>
                                         <td>{{ $ticket->site->name }}</td>
                                         <td>{{ ucfirst($ticket->status) }}</td>

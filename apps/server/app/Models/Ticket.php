@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Support\TicketCategory;
+use Carbon\CarbonInterface;
 use Database\Factories\TicketFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -13,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
+use Illuminate\Support\Str;
 
 #[Fillable([
     'account_id',
@@ -114,6 +116,38 @@ class Ticket extends Model
     }
 
     /**
+     * @return array{label: string, body: string, occurred_at: CarbonInterface|null}
+     */
+    public function queueActivityPreview(): array
+    {
+        $latestMessage = $this->latestConversationMessage();
+
+        if ($latestMessage) {
+            return [
+                'body' => $this->activityPreviewSnippet($latestMessage->body) ?: 'Message has no text preview.',
+                'label' => $this->activityPreviewLabel($latestMessage),
+                'occurred_at' => $latestMessage->created_at,
+            ];
+        }
+
+        $description = $this->activityPreviewSnippet($this->description);
+
+        if ($description !== '') {
+            return [
+                'body' => $description,
+                'label' => 'Ticket summary',
+                'occurred_at' => $this->created_at,
+            ];
+        }
+
+        return [
+            'body' => 'Open the ticket to add context or send the next update.',
+            'label' => 'No activity preview yet',
+            'occurred_at' => null,
+        ];
+    }
+
+    /**
      * @return array{title: string, body: string, cta: string, href: string}
      */
     public function nextAction(): array
@@ -172,6 +206,22 @@ class Ticket extends Model
                 ->latest('created_at')
                 ->latest('id')
                 ->first();
+    }
+
+    private function activityPreviewLabel(ConversationMessage $message): string
+    {
+        return match ($message->sender_type) {
+            Visitor::class => 'Visitor message',
+            User::class => 'Agent reply',
+            default => 'Latest message',
+        };
+    }
+
+    private function activityPreviewSnippet(?string $body): string
+    {
+        $body = (string) Str::of((string) $body)->squish();
+
+        return Str::limit($body, 150);
     }
 
     public function categoryLabel(): string
