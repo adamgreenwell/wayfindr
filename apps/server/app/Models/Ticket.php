@@ -198,6 +198,50 @@ class Ticket extends Model
         };
     }
 
+    /**
+     * @return array{opened_label: string, wait_label: string}
+     */
+    public function queueTimingContext(): array
+    {
+        $latestMessage = $this->latestConversationMessage();
+
+        return [
+            'opened_label' => 'Opened '.$this->created_at->diffForHumans(),
+            'wait_label' => $this->queueWaitLabel($latestMessage),
+        ];
+    }
+
+    private function queueWaitLabel(?ConversationMessage $latestMessage): string
+    {
+        if ($this->status === 'closed') {
+            return 'Closed '.($this->closed_at ?? $this->updated_at)->diffForHumans();
+        }
+
+        if ($latestMessage?->created_at) {
+            $elapsed = $this->elapsedQueueTime($latestMessage->created_at);
+
+            return match ($latestMessage->sender_type) {
+                Visitor::class => 'Waiting on reply for '.$elapsed,
+                User::class => 'Waiting on customer for '.$elapsed,
+                default => 'Waiting on update for '.$elapsed,
+            };
+        }
+
+        return match ($this->attentionState()) {
+            'needs_owner' => 'Waiting on owner since ticket opened',
+            'waiting_on_customer' => 'Waiting on customer since ticket opened',
+            default => 'Waiting on agent update since ticket opened',
+        };
+    }
+
+    private function elapsedQueueTime(CarbonInterface $since): string
+    {
+        return $since->diffForHumans([
+            'syntax' => CarbonInterface::DIFF_ABSOLUTE,
+            'parts' => 1,
+        ]);
+    }
+
     private function latestConversationMessage(): ?ConversationMessage
     {
         return $this->conversation?->relationLoaded('latestMessage')

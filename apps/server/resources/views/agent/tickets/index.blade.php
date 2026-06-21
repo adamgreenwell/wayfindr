@@ -185,11 +185,14 @@
                                     <th scope="col">Assignee</th>
                                     <th scope="col">Next step</th>
                                     <th scope="col">Support Code</th>
-                                    <th scope="col">Updated</th>
+                                    <th scope="col">Timing</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @foreach ($tickets as $ticket)
+                                    @php
+                                        $ticketTiming = $ticket->queueTimingContext();
+                                    @endphp
                                     <tr>
                                         <td>
                                             <a class="text-link" href="{{ route('dashboard.tickets.show', ['ticket' => $ticket] + $ticketQuery) }}">
@@ -241,7 +244,10 @@
                                                 Not linked
                                             @endif
                                         </td>
-                                        <td>{{ $ticket->updated_at->diffForHumans() }}</td>
+                                        <td>
+                                            <strong>{{ $ticketTiming['opened_label'] }}</strong>
+                                            <span class="table-note">{{ $ticketTiming['wait_label'] }}</span>
+                                        </td>
                                     </tr>
                                 @endforeach
                             </tbody>

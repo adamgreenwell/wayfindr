@@ -8,6 +8,7 @@ use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -164,6 +165,69 @@ test('ticket queue keeps internal notes out of standalone activity previews', fu
         ->assertSee('No activity preview yet')
         ->assertSee('Open the ticket to add context or send the next update.')
         ->assertDontSee('private escalation note for agents only');
+});
+
+test('ticket queue shows opened age and waiting context for linked tickets', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-21 16:00:00', 'UTC'));
+
+    try {
+        [$agent, $site, $visitor, $conversation] = ticketQueuePreviewContext();
+
+        ConversationMessage::factory()->for($conversation)->create([
+            'body' => 'I am still blocked on the invoice export.',
+            'created_at' => now()->subHours(3),
+            'sender_id' => $visitor->id,
+            'sender_type' => Visitor::class,
+        ]);
+
+        Ticket::factory()
+            ->for($agent->account)
+            ->for($site)
+            ->for($conversation)
+            ->for($visitor, 'requester')
+            ->for($agent, 'assignee')
+            ->create([
+                'created_at' => now()->subDays(2),
+                'subject' => 'Invoice export timing context',
+                'updated_at' => now()->subHours(3),
+            ]);
+
+        $this->actingAs($agent)
+            ->get(route('dashboard.tickets.index'))
+            ->assertOk()
+            ->assertSee('Opened 2 days ago')
+            ->assertSee('Waiting on reply for 3 hours');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+test('ticket queue shows graceful timing context for standalone tickets', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-21 16:00:00', 'UTC'));
+
+    try {
+        [$agent, $site, $visitor] = ticketQueuePreviewContext(false);
+
+        Ticket::factory()
+            ->for($agent->account)
+            ->for($site)
+            ->for($visitor, 'requester')
+            ->for($agent, 'assignee')
+            ->create([
+                'created_at' => now()->subDays(5),
+                'description' => 'Manual follow-up from a phone call.',
+                'subject' => 'Standalone timing context',
+                'updated_at' => now()->subDays(5),
+            ]);
+
+        $this->actingAs($agent)
+            ->get(route('dashboard.tickets.index'))
+            ->assertOk()
+            ->assertSee('Opened 5 days ago')
+            ->assertSee('Waiting on agent update since ticket opened');
+    } finally {
+        Carbon::setTestNow();
+    }
 });
 
 /**
