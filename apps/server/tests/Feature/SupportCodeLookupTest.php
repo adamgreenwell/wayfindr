@@ -53,6 +53,25 @@ test('agents can jump to a visible conversation by support code', function (): v
         ->assertRedirect(route('dashboard.conversations.show', $conversation->support_code));
 });
 
+test('agents can jump to a visible conversation from pasted support code context', function (string $reference): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $conversation = Conversation::factory()->for($site)->create([
+        'support_code' => 'WF-PASTE1',
+        'subject' => 'Pasted reference conversation',
+    ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.support-code.lookup', [
+            'support_code' => $reference,
+        ]))
+        ->assertRedirect(route('dashboard.conversations.show', $conversation->support_code));
+})->with([
+    'prose reference' => ['Visitor gave me support code wf-paste1 during chat.'],
+    'conversation URL' => ['https://wayfindr.example/dashboard/conversations/wf-paste1?from=email'],
+]);
+
 test('agents jump to the linked ticket when a visible support code has one', function (): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create();
@@ -95,6 +114,27 @@ test('agents can jump to a visible ticket by ticket reference', function (string
     'ticket prefix' => [' Ticket #{ticket} '],
     'hash reference' => ['#{ticket}'],
     'plain id' => ['{ticket}'],
+]);
+
+test('agents can jump to a visible ticket from pasted ticket context', function (string $ticketReference): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->create([
+            'subject' => 'Pasted ticket reference',
+        ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.support-code.lookup', [
+            'support_code' => str_replace('{ticket}', (string) $ticket->id, $ticketReference),
+        ]))
+        ->assertRedirect(route('dashboard.tickets.show', $ticket));
+})->with([
+    'ticket prose' => ['Could you check Ticket #{ticket} from the handoff?'],
+    'ticket URL' => ['https://wayfindr.example/dashboard/tickets/{ticket}?from=email'],
 ]);
 
 test('agents can jump to a visible visitor profile by anonymous visitor id', function (): void {
@@ -222,6 +262,26 @@ test('support record lookup does not expose another account ticket reference', f
         ]))
         ->assertRedirect(route('dashboard'))
         ->assertSessionHas('support_code_lookup_status', 'No visible support record found for Ticket #'.$otherTicket->id.'.');
+});
+
+test('support record lookup does not treat arbitrary prose numbers as ticket references', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->create([
+            'id' => 12345,
+            'subject' => 'Numeric ticket that needs an explicit reference',
+        ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.support-code.lookup', [
+            'support_code' => 'Customer order 12345 needs help',
+        ]))
+        ->assertRedirect(route('dashboard'))
+        ->assertSessionHas('support_code_lookup_status', 'No visible support record found for Customer order 12345 needs help.');
 });
 
 test('support code lookup rejects non-scalar query values', function (): void {

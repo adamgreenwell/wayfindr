@@ -60,7 +60,7 @@ class AgentSupportCodeLookupController extends Controller
             }
         }
 
-        $supportCode = Str::upper($lookupReference);
+        $supportCode = $this->supportCodeReference($lookupReference);
 
         $conversation = Conversation::query()
             ->with('site')
@@ -130,12 +130,33 @@ class AgentSupportCodeLookupController extends Controller
             return $this->validTicketId((int) $matches[1]);
         }
 
+        if (preg_match('/\bdashboard\/tickets\/(\d+)\b/i', $lookupReference, $matches)) {
+            return $this->validTicketId((int) $matches[1]);
+        }
+
+        if (preg_match('/\bticket\s*#\s*(\d+)\b/i', $lookupReference, $matches)) {
+            return $this->validTicketId((int) $matches[1]);
+        }
+
+        if (preg_match('/\bticket\s+(\d+)\b/i', $lookupReference, $matches)) {
+            return $this->validTicketId((int) $matches[1]);
+        }
+
         return null;
     }
 
     private function validTicketId(int $ticketId): ?int
     {
         return $ticketId > 0 ? $ticketId : null;
+    }
+
+    private function supportCodeReference(string $lookupReference): string
+    {
+        if (preg_match('/\bWF-[A-Z0-9]+\b/i', $lookupReference, $matches)) {
+            return Str::upper($matches[0]);
+        }
+
+        return Str::upper($lookupReference);
     }
 
     private function visibleVisitor(string $lookupReference, User $agent): ?Visitor
@@ -155,7 +176,7 @@ class AgentSupportCodeLookupController extends Controller
 
     private function displayReference(string $lookupReference, string $supportCode): string
     {
-        if (preg_match('/^wf-/i', $lookupReference)) {
+        if (preg_match('/\bWF-/i', $lookupReference)) {
             return $supportCode;
         }
 
