@@ -588,9 +588,22 @@
                 @if ($cobrowseConsent['snapshot'])
                     <div class="section-header">
                         <strong>Page snapshot</strong>
+                        <span
+                            class="readiness-status"
+                            data-status="{{ $cobrowseConsent['snapshot']['freshness']['tone'] }}"
+                        >{{ $cobrowseConsent['snapshot']['freshness']['label'] }}</span>
                     </div>
 
                     <div class="meta-grid realtime-grid">
+                        <div class="meta-item">
+                            <span class="meta-label">Snapshot freshness</span>
+                            <span class="meta-value">{{ $cobrowseConsent['snapshot']['freshness']['label'] }}</span>
+                            <span class="lede">{{ $cobrowseConsent['snapshot']['freshness']['message'] }}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Reported</span>
+                            <span class="meta-value">{{ $cobrowseConsent['snapshot']['freshness']['reported_label'] }}</span>
+                        </div>
                         <div class="meta-item">
                             <span class="meta-label">Title</span>
                             <span class="meta-value">{{ $cobrowseConsent['snapshot']['title'] }}</span>

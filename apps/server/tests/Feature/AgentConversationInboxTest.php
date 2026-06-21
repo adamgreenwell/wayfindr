@@ -6472,6 +6472,80 @@ test('agent can see a safe cobrowse snapshot preview on a conversation', functio
         ->assertDontSee('super-secret-token');
 });
 
+test('agent can see cobrowse snapshot freshness guidance on a conversation', function (): void {
+    $this->travelTo(Carbon::parse('2026-06-21 12:00:00'));
+
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+
+    $makeConversation = function (string $supportCode, mixed $reportedAt) use ($site, $visitor): Conversation {
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => $supportCode,
+            'subject' => 'Checkout trouble',
+            'status' => 'open',
+        ]);
+
+        $snapshot = [
+            'page_url' => 'https://docs.example.test/install?step=2',
+            'title' => 'Install Guide',
+            'text' => 'Public checkout content. [masked]',
+            'node_count' => 8,
+            'masked_count' => 2,
+        ];
+
+        if ($reportedAt !== null) {
+            $snapshot['reported_at'] = $reportedAt;
+        }
+
+        CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinute(),
+            'ended_at' => null,
+            'metadata' => [
+                'snapshot' => $snapshot,
+            ],
+        ]);
+
+        return $conversation;
+    };
+
+    $makeConversation('WF-SNAPFRESH', now()->subSeconds(45)->toJSON());
+    $makeConversation('WF-SNAPAGING', now()->subMinutes(3)->toJSON());
+    $makeConversation('WF-SNAPSTALE', now()->subMinutes(8)->toJSON());
+    $makeConversation('WF-SNAPUNKNOWN', 'not-a-real-date');
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-SNAPFRESH')
+        ->assertOk()
+        ->assertSee('Snapshot freshness')
+        ->assertSee('Fresh')
+        ->assertSee('Reported 45 seconds ago')
+        ->assertSee('Snapshot was reported recently.');
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-SNAPAGING')
+        ->assertOk()
+        ->assertSee('Aging')
+        ->assertSee('Reported 3 minutes ago')
+        ->assertSee('Snapshot is a few minutes old. Request a fresh snapshot if this page is changing.');
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-SNAPSTALE')
+        ->assertOk()
+        ->assertSee('Stale')
+        ->assertSee('Reported 8 minutes ago')
+        ->assertSee('Snapshot is older than 5 minutes. Confirm through chat or request a fresh snapshot.');
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-SNAPUNKNOWN')
+        ->assertOk()
+        ->assertSee('Time unknown')
+        ->assertSee('Report time unavailable')
+        ->assertSee('Use chat to confirm what the visitor sees before relying on this preview.');
+});
+
 test('agent can see cobrowse mutation stream diagnostics on a conversation', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
