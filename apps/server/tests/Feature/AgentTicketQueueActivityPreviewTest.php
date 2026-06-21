@@ -129,6 +129,50 @@ test('ticket queue shows seen reply visibility for latest agent replies', functi
     }
 });
 
+test('ticket queue keeps reply visibility aligned when agent replies share a timestamp', function (): void {
+    $sentAt = Carbon::parse('2026-06-21 18:00:00', 'UTC');
+    Carbon::setTestNow($sentAt->copy()->addMinute());
+
+    try {
+        [$agent, $site, $visitor, $conversation] = ticketQueuePreviewContext();
+
+        ConversationMessage::factory()->for($conversation)->create([
+            'body' => 'First reply that the visitor already saw.',
+            'created_at' => $sentAt,
+            'seen_at' => $sentAt->copy()->addSeconds(10),
+            'sender_id' => $agent->id,
+            'sender_type' => User::class,
+        ]);
+        ConversationMessage::factory()->for($conversation)->create([
+            'body' => 'Second same-timestamp reply still waiting on the visitor.',
+            'created_at' => $sentAt,
+            'seen_at' => null,
+            'sender_id' => $agent->id,
+            'sender_type' => User::class,
+        ]);
+
+        Ticket::factory()
+            ->for($agent->account)
+            ->for($site)
+            ->for($conversation)
+            ->for($visitor, 'requester')
+            ->for($agent, 'assignee')
+            ->create([
+                'subject' => 'Same timestamp reply visibility',
+            ]);
+
+        $this->actingAs($agent)
+            ->get(route('dashboard.tickets.index'))
+            ->assertOk()
+            ->assertSee('Second same-timestamp reply still waiting on the visitor.')
+            ->assertSee('Not seen yet')
+            ->assertSee('Latest agent reply has not been seen.')
+            ->assertDontSee('Visitor saw reply');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('ticket queue orders linked activity previews by message timestamp before id', function (): void {
     [$agent, $site, $visitor, $conversation] = ticketQueuePreviewContext();
 
