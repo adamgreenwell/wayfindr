@@ -22,6 +22,16 @@
             </div>
         </div>
 
+        <div class="meta-grid" aria-label="Alert snapshot">
+            @foreach ($alertSnapshot as $snapshotItem)
+                <div class="meta-item">
+                    <span class="meta-label">{{ $snapshotItem['label'] }}</span>
+                    <span class="meta-value">{{ $snapshotItem['value'] }}</span>
+                    <p class="field-help">{{ $snapshotItem['detail'] }}</p>
+                </div>
+            @endforeach
+        </div>
+
         @if ($notifications->isEmpty())
             <p class="empty">No visible alerts yet.</p>
         @else

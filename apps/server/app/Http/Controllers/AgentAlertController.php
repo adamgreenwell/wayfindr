@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 
 class AgentAlertController extends Controller
 {
@@ -24,6 +25,7 @@ class AgentAlertController extends Controller
         return view('agent.alerts.index', [
             'account' => $agent->account()->firstOrFail(),
             'agent' => $agent,
+            'alertSnapshot' => $this->alertSnapshot($notifications, $unreadNotificationCount),
             'notifications' => $notifications,
             'notificationCount' => $notifications->count(),
             'unreadNotificationCount' => $unreadNotificationCount,
@@ -87,6 +89,44 @@ class AgentAlertController extends Controller
             ->get()
             ->filter(fn (DatabaseNotification $notification): bool => Gate::forUser($agent)->allows('view', $notification))
             ->values();
+    }
+
+    /**
+     * @return array<int, array{label: string, value: string, detail: string}>
+     */
+    private function alertSnapshot(Collection $visibleNotifications, int $visibleUnreadNotificationCount): array
+    {
+        $conversationAlertCount = $visibleNotifications
+            ->filter(fn (DatabaseNotification $notification): bool => data_get($notification->data, 'kind') === 'conversation_needs_reply')
+            ->count();
+        $ticketAlertCount = $visibleNotifications
+            ->filter(fn (DatabaseNotification $notification): bool => data_get($notification->data, 'kind') === 'ticket_assigned')
+            ->count();
+
+        return [
+            [
+                'label' => 'Visible alerts',
+                'value' => $visibleNotifications->count().' visible',
+                'detail' => 'Current alerts you can still open.',
+            ],
+            [
+                'label' => 'Unread alerts',
+                'value' => $visibleUnreadNotificationCount.' unread',
+                'detail' => $visibleUnreadNotificationCount > 0
+                    ? 'Still waiting for review or mark-read.'
+                    : 'No visible unread alerts.',
+            ],
+            [
+                'label' => 'Conversation alerts',
+                'value' => $conversationAlertCount.' '.Str::plural('conversation', $conversationAlertCount),
+                'detail' => 'Visitor replies and chat follow-up.',
+            ],
+            [
+                'label' => 'Ticket alerts',
+                'value' => $ticketAlertCount.' '.Str::plural('ticket', $ticketAlertCount),
+                'detail' => 'Ticket assignments and durable work.',
+            ],
+        ];
     }
 
     private function redirectAfterAlertAction(Request $request): RedirectResponse
