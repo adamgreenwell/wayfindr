@@ -2,9 +2,11 @@
 
 use App\Enums\AccountRole;
 use App\Models\Account;
+use App\Models\AuditEvent;
 use App\Models\ExternalIssueProviderConnection;
 use App\Models\Site;
 use App\Models\SiteExternalIssueProject;
+use App\Models\TicketExternalLink;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -163,4 +165,116 @@ test('plain agents can view mapped external projects but cannot manage routing',
             'project_key' => 'blocked/project',
         ])
         ->assertForbidden();
+});
+
+test('site settings show external issue sync health without raw provider failure details', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $site->supportAgents()->attach($admin);
+    $connection = ExternalIssueProviderConnection::factory()
+        ->for($account)
+        ->create([
+            'provider' => 'github',
+            'name' => 'Engineering GitHub',
+            'credentials' => ['token' => 'ghp_super_secret_sync_token'],
+        ]);
+    $project = SiteExternalIssueProject::factory()
+        ->for($account)
+        ->for($site)
+        ->for($connection, 'providerConnection')
+        ->create(['project_key' => 'adamgreenwell/wayfindr']);
+
+    TicketExternalLink::factory()
+        ->for($account)
+        ->for($site)
+        ->create([
+            'provider' => 'github',
+            'project_key' => $project->project_key,
+            'sync_status' => 'linked',
+        ]);
+    TicketExternalLink::factory()
+        ->for($account)
+        ->for($site)
+        ->create([
+            'provider' => 'github',
+            'project_key' => $project->project_key,
+            'sync_status' => 'sync_failed',
+        ]);
+    AuditEvent::factory()
+        ->for($account)
+        ->for($site)
+        ->create([
+            'action' => 'ticket.external_sync_failed',
+            'metadata' => [
+                'provider' => 'github',
+                'project_key' => $project->project_key,
+                'site_external_issue_project_id' => $project->id,
+                'status' => 422,
+                'message' => 'Authorization: Bearer ghp_super_secret_sync_token raw provider body should stay private',
+            ],
+            'occurred_at' => now()->subMinutes(5),
+        ]);
+
+    $this->actingAs($admin)
+        ->get("/dashboard/sites/{$site->id}")
+        ->assertOk()
+        ->assertSee('External issue health')
+        ->assertSee('1 linked')
+        ->assertSee('1 sync failed')
+        ->assertSee('Last failure')
+        ->assertSee('GitHub')
+        ->assertSee('adamgreenwell/wayfindr')
+        ->assertSee('Status 422')
+        ->assertDontSee('ghp_super_secret_sync_token')
+        ->assertDontSee('Authorization: Bearer')
+        ->assertDontSee('raw provider body should stay private');
+});
+
+test('site external issue health is scoped to the current account and site', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $otherAccount = Account::factory()->create(['name' => 'Other Support']);
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $otherSite = Site::factory()->for($otherAccount)->create(['name' => 'Other Docs']);
+    $site->supportAgents()->attach($admin);
+
+    TicketExternalLink::factory()
+        ->for($account)
+        ->for($site)
+        ->create([
+            'provider' => 'gitlab',
+            'project_key' => 'acme/docs',
+            'sync_status' => 'linked',
+        ]);
+    TicketExternalLink::factory()
+        ->for($otherAccount)
+        ->for($otherSite)
+        ->create([
+            'provider' => 'gitlab',
+            'project_key' => 'other/private',
+            'sync_status' => 'sync_failed',
+        ]);
+    AuditEvent::factory()
+        ->for($otherAccount)
+        ->for($otherSite)
+        ->create([
+            'action' => 'ticket.external_sync_failed',
+            'metadata' => [
+                'provider' => 'gitlab',
+                'project_key' => 'other/private',
+                'status' => 401,
+            ],
+            'occurred_at' => now(),
+        ]);
+
+    $this->actingAs($admin)
+        ->get("/dashboard/sites/{$site->id}")
+        ->assertOk()
+        ->assertSee('External issue health')
+        ->assertSee('1 linked')
+        ->assertSee('0 sync failed')
+        ->assertSee('No recent external sync failures for this site.')
+        ->assertDontSee('other/private')
+        ->assertDontSee('Status 401');
 });

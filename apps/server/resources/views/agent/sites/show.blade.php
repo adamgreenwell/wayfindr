@@ -382,6 +382,46 @@
                     </div>
                 @endif
 
+                <div id="external-issue-health" aria-labelledby="external-issue-health-heading">
+                    <div class="section-header">
+                        <h2 id="external-issue-health-heading">External issue health</h2>
+                        <span class="readiness-status" data-status="{{ $externalIssueHealth['tone'] }}">{{ $externalIssueHealth['label'] }}</span>
+                    </div>
+
+                    <div class="meta-grid">
+                        @foreach ($externalIssueHealth['status_counts'] as $statusCount)
+                            <div class="meta-item">
+                                <span class="meta-label">{{ $statusCount['label'] }}</span>
+                                <span class="meta-value">{{ $statusCount['count'] }} {{ strtolower($statusCount['label']) }}</span>
+                            </div>
+                        @endforeach
+                    </div>
+
+                    @if ($externalIssueHealth['recent_failures']->isEmpty())
+                        <p class="empty">No recent external sync failures for this site.</p>
+                    @else
+                        <div class="timeline-list">
+                            @foreach ($externalIssueHealth['recent_failures'] as $failure)
+                                <article class="timeline-item internal-note">
+                                    <div class="timeline-content">
+                                        <strong>{{ $loop->first ? 'Last failure' : 'Earlier failure' }}</strong>
+                                        <p class="message-body">{{ $failure['provider'] }} could not sync {{ $failure['project_key'] }}.</p>
+                                        <div class="timeline-meta">
+                                            @if ($failure['status'])
+                                                <span>{{ $failure['status'] }}</span>
+                                            @endif
+                                            @if ($failure['occurred_at'])
+                                                <span>{{ $failure['occurred_at']->diffForHumans() }}</span>
+                                            @endif
+                                            <span>Provider details withheld</span>
+                                        </div>
+                                    </div>
+                                </article>
+                            @endforeach
+                        </div>
+                    @endif
+                </div>
+
                 @if ($canManageIntegrations)
                     <form class="section-form" method="POST" action="{{ route('dashboard.external-issue-provider-connections.store') }}">
                         @csrf

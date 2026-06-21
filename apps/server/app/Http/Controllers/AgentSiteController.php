@@ -9,6 +9,7 @@ use App\Models\Site;
 use App\Models\User;
 use App\Support\ExternalIssueCapability;
 use App\Support\ExternalIssueProvider;
+use App\Support\ExternalIssueSyncStatus;
 use App\Support\OperatorReadiness;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -111,6 +112,7 @@ class AgentSiteController extends Controller
             'canUpdatePrivacy' => Gate::forUser($agent)->allows('updatePrivacy', $site),
             'dataResponsibility' => config('wayfindr.data_responsibility'),
             'externalIssueCapabilities' => ExternalIssueCapability::options(),
+            'externalIssueHealth' => $this->externalIssueHealth($site),
             'externalIssueProviderConnections' => $externalIssueProviderConnections,
             'externalIssueProviders' => ExternalIssueProvider::options(),
             'maskSelectors' => $this->maskSelectors($site),
@@ -169,6 +171,87 @@ class AgentSiteController extends Controller
                 'body' => 'Updated support access',
                 'occurred_at' => $event->occurred_at,
             ]);
+    }
+
+    /**
+     * @return array{
+     *     label: string,
+     *     tone: string,
+     *     status_counts: Collection<int, array{key: string, label: string, count: int}>,
+     *     recent_failures: Collection<int, array{provider: string, project_key: string, status: string|null, occurred_at: Carbon|null}>
+     * }
+     */
+    private function externalIssueHealth(Site $site): array
+    {
+        $statusCounts = $site->ticketExternalLinks()
+            ->where('account_id', $site->account_id)
+            ->selectRaw('sync_status, count(*) as aggregate')
+            ->groupBy('sync_status')
+            ->pluck('aggregate', 'sync_status');
+
+        $statusItems = collect(ExternalIssueSyncStatus::options())
+            ->map(fn (string $label, string $status): array => [
+                'key' => $status,
+                'label' => $label,
+                'count' => (int) ($statusCounts[$status] ?? 0),
+            ])
+            ->values();
+
+        $recentFailures = $site->auditEvents()
+            ->where('account_id', $site->account_id)
+            ->where('action', 'ticket.external_sync_failed')
+            ->latest('occurred_at')
+            ->latest('id')
+            ->limit(3)
+            ->get()
+            ->map(fn (AuditEvent $event): array => [
+                'provider' => ExternalIssueProvider::label(data_get($event->metadata, 'provider')),
+                'project_key' => $this->externalIssueFailureProjectKey($event),
+                'status' => $this->externalIssueFailureStatus($event),
+                'occurred_at' => $event->occurred_at,
+            ]);
+
+        $failedCount = (int) ($statusCounts['sync_failed'] ?? 0);
+        $pendingCount = (int) ($statusCounts['sync_pending'] ?? 0);
+
+        return [
+            'label' => match (true) {
+                $failedCount > 0 || $recentFailures->isNotEmpty() => 'Needs attention',
+                $pendingCount > 0 => 'Sync pending',
+                default => 'Healthy',
+            },
+            'tone' => match (true) {
+                $failedCount > 0 || $recentFailures->isNotEmpty() => 'attention',
+                $pendingCount > 0 => 'manual',
+                default => 'ready',
+            },
+            'status_counts' => $statusItems,
+            'recent_failures' => $recentFailures,
+        ];
+    }
+
+    private function externalIssueFailureProjectKey(AuditEvent $event): string
+    {
+        $projectKey = data_get($event->metadata, 'project_key');
+
+        return is_string($projectKey) && trim($projectKey) !== ''
+            ? trim($projectKey)
+            : 'Project not recorded';
+    }
+
+    private function externalIssueFailureStatus(AuditEvent $event): ?string
+    {
+        $status = data_get($event->metadata, 'status');
+
+        if (is_int($status) || (is_string($status) && preg_match('/^\d{3}$/', $status))) {
+            return 'Status '.$status;
+        }
+
+        if (is_string($status) && preg_match('/^[A-Za-z0-9 _.-]{1,40}$/', $status)) {
+            return 'Status '.$status;
+        }
+
+        return null;
     }
 
     public function update(Request $request, Site $site): RedirectResponse

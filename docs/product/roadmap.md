@@ -26,7 +26,8 @@ foundation now includes:
   emails, mail readiness warnings, and documented alert digest/escalation
   guardrails.
 - Provider-neutral external issue connections, site project mappings, external
-  ticket links, and GitHub/GitLab outbound issue creation.
+  ticket links, GitHub/GitLab outbound issue creation, and local sync-health
+  visibility.
 
 ## Next Alpha Focus
 
@@ -60,7 +61,8 @@ stable.
 - Bitbucket Cloud, Bitbucket Data Center, or Jira outbound issue creation based
   on operator demand. Jira is the first Atlassian-family candidate; native
   Bitbucket Issues are deferred to legacy demand.
-- External issue sync health, retry state, and deeper audit visibility.
+- External issue retry state, inbound provider updates, and deeper audit
+  visibility.
 - Agent-assisted summaries, reply drafts, and ticket suggestions when they
   improve concrete workflows without becoming AI decoration.
 - SPA route tracking and richer host-app SDKs.

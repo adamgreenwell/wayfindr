@@ -102,6 +102,9 @@ Expected pieces:
 - A GitLab issue creator adapter for explicit outbound issue creation. It calls
   GitLab's Issues API for GitLab.com or self-managed GitLab base URLs only when
   a mapped provider connection has the `create_issue` capability.
+- A site-level external issue health readout that summarizes local link sync
+  states and recent sanitized provider failures without calling external
+  providers or exposing credentials.
 - Adapter interfaces for creating an external issue, adding comments, fetching
   status, and handling webhooks when supported.
 - Audit events for external issue creation, sync attempts, sync failures, and
@@ -152,14 +155,17 @@ Default behavior should be conservative:
 6. Evaluate Bitbucket Cloud issues versus Jira based on real operator demand.
    This is now resolved in favor of Jira as the first Atlassian-family adapter,
    with Bitbucket native issues deferred to legacy demand.
-7. Add inbound webhooks and sync health once outbound links are dependable.
+7. Add external issue sync health once outbound links are dependable. This now
+   starts with local, site-scoped health visibility; inbound webhooks and deeper
+   sync behavior remain later work.
 
 ## Open Questions
 
 - Should external issue creation be account-wide, site-scoped, or both?
 - Should ticket categories map to provider labels by default, or only after an
   operator configures explicit mappings?
-- Should external sync failures create agent alerts, dashboard warnings, or both?
+- Should external sync failures create agent alerts, dashboard warnings, or both
+  after the calm site-level health readout proves useful?
 - Should public repository destinations require an additional warning before
   transcripts or internal notes can be exported?
 
