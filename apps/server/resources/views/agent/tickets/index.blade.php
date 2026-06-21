@@ -208,6 +208,15 @@
                                             @if ($activityPreview['occurred_at'])
                                                 <span class="table-note">{{ $activityPreview['occurred_at']->diffForHumans() }}</span>
                                             @endif
+                                            @if ($activityPreview['reply_visibility'])
+                                                <span class="table-note">
+                                                    Reply visibility:
+                                                    <span class="readiness-status" data-status="{{ $activityPreview['reply_visibility']['tone'] }}">
+                                                        {{ $activityPreview['reply_visibility']['label'] }}
+                                                    </span>
+                                                    {{ $activityPreview['reply_visibility']['detail'] }}
+                                                </span>
+                                            @endif
                                         </td>
                                         <td>{{ $ticket->site->name }}</td>
                                         <td>{{ ucfirst($ticket->status) }}</td>

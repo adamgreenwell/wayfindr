@@ -133,7 +133,7 @@ class AgentTicketQueueController extends Controller
             };
         $ticketQuery = $this->ticketQueryParams($ticketStatus, $ticketFilter, $ticketSite, $ticketPriority, $ticketCategory, $ticketLabel, $ticketAttention, $ticketSearch);
         $ticketResults = Ticket::query()
-            ->with(['assignee', 'conversation.latestMessage', 'labels', 'latestEscalationEvent.actor', 'site'])
+            ->with(['assignee', 'conversation.latestAgentMessage', 'conversation.latestMessage', 'labels', 'latestEscalationEvent.actor', 'site'])
             ->where('account_id', $account->id)
             ->whereHas('site', fn ($query) => $query->visibleToAgent($agent))
             ->when($ticketStatus !== 'all', fn ($query) => $query->where('status', $ticketStatus))

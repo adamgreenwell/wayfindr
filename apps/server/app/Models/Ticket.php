@@ -116,7 +116,7 @@ class Ticket extends Model
     }
 
     /**
-     * @return array{label: string, body: string, occurred_at: CarbonInterface|null}
+     * @return array{label: string, body: string, occurred_at: CarbonInterface|null, reply_visibility: array{label: string, detail: string, tone: string}|null}
      */
     public function queueActivityPreview(): array
     {
@@ -127,6 +127,9 @@ class Ticket extends Model
                 'body' => $this->activityPreviewSnippet($latestMessage->body) ?: 'Message has no text preview.',
                 'label' => $this->activityPreviewLabel($latestMessage),
                 'occurred_at' => $latestMessage->created_at,
+                'reply_visibility' => $latestMessage->sender_type === User::class
+                    ? $this->replyVisibility()
+                    : null,
             ];
         }
 
@@ -137,6 +140,7 @@ class Ticket extends Model
                 'body' => $description,
                 'label' => 'Ticket summary',
                 'occurred_at' => $this->created_at,
+                'reply_visibility' => null,
             ];
         }
 
@@ -144,6 +148,7 @@ class Ticket extends Model
             'body' => 'Open the ticket to add context or send the next update.',
             'label' => 'No activity preview yet',
             'occurred_at' => null,
+            'reply_visibility' => null,
         ];
     }
 

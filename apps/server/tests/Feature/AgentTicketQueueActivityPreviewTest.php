@@ -44,7 +44,8 @@ test('ticket queue shows the latest visitor message preview for linked tickets',
         ->assertOk()
         ->assertSee('Latest activity')
         ->assertSee('Visitor message')
-        ->assertSee('I cannot export the June invoice after checkout.');
+        ->assertSee('I cannot export the June invoice after checkout.')
+        ->assertDontSee('Reply visibility');
 });
 
 test('ticket queue shows the latest agent reply preview for linked tickets', function (): void {
@@ -77,7 +78,55 @@ test('ticket queue shows the latest agent reply preview for linked tickets', fun
         ->get(route('dashboard.tickets.index'))
         ->assertOk()
         ->assertSee('Agent reply')
-        ->assertSee('I sent a workaround and will confirm the export.');
+        ->assertSee('I sent a workaround and will confirm the export.')
+        ->assertSee('Reply visibility')
+        ->assertSee('Not seen yet')
+        ->assertSee('Latest agent reply has not been seen.');
+});
+
+test('ticket queue shows seen reply visibility for latest agent replies', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-21 18:00:00', 'UTC'));
+
+    try {
+        [$agent, $site, $visitor, $conversation] = ticketQueuePreviewContext();
+
+        ConversationMessage::factory()->for($conversation)->create([
+            'body' => 'The invoice export fails.',
+            'created_at' => now()->subMinutes(10),
+            'sender_id' => $visitor->id,
+            'sender_type' => Visitor::class,
+        ]);
+        ConversationMessage::factory()->for($conversation)->create([
+            'body' => 'I sent the fixed export link.',
+            'created_at' => now()->subMinutes(4),
+            'seen_at' => now()->subMinute(),
+            'sender_id' => $agent->id,
+            'sender_type' => User::class,
+        ]);
+
+        Ticket::factory()
+            ->for($agent->account)
+            ->for($site)
+            ->for($conversation)
+            ->for($visitor, 'requester')
+            ->for($agent, 'assignee')
+            ->create([
+                'subject' => 'Invoice export seen follow-up',
+            ]);
+
+        $this->actingAs($agent)
+            ->get(route('dashboard.tickets.index'))
+            ->assertOk()
+            ->assertSeeInOrder([
+                'Agent reply',
+                'I sent the fixed export link.',
+                'Reply visibility',
+                'Visitor saw reply',
+                'Seen 1 minute ago',
+            ]);
+    } finally {
+        Carbon::setTestNow();
+    }
 });
 
 test('ticket queue orders linked activity previews by message timestamp before id', function (): void {
