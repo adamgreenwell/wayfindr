@@ -370,12 +370,14 @@
             white-space: nowrap;
         }
 
+        .queue-activity-preview,
         .ticket-activity-preview {
             max-width: 340px;
             min-width: 260px;
             white-space: normal;
         }
 
+        .queue-activity-preview .lede,
         .ticket-activity-preview .lede {
             margin-top: 4px;
         }

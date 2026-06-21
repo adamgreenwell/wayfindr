@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Support\Str;
 
 #[Fillable([
     'site_id',
@@ -171,6 +172,33 @@ class Conversation extends Model
             'waiting_on_visitor' => 'Waiting on visitor',
             default => 'Needs reply',
         };
+    }
+
+    /**
+     * @return array{label: string, body: string, occurred_at: CarbonInterface|null}
+     */
+    public function queueActivityPreview(): array
+    {
+        $latestMessage = $this->relationLoaded('latestMessage')
+            ? $this->latestMessage
+            : $this->messages()
+                ->latest('created_at')
+                ->latest('id')
+                ->first();
+
+        if ($latestMessage) {
+            return [
+                'body' => $this->activityPreviewSnippet($latestMessage->body) ?: 'Message has no text preview.',
+                'label' => $this->activityPreviewLabel($latestMessage),
+                'occurred_at' => $latestMessage->created_at,
+            ];
+        }
+
+        return [
+            'body' => 'No messages have been sent yet.',
+            'label' => 'No activity preview yet',
+            'occurred_at' => null,
+        ];
     }
 
     public function visitorReadState(): string
@@ -358,6 +386,22 @@ class Conversation extends Model
             ->latest('created_at')
             ->latest('id')
             ->first();
+    }
+
+    private function activityPreviewLabel(ConversationMessage $message): string
+    {
+        return match ($message->sender_type) {
+            Visitor::class => 'Latest visitor message',
+            User::class => 'Latest agent reply',
+            default => 'Latest message',
+        };
+    }
+
+    private function activityPreviewSnippet(?string $body): string
+    {
+        $body = (string) Str::of((string) $body)->squish();
+
+        return Str::limit($body, 150);
     }
 
     private function visitorTypingAt(): ?CarbonInterface

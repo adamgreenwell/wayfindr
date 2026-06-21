@@ -133,6 +133,7 @@
                             <tbody>
                                 @foreach ($conversations as $conversation)
                                     @php
+                                        $activityPreview = $conversation->queueActivityPreview();
                                         $cobrowseTransport = $cobrowseTransportByConversationId->get($conversation->id, [
                                             'label' => 'Unavailable',
                                             'message' => 'Cobrowse transport is not active.',
@@ -143,10 +144,12 @@
                                         ]);
                                     @endphp
                                     <tr>
-                                        <td>
+                                        <td class="queue-activity-preview">
                                             <a class="text-link" href="{{ route('dashboard.conversations.show', ['supportCode' => $conversation->support_code] + $conversationQuery) }}">
                                                 {{ $conversation->subject ?? 'Untitled conversation' }}
                                             </a>
+                                            <span class="table-note">{{ $activityPreview['label'] }}</span>
+                                            <p class="lede">{{ $activityPreview['body'] }}</p>
                                         </td>
                                         <td>
                                             <a class="text-link" href="{{ route('dashboard.sites.show', $conversation->site) }}">
