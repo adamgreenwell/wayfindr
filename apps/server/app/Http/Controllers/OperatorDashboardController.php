@@ -27,7 +27,7 @@ class OperatorDashboardController extends Controller
     }
 
     /**
-     * @return Collection<int, array{actor: string, body: string, label: string, occurred_at: Carbon|null}>
+     * @return Collection<int, array{actor: string, body: string, details: array<int, array{label: string, value: string}>, label: string, occurred_at: Carbon|null}>
      */
     private function operatorActivity(): Collection
     {
@@ -41,6 +41,7 @@ class OperatorDashboardController extends Controller
             ->map(fn (AuditEvent $event): array => [
                 'actor' => $this->operatorActivityActor($event),
                 'body' => $this->operatorActivityBody($event),
+                'details' => $this->operatorActivityDetails($event),
                 'label' => $this->operatorActivityLabel($event),
                 'occurred_at' => $event->occurred_at,
             ]);
@@ -82,6 +83,32 @@ class OperatorDashboardController extends Controller
         };
     }
 
+    /**
+     * @return array<int, array{label: string, value: string}>
+     */
+    private function operatorActivityDetails(AuditEvent $event): array
+    {
+        return match ($event->action) {
+            'operator_readiness.confirmed' => [
+                [
+                    'label' => 'Readiness item',
+                    'value' => $this->readinessConfirmationItem($event),
+                ],
+                [
+                    'label' => 'Evidence note',
+                    'value' => $this->readinessConfirmationHasNote($event)
+                        ? 'Evidence note recorded'
+                        : 'No evidence note recorded',
+                ],
+                [
+                    'label' => 'Event type',
+                    'value' => 'Readiness confirmation',
+                ],
+            ],
+            default => [],
+        };
+    }
+
     private function readinessConfirmationLabel(AuditEvent $event): string
     {
         return match (data_get($event->metadata, 'key')) {
@@ -89,5 +116,19 @@ class OperatorDashboardController extends Controller
             'backups_restore' => 'Backups and restore confirmation',
             default => 'Readiness confirmation',
         };
+    }
+
+    private function readinessConfirmationItem(AuditEvent $event): string
+    {
+        return match (data_get($event->metadata, 'key')) {
+            'scheduler' => 'Scheduler',
+            'backups_restore' => 'Backups and restore',
+            default => 'Instance readiness',
+        };
+    }
+
+    private function readinessConfirmationHasNote(AuditEvent $event): bool
+    {
+        return trim((string) data_get($event->metadata, 'note', '')) !== '';
     }
 }

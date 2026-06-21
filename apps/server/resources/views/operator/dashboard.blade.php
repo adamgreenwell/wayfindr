@@ -172,6 +172,19 @@
                         <div class="timeline-content">
                             <strong>{{ $activity['label'] }}</strong>
                             <p class="message-body">{{ $activity['body'] }}</p>
+                            @if ($activity['details'] !== [])
+                                <div class="operator-activity-details" aria-label="Safe evidence details">
+                                    <span class="meta-label">Safe evidence details</span>
+                                    <div class="meta-grid realtime-grid">
+                                        @foreach ($activity['details'] as $detail)
+                                            <div class="meta-item">
+                                                <span class="meta-label">{{ $detail['label'] }}</span>
+                                                <span class="meta-value">{{ $detail['value'] }}</span>
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                </div>
+                            @endif
                             <div class="timeline-meta">
                                 <span>{{ $activity['actor'] }}</span>
                                 @if ($activity['occurred_at'])

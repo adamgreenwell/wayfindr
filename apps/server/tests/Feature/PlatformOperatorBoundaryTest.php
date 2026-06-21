@@ -329,6 +329,46 @@ test('operator console shows recent safe operator activity', function (): void {
         ->assertDontSee('Sensitive visitor transcript should stay out of the operator console.');
 });
 
+test('operator activity shows safe evidence details without rendering evidence notes', function (): void {
+    $operator = User::factory()->for(Account::factory())->create([
+        'account_role' => AccountRole::Agent,
+        'platform_role' => PlatformRole::Operator,
+        'name' => 'Morgan Maintainer',
+    ]);
+    $confirmation = OperatorReadinessConfirmation::query()->create([
+        'key' => 'backups_restore',
+        'confirmed_by_id' => $operator->id,
+        'confirmed_at' => now()->subMinutes(2),
+        'note' => null,
+    ]);
+
+    AuditEvent::query()->create([
+        'account_id' => $operator->account_id,
+        'actor_type' => $operator->getMorphClass(),
+        'actor_id' => $operator->id,
+        'subject_type' => $confirmation->getMorphClass(),
+        'subject_id' => $confirmation->id,
+        'action' => 'operator_readiness.confirmed',
+        'metadata' => [
+            'key' => 'backups_restore',
+            'note' => 'Support code WF-PRIVATE and visitor email person@example.test were reviewed.',
+        ],
+        'occurred_at' => now()->subMinutes(2),
+    ]);
+
+    $this->actingAs($operator)
+        ->get('/operator')
+        ->assertOk()
+        ->assertSee('Safe evidence details')
+        ->assertSee('Readiness item')
+        ->assertSee('Backups and restore')
+        ->assertSee('Evidence note')
+        ->assertSee('Evidence note recorded')
+        ->assertSee('Event type')
+        ->assertSee('Readiness confirmation')
+        ->assertDontSee('Support code WF-PRIVATE and visitor email person@example.test were reviewed.');
+});
+
 test('operator console shows aggregate cobrowse transport readiness without support data', function (): void {
     $this->travelTo(Carbon::parse('2026-06-20 12:00:00'));
 

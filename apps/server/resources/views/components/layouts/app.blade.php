@@ -944,6 +944,14 @@
             border-color: #b8860b;
         }
 
+        .operator-activity-details {
+            margin-top: 14px;
+        }
+
+        .operator-activity-details > .meta-label {
+            margin-bottom: 8px;
+        }
+
         .timeline-meta {
             display: flex;
             flex-wrap: wrap;
