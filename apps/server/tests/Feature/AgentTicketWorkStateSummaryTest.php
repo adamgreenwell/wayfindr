@@ -8,6 +8,7 @@ use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 
@@ -109,6 +110,79 @@ test('ticket detail work state falls back to standalone ticket context', functio
             'Add the next update',
             'Support reference',
         ]);
+});
+
+test('ticket detail work state shows linked ticket timing context', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-21 16:00:00', 'UTC'));
+
+    try {
+        [$agent, $site, $visitor, $conversation] = ticketWorkStateContext();
+
+        ConversationMessage::factory()->for($conversation)->create([
+            'body' => 'Can someone help me finish the billing export?',
+            'created_at' => now()->subHours(3),
+            'sender_id' => $visitor->id,
+            'sender_type' => Visitor::class,
+        ]);
+
+        $ticket = Ticket::factory()
+            ->for($agent->account)
+            ->for($site)
+            ->for($conversation)
+            ->for($visitor, 'requester')
+            ->for($agent, 'assignee')
+            ->create([
+                'created_at' => now()->subDays(2),
+                'subject' => 'Billing export timing context',
+                'updated_at' => now()->subHours(3),
+            ]);
+
+        $this->actingAs($agent)
+            ->get(route('dashboard.tickets.show', $ticket))
+            ->assertOk()
+            ->assertSeeInOrder([
+                'Work state',
+                'Timing',
+                'Opened 2 days ago',
+                'Waiting on reply for 3 hours',
+                'Support reference',
+            ]);
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+test('ticket detail work state shows graceful standalone timing context', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-21 16:00:00', 'UTC'));
+
+    try {
+        [$agent, $site, $visitor] = ticketWorkStateContext(false);
+
+        $ticket = Ticket::factory()
+            ->for($agent->account)
+            ->for($site)
+            ->for($visitor, 'requester')
+            ->for($agent, 'assignee')
+            ->create([
+                'created_at' => now()->subDays(5),
+                'description' => 'Follow up with operations about the missing label.',
+                'subject' => 'Standalone timing context',
+                'updated_at' => now()->subDays(5),
+            ]);
+
+        $this->actingAs($agent)
+            ->get(route('dashboard.tickets.show', $ticket))
+            ->assertOk()
+            ->assertSeeInOrder([
+                'Work state',
+                'Timing',
+                'Opened 5 days ago',
+                'Waiting on agent update since ticket opened',
+                'Support reference',
+            ]);
+    } finally {
+        Carbon::setTestNow();
+    }
 });
 
 test('ticket detail work state keeps internal notes out of the summary preview', function (): void {

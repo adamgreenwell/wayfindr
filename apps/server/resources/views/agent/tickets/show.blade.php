@@ -9,6 +9,7 @@
 
             @php
                 $ticketActivityPreview = $ticket->queueActivityPreview();
+                $ticketTiming = $ticket->queueTimingContext();
                 $ticketNextAction = $ticket->nextAction();
                 $requesterReference = $ticket->requester?->email
                     ?? $ticket->requester?->name
@@ -30,6 +31,11 @@
                     <div class="meta-item">
                         <span class="meta-label">Owner</span>
                         <span class="meta-value">{{ $ticket->assignee?->name ?? 'Unassigned' }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Timing</span>
+                        <span class="meta-value">{{ $ticketTiming['opened_label'] }}</span>
+                        <span class="lede">{{ $ticketTiming['wait_label'] }}</span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">Latest activity</span>
