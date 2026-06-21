@@ -390,6 +390,19 @@
                                             @endif
                                             <span>Provider details withheld</span>
                                         </div>
+                                        @if ($failure['retry'])
+                                            <form class="compact-form external-issue-retry-form" method="POST" action="{{ $failure['retry']['route'] }}">
+                                                @csrf
+                                                <input type="hidden" name="site_external_issue_project_id" value="{{ $failure['retry']['site_external_issue_project_id'] }}">
+                                                <button class="button secondary" type="submit">{{ $failure['retry']['label'] }}</button>
+                                                <span class="lede">Retry uses the current site project mapping and the conservative export payload.</span>
+                                            </form>
+                                        @else
+                                            <p class="lede">
+                                                <strong>Retry unavailable</strong><br>
+                                                Check the site external issue settings before retrying.
+                                            </p>
+                                        @endif
                                     </div>
                                 </article>
                             @endforeach

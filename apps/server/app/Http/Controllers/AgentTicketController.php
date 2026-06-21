@@ -6,6 +6,7 @@ use App\Events\ConversationMessageCreated;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\Site;
+use App\Models\SiteExternalIssueProject;
 use App\Models\Ticket;
 use App\Models\TicketLabel;
 use App\Models\User;
@@ -734,7 +735,7 @@ class AgentTicketController extends Controller
      *     tone: string,
      *     total: int,
      *     status_counts: Collection<int, array{key: string, label: string, count: int}>,
-     *     failures: Collection<int, array{provider: string, project_key: string, occurred_at: CarbonInterface|null}>
+     *     failures: Collection<int, array{provider: string, project_key: string, occurred_at: CarbonInterface|null, retry: array{label: string, route: string, site_external_issue_project_id: int}|null}>
      * }
      */
     private function ticketExternalIssueHealth(Ticket $ticket): array
@@ -768,13 +769,16 @@ class AgentTicketController extends Controller
                 'provider' => $externalLink->providerLabel(),
                 'project_key' => $externalLink->project_key,
                 'occurred_at' => $externalLink->last_synced_at ?? $externalLink->updated_at,
+                'retry' => $this->externalIssueRetryAction(
+                    $ticket,
+                    $externalLink->provider,
+                    data_get($externalLink->metadata, 'site_external_issue_project_id'),
+                ),
             ])
             ->toBase();
-        $eventFailures = $failedEvents->map(fn ($event): array => [
-            'provider' => ExternalIssueProvider::label(data_get($event->metadata, 'provider')),
-            'project_key' => $this->externalIssueFailureProjectKey($event),
-            'occurred_at' => $event->occurred_at,
-        ])->toBase();
+        $eventFailures = $failedEvents
+            ->map(fn ($event): array => $this->externalIssueFailureItem($ticket, $event))
+            ->toBase();
         $failures = $linkFailures
             ->merge($eventFailures)
             ->sortByDesc('occurred_at')
@@ -806,6 +810,65 @@ class AgentTicketController extends Controller
         return is_string($projectKey) && trim($projectKey) !== ''
             ? trim($projectKey)
             : 'Project not recorded';
+    }
+
+    /**
+     * @return array{provider: string, project_key: string, occurred_at: CarbonInterface|null, retry: array{label: string, route: string, site_external_issue_project_id: int}|null}
+     */
+    private function externalIssueFailureItem(Ticket $ticket, AuditEvent $event): array
+    {
+        $provider = data_get($event->metadata, 'provider');
+
+        return [
+            'provider' => ExternalIssueProvider::label(is_string($provider) ? $provider : null),
+            'project_key' => $this->externalIssueFailureProjectKey($event),
+            'occurred_at' => $event->occurred_at,
+            'retry' => $this->externalIssueRetryAction(
+                $ticket,
+                is_string($provider) ? $provider : null,
+                data_get($event->metadata, 'site_external_issue_project_id'),
+            ),
+        ];
+    }
+
+    /**
+     * @return array{label: string, route: string, site_external_issue_project_id: int}|null
+     */
+    private function externalIssueRetryAction(Ticket $ticket, ?string $provider, mixed $projectId): ?array
+    {
+        $routeName = $this->externalIssueRetryRouteName($provider);
+
+        if ($routeName === null || ! is_numeric($projectId)) {
+            return null;
+        }
+
+        $projectId = (int) $projectId;
+        $project = $ticket->site->externalIssueProjects
+            ->first(fn (SiteExternalIssueProject $project): bool => (int) $project->id === $projectId
+                && (int) $project->account_id === (int) $ticket->account_id
+                && (int) $project->site_id === (int) $ticket->site_id
+                && $project->providerConnection?->provider === $provider
+                && $project->providerConnection?->is_enabled === true
+                && $project->hasCapability('create_issue'));
+
+        if (! $project) {
+            return null;
+        }
+
+        return [
+            'label' => 'Retry '.ExternalIssueProvider::label($provider).' issue',
+            'route' => route($routeName, $ticket),
+            'site_external_issue_project_id' => $project->id,
+        ];
+    }
+
+    private function externalIssueRetryRouteName(?string $provider): ?string
+    {
+        return match ($provider) {
+            'github' => 'dashboard.tickets.external-issues.github.store',
+            'gitlab' => 'dashboard.tickets.external-issues.gitlab.store',
+            default => null,
+        };
     }
 
     private function issueProjectsForTicket(Ticket $ticket, string $provider): Collection

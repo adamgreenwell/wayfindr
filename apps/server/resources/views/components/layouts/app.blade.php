@@ -505,6 +505,10 @@
             min-height: 38px;
         }
 
+        .external-issue-retry-form {
+            margin-top: 12px;
+        }
+
         .support-lookup-form {
             flex: 0 1 220px;
             flex-wrap: nowrap;
