@@ -377,6 +377,14 @@
                                 <span class="meta-value">{{ $statusCount['count'] }} {{ strtolower($statusCount['label']) }}</span>
                             </div>
                         @endforeach
+                        <div class="meta-item">
+                            <span class="meta-label">Last external attempt</span>
+                            <span class="meta-value">{{ $ticketExternalIssueHealth['latest_attempt']['label'] }}</span>
+                            <span class="lede">{{ $ticketExternalIssueHealth['latest_attempt']['body'] }}</span>
+                            @if ($ticketExternalIssueHealth['latest_attempt']['occurred_at'])
+                                <span class="table-note">{{ $ticketExternalIssueHealth['latest_attempt']['occurred_at']->diffForHumans() }}</span>
+                            @endif
+                        </div>
                     </div>
 
                     @if ($ticketExternalIssueHealth['total'] === 0 && $ticketExternalIssueHealth['failures']->isEmpty())

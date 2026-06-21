@@ -125,6 +125,164 @@ test('ticket detail includes outbound issue creation failures in external issue 
         ->assertDontSee('ghp_secret_value');
 });
 
+test('ticket detail summarizes the latest successful external issue attempt', function (): void {
+    [$agent, $ticket] = ticketExternalIssueHealthContext();
+
+    AuditEvent::factory()
+        ->for($ticket->account)
+        ->for($ticket, 'subject')
+        ->create([
+            'action' => 'ticket.external_sync_failed',
+            'actor_id' => $agent->id,
+            'actor_type' => User::class,
+            'metadata' => [
+                'provider' => 'github',
+                'project_key' => 'adamgreenwell/wayfindr',
+                'message' => 'GitHub token ghp_secret_value was rejected.',
+            ],
+            'occurred_at' => now()->subMinutes(2),
+            'site_id' => $ticket->site_id,
+        ]);
+    AuditEvent::factory()
+        ->for($ticket->account)
+        ->for($ticket, 'subject')
+        ->create([
+            'action' => 'ticket.external_issue_created',
+            'actor_id' => $agent->id,
+            'actor_type' => User::class,
+            'metadata' => [
+                'provider' => 'github',
+                'project_key' => 'adamgreenwell/wayfindr',
+                'external_key' => '#123',
+            ],
+            'occurred_at' => now(),
+            'site_id' => $ticket->site_id,
+        ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.tickets.show', $ticket))
+        ->assertOk()
+        ->assertSeeInOrder([
+            'Last external attempt',
+            'GitHub issue created',
+            'adamgreenwell/wayfindr is linked to #123.',
+        ])
+        ->assertDontSee('ghp_secret_value');
+});
+
+test('ticket detail summarizes the latest failed external issue attempt safely', function (): void {
+    [$agent, $ticket] = ticketExternalIssueHealthContext();
+
+    AuditEvent::factory()
+        ->for($ticket->account)
+        ->for($ticket, 'subject')
+        ->create([
+            'action' => 'ticket.external_sync_failed',
+            'actor_id' => $agent->id,
+            'actor_type' => User::class,
+            'metadata' => [
+                'provider' => 'github',
+                'project_key' => 'adamgreenwell/wayfindr',
+                'message' => 'GitHub token ghp_secret_value was rejected.',
+            ],
+            'occurred_at' => now(),
+            'site_id' => $ticket->site_id,
+        ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.tickets.show', $ticket))
+        ->assertOk()
+        ->assertSeeInOrder([
+            'Last external attempt',
+            'GitHub sync failed',
+            'adamgreenwell/wayfindr needs attention. Provider details withheld.',
+        ])
+        ->assertDontSee('ghp_secret_value');
+});
+
+test('ticket detail summarizes pending external issue links as the latest attempt', function (): void {
+    [$agent, $ticket] = ticketExternalIssueHealthContext();
+
+    TicketExternalLink::factory()
+        ->for($ticket->account)
+        ->for($ticket->site)
+        ->for($ticket)
+        ->create([
+            'provider' => 'gitlab',
+            'project_key' => 'acme/docs',
+            'sync_status' => 'sync_pending',
+            'last_synced_at' => null,
+            'updated_at' => now(),
+        ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.tickets.show', $ticket))
+        ->assertOk()
+        ->assertSeeInOrder([
+            'Last external attempt',
+            'GitLab sync pending',
+            'acme/docs is waiting for provider confirmation.',
+        ]);
+});
+
+test('ticket detail summarizes missing external issue activity calmly', function (): void {
+    [$agent, $ticket] = ticketExternalIssueHealthContext();
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.tickets.show', $ticket))
+        ->assertOk()
+        ->assertSeeInOrder([
+            'Last external attempt',
+            'No external attempt yet',
+            'Create or link an external issue when this ticket needs work in another tracker.',
+        ]);
+});
+
+test('ticket detail summarizes removed external links as the latest attempt', function (): void {
+    [$agent, $ticket] = ticketExternalIssueHealthContext();
+
+    AuditEvent::factory()
+        ->for($ticket->account)
+        ->for($ticket, 'subject')
+        ->create([
+            'action' => 'ticket.external_issue_created',
+            'actor_id' => $agent->id,
+            'actor_type' => User::class,
+            'metadata' => [
+                'provider' => 'github',
+                'project_key' => 'adamgreenwell/wayfindr',
+                'external_key' => '#123',
+            ],
+            'occurred_at' => now()->subMinutes(2),
+            'site_id' => $ticket->site_id,
+        ]);
+    AuditEvent::factory()
+        ->for($ticket->account)
+        ->for($ticket, 'subject')
+        ->create([
+            'action' => 'ticket.external_link_removed',
+            'actor_id' => $agent->id,
+            'actor_type' => User::class,
+            'metadata' => [
+                'provider' => 'github',
+                'project_key' => 'adamgreenwell/wayfindr',
+                'external_key' => '#123',
+            ],
+            'occurred_at' => now(),
+            'site_id' => $ticket->site_id,
+        ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.tickets.show', $ticket))
+        ->assertOk()
+        ->assertSeeInOrder([
+            'Last external attempt',
+            'GitHub link removed',
+            'adamgreenwell/wayfindr is no longer linked to #123.',
+        ])
+        ->assertDontSee('adamgreenwell/wayfindr is linked to #123.');
+});
+
 test('ticket detail offers retry for retryable outbound issue creation failures', function (): void {
     [$agent, $ticket] = ticketExternalIssueHealthContext();
     $connection = ExternalIssueProviderConnection::factory()
