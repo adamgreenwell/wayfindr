@@ -8,6 +8,7 @@ use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Models\OperatorReadinessConfirmation;
 use App\Models\Site;
+use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
 use Illuminate\Foundation\Application as LaravelApplication;
@@ -173,6 +174,55 @@ test('operator console explains the platform support data boundary', function ()
         ->assertSee('Future scoped workflow')
         ->assertSee('Conversations, tickets, cobrowse snapshots, transcripts, and visitor page data stay out of operator screens.')
         ->assertSee('Any future customer-data access must be explicit, time-bound, and audited.');
+});
+
+test('platform operator authority does not bypass dashboard support access', function (): void {
+    $operator = User::factory()->for(Account::factory(['name' => 'Wayfindr Operators']))->create([
+        'account_role' => AccountRole::Agent,
+        'platform_role' => PlatformRole::Operator,
+    ]);
+    $customerAccount = Account::factory()->create(['name' => 'Private Customer Account']);
+    $site = Site::factory()->for($customerAccount)->create(['name' => 'Private Customer Site']);
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-private-operator-boundary',
+    ]);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-OPPRIVATE',
+        'subject' => 'Private platform support request',
+    ]);
+    $ticket = Ticket::factory()->for($customerAccount)->for($site)->for($visitor, 'requester')->for($conversation)->create([
+        'subject' => 'Private ticket details',
+        'description' => 'Private ticket body that should stay behind support access.',
+    ]);
+
+    $this->actingAs($operator)
+        ->get('/operator')
+        ->assertOk()
+        ->assertSee('Dashboard support routes remain account and site scoped.')
+        ->assertSee('Platform operator access does not make someone a support agent for customer conversations, tickets, visitors, or sites.')
+        ->assertDontSee('Private Customer Account')
+        ->assertDontSee('Private Customer Site')
+        ->assertDontSee('anon-private-operator-boundary')
+        ->assertDontSee('WF-OPPRIVATE')
+        ->assertDontSee('Private platform support request')
+        ->assertDontSee('Private ticket details')
+        ->assertDontSee('Private ticket body that should stay behind support access.');
+
+    $this->actingAs($operator)
+        ->get("/dashboard/conversations/{$conversation->support_code}")
+        ->assertNotFound();
+
+    $this->actingAs($operator)
+        ->get("/dashboard/tickets/{$ticket->id}")
+        ->assertNotFound();
+
+    $this->actingAs($operator)
+        ->get("/dashboard/visitors/{$visitor->id}")
+        ->assertNotFound();
+
+    $this->actingAs($operator)
+        ->get("/dashboard/sites/{$site->id}")
+        ->assertNotFound();
 });
 
 test('operator console shows a platform action inventory without support data', function (): void {

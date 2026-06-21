@@ -99,6 +99,9 @@
                 Conversations, tickets, cobrowse snapshots, transcripts, and visitor page data stay out of operator screens.
             </p>
             <p>
+                Dashboard support routes remain account and site scoped. Platform operator access does not make someone a support agent for customer conversations, tickets, visitors, or sites.
+            </p>
+            <p>
                 Any future customer-data access must be explicit, time-bound, and audited.
             </p>
         </div>
