@@ -26,7 +26,7 @@ foundation now includes:
   emails, mail readiness warnings, and documented alert digest/escalation
   guardrails.
 - Provider-neutral external issue connections, site project mappings, external
-  ticket links, and GitHub outbound issue creation.
+  ticket links, and GitHub/GitLab outbound issue creation.
 
 ## Next Alpha Focus
 
@@ -57,7 +57,6 @@ experience without opening broad integration or platform-service work too soon.
 These remain valid but should wait until the support loop and operator loop feel
 stable.
 
-- GitLab outbound issue creation.
 - Bitbucket Cloud, Bitbucket Data Center, or Jira outbound issue creation based
   on operator demand.
 - External issue sync health, retry state, and deeper audit visibility.

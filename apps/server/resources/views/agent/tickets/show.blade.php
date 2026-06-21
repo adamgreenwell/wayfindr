@@ -341,10 +341,10 @@
                     <span class="lede">{{ $ticket->externalLinks->count() }} linked</span>
                 </div>
 
-                @if ($githubIssueProjects->isNotEmpty())
+                @if ($githubIssueProjects->isNotEmpty() || $gitlabIssueProjects->isNotEmpty())
                     <div class="section-form">
                         <strong>External issue actions</strong>
-                        <p class="lede">Create a conservative GitHub issue from this ticket without exporting transcripts, cobrowse snapshots, or internal notes.</p>
+                        <p class="lede">Create a conservative external issue from this ticket without exporting transcripts, cobrowse snapshots, or internal notes.</p>
 
                         @error('external_issue')
                             <p class="field-error">{{ $message }}</p>
@@ -356,6 +356,15 @@
                                 <input type="hidden" name="site_external_issue_project_id" value="{{ $githubIssueProject->id }}">
                                 <button class="button" type="submit">Create GitHub issue</button>
                                 <span class="lede">{{ $githubIssueProject->project_key }}</span>
+                            </form>
+                        @endforeach
+
+                        @foreach ($gitlabIssueProjects as $gitlabIssueProject)
+                            <form method="POST" action="{{ route('dashboard.tickets.external-issues.gitlab.store', $ticket) }}">
+                                @csrf
+                                <input type="hidden" name="site_external_issue_project_id" value="{{ $gitlabIssueProject->id }}">
+                                <button class="button" type="submit">Create GitLab issue</button>
+                                <span class="lede">{{ $gitlabIssueProject->project_key }}</span>
                             </form>
                         @endforeach
                     </div>
@@ -866,7 +875,7 @@
                                         @break
 
                                     @case('ticket.external_issue_created')
-                                        GitHub issue created
+                                        {{ \App\Support\ExternalIssueProvider::label(data_get($activity->metadata, 'provider')) }} issue created
                                         @break
 
                                     @case('ticket.external_link_removed')

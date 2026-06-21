@@ -49,6 +49,9 @@ Planning notes:
 
 - Store the GitLab base URL so self-hosted installs can target their own GitLab.
 - Treat project ID/path and issue IID as provider-specific external identifiers.
+- Outbound issue creation supports GitLab.com and self-managed GitLab base URLs.
+  It sends the same conservative ticket summary as GitHub and records the
+  resulting GitLab link locally.
 - Model GitLab capabilities separately from GitHub because labels, milestones,
   epics, and work items may vary by installation and edition.
 - Keep private project access failures non-leaky; a provider `404` can mean
@@ -89,6 +92,9 @@ Expected pieces:
 - A GitHub issue creator adapter for explicit outbound issue creation. It calls
   the GitHub Issues API only when a mapped provider connection has the
   `create_issue` capability.
+- A GitLab issue creator adapter for explicit outbound issue creation. It calls
+  GitLab's Issues API for GitLab.com or self-managed GitLab base URLs only when
+  a mapped provider connection has the `create_issue` capability.
 - Adapter interfaces for creating an external issue, adding comments, fetching
   status, and handling webhooks when supported.
 - Audit events for external issue creation, sync attempts, sync failures, and
@@ -134,6 +140,8 @@ Default behavior should be conservative:
 4. Add GitHub outbound issue creation as the first concrete adapter. This is now
    the outbound creation baseline.
 5. Add GitLab outbound issue creation after the adapter boundary proves itself.
+   This is now the second outbound creation adapter and the self-managed GitLab
+   URL baseline.
 6. Evaluate Bitbucket Cloud issues versus Jira based on real operator demand.
 7. Add inbound webhooks and sync health once outbound links are dependable.
 

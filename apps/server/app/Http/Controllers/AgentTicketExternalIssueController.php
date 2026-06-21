@@ -7,6 +7,8 @@ use App\Models\Ticket;
 use App\Models\User;
 use App\Support\ExternalIssues\GitHubIssueCreationFailed;
 use App\Support\ExternalIssues\GitHubIssueCreator;
+use App\Support\ExternalIssues\GitLabIssueCreationFailed;
+use App\Support\ExternalIssues\GitLabIssueCreator;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -25,7 +27,7 @@ class AgentTicketExternalIssueController extends Controller
         ]);
 
         $ticket->loadMissing(['conversation', 'site']);
-        $project = $this->githubProjectForTicket($ticket, (int) $validated['site_external_issue_project_id']);
+        $project = $this->providerProjectForTicket($ticket, (int) $validated['site_external_issue_project_id'], 'github');
 
         if (! $project->hasCapability('create_issue')) {
             return $this->externalIssueError($ticket, 'This GitHub connection cannot create issues.');
@@ -77,7 +79,71 @@ class AgentTicketExternalIssueController extends Controller
             ->with('status', 'GitHub issue created.');
     }
 
-    private function githubProjectForTicket(Ticket $ticket, int $projectId): SiteExternalIssueProject
+    public function storeGitlab(Request $request, Ticket $ticket, GitLabIssueCreator $gitlabIssueCreator): RedirectResponse
+    {
+        $agent = $request->user();
+
+        $this->authorizeTicketUpdate($agent, $ticket);
+
+        $validated = $request->validate([
+            'site_external_issue_project_id' => ['required', 'integer', 'exists:site_external_issue_projects,id'],
+        ]);
+
+        $ticket->loadMissing(['conversation', 'site']);
+        $project = $this->providerProjectForTicket($ticket, (int) $validated['site_external_issue_project_id'], 'gitlab');
+
+        if (! $project->hasCapability('create_issue')) {
+            return $this->externalIssueError($ticket, 'This GitLab connection cannot create issues.');
+        }
+
+        try {
+            $createdIssue = $gitlabIssueCreator->create($project, $ticket);
+        } catch (GitLabIssueCreationFailed $exception) {
+            $this->recordActivity($ticket, $agent, 'ticket.external_sync_failed', [
+                'provider' => 'gitlab',
+                'project_key' => $project->project_key,
+                'site_external_issue_project_id' => $project->id,
+                'status' => $exception->status(),
+                'message' => Str::limit($exception->getMessage(), 300),
+            ]);
+
+            return $this->externalIssueError($ticket, 'GitLab issue could not be created.');
+        }
+
+        $externalLink = $ticket->externalLinks()->create([
+            'account_id' => $ticket->account_id,
+            'site_id' => $ticket->site_id,
+            'provider' => 'gitlab',
+            'project_key' => $project->project_key,
+            'external_id' => $createdIssue['id'],
+            'external_key' => $createdIssue['iid'] ? '#'.$createdIssue['iid'] : null,
+            'url' => $createdIssue['url'],
+            'sync_status' => 'linked',
+            'metadata' => [
+                'site_external_issue_project_id' => $project->id,
+                'external_issue_provider_connection_id' => $project->external_issue_provider_connection_id,
+                'created_via' => 'gitlab_adapter',
+                'gitlab_issue_iid' => $createdIssue['iid'],
+            ],
+        ]);
+
+        $this->recordActivity($ticket, $agent, 'ticket.external_issue_created', [
+            'external_link_id' => $externalLink->id,
+            'provider' => $externalLink->provider,
+            'project_key' => $externalLink->project_key,
+            'external_id' => $externalLink->external_id,
+            'external_key' => $externalLink->external_key,
+            'url' => $externalLink->url,
+            'sync_status' => $externalLink->sync_status,
+            'site_external_issue_project_id' => $project->id,
+        ]);
+
+        return redirect()
+            ->back(302, [], route('dashboard'))
+            ->with('status', 'GitLab issue created.');
+    }
+
+    private function providerProjectForTicket(Ticket $ticket, int $projectId, string $provider): SiteExternalIssueProject
     {
         return SiteExternalIssueProject::query()
             ->with('providerConnection')
@@ -85,7 +151,7 @@ class AgentTicketExternalIssueController extends Controller
             ->where('account_id', $ticket->account_id)
             ->where('site_id', $ticket->site_id)
             ->whereHas('providerConnection', fn ($query) => $query
-                ->where('provider', 'github')
+                ->where('provider', $provider)
                 ->where('is_enabled', true))
             ->firstOrFail();
     }

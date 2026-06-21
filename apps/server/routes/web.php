@@ -154,6 +154,8 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.tickets.external-links.store');
     Route::post('/dashboard/tickets/{ticket}/external-issues/github', [AgentTicketExternalIssueController::class, 'storeGithub'])
         ->name('dashboard.tickets.external-issues.github.store');
+    Route::post('/dashboard/tickets/{ticket}/external-issues/gitlab', [AgentTicketExternalIssueController::class, 'storeGitlab'])
+        ->name('dashboard.tickets.external-issues.gitlab.store');
     Route::delete('/dashboard/tickets/{ticket}/external-links/{externalLink}', [AgentTicketExternalLinkController::class, 'destroy'])
         ->name('dashboard.tickets.external-links.destroy');
     Route::post('/dashboard/tickets/{ticket}/pending', [AgentTicketController::class, 'pending'])

@@ -62,6 +62,7 @@ class AgentTicketController extends Controller
             'externalIssueProviders' => ExternalIssueProvider::options(),
             'externalIssueSyncStatuses' => ExternalIssueSyncStatus::options(),
             'githubIssueProjects' => $this->githubIssueProjectsForTicket($ticket),
+            'gitlabIssueProjects' => $this->gitlabIssueProjectsForTicket($ticket),
             'latestTicketEscalation' => $ticket->latestRecentEscalationEvent(),
             'noteTemplates' => AgentNoteTemplate::options(),
             'replyTemplates' => $replyTemplateOptions->forAgent($agent),
@@ -717,8 +718,18 @@ class AgentTicketController extends Controller
 
     private function githubIssueProjectsForTicket(Ticket $ticket): Collection
     {
+        return $this->issueProjectsForTicket($ticket, 'github');
+    }
+
+    private function gitlabIssueProjectsForTicket(Ticket $ticket): Collection
+    {
+        return $this->issueProjectsForTicket($ticket, 'gitlab');
+    }
+
+    private function issueProjectsForTicket(Ticket $ticket, string $provider): Collection
+    {
         return $ticket->site->externalIssueProjects
-            ->filter(fn ($project): bool => $project->providerConnection?->provider === 'github'
+            ->filter(fn ($project): bool => $project->providerConnection?->provider === $provider
                 && $project->providerConnection->is_enabled
                 && $project->hasCapability('create_issue'))
             ->values();
@@ -875,7 +886,7 @@ class AgentTicketController extends Controller
             'ticket.label_removed' => 'Label removed: '.data_get($activity->metadata, 'label_name'),
             'ticket.note_added' => 'Internal note',
             'ticket.external_link_created' => 'External link added: '.ExternalIssueProvider::label(data_get($activity->metadata, 'provider')).' '.(data_get($activity->metadata, 'external_key') ?? data_get($activity->metadata, 'external_id') ?? ''),
-            'ticket.external_issue_created' => 'GitHub issue created: '.(data_get($activity->metadata, 'external_key') ?? data_get($activity->metadata, 'external_id') ?? ''),
+            'ticket.external_issue_created' => ExternalIssueProvider::label(data_get($activity->metadata, 'provider')).' issue created: '.(data_get($activity->metadata, 'external_key') ?? data_get($activity->metadata, 'external_id') ?? ''),
             'ticket.external_link_removed' => 'External link removed: '.ExternalIssueProvider::label(data_get($activity->metadata, 'provider')).' '.(data_get($activity->metadata, 'external_key') ?? data_get($activity->metadata, 'external_id') ?? ''),
             'ticket.external_sync_failed' => 'External sync failed: '.ExternalIssueProvider::label(data_get($activity->metadata, 'provider')),
             'ticket.assignee_updated' => 'Assignee changed from '.(data_get($activity->metadata, 'old_assignee_name') ?? 'Unassigned').' to '.(data_get($activity->metadata, 'new_assignee_name') ?? 'Unassigned'),
