@@ -340,57 +340,86 @@
                         'transcriptMessages' => $linkedConversationMessages,
                     ])
 
-                    <form
-                        id="ticket-reply"
-                        class="section-form"
-                        method="POST"
-                        action="{{ route('dashboard.tickets.replies.store', $ticket) }}"
-                        data-reply-composer
-                        data-submitting-label="Sending visitor reply..."
-                    >
-                        @csrf
-                        @include('agent.tickets.partials.return-query-fields')
+                    @php
+                        $selectedReplyTemplate = (string) old('reply_template', '');
+                    @endphp
 
-                        <div class="field">
-                            <label for="reply_template">Reply helper</label>
-                            <select id="reply_template" name="reply_template" data-reply-template data-template-picker data-target="#message">
-                                <option value="">Write a custom reply</option>
+                    <div class="reply-workspace" data-reply-shell>
+                        <form
+                            id="ticket-reply"
+                            class="section-form"
+                            method="POST"
+                            action="{{ route('dashboard.tickets.replies.store', $ticket) }}"
+                            data-reply-composer
+                            data-submitting-label="Sending visitor reply..."
+                        >
+                            @csrf
+                            @include('agent.tickets.partials.return-query-fields')
+
+                            <div class="field">
+                                <label for="reply_template">Reply helper</label>
+                                <select id="reply_template" name="reply_template" data-reply-template data-template-picker data-target="#message">
+                                    <option value="">Write a custom reply</option>
+                                    @foreach ($replyTemplates as $replyTemplateKey => $replyTemplate)
+                                        <option
+                                            value="{{ $replyTemplateKey }}"
+                                            data-body="{{ $replyTemplate['body'] }}"
+                                            @selected($selectedReplyTemplate === $replyTemplateKey)
+                                        >
+                                            {{ $replyTemplate['label'] }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                @error('reply_template')
+                                    <p class="field-error">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            <div class="field">
+                                <label for="message">Visitor reply</label>
+                                <textarea
+                                    id="message"
+                                    name="message"
+                                    rows="4"
+                                    placeholder="Send a reply to the visitor."
+                                    aria-describedby="ticket-reply-shortcut-help"
+                                    data-reply-body
+                                    data-shortcut-submit
+                                >{{ old('message') }}</textarea>
+                                <p id="ticket-reply-shortcut-help" class="sr-only">Command or Control plus Enter sends this visitor reply.</p>
+                                @error('message')
+                                    <p class="field-error">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            <p class="sr-only" data-reply-status aria-live="polite"></p>
+
+                            <button class="button" type="submit" data-reply-submit>Send visitor reply</button>
+                        </form>
+
+                        <aside class="reply-assist" aria-labelledby="ticket-reply-assist-heading">
+                            <h3 id="ticket-reply-assist-heading">Reply assist</h3>
+
+                            <div class="reply-template-preview" data-template-preview>
+                                <div data-template-preview-empty @if ($selectedReplyTemplate !== '') hidden @endif>
+                                    <strong>No helper selected</strong>
+                                    <p class="lede">Custom ticket replies stay fully agent-written.</p>
+                                </div>
+
                                 @foreach ($replyTemplates as $replyTemplateKey => $replyTemplate)
-                                    <option
-                                        value="{{ $replyTemplateKey }}"
-                                        data-body="{{ $replyTemplate['body'] }}"
-                                        @selected(old('reply_template') === $replyTemplateKey)
-                                    >
-                                        {{ $replyTemplate['label'] }}
-                                    </option>
+                                    <article data-template-preview-item="{{ $replyTemplateKey }}" @if ($selectedReplyTemplate !== $replyTemplateKey) hidden @endif>
+                                        <strong>{{ $replyTemplate['label'] }}</strong>
+                                        <p>{{ $replyTemplate['body'] }}</p>
+                                    </article>
                                 @endforeach
-                            </select>
-                            @error('reply_template')
-                                <p class="field-error">{{ $message }}</p>
-                            @enderror
-                        </div>
+                            </div>
 
-                        <div class="field">
-                            <label for="message">Visitor reply</label>
-                            <textarea
-                                id="message"
-                                name="message"
-                                rows="4"
-                                placeholder="Send a reply to the visitor."
-                                aria-describedby="ticket-reply-shortcut-help"
-                                data-reply-body
-                                data-shortcut-submit
-                            >{{ old('message') }}</textarea>
-                            <p id="ticket-reply-shortcut-help" class="sr-only">Command or Control plus Enter sends this visitor reply.</p>
-                            @error('message')
-                                <p class="field-error">{{ $message }}</p>
-                            @enderror
-                        </div>
-
-                        <p class="sr-only" data-reply-status aria-live="polite"></p>
-
-                        <button class="button" type="submit" data-reply-submit>Send visitor reply</button>
-                    </form>
+                            <div class="notice-list">
+                                <p>Keep sensitive details out of visitor replies unless the visitor supplied them here.</p>
+                                <p>Use ticket replies when the customer should see the update; use internal notes for private handoff context.</p>
+                            </div>
+                        </aside>
+                    </div>
                 </section>
             @endif
 

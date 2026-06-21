@@ -246,6 +246,39 @@ test('conversation reply surface shows context and helper preview affordances', 
         ->assertSee('Keep sensitive details out of replies unless the visitor supplied them here.');
 });
 
+test('ticket visitor reply surface shows helper preview affordances', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-TICKETHELPER',
+        'subject' => 'Invoice export question',
+        'status' => 'open',
+    ]);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($conversation)
+        ->for($visitor, 'requester')
+        ->for($agent, 'assignee')
+        ->create(['status' => 'open']);
+    ReplyTemplate::factory()->for($account)->create([
+        'name' => 'Billing follow-up',
+        'body' => 'I will check the billing details and follow up shortly.',
+    ]);
+
+    $this->actingAs($agent)
+        ->get("/dashboard/tickets/{$ticket->id}")
+        ->assertOk()
+        ->assertSee('Reply assist')
+        ->assertSee('No helper selected')
+        ->assertSee('Billing follow-up')
+        ->assertSee('I will check the billing details and follow up shortly.')
+        ->assertSee('data-template-preview-item="managed:', false)
+        ->assertSee('Keep sensitive details out of visitor replies unless the visitor supplied them here.');
+});
+
 test('agents can send replies from managed account templates', function (): void {
     Event::fake([ConversationMessageCreated::class]);
 
