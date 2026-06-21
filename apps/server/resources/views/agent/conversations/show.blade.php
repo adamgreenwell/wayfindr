@@ -394,6 +394,21 @@
                     </div>
                 @endif
 
+                @if ($cobrowseConsent['snapshot_recovery'])
+                    <div
+                        class="live-update"
+                        data-state="{{ $cobrowseConsent['snapshot_recovery']['status'] }}"
+                        data-cobrowse-snapshot-recovery
+                        data-pending="{{ $cobrowseConsent['snapshot_recovery']['status'] === 'pending' ? 'true' : 'false' }}"
+                    >
+                        <div>
+                            <span class="meta-label">Snapshot refresh guidance</span>
+                            <strong data-cobrowse-snapshot-recovery-label>{{ $cobrowseConsent['snapshot_recovery']['label'] }}</strong>
+                            <p class="lede" data-cobrowse-snapshot-recovery-message>{{ $cobrowseConsent['snapshot_recovery']['message'] }}</p>
+                        </div>
+                    </div>
+                @endif
+
                 @if (in_array($cobrowseConsent['status'], ['unavailable', 'revoked', 'ended'], true))
                     <form class="section-form" method="POST" action="{{ route('dashboard.conversations.cobrowse.request', $conversation->support_code) }}">
                         @csrf
@@ -983,6 +998,9 @@
                 var snapshotFreshnessLabel = document.querySelector('[data-cobrowse-snapshot-freshness-label]');
                 var snapshotFreshnessMessage = document.querySelector('[data-cobrowse-snapshot-freshness-message]');
                 var snapshotFreshnessReported = document.querySelector('[data-cobrowse-snapshot-freshness-reported]');
+                var snapshotRecovery = document.querySelector('[data-cobrowse-snapshot-recovery]');
+                var snapshotRecoveryLabel = document.querySelector('[data-cobrowse-snapshot-recovery-label]');
+                var snapshotRecoveryMessage = document.querySelector('[data-cobrowse-snapshot-recovery-message]');
                 var telemetryHeading = document.querySelector('[data-cobrowse-telemetry-heading]');
                 var telemetryEmpty = document.querySelector('[data-cobrowse-telemetry-empty]');
                 var telemetryGrid = document.querySelector('[data-cobrowse-telemetry-grid]');
@@ -999,9 +1017,10 @@
                 var hasReadTargets = Boolean(visitorReadLabel && visitorReadDetail);
                 var hasTransportTargets = Boolean(transportLabel && transportMessage && transportStateLabel);
                 var hasSnapshotFreshnessTargets = Boolean(snapshotStatus && snapshotFreshnessLabel && snapshotFreshnessMessage && snapshotFreshnessReported);
+                var hasSnapshotRecoveryTargets = Boolean(snapshotRecovery && snapshotRecoveryLabel && snapshotRecoveryMessage);
                 var hasTelemetryTargets = Boolean(telemetryGrid && telemetryRtt);
 
-                if (!config || (!hasCobrowseTargets && !hasPresenceTargets && !hasReadTargets && !hasTransportTargets && !hasSnapshotFreshnessTargets && !hasTelemetryTargets) || !window.WebSocket) {
+                if (!config || (!hasCobrowseTargets && !hasPresenceTargets && !hasReadTargets && !hasTransportTargets && !hasSnapshotFreshnessTargets && !hasSnapshotRecoveryTargets && !hasTelemetryTargets) || !window.WebSocket) {
                     if (status) {
                         status.textContent = 'Live cobrowse updates are unavailable in this browser.';
                     }
@@ -1241,6 +1260,53 @@
                     setText(transportRecovery, health.recovery_action);
                 }
 
+                function recoveryFromSnapshotFreshness(freshness) {
+                    if (!freshness || !freshness.state || freshness.state === 'fresh') {
+                        return null;
+                    }
+
+                    if (snapshotRecovery && snapshotRecovery.dataset.pending === 'true') {
+                        return {
+                            status: 'pending',
+                            label: 'Snapshot refresh already requested',
+                            message: 'A fresh snapshot request is already waiting on the visitor widget. Use chat while it catches up.',
+                        };
+                    }
+
+                    if (freshness.state === 'unknown') {
+                        return {
+                            status: 'unknown',
+                            label: 'Snapshot time needs confirmation',
+                            message: 'Ask the visitor what they see or request a fresh snapshot before relying on this preview.',
+                        };
+                    }
+
+                    return {
+                        status: freshness.state,
+                        label: 'Snapshot may need refresh',
+                        message: 'Request a fresh snapshot before relying on this preview, or confirm the page through chat.',
+                    };
+                }
+
+                function updateSnapshotRecovery(freshness) {
+                    if (!hasSnapshotRecoveryTargets) {
+                        return;
+                    }
+
+                    var recovery = recoveryFromSnapshotFreshness(freshness);
+
+                    if (!recovery) {
+                        snapshotRecovery.hidden = true;
+
+                        return;
+                    }
+
+                    snapshotRecovery.hidden = false;
+                    snapshotRecovery.dataset.state = recovery.status || 'unknown';
+                    setText(snapshotRecoveryLabel, recovery.label || 'Snapshot may need refresh');
+                    setText(snapshotRecoveryMessage, recovery.message || 'Use chat to confirm what the visitor sees before relying on this preview.');
+                }
+
                 function updateSnapshotFreshness(snapshot) {
                     if (!hasSnapshotFreshnessTargets || !snapshot || !snapshot.freshness) {
                         return false;
@@ -1253,6 +1319,7 @@
                     setText(snapshotFreshnessLabel, freshness.label || 'Time unknown');
                     setText(snapshotFreshnessMessage, freshness.message || 'Use chat to confirm what the visitor sees before relying on this preview.');
                     setText(snapshotFreshnessReported, freshness.reported_label || 'Report time unavailable');
+                    updateSnapshotRecovery(freshness);
 
                     return true;
                 }

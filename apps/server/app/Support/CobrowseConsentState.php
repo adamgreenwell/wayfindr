@@ -19,7 +19,7 @@ class CobrowseConsentState
     ) {}
 
     /**
-     * @return array{label: string, message: string, status: string, lifecycle: array<string, string>|null, transport: array<string, string>, payload_budget: array<string, string>|null, telemetry: array<string, string>|null, page_state: array<string, string>|null, snapshot: array<string, mixed>|null, mutation_stream: array<string, string>|null, replay_preview: array<string, string>|null, resync_request: array<string, mixed>|null}
+     * @return array{label: string, message: string, status: string, lifecycle: array<string, string>|null, transport: array<string, string>, payload_budget: array<string, string>|null, telemetry: array<string, string>|null, page_state: array<string, string>|null, snapshot: array<string, mixed>|null, snapshot_recovery: array<string, string>|null, mutation_stream: array<string, string>|null, replay_preview: array<string, string>|null, resync_request: array<string, mixed>|null}
      */
     public function forConversation(Conversation $conversation): array
     {
@@ -39,6 +39,7 @@ class CobrowseConsentState
                 'telemetry' => null,
                 'page_state' => null,
                 'snapshot' => null,
+                'snapshot_recovery' => null,
                 'mutation_stream' => null,
                 'replay_preview' => null,
                 'resync_request' => null,
@@ -82,6 +83,10 @@ class CobrowseConsentState
         $state['mutation_stream'] = $this->formatMutationStream($session->metadata['mutations'] ?? null);
         $state['replay_preview'] = $this->replayPreview->fromMetadata($session->metadata ?? []);
         $state['resync_request'] = $this->formatResyncRequest($session);
+        $state['snapshot_recovery'] = $this->formatSnapshotRecovery(
+            $state['snapshot']['freshness'] ?? null,
+            $state['resync_request'],
+        );
 
         return $state;
     }
@@ -370,6 +375,42 @@ class CobrowseConsentState
             'masked_count' => number_format((int) ($snapshot['masked_count'] ?? 0)).' masked',
             'text' => filled($snapshot['text'] ?? null) ? (string) $snapshot['text'] : 'No text preview reported.',
             'freshness' => $this->snapshotFreshness->format($snapshot['reported_at'] ?? null),
+        ];
+    }
+
+    /**
+     * @param  array<string, string>|null  $freshness
+     * @param  array<string, mixed>|null  $resyncRequest
+     * @return array<string, string>|null
+     */
+    private function formatSnapshotRecovery(?array $freshness, ?array $resyncRequest): ?array
+    {
+        $freshnessState = $freshness['state'] ?? null;
+
+        if (! in_array($freshnessState, ['aging', 'stale', 'unknown'], true)) {
+            return null;
+        }
+
+        if (($resyncRequest['status'] ?? null) === 'pending') {
+            return [
+                'status' => 'pending',
+                'label' => 'Snapshot refresh already requested',
+                'message' => 'A fresh snapshot request is already waiting on the visitor widget. Use chat while it catches up.',
+            ];
+        }
+
+        if ($freshnessState === 'unknown') {
+            return [
+                'status' => 'unknown',
+                'label' => 'Snapshot time needs confirmation',
+                'message' => 'Ask the visitor what they see or request a fresh snapshot before relying on this preview.',
+            ];
+        }
+
+        return [
+            'status' => $freshnessState,
+            'label' => 'Snapshot may need refresh',
+            'message' => 'Request a fresh snapshot before relying on this preview, or confirm the page through chat.',
         ];
     }
 

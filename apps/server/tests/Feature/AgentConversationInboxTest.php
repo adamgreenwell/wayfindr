@@ -6593,6 +6593,96 @@ test('agent can see cobrowse snapshot freshness guidance on a conversation', fun
         ->assertSee('Use chat to confirm what the visitor sees before relying on this preview.');
 });
 
+test('agent sees stale snapshot recovery guidance near cobrowse actions', function (): void {
+    config()->set('broadcasting.default', 'reverb');
+    config()->set('broadcasting.connections.reverb.key', 'reverb-key');
+    config()->set('broadcasting.connections.reverb.secret', 'reverb-secret');
+    config()->set('broadcasting.connections.reverb.app_id', 'reverb-app');
+    config()->set('broadcasting.connections.reverb.options.host', 'wayfindr.test');
+    config()->set('broadcasting.connections.reverb.options.port', 443);
+    config()->set('broadcasting.connections.reverb.options.scheme', 'https');
+
+    $this->travelTo(Carbon::parse('2026-06-21 12:00:00'));
+
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+
+    $makeConversation = function (string $supportCode, mixed $reportedAt, ?array $resyncRequest = null) use ($site, $visitor): Conversation {
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => $supportCode,
+            'subject' => 'Checkout trouble',
+            'status' => 'open',
+        ]);
+
+        $snapshot = [
+            'page_url' => 'https://docs.example.test/install?step=2',
+            'title' => 'Install Guide',
+            'text' => 'Public checkout content. [masked]',
+            'node_count' => 8,
+            'masked_count' => 2,
+            'reported_at' => $reportedAt,
+        ];
+
+        $metadata = ['snapshot' => $snapshot];
+
+        if ($resyncRequest !== null) {
+            $metadata['resync_request'] = $resyncRequest;
+        }
+
+        CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinute(),
+            'ended_at' => null,
+            'metadata' => $metadata,
+        ]);
+
+        return $conversation;
+    };
+
+    $makeConversation('WF-SNAPRECENT', now()->subSeconds(45)->toJSON());
+    $makeConversation('WF-SNAPOLD', now()->subMinutes(8)->toJSON());
+    $makeConversation('WF-SNAPMISSING', 'not-a-real-date');
+    $makeConversation('WF-SNAPPENDING', now()->subMinutes(8)->toJSON(), [
+        'id' => 'resync_pending',
+        'requested_at' => now()->subSeconds(30)->toJSON(),
+        'requested_by_name' => 'Ada Agent',
+        'fulfilled_at' => null,
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-SNAPRECENT')
+        ->assertOk()
+        ->assertDontSee('Snapshot refresh guidance');
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-SNAPOLD')
+        ->assertOk()
+        ->assertSeeInOrder([
+            'Cobrowse',
+            'Snapshot refresh guidance',
+            'Snapshot may need refresh',
+            'Request a fresh snapshot before relying on this preview, or confirm the page through chat.',
+            'Request fresh snapshot',
+        ])
+        ->assertSee('data-cobrowse-snapshot-recovery', false);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-SNAPMISSING')
+        ->assertOk()
+        ->assertSee('Snapshot time needs confirmation')
+        ->assertSee('Ask the visitor what they see or request a fresh snapshot before relying on this preview.');
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-SNAPPENDING')
+        ->assertOk()
+        ->assertSee('Snapshot refresh already requested')
+        ->assertSee('A fresh snapshot request is already waiting on the visitor widget. Use chat while it catches up.')
+        ->assertSee('Fresh snapshot already requested')
+        ->assertSee('function updateSnapshotRecovery', false);
+});
+
 test('agent can see cobrowse mutation stream diagnostics on a conversation', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
