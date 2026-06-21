@@ -72,6 +72,22 @@ test('agents can jump to a visible conversation from pasted support code context
     'conversation URL' => ['https://wayfindr.example/dashboard/conversations/wf-paste1?from=email'],
 ]);
 
+test('pasted stale ticket context does not block a visible support code match', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $conversation = Conversation::factory()->for($site)->create([
+        'support_code' => 'WF-MIXED1',
+        'subject' => 'Mixed pasted reference',
+    ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.support-code.lookup', [
+            'support_code' => 'Old ticket #999999, current support code wf-mixed1',
+        ]))
+        ->assertRedirect(route('dashboard.conversations.show', $conversation->support_code));
+});
+
 test('agents jump to the linked ticket when a visible support code has one', function (): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create();

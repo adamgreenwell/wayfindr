@@ -42,6 +42,17 @@ class AgentSupportCodeLookupController extends Controller
             return $this->notFound($lookupReference);
         }
 
+        $supportCode = $this->supportCodeReference($lookupReference);
+        $hasSupportCodeReference = $this->hasSupportCodeReference($lookupReference);
+
+        if ($hasSupportCodeReference) {
+            $supportCodeRedirect = $this->redirectForSupportCode($supportCode, $agent);
+
+            if ($supportCodeRedirect) {
+                return $supportCodeRedirect;
+            }
+        }
+
         $ticketReferenceId = $this->ticketReferenceId($lookupReference);
 
         if ($ticketReferenceId) {
@@ -60,31 +71,12 @@ class AgentSupportCodeLookupController extends Controller
             }
         }
 
-        $supportCode = $this->supportCodeReference($lookupReference);
+        if (! $hasSupportCodeReference) {
+            $supportCodeRedirect = $this->redirectForSupportCode($supportCode, $agent);
 
-        $conversation = Conversation::query()
-            ->with('site')
-            ->where('support_code', $supportCode)
-            ->first();
-
-        if ($conversation && Gate::forUser($agent)->denies('view', $conversation)) {
-            return $this->notFound($supportCode);
-        }
-
-        if ($conversation) {
-            $ticket = $conversation->tickets()
-                ->with('site')
-                ->where('account_id', $agent->account_id)
-                ->latest('updated_at')
-                ->latest('id')
-                ->get()
-                ->first(fn (Ticket $ticket): bool => Gate::forUser($agent)->allows('view', $ticket));
-
-            if ($ticket) {
-                return redirect()->route('dashboard.tickets.show', $ticket);
+            if ($supportCodeRedirect) {
+                return $supportCodeRedirect;
             }
-
-            return redirect()->route('dashboard.conversations.show', $conversation->support_code);
         }
 
         $visitor = $this->visibleVisitor($lookupReference, $agent);
@@ -150,6 +142,36 @@ class AgentSupportCodeLookupController extends Controller
         return $ticketId > 0 ? $ticketId : null;
     }
 
+    private function redirectForSupportCode(string $supportCode, User $agent): ?RedirectResponse
+    {
+        $conversation = Conversation::query()
+            ->with('site')
+            ->where('support_code', $supportCode)
+            ->first();
+
+        if ($conversation && Gate::forUser($agent)->denies('view', $conversation)) {
+            return $this->notFound($supportCode);
+        }
+
+        if (! $conversation) {
+            return null;
+        }
+
+        $ticket = $conversation->tickets()
+            ->with('site')
+            ->where('account_id', $agent->account_id)
+            ->latest('updated_at')
+            ->latest('id')
+            ->get()
+            ->first(fn (Ticket $ticket): bool => Gate::forUser($agent)->allows('view', $ticket));
+
+        if ($ticket) {
+            return redirect()->route('dashboard.tickets.show', $ticket);
+        }
+
+        return redirect()->route('dashboard.conversations.show', $conversation->support_code);
+    }
+
     private function supportCodeReference(string $lookupReference): string
     {
         if (preg_match('/\bWF-[A-Z0-9]+\b/i', $lookupReference, $matches)) {
@@ -157,6 +179,11 @@ class AgentSupportCodeLookupController extends Controller
         }
 
         return Str::upper($lookupReference);
+    }
+
+    private function hasSupportCodeReference(string $lookupReference): bool
+    {
+        return preg_match('/\bWF-[A-Z0-9]+\b/i', $lookupReference) === 1;
     }
 
     private function visibleVisitor(string $lookupReference, User $agent): ?Visitor
