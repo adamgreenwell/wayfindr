@@ -79,6 +79,40 @@ test('ticket queue shows the latest agent reply preview for linked tickets', fun
         ->assertSee('I sent a workaround and will confirm the export.');
 });
 
+test('ticket queue orders linked activity previews by message timestamp before id', function (): void {
+    [$agent, $site, $visitor, $conversation] = ticketQueuePreviewContext();
+
+    ConversationMessage::factory()->for($conversation)->create([
+        'body' => 'Newest visitor activity by timestamp.',
+        'created_at' => now(),
+        'sender_id' => $visitor->id,
+        'sender_type' => Visitor::class,
+    ]);
+    ConversationMessage::factory()->for($conversation)->create([
+        'body' => 'Historical message inserted during an import.',
+        'created_at' => now()->subDay(),
+        'sender_id' => $agent->id,
+        'sender_type' => User::class,
+    ]);
+
+    Ticket::factory()
+        ->for($agent->account)
+        ->for($site)
+        ->for($conversation)
+        ->for($visitor, 'requester')
+        ->for($agent, 'assignee')
+        ->create([
+            'subject' => 'Imported conversation follow-up',
+        ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.tickets.index'))
+        ->assertOk()
+        ->assertSee('Visitor message')
+        ->assertSee('Newest visitor activity by timestamp.')
+        ->assertDontSee('Historical message inserted during an import.');
+});
+
 test('ticket queue falls back to safe standalone ticket context', function (): void {
     [$agent, $site, $visitor] = ticketQueuePreviewContext(false);
 
