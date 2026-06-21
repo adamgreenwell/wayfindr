@@ -19,12 +19,17 @@ class AgentAlertController extends Controller
 
         abort_unless($agent->account_id, 403);
 
-        $notifications = $this->visibleRecentNotifications($agent);
-        $unreadNotificationCount = $this->visibleUnreadNotifications($agent)->count();
+        $alertFilter = $request->query('alert_filter') === 'unread' ? 'unread' : 'all';
+        $visibleUnreadNotifications = $this->visibleUnreadNotifications($agent);
+        $unreadNotificationCount = $visibleUnreadNotifications->count();
+        $notifications = $alertFilter === 'unread'
+            ? $visibleUnreadNotifications->take(30)->values()
+            : $this->visibleRecentNotifications($agent, $visibleUnreadNotifications);
 
         return view('agent.alerts.index', [
             'account' => $agent->account()->firstOrFail(),
             'agent' => $agent,
+            'alertFilter' => $alertFilter,
             'alertSnapshot' => $this->alertSnapshot($notifications, $unreadNotificationCount),
             'notifications' => $notifications,
             'notificationCount' => $notifications->count(),
@@ -60,9 +65,9 @@ class AgentAlertController extends Controller
     /**
      * @return Collection<int, DatabaseNotification>
      */
-    private function visibleRecentNotifications(User $agent): Collection
+    private function visibleRecentNotifications(User $agent, ?Collection $visibleUnreadNotifications = null): Collection
     {
-        $visibleUnreadNotifications = $this->visibleUnreadNotifications($agent);
+        $visibleUnreadNotifications ??= $this->visibleUnreadNotifications($agent);
         $visibleUnreadNotificationIds = $visibleUnreadNotifications->pluck('id');
         $visibleRecentNotifications = $agent
             ->notifications()
@@ -132,7 +137,9 @@ class AgentAlertController extends Controller
     private function redirectAfterAlertAction(Request $request): RedirectResponse
     {
         if ($request->input('return_to') === 'alerts') {
-            return redirect()->route('dashboard.alerts.index');
+            return redirect()->route('dashboard.alerts.index', [
+                'alert_filter' => $request->input('alert_filter') === 'unread' ? 'unread' : null,
+            ]);
         }
 
         return redirect()->to(route('dashboard').'#alerts');

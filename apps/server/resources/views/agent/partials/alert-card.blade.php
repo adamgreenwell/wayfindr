@@ -44,6 +44,9 @@
             @isset($alertReturnTo)
                 <input type="hidden" name="return_to" value="{{ $alertReturnTo }}">
             @endisset
+            @if (($alertFilter ?? null) === 'unread')
+                <input type="hidden" name="alert_filter" value="unread">
+            @endif
             <button class="button secondary" type="submit">Mark read</button>
         </form>
     @else
