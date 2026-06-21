@@ -137,6 +137,39 @@ test('site index scopes management links to sites assigned to the agent', functi
         ->assertDontSee('Restricted Store');
 });
 
+test('site index summarizes active support coverage for explicitly assigned sites', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'name' => 'Ada Active',
+    ]);
+    $teammate = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'name' => 'Mara Mentor',
+    ]);
+    $deactivatedAgent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'name' => 'Gabe Gone',
+        'deactivated_at' => now(),
+    ]);
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Assigned Coverage Docs',
+        'domain' => 'coverage.example.test',
+    ]);
+
+    $site->supportAgents()->attach([$agent->id, $teammate->id, $deactivatedAgent->id]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/sites')
+        ->assertOk()
+        ->assertSee('Assigned Coverage Docs')
+        ->assertSee('Explicit access')
+        ->assertSee('2 assigned')
+        ->assertSee('Assigned support')
+        ->assertSee('Ada Active, Mara Mentor')
+        ->assertDontSee('Gabe Gone');
+});
+
 test('sites with only deactivated support assignments fall back to account-wide access', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create([

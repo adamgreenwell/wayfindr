@@ -42,6 +42,14 @@
                                         $installHealth = \App\Support\SiteInstallHealth::fromVisitor($latestVisitor);
                                         $lastPageUrl = data_get($latestVisitor?->metadata, 'last_page_url');
                                         $supportAgentCount = (int) $site->support_agents_count;
+                                        $supportAgentNames = $site->supportAgents->pluck('name')->values();
+                                        $supportCoverageSummary = $supportAgentNames
+                                            ->take(3)
+                                            ->join(', ');
+
+                                        if ($supportAgentNames->count() > 3) {
+                                            $supportCoverageSummary .= ' + '.($supportAgentNames->count() - 3).' more';
+                                        }
                                     @endphp
                                     <tr>
                                         <td>
@@ -53,6 +61,8 @@
                                             @if ($supportAgentCount > 0)
                                                 <strong>Explicit access</strong>
                                                 <span class="lede">{{ $supportAgentCount }} assigned</span>
+                                                <span class="table-note">Assigned support</span>
+                                                <span>{{ $supportCoverageSummary }}</span>
                                             @else
                                                 <strong>Account-wide fallback</strong>
                                                 <span class="lede">All account agents</span>

@@ -30,6 +30,13 @@ class AgentSiteController extends Controller
         $sites = $account->sites()
             ->visibleToAgent($agent)
             ->with('latestVisitor')
+            ->with([
+                'supportAgents' => fn ($query) => $query
+                    ->where('users.account_id', $account->id)
+                    ->whereNull('users.deactivated_at')
+                    ->orderBy('name')
+                    ->orderBy('email'),
+            ])
             ->withCount([
                 'supportAgents as support_agents_count' => fn ($query) => $query
                     ->where('users.account_id', $account->id)
