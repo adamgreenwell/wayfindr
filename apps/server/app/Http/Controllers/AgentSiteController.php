@@ -137,6 +137,7 @@ class AgentSiteController extends Controller
                 : null,
             'siteExternalIssueProjects' => $site->externalIssueProjects,
             'siteHasExplicitSupportAgents' => $site->hasExplicitSupportAgents(),
+            'siteSupportLoad' => $this->siteSupportLoad($site, $supportAgentIds, $accountAgents->count()),
             'siteSupportReadiness' => $this->siteSupportReadiness($site, $supportAgentIds, $maskSelectors, $externalIssueHealth),
             'supportAgentIds' => $supportAgentIds,
             'supportAgents' => $accountAgents->whereIn('id', $supportAgentIds)->values(),
@@ -182,6 +183,62 @@ class AgentSiteController extends Controller
                 'body' => 'Updated support access',
                 'occurred_at' => $event->occurred_at,
             ]);
+    }
+
+    /**
+     * @param  array<int, int>  $supportAgentIds
+     * @return Collection<int, array{label: string, value: string, detail: string, href: string, action: string}>
+     */
+    private function siteSupportLoad(Site $site, array $supportAgentIds, int $accountAgentCount): Collection
+    {
+        $openConversationCount = $site->conversations()
+            ->where('status', 'open')
+            ->count();
+        $openTicketCount = $site->tickets()
+            ->where('status', 'open')
+            ->count();
+        $pendingTicketCount = $site->tickets()
+            ->where('status', 'pending')
+            ->count();
+        $supportAgentCount = $site->hasExplicitSupportAgents()
+            ? count($supportAgentIds)
+            : $accountAgentCount;
+
+        return collect([
+            [
+                'label' => 'Open conversations',
+                'value' => $openConversationCount.' '.Str::plural('conversation', $openConversationCount),
+                'detail' => 'Currently open for this site.',
+                'href' => route('dashboard.conversations.index', ['conversation_site' => $site->id]),
+                'action' => 'View conversations',
+            ],
+            [
+                'label' => 'Open tickets',
+                'value' => $openTicketCount.' '.Str::plural('ticket', $openTicketCount),
+                'detail' => 'Active tickets for this site.',
+                'href' => route('dashboard.tickets.index', ['ticket_site' => $site->id]),
+                'action' => 'View open tickets',
+            ],
+            [
+                'label' => 'Pending tickets',
+                'value' => $pendingTicketCount.' '.Str::plural('ticket', $pendingTicketCount),
+                'detail' => 'Waiting on a customer, agent, or next step.',
+                'href' => route('dashboard.tickets.index', [
+                    'ticket_status' => 'pending',
+                    'ticket_site' => $site->id,
+                ]),
+                'action' => 'View pending tickets',
+            ],
+            [
+                'label' => 'Support coverage',
+                'value' => $supportAgentCount.' '.Str::plural('agent', $supportAgentCount),
+                'detail' => $site->hasExplicitSupportAgents()
+                    ? 'Active agents assigned to this site.'
+                    : 'Account-wide fallback is active for this site.',
+                'href' => route('dashboard.sites.show', $site).'#support-access-heading',
+                'action' => 'Review access',
+            ],
+        ]);
     }
 
     /**

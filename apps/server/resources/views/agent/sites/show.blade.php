@@ -37,6 +37,28 @@
                 </div>
             </section>
 
+            <section class="section" aria-labelledby="site-support-load-heading">
+                <div class="section-header">
+                    <div>
+                        <h2 id="site-support-load-heading">Support load</h2>
+                        <p class="lede">Current work for this site</p>
+                    </div>
+                </div>
+
+                <div class="meta-grid">
+                    @foreach ($siteSupportLoad as $loadItem)
+                        <div class="meta-item">
+                            <span class="meta-label">{{ $loadItem['label'] }}</span>
+                            <span class="meta-value">{{ $loadItem['value'] }}</span>
+                            <p class="lede">{{ $loadItem['detail'] }}</p>
+                            <p class="readiness-action">
+                                <a class="text-link" href="{{ $loadItem['href'] }}">{{ $loadItem['action'] }}</a>
+                            </p>
+                        </div>
+                    @endforeach
+                </div>
+            </section>
+
             @php
                 $latestVisitor = $site->latestVisitor;
                 $lastSeenAt = $latestVisitor?->last_seen_at;

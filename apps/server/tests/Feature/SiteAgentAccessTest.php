@@ -566,6 +566,85 @@ test('plain agents can see site access context but cannot manage it', function (
         ->toBe([$agent->id, $teammate->id]);
 });
 
+test('site detail summarizes support load for the selected site only', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'name' => 'Ada Admin',
+    ]);
+    $teammate = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'name' => 'Mara Mentor',
+    ]);
+    $deactivatedAgent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'name' => 'Gabe Gone',
+        'deactivated_at' => now(),
+    ]);
+
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Acme Docs',
+        'domain' => 'docs.example.test',
+    ]);
+    $site->supportAgents()->attach([$admin->id, $teammate->id, $deactivatedAgent->id]);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+    Conversation::factory()->for($site)->for($visitor)->create([
+        'status' => 'open',
+        'subject' => 'Open docs question',
+    ]);
+    Conversation::factory()->for($site)->for($visitor)->create([
+        'status' => 'closed',
+        'subject' => 'Closed docs question',
+    ]);
+    Ticket::factory()->for($account)->for($site)->create([
+        'status' => 'open',
+        'subject' => 'Open docs ticket',
+    ]);
+    Ticket::factory()->for($account)->for($site)->create([
+        'status' => 'pending',
+        'subject' => 'Pending docs ticket',
+    ]);
+    Ticket::factory()->for($account)->for($site)->create([
+        'status' => 'closed',
+        'subject' => 'Closed docs ticket',
+    ]);
+
+    $otherSite = Site::factory()->for($account)->create(['name' => 'Acme Store']);
+    $otherVisitor = Visitor::factory()->for($otherSite)->create(['anonymous_id' => 'anon-store']);
+    Conversation::factory()->for($otherSite)->for($otherVisitor)->create([
+        'status' => 'open',
+        'subject' => 'Store question',
+    ]);
+    Ticket::factory()->for($account)->for($otherSite)->create([
+        'status' => 'open',
+        'subject' => 'Store ticket',
+    ]);
+
+    $this->actingAs($admin)
+        ->get("/dashboard/sites/{$site->id}")
+        ->assertOk()
+        ->assertSee('Support load')
+        ->assertSeeInOrder([
+            'Open conversations',
+            '1 conversation',
+            'Open tickets',
+            '1 ticket',
+            'Pending tickets',
+            '1 ticket',
+            'Support coverage',
+            '2 agents',
+        ])
+        ->assertSee(route('dashboard.conversations.index', ['conversation_site' => $site->id]), false)
+        ->assertSee(route('dashboard.tickets.index', ['ticket_site' => $site->id]), false)
+        ->assertSee(str_replace('&', '&amp;', route('dashboard.tickets.index', [
+            'ticket_status' => 'pending',
+            'ticket_site' => $site->id,
+        ])), false)
+        ->assertDontSee('2 conversations')
+        ->assertDontSee('3 tickets')
+        ->assertDontSee('Gabe Gone');
+});
+
 test('site assigned platform operators see the operator smoke path', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $operator = User::factory()->for($account)->create([
