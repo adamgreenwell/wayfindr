@@ -165,6 +165,75 @@ test('agent profile shows the latest alert digest delivery status', function ():
         ->assertDontSee('SMTP cratered');
 });
 
+test('agent profile summarizes personal alert readiness', function (): void {
+    config([
+        'mail.default' => 'smtp',
+        'mail.mailers.smtp.host' => 'smtp.example.test',
+        'mail.mailers.smtp.port' => 587,
+        'mail.from.address' => 'support@example.test',
+    ]);
+
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => [
+            'mode' => 'assigned',
+            'email' => true,
+            'cadence' => 'digest',
+            'digest_delivery' => [
+                'status' => 'queued',
+                'candidate_count' => 3,
+                'last_attempted_at' => now()->subMinutes(11)->toISOString(),
+            ],
+        ],
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/profile')
+        ->assertOk()
+        ->assertSee('Alert readiness')
+        ->assertSee('Dashboard alerts')
+        ->assertSee('Listening')
+        ->assertSee('You will receive dashboard alerts for eligible support work.')
+        ->assertSee('Alert scope')
+        ->assertSee('Assigned to me')
+        ->assertSee('Only conversations and tickets assigned to you create new alerts.')
+        ->assertSee('Email delivery')
+        ->assertSee('Ready')
+        ->assertSee('Email alerts are enabled and outbound mail looks configured.')
+        ->assertSee('Cadence')
+        ->assertSee('Digest')
+        ->assertSee('Digest delivery is preferred. Latest digest: Queued digest email 11 minutes ago.');
+});
+
+test('agent profile explains quiet dashboard-only alert readiness', function (): void {
+    config([
+        'mail.default' => 'smtp',
+        'mail.mailers.smtp.host' => 'smtp.example.test',
+        'mail.mailers.smtp.port' => 587,
+        'mail.from.address' => 'support@example.test',
+    ]);
+
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => [
+            'mode' => 'quiet',
+            'email' => false,
+            'cadence' => 'immediate',
+        ],
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/profile')
+        ->assertOk()
+        ->assertSee('Alert readiness')
+        ->assertSee('Paused')
+        ->assertSee('Quiet mode suppresses new dashboard and email alerts.')
+        ->assertSee('Email delivery')
+        ->assertSee('Dashboard only')
+        ->assertSee('Email alerts are off for your profile.')
+        ->assertSee('Cadence')
+        ->assertSee('Immediate')
+        ->assertSee('New eligible alerts can notify immediately when email alerts are enabled.');
+});
+
 test('agent profile flags email alerts when mail delivery needs attention', function (): void {
     config([
         'mail.default' => 'log',

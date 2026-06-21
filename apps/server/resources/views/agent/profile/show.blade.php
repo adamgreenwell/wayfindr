@@ -58,6 +58,25 @@
         </form>
     </section>
 
+    <section class="section" aria-labelledby="alert-readiness-heading">
+        <div class="section-header">
+            <h2 id="alert-readiness-heading">Alert readiness</h2>
+            <span class="lede">Your current support signal path</span>
+        </div>
+
+        <div class="meta-grid">
+            @foreach ($alertReadiness as $readinessItem)
+                <div class="meta-item">
+                    <span class="meta-label">{{ $readinessItem['label'] }}</span>
+                    <span class="meta-value">
+                        <span class="readiness-status" data-status="{{ $readinessItem['tone'] }}">{{ $readinessItem['status'] }}</span>
+                    </span>
+                    <p class="field-help">{{ $readinessItem['detail'] }}</p>
+                </div>
+            @endforeach
+        </div>
+    </section>
+
     <section class="section" aria-labelledby="alert-preferences-heading">
         <div class="section-header">
             <h2 id="alert-preferences-heading">Alert preferences</h2>

@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Enums\AccountRole;
 use App\Models\AuditEvent;
+use App\Models\User;
 use App\Support\OperatorReadiness;
+use Carbon\CarbonImmutable;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -38,6 +40,7 @@ class AgentProfileController extends Controller
             'alertCadenceOptions' => $agent::alertCadenceOptions(),
             'digestDeliveryStatus' => $agent->alertDigestDeliveryStatus(),
             'mailReadiness' => $mailReadiness,
+            'alertReadiness' => $this->alertReadiness($agent, $mailReadiness),
         ]);
     }
 
@@ -111,5 +114,147 @@ class AgentProfileController extends Controller
         return redirect()
             ->route('dashboard.profile.show')
             ->with('status', 'Password updated.');
+    }
+
+    /**
+     * @param  array{status: string, summary: string, action: string}|null  $mailReadiness
+     * @return array<int, array{label: string, status: string, tone: string, detail: string}>
+     */
+    private function alertReadiness(User $agent, ?array $mailReadiness): array
+    {
+        $alertCadence = $agent->alertCadence();
+        $emailEnabled = $agent->alertEmailEnabled();
+        $digestDeliveryStatus = $agent->alertDigestDeliveryStatus();
+
+        return [
+            $this->dashboardAlertReadiness($agent),
+            $this->alertScopeReadiness($agent),
+            $this->emailAlertReadiness($agent, $mailReadiness),
+            $this->alertCadenceReadiness($alertCadence, $emailEnabled, $digestDeliveryStatus),
+        ];
+    }
+
+    /**
+     * @return array{label: string, status: string, tone: string, detail: string}
+     */
+    private function dashboardAlertReadiness(User $agent): array
+    {
+        if ($agent->alertMode() === User::ALERT_MODE_QUIET) {
+            return [
+                'label' => 'Dashboard alerts',
+                'status' => 'Paused',
+                'tone' => 'manual',
+                'detail' => 'Quiet mode suppresses new dashboard and email alerts.',
+            ];
+        }
+
+        return [
+            'label' => 'Dashboard alerts',
+            'status' => 'Listening',
+            'tone' => 'ready',
+            'detail' => 'You will receive dashboard alerts for eligible support work.',
+        ];
+    }
+
+    /**
+     * @return array{label: string, status: string, tone: string, detail: string}
+     */
+    private function alertScopeReadiness(User $agent): array
+    {
+        return match ($agent->alertMode()) {
+            User::ALERT_MODE_ASSIGNED => [
+                'label' => 'Alert scope',
+                'status' => 'Assigned to me',
+                'tone' => 'ready',
+                'detail' => 'Only conversations and tickets assigned to you create new alerts.',
+            ],
+            User::ALERT_MODE_QUIET => [
+                'label' => 'Alert scope',
+                'status' => 'Quiet mode',
+                'tone' => 'manual',
+                'detail' => 'Your scope is paused until quiet mode is turned off.',
+            ],
+            default => [
+                'label' => 'Alert scope',
+                'status' => 'All support work',
+                'tone' => 'ready',
+                'detail' => 'Conversations and tickets you can support can create new alerts.',
+            ],
+        };
+    }
+
+    /**
+     * @param  array{status: string, summary: string, action: string}|null  $mailReadiness
+     * @return array{label: string, status: string, tone: string, detail: string}
+     */
+    private function emailAlertReadiness(User $agent, ?array $mailReadiness): array
+    {
+        if (! $agent->alertEmailEnabled()) {
+            return [
+                'label' => 'Email delivery',
+                'status' => 'Dashboard only',
+                'tone' => 'manual',
+                'detail' => 'Email alerts are off for your profile.',
+            ];
+        }
+
+        if (($mailReadiness['status'] ?? null) === 'ready') {
+            return [
+                'label' => 'Email delivery',
+                'status' => 'Ready',
+                'tone' => 'ready',
+                'detail' => 'Email alerts are enabled and outbound mail looks configured.',
+            ];
+        }
+
+        return [
+            'label' => 'Email delivery',
+            'status' => 'Needs setup',
+            'tone' => 'attention',
+            'detail' => trim(($mailReadiness['summary'] ?? 'Outbound mail is not ready.').' '.($mailReadiness['action'] ?? '')),
+        ];
+    }
+
+    /**
+     * @param  array{status: string, label: string, last_attempted_at: CarbonImmutable|null}  $digestDeliveryStatus
+     * @return array{label: string, status: string, tone: string, detail: string}
+     */
+    private function alertCadenceReadiness(string $alertCadence, bool $emailEnabled, array $digestDeliveryStatus): array
+    {
+        if ($alertCadence !== User::ALERT_CADENCE_DIGEST) {
+            return [
+                'label' => 'Cadence',
+                'status' => 'Immediate',
+                'tone' => 'ready',
+                'detail' => 'New eligible alerts can notify immediately when email alerts are enabled.',
+            ];
+        }
+
+        if (! $emailEnabled) {
+            return [
+                'label' => 'Cadence',
+                'status' => 'Digest',
+                'tone' => 'manual',
+                'detail' => 'Digest preference is saved, but email alerts are off.',
+            ];
+        }
+
+        $latestDigest = $digestDeliveryStatus['label'];
+
+        if ($digestDeliveryStatus['last_attempted_at']) {
+            $latestDigest .= ' '.$digestDeliveryStatus['last_attempted_at']->diffForHumans();
+        }
+
+        return [
+            'label' => 'Cadence',
+            'status' => 'Digest',
+            'tone' => match ($digestDeliveryStatus['status']) {
+                User::ALERT_DIGEST_DELIVERY_FAILED => 'attention',
+                User::ALERT_DIGEST_DELIVERY_QUEUED,
+                User::ALERT_DIGEST_DELIVERY_NO_ALERTS => 'ready',
+                default => 'manual',
+            },
+            'detail' => 'Digest delivery is preferred. Latest digest: '.$latestDigest.'.',
+        ];
     }
 }
