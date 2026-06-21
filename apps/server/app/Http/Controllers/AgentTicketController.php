@@ -755,13 +755,18 @@ class AgentTicketController extends Controller
 
         $failedCount = (int) ($statusCounts['sync_failed'] ?? 0);
         $pendingCount = (int) ($statusCounts['sync_pending'] ?? 0);
+        $successfulIssueCreations = $ticket->auditEvents()
+            ->where('account_id', $ticket->account_id)
+            ->where('action', 'ticket.external_issue_created')
+            ->get();
         $failedEvents = $ticket->auditEvents()
             ->where('account_id', $ticket->account_id)
             ->where('action', 'ticket.external_sync_failed')
             ->latest('occurred_at')
             ->latest('id')
-            ->limit(3)
-            ->get();
+            ->get()
+            ->reject(fn (AuditEvent $event): bool => $this->externalIssueFailureWasResolved($event, $successfulIssueCreations))
+            ->values();
         $linkFailures = $externalLinks
             ->where('sync_status', 'sync_failed')
             ->values()
@@ -810,6 +815,39 @@ class AgentTicketController extends Controller
         return is_string($projectKey) && trim($projectKey) !== ''
             ? trim($projectKey)
             : 'Project not recorded';
+    }
+
+    /**
+     * @param  Collection<int, AuditEvent>  $successfulIssueCreations
+     */
+    private function externalIssueFailureWasResolved(AuditEvent $failure, Collection $successfulIssueCreations): bool
+    {
+        $failedProjectId = data_get($failure->metadata, 'site_external_issue_project_id');
+        $failedProvider = data_get($failure->metadata, 'provider');
+
+        if (! is_numeric($failedProjectId) || ! is_string($failedProvider)) {
+            return false;
+        }
+
+        return $successfulIssueCreations->contains(function (AuditEvent $success) use ($failure, $failedProjectId, $failedProvider): bool {
+            return (int) data_get($success->metadata, 'site_external_issue_project_id') === (int) $failedProjectId
+                && data_get($success->metadata, 'provider') === $failedProvider
+                && $this->externalIssueEventIsAfter($success, $failure);
+        });
+    }
+
+    private function externalIssueEventIsAfter(AuditEvent $candidate, AuditEvent $reference): bool
+    {
+        if (! $candidate->occurred_at || ! $reference->occurred_at) {
+            return (int) $candidate->id > (int) $reference->id;
+        }
+
+        if ($candidate->occurred_at->greaterThan($reference->occurred_at)) {
+            return true;
+        }
+
+        return $candidate->occurred_at->equalTo($reference->occurred_at)
+            && (int) $candidate->id > (int) $reference->id;
     }
 
     /**

@@ -323,6 +323,83 @@ test('ticket detail hides retry when the failed external issue project belongs t
         ->assertDontSee('ghp_secret_value');
 });
 
+test('ticket detail hides retry when a later external issue creation succeeded for the failed project', function (): void {
+    [$agent, $ticket] = ticketExternalIssueHealthContext();
+    $connection = ExternalIssueProviderConnection::factory()
+        ->for($ticket->account)
+        ->create([
+            'provider' => 'github',
+            'is_enabled' => true,
+            'capabilities' => [
+                'create_issue' => true,
+                'add_comment' => false,
+                'sync_status' => false,
+            ],
+        ]);
+    $project = SiteExternalIssueProject::factory()
+        ->for($ticket->account)
+        ->for($ticket->site)
+        ->for($connection, 'providerConnection')
+        ->create([
+            'project_key' => 'adamgreenwell/wayfindr',
+        ]);
+
+    AuditEvent::factory()
+        ->for($ticket->account)
+        ->for($ticket, 'subject')
+        ->create([
+            'action' => 'ticket.external_sync_failed',
+            'actor_id' => $agent->id,
+            'actor_type' => User::class,
+            'metadata' => [
+                'provider' => 'github',
+                'project_key' => 'adamgreenwell/wayfindr',
+                'site_external_issue_project_id' => $project->id,
+                'message' => 'GitHub token ghp_secret_value was rejected.',
+            ],
+            'occurred_at' => now()->subMinute(),
+            'site_id' => $ticket->site_id,
+        ]);
+    AuditEvent::factory()
+        ->for($ticket->account)
+        ->for($ticket, 'subject')
+        ->create([
+            'action' => 'ticket.external_issue_created',
+            'actor_id' => $agent->id,
+            'actor_type' => User::class,
+            'metadata' => [
+                'provider' => 'github',
+                'project_key' => 'adamgreenwell/wayfindr',
+                'external_key' => '#123',
+                'site_external_issue_project_id' => $project->id,
+            ],
+            'occurred_at' => now(),
+            'site_id' => $ticket->site_id,
+        ]);
+    TicketExternalLink::factory()
+        ->for($ticket->account)
+        ->for($ticket->site)
+        ->for($ticket)
+        ->create([
+            'provider' => 'github',
+            'project_key' => 'adamgreenwell/wayfindr',
+            'sync_status' => 'linked',
+            'metadata' => [
+                'site_external_issue_project_id' => $project->id,
+            ],
+        ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.tickets.show', $ticket))
+        ->assertOk()
+        ->assertSee('Healthy')
+        ->assertSee('1 linked')
+        ->assertSee('External issue links are not reporting failures for this ticket.')
+        ->assertDontSee('GitHub could not sync adamgreenwell/wayfindr.')
+        ->assertDontSee('Retry GitHub issue')
+        ->assertDontSee('ghp_secret_value');
+});
+
 test('ticket detail shows an empty external issue health state', function (): void {
     [$agent, $ticket] = ticketExternalIssueHealthContext();
 
