@@ -76,6 +76,9 @@ class AgentAccountController extends Controller
             'account' => $account,
             'accountActivity' => $this->accountActivityItems($account, $visibleSiteIds),
             'agent' => $agent,
+            'agentAlertDeliverySummaries' => $agents->mapWithKeys(fn (User $accountAgent): array => [
+                $accountAgent->id => $this->agentAlertDeliverySummary($accountAgent),
+            ]),
             'agents' => $agents,
             'agentSupportScopes' => $agentSupportScopes,
             'activeAgentCount' => $agents->reject->isDeactivated()->count(),
@@ -92,6 +95,92 @@ class AgentAccountController extends Controller
             'visibleSites' => $visibleSites,
             'visibleSiteCount' => count($visibleSiteIds),
         ]);
+    }
+
+    /**
+     * @return array{primary: string, lines: array<int, array{text: string, tone?: string}>}
+     */
+    private function agentAlertDeliverySummary(User $accountAgent): array
+    {
+        if ($accountAgent->isDeactivated()) {
+            return [
+                'primary' => 'Deactivated',
+                'lines' => [
+                    ['text' => 'Alert delivery is paused while access is suspended.'],
+                ],
+            ];
+        }
+
+        if ($accountAgent->alertMode() === User::ALERT_MODE_QUIET) {
+            return [
+                'primary' => 'Quiet mode',
+                'lines' => [
+                    ['text' => 'New dashboard and email alerts are paused.'],
+                ],
+            ];
+        }
+
+        [$scopeLabel, $scopeDetail] = $this->agentAlertScopeSummary($accountAgent);
+
+        if (! $accountAgent->alertEmailEnabled()) {
+            return [
+                'primary' => 'Email off',
+                'lines' => [
+                    ['text' => $scopeLabel, 'tone' => 'manual'],
+                    ['text' => $scopeDetail],
+                ],
+            ];
+        }
+
+        if ($accountAgent->alertCadence() === User::ALERT_CADENCE_DIGEST) {
+            $digestDeliveryStatus = $accountAgent->alertDigestDeliveryStatus();
+            $digestDeliveryTone = match ($digestDeliveryStatus['status']) {
+                User::ALERT_DIGEST_DELIVERY_FAILED => 'attention',
+                User::ALERT_DIGEST_DELIVERY_NOT_RUN => 'manual',
+                default => 'ready',
+            };
+            $lines = [
+                ['text' => $scopeLabel, 'tone' => 'ready'],
+                ['text' => $digestDeliveryStatus['label'], 'tone' => $digestDeliveryTone],
+                ['text' => $digestDeliveryStatus['message']],
+            ];
+
+            if ($digestDeliveryStatus['last_attempted_at']) {
+                $lines[] = ['text' => 'Last attempt '.$digestDeliveryStatus['last_attempted_at']->diffForHumans()];
+            }
+
+            return [
+                'primary' => 'Digest',
+                'lines' => $lines,
+            ];
+        }
+
+        return [
+            'primary' => 'Immediate',
+            'lines' => [
+                ['text' => $scopeLabel, 'tone' => 'ready'],
+                ['text' => 'Email alerts as they happen.'],
+                ['text' => $scopeDetail],
+            ],
+        ];
+    }
+
+    /**
+     * @return array{0: string, 1: string}
+     */
+    private function agentAlertScopeSummary(User $accountAgent): array
+    {
+        if ($accountAgent->alertMode() === User::ALERT_MODE_ASSIGNED) {
+            return [
+                'Assigned-only',
+                'Dashboard alerts only for assigned conversations and tickets.',
+            ];
+        }
+
+        return [
+            'All support work',
+            'Dashboard alerts can come from any site work this agent can support.',
+        ];
     }
 
     /**

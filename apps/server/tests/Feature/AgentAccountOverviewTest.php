@@ -260,6 +260,57 @@ test('account overview shows agent alert digest delivery status without raw prov
         ->assertDontSee('Outside failure should not render.');
 });
 
+test('account overview clarifies agent alert scope and quiet delivery state', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'name' => 'Ada Admin',
+    ]);
+
+    User::factory()->for($account)->create([
+        'name' => 'Quinn Quiet',
+        'email' => 'quiet@example.test',
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_QUIET,
+            'email' => false,
+            'cadence' => User::ALERT_CADENCE_IMMEDIATE,
+        ],
+    ]);
+
+    User::factory()->for($account)->create([
+        'name' => 'Ash Assigned',
+        'email' => 'assigned@example.test',
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ASSIGNED,
+            'email' => false,
+            'cadence' => User::ALERT_CADENCE_IMMEDIATE,
+        ],
+    ]);
+
+    User::factory()->for($account)->create([
+        'name' => 'Ivy Immediate',
+        'email' => 'immediate@example.test',
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ALL,
+            'email' => true,
+            'cadence' => User::ALERT_CADENCE_IMMEDIATE,
+        ],
+    ]);
+
+    $this->actingAs($admin)
+        ->get('/dashboard/account')
+        ->assertOk()
+        ->assertSee('Quinn Quiet')
+        ->assertSee('Quiet mode')
+        ->assertSee('New dashboard and email alerts are paused.')
+        ->assertSee('Ash Assigned')
+        ->assertSee('Assigned-only')
+        ->assertSee('Dashboard alerts only for assigned conversations and tickets.')
+        ->assertSee('Ivy Immediate')
+        ->assertSee('All support work')
+        ->assertSee('Email alerts as they happen.');
+});
+
 test('agent can review recent account access activity from the account overview', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $owner = User::factory()->for($account)->create([
