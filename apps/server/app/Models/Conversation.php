@@ -175,6 +175,53 @@ class Conversation extends Model
     }
 
     /**
+     * @return array{title: string, body: string, cta: string, href: string}
+     */
+    public function nextAction(): array
+    {
+        if ($this->status === 'closed') {
+            return [
+                'body' => 'This conversation is closed. Reopen it only if the visitor returns or the outcome changes.',
+                'cta' => 'Review status actions',
+                'href' => '#conversation-context-heading',
+                'title' => 'Review closed conversation',
+            ];
+        }
+
+        $latestMessage = $this->relationLoaded('latestMessage')
+            ? $this->latestMessage
+            : $this->messages()
+                ->latest('created_at')
+                ->latest('id')
+                ->first();
+
+        if (! $latestMessage) {
+            return [
+                'body' => 'No messages have landed yet. Use the current visitor context to decide whether to greet, wait, or create a ticket.',
+                'cta' => 'Review context',
+                'href' => '#visitor-context-heading',
+                'title' => 'Start the conversation',
+            ];
+        }
+
+        if ($latestMessage->sender_type === User::class) {
+            return [
+                'body' => 'Agent replied last. Keep the conversation visible and respond when the visitor comes back.',
+                'cta' => 'Review messages',
+                'href' => '#messages-heading',
+                'title' => 'Wait on visitor',
+            ];
+        }
+
+        return [
+            'body' => 'Visitor replied last. Send a clear response or create a ticket when the request needs durable follow-up.',
+            'cta' => 'Jump to reply',
+            'href' => '#reply-heading',
+            'title' => 'Reply to visitor',
+        ];
+    }
+
+    /**
      * @return array{label: string, body: string, occurred_at: CarbonInterface|null}
      */
     public function queueActivityPreview(): array

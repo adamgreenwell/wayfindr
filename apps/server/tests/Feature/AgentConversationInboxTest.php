@@ -206,6 +206,90 @@ test('conversation detail shows bounded latest activity previews', function (): 
         ]);
 });
 
+test('conversation detail recommends the next action for the conversation state', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Riley Agent']);
+
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-next-action']);
+    $needsReplyConversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-CONVNEXT1',
+        'subject' => 'Visitor needs a reply',
+        'status' => 'open',
+        'last_message_at' => now()->subMinutes(3),
+    ]);
+    $waitingConversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-CONVNEXT2',
+        'subject' => 'Agent replied last',
+        'status' => 'open',
+        'last_message_at' => now()->subMinutes(2),
+    ]);
+    $emptyConversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-CONVNEXT3',
+        'subject' => 'New empty conversation',
+        'status' => 'open',
+    ]);
+    $closedConversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-CONVNEXT4',
+        'subject' => 'Closed conversation',
+        'status' => 'closed',
+        'closed_at' => now()->subMinute(),
+    ]);
+
+    ConversationMessage::factory()->for($needsReplyConversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'Can someone help me finish this setup?',
+        'created_at' => now()->subMinutes(3),
+    ]);
+    ConversationMessage::factory()->for($waitingConversation)->create([
+        'sender_type' => User::class,
+        'sender_id' => $agent->id,
+        'body' => 'I sent the next step.',
+        'created_at' => now()->subMinutes(2),
+    ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.conversations.show', $needsReplyConversation->support_code))
+        ->assertOk()
+        ->assertSeeInOrder([
+            'Next action',
+            'Reply to visitor',
+            'Visitor replied last. Send a clear response or create a ticket when the request needs durable follow-up.',
+            'Jump to reply',
+        ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.conversations.show', $waitingConversation->support_code))
+        ->assertOk()
+        ->assertSeeInOrder([
+            'Next action',
+            'Wait on visitor',
+            'Agent replied last. Keep the conversation visible and respond when the visitor comes back.',
+            'Review messages',
+        ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.conversations.show', $emptyConversation->support_code))
+        ->assertOk()
+        ->assertSeeInOrder([
+            'Next action',
+            'Start the conversation',
+            'No messages have landed yet. Use the current visitor context to decide whether to greet, wait, or create a ticket.',
+            'Review context',
+        ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.conversations.show', $closedConversation->support_code))
+        ->assertOk()
+        ->assertSeeInOrder([
+            'Next action',
+            'Review closed conversation',
+            'This conversation is closed. Reopen it only if the visitor returns or the outcome changes.',
+            'Review status actions',
+        ]);
+});
+
 test('dashboard shows an empty conversation state', function (): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create();

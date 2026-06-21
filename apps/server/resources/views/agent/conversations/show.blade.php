@@ -1,6 +1,7 @@
 <x-layouts.app title="Conversation {{ $conversation->support_code }}" :agent="$agent" :account="$account">
             @php
                 $conversationActivityPreview = $conversation->queueActivityPreview();
+                $conversationNextAction = $conversation->nextAction();
             @endphp
 
             <a class="text-link" href="{{ $conversationBackUrl }}">Back to conversations</a>
@@ -33,6 +34,12 @@
                     <div class="meta-item">
                         <span class="meta-label">Attention</span>
                         <span class="meta-value">{{ $conversation->attentionLabel() }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Next action</span>
+                        <span class="meta-value">{{ $conversationNextAction['title'] }}</span>
+                        <span class="lede">{{ $conversationNextAction['body'] }}</span>
+                        <a class="text-link health-action" href="{{ $conversationNextAction['href'] }}">{{ $conversationNextAction['cta'] }}</a>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">Latest activity</span>
