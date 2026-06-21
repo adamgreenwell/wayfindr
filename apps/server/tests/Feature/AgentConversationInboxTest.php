@@ -4980,7 +4980,9 @@ test('agent conversation page exposes live cobrowse transport health targets whe
         ->assertSee('skipped_mutations', false)
         ->assertSee('telemetry.reported_at', false)
         ->assertSee('Connection telemetry updated live.', false)
-        ->assertSee('Fresh snapshot retry limit reached.', false);
+        ->assertSee('Fresh snapshot retry limit reached.', false)
+        ->assertSee("transportRecovery.dataset.recoveryLocked === 'true' && health.state !== 'exhausted'", false)
+        ->assertSee("transportRecovery.dataset.recoveryLocked = 'false';", false);
 });
 
 test('agent conversation page can update visitor presence from live events', function (): void {
@@ -5855,7 +5857,7 @@ test('agent can see cobrowse telemetry on a conversation', function (): void {
         ->assertSee('5');
 });
 
-test('agent can see cobrowse transport health on a conversation', function (array $metadata, string $label, string $message, string $lastReport, string $pressure, string $guidance): void {
+test('agent can see cobrowse transport health on a conversation', function (array $metadata, string $label, string $message, string $lastReport, string $pressure, string $guidance, string $recoveryAction): void {
     Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00'));
 
     $account = Account::factory()->create(['name' => 'Acme Support']);
@@ -5886,7 +5888,9 @@ test('agent can see cobrowse transport health on a conversation', function (arra
         ->assertSee('Pressure')
         ->assertSee($pressure)
         ->assertSee('Agent guidance')
-        ->assertSee($guidance);
+        ->assertSee($guidance)
+        ->assertSee('Recovery action')
+        ->assertSee($recoveryAction);
 
     Carbon::setTestNow();
 })->with([
@@ -5906,6 +5910,7 @@ test('agent can see cobrowse transport health on a conversation', function (arra
         '30 seconds ago',
         'No recent drops reported',
         'Preview is current enough to use alongside chat.',
+        'No recovery action needed.',
     ],
     'degraded' => [
         [
@@ -5938,6 +5943,7 @@ test('agent can see cobrowse transport health on a conversation', function (arra
         '20 seconds ago',
         '1 dropped batch, 3 skipped mutations',
         'Use the preview for orientation and confirm fast-changing details through chat.',
+        'Request a fresh snapshot once the visitor widget settles, and use chat for fast-changing details.',
     ],
     'stale' => [
         [
@@ -5952,6 +5958,7 @@ test('agent can see cobrowse transport health on a conversation', function (arra
         '5 minutes ago',
         'No recent drops reported',
         'Ask the visitor to confirm what they see before relying on the preview.',
+        'Request a fresh snapshot if the preview looks out of date, and confirm details through chat.',
     ],
     'reconnecting' => [
         [
@@ -5984,6 +5991,7 @@ test('agent can see cobrowse transport health on a conversation', function (arra
         '15 seconds ago',
         '2 dropped batches, 1 skipped mutation',
         'Use chat to confirm anything that depends on fast-changing page state.',
+        'Give the visitor widget a moment, then request a fresh snapshot if the preview still lags.',
     ],
     'unavailable' => [
         [],
@@ -5992,8 +6000,59 @@ test('agent can see cobrowse transport health on a conversation', function (arra
         'Not reported',
         'No drops reported',
         'Wait for the visitor page to report before relying on cobrowse.',
+        'Wait for the visitor page to report before requesting recovery.',
     ],
 ]);
+
+test('agent cobrowse transport recovery action does not invite duplicate fresh snapshots', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-18 15:00:00', 'UTC'));
+
+    try {
+        $account = Account::factory()->create(['name' => 'Acme Support']);
+        $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+        $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-RECOVERY-PENDING',
+            'subject' => 'Cobrowse recovery already requested',
+            'status' => 'open',
+        ]);
+
+        CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+            'requested_by_id' => $agent->id,
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(3),
+            'ended_at' => null,
+            'metadata' => [
+                'telemetry' => [
+                    'rtt_ms' => 120,
+                    'payload_bytes' => 8192,
+                    'dropped_batches' => 2,
+                    'reconnects' => 0,
+                    'samples' => 4,
+                    'reported_at' => now()->subSeconds(20)->toJSON(),
+                ],
+                'resync_request' => [
+                    'id' => 'resync_pending',
+                    'requested_by_id' => $agent->id,
+                    'requested_by_name' => 'Ada Agent',
+                    'requested_at' => now()->subSeconds(15)->toJSON(),
+                    'fulfilled_at' => null,
+                ],
+            ],
+        ]);
+
+        $this->actingAs($agent)
+            ->get('/dashboard/conversations/WF-RECOVERY-PENDING')
+            ->assertOk()
+            ->assertSee('Transport health')
+            ->assertSee('Recovery action')
+            ->assertSee('Fresh snapshot already requested. Wait for the visitor widget before retrying.')
+            ->assertDontSee('Request a fresh snapshot once the visitor widget settles, and use chat for fast-changing details.');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
 
 test('agent cobrowse transport health does not keep stale reconnect warnings alive after newer reports arrive', function (): void {
     Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00'));

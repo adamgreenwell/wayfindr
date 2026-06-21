@@ -86,7 +86,7 @@ class CobrowseConsentState
     }
 
     /**
-     * @return array{state: string, label: string, message: string, last_report: string, pressure: string, guidance: string, tone: string}
+     * @return array{state: string, label: string, message: string, last_report: string, pressure: string, guidance: string, recovery_action: string, tone: string}
      */
     public function queueTransportForConversation(Conversation $conversation): array
     {
@@ -105,6 +105,7 @@ class CobrowseConsentState
             'last_report' => $transport['last_report'],
             'pressure' => $transport['pressure'],
             'guidance' => $transport['guidance'],
+            'recovery_action' => $transport['recovery_action'],
             'tone' => $this->transportTone($transport['state']),
         ];
     }
@@ -131,6 +132,7 @@ class CobrowseConsentState
                 'reconnects' => '0',
                 'pressure' => 'No drops reported',
                 'guidance' => 'Wait for an active cobrowse session before relying on cobrowse.',
+                'recovery_action' => 'Wait for the visitor page to report before requesting recovery.',
             ];
         }
 
@@ -150,6 +152,7 @@ class CobrowseConsentState
                 'reconnects' => number_format($reconnects),
                 'pressure' => $pressure,
                 'guidance' => 'Wait for the visitor page to report before relying on cobrowse.',
+                'recovery_action' => 'Wait for the visitor page to report before requesting recovery.',
             ];
         }
 
@@ -162,6 +165,7 @@ class CobrowseConsentState
                 'reconnects' => number_format($reconnects),
                 'pressure' => $pressure,
                 'guidance' => 'Ask the visitor to confirm what they see before relying on the preview.',
+                'recovery_action' => 'Request a fresh snapshot if the preview looks out of date, and confirm details through chat.',
             ];
         }
 
@@ -174,6 +178,7 @@ class CobrowseConsentState
                 'reconnects' => number_format($reconnects),
                 'pressure' => $pressure,
                 'guidance' => 'Use chat to confirm anything that depends on fast-changing page state.',
+                'recovery_action' => 'Give the visitor widget a moment, then request a fresh snapshot if the preview still lags.',
             ];
         }
 
@@ -186,6 +191,7 @@ class CobrowseConsentState
                 'reconnects' => number_format($reconnects),
                 'pressure' => $pressure,
                 'guidance' => 'Use the preview for orientation and confirm fast-changing details through chat.',
+                'recovery_action' => 'Request a fresh snapshot once the visitor widget settles, and use chat for fast-changing details.',
             ];
         }
 
@@ -199,6 +205,7 @@ class CobrowseConsentState
             'guidance' => ! $this->hasTransportPressure($pressure)
                 ? 'Preview is current enough to use alongside chat.'
                 : 'Use chat to confirm anything that depends on fast-changing page state.',
+            'recovery_action' => 'No recovery action needed.',
         ];
     }
 

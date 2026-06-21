@@ -419,6 +419,7 @@
                                 data-retry-at="{{ $cobrowseConsent['resync_request']['retry_at'] ?? '' }}"
                                 data-retry-label="Request another fresh snapshot"
                                 data-retry-ready-help="Still waiting. You can request another fresh snapshot now."
+                                data-retry-ready-recovery="Request another fresh snapshot if the preview still looks out of date."
                             >
                                 @csrf
                                 @include('agent.conversations.partials.return-query-fields')
@@ -493,6 +494,13 @@
                 @endif
 
                 @if ($cobrowseConsent['transport'])
+                    @php
+                        $transportRecoveryLocked = ($cobrowseConsent['resync_request']['status'] ?? null) === 'pending';
+                        $transportRecoveryAction = $transportRecoveryLocked
+                            ? 'Fresh snapshot already requested. Wait for the visitor widget before retrying.'
+                            : $cobrowseConsent['transport']['recovery_action'];
+                    @endphp
+
                     <div class="section-header" data-cobrowse-transport-panel data-state="{{ $cobrowseConsent['transport']['state'] }}">
                         <strong>Transport health</strong>
                         <span class="lede" data-cobrowse-transport-label>{{ $cobrowseConsent['transport']['label'] }}</span>
@@ -520,6 +528,14 @@
                         <div class="meta-item">
                             <span class="meta-label">Agent guidance</span>
                             <span class="meta-value" data-cobrowse-transport-guidance>{{ $cobrowseConsent['transport']['guidance'] }}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Recovery action</span>
+                            <span
+                                class="meta-value"
+                                data-cobrowse-transport-recovery
+                                data-recovery-locked="{{ $transportRecoveryLocked ? 'true' : 'false' }}"
+                            >{{ $transportRecoveryAction }}</span>
                         </div>
                     </div>
                 @endif
@@ -890,6 +906,7 @@
             <script>
                 (function () {
                     var retryForms = document.querySelectorAll('[data-resync-retry-form]');
+                    var lockedRecovery = document.querySelector('[data-cobrowse-transport-recovery][data-recovery-locked="true"]');
 
                     retryForms.forEach(function (form) {
                         var retryAt = Date.parse(form.getAttribute('data-retry-at') || '');
@@ -906,6 +923,11 @@
 
                             if (help) {
                                 help.textContent = form.getAttribute('data-retry-ready-help') || 'You can request another fresh snapshot now.';
+                            }
+
+                            if (lockedRecovery) {
+                                lockedRecovery.textContent = form.getAttribute('data-retry-ready-recovery') || 'Request another fresh snapshot if the preview still looks out of date.';
+                                lockedRecovery.dataset.recoveryLocked = 'false';
                             }
                         }
 
@@ -942,6 +964,7 @@
                 var transportReconnects = document.querySelector('[data-cobrowse-transport-reconnects]');
                 var transportPressure = document.querySelector('[data-cobrowse-transport-pressure]');
                 var transportGuidance = document.querySelector('[data-cobrowse-transport-guidance]');
+                var transportRecovery = document.querySelector('[data-cobrowse-transport-recovery]');
                 var telemetryHeading = document.querySelector('[data-cobrowse-telemetry-heading]');
                 var telemetryEmpty = document.querySelector('[data-cobrowse-telemetry-empty]');
                 var telemetryGrid = document.querySelector('[data-cobrowse-telemetry-grid]');
@@ -1135,6 +1158,7 @@
                             label: 'Retry limit reached',
                             message: 'Fresh snapshot retry limit reached.',
                             guidance: 'Request another fresh snapshot when the visitor transport settles.',
+                            recovery_action: 'Request another fresh snapshot when the visitor transport settles.',
                         };
                     }
 
@@ -1144,6 +1168,7 @@
                             label: 'Reconnecting',
                             message: 'The visitor transport has reconnected recently; preview data may briefly lag.',
                             guidance: 'Use chat to confirm anything that depends on fast-changing page state.',
+                            recovery_action: 'Give the visitor widget a moment, then request a fresh snapshot if the preview still lags.',
                         };
                     }
 
@@ -1153,6 +1178,7 @@
                             label: 'Degraded',
                             message: 'Cobrowse reports are arriving, but the visitor page is changing faster than Wayfindr can fully replay.',
                             guidance: 'Use the preview for orientation and confirm fast-changing details through chat.',
+                            recovery_action: 'Request a fresh snapshot once the visitor widget settles, and use chat for fast-changing details.',
                         };
                     }
 
@@ -1161,6 +1187,7 @@
                         label: 'Live',
                         message: 'Cobrowse reports are arriving normally.',
                         guidance: 'Preview is current enough to use alongside chat.',
+                        recovery_action: 'No recovery action needed.',
                     };
                 }
 
@@ -1182,6 +1209,17 @@
                     setText(transportReconnects, formatNumber(telemetry.reconnects));
                     setText(transportPressure, droppedBatchPressure(telemetry, pressure));
                     setText(transportGuidance, health.guidance);
+
+                    if (!transportRecovery) {
+                        return;
+                    }
+
+                    if (transportRecovery.dataset.recoveryLocked === 'true' && health.state !== 'exhausted') {
+                        return;
+                    }
+
+                    transportRecovery.dataset.recoveryLocked = 'false';
+                    setText(transportRecovery, health.recovery_action);
                 }
 
                 function updateConnectionTelemetry(telemetry) {
