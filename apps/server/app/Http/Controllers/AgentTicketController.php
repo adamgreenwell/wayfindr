@@ -38,7 +38,7 @@ class AgentTicketController extends Controller
         $ticket->loadMissing('site');
         $ticket->load([
             'assignee',
-            'conversation',
+            'conversation.latestMessage',
             'externalLinks' => fn ($query) => $query
                 ->latest()
                 ->latest('id'),

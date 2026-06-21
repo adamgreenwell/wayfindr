@@ -8,11 +8,48 @@
             @endif
 
             @php
+                $ticketActivityPreview = $ticket->queueActivityPreview();
+                $ticketNextAction = $ticket->nextAction();
                 $requesterReference = $ticket->requester?->email
                     ?? $ticket->requester?->name
                     ?? $ticket->requester?->anonymous_id
                     ?? 'Not linked';
             @endphp
+            <section class="section" aria-labelledby="ticket-work-state-heading">
+                <div class="section-header">
+                    <h2 id="ticket-work-state-heading">Work state</h2>
+                    <span class="lede">{{ $ticket->attentionLabel() }}</span>
+                </div>
+
+                <div class="meta-grid">
+                    <div class="meta-item">
+                        <span class="meta-label">Status</span>
+                        <span class="meta-value">{{ ucfirst($ticket->status) }}</span>
+                        <span class="lede">{{ $ticket->attentionDescription() }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Owner</span>
+                        <span class="meta-value">{{ $ticket->assignee?->name ?? 'Unassigned' }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Latest activity</span>
+                        <span class="meta-value">{{ $ticketActivityPreview['label'] }}</span>
+                        <span class="lede">{{ $ticketActivityPreview['body'] }}</span>
+                        @if ($ticketActivityPreview['occurred_at'])
+                            <span class="table-note">{{ $ticketActivityPreview['occurred_at']->diffForHumans() }}</span>
+                        @endif
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Next action</span>
+                        <span class="meta-value">{{ $ticketNextAction['title'] }}</span>
+                        <span class="lede">{{ $ticketNextAction['body'] }}</span>
+                        <a class="button secondary health-action" href="{{ $ticketNextAction['href'] }}">
+                            {{ $ticketNextAction['cta'] }}
+                        </a>
+                    </div>
+                </div>
+            </section>
+
             <section class="section" aria-labelledby="ticket-reference-heading">
                 <div class="section-header">
                     <h2 id="ticket-reference-heading">Support reference</h2>
@@ -134,26 +171,6 @@
                             @endif
                         </span>
                     </div>
-                </div>
-            </section>
-
-            @php
-                $ticketNextAction = $ticket->nextAction();
-            @endphp
-            <section class="section" aria-labelledby="ticket-next-action-heading">
-                <div class="section-header">
-                    <h2 id="ticket-next-action-heading">Next action</h2>
-                    <span class="lede">{{ $ticket->attentionLabel() }}</span>
-                </div>
-
-                <div class="notice-copy">
-                    <p><strong>{{ $ticketNextAction['title'] }}</strong></p>
-                    <p>{{ $ticketNextAction['body'] }}</p>
-                    <p>
-                        <a class="button secondary" href="{{ $ticketNextAction['href'] }}">
-                            {{ $ticketNextAction['cta'] }}
-                        </a>
-                    </p>
                 </div>
             </section>
 
