@@ -177,6 +177,70 @@ test('agent roster summarizes explicit and fallback site scope', function (): vo
         ->assertSee(route('dashboard.sites.show', $explicitSite), false);
 });
 
+test('agent roster summarizes visible assigned workload without leaking restricted site work', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $viewer = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'name' => 'Bea Builder',
+        'email' => 'bea@example.test',
+    ]);
+    $teammate = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'name' => 'Quinn Queue',
+        'email' => 'quinn@example.test',
+    ]);
+
+    $visibleSite = Site::factory()->for($account)->create(['name' => 'Public Docs']);
+    $visibleSite->supportAgents()->attach([$viewer->id, $teammate->id]);
+    $visibleVisitor = Visitor::factory()->for($visibleSite)->create();
+
+    Conversation::factory()->for($visibleSite)->for($visibleVisitor)->create([
+        'assigned_agent_id' => $viewer->id,
+        'status' => 'open',
+    ]);
+    Conversation::factory()->for($visibleSite)->for($visibleVisitor)->create([
+        'assigned_agent_id' => $viewer->id,
+        'status' => 'open',
+    ]);
+    Conversation::factory()->for($visibleSite)->for($visibleVisitor)->create([
+        'assigned_agent_id' => $viewer->id,
+        'status' => 'closed',
+    ]);
+    Ticket::factory()->for($account)->for($visibleSite)->create([
+        'assignee_id' => $viewer->id,
+        'status' => 'open',
+    ]);
+
+    $restrictedSite = Site::factory()->for($account)->create(['name' => 'Restricted Store']);
+    $restrictedSite->supportAgents()->attach($teammate);
+    $restrictedVisitor = Visitor::factory()->for($restrictedSite)->create();
+    Conversation::factory()->for($restrictedSite)->for($restrictedVisitor)->create([
+        'assigned_agent_id' => $teammate->id,
+        'status' => 'open',
+    ]);
+    Ticket::factory()->for($account)->for($restrictedSite)->create([
+        'assignee_id' => $teammate->id,
+        'status' => 'open',
+    ]);
+
+    $this->actingAs($viewer)
+        ->get('/dashboard/account')
+        ->assertOk()
+        ->assertSee('Workload')
+        ->assertSeeInOrder([
+            'Bea Builder',
+            'bea@example.test',
+            '2 open conversations',
+            '1 open ticket',
+        ])
+        ->assertSeeInOrder([
+            'Quinn Queue',
+            'quinn@example.test',
+            'No assigned open work',
+        ])
+        ->assertDontSee('Restricted Store');
+});
+
 test('account overview shows agent alert digest delivery status without raw provider errors', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $admin = User::factory()->for($account)->create([

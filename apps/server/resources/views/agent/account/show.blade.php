@@ -221,13 +221,15 @@
                                     <th scope="col">Manage access</th>
                                 @endif
                                 <th scope="col">Support scope</th>
-                                <th scope="col">Open conversations</th>
-                                <th scope="col">Open tickets</th>
+                                <th scope="col">Workload</th>
                             </tr>
                         </thead>
                         <tbody>
                             @foreach ($agents as $accountAgent)
                                 @php
+                                    $visibleOpenConversationCount = (int) $accountAgent->visible_open_conversations_count;
+                                    $visibleOpenTicketCount = (int) $accountAgent->visible_open_tickets_count;
+                                    $hasVisibleOpenWork = $visibleOpenConversationCount > 0 || $visibleOpenTicketCount > 0;
                                     $canManageThisAgentAccess = $canManageAgentAccess
                                         && ! $accountAgent->is($agent)
                                         && ($agent->isOwner() || $accountAgent->account_role === \App\Enums\AccountRole::Agent);
@@ -316,8 +318,18 @@
                                             @endif
                                         @endif
                                     </td>
-                                    <td>{{ $accountAgent->visible_open_conversations_count }} {{ \Illuminate\Support\Str::plural('open conversation', $accountAgent->visible_open_conversations_count) }}</td>
-                                    <td>{{ $accountAgent->visible_open_tickets_count }} {{ \Illuminate\Support\Str::plural('open ticket', $accountAgent->visible_open_tickets_count) }}</td>
+                                    <td>
+                                        @if ($hasVisibleOpenWork)
+                                            @if ($visibleOpenConversationCount > 0)
+                                                <strong>{{ $visibleOpenConversationCount }} {{ \Illuminate\Support\Str::plural('open conversation', $visibleOpenConversationCount) }}</strong>
+                                            @endif
+                                            @if ($visibleOpenTicketCount > 0)
+                                                <span class="lede">{{ $visibleOpenTicketCount }} {{ \Illuminate\Support\Str::plural('open ticket', $visibleOpenTicketCount) }}</span>
+                                            @endif
+                                        @else
+                                            <span class="lede">No assigned open work</span>
+                                        @endif
+                                    </td>
                                 </tr>
                             @endforeach
                         </tbody>
