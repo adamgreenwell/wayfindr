@@ -50,6 +50,8 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
     Route::get('/dashboard', AgentDashboardController::class)->name('dashboard');
     Route::get('/dashboard/support-code', AgentSupportCodeLookupController::class)
         ->name('dashboard.support-code.lookup');
+    Route::get('/dashboard/alerts', [AgentAlertController::class, 'index'])
+        ->name('dashboard.alerts.index');
     Route::get('/dashboard/profile', [AgentProfileController::class, 'show'])
         ->name('dashboard.profile.show');
     Route::put('/dashboard/profile', [AgentProfileController::class, 'update'])

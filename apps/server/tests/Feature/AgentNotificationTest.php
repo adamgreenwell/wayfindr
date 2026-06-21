@@ -722,7 +722,160 @@ test('dashboard explains when unread alerts overflow the visible panel', functio
         ->assertSee('7 unread')
         ->assertSee('Showing 5 latest alerts')
         ->assertSee('2 more unread alerts are waiting outside this panel.')
-        ->assertSee('Open the linked queue items or mark alerts read once handled.');
+        ->assertSee('Open the linked queue items or mark alerts read once handled.')
+        ->assertSee('/dashboard/alerts', false)
+        ->assertSee('Open alert center');
+});
+
+test('agents can review visible unread and recent alerts in an alert center', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $assigningAgent = User::factory()->for($account)->create(['name' => 'Bea Builder']);
+    $visibleSite = Site::factory()->for($account)->create([
+        'name' => 'Acme Docs',
+        'public_key' => 'site_public_docs',
+    ]);
+    $hiddenSite = Site::factory()->for($account)->create(['name' => 'Private Docs']);
+    $remainingAgent = User::factory()->for($account)->create(['name' => 'Casey Current']);
+    $visitor = Visitor::factory()->for($visibleSite)->create(['anonymous_id' => 'anon-docs']);
+    $hiddenVisitor = Visitor::factory()->for($hiddenSite)->create(['anonymous_id' => 'anon-hidden']);
+    $conversation = Conversation::factory()->for($visibleSite)->for($visitor)->create([
+        'assigned_agent_id' => $agent->id,
+        'support_code' => 'WF-CENTER1',
+        'subject' => 'Install help',
+    ]);
+    $message = ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'I am stuck on the install step.',
+    ]);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($visibleSite)
+        ->for($agent, 'assignee')
+        ->create([
+            'subject' => 'Escalated checkout issue',
+            'priority' => 'high',
+        ]);
+    $hiddenConversation = Conversation::factory()->for($hiddenSite)->for($hiddenVisitor)->create([
+        'support_code' => 'WF-HIDDEN-CENTER',
+        'subject' => 'Private issue',
+    ]);
+    $hiddenMessage = ConversationMessage::factory()->for($hiddenConversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $hiddenVisitor->id,
+        'body' => 'This should not be visible.',
+    ]);
+
+    $agent->notify(new ConversationNeedsReply($message));
+    $agent->notify(new TicketAssigned($ticket, $assigningAgent));
+    $agent->fresh()->unreadNotifications()
+        ->get()
+        ->firstOrFail(fn ($notification): bool => data_get($notification->data, 'kind') === 'ticket_assigned')
+        ->markAsRead();
+    $agent->notify(new ConversationNeedsReply($hiddenMessage));
+    $hiddenSite->supportAgents()->sync([$remainingAgent->id]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/alerts')
+        ->assertOk()
+        ->assertSee('Alert center')
+        ->assertSee('2 visible')
+        ->assertSee('1 unread')
+        ->assertSee('Install help')
+        ->assertSee('WF-CENTER1')
+        ->assertSee('I am stuck on the install step.')
+        ->assertSee('Escalated checkout issue')
+        ->assertSee('Ticket assigned')
+        ->assertSee('High priority')
+        ->assertSee("/dashboard/tickets/{$ticket->id}", false)
+        ->assertDontSee('Private issue')
+        ->assertDontSee('WF-HIDDEN-CENTER')
+        ->assertDontSee('This should not be visible.');
+});
+
+test('alert center keeps older unread alerts visible before capping recent read alerts', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+
+    $olderConversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'assigned_agent_id' => $agent->id,
+        'support_code' => 'WF-OLDER-UNREAD',
+        'subject' => 'Older unread install blocker',
+    ]);
+    $olderMessage = ConversationMessage::factory()->for($olderConversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'This unread alert should stay visible.',
+    ]);
+
+    $agent->notify(new ConversationNeedsReply($olderMessage));
+    $olderNotification = $agent->unreadNotifications()->firstOrFail();
+    $olderNotification->forceFill([
+        'created_at' => now()->subDays(2),
+        'updated_at' => now()->subDays(2),
+    ])->save();
+
+    foreach (range(1, 35) as $index) {
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'assigned_agent_id' => $agent->id,
+            'support_code' => 'WF-READ-'.$index,
+            'subject' => 'Handled alert '.$index,
+        ]);
+        $message = ConversationMessage::factory()->for($conversation)->create([
+            'sender_type' => Visitor::class,
+            'sender_id' => $visitor->id,
+            'body' => 'Handled message '.$index,
+        ]);
+
+        $agent->notify(new ConversationNeedsReply($message));
+        $readAt = now()->subMinutes(35 - $index);
+        $agent->unreadNotifications()
+            ->latest()
+            ->firstOrFail()
+            ->forceFill([
+                'read_at' => $readAt,
+                'created_at' => $readAt,
+                'updated_at' => $readAt,
+            ])
+            ->save();
+    }
+
+    $this->actingAs($agent)
+        ->get('/dashboard/alerts')
+        ->assertOk()
+        ->assertSee('1 unread')
+        ->assertSee('Older unread install blocker')
+        ->assertSee('WF-OLDER-UNREAD')
+        ->assertSee('This unread alert should stay visible.');
+});
+
+test('alert center mark read controls return agents to the alert center', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['public_key' => 'site_public_docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'assigned_agent_id' => $agent->id,
+        'support_code' => 'WF-CENTER2',
+    ]);
+    $message = ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'Could you look at this?',
+    ]);
+    $agent->notify(new ConversationNeedsReply($message));
+    $notification = $agent->unreadNotifications()->firstOrFail();
+
+    $this->actingAs($agent)
+        ->post("/dashboard/alerts/{$notification->id}/read", [
+            'return_to' => 'alerts',
+        ])
+        ->assertRedirect('/dashboard/alerts');
+
+    expect($notification->fresh()->read())->toBeTrue();
 });
 
 test('agent can mark one alert as read', function (): void {

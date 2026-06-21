@@ -1032,6 +1032,11 @@
                     'active' => request()->routeIs('dashboard.tickets.*'),
                 ],
                 [
+                    'label' => 'Alerts',
+                    'href' => route('dashboard.alerts.index'),
+                    'active' => request()->routeIs('dashboard.alerts.*'),
+                ],
+                [
                     'label' => 'Sites',
                     'href' => route('dashboard.sites.index'),
                     'active' => request()->routeIs('dashboard.sites.*'),
