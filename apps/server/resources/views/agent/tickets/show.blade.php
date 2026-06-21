@@ -56,6 +56,24 @@
                 </div>
             </section>
 
+            <section class="section" aria-labelledby="ticket-artifacts-heading">
+                <div class="section-header">
+                    <h2 id="ticket-artifacts-heading">Support artifacts</h2>
+                    <span class="lede">Ticket coverage</span>
+                </div>
+
+                <div class="meta-grid">
+                    @foreach ($ticketArtifactCoverage as $artifact)
+                        <div class="meta-item">
+                            <span class="meta-label">{{ $artifact['label'] }}</span>
+                            <span class="meta-value">{{ $artifact['value'] }}</span>
+                            <span class="readiness-status" data-status="{{ $artifact['tone'] }}">{{ $artifact['tone'] === 'ready' ? 'Present' : 'Optional' }}</span>
+                            <span class="lede">{{ $artifact['description'] }}</span>
+                        </div>
+                    @endforeach
+                </div>
+            </section>
+
             <section class="section" aria-labelledby="ticket-reference-heading">
                 <div class="section-header">
                     <h2 id="ticket-reference-heading">Support reference</h2>

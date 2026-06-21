@@ -27,6 +27,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -85,6 +86,7 @@ class AgentTicketController extends Controller
             'ticketPriorities' => TicketPriority::options(),
             'ticketPriorityGuidance' => TicketPriority::guidanceOptions(),
             'ticket' => $ticket,
+            'ticketArtifactCoverage' => $this->ticketArtifactCoverage($ticket),
             'ticketExternalIssueHealth' => $this->ticketExternalIssueHealth($ticket),
             'visitorContext' => $this->visitorContext($ticket, $visitorContextSanitizer),
             'priorVisitorConversations' => $this->priorVisitorConversations($ticket),
@@ -543,6 +545,64 @@ class AgentTicketController extends Controller
                 ->whereNull('deactivated_at')
                 ->orderBy('name')
                 ->get();
+    }
+
+    /**
+     * @return Collection<int, array{label: string, value: string, description: string, tone: string}>
+     */
+    private function ticketArtifactCoverage(Ticket $ticket): Collection
+    {
+        $labelCount = $ticket->labels->count();
+        $noteCount = $ticket->auditEvents->count();
+        $externalLinkCount = $ticket->externalLinks
+            ->filter(fn ($externalLink): bool => (int) $externalLink->account_id === (int) $ticket->account_id
+                && (int) $externalLink->ticket_id === (int) $ticket->id)
+            ->count();
+
+        return collect([
+            [
+                'description' => $ticket->conversation
+                    ? 'Support code and transcript are attached.'
+                    : 'No chat transcript is attached yet.',
+                'label' => 'Conversation',
+                'tone' => $ticket->conversation ? 'ready' : 'manual',
+                'value' => $ticket->conversation ? 'Linked' : 'Not linked',
+            ],
+            [
+                'description' => $ticket->requester
+                    ? 'Safe visitor context can support follow-up.'
+                    : 'No visitor profile is attached yet.',
+                'label' => 'Visitor',
+                'tone' => $ticket->requester ? 'ready' : 'manual',
+                'value' => $ticket->requester ? 'Linked' : 'Not linked',
+            ],
+            [
+                'description' => $labelCount > 0
+                    ? 'Queue filters and handoffs can use these labels.'
+                    : 'Add labels when this needs queue-level grouping.',
+                'label' => 'Labels',
+                'tone' => $labelCount > 0 ? 'ready' : 'manual',
+                'value' => $labelCount.' '.Str::plural('label', $labelCount),
+            ],
+            [
+                'description' => $noteCount > 0
+                    ? 'Private agent context exists for handoff.'
+                    : 'No private handoff context has been captured.',
+                'label' => 'Internal notes',
+                'tone' => $noteCount > 0 ? 'ready' : 'manual',
+                'value' => $noteCount.' '.Str::plural('note', $noteCount),
+            ],
+            [
+                'description' => $externalLinkCount > 0
+                    ? 'External tracker references are attached.'
+                    : 'Link an external issue when work leaves Wayfindr.',
+                'label' => 'External issues',
+                'tone' => $externalLinkCount > 0 ? 'ready' : 'manual',
+                'value' => $externalLinkCount > 0
+                    ? $externalLinkCount.' '.Str::plural('link', $externalLinkCount)
+                    : 'Not linked',
+            ],
+        ]);
     }
 
     private function redirectAfterUpdate(Ticket $ticket, Request $request, string $status): RedirectResponse
