@@ -67,154 +67,188 @@ test('conversation message broadcasts use a private conversation channel and saf
 });
 
 test('cobrowse state updates use a private conversation channel and safe payload', function (): void {
-    $account = Account::factory()->create();
-    $site = Site::factory()->for($account)->create(['name' => 'Docs Site']);
-    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
-    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
-        'support_code' => 'WF-COBROWSE-LIVE',
-        'status' => 'open',
-    ]);
-    $reportedAt = now()->toJSON();
-    $session = CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
-        'status' => 'granted',
-        'metadata' => [
-            'page_state' => [
-                'page_url' => 'https://docs.example.test/install',
-                'title' => 'Install Guide',
-                'reported_at' => $reportedAt,
-            ],
-            'snapshot' => [
-                'html' => '<main><p>Public copy.</p></main>',
-                'text' => 'Public copy.',
-                'reported_at' => $reportedAt,
-            ],
-            'mutations' => [
-                'recent_batches' => [
-                    ['mutations' => [['type' => 'text', 'text' => 'Fresh copy.']]],
+    Carbon::setTestNow(Carbon::parse('2026-06-21 12:00:00', 'UTC'));
+
+    try {
+        $account = Account::factory()->create();
+        $site = Site::factory()->for($account)->create(['name' => 'Docs Site']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-COBROWSE-LIVE',
+            'status' => 'open',
+        ]);
+        $reportedAt = now()->toJSON();
+        $session = CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'metadata' => [
+                'page_state' => [
+                    'page_url' => 'https://docs.example.test/install',
+                    'title' => 'Install Guide',
+                    'reported_at' => $reportedAt,
+                ],
+                'snapshot' => [
+                    'html' => '<main><p>Public copy.</p></main>',
+                    'text' => 'Public copy.',
+                    'reported_at' => $reportedAt,
+                ],
+                'mutations' => [
+                    'recent_batches' => [
+                        ['mutations' => [['type' => 'text', 'text' => 'Fresh copy.']]],
+                    ],
                 ],
             ],
-        ],
-    ]);
+        ]);
 
-    expect(class_exists(CobrowseStateUpdated::class))->toBeTrue();
+        expect(class_exists(CobrowseStateUpdated::class))->toBeTrue();
 
-    $event = new CobrowseStateUpdated($session->load('conversation'), 'snapshot');
-    $channels = $event->broadcastOn();
-    $payload = $event->broadcastWith();
+        $event = new CobrowseStateUpdated($session->load('conversation'), 'snapshot');
+        $channels = $event->broadcastOn();
+        $payload = $event->broadcastWith();
 
-    expect($event)
-        ->toBeInstanceOf(ShouldBroadcastNow::class)
-        ->and($event->broadcastAs())->toBe('conversation.cobrowse.updated')
-        ->and($channels)->toHaveCount(1)
-        ->and($channels[0])->toBeInstanceOf(PrivateChannel::class)
-        ->and($channels[0]->name)->toBe('private-conversations.WF-COBROWSE-LIVE')
-        ->and($payload)->toMatchArray([
+        expect($event)
+            ->toBeInstanceOf(ShouldBroadcastNow::class)
+            ->and($event->broadcastAs())->toBe('conversation.cobrowse.updated')
+            ->and($channels)->toHaveCount(1)
+            ->and($channels[0])->toBeInstanceOf(PrivateChannel::class)
+            ->and($channels[0]->name)->toBe('private-conversations.WF-COBROWSE-LIVE')
+            ->and($payload)->toMatchArray([
+                'conversation' => [
+                    'support_code' => 'WF-COBROWSE-LIVE',
+                    'status' => 'open',
+                ],
+                'cobrowse' => [
+                    'status' => 'granted',
+                ],
+                'update' => [
+                    'kind' => 'snapshot',
+                    'reported_at' => $reportedAt,
+                ],
+            ])
+            ->and($payload['summary']['title'])->toBe('Install Guide')
+            ->and($payload['summary']['page_url'])->toBe('https://docs.example.test/install')
+            ->and(data_get($payload, 'summary.snapshot'))->toMatchArray([
+                'reported_at' => $reportedAt,
+                'freshness' => [
+                    'state' => 'fresh',
+                    'label' => 'Fresh',
+                    'message' => 'Snapshot was reported recently.',
+                    'reported_label' => 'Reported 0 seconds ago',
+                    'reported_at' => '0 seconds ago',
+                    'tone' => 'ready',
+                ],
+            ])
+            ->and(json_encode($payload))->not->toContain('<main>')
+            ->and(json_encode($payload))->not->toContain('Fresh copy.');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+test('cobrowse telemetry broadcasts safe transport and resync summary hints', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-21 12:00:00', 'UTC'));
+
+    try {
+        $account = Account::factory()->create();
+        $site = Site::factory()->for($account)->create(['name' => 'Docs Site']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-TELEMETRY-LIVE',
+            'status' => 'open',
+        ]);
+        $reportedAt = now()->subSeconds(20)->toJSON();
+        $mutationReportedAt = now()->subSeconds(15)->toJSON();
+        $exhaustedAt = now()->toJSON();
+        $session = CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'metadata' => [
+                'snapshot' => [
+                    'html' => '<main><p>Sensitive page copy should stay local.</p></main>',
+                    'text' => 'Sensitive page copy should stay local.',
+                    'reported_at' => $reportedAt,
+                ],
+                'mutations' => [
+                    'recent_batches' => [
+                        [
+                            'dropped_count' => 1,
+                            'skipped_count' => 3,
+                            'reported_at' => $mutationReportedAt,
+                            'mutations' => [['type' => 'text', 'text' => 'Private mutation body.']],
+                        ],
+                    ],
+                ],
+                'telemetry' => [
+                    'rtt_ms' => 240,
+                    'max_rtt_ms' => 480,
+                    'payload_bytes' => 8192,
+                    'max_payload_bytes' => 16384,
+                    'dropped_batches' => 2,
+                    'reconnects' => 1,
+                    'samples' => 4,
+                    'reported_at' => $reportedAt,
+                    'resync_request_id' => 'resync_exhausted',
+                    'resync_attempts_exhausted' => true,
+                ],
+                'resync_request' => [
+                    'id' => 'resync_exhausted',
+                    'requested_at' => now()->subMinute()->toJSON(),
+                    'attempts_exhausted_at' => $exhaustedAt,
+                    'fulfilled_at' => null,
+                ],
+            ],
+        ]);
+
+        $event = new CobrowseStateUpdated($session->load('conversation'), 'telemetry');
+        $payload = $event->broadcastWith();
+
+        expect($payload)->toMatchArray([
             'conversation' => [
-                'support_code' => 'WF-COBROWSE-LIVE',
+                'support_code' => 'WF-TELEMETRY-LIVE',
                 'status' => 'open',
             ],
             'cobrowse' => [
                 'status' => 'granted',
             ],
             'update' => [
-                'kind' => 'snapshot',
-                'reported_at' => $reportedAt,
+                'kind' => 'telemetry',
+                'reported_at' => $exhaustedAt,
             ],
-        ])
-        ->and($payload['summary']['title'])->toBe('Install Guide')
-        ->and($payload['summary']['page_url'])->toBe('https://docs.example.test/install')
-        ->and(json_encode($payload))->not->toContain('<main>')
-        ->and(json_encode($payload))->not->toContain('Fresh copy.');
-});
-
-test('cobrowse telemetry broadcasts safe transport and resync summary hints', function (): void {
-    $account = Account::factory()->create();
-    $site = Site::factory()->for($account)->create(['name' => 'Docs Site']);
-    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
-    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
-        'support_code' => 'WF-TELEMETRY-LIVE',
-        'status' => 'open',
-    ]);
-    $reportedAt = now()->subSeconds(20)->toJSON();
-    $mutationReportedAt = now()->subSeconds(15)->toJSON();
-    $exhaustedAt = now()->toJSON();
-    $session = CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
-        'status' => 'granted',
-        'metadata' => [
-            'snapshot' => [
-                'html' => '<main><p>Sensitive page copy should stay local.</p></main>',
-                'text' => 'Sensitive page copy should stay local.',
-                'reported_at' => $reportedAt,
-            ],
-            'mutations' => [
-                'recent_batches' => [
-                    [
-                        'dropped_count' => 1,
-                        'skipped_count' => 3,
-                        'reported_at' => $mutationReportedAt,
-                        'mutations' => [['type' => 'text', 'text' => 'Private mutation body.']],
+            'summary' => [
+                'resync_request_id' => 'resync_exhausted',
+                'transport_pressure' => [
+                    'dropped_batches' => 3,
+                    'skipped_mutations' => 3,
+                    'reported_at' => $mutationReportedAt,
+                ],
+                'telemetry' => [
+                    'rtt_ms' => 240,
+                    'max_rtt_ms' => 480,
+                    'payload_bytes' => 8192,
+                    'max_payload_bytes' => 16384,
+                    'dropped_batches' => 2,
+                    'reconnects' => 1,
+                    'samples' => 4,
+                    'reported_at' => $reportedAt,
+                    'resync_attempts_exhausted' => true,
+                ],
+                'snapshot' => [
+                    'reported_at' => $reportedAt,
+                    'freshness' => [
+                        'state' => 'fresh',
+                        'label' => 'Fresh',
+                        'message' => 'Snapshot was reported recently.',
+                        'reported_at' => '20 seconds ago',
+                        'reported_label' => 'Reported 20 seconds ago',
+                        'tone' => 'ready',
                     ],
                 ],
             ],
-            'telemetry' => [
-                'rtt_ms' => 240,
-                'max_rtt_ms' => 480,
-                'payload_bytes' => 8192,
-                'max_payload_bytes' => 16384,
-                'dropped_batches' => 2,
-                'reconnects' => 1,
-                'samples' => 4,
-                'reported_at' => $reportedAt,
-                'resync_request_id' => 'resync_exhausted',
-                'resync_attempts_exhausted' => true,
-            ],
-            'resync_request' => [
-                'id' => 'resync_exhausted',
-                'requested_at' => now()->subMinute()->toJSON(),
-                'attempts_exhausted_at' => $exhaustedAt,
-                'fulfilled_at' => null,
-            ],
-        ],
-    ]);
-
-    $event = new CobrowseStateUpdated($session->load('conversation'), 'telemetry');
-    $payload = $event->broadcastWith();
-
-    expect($payload)->toMatchArray([
-        'conversation' => [
-            'support_code' => 'WF-TELEMETRY-LIVE',
-            'status' => 'open',
-        ],
-        'cobrowse' => [
-            'status' => 'granted',
-        ],
-        'update' => [
-            'kind' => 'telemetry',
-            'reported_at' => $exhaustedAt,
-        ],
-        'summary' => [
-            'resync_request_id' => 'resync_exhausted',
-            'transport_pressure' => [
-                'dropped_batches' => 3,
-                'skipped_mutations' => 3,
-                'reported_at' => $mutationReportedAt,
-            ],
-            'telemetry' => [
-                'rtt_ms' => 240,
-                'max_rtt_ms' => 480,
-                'payload_bytes' => 8192,
-                'max_payload_bytes' => 16384,
-                'dropped_batches' => 2,
-                'reconnects' => 1,
-                'samples' => 4,
-                'reported_at' => $reportedAt,
-                'resync_attempts_exhausted' => true,
-            ],
-        ],
-    ])
-        ->and(json_encode($payload))->not->toContain('<main>')
-        ->and(json_encode($payload))->not->toContain('Sensitive page copy')
-        ->and(json_encode($payload))->not->toContain('Private mutation body');
+        ])
+            ->and(json_encode($payload))->not->toContain('<main>')
+            ->and(json_encode($payload))->not->toContain('Sensitive page copy')
+            ->and(json_encode($payload))->not->toContain('Private mutation body');
+    } finally {
+        Carbon::setTestNow();
+    }
 });
 
 test('cobrowse broadcasts do not carry stale resync exhaustion onto replacement requests', function (): void {

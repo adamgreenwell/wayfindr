@@ -5109,6 +5109,53 @@ test('agent conversation page exposes live cobrowse transport health targets whe
         ->assertSee("transportRecovery.dataset.recoveryLocked = 'false';", false);
 });
 
+test('agent conversation page exposes live snapshot freshness targets when reverb is configured', function (): void {
+    config()->set('broadcasting.default', 'reverb');
+    config()->set('broadcasting.connections.reverb.key', 'reverb-key');
+    config()->set('broadcasting.connections.reverb.secret', 'reverb-secret');
+    config()->set('broadcasting.connections.reverb.app_id', 'reverb-app');
+    config()->set('broadcasting.connections.reverb.options.host', 'wayfindr.test');
+    config()->set('broadcasting.connections.reverb.options.port', 443);
+    config()->set('broadcasting.connections.reverb.options.scheme', 'https');
+
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-LIVESNAPSHOT',
+        'subject' => 'Snapshot should stay fresh',
+        'status' => 'open',
+    ]);
+
+    CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinute(),
+        'ended_at' => null,
+        'metadata' => [
+            'snapshot' => [
+                'page_url' => 'https://docs.example.test/install?step=2',
+                'title' => 'Install Guide',
+                'text' => 'Public checkout content. [masked]',
+                'node_count' => 8,
+                'masked_count' => 2,
+                'reported_at' => now()->subSeconds(45)->toJSON(),
+            ],
+        ],
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-LIVESNAPSHOT')
+        ->assertOk()
+        ->assertSee('data-cobrowse-snapshot-status', false)
+        ->assertSee('data-cobrowse-snapshot-freshness-label', false)
+        ->assertSee('data-cobrowse-snapshot-freshness-message', false)
+        ->assertSee('data-cobrowse-snapshot-freshness-reported', false)
+        ->assertSee('function updateSnapshotFreshness', false)
+        ->assertSee('summary.snapshot', false)
+        ->assertSee('Fresh snapshot received live. Refresh the preview when you are ready.', false);
+});
+
 test('agent conversation page can update visitor presence from live events', function (): void {
     config()->set('broadcasting.default', 'reverb');
     config()->set('broadcasting.connections.reverb.key', 'reverb-key');

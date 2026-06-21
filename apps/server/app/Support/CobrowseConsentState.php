@@ -11,13 +11,10 @@ class CobrowseConsentState
 {
     private const TRANSPORT_STALE_AFTER_SECONDS = 120;
 
-    private const SNAPSHOT_AGING_AFTER_SECONDS = 120;
-
-    private const SNAPSHOT_STALE_AFTER_SECONDS = 300;
-
     public function __construct(
         private readonly CobrowseReplayPreview $replayPreview,
         private readonly CobrowseResyncRequestPolicy $resyncRequestPolicy,
+        private readonly CobrowseSnapshotFreshness $snapshotFreshness,
         private readonly CobrowseTransportPressure $transportPressure,
     ) {}
 
@@ -372,60 +369,7 @@ class CobrowseConsentState
             'node_count' => number_format((int) ($snapshot['node_count'] ?? 0)).' nodes',
             'masked_count' => number_format((int) ($snapshot['masked_count'] ?? 0)).' masked',
             'text' => filled($snapshot['text'] ?? null) ? (string) $snapshot['text'] : 'No text preview reported.',
-            'freshness' => $this->formatSnapshotFreshness($snapshot),
-        ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $snapshot
-     * @return array{state: string, label: string, message: string, reported_at: string, reported_label: string, tone: string}
-     */
-    private function formatSnapshotFreshness(array $snapshot): array
-    {
-        $reportedAt = $this->parseReportedAt($snapshot['reported_at'] ?? null);
-
-        if (! $reportedAt) {
-            return [
-                'state' => 'unknown',
-                'label' => 'Time unknown',
-                'message' => 'Use chat to confirm what the visitor sees before relying on this preview.',
-                'reported_at' => 'Report time unavailable',
-                'reported_label' => 'Report time unavailable',
-                'tone' => 'manual',
-            ];
-        }
-
-        $reportedAtLabel = $this->formatMoment($reportedAt);
-
-        if ($reportedAt->lt(now()->subSeconds(self::SNAPSHOT_STALE_AFTER_SECONDS))) {
-            return [
-                'state' => 'stale',
-                'label' => 'Stale',
-                'message' => 'Snapshot is older than 5 minutes. Confirm through chat or request a fresh snapshot.',
-                'reported_at' => $reportedAtLabel,
-                'reported_label' => 'Reported '.$reportedAtLabel,
-                'tone' => 'attention',
-            ];
-        }
-
-        if ($reportedAt->lt(now()->subSeconds(self::SNAPSHOT_AGING_AFTER_SECONDS))) {
-            return [
-                'state' => 'aging',
-                'label' => 'Aging',
-                'message' => 'Snapshot is a few minutes old. Request a fresh snapshot if this page is changing.',
-                'reported_at' => $reportedAtLabel,
-                'reported_label' => 'Reported '.$reportedAtLabel,
-                'tone' => 'manual',
-            ];
-        }
-
-        return [
-            'state' => 'fresh',
-            'label' => 'Fresh',
-            'message' => 'Snapshot was reported recently.',
-            'reported_at' => $reportedAtLabel,
-            'reported_label' => 'Reported '.$reportedAtLabel,
-            'tone' => 'ready',
+            'freshness' => $this->snapshotFreshness->format($snapshot['reported_at'] ?? null),
         ];
     }
 

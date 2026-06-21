@@ -3,6 +3,7 @@
 namespace App\Events;
 
 use App\Models\CobrowseSession;
+use App\Support\CobrowseSnapshotFreshness;
 use App\Support\CobrowseTransportPressure;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
@@ -101,10 +102,29 @@ class CobrowseStateUpdated implements ShouldBroadcastNow
             'batch_count' => $mutations['batch_count'] ?? null,
             'mutation_count' => $mutations['mutation_count'] ?? null,
             'last_sequence' => $mutations['last_sequence'] ?? null,
+            'snapshot' => $this->snapshotSummary($snapshot),
             'resync_request_id' => $resyncRequestId,
             'transport_pressure' => $transportPressureService->hasPressure($transportPressure) ? $transportPressure : null,
             'telemetry' => $transportTelemetry === [] ? null : $transportTelemetry,
         ], fn (mixed $value): bool => $value !== null);
+    }
+
+    /**
+     * @param  array<string, mixed>  $snapshot
+     * @return array{reported_at: string|null, freshness: array<string, string>}|null
+     */
+    private function snapshotSummary(array $snapshot): ?array
+    {
+        if ($snapshot === []) {
+            return null;
+        }
+
+        $reportedAt = filled($snapshot['reported_at'] ?? null) ? (string) $snapshot['reported_at'] : null;
+
+        return [
+            'reported_at' => $reportedAt,
+            'freshness' => (new CobrowseSnapshotFreshness)->format($reportedAt),
+        ];
     }
 
     private function reportedAt(): ?string

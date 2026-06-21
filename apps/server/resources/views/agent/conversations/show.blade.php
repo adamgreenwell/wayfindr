@@ -591,18 +591,19 @@
                         <span
                             class="readiness-status"
                             data-status="{{ $cobrowseConsent['snapshot']['freshness']['tone'] }}"
+                            data-cobrowse-snapshot-status
                         >{{ $cobrowseConsent['snapshot']['freshness']['label'] }}</span>
                     </div>
 
                     <div class="meta-grid realtime-grid">
                         <div class="meta-item">
                             <span class="meta-label">Snapshot freshness</span>
-                            <span class="meta-value">{{ $cobrowseConsent['snapshot']['freshness']['label'] }}</span>
-                            <span class="lede">{{ $cobrowseConsent['snapshot']['freshness']['message'] }}</span>
+                            <span class="meta-value" data-cobrowse-snapshot-freshness-label>{{ $cobrowseConsent['snapshot']['freshness']['label'] }}</span>
+                            <span class="lede" data-cobrowse-snapshot-freshness-message>{{ $cobrowseConsent['snapshot']['freshness']['message'] }}</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">Reported</span>
-                            <span class="meta-value">{{ $cobrowseConsent['snapshot']['freshness']['reported_label'] }}</span>
+                            <span class="meta-value" data-cobrowse-snapshot-freshness-reported>{{ $cobrowseConsent['snapshot']['freshness']['reported_label'] }}</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">Title</span>
@@ -978,6 +979,10 @@
                 var transportPressure = document.querySelector('[data-cobrowse-transport-pressure]');
                 var transportGuidance = document.querySelector('[data-cobrowse-transport-guidance]');
                 var transportRecovery = document.querySelector('[data-cobrowse-transport-recovery]');
+                var snapshotStatus = document.querySelector('[data-cobrowse-snapshot-status]');
+                var snapshotFreshnessLabel = document.querySelector('[data-cobrowse-snapshot-freshness-label]');
+                var snapshotFreshnessMessage = document.querySelector('[data-cobrowse-snapshot-freshness-message]');
+                var snapshotFreshnessReported = document.querySelector('[data-cobrowse-snapshot-freshness-reported]');
                 var telemetryHeading = document.querySelector('[data-cobrowse-telemetry-heading]');
                 var telemetryEmpty = document.querySelector('[data-cobrowse-telemetry-empty]');
                 var telemetryGrid = document.querySelector('[data-cobrowse-telemetry-grid]');
@@ -993,9 +998,10 @@
                 var hasPresenceTargets = Boolean(visitorPresenceLabel && visitorPresenceDetail);
                 var hasReadTargets = Boolean(visitorReadLabel && visitorReadDetail);
                 var hasTransportTargets = Boolean(transportLabel && transportMessage && transportStateLabel);
+                var hasSnapshotFreshnessTargets = Boolean(snapshotStatus && snapshotFreshnessLabel && snapshotFreshnessMessage && snapshotFreshnessReported);
                 var hasTelemetryTargets = Boolean(telemetryGrid && telemetryRtt);
 
-                if (!config || (!hasCobrowseTargets && !hasPresenceTargets && !hasReadTargets && !hasTransportTargets && !hasTelemetryTargets) || !window.WebSocket) {
+                if (!config || (!hasCobrowseTargets && !hasPresenceTargets && !hasReadTargets && !hasTransportTargets && !hasSnapshotFreshnessTargets && !hasTelemetryTargets) || !window.WebSocket) {
                     if (status) {
                         status.textContent = 'Live cobrowse updates are unavailable in this browser.';
                     }
@@ -1235,6 +1241,22 @@
                     setText(transportRecovery, health.recovery_action);
                 }
 
+                function updateSnapshotFreshness(snapshot) {
+                    if (!hasSnapshotFreshnessTargets || !snapshot || !snapshot.freshness) {
+                        return false;
+                    }
+
+                    var freshness = snapshot.freshness;
+
+                    setText(snapshotStatus, freshness.label || 'Time unknown');
+                    snapshotStatus.dataset.status = freshness.tone || 'manual';
+                    setText(snapshotFreshnessLabel, freshness.label || 'Time unknown');
+                    setText(snapshotFreshnessMessage, freshness.message || 'Use chat to confirm what the visitor sees before relying on this preview.');
+                    setText(snapshotFreshnessReported, freshness.reported_label || 'Report time unavailable');
+
+                    return true;
+                }
+
                 function updateConnectionTelemetry(telemetry) {
                     if (!hasTelemetryTargets || !telemetry) {
                         return;
@@ -1389,6 +1411,18 @@
                         var cobrowsePayload = parsePayload(event.data);
                         var telemetry = updateLiveCobrowseTelemetry(cobrowsePayload);
                         var updateKind = cobrowsePayload.update ? cobrowsePayload.update.kind : '';
+                        var summary = cobrowsePayload.summary || {};
+
+                        if (updateKind === 'snapshot') {
+                            updateSnapshotFreshness(summary.snapshot);
+                            setStatus('Fresh snapshot received live. Refresh the preview when you are ready.', 'available');
+
+                            if (refresh) {
+                                refresh.hidden = false;
+                            }
+
+                            return;
+                        }
 
                         if (updateKind === 'telemetry') {
                             setStatus(
