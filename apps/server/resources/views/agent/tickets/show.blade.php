@@ -373,7 +373,7 @@
                         @endforeach
                     </div>
 
-                    @if ($ticketExternalIssueHealth['total'] === 0)
+                    @if ($ticketExternalIssueHealth['total'] === 0 && $ticketExternalIssueHealth['failures']->isEmpty())
                         <p class="empty">No external issues linked to this ticket yet.</p>
                     @elseif ($ticketExternalIssueHealth['failures']->isEmpty())
                         <p class="empty">External issue links are not reporting failures for this ticket.</p>

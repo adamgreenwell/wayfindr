@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Account;
+use App\Models\AuditEvent;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\TicketExternalLink;
@@ -77,6 +78,37 @@ test('ticket detail shows failed external issue health without raw provider deta
             'metadata' => [
                 'raw_error' => 'token ghp_secret_value leaked by provider',
             ],
+        ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.tickets.show', $ticket))
+        ->assertOk()
+        ->assertSeeInOrder([
+            'External issue health',
+            'Needs attention',
+            'GitHub could not sync adamgreenwell/wayfindr.',
+            'Provider details withheld',
+        ])
+        ->assertDontSee('ghp_secret_value');
+});
+
+test('ticket detail includes outbound issue creation failures in external issue health', function (): void {
+    [$agent, $ticket] = ticketExternalIssueHealthContext();
+
+    AuditEvent::factory()
+        ->for($ticket->account)
+        ->for($ticket, 'subject')
+        ->create([
+            'action' => 'ticket.external_sync_failed',
+            'actor_id' => $agent->id,
+            'actor_type' => User::class,
+            'metadata' => [
+                'provider' => 'github',
+                'project_key' => 'adamgreenwell/wayfindr',
+                'message' => 'GitHub token ghp_secret_value was rejected.',
+            ],
+            'occurred_at' => now(),
+            'site_id' => $ticket->site_id,
         ]);
 
     $this->actingAs($agent)

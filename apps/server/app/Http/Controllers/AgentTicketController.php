@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Events\ConversationMessageCreated;
+use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\Ticket;
@@ -753,30 +754,58 @@ class AgentTicketController extends Controller
 
         $failedCount = (int) ($statusCounts['sync_failed'] ?? 0);
         $pendingCount = (int) ($statusCounts['sync_pending'] ?? 0);
+        $failedEvents = $ticket->auditEvents()
+            ->where('account_id', $ticket->account_id)
+            ->where('action', 'ticket.external_sync_failed')
+            ->latest('occurred_at')
+            ->latest('id')
+            ->limit(3)
+            ->get();
+        $linkFailures = $externalLinks
+            ->where('sync_status', 'sync_failed')
+            ->values()
+            ->map(fn ($externalLink): array => [
+                'provider' => $externalLink->providerLabel(),
+                'project_key' => $externalLink->project_key,
+                'occurred_at' => $externalLink->last_synced_at ?? $externalLink->updated_at,
+            ])
+            ->toBase();
+        $eventFailures = $failedEvents->map(fn ($event): array => [
+            'provider' => ExternalIssueProvider::label(data_get($event->metadata, 'provider')),
+            'project_key' => $this->externalIssueFailureProjectKey($event),
+            'occurred_at' => $event->occurred_at,
+        ])->toBase();
+        $failures = $linkFailures
+            ->merge($eventFailures)
+            ->sortByDesc('occurred_at')
+            ->values()
+            ->take(3);
 
         return [
             'label' => match (true) {
+                $failedCount > 0 || $failedEvents->isNotEmpty() => 'Needs attention',
                 $externalLinks->isEmpty() => 'No external links',
-                $failedCount > 0 => 'Needs attention',
                 $pendingCount > 0 => 'Sync pending',
                 default => 'Healthy',
             },
             'tone' => match (true) {
-                $failedCount > 0 => 'attention',
+                $failedCount > 0 || $failedEvents->isNotEmpty() => 'attention',
                 $pendingCount > 0 || $externalLinks->isEmpty() => 'manual',
                 default => 'ready',
             },
             'total' => $externalLinks->count(),
             'status_counts' => $statusItems,
-            'failures' => $externalLinks
-                ->where('sync_status', 'sync_failed')
-                ->values()
-                ->map(fn ($externalLink): array => [
-                    'provider' => $externalLink->providerLabel(),
-                    'project_key' => $externalLink->project_key,
-                    'occurred_at' => $externalLink->last_synced_at ?? $externalLink->updated_at,
-                ]),
+            'failures' => $failures,
         ];
+    }
+
+    private function externalIssueFailureProjectKey(AuditEvent $event): string
+    {
+        $projectKey = data_get($event->metadata, 'project_key');
+
+        return is_string($projectKey) && trim($projectKey) !== ''
+            ? trim($projectKey)
+            : 'Project not recorded';
     }
 
     private function issueProjectsForTicket(Ticket $ticket, string $provider): Collection
