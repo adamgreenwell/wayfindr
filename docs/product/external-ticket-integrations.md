@@ -57,22 +57,29 @@ Planning notes:
 - Keep private project access failures non-leaky; a provider `404` can mean
   either "not found" or "not authorized."
 
-### Bitbucket And Atlassian
+### Atlassian, Jira, And Bitbucket
 
-Bitbucket Cloud has an issue tracker API, but many Atlassian-heavy teams use
-Jira as the real ticket or work item system. Bitbucket Cloud, Bitbucket Data
-Center, and Jira should therefore be planned as related but separate provider
-families.
+Jira should be Wayfindr's first Atlassian-family outbound issue destination
+when real operator demand appears. Bitbucket Cloud, Bitbucket Data Center, and
+Jira are related, but they should be planned as separate provider decisions
+instead of one generic "Atlassian" adapter.
+
+See [0006: Atlassian Issue Integration Direction](../decisions/0006-atlassian-issue-integration-direction.md).
 
 Planning notes:
 
-- Treat Bitbucket Cloud issues as one adapter and Jira issues as a separate
-  future adapter.
-- Do not assume every Bitbucket repository has the issue tracker enabled.
-- Do not assume Bitbucket Cloud and Bitbucket Data Center share the same API
-  shape.
-- Keep the first Atlassian integration narrow: create an external record and
-  link back to Wayfindr.
+- Treat Jira outbound issue creation as the narrowest first Atlassian
+  implementation path.
+- Model Jira project keys, issue types, required fields, and cloud/data-center
+  base URL differences explicitly instead of hiding them behind Bitbucket terms.
+- Treat native Bitbucket Cloud issue creation as legacy support only. Atlassian
+  documents that Bitbucket's issue tracker is not available in all workspaces
+  and has announced a 2026 sunset for native Bitbucket Issues.
+- Do not assume every Bitbucket repository has issue tracking enabled.
+- Do not assume Bitbucket Cloud and Bitbucket Data Center share the same issue
+  API shape.
+- Keep the first Jira integration narrow: create an external record and link
+  back to Wayfindr.
 
 ## Integration Boundary
 
@@ -143,6 +150,8 @@ Default behavior should be conservative:
    This is now the second outbound creation adapter and the self-managed GitLab
    URL baseline.
 6. Evaluate Bitbucket Cloud issues versus Jira based on real operator demand.
+   This is now resolved in favor of Jira as the first Atlassian-family adapter,
+   with Bitbucket native issues deferred to legacy demand.
 7. Add inbound webhooks and sync health once outbound links are dependable.
 
 ## Open Questions
@@ -158,5 +167,13 @@ Default behavior should be conservative:
 
 - GitHub REST Issues API: <https://docs.github.com/en/rest/issues/issues>
 - GitLab Issues API: <https://docs.gitlab.com/api/issues/>
+- Jira Cloud Issues API:
+  <https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issues/>
 - Bitbucket Cloud Issue Tracker API:
   <https://developer.atlassian.com/cloud/bitbucket/rest/api-group-issue-tracker/>
+- Bitbucket Cloud Issue Tracker availability:
+  <https://support.atlassian.com/bitbucket-cloud/docs/use-the-issue-tracker/>
+- Bitbucket Issues and Wikis sunset announcement:
+  <https://community.atlassian.com/forums/Bitbucket-articles/Announcing-sunset-of-Bitbucket-Issues-and-Wikis/ba-p/3193882>
+- Bitbucket Data Center Jira integration:
+  <https://confluence.atlassian.com/bitbucketserver/jira-integration-776639874.html>

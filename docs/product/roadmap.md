@@ -58,7 +58,8 @@ These remain valid but should wait until the support loop and operator loop feel
 stable.
 
 - Bitbucket Cloud, Bitbucket Data Center, or Jira outbound issue creation based
-  on operator demand.
+  on operator demand. Jira is the first Atlassian-family candidate; native
+  Bitbucket Issues are deferred to legacy demand.
 - External issue sync health, retry state, and deeper audit visibility.
 - Agent-assisted summaries, reply drafts, and ticket suggestions when they
   improve concrete workflows without becoming AI decoration.
