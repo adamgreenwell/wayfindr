@@ -355,7 +355,46 @@
             <section class="section" aria-labelledby="external-links-heading">
                 <div class="section-header">
                     <h2 id="external-links-heading">External links</h2>
-                    <span class="lede">{{ $ticket->externalLinks->count() }} linked</span>
+                    <span class="lede">{{ $ticketExternalIssueHealth['total'] }} total</span>
+                </div>
+
+                <div id="ticket-external-issue-health" aria-labelledby="ticket-external-issue-health-heading">
+                    <div class="section-header">
+                        <h2 id="ticket-external-issue-health-heading">External issue health</h2>
+                        <span class="readiness-status" data-status="{{ $ticketExternalIssueHealth['tone'] }}">{{ $ticketExternalIssueHealth['label'] }}</span>
+                    </div>
+
+                    <div class="meta-grid">
+                        @foreach ($ticketExternalIssueHealth['status_counts'] as $statusCount)
+                            <div class="meta-item">
+                                <span class="meta-label">{{ $statusCount['label'] }}</span>
+                                <span class="meta-value">{{ $statusCount['count'] }} {{ strtolower($statusCount['label']) }}</span>
+                            </div>
+                        @endforeach
+                    </div>
+
+                    @if ($ticketExternalIssueHealth['total'] === 0)
+                        <p class="empty">No external issues linked to this ticket yet.</p>
+                    @elseif ($ticketExternalIssueHealth['failures']->isEmpty())
+                        <p class="empty">External issue links are not reporting failures for this ticket.</p>
+                    @else
+                        <div class="timeline-list">
+                            @foreach ($ticketExternalIssueHealth['failures'] as $failure)
+                                <article class="timeline-item internal-note">
+                                    <div class="timeline-content">
+                                        <strong>{{ $loop->first ? 'Last failure' : 'Earlier failure' }}</strong>
+                                        <p class="message-body">{{ $failure['provider'] }} could not sync {{ $failure['project_key'] }}.</p>
+                                        <div class="timeline-meta">
+                                            @if ($failure['occurred_at'])
+                                                <span>{{ $failure['occurred_at']->diffForHumans() }}</span>
+                                            @endif
+                                            <span>Provider details withheld</span>
+                                        </div>
+                                    </div>
+                                </article>
+                            @endforeach
+                        </div>
+                    @endif
                 </div>
 
                 @if ($githubIssueProjects->isNotEmpty() || $gitlabIssueProjects->isNotEmpty())

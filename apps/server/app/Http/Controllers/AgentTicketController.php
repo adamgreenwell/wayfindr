@@ -82,6 +82,7 @@ class AgentTicketController extends Controller
             'ticketPriorities' => TicketPriority::options(),
             'ticketPriorityGuidance' => TicketPriority::guidanceOptions(),
             'ticket' => $ticket,
+            'ticketExternalIssueHealth' => $this->ticketExternalIssueHealth($ticket),
             'visitorContext' => $this->visitorContext($ticket, $visitorContextSanitizer),
             'priorVisitorConversations' => $this->priorVisitorConversations($ticket),
             'priorVisitorTickets' => $this->priorVisitorTickets($ticket),
@@ -724,6 +725,58 @@ class AgentTicketController extends Controller
     private function gitlabIssueProjectsForTicket(Ticket $ticket): Collection
     {
         return $this->issueProjectsForTicket($ticket, 'gitlab');
+    }
+
+    /**
+     * @return array{
+     *     label: string,
+     *     tone: string,
+     *     total: int,
+     *     status_counts: Collection<int, array{key: string, label: string, count: int}>,
+     *     failures: Collection<int, array{provider: string, project_key: string, occurred_at: CarbonInterface|null}>
+     * }
+     */
+    private function ticketExternalIssueHealth(Ticket $ticket): array
+    {
+        $externalLinks = $ticket->externalLinks
+            ->filter(fn ($externalLink): bool => (int) $externalLink->account_id === (int) $ticket->account_id
+                && (int) $externalLink->ticket_id === (int) $ticket->id);
+
+        $statusCounts = $externalLinks->countBy('sync_status');
+        $statusItems = collect(ExternalIssueSyncStatus::options())
+            ->map(fn (string $label, string $status): array => [
+                'key' => $status,
+                'label' => $label,
+                'count' => (int) ($statusCounts[$status] ?? 0),
+            ])
+            ->values();
+
+        $failedCount = (int) ($statusCounts['sync_failed'] ?? 0);
+        $pendingCount = (int) ($statusCounts['sync_pending'] ?? 0);
+
+        return [
+            'label' => match (true) {
+                $externalLinks->isEmpty() => 'No external links',
+                $failedCount > 0 => 'Needs attention',
+                $pendingCount > 0 => 'Sync pending',
+                default => 'Healthy',
+            },
+            'tone' => match (true) {
+                $failedCount > 0 => 'attention',
+                $pendingCount > 0 || $externalLinks->isEmpty() => 'manual',
+                default => 'ready',
+            },
+            'total' => $externalLinks->count(),
+            'status_counts' => $statusItems,
+            'failures' => $externalLinks
+                ->where('sync_status', 'sync_failed')
+                ->values()
+                ->map(fn ($externalLink): array => [
+                    'provider' => $externalLink->providerLabel(),
+                    'project_key' => $externalLink->project_key,
+                    'occurred_at' => $externalLink->last_synced_at ?? $externalLink->updated_at,
+                ]),
+        ];
     }
 
     private function issueProjectsForTicket(Ticket $ticket, string $provider): Collection
