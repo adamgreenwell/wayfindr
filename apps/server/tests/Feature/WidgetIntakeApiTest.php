@@ -637,6 +637,63 @@ test('visitor can read their cobrowse request status', function (): void {
         ->assertJsonPath('data.cobrowse.ended_at', null);
 });
 
+test('visitor cobrowse status includes calm degraded transport copy', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-20 14:30:00', 'UTC'));
+
+    try {
+        $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+        $agent = User::factory()->create(['name' => 'Ada Agent']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-DEGRADED',
+        ]);
+        CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->for($agent, 'requestedBy')->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinute(),
+            'ended_at' => null,
+            'metadata' => [
+                'telemetry' => [
+                    'dropped_batches' => 1,
+                    'reconnects' => 0,
+                    'reported_at' => now()->subSeconds(10)->toJSON(),
+                ],
+                'mutations' => [
+                    'last_reported_at' => now()->subSeconds(8)->toJSON(),
+                    'recent_batches' => [
+                        [
+                            'sequence' => 4,
+                            'dropped_count' => 0,
+                            'skipped_count' => 5,
+                            'reported_at' => now()->subSeconds(8)->toJSON(),
+                            'mutations' => [],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $response = $this->getJson('/api/conversations/WF-DEGRADED/cobrowse?'.http_build_query([
+            'site_public_key' => 'site_public_docs',
+            'anonymous_id' => 'anon-docs',
+            'visitor_token' => widgetVisitorToken($this, 'site_public_docs', 'anon-docs'),
+        ]));
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.cobrowse.status', 'granted')
+            ->assertJsonPath('data.cobrowse.visitor_notice.state', 'degraded')
+            ->assertJsonPath('data.cobrowse.visitor_notice.message', 'Cobrowse is catching up with recent page changes. Sensitive fields stay masked.');
+
+        expect($response->json('data.cobrowse.visitor_notice.message'))
+            ->not->toContain('dropped')
+            ->not->toContain('skipped')
+            ->not->toContain('mutation')
+            ->not->toContain('batch');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('visitor cobrowse status includes a pending agent snapshot resync request', function (): void {
     Carbon::setTestNow(Carbon::parse('2026-06-18 15:10:00', 'UTC'));
 

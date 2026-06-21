@@ -440,6 +440,7 @@
     var cobrowseGranted = false;
     var cobrowseState = 'unavailable';
     var cobrowseRequestedBy = null;
+    var cobrowseVisitorNotice = null;
     var pendingCobrowseConsentFocus = false;
     var mutationObserver = null;
     var pendingMutationRecords = [];
@@ -827,7 +828,7 @@
       cobrowseAllow.textContent = granted ? 'Stop cobrowse' : 'Allow cobrowse';
       cobrowseDecline.hidden = granted;
       cobrowseCopy.textContent = granted
-        ? 'Cobrowse is active. Sensitive fields stay masked.'
+        ? (cobrowseVisitorNotice || 'Cobrowse is active. Sensitive fields stay masked.')
         : requester + ' wants to view this page with sensitive fields masked.';
 
       if (requested && wasHidden && !cobrowse.hidden) {
@@ -851,6 +852,9 @@
       cobrowseRequestedBy = nextCobrowse.requested_by && nextCobrowse.requested_by.name
         ? nextCobrowse.requested_by.name
         : null;
+      cobrowseVisitorNotice = nextCobrowse.visitor_notice && typeof nextCobrowse.visitor_notice.message === 'string'
+        ? nextCobrowse.visitor_notice.message
+        : null;
       cobrowseGranted = cobrowseState === 'granted' || nextCobrowse.consent === 'granted';
 
       if (!cobrowseGranted) {
@@ -858,6 +862,7 @@
         lastCobrowseResyncRequestId = null;
         resetCobrowseResyncAttempts();
         cobrowseResyncInFlight = false;
+        cobrowseVisitorNotice = null;
       }
 
       renderCobrowseConsent();

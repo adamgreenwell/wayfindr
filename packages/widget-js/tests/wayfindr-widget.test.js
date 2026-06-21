@@ -4122,6 +4122,106 @@ test('reports skipped-only widget mutation batches when the client payload budge
   widget.destroy();
 });
 
+test('renders calm visitor cobrowse copy from the status payload', async () => {
+  const dom = new JSDOM([
+    '<!doctype html><html><head><title>Install Guide</title></head><body>',
+    '<main><p>Public install content.</p></main>',
+    '<div id="support"></div>',
+    '</body></html>',
+  ].join(''), {
+    url: 'https://docs.example.test/install',
+  });
+  const visitorNotice = {
+    state: 'degraded',
+    message: 'Cobrowse is catching up with recent page changes. Sensitive fields stay masked.',
+  };
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    cobrowseStatusPollMs: 0,
+    storage: memoryStorage(),
+    fetch: async (url) => {
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return jsonResponse(201, {
+          data: {
+            site: { public_key: 'site_public_docs', settings: {} },
+            visitor: { anonymous_id: 'anon-browser-123', token: 'visitor-token-123' },
+          },
+        });
+      }
+
+      if (url.endsWith('/api/conversations')) {
+        return jsonResponse(201, {
+          data: {
+            support_code: 'WF-TEST123',
+            status: 'open',
+          },
+        });
+      }
+
+      if (url.endsWith('/api/conversations/WF-TEST123/messages')) {
+        return jsonResponse(201, {
+          data: {
+            conversation: { support_code: 'WF-TEST123' },
+            message: {
+              id: 1,
+              sender: { kind: 'visitor', name: 'Visitor' },
+              type: 'text',
+              body: 'Can you help me?',
+              created_at: '2026-05-23T14:00:00.000000Z',
+            },
+          },
+        });
+      }
+
+      if (url.includes('/api/conversations/WF-TEST123/cobrowse?')) {
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-TEST123' },
+            cobrowse: {
+              status: 'granted',
+              consent: 'granted',
+              requested_by: { name: 'Ada Agent' },
+              visitor_notice: visitorNotice,
+            },
+          },
+        });
+      }
+
+      return jsonResponse(200, {
+        data: {
+          conversation: { support_code: 'WF-TEST123', status: 'open' },
+          messages: [],
+        },
+      });
+    },
+  });
+
+  widget.open();
+
+  widget.root.querySelector('.wayfindr-widget__textarea').value = 'Can you help me?';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+    new dom.window.Event('submit', { bubbles: true, cancelable: true }),
+  );
+
+  await settle();
+  await widget.refreshCobrowseStatus();
+  await settle();
+
+  const cobrowseCopy = widget.root.querySelector('.wayfindr-widget__cobrowse-copy');
+
+  assert.equal(widget.root.querySelector('.wayfindr-widget__cobrowse').hidden, false);
+  assert.equal(cobrowseCopy.textContent, visitorNotice.message);
+  assert.doesNotMatch(cobrowseCopy.textContent, /dropped|skipped|mutation|batch/i);
+
+  widget.destroy();
+});
+
 test('resyncs a sanitized cobrowse snapshot after skipped mutation pressure', async () => {
   const dom = new JSDOM([
     '<!doctype html><html><head><title>Install Guide</title></head><body>',

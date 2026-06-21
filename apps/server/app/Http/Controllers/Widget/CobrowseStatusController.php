@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Models\Site;
+use App\Support\CobrowseConsentState;
 use App\Support\CobrowseResyncRequestPolicy;
 use App\Support\VisitorSessionToken;
 use Illuminate\Http\JsonResponse;
@@ -13,7 +14,10 @@ use Illuminate\Http\Request;
 
 class CobrowseStatusController extends Controller
 {
-    public function __construct(private readonly CobrowseResyncRequestPolicy $resyncRequestPolicy) {}
+    public function __construct(
+        private readonly CobrowseResyncRequestPolicy $resyncRequestPolicy,
+        private readonly CobrowseConsentState $cobrowseConsentState,
+    ) {}
 
     public function __invoke(Request $request, string $supportCode, VisitorSessionToken $visitorSessionToken): JsonResponse
     {
@@ -52,7 +56,7 @@ class CobrowseStatusController extends Controller
                 'conversation' => [
                     'support_code' => $conversation->support_code,
                 ],
-                'cobrowse' => $this->cobrowsePayload($cobrowseSession),
+                'cobrowse' => $this->cobrowsePayload($cobrowseSession, $conversation),
             ],
         ]);
     }
@@ -60,7 +64,7 @@ class CobrowseStatusController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function cobrowsePayload(?CobrowseSession $cobrowseSession): array
+    private function cobrowsePayload(?CobrowseSession $cobrowseSession, Conversation $conversation): array
     {
         if (! $cobrowseSession) {
             return [
@@ -70,6 +74,7 @@ class CobrowseStatusController extends Controller
                 'requested_at' => null,
                 'consented_at' => null,
                 'ended_at' => null,
+                'visitor_notice' => null,
                 'resync' => $this->resyncPayload(null),
             ];
         }
@@ -88,7 +93,39 @@ class CobrowseStatusController extends Controller
             'requested_at' => $cobrowseSession->created_at?->toJSON(),
             'consented_at' => $cobrowseSession->consented_at?->toJSON(),
             'ended_at' => $cobrowseSession->ended_at?->toJSON(),
+            'visitor_notice' => $this->visitorNotice($cobrowseSession, $conversation),
             'resync' => $this->resyncPayload($cobrowseSession),
+        ];
+    }
+
+    /**
+     * @return array{state: string, message: string}|null
+     */
+    private function visitorNotice(CobrowseSession $cobrowseSession, Conversation $conversation): ?array
+    {
+        if ($cobrowseSession->status !== 'granted' || $cobrowseSession->ended_at) {
+            return null;
+        }
+
+        $conversation->setRelation('latestCobrowseSession', $cobrowseSession);
+
+        $transport = $this->cobrowseConsentState->queueTransportForConversation($conversation);
+        $state = (string) ($transport['state'] ?? 'unavailable');
+        $message = match ($state) {
+            'degraded' => 'Cobrowse is catching up with recent page changes. Sensitive fields stay masked.',
+            'reconnecting' => 'Cobrowse is reconnecting and may briefly lag. Sensitive fields stay masked.',
+            'stale' => 'Cobrowse is waiting for fresh page updates. Sensitive fields stay masked.',
+            'unavailable' => 'Cobrowse is getting ready. Sensitive fields stay masked.',
+            default => null,
+        };
+
+        if (! $message) {
+            return null;
+        }
+
+        return [
+            'state' => $state,
+            'message' => $message,
         ];
     }
 
