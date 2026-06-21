@@ -1513,7 +1513,7 @@ test('marks consecutive widget messages from the same sender as a visual group',
   assert.equal(messages[1].querySelector('.wayfindr-widget__message-time').dateTime, '2026-05-23T14:02:00.000000Z');
 });
 
-test('shows sent delivery status only for visitor messages', async () => {
+test('shows support delivery status only for visitor messages', async () => {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
     url: 'https://docs.example.test/install',
   });
@@ -1605,8 +1605,8 @@ test('shows sent delivery status only for visitor messages', async () => {
   const messages = [...widget.root.querySelectorAll('.wayfindr-widget__message')];
   const visitorDelivery = messages[0].querySelector('.wayfindr-widget__message-delivery');
 
-  assert.equal(visitorDelivery.textContent, 'Sent');
-  assert.equal(visitorDelivery.getAttribute('aria-label'), 'Message delivery status');
+  assert.equal(visitorDelivery.textContent, 'Sent to support');
+  assert.equal(visitorDelivery.getAttribute('aria-label'), 'Visitor message sent to support');
   assert.equal(messages[1].querySelector('.wayfindr-widget__message-delivery'), null);
 });
 

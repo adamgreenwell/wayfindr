@@ -1628,8 +1628,8 @@
 
     var delivery = doc.createElement('span');
     delivery.className = 'wayfindr-widget__message-delivery';
-    delivery.setAttribute('aria-label', 'Message delivery status');
-    delivery.textContent = 'Sent';
+    delivery.setAttribute('aria-label', 'Visitor message sent to support');
+    delivery.textContent = 'Sent to support';
 
     return delivery;
   }
