@@ -109,7 +109,7 @@ test('agent can view a safe visitor profile with same-site support history', fun
         ->assertSee('Visitor lookup reference')
         ->assertSee(route('dashboard.support-code.lookup', ['support_code' => 'anon-profile']), false)
         ->assertSee('Host visitor ID')
-        ->assertSee(route('dashboard.support-code.lookup', ['support_code' => 'customer-123']), false)
+        ->assertSee(e(route('dashboard.support-code.lookup', ['reference_type' => 'visitor', 'support_code' => 'customer-123'])), false)
         ->assertSee('Latest support code')
         ->assertSee(route('dashboard.conversations.show', 'WF-PROFILE1'), false)
         ->assertSee('Latest ticket')

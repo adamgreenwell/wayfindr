@@ -54,7 +54,7 @@
                         <span class="meta-label">Host visitor ID</span>
                         <span class="meta-value">
                             @if ($supportReferences['host_visitor_id'])
-                                <a class="text-link" href="{{ route('dashboard.support-code.lookup', ['support_code' => $supportReferences['host_visitor_id']]) }}">
+                                <a class="text-link" href="{{ route('dashboard.support-code.lookup', ['reference_type' => 'visitor', 'support_code' => $supportReferences['host_visitor_id']]) }}">
                                     {{ $supportReferences['host_visitor_id'] }}
                                 </a>
                             @else

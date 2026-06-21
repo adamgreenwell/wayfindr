@@ -144,6 +144,30 @@ test('agents can jump to a visible visitor profile by numeric host visitor id', 
         ->assertRedirect(route('dashboard.visitors.show', $visitor));
 });
 
+test('explicit visitor support lookup does not treat numeric host visitor id as a ticket reference', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-numeric-host-collision',
+        'external_id' => '12345',
+    ]);
+    Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->create([
+            'id' => 12345,
+            'subject' => 'Unrelated numeric ticket',
+        ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.support-code.lookup', [
+            'reference_type' => 'visitor',
+            'support_code' => '12345',
+        ]))
+        ->assertRedirect(route('dashboard.visitors.show', $visitor));
+});
+
 test('support code lookup does not expose another account record', function (): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create();

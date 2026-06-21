@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Conversation;
 use App\Models\Ticket;
+use App\Models\User;
 use App\Models\Visitor;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -29,6 +30,16 @@ class AgentSupportCodeLookupController extends Controller
 
         if ($lookupReference === '') {
             return $this->missingCode();
+        }
+
+        if ($request->query('reference_type') === 'visitor') {
+            $visitor = $this->visibleVisitor($lookupReference, $agent);
+
+            if ($visitor) {
+                return redirect()->route('dashboard.visitors.show', $visitor);
+            }
+
+            return $this->notFound($lookupReference);
         }
 
         $ticketReferenceId = $this->ticketReferenceId($lookupReference);
@@ -76,17 +87,7 @@ class AgentSupportCodeLookupController extends Controller
             return redirect()->route('dashboard.conversations.show', $conversation->support_code);
         }
 
-        $visitor = Visitor::query()
-            ->with('site')
-            ->where(function (Builder $query) use ($lookupReference): void {
-                $query
-                    ->where('anonymous_id', $lookupReference)
-                    ->orWhere('external_id', $lookupReference);
-            })
-            ->whereHas('site', fn (Builder $query) => $query->visibleToAgent($agent))
-            ->latest('last_seen_at')
-            ->latest('id')
-            ->first();
+        $visitor = $this->visibleVisitor($lookupReference, $agent);
 
         if ($visitor && Gate::forUser($agent)->allows('view', $visitor)) {
             return redirect()->route('dashboard.visitors.show', $visitor);
@@ -135,6 +136,21 @@ class AgentSupportCodeLookupController extends Controller
     private function validTicketId(int $ticketId): ?int
     {
         return $ticketId > 0 ? $ticketId : null;
+    }
+
+    private function visibleVisitor(string $lookupReference, User $agent): ?Visitor
+    {
+        return Visitor::query()
+            ->with('site')
+            ->where(function (Builder $query) use ($lookupReference): void {
+                $query
+                    ->where('anonymous_id', $lookupReference)
+                    ->orWhere('external_id', $lookupReference);
+            })
+            ->whereHas('site', fn (Builder $query) => $query->visibleToAgent($agent))
+            ->latest('last_seen_at')
+            ->latest('id')
+            ->first();
     }
 
     private function displayReference(string $lookupReference, string $supportCode): string
