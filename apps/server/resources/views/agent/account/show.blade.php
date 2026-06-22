@@ -387,6 +387,16 @@
                                     ];
                                     $explicitSites = $supportScope['explicitSites'];
                                     $fallbackSites = $supportScope['fallbackSites'];
+                                    $siteScopePreview = function ($sites): string {
+                                        $names = $sites->pluck('name');
+                                        $preview = $names->take(2)->join(', ');
+
+                                        if ($names->count() > 2) {
+                                            $preview .= ' + '.($names->count() - 2).' more';
+                                        }
+
+                                        return $preview;
+                                    };
                                 @endphp
                                 <tr>
                                     <td>
@@ -453,11 +463,13 @@
                                         @else
                                             @if ($explicitSites->isNotEmpty())
                                                 <strong>{{ $explicitSites->count() }} explicit {{ \Illuminate\Support\Str::plural('site', $explicitSites->count()) }}</strong>
-                                                <span class="lede">Explicit: {{ $explicitSites->pluck('name')->join(', ') }}</span>
+                                                <span class="lede">Explicit: {{ $siteScopePreview($explicitSites) }}</span>
                                             @endif
                                             @if ($fallbackSites->isNotEmpty())
-                                                <span class="lede">Fallback: {{ $fallbackSites->pluck('name')->join(', ') }}</span>
+                                                <strong>{{ $fallbackSites->count() }} fallback {{ \Illuminate\Support\Str::plural('site', $fallbackSites->count()) }}</strong>
+                                                <span class="lede">Fallback: {{ $siteScopePreview($fallbackSites) }}</span>
                                             @endif
+                                            <a class="table-note text-link" href="#site-access-matrix">Review site access</a>
                                         @endif
                                     </td>
                                     <td>

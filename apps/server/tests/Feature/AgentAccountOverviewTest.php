@@ -180,6 +180,39 @@ test('agent roster summarizes explicit and fallback site scope', function (): vo
         ->assertSee(route('dashboard.sites.show', $explicitSite), false);
 });
 
+test('agent roster keeps multi-site support scope summaries scannable', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'name' => 'Bea Builder',
+        'email' => 'bea@example.test',
+    ]);
+
+    $explicitSites = collect(['Alpha Docs', 'Beta Store', 'Gamma Portal'])
+        ->map(fn (string $name): Site => tap(
+            Site::factory()->for($account)->create(['name' => $name]),
+            function (Site $site) use ($agent): void {
+                $site->supportAgents()->attach($agent);
+            },
+        ));
+
+    collect(['Public Docs', 'Knowledge Base', 'Marketing Site'])
+        ->each(fn (string $name) => Site::factory()->for($account)->create(['name' => $name]));
+
+    $this->actingAs($agent)
+        ->get('/dashboard/account')
+        ->assertOk()
+        ->assertSeeInOrder([
+            'Bea Builder',
+            '3 explicit sites',
+            'Explicit: Alpha Docs, Beta Store + 1 more',
+            '3 fallback sites',
+            'Fallback: Knowledge Base, Marketing Site + 1 more',
+            'Review site access',
+        ])
+        ->assertSee(route('dashboard.sites.show', $explicitSites->first()), false);
+});
+
 test('agent roster summarizes visible assigned workload without leaking restricted site work', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $viewer = User::factory()->for($account)->create([
