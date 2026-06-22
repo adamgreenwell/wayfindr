@@ -54,6 +54,19 @@ test('authenticated agent pages share primary app navigation', function (): void
         ->assertSee('aria-current="page"', false);
 });
 
+test('agent pages include an active state for support filter chips', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create([
+        'name' => 'Ada Agent',
+        'email' => 'ada@example.com',
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard')
+        ->assertOk()
+        ->assertSee('.filter-chip[aria-current="page"]', false);
+});
+
 test('account admins see operator readiness navigation', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $admin = User::factory()->for($account)->create([
