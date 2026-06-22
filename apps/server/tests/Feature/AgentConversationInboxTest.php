@@ -303,6 +303,49 @@ test('conversation detail shows bounded latest activity previews', function (): 
         ]);
 });
 
+test('conversation detail gives agents a section map for the workspace', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Riley Agent']);
+
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-map']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-CONVMAP',
+        'subject' => 'Mapped conversation',
+        'status' => 'open',
+        'last_message_at' => now()->subMinute(),
+    ]);
+
+    ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'Can someone point me at the next step?',
+        'created_at' => now()->subMinute(),
+    ]);
+
+    Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($conversation)
+        ->for($visitor, 'requester')
+        ->create([
+            'subject' => 'Mapped ticket',
+        ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->assertSee('Conversation map')
+        ->assertSee('Jump to what this conversation needs next.')
+        ->assertSee('href="#conversation-context-heading"', false)
+        ->assertSee('href="#visitor-context-heading"', false)
+        ->assertSee('href="#tickets-heading"', false)
+        ->assertSee('href="#cobrowse-heading"', false)
+        ->assertSee('href="#messages-heading"', false)
+        ->assertSee('href="#reply-heading"', false)
+        ->assertSee('href="#conversation-status-action"', false);
+});
+
 test('conversation detail recommends the next action for the conversation state', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Riley Agent']);

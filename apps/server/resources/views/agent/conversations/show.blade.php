@@ -8,6 +8,15 @@
                     'unseen' => 'attention',
                     default => 'manual',
                 };
+                $conversationMapSections = [
+                    ['label' => 'Context', 'href' => '#conversation-context-heading'],
+                    ['label' => 'Visitor', 'href' => '#visitor-context-heading'],
+                    ['label' => 'Ticket', 'href' => '#tickets-heading'],
+                    ['label' => 'Cobrowse', 'href' => '#cobrowse-heading'],
+                    ['label' => 'Messages', 'href' => '#messages-heading'],
+                    ['label' => 'Reply', 'href' => '#reply-heading'],
+                    ['label' => 'Status', 'href' => '#conversation-status-action'],
+                ];
             @endphp
 
             <a class="text-link" href="{{ $conversationBackUrl }}">Back to conversations</a>
@@ -17,6 +26,27 @@
             @if (session('status'))
                 <p class="status-message">{{ session('status') }}</p>
             @endif
+
+            <section class="section" aria-labelledby="conversation-map-heading">
+                <div class="section-header">
+                    <h2 id="conversation-map-heading">Conversation map</h2>
+                    <span class="lede">Jump to what this conversation needs next.</span>
+                </div>
+
+                <div class="filter-summary" aria-label="Conversation detail sections">
+                    <div>
+                        <strong>Available sections</strong>
+                        <p class="lede">Use the map when the full conversation workspace gets long.</p>
+                    </div>
+                    <div class="filter-chips">
+                        @foreach ($conversationMapSections as $conversationMapSection)
+                            <a class="filter-chip" href="{{ $conversationMapSection['href'] }}">
+                                {{ $conversationMapSection['label'] }}
+                            </a>
+                        @endforeach
+                    </div>
+                </div>
+            </section>
 
             <section class="section" aria-labelledby="conversation-context-heading">
                 <div class="section-header">
