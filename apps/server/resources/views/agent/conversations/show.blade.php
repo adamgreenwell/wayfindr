@@ -842,7 +842,8 @@
                 </div>
 
                 @php
-                    $selectedReplyTemplate = (string) old('reply_template', '');
+                    $oldReplyTemplate = old('reply_template', '');
+                    $selectedReplyTemplate = is_string($oldReplyTemplate) ? $oldReplyTemplate : '';
                     $replyAssigneeLabel = 'Unassigned';
 
                     if ((int) $conversation->assigned_agent_id === $agent->id) {

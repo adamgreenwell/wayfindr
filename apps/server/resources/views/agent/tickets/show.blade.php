@@ -341,7 +341,8 @@
                     ])
 
                     @php
-                        $selectedReplyTemplate = (string) old('reply_template', '');
+                        $oldReplyTemplate = old('reply_template', '');
+                        $selectedReplyTemplate = is_string($oldReplyTemplate) ? $oldReplyTemplate : '';
                     @endphp
 
                     <div class="reply-workspace" data-reply-shell>

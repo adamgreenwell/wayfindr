@@ -279,6 +279,42 @@ test('ticket visitor reply surface shows helper preview affordances', function (
         ->assertSee('Keep sensitive details out of visitor replies unless the visitor supplied them here.');
 });
 
+test('reply surfaces tolerate malformed flashed reply template input', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-BADHELPER',
+        'status' => 'open',
+    ]);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($conversation)
+        ->for($visitor, 'requester')
+        ->for($agent, 'assignee')
+        ->create(['status' => 'open']);
+    $template = ReplyTemplate::factory()->for($account)->create([
+        'name' => 'Billing follow-up',
+        'body' => 'I will check the billing details and follow up shortly.',
+    ]);
+
+    $this->actingAs($agent)
+        ->withSession(['_old_input' => ['reply_template' => ['managed:'.$template->id]]])
+        ->get("/dashboard/conversations/{$conversation->support_code}")
+        ->assertOk()
+        ->assertSee('Reply assist')
+        ->assertSee('No helper selected');
+
+    $this->actingAs($agent)
+        ->withSession(['_old_input' => ['reply_template' => ['managed:'.$template->id]]])
+        ->get("/dashboard/tickets/{$ticket->id}")
+        ->assertOk()
+        ->assertSee('Reply assist')
+        ->assertSee('No helper selected');
+});
+
 test('agents can send replies from managed account templates', function (): void {
     Event::fake([ConversationMessageCreated::class]);
 
