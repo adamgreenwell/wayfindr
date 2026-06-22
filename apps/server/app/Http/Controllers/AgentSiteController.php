@@ -250,7 +250,7 @@ class AgentSiteController extends Controller
     /**
      * @param  array<int, int>  $supportAgentIds
      * @param  array<int, string>  $maskSelectors
-     * @param  array{label: string, tone: string, status_counts: Collection<int, array{key: string, label: string, count: int}>, recent_failures: Collection<int, array{provider: string, project_key: string, status: string|null, occurred_at: Carbon|null}>}  $externalIssueHealth
+     * @param  array{label: string, tone: string, detail: string, metrics: Collection<int, array{label: string, value: string, tone: string}>, status_counts: Collection<int, array{key: string, label: string, count: int}>, recent_failures: Collection<int, array{provider: string, project_key: string, status: string|null, occurred_at: Carbon|null}>}  $externalIssueHealth
      * @return Collection<int, array{label: string, value: string, tone: string, detail: string, href: string}>
      */
     private function siteSupportReadiness(Site $site, array $supportAgentIds, array $maskSelectors, array $externalIssueHealth): Collection
@@ -312,26 +312,24 @@ class AgentSiteController extends Controller
      * @return array{
      *     label: string,
      *     tone: string,
+     *     detail: string,
+     *     metrics: Collection<int, array{label: string, value: string, tone: string}>,
      *     status_counts: Collection<int, array{key: string, label: string, count: int}>,
      *     recent_failures: Collection<int, array{provider: string, project_key: string, status: string|null, occurred_at: Carbon|null}>
      * }
      */
     private function externalIssueHealth(Site $site): array
     {
+        $mappedProjectCount = $site->externalIssueProjects->count();
+        $handoffProjectCount = $this->externalIssueHandoffProjectCount($site);
+        $disabledProjectCount = $site->externalIssueProjects
+            ->filter(fn ($project): bool => $project->providerConnection?->is_enabled === false)
+            ->count();
         $statusCounts = $site->ticketExternalLinks()
             ->where('account_id', $site->account_id)
             ->selectRaw('sync_status, count(*) as aggregate')
             ->groupBy('sync_status')
             ->pluck('aggregate', 'sync_status');
-
-        $statusItems = collect(ExternalIssueSyncStatus::options())
-            ->map(fn (string $label, string $status): array => [
-                'key' => $status,
-                'label' => $label,
-                'count' => (int) ($statusCounts[$status] ?? 0),
-            ])
-            ->values();
-
         $recentFailures = $site->auditEvents()
             ->where('account_id', $site->account_id)
             ->where('action', 'ticket.external_sync_failed')
@@ -346,20 +344,82 @@ class AgentSiteController extends Controller
                 'occurred_at' => $event->occurred_at,
             ]);
 
-        $failedCount = (int) ($statusCounts['sync_failed'] ?? 0);
-        $pendingCount = (int) ($statusCounts['sync_pending'] ?? 0);
+        $failedCount = max((int) ($statusCounts[ExternalIssueSyncStatus::FAILED] ?? 0), $recentFailures->count());
+        $pendingCount = (int) ($statusCounts[ExternalIssueSyncStatus::PENDING] ?? 0);
+        $statusItems = collect(ExternalIssueSyncStatus::options())
+            ->map(fn (string $label, string $status): array => [
+                'key' => $status,
+                'label' => $label,
+                'count' => $status === ExternalIssueSyncStatus::FAILED
+                    ? $failedCount
+                    : (int) ($statusCounts[$status] ?? 0),
+            ])
+            ->values();
+
+        [$label, $tone, $detail] = match (true) {
+            $mappedProjectCount === 0 => [
+                'Not configured',
+                'manual',
+                'Map a project before this site can send tickets outside Wayfindr.',
+            ],
+            $disabledProjectCount > 0 => [
+                'Needs attention',
+                'attention',
+                'Enable or replace disabled provider mappings before ticket handoff depends on them.',
+            ],
+            $failedCount > 0 => [
+                'Needs attention',
+                'attention',
+                'Review failed syncs before relying on external handoff for this site.',
+            ],
+            $pendingCount > 0 => [
+                'Sync pending',
+                'manual',
+                'Some ticket handoffs are still waiting for provider confirmation.',
+            ],
+            $handoffProjectCount === 0 => [
+                'Not ready',
+                'manual',
+                'Mapped projects exist, but none can currently create external issues.',
+            ],
+            default => [
+                'Ready',
+                'ready',
+                'Tickets can route to an enabled external project for this site.',
+            ],
+        };
 
         return [
-            'label' => match (true) {
-                $failedCount > 0 || $recentFailures->isNotEmpty() => 'Needs attention',
-                $pendingCount > 0 => 'Sync pending',
-                default => 'Healthy',
-            },
-            'tone' => match (true) {
-                $failedCount > 0 || $recentFailures->isNotEmpty() => 'attention',
-                $pendingCount > 0 => 'manual',
-                default => 'ready',
-            },
+            'label' => $label,
+            'tone' => $tone,
+            'detail' => $detail,
+            'metrics' => collect([
+                [
+                    'label' => 'Mapped projects',
+                    'value' => $mappedProjectCount.' mapped '.Str::plural('project', $mappedProjectCount),
+                    'tone' => $mappedProjectCount > 0 ? 'ready' : 'manual',
+                ],
+                [
+                    'label' => 'Handoff ready',
+                    'value' => $handoffProjectCount.' handoff ready',
+                    'tone' => $handoffProjectCount > 0 ? 'ready' : 'manual',
+                ],
+                [
+                    'label' => 'Disabled mappings',
+                    'value' => $disabledProjectCount.' disabled',
+                    'tone' => $disabledProjectCount > 0 ? 'attention' : 'ready',
+                ],
+                [
+                    'label' => 'Sync failed',
+                    'value' => $failedCount.' sync failed',
+                    'tone' => $failedCount > 0 ? 'attention' : 'ready',
+                ],
+                [
+                    'label' => 'Sync pending',
+                    'value' => $pendingCount.' sync pending',
+                    'tone' => $pendingCount > 0 ? 'manual' : 'ready',
+                ],
+            ]),
             'status_counts' => $statusItems,
             'recent_failures' => $recentFailures,
         ];

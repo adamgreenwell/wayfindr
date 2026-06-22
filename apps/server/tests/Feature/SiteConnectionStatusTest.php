@@ -2,11 +2,14 @@
 
 use App\Enums\AccountRole;
 use App\Models\Account;
+use App\Models\AuditEvent;
 use App\Models\ExternalIssueProviderConnection;
 use App\Models\Site;
 use App\Models\SiteExternalIssueProject;
+use App\Models\TicketExternalLink;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\ExternalIssueSyncStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -304,6 +307,143 @@ test('site settings summarize support readiness from existing site signals', fun
         ->assertSee('#privacy-settings-heading', false)
         ->assertSee('#external-issue-routing-heading', false)
         ->assertSee("/dashboard/sites/{$site->id}/tester", false);
+});
+
+test('site settings show external issue readiness for a mapped site', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Wayfindr Public Site',
+        'domain' => 'wayfindr.cc',
+    ]);
+    $connection = ExternalIssueProviderConnection::factory()
+        ->for($account)
+        ->create([
+            'name' => 'Engineering GitHub',
+            'provider' => 'github',
+            'capabilities' => [
+                'create_issue' => true,
+                'add_comment' => true,
+                'sync_status' => false,
+            ],
+        ]);
+    SiteExternalIssueProject::factory()
+        ->for($account)
+        ->for($site)
+        ->for($connection, 'providerConnection')
+        ->create([
+            'project_key' => 'adamgreenwell/wayfindr',
+            'project_name' => 'Wayfindr',
+        ]);
+    TicketExternalLink::factory()
+        ->for($account)
+        ->for($site)
+        ->create([
+            'project_key' => 'adamgreenwell/wayfindr',
+            'sync_status' => ExternalIssueSyncStatus::PENDING,
+        ]);
+    AuditEvent::factory()
+        ->for($account)
+        ->for($site)
+        ->create([
+            'action' => 'ticket.external_sync_failed',
+            'metadata' => [
+                'provider' => 'github',
+                'project_key' => 'adamgreenwell/wayfindr',
+                'status' => 502,
+                'message' => 'raw provider exception should stay hidden',
+            ],
+            'occurred_at' => now()->subMinutes(3),
+        ]);
+
+    $this->actingAs($admin)
+        ->get("/dashboard/sites/{$site->id}")
+        ->assertOk()
+        ->assertSee('External issue readiness')
+        ->assertSee('Needs attention')
+        ->assertSee('Review failed syncs before relying on external handoff for this site.')
+        ->assertSee('1 mapped project')
+        ->assertSee('1 handoff ready')
+        ->assertSee('0 disabled')
+        ->assertSee('1 sync failed')
+        ->assertSee('1 sync pending')
+        ->assertSee('Last external sync failure')
+        ->assertSee('GitHub could not sync adamgreenwell/wayfindr.')
+        ->assertSee('Status 502')
+        ->assertSee('Provider details withheld')
+        ->assertSee('#external-issue-routing-heading', false)
+        ->assertDontSee('raw provider exception should stay hidden');
+});
+
+test('site settings treat provider only external issue setup as not configured', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Wayfindr Public Site',
+        'domain' => 'wayfindr.cc',
+    ]);
+    ExternalIssueProviderConnection::factory()
+        ->for($account)
+        ->create([
+            'name' => 'Engineering GitHub',
+            'provider' => 'github',
+            'capabilities' => [
+                'create_issue' => true,
+                'add_comment' => true,
+                'sync_status' => false,
+            ],
+        ]);
+
+    $this->actingAs($admin)
+        ->get("/dashboard/sites/{$site->id}")
+        ->assertOk()
+        ->assertSee('External issue readiness')
+        ->assertSee('Not configured')
+        ->assertSee('Map a project before this site can send tickets outside Wayfindr.')
+        ->assertSee('0 mapped projects')
+        ->assertSee('0 handoff ready')
+        ->assertSee('0 disabled');
+});
+
+test('site settings flag disabled external issue mappings', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Wayfindr Public Site',
+        'domain' => 'wayfindr.cc',
+    ]);
+    $connection = ExternalIssueProviderConnection::factory()
+        ->for($account)
+        ->create([
+            'is_enabled' => false,
+            'name' => 'Dormant GitLab',
+            'provider' => 'gitlab',
+            'capabilities' => [
+                'create_issue' => true,
+                'add_comment' => false,
+                'sync_status' => false,
+            ],
+        ]);
+    SiteExternalIssueProject::factory()
+        ->for($account)
+        ->for($site)
+        ->for($connection, 'providerConnection')
+        ->create([
+            'project_key' => 'internal/helpdesk',
+            'project_name' => 'Helpdesk',
+        ]);
+
+    $this->actingAs($admin)
+        ->get("/dashboard/sites/{$site->id}")
+        ->assertOk()
+        ->assertSee('External issue readiness')
+        ->assertSee('Needs attention')
+        ->assertSee('Enable or replace disabled provider mappings before ticket handoff depends on them.')
+        ->assertSee('1 mapped project')
+        ->assertSee('0 handoff ready')
+        ->assertSee('1 disabled')
+        ->assertSee('Dormant GitLab')
+        ->assertSee('internal/helpdesk');
 });
 
 test('site settings guide agents when the widget has not checked in yet', function (): void {

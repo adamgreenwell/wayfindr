@@ -59,6 +59,55 @@
                 </div>
             </section>
 
+            <section class="section" aria-labelledby="site-external-issue-readiness-heading">
+                <div class="section-header">
+                    <div>
+                        <h2 id="site-external-issue-readiness-heading">External issue readiness</h2>
+                        <p class="lede">Ticket handoff for this site</p>
+                    </div>
+                    <span class="readiness-status" data-status="{{ $externalIssueHealth['tone'] }}">{{ $externalIssueHealth['label'] }}</span>
+                </div>
+
+                <div class="notice-copy notice-copy-bordered">
+                    <p>{{ $externalIssueHealth['detail'] }}</p>
+                    <p><a class="text-link" href="#external-issue-routing-heading">Review routing</a></p>
+                </div>
+
+                <div class="meta-grid">
+                    @foreach ($externalIssueHealth['metrics'] as $metric)
+                        <div class="meta-item">
+                            <span class="meta-label">{{ $metric['label'] }}</span>
+                            <span class="meta-value">{{ $metric['value'] }}</span>
+                            <span class="readiness-status" data-status="{{ $metric['tone'] }}">{{ ucfirst($metric['tone']) }}</span>
+                        </div>
+                    @endforeach
+                </div>
+
+                @if ($externalIssueHealth['recent_failures']->isEmpty())
+                    <p class="empty">No recent external sync failures for this site.</p>
+                @else
+                    <div class="timeline-list">
+                        @foreach ($externalIssueHealth['recent_failures'] as $failure)
+                            <article class="timeline-item internal-note">
+                                <div class="timeline-content">
+                                    <strong>{{ $loop->first ? 'Last external sync failure' : 'Earlier external sync failure' }}</strong>
+                                    <p class="message-body">{{ $failure['provider'] }} could not sync {{ $failure['project_key'] }}.</p>
+                                    <div class="timeline-meta">
+                                        @if ($failure['status'])
+                                            <span>{{ $failure['status'] }}</span>
+                                        @endif
+                                        @if ($failure['occurred_at'])
+                                            <span>{{ $failure['occurred_at']->diffForHumans() }}</span>
+                                        @endif
+                                        <span>Provider details withheld</span>
+                                    </div>
+                                </div>
+                            </article>
+                        @endforeach
+                    </div>
+                @endif
+            </section>
+
             @php
                 $latestVisitor = $site->latestVisitor;
                 $lastSeenAt = $latestVisitor?->last_seen_at;
