@@ -21,6 +21,19 @@
                 <p class="field-error">{{ $message }}</p>
             @enderror
 
+            <section class="section" aria-labelledby="reply-template-standards-heading">
+                <div class="section-header">
+                    <h2 id="reply-template-standards-heading">Template standards</h2>
+                    <span class="lede">Reusable, safe, and still human.</span>
+                </div>
+
+                <div class="notice-copy">
+                    <p>Treat templates as calm starting points, not scripts agents must send unchanged.</p>
+                    <p>Use templates for acknowledgements, status updates, next steps, and common clarification requests.</p>
+                    <p>Keep visitor-visible templates free of passwords, payment details, private handoff notes, and promises your team cannot keep.</p>
+                </div>
+            </section>
+
             <section class="section" aria-labelledby="new-reply-template-heading">
                 <div class="section-header">
                     <h2 id="new-reply-template-heading">Create template</h2>

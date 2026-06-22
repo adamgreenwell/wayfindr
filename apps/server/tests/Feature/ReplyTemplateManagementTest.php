@@ -85,6 +85,20 @@ test('reply template management guides admins before templates exist', function 
         ->assertSee('href="#new-reply-template-heading"', false);
 });
 
+test('reply template management explains template standards', function (): void {
+    $admin = User::factory()->for(Account::factory())->create([
+        'account_role' => AccountRole::Admin,
+    ]);
+
+    $this->actingAs($admin)
+        ->get('/dashboard/account/reply-templates')
+        ->assertOk()
+        ->assertSee('Template standards')
+        ->assertSee('Treat templates as calm starting points, not scripts agents must send unchanged.')
+        ->assertSee('Keep visitor-visible templates free of passwords, payment details, private handoff notes, and promises your team cannot keep.')
+        ->assertSee('Use templates for acknowledgements, status updates, next steps, and common clarification requests.');
+});
+
 test('reply template management stays inside account admin boundaries', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $otherAccount = Account::factory()->create(['name' => 'Other Support']);
