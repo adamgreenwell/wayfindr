@@ -127,6 +127,90 @@ test('conversation queue shows bounded latest message previews', function (): vo
         ->assertSee('WF-PREVIEW3');
 });
 
+test('conversation queue shows timing context for active triage', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-22 12:00:00', 'UTC'));
+
+    try {
+        $account = Account::factory()->create(['name' => 'Acme Support']);
+        $agent = User::factory()->for($account)->create(['name' => 'Riley Agent']);
+
+        $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-timing']);
+        $visitorConversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-TIMING1',
+            'subject' => 'Visitor is waiting',
+            'status' => 'open',
+            'created_at' => now()->subHours(2),
+            'last_message_at' => now()->subMinutes(15),
+        ]);
+        $agentConversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-TIMING2',
+            'subject' => 'Agent replied',
+            'status' => 'open',
+            'created_at' => now()->subHour(),
+            'last_message_at' => now()->subMinutes(8),
+        ]);
+        $emptyConversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-TIMING3',
+            'subject' => 'Empty chat',
+            'status' => 'open',
+            'created_at' => now()->subMinutes(5),
+        ]);
+        $closedConversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-TIMING4',
+            'subject' => 'Closed chat',
+            'status' => 'closed',
+            'created_at' => now()->subHours(3),
+            'closed_at' => now()->subMinutes(4),
+            'last_message_at' => now()->subMinutes(20),
+        ]);
+
+        ConversationMessage::factory()->for($visitorConversation)->create([
+            'sender_type' => Visitor::class,
+            'sender_id' => $visitor->id,
+            'body' => 'Can someone help with the setup?',
+            'created_at' => now()->subMinutes(15),
+        ]);
+        ConversationMessage::factory()->for($agentConversation)->create([
+            'sender_type' => User::class,
+            'sender_id' => $agent->id,
+            'body' => 'I sent the next step.',
+            'created_at' => now()->subMinutes(8),
+        ]);
+        ConversationMessage::factory()->for($closedConversation)->create([
+            'sender_type' => User::class,
+            'sender_id' => $agent->id,
+            'body' => 'Closing this out.',
+            'created_at' => now()->subMinutes(20),
+        ]);
+
+        $this->actingAs($agent)
+            ->get('/dashboard/conversations?conversation_filter=closed')
+            ->assertOk()
+            ->assertSee('Timing')
+            ->assertSee('Opened 3 hours ago')
+            ->assertSee('Closed 4 minutes ago')
+            ->assertSee('WF-TIMING4');
+
+        $this->actingAs($agent)
+            ->get('/dashboard/conversations')
+            ->assertOk()
+            ->assertSee('Timing')
+            ->assertSee('Opened 2 hours ago')
+            ->assertSee('Waiting on reply for 15 minutes')
+            ->assertSee('Opened 1 hour ago')
+            ->assertSee('Waiting on visitor for 8 minutes')
+            ->assertSee('Opened 5 minutes ago')
+            ->assertSee('No messages yet')
+            ->assertSee('WF-TIMING1')
+            ->assertSee('WF-TIMING2')
+            ->assertSee('WF-TIMING3')
+            ->assertDontSee('WF-TIMING4');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('conversation detail shows bounded latest activity previews', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Riley Agent']);

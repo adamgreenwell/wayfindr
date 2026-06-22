@@ -147,13 +147,14 @@
                                     <th scope="col">Attention</th>
                                     <th scope="col">Read</th>
                                     <th scope="col">Support Code</th>
-                                    <th scope="col">Last Activity</th>
+                                    <th scope="col">Timing</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @foreach ($conversations as $conversation)
                                     @php
                                         $activityPreview = $conversation->queueActivityPreview();
+                                        $conversationTiming = $conversation->queueTimingContext();
                                         $cobrowseTransport = $cobrowseTransportByConversationId->get($conversation->id, [
                                             'label' => 'Unavailable',
                                             'message' => 'Cobrowse transport is not active.',
@@ -209,7 +210,10 @@
                                                 :href="route('dashboard.support-code.lookup', ['support_code' => $conversation->support_code])"
                                             />
                                         </td>
-                                        <td>{{ $conversation->last_message_at?->diffForHumans() ?? $conversation->created_at->diffForHumans() }}</td>
+                                        <td>
+                                            <strong>{{ $conversationTiming['opened_label'] }}</strong>
+                                            <span class="table-note">{{ $conversationTiming['wait_label'] }}</span>
+                                        </td>
                                     </tr>
                                 @endforeach
                             </tbody>

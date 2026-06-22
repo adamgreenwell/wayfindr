@@ -248,6 +248,24 @@ class Conversation extends Model
         ];
     }
 
+    /**
+     * @return array{opened_label: string, wait_label: string}
+     */
+    public function queueTimingContext(): array
+    {
+        $latestMessage = $this->relationLoaded('latestMessage')
+            ? $this->latestMessage
+            : $this->messages()
+                ->latest('created_at')
+                ->latest('id')
+                ->first();
+
+        return [
+            'opened_label' => 'Opened '.$this->created_at->diffForHumans(),
+            'wait_label' => $this->queueWaitLabel($latestMessage),
+        ];
+    }
+
     public function visitorReadState(): string
     {
         $message = $this->latestAgentMessageForReadReceipt();
@@ -449,6 +467,33 @@ class Conversation extends Model
         $body = (string) Str::of((string) $body)->squish();
 
         return Str::limit($body, 150);
+    }
+
+    private function queueWaitLabel(?ConversationMessage $latestMessage): string
+    {
+        if ($this->status === 'closed') {
+            return 'Closed '.($this->closed_at ?? $this->updated_at)->diffForHumans();
+        }
+
+        if ($latestMessage?->created_at) {
+            $elapsed = $this->elapsedQueueTime($latestMessage->created_at);
+
+            return match ($latestMessage->sender_type) {
+                Visitor::class => 'Waiting on reply for '.$elapsed,
+                User::class => 'Waiting on visitor for '.$elapsed,
+                default => 'Waiting on update for '.$elapsed,
+            };
+        }
+
+        return 'No messages yet';
+    }
+
+    private function elapsedQueueTime(CarbonInterface $since): string
+    {
+        return $since->diffForHumans([
+            'syntax' => CarbonInterface::DIFF_ABSOLUTE,
+            'parts' => 1,
+        ]);
     }
 
     private function visitorTypingAt(): ?CarbonInterface
