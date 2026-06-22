@@ -99,7 +99,10 @@
                 </div>
 
                 @if ($visitorContext['host_context'] === [])
-                    <p class="empty">No host-provided context yet.</p>
+                    <div class="empty empty-state">
+                        <strong>No host-provided context yet.</strong>
+                        Wayfindr only has the anonymous visitor reference until the host site supplies safe customer or account context.
+                    </div>
                 @else
                     <div class="table-wrap">
                         <table>
@@ -134,7 +137,10 @@
                 </div>
 
                 @if ($conversations->isEmpty())
-                    <p class="empty">No conversations yet.</p>
+                    <div class="empty empty-state">
+                        <strong>No conversations for this visitor yet.</strong>
+                        New conversations will appear here once this visitor starts a support thread on this site.
+                    </div>
                 @else
                     <div class="timeline-list">
                         @foreach ($conversations as $conversation)
@@ -161,7 +167,10 @@
                 </div>
 
                 @if ($tickets->isEmpty())
-                    <p class="empty">No tickets yet.</p>
+                    <div class="empty empty-state">
+                        <strong>No tickets for this visitor yet.</strong>
+                        Create a ticket from a conversation when the next step needs durable follow-up.
+                    </div>
                 @else
                     <div class="timeline-list">
                         @foreach ($tickets as $ticket)

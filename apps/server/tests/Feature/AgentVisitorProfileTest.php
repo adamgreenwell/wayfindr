@@ -126,6 +126,28 @@ test('agent can view a safe visitor profile with same-site support history', fun
         ->assertDontSee('Other visitor ticket');
 });
 
+test('visitor profile guides agents when only sparse context exists', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-sparse',
+        'external_id' => null,
+        'metadata' => [],
+    ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.visitors.show', $visitor))
+        ->assertOk()
+        ->assertSee('Visitor profile')
+        ->assertSee('No host-provided context yet.')
+        ->assertSee('Wayfindr only has the anonymous visitor reference until the host site supplies safe customer or account context.')
+        ->assertSee('No conversations for this visitor yet.')
+        ->assertSee('New conversations will appear here once this visitor starts a support thread on this site.')
+        ->assertSee('No tickets for this visitor yet.')
+        ->assertSee('Create a ticket from a conversation when the next step needs durable follow-up.');
+});
+
 test('visitor profile finds the first entry page beyond the recent history limit', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
