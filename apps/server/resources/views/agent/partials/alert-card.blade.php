@@ -47,6 +47,12 @@
             @if (($alertFilter ?? null) === 'unread')
                 <input type="hidden" name="alert_filter" value="unread">
             @endif
+            @if (($alertKind ?? 'all') !== 'all')
+                <input type="hidden" name="alert_kind" value="{{ $alertKind }}">
+            @endif
+            @if (($alertSearch ?? '') !== '')
+                <input type="hidden" name="alert_search" value="{{ $alertSearch }}">
+            @endif
             <button class="button secondary" type="submit">Mark read</button>
         </form>
     @else

@@ -13,6 +13,11 @@ use Illuminate\Support\Str;
 
 class AgentAlertController extends Controller
 {
+    private const ALERT_KINDS = [
+        'conversation' => 'conversation_needs_reply',
+        'ticket' => 'ticket_assigned',
+    ];
+
     public function index(Request $request): View
     {
         $agent = $request->user();
@@ -20,20 +25,25 @@ class AgentAlertController extends Controller
         abort_unless($agent->account_id, 403);
 
         $alertFilter = $request->query('alert_filter') === 'unread' ? 'unread' : 'all';
+        $alertKind = $this->normalizedAlertKind($request->query('alert_kind'));
+        $alertSearch = $this->normalizedAlertSearch($request->query('alert_search'));
         $visibleUnreadNotifications = $this->visibleUnreadNotifications($agent);
-        $unreadNotificationCount = $visibleUnreadNotifications->count();
-        $notifications = $alertFilter === 'unread'
-            ? $visibleUnreadNotifications->take(30)->values()
-            : $this->visibleRecentNotifications($agent, $visibleUnreadNotifications);
+        $filteredUnreadNotifications = $this->filterNotifications($visibleUnreadNotifications, $alertKind, $alertSearch);
+        $filteredNotifications = $alertFilter === 'unread'
+            ? $filteredUnreadNotifications
+            : $this->filterNotifications($this->visibleRecentNotifications($agent, $visibleUnreadNotifications), $alertKind, $alertSearch);
+        $notifications = $filteredNotifications->take(30)->values();
 
         return view('agent.alerts.index', [
             'account' => $agent->account()->firstOrFail(),
             'agent' => $agent,
             'alertFilter' => $alertFilter,
-            'alertSnapshot' => $this->alertSnapshot($notifications, $unreadNotificationCount),
+            'alertKind' => $alertKind,
+            'alertSearch' => $alertSearch,
+            'alertSnapshot' => $this->alertSnapshot($notifications, $filteredUnreadNotifications->count()),
             'notifications' => $notifications,
             'notificationCount' => $notifications->count(),
-            'unreadNotificationCount' => $unreadNotificationCount,
+            'unreadNotificationCount' => $filteredUnreadNotifications->count(),
         ]);
     }
 
@@ -51,11 +61,14 @@ class AgentAlertController extends Controller
     public function markAllRead(Request $request): RedirectResponse
     {
         $agent = $request->user();
+        $alertKind = $this->normalizedAlertKind($request->input('alert_kind'));
+        $alertSearch = $this->normalizedAlertSearch($request->input('alert_search'));
 
         $agent
             ->unreadNotifications()
             ->get()
             ->filter(fn (DatabaseNotification $notification): bool => Gate::forUser($agent)->allows('markRead', $notification))
+            ->filter(fn (DatabaseNotification $notification): bool => $this->notificationMatchesFilters($notification, $alertKind, $alertSearch))
             ->each
             ->markAsRead();
 
@@ -79,8 +92,55 @@ class AgentAlertController extends Controller
 
         return $visibleUnreadNotifications
             ->merge($visibleRecentNotifications)
-            ->take(30)
             ->values();
+    }
+
+    /**
+     * @param  Collection<int, DatabaseNotification>  $notifications
+     * @return Collection<int, DatabaseNotification>
+     */
+    private function filterNotifications(Collection $notifications, string $alertKind, string $alertSearch): Collection
+    {
+        return $notifications
+            ->filter(fn (DatabaseNotification $notification): bool => $this->notificationMatchesFilters($notification, $alertKind, $alertSearch))
+            ->values();
+    }
+
+    private function notificationMatchesFilters(DatabaseNotification $notification, string $alertKind, string $alertSearch): bool
+    {
+        if ($alertKind !== 'all' && data_get($notification->data, 'kind') !== self::ALERT_KINDS[$alertKind]) {
+            return false;
+        }
+
+        if ($alertSearch === '') {
+            return true;
+        }
+
+        return Str::contains(
+            Str::lower($this->notificationSearchHaystack($notification)),
+            Str::lower($alertSearch),
+        );
+    }
+
+    private function notificationSearchHaystack(DatabaseNotification $notification): string
+    {
+        $notificationData = $notification->data;
+        $ticketId = data_get($notificationData, 'ticket_id');
+
+        return collect([
+            data_get($notificationData, 'subject'),
+            data_get($notificationData, 'support_code'),
+            $ticketId ? 'Ticket #'.$ticketId : null,
+            $ticketId,
+            data_get($notificationData, 'site_name'),
+            data_get($notificationData, 'message_preview'),
+            data_get($notificationData, 'assigned_by_name'),
+            data_get($notificationData, 'visitor_anonymous_id'),
+            data_get($notificationData, 'priority'),
+        ])
+            ->filter(fn ($value): bool => is_scalar($value) && trim((string) $value) !== '')
+            ->map(fn ($value): string => trim((string) $value))
+            ->implode(' ');
     }
 
     /**
@@ -137,11 +197,49 @@ class AgentAlertController extends Controller
     private function redirectAfterAlertAction(Request $request): RedirectResponse
     {
         if ($request->input('return_to') === 'alerts') {
-            return redirect()->route('dashboard.alerts.index', [
-                'alert_filter' => $request->input('alert_filter') === 'unread' ? 'unread' : null,
-            ]);
+            return redirect()->route('dashboard.alerts.index', $this->alertReturnParams(
+                $request->input('alert_filter') === 'unread' ? 'unread' : 'all',
+                $this->normalizedAlertKind($request->input('alert_kind')),
+                $this->normalizedAlertSearch($request->input('alert_search')),
+            ));
         }
 
         return redirect()->to(route('dashboard').'#alerts');
+    }
+
+    private function normalizedAlertKind(mixed $value): string
+    {
+        return is_string($value) && array_key_exists($value, self::ALERT_KINDS) ? $value : 'all';
+    }
+
+    private function normalizedAlertSearch(mixed $value): string
+    {
+        if (! is_scalar($value)) {
+            return '';
+        }
+
+        return Str::limit(trim((string) $value), 120, '');
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function alertReturnParams(string $alertFilter, string $alertKind, string $alertSearch): array
+    {
+        $params = [];
+
+        if ($alertFilter === 'unread') {
+            $params['alert_filter'] = 'unread';
+        }
+
+        if ($alertKind !== 'all') {
+            $params['alert_kind'] = $alertKind;
+        }
+
+        if ($alertSearch !== '') {
+            $params['alert_search'] = $alertSearch;
+        }
+
+        return $params;
     }
 }

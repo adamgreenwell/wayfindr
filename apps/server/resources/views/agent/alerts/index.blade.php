@@ -4,6 +4,25 @@
     <p class="lede">Visible support alerts for {{ $account->name }}.</p>
 
     <section class="section" aria-labelledby="alert-center-heading">
+        @php
+            $alertBaseParams = [];
+
+            if ($alertKind !== 'all') {
+                $alertBaseParams['alert_kind'] = $alertKind;
+            }
+
+            if ($alertSearch !== '') {
+                $alertBaseParams['alert_search'] = $alertSearch;
+            }
+
+            $activeKindLabel = [
+                'all' => 'alert',
+                'conversation' => 'conversation alert',
+                'ticket' => 'ticket alert',
+            ][$alertKind] ?? 'alert';
+            $hasAlertFilters = $alertKind !== 'all' || $alertSearch !== '';
+        @endphp
+
         <div class="section-header">
             <div>
                 <h2 id="alert-center-heading">Recent alerts</h2>
@@ -17,6 +36,8 @@
                         if ($filterValue === 'unread') {
                             $filterParams['alert_filter'] = 'unread';
                         }
+
+                        $filterParams = array_merge($filterParams, $alertBaseParams);
                     @endphp
                     <a
                         class="button {{ $alertFilter === $filterValue ? '' : 'secondary' }}"
@@ -35,11 +56,47 @@
                         @if ($alertFilter === 'unread')
                             <input type="hidden" name="alert_filter" value="unread">
                         @endif
+                        @if ($alertKind !== 'all')
+                            <input type="hidden" name="alert_kind" value="{{ $alertKind }}">
+                        @endif
+                        @if ($alertSearch !== '')
+                            <input type="hidden" name="alert_search" value="{{ $alertSearch }}">
+                        @endif
                         <button class="button secondary" type="submit">Mark all read</button>
                     </form>
                 @endif
             </div>
         </div>
+
+        <form class="section-form compact-form" method="GET" action="{{ route('dashboard.alerts.index') }}" aria-label="Filter alerts">
+            @if ($alertFilter === 'unread')
+                <input type="hidden" name="alert_filter" value="unread">
+            @endif
+
+            <label class="meta-label" for="alert_kind">Alert type</label>
+            <select id="alert_kind" name="alert_kind">
+                @foreach (['all' => 'All alerts', 'conversation' => 'Conversation alerts', 'ticket' => 'Ticket alerts'] as $kindValue => $kindLabel)
+                    <option value="{{ $kindValue }}" @selected($alertKind === $kindValue)>{{ $kindLabel }}</option>
+                @endforeach
+            </select>
+
+            <label class="meta-label" for="alert_search">Search alerts</label>
+            <input
+                id="alert_search"
+                name="alert_search"
+                type="search"
+                value="{{ $alertSearch }}"
+                placeholder="Support code, ticket #, subject, site, or visitor"
+                aria-describedby="alert-search-help"
+            >
+
+            <button class="button secondary" type="submit">Apply</button>
+            @if ($hasAlertFilters)
+                <a class="button secondary" href="{{ route('dashboard.alerts.index', $alertFilter === 'unread' ? ['alert_filter' => 'unread'] : []) }}">Clear filters</a>
+            @endif
+
+            <span id="alert-search-help" class="table-note">Search visible alert context only; restricted support work stays hidden.</span>
+        </form>
 
         <div class="meta-grid" aria-label="Alert snapshot">
             @foreach ($alertSnapshot as $snapshotItem)
@@ -52,10 +109,20 @@
         </div>
 
         @if ($notifications->isEmpty())
-            <p class="empty">{{ $alertFilter === 'unread' ? 'No unread visible alerts.' : 'No visible alerts yet.' }}</p>
+            <p class="empty">
+                @if ($hasAlertFilters)
+                    No visible alerts match those filters.
+                @elseif ($alertFilter === 'unread')
+                    No unread visible alerts.
+                @else
+                    No visible alerts yet.
+                @endif
+            </p>
         @else
             <div class="notice-copy notice-copy-bordered">
-                @if ($alertFilter === 'unread')
+                @if ($hasAlertFilters)
+                    <p><strong>Showing {{ $notificationCount }} matching {{ \Illuminate\Support\Str::plural($activeKindLabel, $notificationCount) }}.</strong></p>
+                @elseif ($alertFilter === 'unread')
                     <p><strong>Showing unread visible alerts.</strong></p>
                 @else
                     <p><strong>Showing the latest {{ $notificationCount }} visible {{ \Illuminate\Support\Str::plural('alert', $notificationCount) }}.</strong></p>
@@ -68,6 +135,8 @@
                     @include('agent.partials.alert-card', [
                         'notification' => $notification,
                         'alertFilter' => $alertFilter,
+                        'alertKind' => $alertKind,
+                        'alertSearch' => $alertSearch,
                         'alertReturnTo' => 'alerts',
                     ])
                 @endforeach
