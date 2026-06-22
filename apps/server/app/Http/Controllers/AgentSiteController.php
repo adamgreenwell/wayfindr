@@ -54,6 +54,7 @@ class AgentSiteController extends Controller
             ])
             ->orderBy('name')
             ->get();
+        $siteOperationsSnapshot = $this->siteOperationsSnapshot($sites);
         [$sites, $siteFilters] = $this->filteredSites($sites, $request);
 
         return view('agent.sites.index', [
@@ -61,6 +62,7 @@ class AgentSiteController extends Controller
             'agent' => $agent,
             'siteEmptyState' => $this->siteEmptyState($siteFilters),
             'siteFilters' => $siteFilters,
+            'siteOperationsSnapshot' => $siteOperationsSnapshot,
             'sites' => $sites,
         ]);
     }
@@ -616,6 +618,65 @@ class AgentSiteController extends Controller
     }
 
     /**
+     * @param  Collection<int, Site>  $sites
+     * @return list<array{label: string, value: string, detail: string, href: string|null, action: string|null}>
+     */
+    private function siteOperationsSnapshot(Collection $sites): array
+    {
+        $visibleCount = $sites->count();
+        $activeSiteCount = $sites
+            ->filter(fn (Site $site): bool => $this->siteHasActiveWorkload($site))
+            ->count();
+        $openConversationCount = $sites->sum(fn (Site $site): int => (int) $site->open_conversations_count);
+        $openTicketCount = $sites->sum(fn (Site $site): int => (int) $site->open_tickets_count);
+        $pendingTicketCount = $sites->sum(fn (Site $site): int => (int) $site->pending_tickets_count);
+        $installAttentionCount = $sites
+            ->filter(fn (Site $site): bool => SiteInstallHealth::fromVisitor($site->latestVisitor)['needs_attention'])
+            ->count();
+        $explicitAccessCount = $sites
+            ->filter(fn (Site $site): bool => ((int) $site->support_agents_count) > 0)
+            ->count();
+        $fallbackAccessCount = max(0, $visibleCount - $explicitAccessCount);
+
+        return [
+            [
+                'label' => 'Visible sites',
+                'value' => $visibleCount.' '.Str::plural('visible site', $visibleCount),
+                'detail' => 'Visible to your support role before filters.',
+                'href' => route('dashboard.sites.index'),
+                'action' => 'Review sites',
+            ],
+            [
+                'label' => 'Active support work',
+                'value' => $activeSiteCount.' active '.Str::plural('site', $activeSiteCount),
+                'detail' => sprintf(
+                    '%s, %s, %s across visible sites.',
+                    $openConversationCount.' open '.Str::plural('conversation', $openConversationCount),
+                    $openTicketCount.' open '.Str::plural('ticket', $openTicketCount),
+                    $pendingTicketCount.' pending '.Str::plural('ticket', $pendingTicketCount),
+                ),
+                'href' => route('dashboard.sites.index', ['site_workload' => 'active']),
+                'action' => 'Review active sites',
+            ],
+            [
+                'label' => 'Install attention',
+                'value' => $installAttentionCount.' '.Str::plural('site', $installAttentionCount).' '
+                    .($installAttentionCount === 1 ? 'needs' : 'need').' install attention',
+                'detail' => 'Widget installs that have not checked in recently or have not reported yet.',
+                'href' => route('dashboard.sites.index', ['site_install' => 'needs_attention']),
+                'action' => 'Review installs',
+            ],
+            [
+                'label' => 'Support access',
+                'value' => $explicitAccessCount.' '.Str::plural('site', $explicitAccessCount).' with explicit access',
+                'detail' => $fallbackAccessCount.' '.($fallbackAccessCount === 1 ? 'uses' : 'use').' account-wide fallback.',
+                'href' => null,
+                'action' => null,
+            ],
+        ];
+    }
+
+    /**
      * @param  array{search: string, workload: string, install: string, workload_options: array<string, string>, install_options: array<string, string>, active: list<array{label: string, value: string}>, has_active_filters: bool, visible_count: int, result_count: int, summary_label: string}  $siteFilters
      * @return array{heading: string, detail: string, actions: list<array{label: string, url: string}>}
      */
@@ -752,15 +813,18 @@ class AgentSiteController extends Controller
 
     private function siteMatchesWorkloadFilter(Site $site, string $workload): bool
     {
-        $hasWorkload = ((int) $site->open_conversations_count) > 0
-            || ((int) $site->open_tickets_count) > 0
-            || ((int) $site->pending_tickets_count) > 0;
-
         return match ($workload) {
-            'active' => $hasWorkload,
-            'quiet' => ! $hasWorkload,
+            'active' => $this->siteHasActiveWorkload($site),
+            'quiet' => ! $this->siteHasActiveWorkload($site),
             default => true,
         };
+    }
+
+    private function siteHasActiveWorkload(Site $site): bool
+    {
+        return ((int) $site->open_conversations_count) > 0
+            || ((int) $site->open_tickets_count) > 0
+            || ((int) $site->pending_tickets_count) > 0;
     }
 
     private function siteMatchesInstallFilter(Site $site, string $install): bool

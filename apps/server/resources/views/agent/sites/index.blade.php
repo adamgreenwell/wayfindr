@@ -14,6 +14,28 @@
                 <p class="status-message">{{ session('status') }}</p>
             @endif
 
+            <section class="section" aria-labelledby="site-operations-snapshot-heading">
+                <div class="section-header">
+                    <div>
+                        <h2 id="site-operations-snapshot-heading">Site operations snapshot</h2>
+                        <p class="lede">A quick read on the sites your support role can currently reach.</p>
+                    </div>
+                </div>
+
+                <div class="meta-grid" aria-label="Site operations metrics">
+                    @foreach ($siteOperationsSnapshot as $snapshotItem)
+                        <div class="meta-item">
+                            <span class="meta-label">{{ $snapshotItem['label'] }}</span>
+                            <span class="meta-value">{{ $snapshotItem['value'] }}</span>
+                            <p class="lede">{{ $snapshotItem['detail'] }}</p>
+                            @if ($snapshotItem['href'] && $snapshotItem['action'])
+                                <a class="text-link table-note" href="{{ $snapshotItem['href'] }}">{{ $snapshotItem['action'] }}</a>
+                            @endif
+                        </div>
+                    @endforeach
+                </div>
+            </section>
+
             <section class="section" aria-labelledby="site-filters-heading">
                 <div class="section-header">
                     <div>

@@ -229,6 +229,77 @@ test('site index summarizes visible workload without exposing restricted sites',
         ->assertDontSee('Restricted site ticket');
 });
 
+test('site index summarizes operations across visible sites only', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'name' => 'Ada Active',
+    ]);
+    $teammate = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'name' => 'Mara Mentor',
+    ]);
+
+    $assignedSite = Site::factory()->for($account)->create([
+        'name' => 'Assigned Docs',
+        'domain' => 'docs.example.test',
+    ]);
+    $assignedSite->supportAgents()->attach($agent);
+    $assignedVisitor = Visitor::factory()->for($assignedSite)->create([
+        'anonymous_id' => 'anon-assigned',
+        'last_seen_at' => now(),
+    ]);
+    Conversation::factory()->for($assignedSite)->for($assignedVisitor)->create(['status' => 'open']);
+    Ticket::factory()->for($account)->for($assignedSite)->create(['status' => 'open']);
+    Ticket::factory()->for($account)->for($assignedSite)->count(2)->create(['status' => 'pending']);
+
+    $staleFallbackSite = Site::factory()->for($account)->create([
+        'name' => 'Stale Fallback Site',
+        'domain' => 'stale.example.test',
+    ]);
+    Visitor::factory()->for($staleFallbackSite)->create([
+        'anonymous_id' => 'anon-stale',
+        'last_seen_at' => now()->subDays(2),
+    ]);
+
+    Site::factory()->for($account)->create([
+        'name' => 'Quiet Fallback Site',
+        'domain' => 'quiet.example.test',
+    ]);
+
+    $restrictedSite = Site::factory()->for($account)->create(['name' => 'Restricted Store']);
+    $restrictedSite->supportAgents()->attach($teammate);
+    $restrictedVisitor = Visitor::factory()->for($restrictedSite)->create([
+        'anonymous_id' => 'anon-restricted',
+        'last_seen_at' => now(),
+    ]);
+    Conversation::factory()->for($restrictedSite)->for($restrictedVisitor)->create([
+        'status' => 'open',
+        'subject' => 'Restricted site conversation',
+    ]);
+    Ticket::factory()->for($account)->for($restrictedSite)->create([
+        'status' => 'open',
+        'subject' => 'Restricted site ticket',
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/sites')
+        ->assertOk()
+        ->assertSee('Site operations snapshot')
+        ->assertSee('3 visible sites')
+        ->assertSee('Visible to your support role before filters.')
+        ->assertSee('1 active site')
+        ->assertSee('1 open conversation, 1 open ticket, 2 pending tickets across visible sites.')
+        ->assertSee('/dashboard/sites?site_workload=active', false)
+        ->assertSee('2 sites need install attention')
+        ->assertSee('/dashboard/sites?site_install=needs_attention', false)
+        ->assertSee('1 site with explicit access')
+        ->assertSee('2 use account-wide fallback.')
+        ->assertDontSee('Restricted Store')
+        ->assertDontSee('Restricted site conversation')
+        ->assertDontSee('Restricted site ticket');
+});
+
 test('site index filters visible sites by search workload and install health', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create([
