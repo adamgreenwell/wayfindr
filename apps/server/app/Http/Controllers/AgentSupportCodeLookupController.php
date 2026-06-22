@@ -14,6 +14,8 @@ use Illuminate\Support\Str;
 
 class AgentSupportCodeLookupController extends Controller
 {
+    private const SUPPORT_CODE_PATTERN = '/\bWF[\s:_-]+([A-Z0-9]+)\b/i';
+
     public function __invoke(Request $request): RedirectResponse
     {
         $agent = $request->user();
@@ -174,8 +176,8 @@ class AgentSupportCodeLookupController extends Controller
 
     private function supportCodeReference(string $lookupReference): string
     {
-        if (preg_match('/\bWF-[A-Z0-9]+\b/i', $lookupReference, $matches)) {
-            return Str::upper($matches[0]);
+        if (preg_match(self::SUPPORT_CODE_PATTERN, $lookupReference, $matches)) {
+            return 'WF-'.Str::upper($matches[1]);
         }
 
         return Str::upper($lookupReference);
@@ -183,7 +185,7 @@ class AgentSupportCodeLookupController extends Controller
 
     private function hasSupportCodeReference(string $lookupReference): bool
     {
-        return preg_match('/\bWF-[A-Z0-9]+\b/i', $lookupReference) === 1;
+        return preg_match(self::SUPPORT_CODE_PATTERN, $lookupReference) === 1;
     }
 
     private function visibleVisitor(string $lookupReference, User $agent): ?Visitor
@@ -203,7 +205,7 @@ class AgentSupportCodeLookupController extends Controller
 
     private function displayReference(string $lookupReference, string $supportCode): string
     {
-        if (preg_match('/\bWF-/i', $lookupReference)) {
+        if ($this->hasSupportCodeReference($lookupReference)) {
             return $supportCode;
         }
 

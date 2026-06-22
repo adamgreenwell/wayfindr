@@ -72,6 +72,27 @@ test('agents can jump to a visible conversation from pasted support code context
     'conversation URL' => ['https://wayfindr.example/dashboard/conversations/wf-paste1?from=email'],
 ]);
 
+test('agents can jump to a visible conversation from common support code separators', function (string $reference): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $conversation = Conversation::factory()->for($site)->create([
+        'support_code' => 'WF-PASTE2',
+        'subject' => 'Human formatted support code',
+    ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.support-code.lookup', [
+            'support_code' => $reference,
+        ]))
+        ->assertRedirect(route('dashboard.conversations.show', $conversation->support_code));
+})->with([
+    'space separator' => ['Visitor said support code wf paste2.'],
+    'colon separator' => ['Support code: WF: PASTE2'],
+    'underscore separator' => ['WF_PASTE2'],
+    'padded separator' => ['WF - PASTE2'],
+]);
+
 test('pasted stale ticket context does not block a visible support code match', function (): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create();
