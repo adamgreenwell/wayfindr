@@ -24,6 +24,18 @@ test('ticket actions warn agents before closing while the visitor is waiting', f
         ->assertSee('href="#ticket-reply"', false);
 });
 
+test('ticket actions prioritize visitor waiting warning for unassigned tickets', function (): void {
+    [$agent, $ticket] = ticketLifecycleReadinessContext('visitor', assignee: false);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.tickets.show', $ticket))
+        ->assertOk()
+        ->assertSee('Status action readiness')
+        ->assertSee('Reply before closing')
+        ->assertSee('Visitor replied last. Closing now may leave the customer waiting.')
+        ->assertSee('href="#ticket-reply"', false);
+});
+
 test('ticket actions present calm lifecycle options after an agent reply', function (): void {
     [$agent, $ticket] = ticketLifecycleReadinessContext('agent');
 
@@ -48,7 +60,7 @@ test('ticket actions explain reopening closed tickets', function (): void {
         ->assertSee('Use the reopen note to leave the next agent enough context.');
 });
 
-function ticketLifecycleReadinessContext(string $latestMessage = 'none', string $status = 'open'): array
+function ticketLifecycleReadinessContext(string $latestMessage = 'none', string $status = 'open', bool $assignee = true): array
 {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
@@ -75,8 +87,8 @@ function ticketLifecycleReadinessContext(string $latestMessage = 'none', string 
         ->for($site)
         ->for($visitor, 'requester')
         ->for($conversation)
-        ->for($agent, 'assignee')
         ->create([
+            'assignee_id' => $assignee ? $agent->id : null,
             'closed_at' => $status === 'closed' ? now()->subMinute() : null,
             'status' => $status,
             'subject' => 'Lifecycle action readiness',

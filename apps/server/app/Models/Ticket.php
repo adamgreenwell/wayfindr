@@ -224,6 +224,18 @@ class Ticket extends Model
      */
     public function statusActionReadiness(): array
     {
+        $latestMessage = $this->latestConversationMessage();
+
+        if ($this->status !== 'closed' && $latestMessage?->sender_type === Visitor::class) {
+            return [
+                'cta' => 'Jump to reply',
+                'detail' => 'Visitor replied last. Closing now may leave the customer waiting. Use pending or close only after an agent update or a confirmed outcome.',
+                'href' => '#ticket-reply',
+                'title' => 'Reply before closing',
+                'tone' => 'attention',
+            ];
+        }
+
         return match ($this->attentionState()) {
             'needs_reply' => [
                 'cta' => 'Jump to reply',
