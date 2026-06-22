@@ -789,6 +789,8 @@ test('agents can review visible unread and recent alerts in an alert center', fu
         ->assertSee('1 conversation')
         ->assertSee('Ticket alerts')
         ->assertSee('1 ticket')
+        ->assertSee('aria-label="Alert status: Unread"', false)
+        ->assertSee('aria-label="Alert status: Read"', false)
         ->assertSee('Install help')
         ->assertSee('WF-CENTER1')
         ->assertSee('I am stuck on the install step.')

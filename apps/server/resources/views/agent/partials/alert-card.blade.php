@@ -2,17 +2,27 @@
     $notificationData = $notification->data;
     $notificationKind = data_get($notificationData, 'kind');
     $messageCount = max(1, (int) data_get($notificationData, 'message_count', 1));
+    $alertStatusLabel = $notification->unread() ? 'Unread' : 'Read';
 @endphp
 
 <article class="message">
     <div class="message-meta">
         <strong>{{ data_get($notificationData, 'subject', $notificationKind === 'ticket_assigned' ? 'Untitled ticket' : 'Untitled conversation') }}</strong>
-        <span>
-            @if ($notification->read())
-                Read {{ $notification->read_at->diffForHumans() }}
-                ·
-            @endif
-            {{ $notification->created_at->diffForHumans() }}
+        <span class="message-status-line">
+            <span
+                class="readiness-status"
+                data-status="{{ $notification->unread() ? 'attention' : 'ready' }}"
+                aria-label="Alert status: {{ $alertStatusLabel }}"
+            >
+                {{ $alertStatusLabel }}
+            </span>
+            <span>
+                @if ($notification->read())
+                    Read {{ $notification->read_at->diffForHumans() }}
+                    ·
+                @endif
+                {{ $notification->created_at->diffForHumans() }}
+            </span>
         </span>
     </div>
     @if ($notificationKind === 'ticket_assigned')
