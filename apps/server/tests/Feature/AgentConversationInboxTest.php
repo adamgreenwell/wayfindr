@@ -4061,6 +4061,31 @@ test('ticket detail exposes internal note helpers', function (): void {
         ->assertSee('Resolution summary');
 });
 
+test('ticket detail previews internal note helpers with private handoff guidance', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($agent, 'assignee')
+        ->create([
+            'subject' => 'Escalated checkout issue',
+            'status' => 'open',
+        ]);
+
+    $this->actingAs($agent)
+        ->get("/dashboard/tickets/{$ticket->id}")
+        ->assertOk()
+        ->assertSee('Note assist')
+        ->assertSee('No note helper selected')
+        ->assertSee('Handoff summary')
+        ->assertSee('Handoff summary: include what was tried, current customer impact, and the next recommended step.')
+        ->assertSee('data-template-preview-item="handoff_summary"', false)
+        ->assertSee('Internal notes are private handoff context for your team, not visitor replies.')
+        ->assertSee('Avoid storing sensitive details unless they are necessary for support continuity.');
+});
+
 test('agent can add an internal note from a ticket helper', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);

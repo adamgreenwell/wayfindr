@@ -935,39 +935,69 @@
                     @endforelse
                 </div>
 
-                <form class="section-form" method="POST" action="{{ route('dashboard.tickets.notes.store', $ticket) }}">
-                    @csrf
-                    @include('agent.tickets.partials.return-query-fields')
+                @php
+                    $oldNoteTemplate = old('note_template', '');
+                    $selectedNoteTemplate = is_string($oldNoteTemplate) ? $oldNoteTemplate : '';
+                @endphp
 
-                    <div class="field">
-                        <label for="note_template">Note helper</label>
-                        <select id="note_template" name="note_template" data-template-picker data-target="#body">
-                            <option value="">Write a custom note</option>
+                <div class="reply-workspace" data-reply-shell>
+                    <form class="section-form" method="POST" action="{{ route('dashboard.tickets.notes.store', $ticket) }}">
+                        @csrf
+                        @include('agent.tickets.partials.return-query-fields')
+
+                        <div class="field">
+                            <label for="note_template">Note helper</label>
+                            <select id="note_template" name="note_template" data-template-picker data-target="#body">
+                                <option value="">Write a custom note</option>
+                                @foreach ($noteTemplates as $noteTemplateKey => $noteTemplate)
+                                    <option
+                                        value="{{ $noteTemplateKey }}"
+                                        data-body="{{ $noteTemplate['body'] }}"
+                                        @selected($selectedNoteTemplate === $noteTemplateKey)
+                                    >
+                                        {{ $noteTemplate['label'] }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            @error('note_template')
+                                <p class="field-error">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <div class="field">
+                            <label for="body">Add internal note</label>
+                            <textarea id="body" name="body" rows="4" placeholder="Document follow-up, escalation context, or handoff details.">{{ old('body') }}</textarea>
+                            @error('body')
+                                <p class="field-error">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <button class="button" type="submit">Add note</button>
+                    </form>
+
+                    <aside class="reply-assist" aria-labelledby="ticket-note-assist-heading">
+                        <h3 id="ticket-note-assist-heading">Note assist</h3>
+
+                        <div class="reply-template-preview" data-template-preview>
+                            <div data-template-preview-empty @if ($selectedNoteTemplate !== '') hidden @endif>
+                                <strong>No note helper selected</strong>
+                                <p class="lede">Custom notes stay fully agent-written.</p>
+                            </div>
+
                             @foreach ($noteTemplates as $noteTemplateKey => $noteTemplate)
-                                <option
-                                    value="{{ $noteTemplateKey }}"
-                                    data-body="{{ $noteTemplate['body'] }}"
-                                    @selected(old('note_template') === $noteTemplateKey)
-                                >
-                                    {{ $noteTemplate['label'] }}
-                                </option>
+                                <article data-template-preview-item="{{ $noteTemplateKey }}" @if ($selectedNoteTemplate !== $noteTemplateKey) hidden @endif>
+                                    <strong>{{ $noteTemplate['label'] }}</strong>
+                                    <p>{{ $noteTemplate['body'] }}</p>
+                                </article>
                             @endforeach
-                        </select>
-                        @error('note_template')
-                            <p class="field-error">{{ $message }}</p>
-                        @enderror
-                    </div>
+                        </div>
 
-                    <div class="field">
-                        <label for="body">Add internal note</label>
-                        <textarea id="body" name="body" rows="4" placeholder="Document follow-up, escalation context, or handoff details.">{{ old('body') }}</textarea>
-                        @error('body')
-                            <p class="field-error">{{ $message }}</p>
-                        @enderror
-                    </div>
-
-                    <button class="button" type="submit">Add note</button>
-                </form>
+                        <div class="notice-list">
+                            <p>Internal notes are private handoff context for your team, not visitor replies.</p>
+                            <p>Avoid storing sensitive details unless they are necessary for support continuity.</p>
+                        </div>
+                    </aside>
+                </div>
             </section>
 
             <section class="section" aria-labelledby="ticket-activity-heading">
