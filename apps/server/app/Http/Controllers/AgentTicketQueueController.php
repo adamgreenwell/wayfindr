@@ -3,9 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Models\Account;
+use App\Models\AuditEvent;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Support\ExternalIssueSyncStatus;
 use App\Support\TicketCategory;
 use App\Support\TicketPriority;
 use Illuminate\Contracts\View\View;
@@ -14,6 +16,14 @@ use Illuminate\Support\Collection;
 
 class AgentTicketQueueController extends Controller
 {
+    private const string EXTERNAL_ISSUE_FAILED = 'failed';
+
+    private const string EXTERNAL_ISSUE_PENDING = 'pending';
+
+    private const string EXTERNAL_ISSUE_LINKED = 'linked';
+
+    private const string EXTERNAL_ISSUE_NONE = 'none';
+
     public function __invoke(Request $request): View
     {
         $agent = $request->user();
@@ -101,6 +111,17 @@ class AgentTicketQueueController extends Controller
         $ticketAttention = is_string($ticketAttention) && array_key_exists($ticketAttention, $ticketAttentionFilters)
             ? $ticketAttention
             : 'all';
+        $ticketExternalIssueFilters = [
+            'all' => 'Any external issue',
+            self::EXTERNAL_ISSUE_FAILED => 'Needs attention',
+            self::EXTERNAL_ISSUE_PENDING => 'Sync pending',
+            self::EXTERNAL_ISSUE_LINKED => 'Linked',
+            self::EXTERNAL_ISSUE_NONE => 'No external issue',
+        ];
+        $ticketExternalIssue = $request->query('ticket_external', 'all');
+        $ticketExternalIssue = is_string($ticketExternalIssue) && array_key_exists($ticketExternalIssue, $ticketExternalIssueFilters)
+            ? $ticketExternalIssue
+            : 'all';
         if ($ticketAttention === 'resolved' && ! in_array($ticketStatus, ['closed', 'all'], true)) {
             $ticketStatus = 'closed';
         }
@@ -122,6 +143,7 @@ class AgentTicketQueueController extends Controller
             || $ticketCategory !== 'all'
             || $ticketLabel !== 'all'
             || $ticketAttention !== 'all'
+            || $ticketExternalIssue !== 'all'
             || $ticketSearch !== '';
         $ticketEmptyMessage = $ticketHasActiveRefinement
             ? 'No tickets match those filters.'
@@ -131,9 +153,22 @@ class AgentTicketQueueController extends Controller
                 'closed' => 'No closed tickets yet.',
                 default => 'No open tickets yet.',
             };
-        $ticketQuery = $this->ticketQueryParams($ticketStatus, $ticketFilter, $ticketSite, $ticketPriority, $ticketCategory, $ticketLabel, $ticketAttention, $ticketSearch);
+        $ticketQuery = $this->ticketQueryParams($ticketStatus, $ticketFilter, $ticketSite, $ticketPriority, $ticketCategory, $ticketLabel, $ticketAttention, $ticketExternalIssue, $ticketSearch);
         $ticketResults = Ticket::query()
-            ->with(['assignee', 'conversation.latestAgentMessage', 'conversation.latestMessage', 'labels', 'latestEscalationEvent.actor', 'site'])
+            ->with([
+                'assignee',
+                'auditEvents' => fn ($query) => $query->whereIn('action', [
+                    'ticket.external_issue_created',
+                    'ticket.external_link_removed',
+                    'ticket.external_sync_failed',
+                ]),
+                'conversation.latestAgentMessage',
+                'conversation.latestMessage',
+                'externalLinks',
+                'labels',
+                'latestEscalationEvent.actor',
+                'site',
+            ])
             ->where('account_id', $account->id)
             ->whereHas('site', fn ($query) => $query->visibleToAgent($agent))
             ->when($ticketStatus !== 'all', fn ($query) => $query->where('status', $ticketStatus))
@@ -169,6 +204,10 @@ class AgentTicketQueueController extends Controller
             ->orderByDesc('updated_at')
             ->orderByDesc('created_at')
             ->get();
+        $ticketResults = $ticketResults
+            ->filter(fn (Ticket $ticket): bool => $ticketExternalIssue === 'all'
+                || $this->ticketExternalIssueState($ticket) === $ticketExternalIssue)
+            ->values();
         $ticketQueueSummary = $this->ticketQueueSummary($ticketResults, $ticketQuery, $ticketAttentionFilters);
         $tickets = $ticketResults
             ->filter(fn (Ticket $ticket): bool => $ticketAttention === 'all' || $this->ticketDashboardAttentionState($ticket) === $ticketAttention)
@@ -208,8 +247,16 @@ class AgentTicketQueueController extends Controller
                 $ticketLabelFilters,
                 $ticketAttention,
                 $ticketAttentionFilters,
+                $ticketExternalIssue,
+                $ticketExternalIssueFilters,
                 $ticketSearch,
             ),
+            'ticketExternalIssue' => $ticketExternalIssue,
+            'ticketExternalIssueFilters' => $ticketExternalIssueFilters,
+            'ticketExternalIssueStates' => $tickets
+                ->mapWithKeys(fn (Ticket $ticket): array => [
+                    $ticket->id => $this->ticketExternalIssueStateCue($this->ticketExternalIssueState($ticket)),
+                ]),
             'ticketQuery' => $ticketQuery,
             'ticketSearch' => $ticketSearch,
             'ticketSite' => $ticketSite,
@@ -223,7 +270,7 @@ class AgentTicketQueueController extends Controller
     /**
      * @return array<string, string|int>
      */
-    private function ticketQueryParams(string $ticketStatus, string $ticketFilter, ?int $ticketSite, string $ticketPriority, string $ticketCategory, string $ticketLabel, string $ticketAttention, string $ticketSearch): array
+    private function ticketQueryParams(string $ticketStatus, string $ticketFilter, ?int $ticketSite, string $ticketPriority, string $ticketCategory, string $ticketLabel, string $ticketAttention, string $ticketExternalIssue, string $ticketSearch): array
     {
         $params = [];
 
@@ -253,6 +300,10 @@ class AgentTicketQueueController extends Controller
 
         if ($ticketAttention !== 'all') {
             $params['ticket_attention'] = $ticketAttention;
+        }
+
+        if ($ticketExternalIssue !== 'all') {
+            $params['ticket_external'] = $ticketExternalIssue;
         }
 
         if ($ticketSearch !== '') {
@@ -312,6 +363,8 @@ class AgentTicketQueueController extends Controller
         array $ticketLabelFilters,
         string $ticketAttention,
         array $ticketAttentionFilters,
+        string $ticketExternalIssue,
+        array $ticketExternalIssueFilters,
         string $ticketSearch,
     ): array {
         $filters = [];
@@ -346,6 +399,10 @@ class AgentTicketQueueController extends Controller
 
         if ($ticketAttention !== 'all') {
             $filters[] = $this->ticketFilterChip('ticket_attention', 'Next step: '.$ticketAttentionFilters[$ticketAttention], $ticketQuery);
+        }
+
+        if ($ticketExternalIssue !== 'all') {
+            $filters[] = $this->ticketFilterChip('ticket_external', 'External issue: '.$ticketExternalIssueFilters[$ticketExternalIssue], $ticketQuery);
         }
 
         if ($ticketSearch !== '') {
@@ -410,5 +467,163 @@ class AgentTicketQueueController extends Controller
         return $this->ticketDashboardAttentionState($ticket) === 'escalated'
             ? 5
             : $ticket->attentionSortRank();
+    }
+
+    private function ticketExternalIssueState(Ticket $ticket): string
+    {
+        $externalLinks = $ticket->externalLinks
+            ->filter(fn ($externalLink): bool => (int) $externalLink->account_id === (int) $ticket->account_id
+                && (int) $externalLink->ticket_id === (int) $ticket->id);
+
+        $auditEvents = $ticket->auditEvents
+            ->where('account_id', $ticket->account_id);
+        $successfulIssueCreations = $auditEvents
+            ->where('action', 'ticket.external_issue_created')
+            ->values();
+        $removedExternalLinks = $auditEvents
+            ->where('action', 'ticket.external_link_removed')
+            ->values();
+        $currentSuccessfulIssueCreations = $successfulIssueCreations
+            ->reject(fn (AuditEvent $event): bool => $this->externalIssueCreationWasRemoved($event, $removedExternalLinks))
+            ->values();
+        $failedEvents = $auditEvents
+            ->where('action', 'ticket.external_sync_failed')
+            ->reject(fn (AuditEvent $event): bool => $this->externalIssueFailureWasResolved($event, $successfulIssueCreations));
+
+        if ($externalLinks->where('sync_status', ExternalIssueSyncStatus::FAILED)->isNotEmpty() || $failedEvents->isNotEmpty()) {
+            return self::EXTERNAL_ISSUE_FAILED;
+        }
+
+        if ($externalLinks->where('sync_status', ExternalIssueSyncStatus::PENDING)->isNotEmpty()) {
+            return self::EXTERNAL_ISSUE_PENDING;
+        }
+
+        if ($externalLinks->isNotEmpty() || $currentSuccessfulIssueCreations->isNotEmpty()) {
+            return self::EXTERNAL_ISSUE_LINKED;
+        }
+
+        return self::EXTERNAL_ISSUE_NONE;
+    }
+
+    /**
+     * @return array{label: string, tone: string, detail: string}
+     */
+    private function ticketExternalIssueStateCue(string $state): array
+    {
+        return match ($state) {
+            self::EXTERNAL_ISSUE_FAILED => [
+                'label' => 'Needs attention',
+                'tone' => 'attention',
+                'detail' => 'Open the ticket to review safe retry options.',
+            ],
+            self::EXTERNAL_ISSUE_PENDING => [
+                'label' => 'Sync pending',
+                'tone' => 'manual',
+                'detail' => 'Waiting for external tracker confirmation.',
+            ],
+            self::EXTERNAL_ISSUE_LINKED => [
+                'label' => 'Linked',
+                'tone' => 'ready',
+                'detail' => 'External tracker reference is attached.',
+            ],
+            default => [
+                'label' => 'No external issue',
+                'tone' => 'manual',
+                'detail' => 'Wayfindr is the only tracker for this ticket.',
+            ],
+        };
+    }
+
+    /**
+     * @param  Collection<int, AuditEvent>  $successfulIssueCreations
+     */
+    private function externalIssueFailureWasResolved(AuditEvent $failure, Collection $successfulIssueCreations): bool
+    {
+        $failedProjectId = data_get($failure->metadata, 'site_external_issue_project_id');
+        $failedProvider = data_get($failure->metadata, 'provider');
+
+        if (! is_numeric($failedProjectId) || ! is_string($failedProvider)) {
+            return false;
+        }
+
+        return $successfulIssueCreations->contains(function (AuditEvent $success) use ($failure, $failedProjectId, $failedProvider): bool {
+            return (int) data_get($success->metadata, 'site_external_issue_project_id') === (int) $failedProjectId
+                && data_get($success->metadata, 'provider') === $failedProvider
+                && $this->externalIssueEventIsAfter($success, $failure);
+        });
+    }
+
+    /**
+     * @param  Collection<int, AuditEvent>  $removedExternalLinks
+     */
+    private function externalIssueCreationWasRemoved(AuditEvent $creation, Collection $removedExternalLinks): bool
+    {
+        return $removedExternalLinks->contains(function (AuditEvent $removal) use ($creation): bool {
+            return $this->externalIssueEventsReferenceSameLink($creation, $removal)
+                && $this->externalIssueEventIsAfter($removal, $creation);
+        });
+    }
+
+    private function externalIssueEventsReferenceSameLink(AuditEvent $left, AuditEvent $right): bool
+    {
+        $leftProvider = data_get($left->metadata, 'provider');
+        $rightProvider = data_get($right->metadata, 'provider');
+
+        if (! is_string($leftProvider) || $leftProvider !== $rightProvider) {
+            return false;
+        }
+
+        $leftReference = $this->externalIssueEventReference($left);
+        $rightReference = $this->externalIssueEventReference($right);
+
+        if ($leftReference !== null && $rightReference !== null) {
+            return $leftReference === $rightReference
+                && $this->externalIssueEventsReferenceSameProject($left, $right, true);
+        }
+
+        return $this->externalIssueEventsReferenceSameProject($left, $right, false);
+    }
+
+    private function externalIssueEventsReferenceSameProject(AuditEvent $left, AuditEvent $right, bool $allowMissingProject): bool
+    {
+        $leftProjectId = data_get($left->metadata, 'site_external_issue_project_id');
+        $rightProjectId = data_get($right->metadata, 'site_external_issue_project_id');
+
+        if (is_numeric($leftProjectId) && is_numeric($rightProjectId)) {
+            return (int) $leftProjectId === (int) $rightProjectId;
+        }
+
+        $leftProjectKey = data_get($left->metadata, 'project_key');
+        $rightProjectKey = data_get($right->metadata, 'project_key');
+
+        if (is_string($leftProjectKey) && $leftProjectKey !== '' && is_string($rightProjectKey) && $rightProjectKey !== '') {
+            return $leftProjectKey === $rightProjectKey;
+        }
+
+        return $allowMissingProject;
+    }
+
+    private function externalIssueEventReference(AuditEvent $event): ?string
+    {
+        $reference = data_get($event->metadata, 'external_key')
+            ?: data_get($event->metadata, 'external_id');
+
+        return is_string($reference) && trim($reference) !== ''
+            ? trim($reference)
+            : null;
+    }
+
+    private function externalIssueEventIsAfter(AuditEvent $candidate, AuditEvent $reference): bool
+    {
+        if (! $candidate->occurred_at || ! $reference->occurred_at) {
+            return (int) $candidate->id > (int) $reference->id;
+        }
+
+        if ($candidate->occurred_at->greaterThan($reference->occurred_at)) {
+            return true;
+        }
+
+        return $candidate->occurred_at->equalTo($reference->occurred_at)
+            && (int) $candidate->id > (int) $reference->id;
     }
 }

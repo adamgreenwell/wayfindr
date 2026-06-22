@@ -704,6 +704,12 @@ class AgentTicketController extends Controller
             $query['ticket_attention'] = $ticketAttention;
         }
 
+        $ticketExternalIssue = $request->input('ticket_external');
+
+        if (is_string($ticketExternalIssue) && in_array($ticketExternalIssue, ['failed', 'pending', 'linked', 'none'], true)) {
+            $query['ticket_external'] = $ticketExternalIssue;
+        }
+
         $ticketSearch = $request->input('ticket_search');
         $ticketSearch = is_string($ticketSearch) ? mb_substr(trim($ticketSearch), 0, 120) : '';
 

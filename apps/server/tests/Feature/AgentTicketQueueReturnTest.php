@@ -5,9 +5,11 @@ use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\Site;
 use App\Models\Ticket;
+use App\Models\TicketExternalLink;
 use App\Models\TicketLabel;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\ExternalIssueSyncStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -48,6 +50,13 @@ test('ticket links preserve the current ticket queue filters for detail page ret
             'subject' => 'Refund support request',
         ]);
     $ticket->labels()->attach($label);
+    TicketExternalLink::factory()
+        ->for($account)
+        ->for($site)
+        ->for($ticket)
+        ->create([
+            'sync_status' => ExternalIssueSyncStatus::FAILED,
+        ]);
 
     $ticketQueueQuery = [
         'ticket_status' => 'all',
@@ -57,6 +66,7 @@ test('ticket links preserve the current ticket queue filters for detail page ret
         'ticket_category' => 'billing',
         'ticket_label' => 'vip',
         'ticket_attention' => 'needs_reply',
+        'ticket_external' => 'failed',
         'ticket_search' => 'refund',
     ];
 

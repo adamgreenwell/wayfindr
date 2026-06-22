@@ -114,6 +114,17 @@
                         </div>
 
                         <div class="meta-item">
+                            <label class="meta-label" for="ticket_external">External issue</label>
+                            <select id="ticket_external" name="ticket_external">
+                                @foreach ($ticketExternalIssueFilters as $filterValue => $filterLabel)
+                                    <option value="{{ $filterValue }}" @selected($ticketExternalIssue === $filterValue)>
+                                        {{ $filterLabel }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div class="meta-item">
                             <label class="meta-label" for="ticket_search">Search</label>
                             <input id="ticket_search" name="ticket_search" type="search" value="{{ $ticketSearch }}">
                         </div>
@@ -123,7 +134,7 @@
                             <button class="button" type="submit">Apply filters</button>
                             @php
                                 $clearParams = $ticketQuery;
-                                unset($clearParams['ticket_site'], $clearParams['ticket_priority'], $clearParams['ticket_category'], $clearParams['ticket_label'], $clearParams['ticket_attention'], $clearParams['ticket_search']);
+                                unset($clearParams['ticket_site'], $clearParams['ticket_priority'], $clearParams['ticket_category'], $clearParams['ticket_label'], $clearParams['ticket_attention'], $clearParams['ticket_external'], $clearParams['ticket_search']);
                             @endphp
                             <a class="button secondary" href="{{ route('dashboard.tickets.index', $clearParams) }}">Clear filters</a>
                         </div>
@@ -185,6 +196,7 @@
                                     <th scope="col">Assignee</th>
                                     <th scope="col">Next step</th>
                                     <th scope="col">Support Code</th>
+                                    <th scope="col">External issue</th>
                                     <th scope="col">Timing</th>
                                 </tr>
                             </thead>
@@ -192,6 +204,11 @@
                                 @foreach ($tickets as $ticket)
                                     @php
                                         $ticketTiming = $ticket->queueTimingContext();
+                                        $ticketExternalIssueState = $ticketExternalIssueStates[$ticket->id] ?? [
+                                            'label' => 'No external issue',
+                                            'tone' => 'manual',
+                                            'detail' => 'Wayfindr is the only tracker for this ticket.',
+                                        ];
                                     @endphp
                                     <tr>
                                         <td>
@@ -253,6 +270,12 @@
                                             @else
                                                 Not linked
                                             @endif
+                                        </td>
+                                        <td>
+                                            <span class="readiness-status" data-status="{{ $ticketExternalIssueState['tone'] }}">
+                                                {{ $ticketExternalIssueState['label'] }}
+                                            </span>
+                                            <span class="table-note">{{ $ticketExternalIssueState['detail'] }}</span>
                                         </td>
                                         <td>
                                             <strong>{{ $ticketTiming['opened_label'] }}</strong>

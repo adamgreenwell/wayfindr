@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
 use App\Support\CobrowseConsentState;
+use App\Support\ExternalIssueSyncStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -2085,6 +2086,204 @@ test('dashboard filters tickets by category', function (): void {
         ->assertSee('Needs triage')
         ->assertDontSee('Broken checkout flow')
         ->assertDontSee('How do I export invoices?');
+});
+
+test('dashboard filters tickets by external issue state', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-22 12:00:00', 'UTC'));
+
+    try {
+        $account = Account::factory()->create(['name' => 'Acme Support']);
+        $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+        $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+
+        $failedLinkTicket = Ticket::factory()
+            ->for($account)
+            ->for($site)
+            ->create([
+                'subject' => 'GitHub sync needs attention',
+                'status' => 'open',
+            ]);
+        TicketExternalLink::factory()
+            ->for($account)
+            ->for($site)
+            ->for($failedLinkTicket)
+            ->create([
+                'project_key' => 'acme/storefront',
+                'sync_status' => ExternalIssueSyncStatus::FAILED,
+            ]);
+
+        $pendingTicket = Ticket::factory()
+            ->for($account)
+            ->for($site)
+            ->create([
+                'subject' => 'GitLab sync still pending',
+                'status' => 'open',
+            ]);
+        TicketExternalLink::factory()
+            ->for($account)
+            ->for($site)
+            ->for($pendingTicket)
+            ->create([
+                'provider' => 'gitlab',
+                'project_key' => 'acme/status',
+                'sync_status' => ExternalIssueSyncStatus::PENDING,
+            ]);
+
+        $linkedTicket = Ticket::factory()
+            ->for($account)
+            ->for($site)
+            ->create([
+                'subject' => 'GitHub issue is linked',
+                'status' => 'open',
+            ]);
+        TicketExternalLink::factory()
+            ->for($account)
+            ->for($site)
+            ->for($linkedTicket)
+            ->create([
+                'external_key' => '#123',
+                'sync_status' => ExternalIssueSyncStatus::LINKED,
+            ]);
+
+        $localOnlyTicket = Ticket::factory()
+            ->for($account)
+            ->for($site)
+            ->create([
+                'subject' => 'Wayfindr-only ticket',
+                'status' => 'open',
+            ]);
+
+        $auditFailureTicket = Ticket::factory()
+            ->for($account)
+            ->for($site)
+            ->create([
+                'subject' => 'Audit-only failure needs attention',
+                'status' => 'open',
+            ]);
+        $auditFailureTicket->auditEvents()->create([
+            'account_id' => $account->id,
+            'site_id' => $site->id,
+            'action' => 'ticket.external_sync_failed',
+            'metadata' => [
+                'provider' => 'github',
+                'project_key' => 'acme/api',
+                'site_external_issue_project_id' => 42,
+                'message' => 'Provider said nope, but this detail should stay out of the queue.',
+            ],
+            'occurred_at' => now()->subMinutes(5),
+        ]);
+
+        $resolvedFailureTicket = Ticket::factory()
+            ->for($account)
+            ->for($site)
+            ->create([
+                'subject' => 'Resolved external issue failure',
+                'status' => 'open',
+            ]);
+        $resolvedFailureTicket->auditEvents()->create([
+            'account_id' => $account->id,
+            'site_id' => $site->id,
+            'action' => 'ticket.external_sync_failed',
+            'metadata' => [
+                'provider' => 'github',
+                'project_key' => 'acme/docs',
+                'site_external_issue_project_id' => 77,
+            ],
+            'occurred_at' => now()->subMinutes(10),
+        ]);
+        $resolvedFailureTicket->auditEvents()->create([
+            'account_id' => $account->id,
+            'site_id' => $site->id,
+            'action' => 'ticket.external_issue_created',
+            'metadata' => [
+                'provider' => 'github',
+                'project_key' => 'acme/docs',
+                'site_external_issue_project_id' => 77,
+                'external_key' => '#456',
+            ],
+            'occurred_at' => now()->subMinutes(2),
+        ]);
+
+        $removedExternalLinkTicket = Ticket::factory()
+            ->for($account)
+            ->for($site)
+            ->create([
+                'subject' => 'Removed external issue link',
+                'status' => 'open',
+            ]);
+        $removedExternalLinkTicket->auditEvents()->create([
+            'account_id' => $account->id,
+            'site_id' => $site->id,
+            'action' => 'ticket.external_issue_created',
+            'metadata' => [
+                'provider' => 'github',
+                'project_key' => 'acme/removed',
+                'site_external_issue_project_id' => 88,
+                'external_key' => '#789',
+            ],
+            'occurred_at' => now()->subMinutes(4),
+        ]);
+        $removedExternalLinkTicket->auditEvents()->create([
+            'account_id' => $account->id,
+            'site_id' => $site->id,
+            'action' => 'ticket.external_link_removed',
+            'metadata' => [
+                'provider' => 'github',
+                'project_key' => 'acme/removed',
+                'site_external_issue_project_id' => 88,
+                'external_key' => '#789',
+            ],
+            'occurred_at' => now()->subMinute(),
+        ]);
+
+        $this->actingAs($agent)
+            ->get('/dashboard/tickets?ticket_status=all')
+            ->assertOk()
+            ->assertSee('External issue')
+            ->assertSee('Needs attention')
+            ->assertSee('Sync pending')
+            ->assertSee('Linked')
+            ->assertSee('No external issue')
+            ->assertDontSee('Provider said nope');
+
+        $this->actingAs($agent)
+            ->get('/dashboard/tickets?ticket_status=all&ticket_external=failed')
+            ->assertOk()
+            ->assertSee('External issue: Needs attention')
+            ->assertSee('GitHub sync needs attention')
+            ->assertSee('Audit-only failure needs attention')
+            ->assertDontSee('GitLab sync still pending')
+            ->assertDontSee('GitHub issue is linked')
+            ->assertDontSee('Wayfindr-only ticket')
+            ->assertDontSee('Resolved external issue failure');
+
+        $this->actingAs($agent)
+            ->get('/dashboard/tickets?ticket_status=all&ticket_external=pending')
+            ->assertOk()
+            ->assertSee('GitLab sync still pending')
+            ->assertDontSee('GitHub sync needs attention')
+            ->assertDontSee('Audit-only failure needs attention');
+
+        $this->actingAs($agent)
+            ->get('/dashboard/tickets?ticket_status=all&ticket_external=linked')
+            ->assertOk()
+            ->assertSee('GitHub issue is linked')
+            ->assertSee('Resolved external issue failure')
+            ->assertDontSee('GitLab sync still pending')
+            ->assertDontSee('Removed external issue link')
+            ->assertDontSee('Wayfindr-only ticket');
+
+        $this->actingAs($agent)
+            ->get('/dashboard/tickets?ticket_status=all&ticket_external=none')
+            ->assertOk()
+            ->assertSee('Wayfindr-only ticket')
+            ->assertSee('Removed external issue link')
+            ->assertDontSee('GitHub sync needs attention')
+            ->assertDontSee('GitLab sync still pending')
+            ->assertDontSee('GitHub issue is linked');
+    } finally {
+        Carbon::setTestNow();
+    }
 });
 
 test('dashboard searches tickets by subject description support code and requester references', function (): void {
