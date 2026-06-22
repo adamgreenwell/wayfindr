@@ -2,6 +2,7 @@
 
 use App\Models\Account;
 use App\Models\Conversation;
+use App\Models\ConversationMessage;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
@@ -224,6 +225,98 @@ test('visitor support references prefer the newest conversation even when recent
         ->assertOk()
         ->assertSee('Latest support code')
         ->assertSee(route('dashboard.conversations.show', $newConversation->support_code), false);
+});
+
+test('visitor profile summarizes active support and the next step', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-snapshot']);
+
+    $conversation = Conversation::factory()
+        ->for($site)
+        ->for($visitor)
+        ->create([
+            'support_code' => 'WF-SNAPSHOT',
+            'subject' => 'Visitor needs help',
+            'created_at' => now()->subMinutes(12),
+        ]);
+    $visitorMessage = ConversationMessage::factory()
+        ->for($conversation)
+        ->create([
+            'sender_type' => Visitor::class,
+            'sender_id' => $visitor->id,
+            'body' => 'Can someone help me pick the right plan?',
+            'created_at' => now()->subMinutes(4),
+        ]);
+    $conversation->forceFill(['last_message_at' => $visitorMessage->created_at])->save();
+
+    Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($visitor, 'requester')
+        ->create([
+            'subject' => 'Unowned plan ticket',
+            'status' => 'open',
+        ]);
+    Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($visitor, 'requester')
+        ->create([
+            'subject' => 'Closed prior ticket',
+            'status' => 'closed',
+            'closed_at' => now()->subDay(),
+        ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.visitors.show', $visitor))
+        ->assertOk()
+        ->assertSee('Support snapshot')
+        ->assertSee('1 active conversation')
+        ->assertSee('1 active ticket')
+        ->assertSee('Needs reply')
+        ->assertSee('Visitor replied last. Open the latest support item before scanning older history.')
+        ->assertSee('Reply to visitor')
+        ->assertSee(route('dashboard.conversations.show', $conversation->support_code).'#reply-heading', false);
+});
+
+test('visitor support snapshot finds active tickets beyond the recent history limit', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-deep-active']);
+    $oldActiveTicket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($visitor, 'requester')
+        ->create([
+            'subject' => 'Old active ticket',
+            'status' => 'open',
+            'created_at' => now()->subDays(30),
+            'updated_at' => now()->subDays(30),
+        ]);
+
+    foreach (range(1, 11) as $index) {
+        Ticket::factory()
+            ->for($account)
+            ->for($site)
+            ->for($visitor, 'requester')
+            ->create([
+                'subject' => 'Closed recent ticket '.$index,
+                'status' => 'closed',
+                'closed_at' => now()->subHours($index),
+                'updated_at' => now()->subHours($index),
+            ]);
+    }
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.visitors.show', $visitor))
+        ->assertOk()
+        ->assertSee('Support snapshot')
+        ->assertSee('1 active ticket')
+        ->assertSee('Assign an owner')
+        ->assertSee(route('dashboard.tickets.show', $oldActiveTicket).'#ticket-actions-heading', false);
 });
 
 test('conversation and ticket context panels link to the visitor profile', function (): void {

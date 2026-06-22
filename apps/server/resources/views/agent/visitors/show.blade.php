@@ -37,6 +37,38 @@
                 </div>
 
                 <div class="section-header">
+                    <strong>Support snapshot</strong>
+                    <span class="readiness-status" data-status="{{ $supportSnapshot['tone'] }}">
+                        {{ $supportSnapshot['status_label'] }}
+                    </span>
+                </div>
+
+                <div class="meta-grid">
+                    <div class="meta-item">
+                        <span class="meta-label">Conversations</span>
+                        <span class="meta-value">{{ $supportSnapshot['active_conversation_label'] }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Tickets</span>
+                        <span class="meta-value">{{ $supportSnapshot['active_ticket_label'] }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Next step</span>
+                        <span class="meta-value">{{ $supportSnapshot['next_action']['title'] }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Agent cue</span>
+                        <span class="meta-value">{{ $supportSnapshot['status_label'] }}</span>
+                        <p class="lede">{{ $supportSnapshot['next_action']['body'] }}</p>
+                        @if ($supportSnapshot['next_action']['href'])
+                            <a class="text-link health-action" href="{{ $supportSnapshot['next_action']['href'] }}">
+                                {{ $supportSnapshot['next_action']['cta'] }}
+                            </a>
+                        @endif
+                    </div>
+                </div>
+
+                <div class="section-header">
                     <strong>Support references</strong>
                     <span class="lede">Stable anchors for search, handoff, and follow-up.</span>
                 </div>
