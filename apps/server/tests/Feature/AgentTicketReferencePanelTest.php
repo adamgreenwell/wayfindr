@@ -54,6 +54,49 @@ test('ticket detail shows a compact support reference for linked tickets', funct
         ->assertSee('https://docs.example.test/account');
 });
 
+test('ticket detail gives agents a section map for available workspaces', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-map',
+        'last_seen_at' => now()->subMinutes(12),
+    ]);
+    $conversation = Conversation::factory()
+        ->for($site)
+        ->for($visitor)
+        ->create([
+            'support_code' => 'WF-MAP',
+            'subject' => 'Mapped conversation',
+        ]);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($conversation)
+        ->for($visitor, 'requester')
+        ->for($agent, 'assignee')
+        ->create([
+            'subject' => 'Mapped ticket',
+        ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.tickets.show', $ticket))
+        ->assertOk()
+        ->assertSee('Ticket map')
+        ->assertSee('href="#ticket-work-state-heading"', false)
+        ->assertSee('href="#ticket-reference-heading"', false)
+        ->assertSee('href="#ticket-labels-heading"', false)
+        ->assertSee('href="#ticket-timeline-heading"', false)
+        ->assertSee('href="#linked-conversation-heading"', false)
+        ->assertSee('href="#ticket-reply"', false)
+        ->assertSee('href="#external-links-heading"', false)
+        ->assertSee('href="#ticket-visitor-context-heading"', false)
+        ->assertSee('href="#ticket-actions-heading"', false)
+        ->assertSee('href="#ticket-details-heading"', false)
+        ->assertSee('href="#ticket-notes-heading"', false)
+        ->assertSee('href="#ticket-activity-heading"', false);
+});
+
 test('ticket detail reference handles standalone tickets without a linked conversation', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);

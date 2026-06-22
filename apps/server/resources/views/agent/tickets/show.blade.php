@@ -18,7 +18,63 @@
                     ?? $ticket->requester?->name
                     ?? $ticket->requester?->anonymous_id
                     ?? 'Not linked';
+                $hasVisitorContext = $visitorContext['has_visitor']
+                    || $visitorContext['last_page_url']
+                    || $visitorContext['started_page_url']
+                    || $visitorContext['host_context'] !== [];
+                $ticketMapSections = [
+                    ['label' => 'State', 'href' => '#ticket-work-state-heading'],
+                    ['label' => 'Coverage', 'href' => '#ticket-artifacts-heading'],
+                    ['label' => 'Reference', 'href' => '#ticket-reference-heading'],
+                    ['label' => 'Context', 'href' => '#ticket-context-heading'],
+                    ['label' => 'Labels', 'href' => '#ticket-labels-heading'],
+                    ['label' => 'Timeline', 'href' => '#ticket-timeline-heading'],
+                ];
+
+                if ($latestTicketEscalation) {
+                    $ticketMapSections[] = ['label' => 'Escalation', 'href' => '#ticket-escalation-heading'];
+                }
+
+                if ($ticket->conversation) {
+                    $ticketMapSections[] = ['label' => 'Conversation', 'href' => '#linked-conversation-heading'];
+                    $ticketMapSections[] = ['label' => 'Reply', 'href' => '#ticket-reply'];
+                }
+
+                $ticketMapSections[] = ['label' => 'External', 'href' => '#external-links-heading'];
+
+                if ($hasVisitorContext) {
+                    $ticketMapSections[] = ['label' => 'Visitor', 'href' => '#ticket-visitor-context-heading'];
+                }
+
+                $ticketMapSections = [
+                    ...$ticketMapSections,
+                    ['label' => 'Actions', 'href' => '#ticket-actions-heading'],
+                    ['label' => 'Details', 'href' => '#ticket-details-heading'],
+                    ['label' => 'Notes', 'href' => '#ticket-notes-heading'],
+                    ['label' => 'Activity', 'href' => '#ticket-activity-heading'],
+                ];
             @endphp
+            <section class="section" aria-labelledby="ticket-map-heading">
+                <div class="section-header">
+                    <h2 id="ticket-map-heading">Ticket map</h2>
+                    <span class="lede">Jump to what this ticket needs next.</span>
+                </div>
+
+                <div class="filter-summary" aria-label="Ticket detail sections">
+                    <div>
+                        <strong>Available sections</strong>
+                        <p class="lede">Use the map when the full ticket workspace gets long.</p>
+                    </div>
+                    <div class="filter-chips">
+                        @foreach ($ticketMapSections as $ticketMapSection)
+                            <a class="filter-chip" href="{{ $ticketMapSection['href'] }}">
+                                {{ $ticketMapSection['label'] }}
+                            </a>
+                        @endforeach
+                    </div>
+                </div>
+            </section>
+
             <section class="section" aria-labelledby="ticket-work-state-heading">
                 <div class="section-header">
                     <h2 id="ticket-work-state-heading">Work state</h2>
@@ -685,7 +741,7 @@
             @php
                 $priorSupportRecordCount = $priorVisitorConversations->count() + $priorVisitorTickets->count();
             @endphp
-            @if ($visitorContext['has_visitor'] || $visitorContext['last_page_url'] || $visitorContext['started_page_url'] || $visitorContext['host_context'] !== [])
+            @if ($hasVisitorContext)
                 <section class="section" aria-labelledby="ticket-visitor-context-heading">
                     <div class="section-header">
                         <h2 id="ticket-visitor-context-heading">Visitor at a glance</h2>
