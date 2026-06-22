@@ -205,6 +205,7 @@
                                     @php
                                         $ticketTiming = $ticket->queueTimingContext();
                                         $ticketExternalIssueState = $ticketExternalIssueStates[$ticket->id] ?? [
+                                            'attempt' => null,
                                             'label' => 'No external issue',
                                             'tone' => 'manual',
                                             'detail' => 'Wayfindr is the only tracker for this ticket.',
@@ -287,6 +288,16 @@
                                                 {{ $ticketExternalIssueState['label'] }}
                                             </span>
                                             <span class="table-note">{{ $ticketExternalIssueState['detail'] }}</span>
+                                            @if ($ticketExternalIssueState['attempt'])
+                                                <span class="table-note">
+                                                    <strong>Latest attempt</strong>
+                                                    {{ $ticketExternalIssueState['attempt']['label'] }}:
+                                                    {{ $ticketExternalIssueState['attempt']['body'] }}
+                                                </span>
+                                                @if ($ticketExternalIssueState['attempt']['occurred_at'])
+                                                    <span class="table-note">{{ $ticketExternalIssueState['attempt']['occurred_at']->diffForHumans() }}</span>
+                                                @endif
+                                            @endif
                                         </td>
                                         <td>
                                             <strong>{{ $ticketTiming['opened_label'] }}</strong>

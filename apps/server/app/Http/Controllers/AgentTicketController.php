@@ -8,7 +8,6 @@ use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\SiteExternalIssueProject;
 use App\Models\Ticket;
-use App\Models\TicketExternalLink;
 use App\Models\TicketLabel;
 use App\Models\User;
 use App\Models\Visitor;
@@ -20,6 +19,7 @@ use App\Support\ExternalIssues\ExternalIssueExportPreview;
 use App\Support\ExternalIssueSyncStatus;
 use App\Support\ReplyTemplateOptions;
 use App\Support\TicketCategory;
+use App\Support\TicketExternalIssueAttempt;
 use App\Support\TicketPriority;
 use App\Support\VisitorContextSanitizer;
 use Carbon\CarbonInterface;
@@ -988,147 +988,9 @@ class AgentTicketController extends Controller
             },
             'total' => $externalLinks->count(),
             'status_counts' => $statusItems,
-            'latest_attempt' => $this->latestExternalIssueAttempt($ticket, $externalLinks),
+            'latest_attempt' => TicketExternalIssueAttempt::latestForTicket($ticket, $externalLinks),
             'failures' => $failures,
         ];
-    }
-
-    /**
-     * @param  Collection<int, TicketExternalLink>  $externalLinks
-     * @return array{label: string, body: string, occurred_at: CarbonInterface|null}
-     */
-    private function latestExternalIssueAttempt(Ticket $ticket, Collection $externalLinks): array
-    {
-        $linkAttempts = $externalLinks
-            ->map(fn (TicketExternalLink $externalLink): array => $this->externalIssueLinkAttemptItem($externalLink))
-            ->toBase();
-        $eventAttempts = $ticket->auditEvents()
-            ->where('account_id', $ticket->account_id)
-            ->whereIn('action', [
-                'ticket.external_issue_created',
-                'ticket.external_link_removed',
-                'ticket.external_sync_failed',
-            ])
-            ->get()
-            ->map(fn (AuditEvent $event): array => $this->externalIssueEventAttemptItem($event))
-            ->toBase();
-
-        $attempt = $linkAttempts
-            ->merge($eventAttempts)
-            ->sortByDesc(fn (array $attempt): string => sprintf(
-                '%020d.%020d',
-                $attempt['occurred_at']?->getTimestamp() ?? 0,
-                $attempt['sequence'],
-            ))
-            ->first();
-
-        if (! $attempt) {
-            return [
-                'label' => 'No external attempt yet',
-                'body' => 'Create or link an external issue when this ticket needs work in another tracker.',
-                'occurred_at' => null,
-            ];
-        }
-
-        return [
-            'label' => $attempt['label'],
-            'body' => $attempt['body'],
-            'occurred_at' => $attempt['occurred_at'],
-        ];
-    }
-
-    /**
-     * @return array{label: string, body: string, occurred_at: CarbonInterface|null, sequence: int}
-     */
-    private function externalIssueLinkAttemptItem(TicketExternalLink $externalLink): array
-    {
-        $provider = $externalLink->providerLabel();
-        $projectKey = $externalLink->project_key ?: 'Project not recorded';
-        $externalReference = $externalLink->external_key ?: $externalLink->external_id;
-        $occurredAt = $externalLink->last_synced_at ?? $externalLink->updated_at;
-
-        return match ($externalLink->sync_status) {
-            'sync_failed' => [
-                'label' => "{$provider} sync failed",
-                'body' => "{$projectKey} needs attention. Provider details withheld.",
-                'occurred_at' => $occurredAt,
-                'sequence' => (int) $externalLink->id,
-            ],
-            'sync_pending' => [
-                'label' => "{$provider} sync pending",
-                'body' => "{$projectKey} is waiting for provider confirmation.",
-                'occurred_at' => $occurredAt,
-                'sequence' => (int) $externalLink->id,
-            ],
-            default => [
-                'label' => "{$provider} link active",
-                'body' => $externalReference
-                    ? "{$projectKey} is linked to {$externalReference}."
-                    : "{$projectKey} is linked.",
-                'occurred_at' => $occurredAt,
-                'sequence' => (int) $externalLink->id,
-            ],
-        };
-    }
-
-    /**
-     * @return array{label: string, body: string, occurred_at: CarbonInterface|null, sequence: int}
-     */
-    private function externalIssueEventAttemptItem(AuditEvent $event): array
-    {
-        $provider = data_get($event->metadata, 'provider');
-        $providerLabel = ExternalIssueProvider::label(is_string($provider) ? $provider : null);
-        $projectKey = $this->externalIssueFailureProjectKey($event);
-
-        if ($event->action === 'ticket.external_link_removed') {
-            $externalReference = data_get($event->metadata, 'external_key')
-                ?: data_get($event->metadata, 'external_id');
-            $externalReference = is_string($externalReference) && trim($externalReference) !== ''
-                ? trim($externalReference)
-                : null;
-
-            return [
-                'label' => "{$providerLabel} link removed",
-                'body' => $externalReference
-                    ? "{$projectKey} is no longer linked to {$externalReference}."
-                    : "{$projectKey} external link was removed.",
-                'occurred_at' => $event->occurred_at,
-                'sequence' => (int) $event->id,
-            ];
-        }
-
-        if ($event->action === 'ticket.external_issue_created') {
-            $externalReference = data_get($event->metadata, 'external_key')
-                ?: data_get($event->metadata, 'external_id');
-            $externalReference = is_string($externalReference) && trim($externalReference) !== ''
-                ? trim($externalReference)
-                : null;
-
-            return [
-                'label' => "{$providerLabel} issue created",
-                'body' => $externalReference
-                    ? "{$projectKey} is linked to {$externalReference}."
-                    : "{$projectKey} was created in the external tracker.",
-                'occurred_at' => $event->occurred_at,
-                'sequence' => (int) $event->id,
-            ];
-        }
-
-        return [
-            'label' => "{$providerLabel} sync failed",
-            'body' => "{$projectKey} needs attention. Provider details withheld.",
-            'occurred_at' => $event->occurred_at,
-            'sequence' => (int) $event->id,
-        ];
-    }
-
-    private function externalIssueFailureProjectKey(AuditEvent $event): string
-    {
-        $projectKey = data_get($event->metadata, 'project_key');
-
-        return is_string($projectKey) && trim($projectKey) !== ''
-            ? trim($projectKey)
-            : 'Project not recorded';
     }
 
     /**
@@ -1173,7 +1035,7 @@ class AgentTicketController extends Controller
 
         return [
             'provider' => ExternalIssueProvider::label(is_string($provider) ? $provider : null),
-            'project_key' => $this->externalIssueFailureProjectKey($event),
+            'project_key' => TicketExternalIssueAttempt::eventProjectKey($event),
             'occurred_at' => $event->occurred_at,
             'retry' => $this->externalIssueRetryAction(
                 $ticket,

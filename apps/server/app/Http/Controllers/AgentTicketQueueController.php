@@ -7,8 +7,10 @@ use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Support\TicketCategory;
+use App\Support\TicketExternalIssueAttempt;
 use App\Support\TicketExternalIssueState;
 use App\Support\TicketPriority;
+use Carbon\CarbonInterface;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -243,7 +245,7 @@ class AgentTicketQueueController extends Controller
             'ticketExternalIssueFilters' => $ticketExternalIssueFilters,
             'ticketExternalIssueStates' => $tickets
                 ->mapWithKeys(fn (Ticket $ticket): array => [
-                    $ticket->id => $this->ticketExternalIssueStateCue(TicketExternalIssueState::forTicket($ticket)),
+                    $ticket->id => $this->ticketExternalIssueStateCueForTicket($ticket),
                 ]),
             'ticketQuery' => $ticketQuery,
             'ticketSearch' => $ticketSearch,
@@ -455,6 +457,17 @@ class AgentTicketQueueController extends Controller
         return $this->ticketDashboardAttentionState($ticket) === 'escalated'
             ? 5
             : $ticket->attentionSortRank();
+    }
+
+    /**
+     * @return array{label: string, tone: string, detail: string, attempt: array{label: string, body: string, occurred_at: CarbonInterface|null}|null}
+     */
+    private function ticketExternalIssueStateCueForTicket(Ticket $ticket): array
+    {
+        return [
+            ...$this->ticketExternalIssueStateCue(TicketExternalIssueState::forTicket($ticket)),
+            'attempt' => TicketExternalIssueAttempt::latestCueForTicket($ticket),
+        ];
     }
 
     /**
