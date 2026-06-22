@@ -170,6 +170,11 @@
                                                 {{ $conversation->subject ?? 'Untitled conversation' }}
                                             </a>
                                             <span class="table-note">{{ $activityPreview['label'] }}</span>
+                                            @if ($activityPreview['occurred_at'])
+                                                <time class="table-note" datetime="{{ $activityPreview['occurred_at']->toJSON() }}">
+                                                    Activity {{ $activityPreview['occurred_at']->diffForHumans() }}
+                                                </time>
+                                            @endif
                                             <p class="lede">{{ $activityPreview['body'] }}</p>
                                         </td>
                                         <td>

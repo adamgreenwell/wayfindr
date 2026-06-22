@@ -75,57 +75,69 @@ test('dashboard lists open conversations for the agent account', function (): vo
 });
 
 test('conversation queue shows bounded latest message previews', function (): void {
-    $account = Account::factory()->create(['name' => 'Acme Support']);
-    $agent = User::factory()->for($account)->create(['name' => 'Riley Agent']);
+    Carbon::setTestNow(Carbon::parse('2026-06-22 16:00:00', 'UTC'));
 
-    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
-    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-preview']);
-    $visitorConversation = Conversation::factory()->for($site)->for($visitor)->create([
-        'support_code' => 'WF-PREVIEW1',
-        'subject' => 'Visitor needs help',
-        'status' => 'open',
-        'last_message_at' => now()->subMinutes(2),
-    ]);
-    $agentConversation = Conversation::factory()->for($site)->for($visitor)->create([
-        'support_code' => 'WF-PREVIEW2',
-        'subject' => 'Agent replied last',
-        'status' => 'open',
-        'last_message_at' => now()->subMinute(),
-    ]);
-    $emptyConversation = Conversation::factory()->for($site)->for($visitor)->create([
-        'support_code' => 'WF-PREVIEW3',
-        'subject' => 'No messages yet',
-        'status' => 'open',
-    ]);
+    try {
+        $account = Account::factory()->create(['name' => 'Acme Support']);
+        $agent = User::factory()->for($account)->create(['name' => 'Riley Agent']);
 
-    ConversationMessage::factory()->for($visitorConversation)->create([
-        'sender_type' => Visitor::class,
-        'sender_id' => $visitor->id,
-        'body' => 'The checkout button fails after billing details are saved, and the visitor needs a calm next step before they abandon the order. '
-            .str_repeat('Extra diagnostic context that should stay clipped. ', 4)
-            .'private-tail-that-should-not-render',
-        'created_at' => now()->subMinutes(2),
-    ]);
-    ConversationMessage::factory()->for($agentConversation)->create([
-        'sender_type' => User::class,
-        'sender_id' => $agent->id,
-        'body' => 'I can help from the support desk.',
-        'created_at' => now()->subMinute(),
-    ]);
+        $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-preview']);
+        $visitorMessageAt = now()->subMinutes(2);
+        $agentMessageAt = now()->subMinute();
+        $visitorConversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-PREVIEW1',
+            'subject' => 'Visitor needs help',
+            'status' => 'open',
+            'last_message_at' => $visitorMessageAt,
+        ]);
+        $agentConversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-PREVIEW2',
+            'subject' => 'Agent replied last',
+            'status' => 'open',
+            'last_message_at' => $agentMessageAt,
+        ]);
+        $emptyConversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-PREVIEW3',
+            'subject' => 'No messages yet',
+            'status' => 'open',
+        ]);
 
-    $this->actingAs($agent)
-        ->get('/dashboard/conversations')
-        ->assertOk()
-        ->assertSee('Latest visitor message')
-        ->assertSee('The checkout button fails after billing details are saved')
-        ->assertDontSee('private-tail-that-should-not-render')
-        ->assertSee('Latest agent reply')
-        ->assertSee('I can help from the support desk.')
-        ->assertSee('No activity preview yet')
-        ->assertSee('No messages have been sent yet.')
-        ->assertSee('WF-PREVIEW1')
-        ->assertSee('WF-PREVIEW2')
-        ->assertSee('WF-PREVIEW3');
+        ConversationMessage::factory()->for($visitorConversation)->create([
+            'sender_type' => Visitor::class,
+            'sender_id' => $visitor->id,
+            'body' => 'The checkout button fails after billing details are saved, and the visitor needs a calm next step before they abandon the order. '
+                .str_repeat('Extra diagnostic context that should stay clipped. ', 4)
+                .'private-tail-that-should-not-render',
+            'created_at' => $visitorMessageAt,
+        ]);
+        ConversationMessage::factory()->for($agentConversation)->create([
+            'sender_type' => User::class,
+            'sender_id' => $agent->id,
+            'body' => 'I can help from the support desk.',
+            'created_at' => $agentMessageAt,
+        ]);
+
+        $this->actingAs($agent)
+            ->get('/dashboard/conversations')
+            ->assertOk()
+            ->assertSee('Latest visitor message')
+            ->assertSee('The checkout button fails after billing details are saved')
+            ->assertSee('Activity 2 minutes ago')
+            ->assertSee('datetime="'.$visitorMessageAt->toJSON().'"', false)
+            ->assertDontSee('private-tail-that-should-not-render')
+            ->assertSee('Latest agent reply')
+            ->assertSee('I can help from the support desk.')
+            ->assertSee('Activity 1 minute ago')
+            ->assertSee('datetime="'.$agentMessageAt->toJSON().'"', false)
+            ->assertSee('No activity preview yet')
+            ->assertSee('No messages have been sent yet.')
+            ->assertSee('WF-PREVIEW1')
+            ->assertSee('WF-PREVIEW2')
+            ->assertSee('WF-PREVIEW3');
+    } finally {
+        Carbon::setTestNow();
+    }
 });
 
 test('conversation queue shows timing context for active triage', function (): void {
