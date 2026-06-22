@@ -122,7 +122,8 @@ class AgentVisitorController extends Controller
      */
     private function supportSnapshotAction(Collection $conversations, Collection $tickets): array
     {
-        $conversationNeedingReply = $conversations->first(fn (Conversation $conversation): bool => $conversation->attentionState() === 'needs_reply');
+        $conversationNeedingReply = $conversations->first(fn (Conversation $conversation): bool => $conversation->latestMessage !== null
+            && $conversation->attentionState() === 'needs_reply');
 
         if ($conversationNeedingReply) {
             return [
@@ -154,6 +155,23 @@ class AgentVisitorController extends Controller
                 ],
                 'status_label' => $ticketNeedingAction->attentionLabel(),
                 'tone' => $ticketNeedingAction->attentionState() === 'needs_reply' ? 'attention' : 'manual',
+            ];
+        }
+
+        $emptyConversation = $conversations->first(fn (Conversation $conversation): bool => $conversation->latestMessage === null);
+
+        if ($emptyConversation) {
+            $nextAction = $emptyConversation->nextAction();
+
+            return [
+                'next_action' => [
+                    'body' => $nextAction['body'],
+                    'cta' => $nextAction['cta'],
+                    'href' => route('dashboard.conversations.show', $emptyConversation->support_code).$nextAction['href'],
+                    'title' => $nextAction['title'],
+                ],
+                'status_label' => 'Review context',
+                'tone' => 'manual',
             ];
         }
 

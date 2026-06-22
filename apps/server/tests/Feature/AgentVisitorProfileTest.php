@@ -319,6 +319,31 @@ test('visitor support snapshot finds active tickets beyond the recent history li
         ->assertSee(route('dashboard.tickets.show', $oldActiveTicket).'#ticket-actions-heading', false);
 });
 
+test('visitor support snapshot does not ask agents to reply to empty conversations', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-empty-chat']);
+    $conversation = Conversation::factory()
+        ->for($site)
+        ->for($visitor)
+        ->create([
+            'support_code' => 'WF-EMPTYCHAT',
+            'subject' => 'Empty visitor conversation',
+            'last_message_at' => null,
+        ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.visitors.show', $visitor))
+        ->assertOk()
+        ->assertSee('Support snapshot')
+        ->assertSee('1 active conversation')
+        ->assertSee('Review context')
+        ->assertSee('Start the conversation')
+        ->assertDontSee('Visitor replied last. Open the latest support item before scanning older history.')
+        ->assertSee(route('dashboard.conversations.show', $conversation->support_code).'#visitor-context-heading', false);
+});
+
 test('conversation and ticket context panels link to the visitor profile', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
