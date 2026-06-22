@@ -229,6 +229,81 @@ test('site index summarizes visible workload without exposing restricted sites',
         ->assertDontSee('Restricted site ticket');
 });
 
+test('site index filters visible sites by search workload and install health', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'name' => 'Ada Active',
+    ]);
+    $teammate = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'name' => 'Mara Mentor',
+    ]);
+
+    $liveDocsSite = Site::factory()->for($account)->create([
+        'name' => 'Docs Platform',
+        'domain' => 'docs.example.test',
+    ]);
+    $liveDocsSite->supportAgents()->attach($agent);
+    $liveDocsVisitor = Visitor::factory()->for($liveDocsSite)->create([
+        'anonymous_id' => 'anon-live-docs',
+        'last_seen_at' => now(),
+    ]);
+    Conversation::factory()->for($liveDocsSite)->for($liveDocsVisitor)->create(['status' => 'open']);
+
+    $staleDocsSite = Site::factory()->for($account)->create([
+        'name' => 'Docs Archive',
+        'domain' => 'archive.example.test',
+    ]);
+    $staleDocsVisitor = Visitor::factory()->for($staleDocsSite)->create([
+        'anonymous_id' => 'anon-stale-docs',
+        'last_seen_at' => now()->subHours(2),
+    ]);
+    Ticket::factory()->for($account)->for($staleDocsSite)->create(['status' => 'open']);
+
+    $quietSite = Site::factory()->for($account)->create([
+        'name' => 'Marketing Site',
+        'domain' => 'marketing.example.test',
+    ]);
+
+    $restrictedSite = Site::factory()->for($account)->create([
+        'name' => 'Docs Restricted',
+        'domain' => 'restricted-docs.example.test',
+    ]);
+    $restrictedSite->supportAgents()->attach($teammate);
+    $restrictedVisitor = Visitor::factory()->for($restrictedSite)->create([
+        'anonymous_id' => 'anon-restricted-docs',
+        'last_seen_at' => now(),
+    ]);
+    Conversation::factory()->for($restrictedSite)->for($restrictedVisitor)->create(['status' => 'open']);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/sites?site_search=docs&site_workload=active&site_install=live')
+        ->assertOk()
+        ->assertSee('Site filters')
+        ->assertSee('1 shown of 3 visible')
+        ->assertSee('Search: docs')
+        ->assertSee('Workload: Active support work')
+        ->assertSee('Install: Live')
+        ->assertSee('Docs Platform')
+        ->assertSee('Live')
+        ->assertDontSee('Docs Archive')
+        ->assertDontSee('Marketing Site')
+        ->assertDontSee('Docs Restricted');
+
+    $this->actingAs($agent)
+        ->get('/dashboard/sites?site_workload=quiet&site_install=needs_attention')
+        ->assertOk()
+        ->assertSee('1 shown of 3 visible')
+        ->assertSee('Workload: Quiet')
+        ->assertSee('Install: Needs attention')
+        ->assertSee('Marketing Site')
+        ->assertSee('Not installed')
+        ->assertDontSee('Docs Platform')
+        ->assertDontSee('Docs Archive')
+        ->assertDontSee('Docs Restricted');
+});
+
 test('sites with only deactivated support assignments fall back to account-wide access', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create([

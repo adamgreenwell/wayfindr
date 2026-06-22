@@ -54,10 +54,12 @@ class AgentSiteController extends Controller
             ])
             ->orderBy('name')
             ->get();
+        [$sites, $siteFilters] = $this->filteredSites($sites, $request);
 
         return view('agent.sites.index', [
             'account' => $account,
             'agent' => $agent,
+            'siteFilters' => $siteFilters,
             'sites' => $sites,
         ]);
     }
@@ -542,6 +544,118 @@ class AgentSiteController extends Controller
         $agent = $request->user();
 
         abort_unless($agent && Gate::forUser($agent)->allows($ability, $site), $status);
+    }
+
+    /**
+     * @param  Collection<int, Site>  $sites
+     * @return array{0: Collection<int, Site>, 1: array{search: string, workload: string, install: string, workload_options: array<string, string>, install_options: array<string, string>, active: list<array{label: string, value: string}>, has_active_filters: bool, visible_count: int, result_count: int, summary_label: string}}
+     */
+    private function filteredSites(Collection $sites, Request $request): array
+    {
+        $visibleCount = $sites->count();
+        $workloadOptions = [
+            'all' => 'All workloads',
+            'active' => 'Active support work',
+            'quiet' => 'Quiet',
+        ];
+        $installOptions = [
+            'all' => 'All install states',
+            'needs_attention' => 'Needs attention',
+            'live' => 'Live',
+        ];
+        $search = trim((string) $request->query('site_search', ''));
+        $workload = $this->normalizeSiteFilter(
+            (string) $request->query('site_workload', 'all'),
+            array_keys($workloadOptions),
+        );
+        $install = $this->normalizeSiteFilter(
+            (string) $request->query('site_install', 'all'),
+            array_keys($installOptions),
+        );
+
+        $filteredSites = $sites
+            ->filter(fn (Site $site): bool => $this->siteMatchesSearch($site, $search))
+            ->filter(fn (Site $site): bool => $this->siteMatchesWorkloadFilter($site, $workload))
+            ->filter(fn (Site $site): bool => $this->siteMatchesInstallFilter($site, $install))
+            ->values();
+        $activeFilters = [];
+
+        if ($search !== '') {
+            $activeFilters[] = ['label' => 'Search', 'value' => $search];
+        }
+
+        if ($workload !== 'all') {
+            $activeFilters[] = ['label' => 'Workload', 'value' => $workloadOptions[$workload]];
+        }
+
+        if ($install !== 'all') {
+            $activeFilters[] = ['label' => 'Install', 'value' => $installOptions[$install]];
+        }
+
+        $resultCount = $filteredSites->count();
+        $hasActiveFilters = $activeFilters !== [];
+
+        return [
+            $filteredSites,
+            [
+                'search' => $search,
+                'workload' => $workload,
+                'install' => $install,
+                'workload_options' => $workloadOptions,
+                'install_options' => $installOptions,
+                'active' => $activeFilters,
+                'has_active_filters' => $hasActiveFilters,
+                'visible_count' => $visibleCount,
+                'result_count' => $resultCount,
+                'summary_label' => $hasActiveFilters
+                    ? "{$resultCount} shown of {$visibleCount} visible"
+                    : "{$visibleCount} visible",
+            ],
+        ];
+    }
+
+    /**
+     * @param  list<string>  $allowed
+     */
+    private function normalizeSiteFilter(string $value, array $allowed): string
+    {
+        return in_array($value, $allowed, true) ? $value : 'all';
+    }
+
+    private function siteMatchesSearch(Site $site, string $search): bool
+    {
+        if ($search === '') {
+            return true;
+        }
+
+        return Str::contains(
+            Str::lower($site->name.' '.($site->domain ?? '')),
+            Str::lower($search),
+        );
+    }
+
+    private function siteMatchesWorkloadFilter(Site $site, string $workload): bool
+    {
+        $hasWorkload = ((int) $site->open_conversations_count) > 0
+            || ((int) $site->open_tickets_count) > 0
+            || ((int) $site->pending_tickets_count) > 0;
+
+        return match ($workload) {
+            'active' => $hasWorkload,
+            'quiet' => ! $hasWorkload,
+            default => true,
+        };
+    }
+
+    private function siteMatchesInstallFilter(Site $site, string $install): bool
+    {
+        $installHealth = SiteInstallHealth::fromVisitor($site->latestVisitor);
+
+        return match ($install) {
+            'needs_attention' => $installHealth['needs_attention'],
+            'live' => $installHealth['label'] === 'Live',
+            default => true,
+        };
     }
 
     private function account(Request $request): Account

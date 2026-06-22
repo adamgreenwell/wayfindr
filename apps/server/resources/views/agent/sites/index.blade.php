@@ -5,7 +5,7 @@
                     <p class="lede">Manage widget installs, support access, privacy rules, and issue routing.</p>
                 </div>
                 <div class="section-actions">
-                    <span class="lede">{{ $sites->count() }} visible</span>
+                    <span class="lede">{{ $siteFilters['summary_label'] }}</span>
                     <a class="button secondary" href="{{ route('dashboard.sites.create') }}">Add site</a>
                 </div>
             </div>
@@ -13,6 +13,62 @@
             @if (session('status'))
                 <p class="status-message">{{ session('status') }}</p>
             @endif
+
+            <section class="section" aria-labelledby="site-filters-heading">
+                <div class="section-header">
+                    <div>
+                        <h2 id="site-filters-heading">Site filters</h2>
+                        <p class="lede">Narrow connected sites by support work, install health, or name.</p>
+                    </div>
+                    @if ($siteFilters['has_active_filters'])
+                        <a class="button secondary" href="{{ route('dashboard.sites.index') }}">Clear filters</a>
+                    @endif
+                </div>
+
+                <form class="section-form" method="GET" action="{{ route('dashboard.sites.index') }}">
+                    <div class="meta-grid">
+                        <div class="meta-item">
+                            <label class="meta-label" for="site_search">Search</label>
+                            <input id="site_search" name="site_search" type="search" value="{{ $siteFilters['search'] }}" placeholder="Site name or domain" autocomplete="off">
+                        </div>
+                        <div class="meta-item">
+                            <label class="meta-label" for="site_workload">Workload</label>
+                            <select id="site_workload" name="site_workload">
+                                @foreach ($siteFilters['workload_options'] as $value => $label)
+                                    <option value="{{ $value }}" @selected($siteFilters['workload'] === $value)>{{ $label }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="meta-item">
+                            <label class="meta-label" for="site_install">Install health</label>
+                            <select id="site_install" name="site_install">
+                                @foreach ($siteFilters['install_options'] as $value => $label)
+                                    <option value="{{ $value }}" @selected($siteFilters['install'] === $value)>{{ $label }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Results</span>
+                            <span class="meta-value">{{ $siteFilters['summary_label'] }}</span>
+                            <button class="button secondary" type="submit">Apply filters</button>
+                        </div>
+                    </div>
+                </form>
+
+                <div class="filter-summary" aria-label="Active site filters">
+                    <div>
+                        <strong>{{ $siteFilters['has_active_filters'] ? 'Filtered sites' : 'All visible sites' }}</strong>
+                        <p class="lede">{{ $siteFilters['summary_label'] }}</p>
+                    </div>
+                    <div class="filter-chips">
+                        @forelse ($siteFilters['active'] as $filter)
+                            <span class="filter-chip">{{ $filter['label'] }}: {{ $filter['value'] }}</span>
+                        @empty
+                            <span class="filter-chip">No filters applied</span>
+                        @endforelse
+                    </div>
+                </div>
+            </section>
 
             <section id="site-install-health" class="section" aria-labelledby="sites-heading">
                 <div class="section-header">
@@ -22,7 +78,11 @@
 
                 @if ($sites->isEmpty())
                     <div class="notice-copy">
-                        <p>No sites are visible to you yet. Add the first site to get a public key and widget install snippet.</p>
+                        @if ($siteFilters['has_active_filters'])
+                            <p>No sites match these filters. Clear filters to review every visible site.</p>
+                        @else
+                            <p>No sites are visible to you yet. Add the first site to get a public key and widget install snippet.</p>
+                        @endif
                     </div>
                 @else
                     <div class="table-wrap">
