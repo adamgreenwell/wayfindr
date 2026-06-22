@@ -304,6 +304,27 @@ test('site index filters visible sites by search workload and install health', f
         ->assertDontSee('Docs Restricted');
 });
 
+test('site index ignores malformed array filter values', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'name' => 'Ada Active',
+    ]);
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Docs Platform',
+        'domain' => 'docs.example.test',
+    ]);
+    $site->supportAgents()->attach($agent);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/sites?site_search[]=docs&site_workload[]=active&site_install[]=live')
+        ->assertOk()
+        ->assertSee('1 visible')
+        ->assertSee('No filters applied')
+        ->assertSee('Docs Platform')
+        ->assertSee('docs.example.test');
+});
+
 test('sites with only deactivated support assignments fall back to account-wide access', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create([

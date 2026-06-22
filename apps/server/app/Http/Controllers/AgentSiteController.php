@@ -563,13 +563,13 @@ class AgentSiteController extends Controller
             'needs_attention' => 'Needs attention',
             'live' => 'Live',
         ];
-        $search = trim((string) $request->query('site_search', ''));
+        $search = trim($this->stringQuery($request, 'site_search'));
         $workload = $this->normalizeSiteFilter(
-            (string) $request->query('site_workload', 'all'),
+            $this->stringQuery($request, 'site_workload', 'all'),
             array_keys($workloadOptions),
         );
         $install = $this->normalizeSiteFilter(
-            (string) $request->query('site_install', 'all'),
+            $this->stringQuery($request, 'site_install', 'all'),
             array_keys($installOptions),
         );
 
@@ -612,6 +612,13 @@ class AgentSiteController extends Controller
                     : "{$visibleCount} visible",
             ],
         ];
+    }
+
+    private function stringQuery(Request $request, string $key, string $default = ''): string
+    {
+        $value = $request->query($key, $default);
+
+        return is_string($value) ? $value : $default;
     }
 
     /**
