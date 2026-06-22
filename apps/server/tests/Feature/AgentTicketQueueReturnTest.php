@@ -85,3 +85,73 @@ test('ticket links preserve the current ticket queue filters for detail page ret
         ->assertSee('Back to ticket queue')
         ->assertSee('href="'.e($returnUrl).'"', false);
 });
+
+test('ticket queue summarizes the current workload focus', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-focus']);
+    $label = TicketLabel::factory()->for($account)->create([
+        'name' => 'VIP',
+        'slug' => 'vip',
+    ]);
+    $conversation = Conversation::factory()
+        ->for($site)
+        ->for($visitor)
+        ->create([
+            'support_code' => 'WF-QUEUEFOCUS',
+            'status' => 'open',
+        ]);
+
+    ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'Can someone help with the refund?',
+    ]);
+
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($conversation)
+        ->for($visitor, 'requester')
+        ->for($agent, 'assignee')
+        ->create([
+            'category' => 'billing',
+            'priority' => 'high',
+            'status' => 'open',
+            'subject' => 'Refund support request',
+        ]);
+    $ticket->labels()->attach($label);
+    TicketExternalLink::factory()
+        ->for($account)
+        ->for($site)
+        ->for($ticket)
+        ->create([
+            'sync_status' => ExternalIssueSyncStatus::FAILED,
+        ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.tickets.index', [
+            'ticket_status' => 'all',
+            'ticket_filter' => 'assigned_to_me',
+            'ticket_site' => $site->id,
+            'ticket_priority' => 'high',
+            'ticket_category' => 'billing',
+            'ticket_label' => 'vip',
+            'ticket_attention' => 'needs_reply',
+            'ticket_external' => 'failed',
+            'ticket_search' => 'refund',
+        ]))
+        ->assertOk()
+        ->assertSee('Queue focus')
+        ->assertSee('What this ticket queue is showing before you open a row.')
+        ->assertSee('Status: All tickets')
+        ->assertSee('Assignee: Assigned to me')
+        ->assertSee('Site: Acme Docs')
+        ->assertSee('Priority: High')
+        ->assertSee('Category: Billing')
+        ->assertSee('Label: VIP')
+        ->assertSee('Next step: Needs reply')
+        ->assertSee('External issue: Needs attention')
+        ->assertSee('Search: refund');
+});

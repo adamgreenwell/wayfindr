@@ -141,6 +141,51 @@
                     </div>
                 </form>
 
+                @php
+                    $ticketQueueFocusItems = [
+                        ['label' => 'Status', 'value' => $ticketStatusFilters[$ticketStatus]],
+                        ['label' => 'Assignee', 'value' => $ticketFilters[$ticketFilter]],
+                    ];
+                    $focusedSite = $ticketSite ? $sites->firstWhere('id', $ticketSite) : null;
+
+                    if ($focusedSite) {
+                        $ticketQueueFocusItems[] = ['label' => 'Site', 'value' => $focusedSite->name];
+                    }
+
+                    if ($ticketPriority !== 'all') {
+                        $ticketQueueFocusItems[] = ['label' => 'Priority', 'value' => $ticketPriorityFilters[$ticketPriority]];
+                    }
+
+                    if ($ticketCategory !== 'all') {
+                        $ticketQueueFocusItems[] = ['label' => 'Category', 'value' => $ticketCategoryFilters[$ticketCategory]];
+                    }
+
+                    if ($ticketLabel !== 'all') {
+                        $ticketQueueFocusItems[] = ['label' => 'Label', 'value' => $ticketLabelFilters[$ticketLabel]];
+                    }
+
+                    $ticketQueueFocusItems[] = ['label' => 'Next step', 'value' => $ticketAttentionFilters[$ticketAttention]];
+                    $ticketQueueFocusItems[] = ['label' => 'External issue', 'value' => $ticketExternalIssueFilters[$ticketExternalIssue]];
+
+                    if ($ticketSearch !== '') {
+                        $ticketQueueFocusItems[] = ['label' => 'Search', 'value' => $ticketSearch];
+                    }
+                @endphp
+
+                <div class="filter-summary" aria-label="Ticket queue focus">
+                    <div>
+                        <strong>Queue focus</strong>
+                        <p class="lede">What this ticket queue is showing before you open a row.</p>
+                    </div>
+                    <div class="filter-chips">
+                        @foreach ($ticketQueueFocusItems as $ticketQueueFocusItem)
+                            <span class="filter-chip">
+                                {{ $ticketQueueFocusItem['label'] }}: {{ $ticketQueueFocusItem['value'] }}
+                            </span>
+                        @endforeach
+                    </div>
+                </div>
+
                 @if (collect($ticketQueueSummary)->sum('count') > 0)
                     <div class="filter-summary" aria-label="Ticket queue snapshot">
                         <div>
