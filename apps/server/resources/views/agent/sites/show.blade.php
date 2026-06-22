@@ -7,6 +7,93 @@
                 <p class="status-message">{{ session('status') }}</p>
             @endif
 
+            @php
+                $latestVisitor = $site->latestVisitor;
+                $lastSeenAt = $latestVisitor?->last_seen_at;
+                $lastPageUrl = data_get($latestVisitor?->metadata, 'last_page_url');
+                $installHealth = \App\Support\SiteInstallHealth::fromVisitor($latestVisitor);
+                $installAttentionTarget = $site->domain ?? 'the site';
+                $installAttentionSiteUrl = $site->domain ? 'https://'.$site->domain : null;
+                $installAttentionGuidance = $installHealth['label'] === 'Not installed'
+                    ? "Finish the widget install by copying the snippet below, loading {$installAttentionTarget}, then using Verify again."
+                    : "Check whether the widget still loads on {$installAttentionTarget}. If it does, use Verify again. If it does not, revisit the snippet.";
+                $installVerificationRefreshUrl = route('dashboard.sites.show', [
+                    'site' => $site,
+                    'verify' => now()->timestamp,
+                ]).'#install-verification';
+                $installVerification = match (true) {
+                    ! $lastSeenAt => [
+                        'status' => 'Not seen yet',
+                        'tone' => 'attention',
+                        'message' => 'Wayfindr has not seen this widget check in yet.',
+                        'guidance' => 'Copy the snippet, load the site, then refresh this page.',
+                    ],
+                    $lastSeenAt->greaterThanOrEqualTo(now()->subMinutes(30)) => [
+                        'status' => 'Seen '.$lastSeenAt->diffForHumans(),
+                        'tone' => 'ready',
+                        'message' => 'The widget has checked in recently.',
+                        'guidance' => 'Send a test message from the widget if you want to confirm the full support loop.',
+                    ],
+                    default => [
+                        'status' => 'Last seen '.$lastSeenAt->diffForHumans(),
+                        'tone' => 'manual',
+                        'message' => 'Wayfindr has seen this widget before, but not recently.',
+                        'guidance' => 'Visit the site and refresh this page if it should still be active.',
+                    ],
+                };
+                $selectedSupportAgentIds = collect(old('support_agent_ids', $supportAgentIds))
+                    ->map(fn ($id) => (int) $id)
+                    ->all();
+                $selectedCapabilities = collect(old('capabilities', ['create_issue']))
+                    ->filter()
+                    ->map(fn ($capability) => (string) $capability)
+                    ->all();
+                $siteMapSections = [
+                    ['label' => 'Support readiness', 'href' => '#site-support-readiness-heading'],
+                    ['label' => 'Support load', 'href' => '#site-support-load-heading'],
+                    ['label' => 'External issue readiness', 'href' => '#site-external-issue-readiness-heading'],
+                ];
+
+                if ($installHealth['needs_attention']) {
+                    $siteMapSections[] = ['label' => 'Setup attention', 'href' => '#setup-attention-heading'];
+                }
+
+                $siteMapSections[] = ['label' => 'Site', 'href' => '#site-context-heading'];
+                $siteMapSections[] = ['label' => 'Install verification', 'href' => '#install-verification-heading'];
+                $siteMapSections[] = ['label' => 'Install snippet', 'href' => '#install-snippet-heading'];
+                $siteMapSections[] = ['label' => 'Support access', 'href' => '#support-access-heading'];
+
+                if ($canViewSiteActivity) {
+                    $siteMapSections[] = ['label' => 'Site access activity', 'href' => '#site-access-activity-heading'];
+                }
+
+                $siteMapSections[] = ['label' => 'External issue routing', 'href' => '#external-issue-routing-heading'];
+                $siteMapSections[] = ['label' => 'Data responsibility', 'href' => '#data-responsibility-heading'];
+                $siteMapSections[] = ['label' => 'Mask selectors', 'href' => '#privacy-settings-heading'];
+            @endphp
+
+            <section class="section" aria-labelledby="site-map-heading">
+                <div class="section-header">
+                    <div>
+                        <h2 id="site-map-heading">Site map</h2>
+                        <p class="lede">What this site workspace can help with before you change settings.</p>
+                    </div>
+                    <span class="lede">{{ count($siteMapSections) }} sections</span>
+                </div>
+
+                <div class="filter-summary" aria-label="Site detail sections">
+                    <div>
+                        <strong>Jump to</strong>
+                        <p class="lede">Use the map when a site workspace gets long.</p>
+                    </div>
+                    <div class="filter-chips">
+                        @foreach ($siteMapSections as $siteMapSection)
+                            <a class="filter-chip" href="{{ $siteMapSection['href'] }}">{{ $siteMapSection['label'] }}</a>
+                        @endforeach
+                    </div>
+                </div>
+            </section>
+
             <section class="section" aria-labelledby="site-support-readiness-heading">
                 <div class="section-header">
                     <div>
@@ -112,49 +199,6 @@
                     </div>
                 @endif
             </section>
-
-            @php
-                $latestVisitor = $site->latestVisitor;
-                $lastSeenAt = $latestVisitor?->last_seen_at;
-                $lastPageUrl = data_get($latestVisitor?->metadata, 'last_page_url');
-                $installHealth = \App\Support\SiteInstallHealth::fromVisitor($latestVisitor);
-                $installAttentionTarget = $site->domain ?? 'the site';
-                $installAttentionSiteUrl = $site->domain ? 'https://'.$site->domain : null;
-                $installAttentionGuidance = $installHealth['label'] === 'Not installed'
-                    ? "Finish the widget install by copying the snippet below, loading {$installAttentionTarget}, then using Verify again."
-                    : "Check whether the widget still loads on {$installAttentionTarget}. If it does, use Verify again. If it does not, revisit the snippet.";
-                $installVerificationRefreshUrl = route('dashboard.sites.show', [
-                    'site' => $site,
-                    'verify' => now()->timestamp,
-                ]).'#install-verification';
-                $installVerification = match (true) {
-                    ! $lastSeenAt => [
-                        'status' => 'Not seen yet',
-                        'tone' => 'attention',
-                        'message' => 'Wayfindr has not seen this widget check in yet.',
-                        'guidance' => 'Copy the snippet, load the site, then refresh this page.',
-                    ],
-                    $lastSeenAt->greaterThanOrEqualTo(now()->subMinutes(30)) => [
-                        'status' => 'Seen '.$lastSeenAt->diffForHumans(),
-                        'tone' => 'ready',
-                        'message' => 'The widget has checked in recently.',
-                        'guidance' => 'Send a test message from the widget if you want to confirm the full support loop.',
-                    ],
-                    default => [
-                        'status' => 'Last seen '.$lastSeenAt->diffForHumans(),
-                        'tone' => 'manual',
-                        'message' => 'Wayfindr has seen this widget before, but not recently.',
-                        'guidance' => 'Visit the site and refresh this page if it should still be active.',
-                    ],
-                };
-                $selectedSupportAgentIds = collect(old('support_agent_ids', $supportAgentIds))
-                    ->map(fn ($id) => (int) $id)
-                    ->all();
-                $selectedCapabilities = collect(old('capabilities', ['create_issue']))
-                    ->filter()
-                    ->map(fn ($capability) => (string) $capability)
-                    ->all();
-            @endphp
 
             @if ($installHealth['needs_attention'])
                 <section class="section" aria-labelledby="setup-attention-heading">

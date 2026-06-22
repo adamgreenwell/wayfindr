@@ -682,6 +682,19 @@ test('site detail summarizes support load for the selected site only', function 
     $this->actingAs($admin)
         ->get("/dashboard/sites/{$site->id}")
         ->assertOk()
+        ->assertSee('Site map')
+        ->assertSee('What this site workspace can help with before you change settings.')
+        ->assertSee('href="#site-support-readiness-heading"', false)
+        ->assertSee('href="#site-support-load-heading"', false)
+        ->assertSee('href="#site-external-issue-readiness-heading"', false)
+        ->assertSee('href="#site-context-heading"', false)
+        ->assertSee('href="#install-verification-heading"', false)
+        ->assertSee('href="#install-snippet-heading"', false)
+        ->assertSee('href="#support-access-heading"', false)
+        ->assertSee('href="#site-access-activity-heading"', false)
+        ->assertSee('href="#external-issue-routing-heading"', false)
+        ->assertSee('href="#data-responsibility-heading"', false)
+        ->assertSee('href="#privacy-settings-heading"', false)
         ->assertSee('Support load')
         ->assertSeeInOrder([
             'Open conversations',
@@ -702,6 +715,29 @@ test('site detail summarizes support load for the selected site only', function 
         ->assertDontSee('2 conversations')
         ->assertDontSee('3 tickets')
         ->assertDontSee('Gabe Gone');
+});
+
+test('site detail map includes setup attention when the widget needs attention', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'name' => 'Ada Admin',
+    ]);
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Acme Docs',
+        'domain' => 'docs.example.test',
+    ]);
+
+    $this->actingAs($admin)
+        ->get("/dashboard/sites/{$site->id}")
+        ->assertOk()
+        ->assertSee('Site map')
+        ->assertSee('href="#setup-attention-heading"', false)
+        ->assertSeeInOrder([
+            'Setup attention',
+            'Not installed',
+            'Wayfindr has not seen this widget check in yet.',
+        ]);
 });
 
 test('site assigned platform operators see the operator smoke path', function (): void {
@@ -797,6 +833,7 @@ test('plain agents do not see site access activity audit affordances', function 
         ->get("/dashboard/sites/{$site->id}")
         ->assertOk()
         ->assertDontSee('Recent site access activity')
+        ->assertDontSee('href="#site-access-activity-heading"', false)
         ->assertDontSee('View full audit log')
         ->assertDontSee('/dashboard/account/audit', false);
 });
