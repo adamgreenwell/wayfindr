@@ -1987,6 +1987,7 @@ test('preserves failed first message drafts and retries without recreating the c
   const textarea = widget.root.querySelector('.wayfindr-widget__textarea');
   const status = widget.root.querySelector('.wayfindr-widget__status');
   const notice = widget.root.querySelector('.wayfindr-widget__notice');
+  const retry = widget.root.querySelector('.wayfindr-widget__notice-retry');
 
   textarea.value = 'Can you help me?';
   form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
@@ -2000,6 +2001,8 @@ test('preserves failed first message drafts and retries without recreating the c
   assert.equal(notice.hidden, false);
   assert.equal(notice.getAttribute('data-state'), 'warning');
   assert.match(notice.textContent, /Message could not be sent/);
+  assert.equal(retry.hidden, false);
+  assert.equal(retry.textContent, 'Try again');
   assert.equal(calls.filter((call) => new URL(call.url).pathname === '/api/conversations').length, 1);
   assert.equal(
     calls.filter((call) => new URL(call.url).pathname === '/api/conversations/WF-RETRY123/messages' && call.options.method === 'GET').length,
@@ -2012,7 +2015,7 @@ test('preserves failed first message drafts and retries without recreating the c
   assert.equal(widget.root.querySelector('.wayfindr-widget__refresh').hidden, true);
   assert.equal(widget.root.querySelector('.wayfindr-widget__connection').hidden, true);
 
-  form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+  retry.dispatchEvent(new dom.window.Event('click', { bubbles: true }));
 
   await settle();
 

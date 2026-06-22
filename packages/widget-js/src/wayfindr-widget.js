@@ -480,6 +480,7 @@
     var visitorContext = options.visitorContext || null;
     var composerBusy = false;
     var refreshBusy = false;
+    var noticeRetryAction = null;
     var sendLabel = send.textContent;
     var refreshLabel = refresh.textContent;
 
@@ -489,13 +490,15 @@
       notice.hidden = false;
       notice.setAttribute('data-state', state || 'info');
       noticeCopy.textContent = copy;
+      noticeRetryAction = typeof options.onRetry === 'function' ? options.onRetry : null;
       noticeRetry.hidden = !options.retry;
-      noticeRetry.disabled = false;
+      noticeRetry.disabled = Boolean(noticeRetryAction && composerBusy);
     }
 
     function hideNotice() {
       notice.hidden = true;
       noticeRetry.hidden = true;
+      noticeRetryAction = null;
       noticeRetry.disabled = false;
     }
 
@@ -1339,6 +1342,10 @@
       textarea.disabled = composerBusy;
       send.disabled = composerBusy;
       send.textContent = composerBusy ? 'Sending...' : sendLabel;
+
+      if (noticeRetryAction) {
+        noticeRetry.disabled = composerBusy;
+      }
     }
 
     function setRefreshBusy(nextBusy) {
@@ -1416,6 +1423,12 @@
       refreshMessages();
     });
     noticeRetry.addEventListener('click', function () {
+      if (noticeRetryAction) {
+        noticeRetryAction();
+
+        return;
+      }
+
       refreshMessages();
     });
     cobrowseAllow.addEventListener('click', function () {
@@ -1430,6 +1443,26 @@
       }
     });
     doc.addEventListener('visibilitychange', handleVisibilityChange);
+
+    function retryComposerSend() {
+      if (composerBusy) {
+        return;
+      }
+
+      if (typeof form.requestSubmit === 'function') {
+        form.requestSubmit();
+
+        return;
+      }
+
+      var view = doc.defaultView || root;
+      var EventConstructor = view && view.Event ? view.Event : root && root.Event ? root.Event : null;
+
+      if (EventConstructor) {
+        form.dispatchEvent(new EventConstructor('submit', { bubbles: true, cancelable: true }));
+      }
+    }
+
     form.addEventListener('submit', async function (event) {
       event.preventDefault();
 
@@ -1477,7 +1510,10 @@
         status.textContent = 'Message sent. Support code ' + supportCode + '.';
       } catch (error) {
         status.textContent = MESSAGE_SEND_ERROR;
-        showNotice('warning', MESSAGE_SEND_ERROR);
+        showNotice('warning', MESSAGE_SEND_ERROR, {
+          retry: true,
+          onRetry: retryComposerSend,
+        });
       } finally {
         setComposerBusy(false);
       }
