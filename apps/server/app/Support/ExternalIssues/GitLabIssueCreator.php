@@ -6,10 +6,11 @@ use App\Models\SiteExternalIssueProject;
 use App\Models\Ticket;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Str;
 
 class GitLabIssueCreator
 {
+    public function __construct(private readonly ExternalIssueExportPreview $exportPreview) {}
+
     /**
      * @return array{id: string|null, iid: string|null, url: string, title: string|null}
      */
@@ -28,7 +29,7 @@ class GitLabIssueCreator
                 'PRIVATE-TOKEN' => $token,
             ])->post($this->issuesEndpoint($project), [
                 'title' => $ticket->subject,
-                'description' => $this->issueDescription($ticket),
+                'description' => $this->exportPreview->forTicket($ticket)['body'],
             ]);
         } catch (ConnectionException) {
             throw new GitLabIssueCreationFailed('GitLab request failed before a response was received.');
@@ -84,34 +85,5 @@ class GitLabIssueCreator
         }
 
         return $baseUrl;
-    }
-
-    private function issueDescription(Ticket $ticket): string
-    {
-        $ticket->loadMissing(['conversation', 'site']);
-
-        return collect([
-            "Wayfindr ticket #{$ticket->id}",
-            '',
-            'Support code: '.($ticket->conversation?->support_code ?? 'Not linked'),
-            'Site: '.$ticket->site->name,
-            'Priority: '.Str::headline($ticket->priority),
-            'Category: '.$ticket->categoryLabel(),
-            'Status: '.Str::headline($ticket->status),
-            'Wayfindr URL: '.route('dashboard.tickets.show', $ticket),
-            '',
-            'Description:',
-            $this->description($ticket),
-            '',
-            'Export note:',
-            'This issue was created from a Wayfindr ticket. Raw visitor transcripts, cobrowse snapshots, and internal notes were not exported by default.',
-        ])->implode(PHP_EOL);
-    }
-
-    private function description(Ticket $ticket): string
-    {
-        $description = trim((string) $ticket->description);
-
-        return $description === '' ? 'No description provided.' : $description;
     }
 }

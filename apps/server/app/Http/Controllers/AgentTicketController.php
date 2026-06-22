@@ -16,6 +16,7 @@ use App\Notifications\ConversationNeedsReply;
 use App\Notifications\TicketAssigned;
 use App\Support\AgentNoteTemplate;
 use App\Support\ExternalIssueProvider;
+use App\Support\ExternalIssues\ExternalIssueExportPreview;
 use App\Support\ExternalIssueSyncStatus;
 use App\Support\ReplyTemplateOptions;
 use App\Support\TicketCategory;
@@ -33,7 +34,7 @@ use Illuminate\Validation\ValidationException;
 
 class AgentTicketController extends Controller
 {
-    public function show(Request $request, Ticket $ticket, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions): View
+    public function show(Request $request, Ticket $ticket, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, ExternalIssueExportPreview $externalIssueExportPreview): View
     {
         $agent = $request->user();
 
@@ -67,6 +68,7 @@ class AgentTicketController extends Controller
             'agent' => $agent,
             'externalIssueProviders' => ExternalIssueProvider::options(),
             'externalIssueSyncStatuses' => ExternalIssueSyncStatus::options(),
+            'externalIssueExportPreview' => $externalIssueExportPreview->forTicket($ticket),
             'githubIssueProjects' => $this->githubIssueProjectsForTicket($ticket),
             'gitlabIssueProjects' => $this->gitlabIssueProjectsForTicket($ticket),
             'latestTicketEscalation' => $ticket->latestRecentEscalationEvent(),

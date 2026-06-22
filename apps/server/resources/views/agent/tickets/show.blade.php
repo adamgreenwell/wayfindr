@@ -499,6 +499,31 @@
                             <p class="field-error">{{ $message }}</p>
                         @enderror
 
+                        <div class="external-issue-export-preview" data-external-issue-export-preview>
+                            <div class="notice-copy notice-copy-bordered">
+                                <p><strong>External issue export preview</strong></p>
+                                <p>Review the scoped payload before sending this ticket to another tracker.</p>
+                            </div>
+
+                            <div class="meta-grid">
+                                <div class="meta-item">
+                                    <span class="meta-label">Issue title</span>
+                                    <span class="meta-value">{{ $externalIssueExportPreview['title'] }}</span>
+                                </div>
+                                <div class="meta-item">
+                                    <span class="meta-label">Data boundary</span>
+                                    <span class="meta-value">Safe summary only</span>
+                                    <span class="lede">No raw transcripts, cobrowse snapshots, or internal notes by default.</span>
+                                </div>
+                            </div>
+
+                            <div class="section-header">
+                                <strong>Summary sent to external trackers</strong>
+                                <span class="lede">Provider credentials and raw errors stay out of this payload.</span>
+                            </div>
+                            <pre class="code-block"><code>{{ $externalIssueExportPreview['body'] }}</code></pre>
+                        </div>
+
                         @foreach ($githubIssueProjects as $githubIssueProject)
                             <form method="POST" action="{{ route('dashboard.tickets.external-issues.github.store', $ticket) }}">
                                 @csrf

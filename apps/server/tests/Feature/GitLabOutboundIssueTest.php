@@ -148,6 +148,42 @@ test('GitLab issue creation supports self-managed host base URLs', function (): 
     ]);
 });
 
+test('ticket detail previews the conservative GitLab issue export payload', function (): void {
+    $fixture = gitlabOutboundIssueFixture();
+    $ticket = $fixture['ticket'];
+    $agent = $fixture['agent'];
+
+    $response = $this->actingAs($agent)
+        ->get("/dashboard/tickets/{$ticket->id}")
+        ->assertOk();
+
+    $response
+        ->assertSeeInOrder([
+            'External issue export preview',
+            'Issue title',
+            'Checkout export keeps failing',
+            'Summary sent to external trackers',
+            "Wayfindr ticket #{$ticket->id}",
+            'Support code: WF-GL01',
+            'Site: Acme Docs',
+            'Priority: High',
+            'Category: Bug',
+            'Status: Open',
+            'Description',
+            'The visitor cannot export orders after checkout.',
+            'Raw visitor transcripts, cobrowse snapshots, and internal notes were not exported by default.',
+        ]);
+
+    preg_match('/<div class="external-issue-export-preview" data-external-issue-export-preview>.*?<\/pre>\s*<\/div>/s', $response->getContent(), $matches);
+
+    expect($matches[0] ?? '')
+        ->not->toBe('')
+        ->not->toContain('my card number is 4242 4242 4242 4242')
+        ->not->toContain('Do not send this internal note')
+        ->not->toContain('super-secret-cobrowse-token')
+        ->not->toContain('glpat_test_secret');
+});
+
 test('GitLab issue creation failure is audited without storing credentials or leaking response details', function (): void {
     $fixture = gitlabOutboundIssueFixture(projectOverrides: [
         'project_key' => 'secret-group/private-project',
