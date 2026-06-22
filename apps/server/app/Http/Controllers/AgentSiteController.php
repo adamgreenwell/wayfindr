@@ -59,6 +59,7 @@ class AgentSiteController extends Controller
         return view('agent.sites.index', [
             'account' => $account,
             'agent' => $agent,
+            'siteEmptyState' => $this->siteEmptyState($siteFilters),
             'siteFilters' => $siteFilters,
             'sites' => $sites,
         ]);
@@ -612,6 +613,114 @@ class AgentSiteController extends Controller
                     : "{$visibleCount} visible",
             ],
         ];
+    }
+
+    /**
+     * @param  array{search: string, workload: string, install: string, workload_options: array<string, string>, install_options: array<string, string>, active: list<array{label: string, value: string}>, has_active_filters: bool, visible_count: int, result_count: int, summary_label: string}  $siteFilters
+     * @return array{heading: string, detail: string, actions: list<array{label: string, url: string}>}
+     */
+    private function siteEmptyState(array $siteFilters): array
+    {
+        $actions = $siteFilters['has_active_filters']
+            ? [['label' => 'Clear all site filters', 'url' => route('dashboard.sites.index')]]
+            : [['label' => 'Add site', 'url' => route('dashboard.sites.create')]];
+
+        if ($siteFilters['search'] !== '') {
+            array_unshift($actions, [
+                'label' => 'Clear search',
+                'url' => $this->siteFilterUrl($siteFilters, ['search' => '']),
+            ]);
+
+            return [
+                'heading' => sprintf('No sites match "%s".', $siteFilters['search']),
+                'detail' => 'Search checks site name and domain. Clear the search term or loosen the other site filters to review more visible sites.',
+                'actions' => $actions,
+            ];
+        }
+
+        if ($siteFilters['install'] === 'needs_attention') {
+            array_unshift($actions, [
+                'label' => 'Clear install health filter',
+                'url' => $this->siteFilterUrl($siteFilters, ['install' => 'all']),
+            ]);
+
+            return [
+                'heading' => 'No sites need install attention right now.',
+                'detail' => 'Every visible site has sent a recent widget signal. Clear the install health filter to review all connected sites.',
+                'actions' => $actions,
+            ];
+        }
+
+        if ($siteFilters['install'] === 'live') {
+            array_unshift($actions, [
+                'label' => 'Clear install health filter',
+                'url' => $this->siteFilterUrl($siteFilters, ['install' => 'all']),
+            ]);
+
+            return [
+                'heading' => 'No live widget installs match these filters.',
+                'detail' => 'Try clearing the install health filter to see sites that still need their first widget signal.',
+                'actions' => $actions,
+            ];
+        }
+
+        if ($siteFilters['workload'] === 'active') {
+            array_unshift($actions, [
+                'label' => 'Clear workload filter',
+                'url' => $this->siteFilterUrl($siteFilters, ['workload' => 'all']),
+            ]);
+
+            return [
+                'heading' => 'No sites have active support work right now.',
+                'detail' => 'Clear the workload filter to include quiet sites that may still need install or access review.',
+                'actions' => $actions,
+            ];
+        }
+
+        if ($siteFilters['workload'] === 'quiet') {
+            array_unshift($actions, [
+                'label' => 'Clear workload filter',
+                'url' => $this->siteFilterUrl($siteFilters, ['workload' => 'all']),
+            ]);
+
+            return [
+                'heading' => 'No quiet sites match these filters.',
+                'detail' => 'Clear the workload filter to include sites with active conversations or tickets.',
+                'actions' => $actions,
+            ];
+        }
+
+        return [
+            'heading' => 'No sites are visible to you yet.',
+            'detail' => 'Add the first site to get a public key and widget install snippet.',
+            'actions' => $actions,
+        ];
+    }
+
+    /**
+     * @param  array{search: string, workload: string, install: string}  $siteFilters
+     * @param  array{search?: string, workload?: string, install?: string}  $overrides
+     */
+    private function siteFilterUrl(array $siteFilters, array $overrides = []): string
+    {
+        $search = $overrides['search'] ?? $siteFilters['search'];
+        $workload = $overrides['workload'] ?? $siteFilters['workload'];
+        $install = $overrides['install'] ?? $siteFilters['install'];
+        $query = [];
+
+        if ($search !== '') {
+            $query['site_search'] = $search;
+        }
+
+        if ($workload !== 'all') {
+            $query['site_workload'] = $workload;
+        }
+
+        if ($install !== 'all') {
+            $query['site_install'] = $install;
+        }
+
+        return route('dashboard.sites.index', $query);
     }
 
     private function stringQuery(Request $request, string $key, string $default = ''): string

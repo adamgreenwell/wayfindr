@@ -304,6 +304,53 @@ test('site index filters visible sites by search workload and install health', f
         ->assertDontSee('Docs Restricted');
 });
 
+test('site index gives agents a clearer empty site search state', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'name' => 'Ada Active',
+    ]);
+
+    Site::factory()->for($account)->create([
+        'name' => 'Docs Platform',
+        'domain' => 'docs.example.test',
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/sites?site_search=missing&site_workload=active')
+        ->assertOk()
+        ->assertSee('No sites match &quot;missing&quot;.', false)
+        ->assertSee('Search checks site name and domain. Clear the search term or loosen the other site filters to review more visible sites.')
+        ->assertSee('Clear search')
+        ->assertSee('Clear all site filters')
+        ->assertDontSee('Docs Platform');
+});
+
+test('site index gives agents a clearer empty install attention state', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'name' => 'Ada Active',
+    ]);
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Docs Platform',
+        'domain' => 'docs.example.test',
+    ]);
+    Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-live-docs',
+        'last_seen_at' => now(),
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/sites?site_install=needs_attention')
+        ->assertOk()
+        ->assertSee('No sites need install attention right now.')
+        ->assertSee('Every visible site has sent a recent widget signal. Clear the install health filter to review all connected sites.')
+        ->assertSee('Clear install health filter')
+        ->assertSee('Clear all site filters')
+        ->assertDontSee('Docs Platform');
+});
+
 test('site index ignores malformed array filter values', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create([

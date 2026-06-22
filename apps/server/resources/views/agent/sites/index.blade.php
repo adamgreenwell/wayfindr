@@ -77,12 +77,14 @@
                 </div>
 
                 @if ($sites->isEmpty())
-                    <div class="notice-copy">
-                        @if ($siteFilters['has_active_filters'])
-                            <p>No sites match these filters. Clear filters to review every visible site.</p>
-                        @else
-                            <p>No sites are visible to you yet. Add the first site to get a public key and widget install snippet.</p>
-                        @endif
+                    <div class="empty empty-state">
+                        <strong>{{ $siteEmptyState['heading'] }}</strong>
+                        <p>{{ $siteEmptyState['detail'] }}</p>
+                        <div class="empty-state-actions">
+                            @foreach ($siteEmptyState['actions'] as $action)
+                                <a class="button secondary" href="{{ $action['url'] }}">{{ $action['label'] }}</a>
+                            @endforeach
+                        </div>
                     </div>
                 @else
                     <div class="table-wrap">
