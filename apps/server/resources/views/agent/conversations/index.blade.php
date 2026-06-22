@@ -83,6 +83,38 @@
                     </div>
                 </form>
 
+                @php
+                    $conversationQueueFocusItems = [
+                        ['label' => 'Lane', 'value' => $conversationFilters[$conversationFilter]],
+                    ];
+                    $focusedConversationSite = $conversationSite ? $sites->firstWhere('id', $conversationSite) : null;
+
+                    if ($focusedConversationSite) {
+                        $conversationQueueFocusItems[] = ['label' => 'Site', 'value' => $focusedConversationSite->name];
+                    }
+
+                    $conversationQueueFocusItems[] = ['label' => 'Presence', 'value' => $conversationPresenceFilters[$conversationPresence]];
+
+                    if ($conversationSearch !== '') {
+                        $conversationQueueFocusItems[] = ['label' => 'Search', 'value' => $conversationSearch];
+                    }
+                @endphp
+
+                <div class="filter-summary" aria-label="Conversation queue focus">
+                    <div>
+                        <strong>Queue focus</strong>
+                        <p class="lede">What this conversation queue is showing before you open a row.</p>
+                        <p class="lede">{{ $conversationQueueCountSummary['detail'] }}</p>
+                    </div>
+                    <div class="filter-chips">
+                        @foreach ($conversationQueueFocusItems as $conversationQueueFocusItem)
+                            <span class="filter-chip">
+                                {{ $conversationQueueFocusItem['label'] }}: {{ $conversationQueueFocusItem['value'] }}
+                            </span>
+                        @endforeach
+                    </div>
+                </div>
+
                 @if ($activeConversationFilters !== [])
                     <div class="filter-summary" aria-label="Active conversation filters">
                         <div>

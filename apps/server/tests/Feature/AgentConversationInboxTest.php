@@ -1100,6 +1100,45 @@ test('conversation queue snapshot respects current site and search context', fun
         ->assertDontSee('Checkout from other site');
 });
 
+test('conversation queue shows focus context for the current filters', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-focus',
+        'last_seen_at' => now()->subMinute(),
+    ]);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-FOCUS',
+        'subject' => 'Checkout focus question',
+        'status' => 'open',
+        'last_message_at' => now()->subMinute(),
+    ]);
+
+    ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'Checkout is stuck.',
+        'created_at' => now()->subMinute(),
+    ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.conversations.index', [
+            'conversation_filter' => 'needs_reply',
+            'conversation_site' => $site->id,
+            'conversation_presence' => 'active',
+            'conversation_search' => 'Checkout',
+        ]))
+        ->assertOk()
+        ->assertSee('Queue focus')
+        ->assertSee('What this conversation queue is showing before you open a row.')
+        ->assertSee('Lane: Needs reply')
+        ->assertSee('Site: Acme Docs')
+        ->assertSee('Presence: Active recently')
+        ->assertSee('Search: Checkout')
+        ->assertSee('Showing 1 conversation matching the current queue filters.');
+});
+
 test('conversation queue distinguishes shown conversations from broader matching filters', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
