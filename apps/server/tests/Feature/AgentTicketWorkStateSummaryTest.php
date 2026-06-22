@@ -634,7 +634,50 @@ test('ticket detail timeline filters by visibility type', function (): void {
         $emptyTimelineHtml = Str::betweenFirst($emptyTimeline->content(), '<section class="section" aria-labelledby="ticket-timeline-heading">', '</section>');
 
         expect($emptyTimelineHtml)
-            ->toContain('No internal note timeline events yet.');
+            ->toContain('No internal note timeline events yet.')
+            ->toContain('Private handoff notes will appear here after an agent records context for the team.');
+
+        $emptyActivityTimeline = $this->actingAs($agent)
+            ->get("/dashboard/tickets/{$emptyTimelineTicket->id}?timeline_filter=ticket_activity")
+            ->assertOk()
+            ->assertSee('0 of 2 events');
+
+        $emptyActivityTimelineHtml = Str::betweenFirst($emptyActivityTimeline->content(), '<section class="section" aria-labelledby="ticket-timeline-heading">', '</section>');
+
+        expect($emptyActivityTimelineHtml)
+            ->toContain('No ticket activity timeline events yet.')
+            ->toContain('Status, assignment, label, and external-link changes will appear here as the ticket moves.');
+
+        $standaloneTicket = Ticket::factory()
+            ->for($agent->account)
+            ->for($site)
+            ->for($visitor, 'requester')
+            ->for($agent, 'assignee')
+            ->create([
+                'subject' => 'Standalone empty timeline follow-up',
+            ]);
+
+        $emptyAllTimeline = $this->actingAs($agent)
+            ->get(route('dashboard.tickets.show', $standaloneTicket))
+            ->assertOk()
+            ->assertSee('0 events');
+
+        $emptyAllTimelineHtml = Str::betweenFirst($emptyAllTimeline->content(), '<section class="section" aria-labelledby="ticket-timeline-heading">', '</section>');
+
+        expect($emptyAllTimelineHtml)
+            ->toContain('No ticket timeline events yet.')
+            ->toContain('Conversation replies, internal notes, and ticket updates will appear here as this ticket gets worked.');
+
+        $emptyConversationTimeline = $this->actingAs($agent)
+            ->get("/dashboard/tickets/{$standaloneTicket->id}?timeline_filter=conversation")
+            ->assertOk()
+            ->assertSee('0 of 0 events');
+
+        $emptyConversationTimelineHtml = Str::betweenFirst($emptyConversationTimeline->content(), '<section class="section" aria-labelledby="ticket-timeline-heading">', '</section>');
+
+        expect($emptyConversationTimelineHtml)
+            ->toContain('No customer-visible timeline events yet.')
+            ->toContain('Visitor messages and agent replies will appear here once this ticket is linked to an active conversation.');
     } finally {
         Carbon::setTestNow();
     }

@@ -420,7 +420,10 @@
                             </div>
                         </article>
                     @empty
-                        <div class="empty-state">{{ $ticketTimelineEmptyMessage }}</div>
+                        <div class="empty-state">
+                            <strong>{{ $ticketTimelineEmptyMessage }}</strong>
+                            <p class="lede">{{ $ticketTimelineEmptyDescription }}</p>
+                        </div>
                     @endforelse
                 </div>
             </section>

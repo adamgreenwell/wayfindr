@@ -100,6 +100,7 @@ class AgentTicketController extends Controller
             'priorVisitorConversations' => $this->priorVisitorConversations($ticket),
             'priorVisitorTickets' => $this->priorVisitorTickets($ticket),
             'linkedConversationMessages' => $this->linkedConversationMessages($ticket),
+            'ticketTimelineEmptyDescription' => $this->ticketTimelineEmptyDescription($ticketTimelineFilter),
             'ticketTimelineEmptyMessage' => $this->ticketTimelineEmptyMessage($ticketTimelineFilter),
             'ticketTimelineFilter' => $ticketTimelineFilter,
             'ticketTimelineFilters' => $this->ticketTimelineFilters(),
@@ -869,6 +870,16 @@ class AgentTicketController extends Controller
             'internal_notes' => 'No internal note timeline events yet.',
             'ticket_activity' => 'No ticket activity timeline events yet.',
             default => 'No ticket timeline events yet.',
+        };
+    }
+
+    private function ticketTimelineEmptyDescription(string $filter): string
+    {
+        return match ($filter) {
+            'conversation' => 'Visitor messages and agent replies will appear here once this ticket is linked to an active conversation.',
+            'internal_notes' => 'Private handoff notes will appear here after an agent records context for the team.',
+            'ticket_activity' => 'Status, assignment, label, and external-link changes will appear here as the ticket moves.',
+            default => 'Conversation replies, internal notes, and ticket updates will appear here as this ticket gets worked.',
         };
     }
 
