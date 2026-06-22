@@ -52,6 +52,7 @@ class AgentDashboardController extends Controller
             'dataResponsibility' => config('wayfindr.data_responsibility'),
             'realtimeHealth' => $realtimeHealthSummary,
             'sites' => $sites,
+            'conversationNextSteps' => $this->conversationNextSteps($agent),
             'supportQueues' => $this->supportQueues($agent, $cobrowseConsentState),
             'ticketNextSteps' => $this->ticketNextSteps($agent),
             'unreadNotificationCount' => $unreadNotificationCount,
@@ -116,6 +117,91 @@ class AgentDashboardController extends Controller
                 ->count(),
             'open_tickets_count' => (clone $visibleOpenTickets)->count(),
             'unassigned_tickets_count' => (clone $visibleOpenTickets)->whereNull('assignee_id')->count(),
+        ];
+    }
+
+    /**
+     * @return array{
+     *     open_count: int,
+     *     queue_href: string,
+     *     items: array<int, array{
+     *         action: string,
+     *         detail: string,
+     *         href: string,
+     *         label: string,
+     *         state: string,
+     *         title: string,
+     *         count: int
+     *     }>
+     * }
+     */
+    private function conversationNextSteps(User $agent): array
+    {
+        $visibleOpenConversations = Conversation::query()
+            ->where('status', 'open')
+            ->whereHas('site', fn ($query) => $query->visibleToAgent($agent));
+
+        $definitions = $this->conversationNextStepDefinitions();
+        $counts = [
+            'new_activity' => (clone $visibleOpenConversations)->withNewActivityFor($agent)->count(),
+            'needs_reply' => (clone $visibleOpenConversations)
+                ->where(function ($query): void {
+                    $query->whereDoesntHave('messages')
+                        ->orWhereHas('latestMessage', fn ($query) => $query->where('sender_type', '!=', User::class));
+                })
+                ->count(),
+            'assigned_to_me' => (clone $visibleOpenConversations)->where('assigned_agent_id', $agent->id)->count(),
+            'unassigned' => (clone $visibleOpenConversations)->whereNull('assigned_agent_id')->count(),
+        ];
+
+        return [
+            'items' => collect(array_keys($definitions))
+                ->map(function (string $state) use ($counts, $definitions): array {
+                    return [
+                        ...$definitions[$state],
+                        'count' => (int) ($counts[$state] ?? 0),
+                        'href' => route('dashboard.conversations.index', ['conversation_filter' => $state]),
+                        'state' => $state,
+                    ];
+                })
+                ->filter(fn (array $item): bool => $item['count'] > 0)
+                ->values()
+                ->all(),
+            'open_count' => (clone $visibleOpenConversations)->count(),
+            'queue_href' => route('dashboard.conversations.index'),
+        ];
+    }
+
+    /**
+     * @return array<string, array{action: string, detail: string, label: string, title: string}>
+     */
+    private function conversationNextStepDefinitions(): array
+    {
+        return [
+            'new_activity' => [
+                'action' => 'Open attention queue',
+                'detail' => 'Unread visitor activity is waiting for review.',
+                'label' => 'new activity',
+                'title' => 'Needs attention',
+            ],
+            'needs_reply' => [
+                'action' => 'Open reply queue',
+                'detail' => 'Visitor-started or visitor-latest conversations need a response.',
+                'label' => 'need reply',
+                'title' => 'Reply to visitor',
+            ],
+            'assigned_to_me' => [
+                'action' => 'Open my conversations',
+                'detail' => 'Conversations assigned to you stay close without filling the dashboard.',
+                'label' => 'assigned conversation',
+                'title' => 'Assigned to you',
+            ],
+            'unassigned' => [
+                'action' => 'Open unassigned',
+                'detail' => 'Unassigned conversations need someone to take ownership.',
+                'label' => 'unassigned conversation',
+                'title' => 'Claim unassigned',
+            ],
         ];
     }
 

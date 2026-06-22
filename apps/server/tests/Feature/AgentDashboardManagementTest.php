@@ -115,6 +115,88 @@ test('dashboard summarizes visible ticket next steps', function (): void {
         ->assertDontSee('Hidden site ticket');
 });
 
+test('dashboard summarizes visible conversation next steps', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'name' => 'Ada Agent',
+    ]);
+    $teammate = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'name' => 'Tess Teammate',
+    ]);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $hiddenSite = Site::factory()->for($account)->create(['name' => 'Hidden Docs']);
+    $hiddenSite->supportAgents()->attach($teammate);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-dashboard-chat']);
+
+    $needsReplyConversation = Conversation::factory()->for($site)->for($visitor)->for($agent, 'assignedAgent')->create([
+        'last_message_at' => now()->subMinutes(3),
+        'status' => 'open',
+        'subject' => 'Visitor needs login help',
+        'support_code' => 'WF-DASHCHAT1',
+    ]);
+    ConversationMessage::factory()->for($needsReplyConversation)->create([
+        'body' => 'Can someone help with login?',
+        'created_at' => now()->subMinutes(3),
+        'sender_id' => $visitor->id,
+        'sender_type' => Visitor::class,
+    ]);
+
+    $waitingConversation = Conversation::factory()->for($site)->for($visitor)->for($agent, 'assignedAgent')->create([
+        'last_message_at' => now()->subMinutes(2),
+        'status' => 'open',
+        'subject' => 'Agent already replied',
+        'support_code' => 'WF-DASHCHAT2',
+    ]);
+    ConversationMessage::factory()->for($waitingConversation)->create([
+        'body' => 'Try this next step.',
+        'created_at' => now()->subMinutes(2),
+        'sender_id' => $agent->id,
+        'sender_type' => User::class,
+    ]);
+    $waitingConversation->markReadFor($agent, now());
+
+    $unassignedConversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'status' => 'open',
+        'subject' => 'Ready to claim',
+        'support_code' => 'WF-DASHCHAT3',
+    ]);
+    $unassignedConversation->markReadFor($agent, now());
+
+    Conversation::factory()->for($hiddenSite)->create([
+        'status' => 'open',
+        'subject' => 'Hidden conversation',
+        'support_code' => 'WF-HIDDENCHAT',
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard')
+        ->assertOk()
+        ->assertSee('Conversation next steps')
+        ->assertSee('3 open conversations needing movement')
+        ->assertSee('Needs attention')
+        ->assertSee('1 new activity')
+        ->assertSee(route('dashboard.conversations.index', ['conversation_filter' => 'new_activity']), false)
+        ->assertSee('Reply to visitor')
+        ->assertSee('2 need replies')
+        ->assertSee(route('dashboard.conversations.index', ['conversation_filter' => 'needs_reply']), false)
+        ->assertSee('Assigned to you')
+        ->assertSee('2 assigned conversations')
+        ->assertSee(route('dashboard.conversations.index', ['conversation_filter' => 'assigned_to_me']), false)
+        ->assertSee('Claim unassigned')
+        ->assertSee('1 unassigned conversation')
+        ->assertSee(route('dashboard.conversations.index', ['conversation_filter' => 'unassigned']), false)
+        ->assertDontSee('Visitor needs login help')
+        ->assertDontSee('WF-DASHCHAT1')
+        ->assertDontSee('Agent already replied')
+        ->assertDontSee('WF-DASHCHAT2')
+        ->assertDontSee('Ready to claim')
+        ->assertDontSee('WF-DASHCHAT3')
+        ->assertDontSee('Hidden conversation')
+        ->assertDontSee('WF-HIDDENCHAT');
+});
+
 test('dashboard gives account admins a command center for account administration', function (): void {
     $admin = User::factory()->for(Account::factory())->create([
         'account_role' => AccountRole::Admin,

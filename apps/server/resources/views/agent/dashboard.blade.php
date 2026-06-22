@@ -54,6 +54,37 @@
                 </div>
             </section>
 
+            <section class="section" aria-labelledby="conversation-next-steps-heading">
+                <div class="section-header">
+                    <div>
+                        <h2 id="conversation-next-steps-heading">Conversation next steps</h2>
+                        <p class="lede">
+                            {{ $conversationNextSteps['open_count'] }} open {{ \Illuminate\Support\Str::plural('conversation', $conversationNextSteps['open_count']) }} needing movement
+                        </p>
+                    </div>
+                    <a class="button secondary" href="{{ $conversationNextSteps['queue_href'] }}">Open conversation queue</a>
+                </div>
+
+                @if ($conversationNextSteps['items'] === [])
+                    <p class="empty">No open conversations need movement right now.</p>
+                @else
+                    <div class="management-list">
+                        @foreach ($conversationNextSteps['items'] as $conversationNextStep)
+                            <a class="management-link" href="{{ $conversationNextStep['href'] }}">
+                                <span>
+                                    <strong>{{ $conversationNextStep['title'] }}</strong>
+                                    <span class="lede">
+                                        {{ $conversationNextStep['count'].' '.\Illuminate\Support\Str::plural($conversationNextStep['label'], $conversationNextStep['count']) }}
+                                    </span>
+                                    <span class="table-note">{{ $conversationNextStep['detail'] }}</span>
+                                </span>
+                                <span class="management-action">{{ $conversationNextStep['action'] }}</span>
+                            </a>
+                        @endforeach
+                    </div>
+                @endif
+            </section>
+
             <section class="section" aria-labelledby="ticket-next-steps-heading">
                 <div class="section-header">
                     <div>
