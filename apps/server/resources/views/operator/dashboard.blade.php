@@ -1,11 +1,58 @@
 <x-layouts.app title="Operator console">
-    @php($readinessConfirmationRoute = route('operator.readiness.confirmations.store'))
+    @php
+        $readinessConfirmationRoute = route('operator.readiness.confirmations.store');
+        $operatorActivityCount = $operatorActivity->count();
+        $operatorActivityLabel = $operatorActivityCount === 1 ? '1 safe event' : $operatorActivityCount.' safe events';
+        $proofCoverageSummary = sprintf(
+            '%d current / %d stale / %d missing',
+            $readiness['proof_coverage']['fresh_count'],
+            $readiness['proof_coverage']['stale_count'],
+            $readiness['proof_coverage']['missing_count'],
+        );
+    @endphp
 
     <p><a class="text-link" href="{{ route('dashboard') }}">Back to dashboard</a></p>
     <h1>Operator console</h1>
     <p class="lede">
         Signed in as {{ $operator->name }}. Platform operator access does not grant support data access.
     </p>
+
+    <section class="section" aria-labelledby="operator-focus-heading">
+        <div class="section-header">
+            <div>
+                <h2 id="operator-focus-heading">Operator focus</h2>
+                <p class="lede">Current instance posture, without opening customer support data.</p>
+            </div>
+            <span class="readiness-status" data-status="{{ $readiness['attention_count'] > 0 ? 'attention' : 'ready' }}">
+                {{ $readiness['label'] }}
+            </span>
+        </div>
+
+        <div class="meta-grid realtime-grid">
+            <div class="meta-item">
+                <span class="meta-label">Posture</span>
+                <span class="meta-value">{{ $readiness['label'] }}</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Proof coverage</span>
+                <span class="meta-value">{{ $proofCoverageSummary }}</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Safe activity</span>
+                <span class="meta-value">{{ $operatorActivityLabel }}</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Support data</span>
+                <span class="meta-value">Hidden here</span>
+            </div>
+        </div>
+
+        <div class="notice-copy">
+            <p>
+                Use this console to keep the installation healthy without opening customer support data.
+            </p>
+        </div>
+    </section>
 
     <section class="section" aria-labelledby="system-identity-heading">
         <div class="section-header">
@@ -200,7 +247,7 @@
                 <p class="lede">Only safe instance-level operator actions are shown here.</p>
             </div>
             <span class="lede">
-                {{ $operatorActivity->count() === 1 ? '1 safe event' : $operatorActivity->count().' safe events' }}
+                {{ $operatorActivityLabel }}
             </span>
         </div>
 

@@ -53,6 +53,70 @@ test('explicit platform operators can inspect the operator console', function ()
         ->assertSee('Platform operator access does not grant support data access.');
 });
 
+test('operator console shows a safe focus summary for the current instance posture', function (): void {
+    $this->travelTo(Carbon::parse('2026-06-22 12:00:00'));
+
+    $operator = User::factory()->for(Account::factory(['name' => 'Wayfindr Ops']))->create([
+        'account_role' => AccountRole::Agent,
+        'platform_role' => PlatformRole::Operator,
+        'name' => 'Olive Operator',
+    ]);
+    $site = Site::factory()->create(['name' => 'Private Focus Site']);
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-focus-secret',
+    ]);
+    Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-OPFOCUS',
+        'subject' => 'Private operator focus request',
+    ]);
+
+    OperatorReadinessConfirmation::query()->create([
+        'key' => 'scheduler',
+        'confirmed_by_id' => $operator->id,
+        'confirmed_at' => now()->subDay(),
+        'note' => 'Scheduler proof mentioned WF-OPFOCUS.',
+    ]);
+    OperatorReadinessConfirmation::query()->create([
+        'key' => 'backups_restore',
+        'confirmed_by_id' => $operator->id,
+        'confirmed_at' => now()->subDays(31),
+        'note' => 'Restore proof mentioned anon-focus-secret.',
+    ]);
+
+    AuditEvent::query()->create([
+        'account_id' => $operator->account_id,
+        'actor_type' => $operator->getMorphClass(),
+        'actor_id' => $operator->id,
+        'action' => 'operator_readiness.confirmed',
+        'metadata' => [
+            'key' => 'scheduler',
+            'note' => 'Support code WF-OPFOCUS was checked.',
+        ],
+        'occurred_at' => now()->subMinutes(5),
+    ]);
+
+    $this->actingAs($operator)
+        ->get('/operator')
+        ->assertOk()
+        ->assertSee('Operator focus')
+        ->assertSee('Posture')
+        ->assertSee('Needs attention')
+        ->assertSee('Proof coverage')
+        ->assertSee('1 current / 1 stale / 0 missing')
+        ->assertSee('Safe activity')
+        ->assertSee('1 safe event')
+        ->assertSee('Support data')
+        ->assertSee('Hidden here')
+        ->assertSee('Use this console to keep the installation healthy without opening customer support data.')
+        ->assertDontSee('WF-OPFOCUS')
+        ->assertDontSee('Private operator focus request')
+        ->assertDontSee('Private Focus Site')
+        ->assertDontSee('anon-focus-secret')
+        ->assertDontSee('Scheduler proof mentioned WF-OPFOCUS.')
+        ->assertDontSee('Restore proof mentioned anon-focus-secret.')
+        ->assertDontSee('Support code WF-OPFOCUS was checked.');
+});
+
 test('platform operators can confirm manual readiness items from the operator console', function (): void {
     $account = Account::factory()->create(['name' => 'Wayfindr Ops']);
     $operator = User::factory()->for($account)->create([
