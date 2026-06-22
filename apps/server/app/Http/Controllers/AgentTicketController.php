@@ -60,6 +60,7 @@ class AgentTicketController extends Controller
         ]);
 
         $ticketReturnQuery = $this->ticketQueueReturnQuery($request);
+        $ticketDetailReturnQuery = $this->ticketDetailReturnQuery($request);
         $ticketTimelineFilter = $this->ticketTimelineFilter($request);
         $fullTicketTimeline = $this->ticketTimeline($ticket);
         $ticketTimeline = $this->filteredTicketTimeline($fullTicketTimeline, $ticketTimelineFilter);
@@ -76,6 +77,7 @@ class AgentTicketController extends Controller
             'latestTicketEscalation' => $ticket->latestRecentEscalationEvent(),
             'noteTemplates' => AgentNoteTemplate::options(),
             'replyTemplates' => $replyTemplateOptions->forAgent($agent),
+            'ticketDetailReturnQuery' => $ticketDetailReturnQuery,
             'ticketReturnLink' => $this->ticketReturnLink($ticketReturnQuery),
             'ticketReturnQuery' => $ticketReturnQuery,
             'ticketLabelOptions' => $agent->account->ticketLabels()
@@ -624,7 +626,7 @@ class AgentTicketController extends Controller
 
     private function redirectAfterUpdate(Ticket $ticket, Request $request, string $status): RedirectResponse
     {
-        $ticketReturnQuery = $this->ticketQueueReturnQuery($request);
+        $ticketReturnQuery = $this->ticketDetailReturnQuery($request);
 
         if ($ticketReturnQuery !== []) {
             return redirect()
@@ -805,11 +807,26 @@ class AgentTicketController extends Controller
 
     private function ticketTimelineFilter(Request $request): string
     {
-        $filter = $request->query('timeline_filter');
+        $filter = $request->input('timeline_filter');
 
         return is_string($filter) && array_key_exists($filter, $this->ticketTimelineFilters())
             ? $filter
             : 'all';
+    }
+
+    /**
+     * @return array<string, int|string>
+     */
+    private function ticketDetailReturnQuery(Request $request): array
+    {
+        $query = $this->ticketQueueReturnQuery($request);
+        $timelineFilter = $this->ticketTimelineFilter($request);
+
+        if ($timelineFilter !== 'all') {
+            $query['timeline_filter'] = $timelineFilter;
+        }
+
+        return $query;
     }
 
     /**

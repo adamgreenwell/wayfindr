@@ -4014,6 +4014,11 @@ test('ticket detail and actions preserve ticket queue return context', function 
         'ticket_search' => 'smoke',
     ];
     $expectedDetailUrl = route('dashboard.tickets.show', ['ticket' => $ticket] + $returnQuery);
+    $expectedFilteredDetailUrl = route('dashboard.tickets.show', [
+        'ticket' => $ticket,
+    ] + $returnQuery + [
+        'timeline_filter' => 'conversation',
+    ]);
 
     $this->actingAs($agent)
         ->get($expectedDetailUrl.'&ignored=yes')
@@ -4021,6 +4026,25 @@ test('ticket detail and actions preserve ticket queue return context', function 
         ->assertSee('Back to ticket queue')
         ->assertSee(str_replace('&', '&amp;', route('dashboard.tickets.index', $returnQuery)), false)
         ->assertDontSee('ignored=yes', false);
+
+    $this->actingAs($agent)
+        ->get($expectedFilteredDetailUrl)
+        ->assertOk()
+        ->assertSee('name="timeline_filter" value="conversation"', false)
+        ->assertSee(str_replace('&', '&amp;', route('dashboard.tickets.index', $returnQuery)), false);
+
+    $this->actingAs($agent)
+        ->get($expectedDetailUrl.'&timeline_filter=not-real')
+        ->assertOk()
+        ->assertDontSee('name="timeline_filter"', false);
+
+    $this->actingAs($agent)
+        ->post("/dashboard/tickets/{$ticket->id}/notes", $returnQuery + [
+            'body' => 'Filtered timeline context should survive the redirect.',
+            'timeline_filter' => 'conversation',
+        ])
+        ->assertRedirect($expectedFilteredDetailUrl)
+        ->assertSessionHas('status', 'Ticket note added.');
 
     $this->actingAs($agent)
         ->post("/dashboard/tickets/{$ticket->id}/notes", $returnQuery + [
