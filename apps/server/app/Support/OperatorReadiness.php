@@ -366,7 +366,6 @@ class OperatorReadiness
             commands: [
                 '* * * * * cd /path/to/apps/server && php artisan schedule:run',
                 'php artisan schedule:list',
-                'php artisan wayfindr:send-alert-digests',
             ]
         );
     }
@@ -529,7 +528,6 @@ class OperatorReadiness
                     'php artisan queue:failed',
                     '* * * * * cd /path/to/apps/server && php artisan schedule:run',
                     'php artisan schedule:list',
-                    'php artisan wayfindr:send-alert-digests',
                 ],
             ),
             $this->smokeStep(

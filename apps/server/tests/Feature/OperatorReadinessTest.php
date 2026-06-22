@@ -64,6 +64,7 @@ test('account owner can inspect operator readiness diagnostics', function (): vo
         ->assertSee('data-copy-value="php artisan queue:failed"', false)
         ->assertSee('data-copy-value="php artisan reverb:start --host=127.0.0.1 --port=8080"', false)
         ->assertSee('data-copy-value="php artisan wayfindr:cobrowse-transport-smoke"', false)
+        ->assertDontSee('data-copy-value="php artisan wayfindr:send-alert-digests"', false)
         ->assertSee('Confirm background workers')
         ->assertSee('Open the public app URL')
         ->assertSee('Send a widget smoke test')
@@ -893,7 +894,6 @@ test('readiness diagnostics include a guided post install smoke path', function 
                 'php artisan queue:failed',
                 '* * * * * cd /path/to/apps/server && php artisan schedule:run',
                 'php artisan schedule:list',
-                'php artisan wayfindr:send-alert-digests',
             ],
         ]),
         fn ($step) => $step->toMatchArray([
