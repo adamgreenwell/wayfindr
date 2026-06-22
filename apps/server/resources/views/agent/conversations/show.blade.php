@@ -2,7 +2,11 @@
             @php
                 $conversationActivityPreview = $conversation->queueActivityPreview();
                 $conversationNextAction = $conversation->nextAction();
-                $visitorReadTone = $conversation->visitorReadState() === 'seen' ? 'ready' : 'manual';
+                $visitorReadTone = match ($conversation->visitorReadState()) {
+                    'seen' => 'ready',
+                    'unseen' => 'attention',
+                    default => 'manual',
+                };
             @endphp
 
             <a class="text-link" href="{{ $conversationBackUrl }}">Back to conversations</a>
@@ -1099,7 +1103,11 @@
                 }
 
                 function readStatusFor(state) {
-                    return state === 'seen' ? 'ready' : 'manual';
+                    if (state === 'seen') {
+                        return 'ready';
+                    }
+
+                    return state === 'unseen' ? 'attention' : 'manual';
                 }
 
                 function updateVisitorRead(visitorRead) {

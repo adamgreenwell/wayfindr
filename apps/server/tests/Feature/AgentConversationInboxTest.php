@@ -1413,6 +1413,7 @@ test('conversation context surfaces visitor read state before the reply composer
                 'Not seen yet',
             ])
             ->assertSee('data-visitor-read-context-label', false)
+            ->assertSee('data-status="attention"', false)
             ->assertSee("document.querySelectorAll('[data-visitor-read-label]')", false);
     } finally {
         Carbon::setTestNow();
