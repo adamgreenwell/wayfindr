@@ -976,6 +976,119 @@ test('alert center mark read controls preserve active filters', function (): voi
         ->assertRedirect('/dashboard/alerts?alert_kind=ticket&alert_search=Ticket%20%23'.$ticket->id);
 });
 
+test('alert center bulk read action explains the current visible scope', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $assigningAgent = User::factory()->for($account)->create(['name' => 'Bea Builder']);
+    $visibleSite = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $hiddenSite = Site::factory()->for($account)->create(['name' => 'Private Docs']);
+    $remainingAgent = User::factory()->for($account)->create(['name' => 'Casey Current']);
+    $visitor = Visitor::factory()->for($visibleSite)->create(['anonymous_id' => 'anon-docs']);
+    $hiddenVisitor = Visitor::factory()->for($hiddenSite)->create(['anonymous_id' => 'anon-hidden']);
+    $conversation = Conversation::factory()->for($visibleSite)->for($visitor)->create([
+        'assigned_agent_id' => $agent->id,
+        'support_code' => 'WF-SCOPED1',
+        'subject' => 'Scoped install help',
+    ]);
+    $message = ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'This filtered conversation should be marked read.',
+    ]);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($visibleSite)
+        ->for($agent, 'assignee')
+        ->create([
+            'subject' => 'Keep this ticket unread',
+            'priority' => 'high',
+        ]);
+    $hiddenConversation = Conversation::factory()->for($hiddenSite)->for($hiddenVisitor)->create([
+        'support_code' => 'WF-HIDDEN-SCOPE',
+        'subject' => 'Hidden scoped issue',
+    ]);
+    $hiddenMessage = ConversationMessage::factory()->for($hiddenConversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $hiddenVisitor->id,
+        'body' => 'This hidden alert should stay unread.',
+    ]);
+
+    $agent->notify(new ConversationNeedsReply($message));
+    $agent->notify(new TicketAssigned($ticket, $assigningAgent));
+    $agent->notify(new ConversationNeedsReply($hiddenMessage));
+    $hiddenSite->supportAgents()->sync([$remainingAgent->id]);
+
+    $conversationNotification = $agent->unreadNotifications()
+        ->get()
+        ->firstOrFail(fn ($notification): bool => data_get($notification->data, 'support_code') === 'WF-SCOPED1');
+    $ticketNotification = $agent->unreadNotifications()
+        ->get()
+        ->firstOrFail(fn ($notification): bool => data_get($notification->data, 'ticket_id') === $ticket->id);
+    $hiddenNotification = $agent->unreadNotifications()
+        ->get()
+        ->firstOrFail(fn ($notification): bool => data_get($notification->data, 'support_code') === 'WF-HIDDEN-SCOPE');
+
+    $this->actingAs($agent)
+        ->get('/dashboard/alerts?alert_filter=unread&alert_kind=conversation&alert_search=WF-SCOPED1')
+        ->assertOk()
+        ->assertSee('Mark matching read')
+        ->assertSee('All unread alerts matching this view, including alerts outside the current display, will be marked read.')
+        ->assertDontSee('Mark all read');
+
+    $this->actingAs($agent)
+        ->post('/dashboard/alerts/read', [
+            'return_to' => 'alerts',
+            'alert_filter' => 'unread',
+            'alert_kind' => 'conversation',
+            'alert_search' => 'WF-SCOPED1',
+        ])
+        ->assertRedirect('/dashboard/alerts?alert_filter=unread&alert_kind=conversation&alert_search=WF-SCOPED1');
+
+    expect($conversationNotification->fresh()->read())->toBeTrue()
+        ->and($ticketNotification->fresh()->unread())->toBeTrue()
+        ->and($hiddenNotification->fresh()->unread())->toBeTrue();
+});
+
+test('alert center bulk read includes matching unread alerts outside the display cap', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+
+    foreach (range(1, 31) as $index) {
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'assigned_agent_id' => $agent->id,
+            'support_code' => 'WF-BULK'.str_pad((string) $index, 2, '0', STR_PAD_LEFT),
+            'subject' => 'Bulk scope help '.$index,
+        ]);
+        $message = ConversationMessage::factory()->for($conversation)->create([
+            'sender_type' => Visitor::class,
+            'sender_id' => $visitor->id,
+            'body' => 'Bulk scope message '.$index,
+        ]);
+
+        $agent->notify(new ConversationNeedsReply($message));
+    }
+
+    $this->actingAs($agent)
+        ->get('/dashboard/alerts?alert_filter=unread&alert_kind=conversation&alert_search=Bulk+scope')
+        ->assertOk()
+        ->assertSee('30 visible')
+        ->assertSee('31 unread')
+        ->assertSee('All unread alerts matching this view, including alerts outside the current display, will be marked read.');
+
+    $this->actingAs($agent)
+        ->post('/dashboard/alerts/read', [
+            'return_to' => 'alerts',
+            'alert_filter' => 'unread',
+            'alert_kind' => 'conversation',
+            'alert_search' => 'Bulk scope',
+        ])
+        ->assertRedirect('/dashboard/alerts?alert_filter=unread&alert_kind=conversation&alert_search=Bulk%20scope');
+
+    expect($agent->fresh()->unreadNotifications)->toHaveCount(0);
+});
+
 test('alert center keeps older unread alerts visible before capping recent read alerts', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);

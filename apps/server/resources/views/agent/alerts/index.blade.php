@@ -21,6 +21,10 @@
                 'ticket' => 'ticket alert',
             ][$alertKind] ?? 'alert';
             $hasAlertFilters = $alertKind !== 'all' || $alertSearch !== '';
+            $bulkReadLabel = $hasAlertFilters ? 'Mark matching read' : 'Mark unread alerts read';
+            $bulkReadHelp = $hasAlertFilters
+                ? 'All unread alerts matching this view, including alerts outside the current display, will be marked read.'
+                : 'All unread alerts you can still access, including alerts outside the current display, will be marked read.';
         @endphp
 
         <div class="section-header">
@@ -62,7 +66,8 @@
                         @if ($alertSearch !== '')
                             <input type="hidden" name="alert_search" value="{{ $alertSearch }}">
                         @endif
-                        <button class="button secondary" type="submit">Mark all read</button>
+                        <button class="button secondary" type="submit" aria-describedby="alert-bulk-read-help">{{ $bulkReadLabel }}</button>
+                        <span id="alert-bulk-read-help" class="table-note">{{ $bulkReadHelp }}</span>
                     </form>
                 @endif
             </div>
