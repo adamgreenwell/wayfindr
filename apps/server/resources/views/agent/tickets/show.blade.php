@@ -689,6 +689,14 @@
                     @endforelse
                 </div>
 
+                <div class="notice-copy notice-copy-bordered">
+                    <p><strong>Manual external reference</strong></p>
+                    <p>Attach an existing issue only when another tracker owns part of the follow-up.</p>
+                    <p>Use stable issue URLs, project keys, and issue IDs so teammates can find the handoff later.</p>
+                    <p>Keep raw visitor data, transcripts, cobrowse snapshots, and internal notes in Wayfindr unless an agent deliberately summarizes them.</p>
+                    <p>Manual references do not push data to the provider.</p>
+                </div>
+
                 <form class="section-form" method="POST" action="{{ route('dashboard.tickets.external-links.store', $ticket) }}">
                     @csrf
 

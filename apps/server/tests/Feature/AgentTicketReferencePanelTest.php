@@ -134,6 +134,27 @@ test('ticket detail guides agents through empty workspaces', function (): void {
         ->assertSee('Lifecycle, assignment, label, reply, and external-link updates will appear here once the team works the ticket.');
 });
 
+test('ticket detail guides agents through manual external references', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->create([
+            'subject' => 'Manual external reference',
+        ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.tickets.show', $ticket))
+        ->assertOk()
+        ->assertSee('Manual external reference')
+        ->assertSee('Attach an existing issue only when another tracker owns part of the follow-up.')
+        ->assertSee('Use stable issue URLs, project keys, and issue IDs so teammates can find the handoff later.')
+        ->assertSee('Keep raw visitor data, transcripts, cobrowse snapshots, and internal notes in Wayfindr unless an agent deliberately summarizes them.')
+        ->assertSee('Manual references do not push data to the provider.');
+});
+
 test('ticket detail reference handles standalone tickets without a linked conversation', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
