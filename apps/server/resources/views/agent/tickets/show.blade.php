@@ -12,6 +12,7 @@
                 $ticketTiming = $ticket->queueTimingContext();
                 $ticketNextAction = $ticket->nextAction();
                 $ticketReplyVisibility = $ticket->replyVisibility();
+                $ticketStatusActionReadiness = $ticket->statusActionReadiness();
                 $requesterReference = $ticket->requester?->email
                     ?? $ticket->requester?->name
                     ?? $ticket->requester?->anonymous_id
@@ -764,6 +765,21 @@
                 <div class="section-header">
                     <h2 id="ticket-actions-heading">Actions</h2>
                     <span class="lede">{{ $ticket->assignee?->name ?? 'Unassigned' }}</span>
+                </div>
+
+                <div class="notice-copy notice-copy-bordered">
+                    <p>
+                        <strong>Status action readiness</strong>
+                        <span class="readiness-status" data-status="{{ $ticketStatusActionReadiness['tone'] }}">
+                            {{ $ticketStatusActionReadiness['title'] }}
+                        </span>
+                    </p>
+                    <p>{{ $ticketStatusActionReadiness['detail'] }}</p>
+                    <div class="notice-actions">
+                        <a class="button secondary" href="{{ $ticketStatusActionReadiness['href'] }}">
+                            {{ $ticketStatusActionReadiness['cta'] }}
+                        </a>
+                    </div>
                 </div>
 
                 @php

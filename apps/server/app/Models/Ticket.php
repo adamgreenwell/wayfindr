@@ -219,6 +219,58 @@ class Ticket extends Model
         };
     }
 
+    /**
+     * @return array{title: string, detail: string, cta: string, href: string, tone: string}
+     */
+    public function statusActionReadiness(): array
+    {
+        return match ($this->attentionState()) {
+            'needs_reply' => [
+                'cta' => 'Jump to reply',
+                'detail' => 'Visitor replied last. Closing now may leave the customer waiting. Use pending or close only after an agent update or a confirmed outcome.',
+                'href' => '#ticket-reply',
+                'title' => 'Reply before closing',
+                'tone' => 'attention',
+            ],
+            'needs_owner' => [
+                'cta' => 'Assign ticket',
+                'detail' => 'Assign an owner before changing status so follow-up does not drift.',
+                'href' => '#assignee_id',
+                'title' => 'Assign before status changes',
+                'tone' => 'manual',
+            ],
+            'waiting_on_customer' => $this->status === 'pending'
+                ? [
+                    'cta' => 'Review reopen option',
+                    'detail' => 'This ticket is pending. Reopen it when the visitor answers or new work is needed.',
+                    'href' => '#reopen_note',
+                    'title' => 'Pending ticket',
+                    'tone' => 'manual',
+                ]
+                : [
+                    'cta' => 'Review status actions',
+                    'detail' => 'Agent replied last. Mark pending if you are waiting on the visitor, or close once the outcome is settled.',
+                    'href' => '#ticket-actions-heading',
+                    'title' => 'Lifecycle options are calm',
+                    'tone' => 'ready',
+                ],
+            'resolved' => [
+                'cta' => 'Review reopen option',
+                'detail' => 'Reopen only if the customer comes back or the outcome changes. Use the reopen note to leave the next agent enough context.',
+                'href' => '#reopen_note',
+                'title' => 'Closed ticket',
+                'tone' => 'manual',
+            ],
+            default => [
+                'cta' => 'Review status actions',
+                'detail' => 'Add the next update, internal note, pending state, or close once the outcome is clear.',
+                'href' => '#ticket-actions-heading',
+                'title' => 'Ready for lifecycle update',
+                'tone' => 'manual',
+            ],
+        };
+    }
+
     public function attentionSortRank(): int
     {
         return match ($this->attentionState()) {
