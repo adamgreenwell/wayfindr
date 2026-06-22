@@ -2,6 +2,7 @@
             @php
                 $conversationActivityPreview = $conversation->queueActivityPreview();
                 $conversationNextAction = $conversation->nextAction();
+                $conversationStatusActionReadiness = $conversation->statusActionReadiness();
                 $visitorReadTone = match ($conversation->visitorReadState()) {
                     'seen' => 'ready',
                     'unseen' => 'attention',
@@ -92,6 +93,21 @@
                         <button class="button secondary" type="submit">Release conversation</button>
                     </form>
                 @endif
+
+                <div class="notice-copy notice-copy-bordered" id="conversation-status-action">
+                    <p>
+                        <strong>Status action readiness</strong>
+                        <span class="readiness-status" data-status="{{ $conversationStatusActionReadiness['tone'] }}">
+                            {{ $conversationStatusActionReadiness['title'] }}
+                        </span>
+                    </p>
+                    <p>{{ $conversationStatusActionReadiness['detail'] }}</p>
+                    <div class="notice-actions">
+                        <a class="button secondary" href="{{ $conversationStatusActionReadiness['href'] }}">
+                            {{ $conversationStatusActionReadiness['cta'] }}
+                        </a>
+                    </div>
+                </div>
 
                 <form class="section-form" method="POST" action="{{ route($conversation->status === 'closed' ? 'dashboard.conversations.reopen' : 'dashboard.conversations.close', $conversation->support_code) }}">
                     @csrf

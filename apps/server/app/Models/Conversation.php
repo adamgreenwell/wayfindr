@@ -222,6 +222,57 @@ class Conversation extends Model
     }
 
     /**
+     * @return array{title: string, detail: string, cta: string, href: string, tone: string}
+     */
+    public function statusActionReadiness(): array
+    {
+        if ($this->status === 'closed') {
+            return [
+                'cta' => 'Review reopen option',
+                'detail' => 'Reopen only if the visitor returns or the outcome changes. The existing transcript stays attached to this support code.',
+                'href' => '#conversation-status-action',
+                'title' => 'Closed conversation',
+                'tone' => 'manual',
+            ];
+        }
+
+        $latestMessage = $this->relationLoaded('latestMessage')
+            ? $this->latestMessage
+            : $this->messages()
+                ->latest('created_at')
+                ->latest('id')
+                ->first();
+
+        if (! $latestMessage) {
+            return [
+                'cta' => 'Review context',
+                'detail' => 'Wait for the visitor or use the context panel before closing an empty conversation.',
+                'href' => '#visitor-context-heading',
+                'title' => 'No messages yet',
+                'tone' => 'manual',
+            ];
+        }
+
+        if ($latestMessage->sender_type === Visitor::class) {
+            return [
+                'cta' => 'Jump to reply',
+                'detail' => 'Visitor replied last. Closing now may leave the visitor waiting. Send a reply or create a ticket before closing the live chat.',
+                'href' => '#reply-heading',
+                'title' => 'Reply before closing',
+                'tone' => 'attention',
+            ];
+        }
+
+        return [
+            'cta' => 'Review close option',
+            'detail' => 'Agent replied last. Keep it open while waiting, or close once the outcome is settled.',
+            'href' => '#conversation-status-action',
+            'title' => 'Ready to close when settled',
+            'tone' => 'ready',
+        ];
+    }
+
+    /**
      * @return array{label: string, body: string, occurred_at: CarbonInterface|null}
      */
     public function queueActivityPreview(): array
