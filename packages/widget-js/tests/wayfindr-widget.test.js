@@ -99,6 +99,7 @@ test('marks visitor chat regions for calm assistive announcements', () => {
   const timeline = widget.root.querySelector('.wayfindr-widget__timeline');
   const notice = widget.root.querySelector('.wayfindr-widget__notice');
   const typing = widget.root.querySelector('.wayfindr-widget__typing');
+  const connection = widget.root.querySelector('.wayfindr-widget__connection');
   const status = widget.root.querySelector('.wayfindr-widget__status');
 
   assert.equal(timeline.getAttribute('role'), 'log');
@@ -114,6 +115,10 @@ test('marks visitor chat regions for calm assistive announcements', () => {
   assert.equal(typing.getAttribute('role'), 'status');
   assert.equal(typing.getAttribute('aria-live'), 'polite');
   assert.equal(typing.getAttribute('aria-atomic'), 'true');
+
+  assert.equal(connection.getAttribute('role'), 'status');
+  assert.equal(connection.getAttribute('aria-live'), 'polite');
+  assert.equal(connection.getAttribute('aria-atomic'), 'true');
 
   assert.equal(status.getAttribute('role'), 'status');
   assert.equal(status.getAttribute('aria-live'), 'polite');
@@ -2558,6 +2563,166 @@ test('polls active conversations so agent replies appear when realtime is unavai
   widget.destroy();
 });
 
+test('shows calm connection trouble when fallback message polling fails and clears after refresh', async () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+  let timelineFetches = 0;
+  const recoveryResponse = deferred();
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    storage: memoryStorage(),
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 50,
+    fetch: async (url, options) => {
+      const path = new URL(url).pathname;
+
+      if (path === '/api/widget/bootstrap') {
+        return jsonResponse(201, {
+          data: {
+            site: { public_key: 'site_public_docs', settings: {} },
+            visitor: { anonymous_id: 'anon-browser-123', token: 'visitor-token-123' },
+          },
+        });
+      }
+
+      if (path === '/api/conversations') {
+        return jsonResponse(201, {
+          data: {
+            support_code: 'WF-POLLFAIL',
+            status: 'open',
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-POLLFAIL/messages' && options.method === 'POST') {
+        return jsonResponse(201, {
+          data: {
+            conversation: { support_code: 'WF-POLLFAIL' },
+            message: {
+              id: 1,
+              sender: { kind: 'visitor', name: 'Visitor' },
+              type: 'text',
+              body: 'Can you help me?',
+              created_at: '2026-05-23T14:00:00.000000Z',
+            },
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-POLLFAIL/messages') {
+        timelineFetches += 1;
+
+        if (timelineFetches === 2) {
+          return jsonResponse(503, {
+            message: 'Upstream timeout.',
+          });
+        }
+
+        if (timelineFetches > 2) {
+          return recoveryResponse.promise;
+        }
+
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-POLLFAIL', status: 'open' },
+            messages: [{
+              id: 1,
+              sender: { kind: 'visitor', name: 'Visitor' },
+              type: 'text',
+              body: 'Can you help me?',
+              created_at: '2026-05-23T14:00:00.000000Z',
+            }, ...(timelineFetches > 2
+              ? [{
+                  id: 2,
+                  sender: { kind: 'agent', name: 'Ada Agent' },
+                  type: 'text',
+                  body: 'I am still here.',
+                  created_at: '2026-05-23T14:01:00.000000Z',
+                }]
+              : [])],
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-POLLFAIL/cobrowse') {
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-POLLFAIL' },
+            cobrowse: {
+              status: 'unavailable',
+              consent: 'unavailable',
+              requested_by: null,
+            },
+          },
+        });
+      }
+
+      throw new Error('Unexpected request ' + url);
+    },
+  });
+
+  widget.open();
+
+  widget.root.querySelector('.wayfindr-widget__textarea').value = 'Can you help me?';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+    new dom.window.Event('submit', { bubbles: true, cancelable: true }),
+  );
+
+  await settle();
+  await wait(65);
+  await settle();
+
+  assert.deepEqual(messageSummaries(widget), ['VisitorCan you help me?']);
+  assert.match(
+    widget.root.querySelector('.wayfindr-widget__connection').textContent,
+    /Having trouble reaching support/,
+  );
+  assert.doesNotMatch(
+    widget.root.querySelector('.wayfindr-widget__status').textContent,
+    /Upstream timeout/,
+  );
+
+  widget.root.querySelector('.wayfindr-widget__refresh').dispatchEvent(
+    new dom.window.Event('click', { bubbles: true }),
+  );
+
+  recoveryResponse.resolve(jsonResponse(200, {
+    data: {
+      conversation: { support_code: 'WF-POLLFAIL', status: 'open' },
+      messages: [{
+        id: 1,
+        sender: { kind: 'visitor', name: 'Visitor' },
+        type: 'text',
+        body: 'Can you help me?',
+        created_at: '2026-05-23T14:00:00.000000Z',
+      }, {
+        id: 2,
+        sender: { kind: 'agent', name: 'Ada Agent' },
+        type: 'text',
+        body: 'I am still here.',
+        created_at: '2026-05-23T14:01:00.000000Z',
+      }],
+    },
+  }));
+
+  await settle();
+
+  assert.deepEqual(messageSummaries(widget), ['VisitorCan you help me?', 'Ada AgentI am still here.']);
+  assert.match(
+    widget.root.querySelector('.wayfindr-widget__connection').textContent,
+    /Using periodic refresh for updates/,
+  );
+
+  widget.destroy();
+});
+
 test('shows a calm support typing indicator from fetched message state', async () => {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
     url: 'https://docs.example.test/install',
@@ -3419,6 +3584,115 @@ test('appends live agent messages from the realtime subscription', async () => {
   widget.destroy();
 
   assert.equal(unsubscribed, true);
+});
+
+test('keeps live connection copy when redundant fallback message polling fails', async () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+  let liveMessage = null;
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    storage: memoryStorage(),
+    messagePollMs: 20,
+    realtime: {
+      subscribe: ({ onMessage }) => {
+        liveMessage = onMessage;
+
+        return {
+          unsubscribe: () => {},
+        };
+      },
+    },
+    fetch: async (url, options = {}) => {
+      const path = new URL(url).pathname;
+
+      if (path === '/api/widget/bootstrap') {
+        return jsonResponse(201, {
+          data: {
+            site: { public_key: 'site_public_docs', settings: {} },
+            visitor: { anonymous_id: 'anon-browser-123', token: 'visitor-token-123' },
+          },
+        });
+      }
+
+      if (path === '/api/conversations') {
+        return jsonResponse(201, {
+          data: {
+            support_code: 'WF-LIVEPOLL',
+            status: 'open',
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-LIVEPOLL/messages' && options.method === 'POST') {
+        return jsonResponse(201, {
+          data: {
+            conversation: { support_code: 'WF-LIVEPOLL' },
+            message: {
+              id: 1,
+              sender: { kind: 'visitor', name: 'Visitor' },
+              type: 'text',
+              body: 'Can you help me?',
+              created_at: '2026-05-23T14:00:00.000000Z',
+            },
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-LIVEPOLL/messages') {
+        return jsonResponse(503, {
+          message: 'Temporary polling outage.',
+        });
+      }
+
+      throw new Error('Unexpected request ' + url);
+    },
+  });
+
+  widget.open();
+
+  widget.root.querySelector('.wayfindr-widget__textarea').value = 'Can you help me?';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+    new dom.window.Event('submit', { bubbles: true, cancelable: true }),
+  );
+
+  await settle();
+  await wait(35);
+  await settle();
+
+  assert.match(
+    widget.root.querySelector('.wayfindr-widget__connection').textContent,
+    /Live updates connected/,
+  );
+
+  liveMessage({
+    conversation: { support_code: 'WF-LIVEPOLL' },
+    message: {
+      id: 2,
+      sender: { kind: 'agent', name: 'Ada Agent' },
+      type: 'text',
+      body: 'Live hello.',
+      created_at: '2026-05-23T14:01:00.000000Z',
+    },
+  });
+
+  assert.deepEqual(
+    messageSummaries(widget),
+    ['Ada AgentLive hello.'],
+  );
+  assert.match(
+    widget.root.querySelector('.wayfindr-widget__connection').textContent,
+    /Live updates connected/,
+  );
+
+  widget.destroy();
 });
 
 test('renders live support typing updates from the realtime subscription', async () => {

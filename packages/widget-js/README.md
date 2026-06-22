@@ -68,6 +68,7 @@ The widget currently supports the first visitor loop:
 - preserve visitor drafts after recoverable send failures and retry the same conversation when possible,
 - show calm empty, error, and retry states without hiding the existing conversation,
 - explain when a refreshed conversation has been closed and that sending a new visitor message will reopen it,
+- show calm connection trouble copy if fallback message polling cannot reach Wayfindr, then clear it after a successful refresh,
 - render the visitor-visible conversation message timeline with timestamps, simple message grouping, and sent cues for visitor messages,
 - expose the timeline, notices, typing hints, and delivery status through polite live regions so assistive technology can announce new context without rereading the whole widget,
 - expose the launcher/panel state to assistive technology and let keyboard visitors close the panel with Escape,

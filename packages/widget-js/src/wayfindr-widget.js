@@ -15,6 +15,7 @@
   var STYLE_ID = 'wayfindr-widget-styles';
   var MESSAGE_SEND_ERROR = 'Message could not be sent. Your text is still here so you can try again.';
   var MESSAGE_REFRESH_ERROR = 'Messages could not be refreshed. Your current chat is still visible.';
+  var MESSAGE_CONNECTION_TROUBLE = 'Having trouble reaching support. Your chat is still here; refresh will try again.';
   var DEFAULT_COBROWSE_PAYLOAD_BUDGET = {
     mutationBatchMaxBytes: 60000,
     mutationQueueMaxRecords: 250,
@@ -391,7 +392,7 @@
       '    <button class="wayfindr-widget__notice-retry" type="button" hidden>Try again</button>',
       '  </div>',
       '  <p class="wayfindr-widget__typing" role="status" aria-live="polite" aria-atomic="true" hidden></p>',
-      '  <p class="wayfindr-widget__connection" hidden></p>',
+      '  <p class="wayfindr-widget__connection" role="status" aria-live="polite" aria-atomic="true" hidden></p>',
       '  <form class="wayfindr-widget__form">',
       '    <label class="wayfindr-widget__label" for="wayfindr-message">How can we help?</label>',
       '    <textarea id="wayfindr-message" class="wayfindr-widget__textarea" name="message" rows="4" required placeholder="' + escapeHtml(options.placeholder || 'Type your message...') + '"></textarea>',
@@ -437,6 +438,7 @@
     var conversationStatus = null;
     var messages = [];
     var realtimeSubscription = null;
+    var stableConnectionState = null;
     var cobrowseGranted = false;
     var cobrowseState = 'unavailable';
     var cobrowseRequestedBy = null;
@@ -633,6 +635,7 @@
           return;
         }
 
+        renderConnectionState('connected');
         appendMessage(event.message);
       }, function (state) {
         sawConnectionState = true;
@@ -662,6 +665,7 @@
       if (!supportCode) {
         connection.hidden = true;
         connection.textContent = '';
+        stableConnectionState = null;
 
         return;
       }
@@ -672,11 +676,37 @@
         connection.textContent = 'Live updates connected.';
       } else if (normalized === 'connecting' || normalized === 'reconnecting') {
         connection.textContent = 'Live updates reconnecting. Refresh still works.';
+      } else if (normalized === 'trouble') {
+        connection.textContent = MESSAGE_CONNECTION_TROUBLE;
       } else {
         connection.textContent = 'Using periodic refresh for updates.';
       }
 
+      if (normalized !== 'trouble') {
+        stableConnectionState = normalized || 'polling';
+      }
+
       connection.hidden = false;
+    }
+
+    function renderConnectionTrouble() {
+      if (hasConnectedRealtime()) {
+        return;
+      }
+
+      renderConnectionState('trouble');
+    }
+
+    function hasConnectedRealtime() {
+      return Boolean(realtimeSubscription && (stableConnectionState === 'connected' || stableConnectionState === 'live'));
+    }
+
+    function clearConnectionTrouble() {
+      if (connection.textContent !== MESSAGE_CONNECTION_TROUBLE) {
+        return;
+      }
+
+      renderConnectionState(stableConnectionState || 'polling');
     }
 
     function scheduleMessagePoll() {
@@ -1282,11 +1312,14 @@
         applyConversationStatus(result.conversation);
         renderMessages(result.messages || []);
         renderAgentTyping(result.agent_typing);
+        clearConnectionTrouble();
 
         if (!options.silent) {
           status.textContent = 'Messages refreshed.';
         }
       } catch (error) {
+        renderConnectionTrouble();
+
         if (!options.silent) {
           status.textContent = MESSAGE_REFRESH_ERROR;
           showNotice('warning', MESSAGE_REFRESH_ERROR, {
