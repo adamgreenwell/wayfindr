@@ -225,6 +225,7 @@
 
                     <p class="lede">{{ $check['detail'] }}</p>
                     <p class="readiness-action">{{ $check['action'] }}</p>
+                    <x-operator-readiness-commands :commands="$check['commands'] ?? []" />
                     <x-operator-readiness-confirmation-form :action="$readinessConfirmationRoute" :item="$check" />
                 </article>
             @endforeach

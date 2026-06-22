@@ -606,6 +606,25 @@
             font-weight: 650;
         }
 
+        .readiness-commands {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .readiness-command {
+            align-items: center;
+            display: inline-flex;
+            gap: 6px;
+            max-width: 100%;
+        }
+
+        .readiness-command code {
+            overflow-x: auto;
+            white-space: nowrap;
+        }
+
         .notice-copy {
             padding: 20px;
             color: var(--muted);

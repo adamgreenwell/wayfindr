@@ -24,6 +24,7 @@
 
         <p class="lede">{{ $nextStep['detail'] }}</p>
         <p class="readiness-action">{{ $nextStep['action'] }}</p>
+        <x-operator-readiness-commands :commands="$nextStep['commands'] ?? []" />
         <x-operator-readiness-confirmation-form :action="$confirmationRoute" :item="$nextStep" />
     </article>
 </section>

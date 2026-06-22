@@ -60,6 +60,10 @@ test('account owner can inspect operator readiness diagnostics', function (): vo
         ->assertSee('php artisan reverb:restart')
         ->assertSee('Post-install smoke path')
         ->assertSee('Recommended next step')
+        ->assertSee('data-copy-value="php artisan wayfindr:mail-test --to=you@example.com"', false)
+        ->assertSee('data-copy-value="php artisan queue:failed"', false)
+        ->assertSee('data-copy-value="php artisan reverb:start --host=127.0.0.1 --port=8080"', false)
+        ->assertSee('data-copy-value="php artisan wayfindr:cobrowse-transport-smoke"', false)
         ->assertSee('Confirm background workers')
         ->assertSee('Open the public app URL')
         ->assertSee('Send a widget smoke test')
@@ -804,6 +808,7 @@ test('readiness diagnostics accept a public https app url and outbound mail tran
         'status' => 'ready',
         'summary' => 'MAIL_MAILER is smtp.',
         'action' => 'Run php artisan wayfindr:mail-test --to=you@example.com from apps/server after deploy. For STARTTLS ports such as 587 or 2587, leave MAIL_SCHEME unset; use smtps only for port 465.',
+        'commands' => ['php artisan wayfindr:mail-test --to=you@example.com'],
     ]);
 });
 
@@ -876,12 +881,20 @@ test('readiness diagnostics include a guided post install smoke path', function 
             'label' => 'Send a real email',
             'status' => 'ready',
             'action' => 'Run php artisan wayfindr:mail-test --to=you@example.com from apps/server, then confirm the message lands in a real inbox.',
+            'commands' => ['php artisan wayfindr:mail-test --to=you@example.com'],
         ]),
         fn ($step) => $step->toMatchArray([
             'key' => 'background_processes',
             'label' => 'Confirm background workers',
             'status' => 'manual',
             'action' => 'Confirm php artisan queue:work is managed by Forge, Supervisor, systemd, or your host; run php artisan queue:failed to inspect failures; verify * * * * * cd /path/to/apps/server && php artisan schedule:run is configured once per minute; and confirm php artisan wayfindr:send-alert-digests appears in php artisan schedule:list.',
+            'commands' => [
+                'php artisan queue:work',
+                'php artisan queue:failed',
+                '* * * * * cd /path/to/apps/server && php artisan schedule:run',
+                'php artisan schedule:list',
+                'php artisan wayfindr:send-alert-digests',
+            ],
         ]),
         fn ($step) => $step->toMatchArray([
             'key' => 'widget_smoke',
@@ -894,6 +907,7 @@ test('readiness diagnostics include a guided post install smoke path', function 
             'status' => 'ready',
             'status_label' => 'No data yet',
             'action' => 'Run php artisan wayfindr:cobrowse-transport-smoke from apps/server after a consented widget smoke test, then review aggregate transport state before relying on cobrowse.',
+            'commands' => ['php artisan wayfindr:cobrowse-transport-smoke'],
         ]),
         fn ($step) => $step->toMatchArray([
             'key' => 'backup_restore',

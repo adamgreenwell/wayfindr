@@ -27,6 +27,7 @@
                 </div>
 
                 <p class="readiness-action">{{ $step['action'] }}</p>
+                <x-operator-readiness-commands :commands="$step['commands'] ?? []" />
                 <x-operator-readiness-confirmation-form :action="$confirmationRoute" :item="$step" />
             </article>
         @endforeach

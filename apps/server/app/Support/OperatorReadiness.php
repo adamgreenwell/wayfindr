@@ -35,13 +35,13 @@ class OperatorReadiness
     /**
      * @return array{
      *     attention_count: int,
-     *     checks: array<int, array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string}>,
+     *     checks: array<int, array{action: string, commands?: array<int, string>, detail: string, key: string, label: string, status: string, status_label: string, summary: string}>,
      *     cobrowse_budget_defaults: array<int, array{description: string, items: array<int, array{label: string, value: string}>, label: string}>,
      *     label: string,
      *     manual_count: int,
-     *     next_step: array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string},
+     *     next_step: array{action: string, commands?: array<int, string>, detail: string, key: string, label: string, status: string, status_label: string, summary: string},
      *     ready_count: int,
-     *     smoke_path: array<int, array{action: string, key: string, label: string, status: string, status_label: string, summary: string}>
+     *     smoke_path: array<int, array{action: string, commands: array<int, string>, key: string, label: string, status: string, status_label: string, summary: string}>
      * }
      */
     public function summary(): array
@@ -121,7 +121,8 @@ class OperatorReadiness
             status: 'attention',
             summary: 'APP_KEY is missing.',
             detail: 'Laravel cannot safely encrypt sessions, cookies, or signed data without an application key.',
-            action: 'Run php artisan key:generate and save the generated APP_KEY in the environment.'
+            action: 'Run php artisan key:generate and save the generated APP_KEY in the environment.',
+            commands: ['php artisan key:generate']
         );
     }
 
@@ -261,7 +262,8 @@ class OperatorReadiness
             status: 'ready',
             summary: sprintf('MAIL_MAILER is %s.', $mailer),
             detail: 'Wayfindr has an outbound mail transport configured.',
-            action: 'Run php artisan wayfindr:mail-test --to=you@example.com from apps/server after deploy. For STARTTLS ports such as 587 or 2587, leave MAIL_SCHEME unset; use smtps only for port 465.'
+            action: 'Run php artisan wayfindr:mail-test --to=you@example.com from apps/server after deploy. For STARTTLS ports such as 587 or 2587, leave MAIL_SCHEME unset; use smtps only for port 465.',
+            commands: ['php artisan wayfindr:mail-test --to=you@example.com']
         );
     }
 
@@ -279,7 +281,8 @@ class OperatorReadiness
                 status: 'attention',
                 summary: sprintf('QUEUE_CONNECTION is %s.', $connection),
                 detail: 'Synchronous queues are useful locally, but production installs should run durable background workers.',
-                action: 'Use database or redis queues and run php artisan queue:work under Forge, Supervisor, systemd, or your process manager.'
+                action: 'Use database or redis queues and run php artisan queue:work under Forge, Supervisor, systemd, or your process manager.',
+                commands: ['php artisan queue:work']
             );
         }
 
@@ -289,7 +292,8 @@ class OperatorReadiness
             status: 'ready',
             summary: sprintf('QUEUE_CONNECTION is %s.', $connection),
             detail: 'The queue driver is configured for background work.',
-            action: 'Confirm php artisan queue:work is managed by Forge, Supervisor, systemd, or your deployment platform, then run php artisan queue:failed after smoke tests to inspect failures.'
+            action: 'Confirm php artisan queue:work is managed by Forge, Supervisor, systemd, or your deployment platform, then run php artisan queue:failed after smoke tests to inspect failures.',
+            commands: ['php artisan queue:work', 'php artisan queue:failed']
         );
     }
 
@@ -309,7 +313,10 @@ class OperatorReadiness
             detail: $realtime['message'],
             action: $status === 'ready'
                 ? 'Run php artisan reverb:start --host=127.0.0.1 --port=8080 under your process manager, and keep php artisan reverb:restart in the deploy script so long-running Reverb workers refresh cleanly.'
-                : 'Set BROADCAST_CONNECTION=reverb plus REVERB_APP_ID, REVERB_APP_KEY, REVERB_APP_SECRET, REVERB_HOST, REVERB_PORT, and REVERB_SCHEME.'
+                : 'Set BROADCAST_CONNECTION=reverb plus REVERB_APP_ID, REVERB_APP_KEY, REVERB_APP_SECRET, REVERB_HOST, REVERB_PORT, and REVERB_SCHEME.',
+            commands: $status === 'ready'
+                ? ['php artisan reverb:start --host=127.0.0.1 --port=8080', 'php artisan reverb:restart']
+                : []
         );
     }
 
@@ -355,7 +362,12 @@ class OperatorReadiness
             label: 'Scheduler',
             summary: 'Confirm the Laravel scheduler is running once per minute.',
             detail: 'Wayfindr cannot safely prove cron or external scheduler setup from inside the request. Alert digest email depends on the scheduler running the hourly digest command.',
-            action: 'Configure * * * * * cd /path/to/apps/server && php artisan schedule:run or the equivalent scheduled job in your host, then run php artisan schedule:list and confirm php artisan wayfindr:send-alert-digests is listed.'
+            action: 'Configure * * * * * cd /path/to/apps/server && php artisan schedule:run or the equivalent scheduled job in your host, then run php artisan schedule:list and confirm php artisan wayfindr:send-alert-digests is listed.',
+            commands: [
+                '* * * * * cd /path/to/apps/server && php artisan schedule:run',
+                'php artisan schedule:list',
+                'php artisan wayfindr:send-alert-digests',
+            ]
         );
     }
 
@@ -371,7 +383,8 @@ class OperatorReadiness
                 status: 'manual',
                 summary: 'Agent alert preferences are not available yet.',
                 detail: 'Run migrations before checking digest delivery state.',
-                action: 'Run php artisan migrate from apps/server, then revisit readiness once agents can opt into digest email.'
+                action: 'Run php artisan migrate from apps/server, then revisit readiness once agents can opt into digest email.',
+                commands: ['php artisan migrate']
             );
         }
 
@@ -473,8 +486,8 @@ class OperatorReadiness
     }
 
     /**
-     * @param  array<string, array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string}>  $checks
-     * @return array<int, array{action: string, key: string, label: string, status: string, status_label: string, summary: string}>
+     * @param  array<string, array{action: string, commands?: array<int, string>, detail: string, key: string, label: string, status: string, status_label: string, summary: string}>  $checks
+     * @return array<int, array{action: string, commands: array<int, string>, key: string, label: string, status: string, status_label: string, summary: string}>
      */
     private function postInstallSmokePath(array $checks): array
     {
@@ -498,7 +511,8 @@ class OperatorReadiness
                 label: 'Send a real email',
                 status: $this->statusFromCheck($checks, 'mail_transport'),
                 summary: 'Alerts are only useful after mail leaves the server and lands in a real inbox.',
-                action: 'Run php artisan wayfindr:mail-test --to=you@example.com from apps/server, then confirm the message lands in a real inbox.'
+                action: 'Run php artisan wayfindr:mail-test --to=you@example.com from apps/server, then confirm the message lands in a real inbox.',
+                commands: ['php artisan wayfindr:mail-test --to=you@example.com']
             ),
             $this->smokeStep(
                 key: 'background_processes',
@@ -510,6 +524,13 @@ class OperatorReadiness
                 confirmable: $backgroundStatus !== 'attention',
                 confirmation: $schedulerCheck['confirmation'] ?? null,
                 statusLabel: $backgroundStatus === 'attention' ? null : ($schedulerCheck['status_label'] ?? null),
+                commands: [
+                    'php artisan queue:work',
+                    'php artisan queue:failed',
+                    '* * * * * cd /path/to/apps/server && php artisan schedule:run',
+                    'php artisan schedule:list',
+                    'php artisan wayfindr:send-alert-digests',
+                ],
             ),
             $this->smokeStep(
                 key: 'widget_smoke',
@@ -527,6 +548,9 @@ class OperatorReadiness
                     ? $cobrowseTransportCheck['action']
                     : 'Run php artisan wayfindr:cobrowse-transport-smoke from apps/server after a consented widget smoke test, then review aggregate transport state before relying on cobrowse.',
                 statusLabel: $cobrowseTransportCheck['status_label'] ?? null,
+                commands: ($cobrowseTransportCheck['status'] ?? null) === 'manual'
+                    ? []
+                    : ['php artisan wayfindr:cobrowse-transport-smoke'],
             ),
             $this->smokeStep(
                 key: 'backup_restore',
@@ -543,9 +567,10 @@ class OperatorReadiness
     }
 
     /**
-     * @return array{action: string, confirmation: array{confirmed_at: string|null, confirmed_by: string, key: string, note: string|null}|null, confirmation_key: string, confirmable: bool, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
+     * @param  array<int, string>  $commands
+     * @return array{action: string, commands: array<int, string>, confirmation: array{confirmed_at: string|null, confirmed_by: string, key: string, note: string|null}|null, confirmation_key: string, confirmable: bool, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
      */
-    private function manualCheck(string $key, string $label, string $summary, string $detail, string $action): array
+    private function manualCheck(string $key, string $label, string $summary, string $detail, string $action, array $commands = []): array
     {
         $confirmation = $this->confirmations[$key] ?? null;
 
@@ -564,6 +589,7 @@ class OperatorReadiness
                 confirmation: $confirmationPayload,
                 confirmationKey: $key,
                 statusLabel: $isStale ? 'Refresh due' : null,
+                commands: $commands,
             );
         }
 
@@ -576,6 +602,7 @@ class OperatorReadiness
             action: $action,
             confirmable: true,
             confirmationKey: $key,
+            commands: $commands,
         );
     }
 
@@ -640,9 +667,9 @@ class OperatorReadiness
     }
 
     /**
-     * @param  array<int, array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string}>  $checks
-     * @param  array<int, array{action: string, key: string, label: string, status: string, status_label: string, summary: string}>  $smokePath
-     * @return array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
+     * @param  array<int, array{action: string, commands?: array<int, string>, detail: string, key: string, label: string, status: string, status_label: string, summary: string}>  $checks
+     * @param  array<int, array{action: string, commands: array<int, string>, key: string, label: string, status: string, status_label: string, summary: string}>  $smokePath
+     * @return array{action: string, commands?: array<int, string>, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
      */
     private function nextStep(array $checks, array $smokePath): array
     {
@@ -675,7 +702,7 @@ class OperatorReadiness
     }
 
     /**
-     * @return array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
+     * @return array{action: string, commands: array<int, string>, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
      */
     private function check(
         string $key,
@@ -688,9 +715,11 @@ class OperatorReadiness
         ?array $confirmation = null,
         ?string $confirmationKey = null,
         ?string $statusLabel = null,
+        array $commands = [],
     ): array {
         return [
             'action' => $action,
+            'commands' => $commands,
             'confirmation' => $confirmation,
             'confirmation_key' => $confirmationKey ?? $key,
             'confirmable' => $confirmable,
@@ -708,7 +737,7 @@ class OperatorReadiness
     }
 
     /**
-     * @return array{action: string, key: string, label: string, status: string, status_label: string, summary: string}
+     * @return array{action: string, commands: array<int, string>, key: string, label: string, status: string, status_label: string, summary: string}
      */
     private function smokeStep(
         string $key,
@@ -720,9 +749,11 @@ class OperatorReadiness
         bool $confirmable = false,
         ?array $confirmation = null,
         ?string $statusLabel = null,
+        array $commands = [],
     ): array {
         return [
             'action' => $action,
+            'commands' => $commands,
             'confirmation' => $confirmation,
             'confirmation_key' => $confirmationKey ?? $key,
             'confirmable' => $confirmable,
