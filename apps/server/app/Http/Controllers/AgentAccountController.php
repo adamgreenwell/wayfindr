@@ -6,11 +6,15 @@ use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\Site;
+use App\Models\SiteExternalIssueProject;
 use App\Models\User;
 use App\Support\AccountAlertReadiness;
+use App\Support\ExternalIssueProvider;
+use App\Support\ExternalIssueSyncStatus;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 class AgentAccountController extends Controller
@@ -87,10 +91,14 @@ class AgentAccountController extends Controller
             'agentSupportScopes' => $agentSupportScopes,
             'activeAgentCount' => $agents->reject->isDeactivated()->count(),
             'canCreateAgents' => $agent->isAdmin(),
+            'canViewExternalIssueReadiness' => $agent->isAdmin(),
             'canViewAlertDelivery' => $agent->isAdmin(),
             'canManageAgentAccess' => $agent->isAdmin(),
             'canManageRoles' => $agent->isOwner(),
             'canViewAudit' => $agent->isAdmin(),
+            'externalIssueReadiness' => $agent->isAdmin()
+                ? $this->externalIssueReadiness($account)
+                : null,
             'roleLabels' => $this->roleLabels(),
             'roleOptions' => $this->roleLabels(),
             'siteCount' => $account->sites()->count(),
@@ -99,6 +107,138 @@ class AgentAccountController extends Controller
             'visibleSites' => $visibleSites,
             'visibleSiteCount' => count($visibleSiteIds),
         ]);
+    }
+
+    /**
+     * @return array{
+     *     label: string,
+     *     tone: string,
+     *     detail: string,
+     *     metrics: array<int, array{label: string, value: string, tone: string}>,
+     *     projects: Collection<int, array{
+     *         site: string,
+     *         provider: string,
+     *         connection: string,
+     *         project_key: string,
+     *         project_name: string|null,
+     *         capabilities: list<string>,
+     *         href: string,
+     *         enabled: bool
+     *     }>,
+     *     recent_failures: Collection<int, array{provider: string, project_key: string, status: string|null, occurred_at: Carbon|null}>
+     * }
+     */
+    private function externalIssueReadiness(Account $account): array
+    {
+        $connections = $account->externalIssueProviderConnections()
+            ->orderBy('name')
+            ->get();
+        $projects = $account->siteExternalIssueProjects()
+            ->with(['providerConnection', 'site'])
+            ->get()
+            ->sortBy(fn (SiteExternalIssueProject $project): string => ($project->site?->name ?? '').' '.$project->project_key)
+            ->values();
+        $statusCounts = $account->ticketExternalLinks()
+            ->selectRaw('sync_status, count(*) as aggregate')
+            ->groupBy('sync_status')
+            ->pluck('aggregate', 'sync_status');
+
+        $disabledCount = $connections
+            ->where('is_enabled', false)
+            ->count();
+        $failedCount = (int) ($statusCounts[ExternalIssueSyncStatus::FAILED] ?? 0);
+        $pendingCount = (int) ($statusCounts[ExternalIssueSyncStatus::PENDING] ?? 0);
+
+        [$label, $tone, $detail] = match (true) {
+            $connections->isEmpty() => [
+                'Not configured',
+                'manual',
+                'Add a provider connection when tickets need to leave Wayfindr.',
+            ],
+            $disabledCount > 0 || $failedCount > 0 => [
+                'Needs attention',
+                'attention',
+                'Review disabled connections or failed syncs before relying on external handoff.',
+            ],
+            $pendingCount > 0 => [
+                'Sync pending',
+                'manual',
+                'Some external links are still waiting for confirmation.',
+            ],
+            default => [
+                'Ready',
+                'ready',
+                'External issue routing has mapped projects and no failed syncs.',
+            ],
+        };
+
+        return [
+            'label' => $label,
+            'tone' => $tone,
+            'detail' => $detail,
+            'metrics' => [
+                [
+                    'label' => 'Provider connections',
+                    'value' => $this->countLabel($connections->count(), 'provider connection'),
+                    'tone' => $connections->isEmpty() ? 'manual' : 'ready',
+                ],
+                [
+                    'label' => 'Mapped projects',
+                    'value' => $this->countLabel($projects->count(), 'mapped project'),
+                    'tone' => $projects->isEmpty() ? 'manual' : 'ready',
+                ],
+                [
+                    'label' => 'Disabled',
+                    'value' => $this->countLabel($disabledCount, 'disabled', 'disabled'),
+                    'tone' => $disabledCount > 0 ? 'attention' : 'ready',
+                ],
+                [
+                    'label' => 'Sync failed',
+                    'value' => $this->countLabel($failedCount, 'sync failed', 'sync failed'),
+                    'tone' => $failedCount > 0 ? 'attention' : 'ready',
+                ],
+                [
+                    'label' => 'Sync pending',
+                    'value' => $this->countLabel($pendingCount, 'sync pending', 'sync pending'),
+                    'tone' => $pendingCount > 0 ? 'manual' : 'ready',
+                ],
+            ],
+            'projects' => $projects->map(fn (SiteExternalIssueProject $project): array => [
+                'site' => $project->site?->name ?? 'Unknown site',
+                'provider' => $project->providerLabel(),
+                'connection' => $project->providerConnection?->name ?? $project->providerLabel(),
+                'project_key' => $project->project_key,
+                'project_name' => $project->project_name,
+                'capabilities' => $project->capabilityLabels(),
+                'href' => $project->site
+                    ? route('dashboard.sites.show', $project->site).'#external-issue-routing-heading'
+                    : route('dashboard.sites.index'),
+                'enabled' => (bool) $project->providerConnection?->is_enabled,
+            ]),
+            'recent_failures' => $account->auditEvents()
+                ->where('action', 'ticket.external_sync_failed')
+                ->latest('occurred_at')
+                ->latest('id')
+                ->limit(3)
+                ->get()
+                ->map(fn (AuditEvent $event): array => [
+                    'provider' => ExternalIssueProvider::label(data_get($event->metadata, 'provider')),
+                    'project_key' => (string) (data_get($event->metadata, 'project_key') ?? 'Unknown project'),
+                    'status' => data_get($event->metadata, 'status')
+                        ? 'Status '.data_get($event->metadata, 'status')
+                        : null,
+                    'occurred_at' => $event->occurred_at,
+                ]),
+        ];
+    }
+
+    private function countLabel(int $count, string $singular, ?string $plural = null): string
+    {
+        if ($plural !== null) {
+            return $count.' '.($count === 1 ? $singular : $plural);
+        }
+
+        return $count.' '.Str::plural($singular, $count);
     }
 
     /**

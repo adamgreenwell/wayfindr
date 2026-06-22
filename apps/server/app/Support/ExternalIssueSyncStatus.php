@@ -4,15 +4,21 @@ namespace App\Support;
 
 final class ExternalIssueSyncStatus
 {
+    public const string LINKED = 'linked';
+
+    public const string PENDING = 'sync_pending';
+
+    public const string FAILED = 'sync_failed';
+
     /**
      * @return array<string, string>
      */
     public static function options(): array
     {
         return [
-            'linked' => 'Linked',
-            'sync_pending' => 'Sync pending',
-            'sync_failed' => 'Sync failed',
+            self::LINKED => 'Linked',
+            self::PENDING => 'Sync pending',
+            self::FAILED => 'Sync failed',
         ];
     }
 

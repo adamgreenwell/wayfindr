@@ -123,6 +123,106 @@
                 @endif
             </section>
 
+            @if ($canViewExternalIssueReadiness && $externalIssueReadiness)
+                <section class="section" aria-labelledby="external-issue-readiness-heading">
+                    <div class="section-header">
+                        <div>
+                            <h2 id="external-issue-readiness-heading">External issue readiness</h2>
+                            <p class="lede">{{ $externalIssueReadiness['detail'] }}</p>
+                        </div>
+                        <span class="readiness-status" data-status="{{ $externalIssueReadiness['tone'] }}">
+                            {{ $externalIssueReadiness['label'] }}
+                        </span>
+                    </div>
+
+                    <div class="meta-grid readiness-summary-grid">
+                        @foreach ($externalIssueReadiness['metrics'] as $metric)
+                            <div class="meta-item">
+                                <span class="meta-label">{{ $metric['label'] }}</span>
+                                <span class="meta-value">{{ $metric['value'] }}</span>
+                                <span class="lede">
+                                    <span class="readiness-status" data-status="{{ $metric['tone'] }}">
+                                        {{ ucfirst($metric['tone']) }}
+                                    </span>
+                                </span>
+                            </div>
+                        @endforeach
+                    </div>
+
+                    @if ($externalIssueReadiness['projects']->isEmpty())
+                        <p class="empty">No external issue projects are mapped yet.</p>
+                    @else
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Site</th>
+                                        <th scope="col">Provider</th>
+                                        <th scope="col">Project</th>
+                                        <th scope="col">Capabilities</th>
+                                        <th scope="col">Manage</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach ($externalIssueReadiness['projects'] as $project)
+                                        <tr>
+                                            <td>
+                                                <strong>{{ $project['site'] }}</strong>
+                                                <span class="lede">{{ $project['enabled'] ? 'Connection enabled' : 'Connection disabled' }}</span>
+                                            </td>
+                                            <td>
+                                                <strong>{{ $project['connection'] }}</strong>
+                                                <span class="lede">{{ $project['provider'] }}</span>
+                                            </td>
+                                            <td>
+                                                <strong>{{ $project['project_key'] }}</strong>
+                                                @if ($project['project_name'])
+                                                    <span class="lede">{{ $project['project_name'] }}</span>
+                                                @endif
+                                            </td>
+                                            <td>
+                                                @forelse ($project['capabilities'] as $capability)
+                                                    <span>{{ $capability }}</span>@if (! $loop->last)<br>@endif
+                                                @empty
+                                                    <span>Link only</span>
+                                                @endforelse
+                                            </td>
+                                            <td>
+                                                <a class="text-link" href="{{ $project['href'] }}">Manage routing</a>
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @endif
+
+                    @if ($externalIssueReadiness['recent_failures']->isEmpty())
+                        <p class="empty">No recent external sync failures for this account.</p>
+                    @else
+                        <div class="timeline-list">
+                            @foreach ($externalIssueReadiness['recent_failures'] as $failure)
+                                <article class="timeline-item internal-note">
+                                    <div class="timeline-content">
+                                        <strong>{{ $loop->first ? 'Last external sync failure' : 'Earlier external sync failure' }}</strong>
+                                        <p class="message-body">{{ $failure['provider'] }} could not sync {{ $failure['project_key'] }}.</p>
+                                        <div class="timeline-meta">
+                                            @if ($failure['status'])
+                                                <span>{{ $failure['status'] }}</span>
+                                            @endif
+                                            @if ($failure['occurred_at'])
+                                                <span>{{ $failure['occurred_at']->diffForHumans() }}</span>
+                                            @endif
+                                            <span>Provider details withheld</span>
+                                        </div>
+                                    </div>
+                                </article>
+                            @endforeach
+                        </div>
+                    @endif
+                </section>
+            @endif
+
             <section class="section" aria-labelledby="account-activity-heading">
                 <div class="section-header">
                     <h2 id="account-activity-heading">Recent account activity</h2>
