@@ -172,7 +172,16 @@
                 <div class="meta-grid">
                     <div class="meta-item">
                         <span class="meta-label">Ticket reference</span>
-                        <span class="meta-value">Ticket #{{ $ticket->id }}</span>
+                        <span class="meta-value">
+                            <span class="support-reference">
+                                <code>Ticket #{{ $ticket->id }}</code>
+                                <x-copy-value-button
+                                    :value="'Ticket #'.$ticket->id"
+                                    :aria-label="'Copy ticket reference Ticket #'.$ticket->id"
+                                    title="Copy ticket reference"
+                                />
+                            </span>
+                        </span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">Support code</span>
