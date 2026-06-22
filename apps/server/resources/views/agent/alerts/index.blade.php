@@ -115,6 +115,39 @@
             <span id="alert-search-help" class="table-note">Search visible alert context only; restricted support work stays hidden.</span>
         </form>
 
+        @php
+            $alertKindLabels = [
+                'all' => 'All alerts',
+                'conversation' => 'Conversation alerts',
+                'ticket' => 'Ticket alerts',
+            ];
+            $alertFocusItems = [
+                ['label' => 'View', 'value' => $alertFilter === 'unread' ? 'Unread only' : 'All alerts'],
+                ['label' => 'Type', 'value' => $alertKindLabels[$alertKind]],
+                ['label' => 'Visible', 'value' => $notificationCount.' visible'],
+                ['label' => 'Unread', 'value' => $unreadNotificationCount.' unread'],
+            ];
+
+            if ($alertSearch !== '') {
+                $alertFocusItems[] = ['label' => 'Search', 'value' => $alertSearch];
+            }
+        @endphp
+
+        <div class="filter-summary" aria-label="Alert center focus">
+            <div>
+                <strong>Alert focus</strong>
+                <p class="lede">What this alert center is showing before you triage items.</p>
+                <p class="lede">{{ $alertCountSummary['heading'] }}</p>
+            </div>
+            <div class="filter-chips">
+                @foreach ($alertFocusItems as $alertFocusItem)
+                    <span class="filter-chip">
+                        {{ $alertFocusItem['label'] }}: {{ $alertFocusItem['value'] }}
+                    </span>
+                @endforeach
+            </div>
+        </div>
+
         @if ($activeAlertFilters !== [])
             <div class="filter-summary" aria-label="Active alert filters">
                 <div>

@@ -973,6 +973,40 @@ test('agents can narrow alert center alerts by kind and reference search', funct
         ->assertDontSee('Hidden filter issue');
 });
 
+test('alert center shows focus context for the current filters', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Acme Docs',
+        'public_key' => 'site_public_docs',
+    ]);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-alert-focus']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'assigned_agent_id' => $agent->id,
+        'support_code' => 'WF-ALERTFOCUS',
+        'subject' => 'Alert focus install help',
+    ]);
+    $message = ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'The alert focus view needs context.',
+    ]);
+
+    $agent->notify(new ConversationNeedsReply($message));
+
+    $this->actingAs($agent)
+        ->get('/dashboard/alerts?alert_filter=unread&alert_kind=conversation&alert_search=WF-ALERTFOCUS')
+        ->assertOk()
+        ->assertSee('Alert focus')
+        ->assertSee('What this alert center is showing before you triage items.')
+        ->assertSee('View: Unread only')
+        ->assertSee('Type: Conversation alerts')
+        ->assertSee('Search: WF-ALERTFOCUS')
+        ->assertSee('Visible: 1 visible')
+        ->assertSee('Unread: 1 unread')
+        ->assertSee('Showing 1 matching conversation alert.');
+});
+
 test('alert center gives agents a clearer empty alert search state', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
