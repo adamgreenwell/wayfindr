@@ -324,6 +324,12 @@ class AgentTicketController extends Controller
 
         $changes = $this->ticketFieldChanges($ticket, $validated);
 
+        if (array_key_exists('description', $changes)) {
+            $validated['metadata'] = array_replace($ticket->metadata ?? [], [
+                'description_source' => 'agent_summary',
+            ]);
+        }
+
         $ticket->forceFill($validated)->save();
 
         if ($changes !== []) {

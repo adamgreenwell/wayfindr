@@ -3356,6 +3356,7 @@ test('agent can create a ticket from their account conversation', function (): v
 
     expect($ticket->metadata)->toMatchArray([
         'source' => 'conversation',
+        'description_source' => 'conversation_transcript',
         'support_code' => 'WF-TICKET1',
         'visitor_context' => [
             'last_page_url' => 'https://docs.example.test/checkout',
@@ -4587,6 +4588,9 @@ test('agent can update ticket fields from the detail page', function (): void {
             'category' => 'question',
             'subject' => 'Old checkout issue',
             'description' => 'The original ticket description.',
+            'metadata' => [
+                'description_source' => 'conversation_transcript',
+            ],
             'priority' => 'normal',
             'status' => 'open',
         ]);
@@ -4606,6 +4610,7 @@ test('agent can update ticket fields from the detail page', function (): void {
         ->category->toBe('bug')
         ->subject->toBe('Updated checkout issue')
         ->description->toBe('The visitor cannot finish checkout on mobile.')
+        ->metadata->toMatchArray(['description_source' => 'agent_summary'])
         ->priority->toBe('high');
 
     $this->assertDatabaseHas('audit_events', [

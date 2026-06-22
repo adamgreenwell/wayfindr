@@ -9,6 +9,8 @@ class ExternalIssueExportPreview
 {
     private const EXPORT_NOTE = 'This issue was created from a Wayfindr ticket. Raw visitor transcripts, cobrowse snapshots, and internal notes were not exported by default.';
 
+    private const OMITTED_CONVERSATION_DESCRIPTION = 'Conversation transcript omitted. Use the Wayfindr ticket link for authorized support context.';
+
     /**
      * @return array{
      *     title: string,
@@ -74,6 +76,35 @@ class ExternalIssueExportPreview
     {
         $description = trim((string) $ticket->description);
 
+        if ($this->shouldOmitDescription($ticket, $description)) {
+            return self::OMITTED_CONVERSATION_DESCRIPTION;
+        }
+
         return $description === '' ? 'No description provided.' : $description;
+    }
+
+    private function shouldOmitDescription(Ticket $ticket, string $description): bool
+    {
+        if ($description === '') {
+            return false;
+        }
+
+        $descriptionSource = data_get($ticket->metadata, 'description_source');
+
+        if ($descriptionSource === 'agent_summary') {
+            return false;
+        }
+
+        if ($descriptionSource === 'conversation_transcript') {
+            return true;
+        }
+
+        return data_get($ticket->metadata, 'source') === 'conversation'
+            && $this->looksLikeConversationTranscript($description);
+    }
+
+    private function looksLikeConversationTranscript(string $description): bool
+    {
+        return preg_match('/(?:^|\R)(?:Visitor|Agent|[A-Z][\p{L}\p{M}\p{N} .\'-]{1,80}):\s+\S/u', $description) === 1;
     }
 }

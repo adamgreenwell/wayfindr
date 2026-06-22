@@ -327,6 +327,7 @@ class AgentConversationController extends Controller
             'description' => $this->ticketDescription($conversation),
             'metadata' => [
                 'source' => 'conversation',
+                'description_source' => 'conversation_transcript',
                 'support_code' => $conversation->support_code,
                 'visitor_context' => $this->ticketVisitorContext($conversation, $visitorContextSanitizer),
             ],
