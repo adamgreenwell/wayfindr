@@ -69,6 +69,42 @@ class SiteExternalIssueProject extends Model
     }
 
     /**
+     * @return array{label: string, detail: string, tone: string}
+     */
+    public function issueCreationHandoffState(): array
+    {
+        if (! $this->providerConnection?->is_enabled) {
+            return [
+                'label' => 'Blocked',
+                'detail' => 'Provider connection is disabled.',
+                'tone' => 'attention',
+            ];
+        }
+
+        if (! $this->hasSupportedIssueCreationProvider()) {
+            return [
+                'label' => 'Link only',
+                'detail' => 'Wayfindr issue creation is not available for this provider yet.',
+                'tone' => 'manual',
+            ];
+        }
+
+        if ($this->supportsIssueCreationHandoff()) {
+            return [
+                'label' => 'Handoff ready',
+                'detail' => 'Can create external issues.',
+                'tone' => 'ready',
+            ];
+        }
+
+        return [
+            'label' => 'Link only',
+            'detail' => 'External issue creation is not enabled.',
+            'tone' => 'manual',
+        ];
+    }
+
+    /**
      * @return list<string>
      */
     public function capabilityLabels(): array

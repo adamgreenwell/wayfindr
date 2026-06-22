@@ -439,6 +439,7 @@
                                     <th scope="col">Provider</th>
                                     <th scope="col">Project</th>
                                     <th scope="col">Capabilities</th>
+                                    <th scope="col">External issue handoff</th>
                                     <th scope="col">Link</th>
                                     @if ($canManageIntegrations)
                                         <th scope="col">Action</th>
@@ -447,6 +448,7 @@
                             </thead>
                             <tbody>
                                 @foreach ($siteExternalIssueProjects as $externalIssueProject)
+                                    @php($handoffState = $externalIssueProject->issueCreationHandoffState())
                                     <tr>
                                         <td>
                                             <strong>{{ $externalIssueProject->providerConnection?->name ?? $externalIssueProject->providerLabel() }}</strong>
@@ -464,6 +466,12 @@
                                             @empty
                                                 <span>Link only</span>
                                             @endforelse
+                                        </td>
+                                        <td>
+                                            <span class="readiness-status" data-status="{{ $handoffState['tone'] }}">
+                                                {{ $handoffState['label'] }}
+                                            </span>
+                                            <span class="lede">{{ $handoffState['detail'] }}</span>
                                         </td>
                                         <td>
                                             @if ($externalIssueProject->web_url)
