@@ -83,6 +83,13 @@
             <span class="lede">Keep support signals useful</span>
         </div>
 
+        <div class="notice-copy notice-copy-bordered" aria-labelledby="alert-preference-guidance-heading">
+            <p><strong id="alert-preference-guidance-heading">How alerts behave</strong></p>
+            <p>Dashboard alerts are the source of truth for support work that needs attention.</p>
+            <p>Email alerts are optional delivery, not a separate queue.</p>
+            <p>Quiet mode pauses new alerts without changing assignments, site access, or support responsibility.</p>
+        </div>
+
         <form class="section-form" method="POST" action="{{ route('dashboard.profile.alerts.update') }}">
             @csrf
             @method('PUT')
@@ -177,6 +184,8 @@
         <form class="section-form" method="POST" action="{{ route('dashboard.profile.password.update') }}">
             @csrf
             @method('PUT')
+
+            <input type="text" name="username" value="{{ $agent->email }}" autocomplete="username" hidden readonly>
 
             <div class="field">
                 <label for="current_password">Current password</label>

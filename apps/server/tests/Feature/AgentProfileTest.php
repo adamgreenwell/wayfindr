@@ -65,6 +65,20 @@ test('agent can view their profile from the application shell', function (): voi
         ->assertSee('/dashboard/profile/password', false);
 });
 
+test('agent profile password form includes a hidden username for browser tooling', function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'email' => 'ada@example.test',
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/profile')
+        ->assertOk()
+        ->assertSee('name="username"', false)
+        ->assertSee('value="ada@example.test"', false)
+        ->assertSee('autocomplete="username"', false)
+        ->assertSee('hidden', false);
+});
+
 test('agent can update their alert preference mode', function (): void {
     $agent = User::factory()->for(Account::factory())->create([
         'alert_preferences' => ['mode' => 'all'],
@@ -93,6 +107,18 @@ test('agent can update their alert preference mode', function (): void {
         'mode' => 'assigned',
         'email' => true,
     ]);
+});
+
+test('agent profile explains calm alert preference controls', function (): void {
+    $agent = User::factory()->for(Account::factory())->create();
+
+    $this->actingAs($agent)
+        ->get('/dashboard/profile')
+        ->assertOk()
+        ->assertSee('How alerts behave')
+        ->assertSee('Dashboard alerts are the source of truth for support work that needs attention.')
+        ->assertSee('Email alerts are optional delivery, not a separate queue.')
+        ->assertSee('Quiet mode pauses new alerts without changing assignments, site access, or support responsibility.');
 });
 
 test('agent alert cadence defaults to immediate delivery', function (): void {
