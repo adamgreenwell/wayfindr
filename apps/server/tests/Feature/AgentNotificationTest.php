@@ -1240,8 +1240,41 @@ test('alert center counts filtered unread alerts before applying the display cap
         ->assertOk()
         ->assertSee('30 visible')
         ->assertSee('35 unread')
-        ->assertSee('Showing 30 matching conversation alerts.')
+        ->assertSee('30 shown of 35 matching conversation alerts.')
+        ->assertSee('Showing 30 alerts after the current display cap. 35 conversation alerts match this view.')
+        ->assertDontSee('Showing 30 matching conversation alerts.')
         ->assertDontSee('No visible alerts match those filters.');
+});
+
+test('alert center clarifies unread only alerts beyond the display cap', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+
+    foreach (range(1, 35) as $index) {
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'assigned_agent_id' => $agent->id,
+            'support_code' => 'WF-UNREAD-ONLY-'.$index,
+            'subject' => 'Unread only alert '.$index,
+        ]);
+        $message = ConversationMessage::factory()->for($conversation)->create([
+            'sender_type' => Visitor::class,
+            'sender_id' => $visitor->id,
+            'body' => 'Unread only message '.$index,
+        ]);
+
+        $agent->notify(new ConversationNeedsReply($message));
+    }
+
+    $this->actingAs($agent)
+        ->get('/dashboard/alerts?alert_filter=unread')
+        ->assertOk()
+        ->assertSee('30 visible')
+        ->assertSee('35 unread')
+        ->assertSee('30 shown of 35 matching unread alerts.')
+        ->assertSee('Showing 30 alerts after the current display cap. 35 unread alerts match this view.')
+        ->assertDontSee('Showing unread visible alerts.');
 });
 
 test('alert center mark read controls return agents to the alert center', function (): void {

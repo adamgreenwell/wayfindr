@@ -15,11 +15,6 @@
                 $alertBaseParams['alert_search'] = $alertSearch;
             }
 
-            $activeKindLabel = [
-                'all' => 'alert',
-                'conversation' => 'conversation alert',
-                'ticket' => 'ticket alert',
-            ][$alertKind] ?? 'alert';
             $hasAlertFilters = $alertKind !== 'all' || $alertSearch !== '';
             $bulkReadLabel = $hasAlertFilters ? 'Mark matching read' : 'Mark unread alerts read';
             $bulkReadHelp = $hasAlertFilters
@@ -143,12 +138,9 @@
             </p>
         @else
             <div class="notice-copy notice-copy-bordered">
-                @if ($hasAlertFilters)
-                    <p><strong>Showing {{ $notificationCount }} matching {{ \Illuminate\Support\Str::plural($activeKindLabel, $notificationCount) }}.</strong></p>
-                @elseif ($alertFilter === 'unread')
-                    <p><strong>Showing unread visible alerts.</strong></p>
-                @else
-                    <p><strong>Showing the latest {{ $notificationCount }} visible {{ \Illuminate\Support\Str::plural('alert', $notificationCount) }}.</strong></p>
+                <p><strong>{{ $alertCountSummary['heading'] }}</strong></p>
+                @if ($alertCountSummary['detail'])
+                    <p>{{ $alertCountSummary['detail'] }}</p>
                 @endif
                 <p>Alerts you can no longer access are hidden so old notifications do not leak restricted support work.</p>
             </div>

@@ -32,6 +32,7 @@ class AgentAlertController extends Controller
         $filteredNotifications = $alertFilter === 'unread'
             ? $filteredUnreadNotifications
             : $this->filterNotifications($this->visibleRecentNotifications($agent, $visibleUnreadNotifications), $alertKind, $alertSearch);
+        $matchingNotificationCount = $filteredNotifications->count();
         $notifications = $filteredNotifications->take(30)->values();
 
         return view('agent.alerts.index', [
@@ -40,6 +41,13 @@ class AgentAlertController extends Controller
             'alertFilter' => $alertFilter,
             'alertKind' => $alertKind,
             'alertSearch' => $alertSearch,
+            'alertCountSummary' => $this->alertCountSummary(
+                $notifications->count(),
+                $matchingNotificationCount,
+                $alertFilter,
+                $alertKind,
+                $alertSearch,
+            ),
             'alertSnapshot' => $this->alertSnapshot($notifications, $filteredUnreadNotifications->count()),
             'activeAlertFilters' => $this->activeAlertFilters($alertFilter, $alertKind, $alertSearch),
             'notifications' => $notifications,
@@ -193,6 +201,68 @@ class AgentAlertController extends Controller
                 'detail' => 'Ticket assignments and durable work.',
             ],
         ];
+    }
+
+    /**
+     * @return array{heading: string, detail: ?string}
+     */
+    private function alertCountSummary(
+        int $visibleNotificationCount,
+        int $matchingNotificationCount,
+        string $alertFilter,
+        string $alertKind,
+        string $alertSearch,
+    ): array {
+        $hasAlertFilters = $alertKind !== 'all' || $alertSearch !== '';
+        $isUnreadOnlyView = $alertFilter === 'unread';
+        $isCapped = $matchingNotificationCount > $visibleNotificationCount;
+
+        if ($isCapped && ($hasAlertFilters || $isUnreadOnlyView)) {
+            $matchingAlertLabel = $this->matchingAlertLabel($alertFilter, $alertKind, $matchingNotificationCount);
+
+            return [
+                'heading' => "{$visibleNotificationCount} shown of {$matchingNotificationCount} matching {$matchingAlertLabel}.",
+                'detail' => "Showing {$visibleNotificationCount} alerts after the current display cap. {$matchingNotificationCount} {$matchingAlertLabel} match this view.",
+            ];
+        }
+
+        if ($hasAlertFilters) {
+            $matchingAlertLabel = $this->matchingAlertLabel($alertFilter, $alertKind, $visibleNotificationCount);
+
+            return [
+                'heading' => "Showing {$visibleNotificationCount} matching {$matchingAlertLabel}.",
+                'detail' => null,
+            ];
+        }
+
+        if ($alertFilter === 'unread') {
+            return [
+                'heading' => 'Showing unread visible alerts.',
+                'detail' => null,
+            ];
+        }
+
+        return [
+            'heading' => "Showing the latest {$visibleNotificationCount} visible ".Str::plural('alert', $visibleNotificationCount).'.',
+            'detail' => null,
+        ];
+    }
+
+    private function matchingAlertLabel(string $alertFilter, string $alertKind, int $alertCount): string
+    {
+        if ($alertKind === 'conversation') {
+            return Str::plural('conversation alert', $alertCount);
+        }
+
+        if ($alertKind === 'ticket') {
+            return Str::plural('ticket alert', $alertCount);
+        }
+
+        if ($alertFilter === 'unread') {
+            return 'unread '.Str::plural('alert', $alertCount);
+        }
+
+        return Str::plural('alert', $alertCount);
     }
 
     private function redirectAfterAlertAction(Request $request): RedirectResponse
