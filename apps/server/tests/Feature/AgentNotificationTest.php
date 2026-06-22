@@ -1010,6 +1010,24 @@ test('alert center gives agents a clearer empty unread state', function (): void
         ->assertDontSee('WF-READ-EMPTY');
 });
 
+test('alert center snapshot explains zero count states', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/alerts')
+        ->assertOk()
+        ->assertSee('0 visible')
+        ->assertSee('Nothing currently needs attention in this alert view.')
+        ->assertSee('0 unread')
+        ->assertSee('No unread alerts are waiting for review.')
+        ->assertSee('0 conversations')
+        ->assertSee('No visitor reply alerts in this view.')
+        ->assertSee('0 tickets')
+        ->assertSee('No ticket assignment alerts in this view.')
+        ->assertSee('No visible alerts yet.');
+});
+
 test('alert center mark read controls preserve active filters', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);

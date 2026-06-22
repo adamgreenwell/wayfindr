@@ -182,24 +182,30 @@ class AgentAlertController extends Controller
             [
                 'label' => 'Visible alerts',
                 'value' => $visibleNotifications->count().' visible',
-                'detail' => 'Current alerts you can still open.',
+                'detail' => $visibleNotifications->isNotEmpty()
+                    ? 'Current alerts you can still open.'
+                    : 'Nothing currently needs attention in this alert view.',
             ],
             [
                 'label' => 'Unread alerts',
                 'value' => $visibleUnreadNotificationCount.' unread',
                 'detail' => $visibleUnreadNotificationCount > 0
                     ? 'Still waiting for review or mark-read.'
-                    : 'No visible unread alerts.',
+                    : 'No unread alerts are waiting for review.',
             ],
             [
                 'label' => 'Conversation alerts',
                 'value' => $conversationAlertCount.' '.Str::plural('conversation', $conversationAlertCount),
-                'detail' => 'Visitor replies and chat follow-up.',
+                'detail' => $conversationAlertCount > 0
+                    ? 'Visitor replies and chat follow-up.'
+                    : 'No visitor reply alerts in this view.',
             ],
             [
                 'label' => 'Ticket alerts',
                 'value' => $ticketAlertCount.' '.Str::plural('ticket', $ticketAlertCount),
-                'detail' => 'Ticket assignments and durable work.',
+                'detail' => $ticketAlertCount > 0
+                    ? 'Ticket assignments and durable work.'
+                    : 'No ticket assignment alerts in this view.',
             ],
         ];
     }
