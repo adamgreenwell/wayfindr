@@ -330,9 +330,11 @@ class AgentSiteController extends Controller
             ->selectRaw('sync_status, count(*) as aggregate')
             ->groupBy('sync_status')
             ->pluck('aggregate', 'sync_status');
-        $recentFailures = $site->auditEvents()
+        $failureEvents = fn () => $site->auditEvents()
             ->where('account_id', $site->account_id)
-            ->where('action', 'ticket.external_sync_failed')
+            ->where('action', 'ticket.external_sync_failed');
+        $auditFailureCount = $failureEvents()->count();
+        $recentFailures = $failureEvents()
             ->latest('occurred_at')
             ->latest('id')
             ->limit(3)
@@ -344,7 +346,7 @@ class AgentSiteController extends Controller
                 'occurred_at' => $event->occurred_at,
             ]);
 
-        $failedCount = max((int) ($statusCounts[ExternalIssueSyncStatus::FAILED] ?? 0), $recentFailures->count());
+        $failedCount = max((int) ($statusCounts[ExternalIssueSyncStatus::FAILED] ?? 0), $auditFailureCount);
         $pendingCount = (int) ($statusCounts[ExternalIssueSyncStatus::PENDING] ?? 0);
         $statusItems = collect(ExternalIssueSyncStatus::options())
             ->map(fn (string $label, string $status): array => [

@@ -446,6 +446,61 @@ test('site settings flag disabled external issue mappings', function (): void {
         ->assertSee('internal/helpdesk');
 });
 
+test('site external issue readiness counts audit failures beyond the displayed timeline', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Wayfindr Public Site',
+        'domain' => 'wayfindr.cc',
+    ]);
+    $connection = ExternalIssueProviderConnection::factory()
+        ->for($account)
+        ->create([
+            'name' => 'Engineering GitHub',
+            'provider' => 'github',
+            'capabilities' => [
+                'create_issue' => true,
+                'add_comment' => true,
+                'sync_status' => false,
+            ],
+        ]);
+    SiteExternalIssueProject::factory()
+        ->for($account)
+        ->for($site)
+        ->for($connection, 'providerConnection')
+        ->create(['project_key' => 'adamgreenwell/wayfindr']);
+
+    foreach (range(1, 5) as $index) {
+        AuditEvent::factory()
+            ->for($account)
+            ->for($site)
+            ->create([
+                'action' => 'ticket.external_sync_failed',
+                'metadata' => [
+                    'provider' => 'github',
+                    'project_key' => "adamgreenwell/wayfindr-{$index}",
+                    'status' => 502,
+                ],
+                'occurred_at' => now()->subMinutes($index),
+            ]);
+    }
+
+    $response = $this->actingAs($admin)
+        ->get("/dashboard/sites/{$site->id}")
+        ->assertOk()
+        ->assertSee('External issue readiness')
+        ->assertSee('5 sync failed')
+        ->assertSee('Last external sync failure')
+        ->assertSee('Earlier external sync failure')
+        ->assertSee('adamgreenwell/wayfindr-1')
+        ->assertSee('adamgreenwell/wayfindr-2')
+        ->assertSee('adamgreenwell/wayfindr-3')
+        ->assertDontSee('adamgreenwell/wayfindr-4')
+        ->assertDontSee('adamgreenwell/wayfindr-5');
+
+    expect(substr_count($response->getContent(), 'external sync failure'))->toBe(3);
+});
+
 test('site settings guide agents when the widget has not checked in yet', function (): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create();
