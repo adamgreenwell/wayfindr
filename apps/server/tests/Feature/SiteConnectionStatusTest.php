@@ -367,6 +367,16 @@ test('site settings show external issue readiness for a mapped site', function (
         ->assertSee('0 disabled')
         ->assertSee('1 sync failed')
         ->assertSee('1 sync pending')
+        ->assertSee(route('dashboard.tickets.index', [
+            'ticket_status' => 'all',
+            'ticket_site' => $site->id,
+            'ticket_external' => 'failed',
+        ]))
+        ->assertSee(route('dashboard.tickets.index', [
+            'ticket_status' => 'all',
+            'ticket_site' => $site->id,
+            'ticket_external' => 'pending',
+        ]))
         ->assertSee('Last external sync failure')
         ->assertSee('GitHub could not sync adamgreenwell/wayfindr.')
         ->assertSee('Status 502')

@@ -250,7 +250,7 @@ class AgentSiteController extends Controller
     /**
      * @param  array<int, int>  $supportAgentIds
      * @param  array<int, string>  $maskSelectors
-     * @param  array{label: string, tone: string, detail: string, metrics: Collection<int, array{label: string, value: string, tone: string}>, status_counts: Collection<int, array{key: string, label: string, count: int}>, recent_failures: Collection<int, array{provider: string, project_key: string, status: string|null, occurred_at: Carbon|null}>}  $externalIssueHealth
+     * @param  array{label: string, tone: string, detail: string, metrics: Collection<int, array{label: string, value: string, tone: string, href?: string|null, action?: string}>, status_counts: Collection<int, array{key: string, label: string, count: int}>, recent_failures: Collection<int, array{provider: string, project_key: string, status: string|null, occurred_at: Carbon|null}>}  $externalIssueHealth
      * @return Collection<int, array{label: string, value: string, tone: string, detail: string, href: string}>
      */
     private function siteSupportReadiness(Site $site, array $supportAgentIds, array $maskSelectors, array $externalIssueHealth): Collection
@@ -313,7 +313,7 @@ class AgentSiteController extends Controller
      *     label: string,
      *     tone: string,
      *     detail: string,
-     *     metrics: Collection<int, array{label: string, value: string, tone: string}>,
+     *     metrics: Collection<int, array{label: string, value: string, tone: string, href?: string|null, action?: string}>,
      *     status_counts: Collection<int, array{key: string, label: string, count: int}>,
      *     recent_failures: Collection<int, array{provider: string, project_key: string, status: string|null, occurred_at: Carbon|null}>
      * }
@@ -415,11 +415,27 @@ class AgentSiteController extends Controller
                     'label' => 'Sync failed',
                     'value' => $failedCount.' sync failed',
                     'tone' => $failedCount > 0 ? 'attention' : 'ready',
+                    'href' => $failedCount > 0
+                        ? route('dashboard.tickets.index', [
+                            'ticket_status' => 'all',
+                            'ticket_site' => $site->id,
+                            'ticket_external' => 'failed',
+                        ])
+                        : null,
+                    'action' => 'Review failed tickets',
                 ],
                 [
                     'label' => 'Sync pending',
                     'value' => $pendingCount.' sync pending',
                     'tone' => $pendingCount > 0 ? 'manual' : 'ready',
+                    'href' => $pendingCount > 0
+                        ? route('dashboard.tickets.index', [
+                            'ticket_status' => 'all',
+                            'ticket_site' => $site->id,
+                            'ticket_external' => 'pending',
+                        ])
+                        : null,
+                    'action' => 'Review pending tickets',
                 ],
             ]),
             'status_counts' => $statusItems,

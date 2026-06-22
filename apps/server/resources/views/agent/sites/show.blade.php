@@ -79,6 +79,11 @@
                             <span class="meta-label">{{ $metric['label'] }}</span>
                             <span class="meta-value">{{ $metric['value'] }}</span>
                             <span class="readiness-status" data-status="{{ $metric['tone'] }}">{{ ucfirst($metric['tone']) }}</span>
+                            @if (! empty($metric['href']) && ! empty($metric['action']))
+                                <p class="readiness-action">
+                                    <a class="text-link" href="{{ $metric['href'] }}">{{ $metric['action'] }}</a>
+                                </p>
+                            @endif
                         </div>
                     @endforeach
                 </div>

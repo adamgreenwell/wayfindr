@@ -145,6 +145,11 @@
                                         {{ ucfirst($metric['tone']) }}
                                     </span>
                                 </span>
+                                @if (! empty($metric['href']) && ! empty($metric['action']))
+                                    <p class="readiness-action">
+                                        <a class="text-link" href="{{ $metric['href'] }}">{{ $metric['action'] }}</a>
+                                    </p>
+                                @endif
                             </div>
                         @endforeach
                     </div>

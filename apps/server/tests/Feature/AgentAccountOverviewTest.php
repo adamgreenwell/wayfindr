@@ -438,6 +438,14 @@ test('account admins can inspect external issue readiness without raw provider d
         ->assertSee('1 disabled')
         ->assertSee('1 sync failed')
         ->assertSee('1 sync pending')
+        ->assertSee(route('dashboard.tickets.index', [
+            'ticket_status' => 'all',
+            'ticket_external' => 'failed',
+        ]))
+        ->assertSee(route('dashboard.tickets.index', [
+            'ticket_status' => 'all',
+            'ticket_external' => 'pending',
+        ]))
         ->assertSee('Engineering GitHub')
         ->assertSee('GitHub')
         ->assertSee('Acme Docs')

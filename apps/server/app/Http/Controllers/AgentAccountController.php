@@ -114,7 +114,7 @@ class AgentAccountController extends Controller
      *     label: string,
      *     tone: string,
      *     detail: string,
-     *     metrics: array<int, array{label: string, value: string, tone: string}>,
+     *     metrics: array<int, array{label: string, value: string, tone: string, href?: string|null, action?: string}>,
      *     projects: Collection<int, array{
      *         site: string,
      *         provider: string,
@@ -214,11 +214,25 @@ class AgentAccountController extends Controller
                     'label' => 'Sync failed',
                     'value' => $this->countLabel($failedCount, 'sync failed', 'sync failed'),
                     'tone' => $failedCount > 0 ? 'attention' : 'ready',
+                    'href' => $failedCount > 0
+                        ? route('dashboard.tickets.index', [
+                            'ticket_status' => 'all',
+                            'ticket_external' => 'failed',
+                        ])
+                        : null,
+                    'action' => 'Review failed tickets',
                 ],
                 [
                     'label' => 'Sync pending',
                     'value' => $this->countLabel($pendingCount, 'sync pending', 'sync pending'),
                     'tone' => $pendingCount > 0 ? 'manual' : 'ready',
+                    'href' => $pendingCount > 0
+                        ? route('dashboard.tickets.index', [
+                            'ticket_status' => 'all',
+                            'ticket_external' => 'pending',
+                        ])
+                        : null,
+                    'action' => 'Review pending tickets',
                 ],
             ],
             'projects' => $projects->map(fn (SiteExternalIssueProject $project): array => [
