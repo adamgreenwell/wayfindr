@@ -71,6 +71,20 @@ test('account admins can create edit and archive reply templates', function (): 
     expect($template->fresh()->is_active)->toBeFalse();
 });
 
+test('reply template management guides admins before templates exist', function (): void {
+    $admin = User::factory()->for(Account::factory())->create([
+        'account_role' => AccountRole::Admin,
+    ]);
+
+    $this->actingAs($admin)
+        ->get('/dashboard/account/reply-templates')
+        ->assertOk()
+        ->assertSee('No managed reply templates yet.')
+        ->assertSee('Built-in helpers stay available in reply composers until your team adds account templates.')
+        ->assertSee('Create the first template')
+        ->assertSee('href="#new-reply-template-heading"', false);
+});
+
 test('reply template management stays inside account admin boundaries', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $otherAccount = Account::factory()->create(['name' => 'Other Support']);

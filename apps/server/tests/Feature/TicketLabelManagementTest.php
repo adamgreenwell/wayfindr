@@ -57,6 +57,20 @@ test('account admins can review ticket labels and usage', function (): void {
         ->and($otherAccountLabel->exists)->toBeTrue();
 });
 
+test('ticket label management guides admins before labels exist', function (): void {
+    $admin = User::factory()->for(Account::factory())->create([
+        'account_role' => AccountRole::Admin,
+    ]);
+
+    $this->actingAs($admin)
+        ->get('/dashboard/account/labels')
+        ->assertOk()
+        ->assertSee('No managed ticket labels yet.')
+        ->assertSee('Use labels when tickets need repeatable triage context, escalation cues, or workflow grouping.')
+        ->assertSee('Create the first label')
+        ->assertSee('href="#new-ticket-label-heading"', false);
+});
+
 test('account admins can create reusable ticket labels from management', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $admin = User::factory()->for($account)->create([

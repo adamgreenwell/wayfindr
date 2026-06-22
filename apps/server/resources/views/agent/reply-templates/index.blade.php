@@ -51,7 +51,13 @@
                 </div>
 
                 @if ($replyTemplates->isEmpty())
-                    <p class="empty">No account reply templates yet. The built-in defaults will stay available until you create one.</p>
+                    <div class="empty empty-state">
+                        <strong>No managed reply templates yet.</strong>
+                        Built-in helpers stay available in reply composers until your team adds account templates. Add one when agents keep rewriting the same calm, useful answer.
+                        <div class="empty-state-actions">
+                            <a class="button secondary" href="#new-reply-template-heading">Create the first template</a>
+                        </div>
+                    </div>
                 @else
                     <div class="table-wrap">
                         <table>

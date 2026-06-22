@@ -46,7 +46,13 @@
                 </div>
 
                 @if ($ticketLabels->isEmpty())
-                    <p class="empty">No ticket labels yet. Add labels from a ticket when a support thread needs triage context.</p>
+                    <div class="empty empty-state">
+                        <strong>No managed ticket labels yet.</strong>
+                        Use labels when tickets need repeatable triage context, escalation cues, or workflow grouping. Start with a few labels your team will actually use.
+                        <div class="empty-state-actions">
+                            <a class="button secondary" href="#new-ticket-label-heading">Create the first label</a>
+                        </div>
+                    </div>
                 @else
                     <div class="table-wrap">
                         <table>
