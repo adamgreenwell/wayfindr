@@ -97,7 +97,7 @@ class AgentAccountController extends Controller
             'canManageRoles' => $agent->isOwner(),
             'canViewAudit' => $agent->isAdmin(),
             'externalIssueReadiness' => $agent->isAdmin()
-                ? $this->externalIssueReadiness($account)
+                ? $this->externalIssueReadiness($account, $visibleSiteIds)
                 : null,
             'roleLabels' => $this->roleLabels(),
             'roleOptions' => $this->roleLabels(),
@@ -128,25 +128,38 @@ class AgentAccountController extends Controller
      *     recent_failures: Collection<int, array{provider: string, project_key: string, status: string|null, occurred_at: Carbon|null}>
      * }
      */
-    private function externalIssueReadiness(Account $account): array
+    private function externalIssueReadiness(Account $account, array $visibleSiteIds): array
     {
         $connections = $account->externalIssueProviderConnections()
+            ->where(function ($query) use ($visibleSiteIds): void {
+                $query
+                    ->whereDoesntHave('siteProjects')
+                    ->orWhereHas('siteProjects', fn ($projectQuery) => $projectQuery->whereIn('site_id', $visibleSiteIds));
+            })
             ->orderBy('name')
             ->get();
         $projects = $account->siteExternalIssueProjects()
+            ->whereIn('site_id', $visibleSiteIds)
             ->with(['providerConnection', 'site'])
             ->get()
             ->sortBy(fn (SiteExternalIssueProject $project): string => ($project->site?->name ?? '').' '.$project->project_key)
             ->values();
         $statusCounts = $account->ticketExternalLinks()
+            ->whereIn('site_id', $visibleSiteIds)
             ->selectRaw('sync_status, count(*) as aggregate')
             ->groupBy('sync_status')
             ->pluck('aggregate', 'sync_status');
+        $visibleFailureEvents = fn () => $account->auditEvents()
+            ->where('action', 'ticket.external_sync_failed')
+            ->whereIn('site_id', $visibleSiteIds);
 
         $disabledCount = $connections
             ->where('is_enabled', false)
             ->count();
-        $failedCount = (int) ($statusCounts[ExternalIssueSyncStatus::FAILED] ?? 0);
+        $failedCount = max(
+            (int) ($statusCounts[ExternalIssueSyncStatus::FAILED] ?? 0),
+            $visibleFailureEvents()->count(),
+        );
         $pendingCount = (int) ($statusCounts[ExternalIssueSyncStatus::PENDING] ?? 0);
 
         [$label, $tone, $detail] = match (true) {
@@ -154,6 +167,11 @@ class AgentAccountController extends Controller
                 'Not configured',
                 'manual',
                 'Add a provider connection when tickets need to leave Wayfindr.',
+            ],
+            $projects->isEmpty() => [
+                'Not configured',
+                'manual',
+                'Map at least one site project before tickets can leave Wayfindr.',
             ],
             $disabledCount > 0 || $failedCount > 0 => [
                 'Needs attention',
@@ -215,8 +233,7 @@ class AgentAccountController extends Controller
                     : route('dashboard.sites.index'),
                 'enabled' => (bool) $project->providerConnection?->is_enabled,
             ]),
-            'recent_failures' => $account->auditEvents()
-                ->where('action', 'ticket.external_sync_failed')
+            'recent_failures' => $visibleFailureEvents()
                 ->latest('occurred_at')
                 ->latest('id')
                 ->limit(3)
