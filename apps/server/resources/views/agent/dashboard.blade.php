@@ -9,7 +9,11 @@
                 </div>
 
                 @if (session('support_code_lookup_status'))
-                    <p class="empty">{{ session('support_code_lookup_status') }}</p>
+                    <div class="empty empty-state">
+                        <strong>{{ session('support_code_lookup_status') }}</strong>
+                        <p>Try a support code like WF-ABC123, a ticket reference like Ticket #123, or a visitor ID.</p>
+                        <p>Records outside your support access stay hidden.</p>
+                    </div>
                 @endif
 
                 <form class="section-form" method="GET" action="{{ route('dashboard.support-code.lookup') }}">

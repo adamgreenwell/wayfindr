@@ -333,6 +333,19 @@ test('support code lookup rejects non-scalar query values', function (): void {
         ->assertSessionHas('support_code_lookup_status', 'Enter a support code, ticket reference, or visitor ID to find a support trail.');
 });
 
+test('support lookup misses give agents recovery guidance on the dashboard', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+
+    $this->actingAs($agent)
+        ->withSession(['support_code_lookup_status' => 'No visible support record found for WF-MISSING.'])
+        ->get('/dashboard')
+        ->assertOk()
+        ->assertSee('No visible support record found for WF-MISSING.')
+        ->assertSee('Try a support code like WF-ABC123, a ticket reference like Ticket #123, or a visitor ID.')
+        ->assertSee('Records outside your support access stay hidden.');
+});
+
 test('support code lookup respects explicit site support access', function (): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
