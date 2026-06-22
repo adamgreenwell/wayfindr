@@ -949,6 +949,67 @@ test('agents can narrow alert center alerts by kind and reference search', funct
         ->assertDontSee('Hidden filter issue');
 });
 
+test('alert center gives agents a clearer empty alert search state', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Acme Docs',
+        'public_key' => 'site_public_docs',
+    ]);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs-filter']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'assigned_agent_id' => $agent->id,
+        'support_code' => 'WF-ALERT-MATCH',
+        'subject' => 'Filterable install help',
+    ]);
+    $message = ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'The installer needs attention.',
+    ]);
+
+    $agent->notify(new ConversationNeedsReply($message));
+
+    $this->actingAs($agent)
+        ->get('/dashboard/alerts?alert_kind=conversation&alert_search=missing')
+        ->assertOk()
+        ->assertSee('No alerts match &quot;missing&quot;.', false)
+        ->assertSee('Search checks support codes, ticket numbers, subjects, sites, visitors, and message previews you can still access.')
+        ->assertSee('Clear search')
+        ->assertSee('Clear all alert filters')
+        ->assertDontSee('Filterable install help')
+        ->assertDontSee('WF-ALERT-MATCH');
+});
+
+test('alert center gives agents a clearer empty unread state', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'assigned_agent_id' => $agent->id,
+        'support_code' => 'WF-READ-EMPTY',
+        'subject' => 'Handled install help',
+    ]);
+    $message = ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'This has already been handled.',
+    ]);
+
+    $agent->notify(new ConversationNeedsReply($message));
+    $agent->unreadNotifications()->firstOrFail()->markAsRead();
+
+    $this->actingAs($agent)
+        ->get('/dashboard/alerts?alert_filter=unread')
+        ->assertOk()
+        ->assertSee('You are caught up.')
+        ->assertSee('New eligible visitor replies and ticket assignments will appear here when they need attention.')
+        ->assertSee('Show recent alerts')
+        ->assertDontSee('Handled install help')
+        ->assertDontSee('WF-READ-EMPTY');
+});
+
 test('alert center mark read controls preserve active filters', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);

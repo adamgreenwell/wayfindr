@@ -48,6 +48,7 @@ class AgentAlertController extends Controller
                 $alertKind,
                 $alertSearch,
             ),
+            'alertEmptyState' => $this->alertEmptyState($alertFilter, $alertKind, $alertSearch),
             'alertSnapshot' => $this->alertSnapshot($notifications, $filteredUnreadNotifications->count()),
             'activeAlertFilters' => $this->activeAlertFilters($alertFilter, $alertKind, $alertSearch),
             'notifications' => $notifications,
@@ -263,6 +264,74 @@ class AgentAlertController extends Controller
         }
 
         return Str::plural('alert', $alertCount);
+    }
+
+    /**
+     * @return array{heading: string, detail: string, actions: list<array{label: string, url: string}>}
+     */
+    private function alertEmptyState(string $alertFilter, string $alertKind, string $alertSearch): array
+    {
+        if ($alertSearch !== '') {
+            return [
+                'heading' => sprintf('No alerts match "%s".', $alertSearch),
+                'detail' => 'Search checks support codes, ticket numbers, subjects, sites, visitors, and message previews you can still access.',
+                'actions' => [
+                    [
+                        'label' => 'Clear search',
+                        'url' => route('dashboard.alerts.index', $this->alertReturnParams($alertFilter, $alertKind, '')),
+                    ],
+                    [
+                        'label' => 'Clear all alert filters',
+                        'url' => route('dashboard.alerts.index', $alertFilter === 'unread' ? ['alert_filter' => 'unread'] : []),
+                    ],
+                ],
+            ];
+        }
+
+        if ($alertKind !== 'all') {
+            return [
+                'heading' => 'No '.$this->matchingAlertLabel($alertFilter, $alertKind, 2).' match this view.',
+                'detail' => 'Try all alert types to include the other support signals you can still access.',
+                'actions' => [
+                    [
+                        'label' => 'Clear alert type filter',
+                        'url' => route('dashboard.alerts.index', $this->alertReturnParams($alertFilter, 'all', $alertSearch)),
+                    ],
+                    [
+                        'label' => 'Clear all alert filters',
+                        'url' => route('dashboard.alerts.index', $alertFilter === 'unread' ? ['alert_filter' => 'unread'] : []),
+                    ],
+                ],
+            ];
+        }
+
+        if ($alertFilter === 'unread') {
+            return [
+                'heading' => 'You are caught up.',
+                'detail' => 'New eligible visitor replies and ticket assignments will appear here when they need attention.',
+                'actions' => [
+                    [
+                        'label' => 'Show recent alerts',
+                        'url' => route('dashboard.alerts.index'),
+                    ],
+                ],
+            ];
+        }
+
+        return [
+            'heading' => 'No visible alerts yet.',
+            'detail' => 'Visitor replies and ticket assignments you can support will appear here once they need attention.',
+            'actions' => [
+                [
+                    'label' => 'Back to dashboard',
+                    'url' => route('dashboard'),
+                ],
+                [
+                    'label' => 'Review alert preferences',
+                    'url' => route('dashboard.profile.show'),
+                ],
+            ],
+        ];
     }
 
     private function redirectAfterAlertAction(Request $request): RedirectResponse

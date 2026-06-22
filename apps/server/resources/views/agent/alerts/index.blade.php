@@ -127,15 +127,15 @@
         </div>
 
         @if ($notifications->isEmpty())
-            <p class="empty">
-                @if ($hasAlertFilters)
-                    No visible alerts match those filters.
-                @elseif ($alertFilter === 'unread')
-                    No unread visible alerts.
-                @else
-                    No visible alerts yet.
-                @endif
-            </p>
+            <div class="empty empty-state">
+                <strong>{{ $alertEmptyState['heading'] }}</strong>
+                <p>{{ $alertEmptyState['detail'] }}</p>
+                <div class="empty-state-actions">
+                    @foreach ($alertEmptyState['actions'] as $action)
+                        <a class="button secondary" href="{{ $action['url'] }}">{{ $action['label'] }}</a>
+                    @endforeach
+                </div>
+            </div>
         @else
             <div class="notice-copy notice-copy-bordered">
                 <p><strong>{{ $alertCountSummary['heading'] }}</strong></p>
