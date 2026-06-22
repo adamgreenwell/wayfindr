@@ -147,6 +147,14 @@ class AgentTicketQueueController extends Controller
                 default => 'No open tickets yet.',
             };
         $ticketQuery = $this->ticketQueryParams($ticketStatus, $ticketFilter, $ticketSite, $ticketPriority, $ticketCategory, $ticketLabel, $ticketAttention, $ticketExternalIssue, $ticketSearch);
+        $ticketEmptyState = $this->ticketEmptyState(
+            $ticketEmptyMessage,
+            $ticketHasActiveRefinement,
+            $ticketQuery,
+            $ticketAttention,
+            $ticketExternalIssue,
+            $ticketSearch,
+        );
         $ticketResults = Ticket::query()
             ->with([
                 'assignee',
@@ -221,6 +229,7 @@ class AgentTicketQueueController extends Controller
             'ticketCategory' => $ticketCategory,
             'ticketCategoryFilters' => $ticketCategoryFilters,
             'ticketEmptyMessage' => $ticketEmptyMessage,
+            'ticketEmptyState' => $ticketEmptyState,
             'ticketFilter' => $ticketFilter,
             'ticketFilters' => $ticketFilters,
             'ticketLabel' => $ticketLabel,
@@ -473,7 +482,7 @@ class AgentTicketQueueController extends Controller
         }
 
         return [
-            'detail' => 'Showing '.$this->ticketCountLabel($shownCount).' after the '.$ticketAttentionFilters[$ticketAttention].' next-step filter. '.$this->ticketCountLabel($matchingCount).' match the other queue filters.',
+            'detail' => 'Showing '.$this->ticketCountLabel($shownCount).' after the '.$ticketAttentionFilters[$ticketAttention].' next-step filter. '.$this->ticketCountLabel($matchingCount).' '.$this->ticketCountVerb($matchingCount).' the other queue filters.',
             'heading' => $shownCount.' shown of '.$matchingCount.' matching tickets',
         ];
     }
@@ -481,6 +490,101 @@ class AgentTicketQueueController extends Controller
     private function ticketCountLabel(int $count): string
     {
         return $count.' '.($count === 1 ? 'ticket' : 'tickets');
+    }
+
+    private function ticketCountVerb(int $count): string
+    {
+        return $count === 1 ? 'matches' : 'match';
+    }
+
+    /**
+     * @param  array<string, string|int>  $ticketQuery
+     * @return array{heading: string, detail: string, actions: array<int, array{label: string, href: string}>}
+     */
+    private function ticketEmptyState(string $ticketEmptyMessage, bool $ticketHasActiveRefinement, array $ticketQuery, string $ticketAttention, string $ticketExternalIssue, string $ticketSearch): array
+    {
+        $clearAllAction = [
+            'href' => route('dashboard.tickets.index'),
+            'label' => 'Clear all ticket filters',
+        ];
+
+        if (! $ticketHasActiveRefinement) {
+            return [
+                'actions' => [],
+                'detail' => 'When visitors need durable follow-up, tickets will land here.',
+                'heading' => $ticketEmptyMessage,
+            ];
+        }
+
+        if ($ticketSearch !== '') {
+            $query = $ticketQuery;
+            unset($query['ticket_search']);
+
+            return [
+                'actions' => [
+                    [
+                        'href' => route('dashboard.tickets.index', $query),
+                        'label' => 'Clear search',
+                    ],
+                    $clearAllAction,
+                ],
+                'detail' => 'Search covers ticket number, subject, description, support code, requester, email, and anonymous visitor IDs.',
+                'heading' => 'No tickets match "'.$ticketSearch.'".',
+            ];
+        }
+
+        if ($ticketAttention !== 'all') {
+            $query = $ticketQuery;
+            unset($query['ticket_attention']);
+
+            return [
+                'actions' => [
+                    [
+                        'href' => route('dashboard.tickets.index', $query),
+                        'label' => 'Clear next-step filter',
+                    ],
+                    $clearAllAction,
+                ],
+                'detail' => 'Try another next-step queue or clear the next-step filter.',
+                'heading' => 'No tickets need '.$this->ticketEmptyAttentionPhrase($ticketAttention).' right now.',
+            ];
+        }
+
+        if ($ticketExternalIssue !== 'all') {
+            $query = $ticketQuery;
+            unset($query['ticket_external']);
+
+            return [
+                'actions' => [
+                    [
+                        'href' => route('dashboard.tickets.index', $query),
+                        'label' => 'Clear external issue filter',
+                    ],
+                    $clearAllAction,
+                ],
+                'detail' => 'Try another external issue state or clear the external issue filter.',
+                'heading' => 'No tickets match that external issue state.',
+            ];
+        }
+
+        return [
+            'actions' => [$clearAllAction],
+            'detail' => 'Try clearing a filter, widening the status, or searching by support code if you have one.',
+            'heading' => $ticketEmptyMessage,
+        ];
+    }
+
+    private function ticketEmptyAttentionPhrase(string $ticketAttention): string
+    {
+        return match ($ticketAttention) {
+            'escalated' => 'recent escalation review',
+            'needs_reply' => 'a visitor reply',
+            'needs_owner' => 'an owner',
+            'needs_agent' => 'an agent update',
+            'waiting_on_customer' => 'customer follow-up',
+            'resolved' => 'resolution review',
+            default => 'that next step',
+        };
     }
 
     private function ticketDashboardAttentionState(Ticket $ticket): string

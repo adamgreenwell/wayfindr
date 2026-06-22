@@ -881,6 +881,22 @@
             color: var(--muted);
         }
 
+        .empty-state strong {
+            color: var(--text);
+            display: block;
+        }
+
+        .empty-state-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        .empty-state-actions .button {
+            margin-top: 0;
+        }
+
         .message-meta {
             color: var(--muted);
             display: flex;

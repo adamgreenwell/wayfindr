@@ -2616,6 +2616,65 @@ test('dashboard explains when ticket filters have no matches', function (): void
         ->assertDontSee('No open tickets yet.');
 });
 
+test('dashboard gives agents a clearer empty ticket search state', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+
+    Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->create([
+            'status' => 'open',
+            'subject' => 'Docs typo',
+        ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/tickets?ticket_search=missing')
+        ->assertOk()
+        ->assertSee('No tickets match "missing".')
+        ->assertSee('Search covers ticket number, subject, description, support code, requester, email, and anonymous visitor IDs.')
+        ->assertSee('Clear search')
+        ->assertSee('Clear all ticket filters')
+        ->assertDontSee('Docs typo');
+});
+
+test('dashboard gives agents a clearer empty ticket next step state', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+
+    $waitingConversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-WAITING',
+        'status' => 'open',
+    ]);
+    ConversationMessage::factory()->for($waitingConversation)->create([
+        'sender_type' => User::class,
+        'sender_id' => $agent->id,
+        'body' => 'I sent the next step.',
+    ]);
+    Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($waitingConversation)
+        ->for($agent, 'assignee')
+        ->create([
+            'subject' => 'Waiting on the customer',
+            'status' => 'open',
+        ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/tickets?ticket_attention=needs_reply')
+        ->assertOk()
+        ->assertSee('No tickets need a visitor reply right now.')
+        ->assertSee('Try another next-step queue or clear the next-step filter.')
+        ->assertSee('1 ticket matches the other queue filters.')
+        ->assertSee('Clear next-step filter')
+        ->assertSee('Clear all ticket filters')
+        ->assertDontSee('Waiting on the customer');
+});
+
 test('dashboard surfaces ticket attention signals', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);

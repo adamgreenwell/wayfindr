@@ -226,7 +226,20 @@
                 @endif
 
                 @if ($tickets->isEmpty())
-                    <p class="empty">{{ $ticketEmptyMessage }}</p>
+                    <div class="empty empty-state">
+                        <strong>{{ $ticketEmptyState['heading'] }}</strong>
+                        <p class="lede">{{ $ticketEmptyState['detail'] }}</p>
+
+                        @if ($ticketEmptyState['actions'] !== [])
+                            <div class="empty-state-actions">
+                                @foreach ($ticketEmptyState['actions'] as $emptyStateAction)
+                                    <a class="button secondary" href="{{ $emptyStateAction['href'] }}">
+                                        {{ $emptyStateAction['label'] }}
+                                    </a>
+                                @endforeach
+                            </div>
+                        @endif
+                    </div>
                 @else
                     <div class="table-wrap">
                         <table>
