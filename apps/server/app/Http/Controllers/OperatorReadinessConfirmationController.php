@@ -36,13 +36,17 @@ class OperatorReadinessConfirmationController extends Controller
             'note' => ['nullable', 'string', 'max:500'],
         ]);
         $note = trim((string) ($validated['note'] ?? ''));
+        $existingConfirmation = OperatorReadinessConfirmation::query()
+            ->where('key', $validated['key'])
+            ->first();
+        $storedNote = $note !== '' ? $note : $existingConfirmation?->note;
 
         $confirmation = OperatorReadinessConfirmation::query()->updateOrCreate(
             ['key' => $validated['key']],
             [
                 'confirmed_by_id' => $agent->id,
                 'confirmed_at' => now(),
-                'note' => $note !== '' ? $note : null,
+                'note' => $storedNote,
             ],
         );
 
@@ -55,7 +59,7 @@ class OperatorReadinessConfirmationController extends Controller
             'action' => 'operator_readiness.confirmed',
             'metadata' => [
                 'key' => $validated['key'],
-                'note' => $note !== '' ? $note : null,
+                'note' => $storedNote,
             ],
             'occurred_at' => now(),
         ]);

@@ -91,7 +91,8 @@ test('platform operators can confirm manual readiness items from the operator co
         ->assertOk()
         ->assertSee('Backups and restore confirmed.')
         ->assertSee('Confirmed by Olive Operator')
-        ->assertSee('Snapshot and database restore tested.');
+        ->assertSee('Evidence note recorded.')
+        ->assertDontSee('Snapshot and database restore tested.');
 });
 
 test('platform operators cannot confirm unsupported readiness keys', function (): void {
@@ -155,6 +156,59 @@ test('operator console shows safe system identity and documentation links', func
         ->assertSee('https://example.test/docs/runtime', false)
         ->assertSee('Forge deploy guide')
         ->assertSee('https://example.test/docs/forge', false);
+});
+
+test('operator console summarizes readiness proof coverage without evidence notes or support data', function (): void {
+    $this->travelTo(Carbon::parse('2026-06-22 12:00:00'));
+
+    $operator = User::factory()->for(Account::factory())->create([
+        'platform_role' => PlatformRole::Operator,
+        'name' => 'Olive Operator',
+    ]);
+    $site = Site::factory()->create(['name' => 'Private Proof Site']);
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-proof-secret',
+    ]);
+    Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-PROOFSECRET',
+        'subject' => 'Private visitor proof request',
+    ]);
+
+    OperatorReadinessConfirmation::query()->create([
+        'key' => 'scheduler',
+        'confirmed_by_id' => $operator->id,
+        'confirmed_at' => now()->subDay(),
+        'note' => 'Scheduler proof mentioned support code WF-PROOFSECRET.',
+    ]);
+
+    OperatorReadinessConfirmation::query()->create([
+        'key' => 'backups_restore',
+        'confirmed_by_id' => $operator->id,
+        'confirmed_at' => now()->subDays(31),
+        'note' => 'Restore proof mentioned anon-proof-secret.',
+    ]);
+
+    $this->actingAs($operator)
+        ->get('/operator')
+        ->assertOk()
+        ->assertSee('Readiness proof coverage')
+        ->assertSee('Fresh proofs')
+        ->assertSee('1 current')
+        ->assertSee('Refresh due')
+        ->assertSee('1 stale')
+        ->assertSee('Missing proofs')
+        ->assertSee('0 missing')
+        ->assertSee('Scheduler')
+        ->assertSee('Backups and restore')
+        ->assertSee('Confirmed by Olive Operator 1 day ago')
+        ->assertSee('Confirmed by Olive Operator 1 month ago')
+        ->assertSee('Manual proof notes stay out of this summary.')
+        ->assertDontSee('Scheduler proof mentioned support code WF-PROOFSECRET.')
+        ->assertDontSee('Restore proof mentioned anon-proof-secret.')
+        ->assertDontSee('WF-PROOFSECRET')
+        ->assertDontSee('Private visitor proof request')
+        ->assertDontSee('Private Proof Site')
+        ->assertDontSee('anon-proof-secret');
 });
 
 test('operator console explains the platform support data boundary', function (): void {

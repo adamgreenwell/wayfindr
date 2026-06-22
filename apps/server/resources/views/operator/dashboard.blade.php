@@ -71,6 +71,54 @@
         </div>
     </section>
 
+    <section class="section" aria-labelledby="readiness-proof-coverage-heading">
+        <div class="section-header">
+            <div>
+                <h2 id="readiness-proof-coverage-heading">Readiness proof coverage</h2>
+                <p class="lede">Manual operational evidence without replaying note contents.</p>
+            </div>
+        </div>
+
+        <div class="meta-grid readiness-summary-grid">
+            <div class="meta-item">
+                <span class="meta-label">Fresh proofs</span>
+                <span class="meta-value">{{ $readiness['proof_coverage']['fresh_count'] }} current</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Refresh due</span>
+                <span class="meta-value">{{ $readiness['proof_coverage']['stale_count'] }} stale</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Missing proofs</span>
+                <span class="meta-value">{{ $readiness['proof_coverage']['missing_count'] }} missing</span>
+            </div>
+        </div>
+
+        <div class="notice-copy notice-copy-bordered">
+            <p>
+                Manual proof notes stay out of this summary. Use notes only for operational evidence,
+                not support codes, visitor identifiers, conversation text, or ticket details.
+            </p>
+        </div>
+
+        <div class="readiness-list">
+            @foreach ($readiness['proof_coverage']['items'] as $item)
+                <article class="readiness-check" data-status="{{ $item['status'] === 'fresh' ? 'ready' : 'manual' }}">
+                    <div class="readiness-check-main">
+                        <div>
+                            <h3>{{ $item['label'] }}</h3>
+                            <p>{{ $item['summary'] }}</p>
+                        </div>
+                        <span class="readiness-status" data-status="{{ $item['status'] === 'fresh' ? 'ready' : 'manual' }}">
+                            {{ $item['status_label'] }}
+                        </span>
+                    </div>
+                    <p class="lede">{{ $item['note_status'] }}</p>
+                </article>
+            @endforeach
+        </div>
+    </section>
+
     <section class="section" aria-labelledby="operator-boundary-inventory-heading">
         <div class="section-header">
             <div>

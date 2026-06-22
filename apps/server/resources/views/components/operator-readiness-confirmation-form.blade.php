@@ -13,7 +13,7 @@
             maxlength="500"
             placeholder="Optional note"
             aria-label="Confirmation note for {{ $item['label'] }}"
-            value="{{ old('note', $item['confirmation']['note'] ?? '') }}"
+            value="{{ old('note', '') }}"
         >
         <button class="button secondary" type="submit">
             {{ $item['confirmation'] ? 'Refresh confirmation' : 'Mark confirmed' }}

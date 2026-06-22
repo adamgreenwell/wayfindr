@@ -534,7 +534,7 @@ test('readiness diagnostics treat confirmed manual items as ready', function ():
             'key' => 'scheduler',
             'confirmed_by' => 'Olive Operator',
             'freshness_status' => 'fresh',
-            'note' => 'Forge scheduler is running every minute.',
+            'note_present' => true,
             'stale_after_days' => 7,
         ])
         ->and($scheduler['confirmation']['age_label'])->not->toBeNull()
@@ -613,7 +613,7 @@ test('readiness diagnostics mark stale confirmations as refresh due', function (
             'confirmed_by' => 'Olive Operator',
             'freshness_status' => 'stale',
             'key' => 'scheduler',
-            'note' => 'Forge scheduler was checked last week.',
+            'note_present' => true,
             'stale_after_days' => 7,
         ])
         ->and($backups)->toMatchArray([
@@ -664,7 +664,8 @@ test('dashboard readiness shows stale confirmation refresh guidance', function (
         ->assertOk()
         ->assertSee('Scheduler confirmation needs refresh.')
         ->assertSee('Confirmed by Adam Admin 8 days ago.')
-        ->assertSee('Scheduler was checked before a deploy.')
+        ->assertSee('Evidence note recorded.')
+        ->assertDontSee('Scheduler was checked before a deploy.')
         ->assertSee('Refresh confirmation');
 });
 
@@ -738,7 +739,55 @@ test('account admins can confirm a manual readiness item', function (): void {
         ->assertOk()
         ->assertSee('Scheduler confirmed.')
         ->assertSee('Confirmed by Adam Admin')
-        ->assertSee('Forge scheduled job is configured.');
+        ->assertSee('Evidence note recorded.')
+        ->assertDontSee('Forge scheduled job is configured.');
+});
+
+test('blank readiness refresh preserves the existing evidence note', function (): void {
+    $this->travelTo(Carbon::parse('2026-06-22 12:00:00'));
+
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'name' => 'Adam Admin',
+    ]);
+
+    OperatorReadinessConfirmation::query()->create([
+        'key' => 'scheduler',
+        'confirmed_by_id' => $agent->id,
+        'confirmed_at' => now()->subDays(8),
+        'note' => 'Existing scheduler proof should stay recorded.',
+    ]);
+
+    $this->travelTo(Carbon::parse('2026-06-22 12:05:00'));
+
+    $this->actingAs($agent)
+        ->post('/dashboard/readiness/confirmations', [
+            'key' => 'scheduler',
+            'note' => '   ',
+        ])
+        ->assertRedirect('/dashboard/readiness');
+
+    $this->assertDatabaseHas('operator_readiness_confirmations', [
+        'key' => 'scheduler',
+        'confirmed_by_id' => $agent->id,
+        'note' => 'Existing scheduler proof should stay recorded.',
+    ]);
+
+    $confirmation = OperatorReadinessConfirmation::query()
+        ->where('key', 'scheduler')
+        ->firstOrFail();
+
+    expect($confirmation->confirmed_at?->toIso8601String())->toBe('2026-06-22T12:05:00+00:00');
+
+    $auditEvent = AuditEvent::query()
+        ->where('action', 'operator_readiness.confirmed')
+        ->firstOrFail();
+
+    expect($auditEvent->metadata)->toMatchArray([
+        'key' => 'scheduler',
+        'note' => 'Existing scheduler proof should stay recorded.',
+    ]);
 });
 
 test('plain agents cannot confirm readiness items', function (): void {

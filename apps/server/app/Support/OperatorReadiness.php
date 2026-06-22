@@ -40,6 +40,7 @@ class OperatorReadiness
      *     label: string,
      *     manual_count: int,
      *     next_step: array{action: string, commands?: array<int, string>, detail: string, key: string, label: string, status: string, status_label: string, summary: string},
+     *     proof_coverage: array{fresh_count: int, items: array<int, array{key: string, label: string, note_status: string, status: string, status_label: string, summary: string}>, missing_count: int, stale_count: int},
      *     ready_count: int,
      *     smoke_path: array<int, array{action: string, commands: array<int, string>, key: string, label: string, status: string, status_label: string, summary: string}>
      * }
@@ -75,6 +76,7 @@ class OperatorReadiness
             'label' => $attentionCount > 0 ? 'Needs attention' : 'Ready',
             'manual_count' => $manualCount,
             'next_step' => $this->nextStep($checks, $smokePath),
+            'proof_coverage' => $this->proofCoverage($checks),
             'ready_count' => $readyCount,
             'smoke_path' => $smokePath,
         ];
@@ -566,7 +568,7 @@ class OperatorReadiness
 
     /**
      * @param  array<int, string>  $commands
-     * @return array{action: string, commands: array<int, string>, confirmation: array{confirmed_at: string|null, confirmed_by: string, key: string, note: string|null}|null, confirmation_key: string, confirmable: bool, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
+     * @return array{action: string, commands: array<int, string>, confirmation: array{age_label: string|null, confirmed_at: string|null, confirmed_by: string, freshness_status: string, key: string, note_present: bool, stale_after_days: int|null}|null, confirmation_key: string, confirmable: bool, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
      */
     private function manualCheck(string $key, string $label, string $summary, string $detail, string $action, array $commands = []): array
     {
@@ -605,22 +607,21 @@ class OperatorReadiness
     }
 
     /**
-     * @param  array{age_label: string|null, confirmed_at: string|null, confirmed_by: string, freshness_status: string, key: string, note: string|null, stale_after_days: int|null}  $confirmationPayload
+     * @param  array{age_label: string|null, confirmed_at: string|null, confirmed_by: string, freshness_status: string, key: string, note_present: bool, stale_after_days: int|null}  $confirmationPayload
      */
     private function confirmationDetail(OperatorReadinessConfirmation $confirmation, array $confirmationPayload): string
     {
         $confirmedBy = $confirmation->confirmedBy?->name ?? 'Unknown operator';
         $ageLabel = $confirmationPayload['age_label'];
-        $note = trim((string) $confirmation->note);
         $detail = $ageLabel
             ? "Confirmed by {$confirmedBy} {$ageLabel}."
             : "Confirmed by {$confirmedBy}.";
 
-        return $note !== '' ? "{$detail} Note: {$note}" : $detail;
+        return $confirmationPayload['note_present'] ? "{$detail} Evidence note recorded." : $detail;
     }
 
     /**
-     * @return array{age_label: string|null, confirmed_at: string|null, confirmed_by: string, freshness_status: string, key: string, note: string|null, stale_after_days: int|null}
+     * @return array{age_label: string|null, confirmed_at: string|null, confirmed_by: string, freshness_status: string, key: string, note_present: bool, stale_after_days: int|null}
      */
     private function confirmationPayload(OperatorReadinessConfirmation $confirmation): array
     {
@@ -633,8 +634,57 @@ class OperatorReadiness
             'confirmed_by' => $confirmation->confirmedBy?->name ?? 'Unknown operator',
             'freshness_status' => $this->isConfirmationStale($confirmation) ? 'stale' : 'fresh',
             'key' => $confirmation->key,
-            'note' => $confirmation->note,
+            'note_present' => trim((string) $confirmation->note) !== '',
             'stale_after_days' => $staleAfterDays,
+        ];
+    }
+
+    /**
+     * @param  array<int, array{confirmation?: array{age_label: string|null, confirmed_at: string|null, confirmed_by: string, freshness_status: string, key: string, note_present: bool, stale_after_days: int|null}|null, confirmable?: bool, key: string, label: string}>  $checks
+     * @return array{fresh_count: int, items: array<int, array{key: string, label: string, note_status: string, status: string, status_label: string, summary: string}>, missing_count: int, stale_count: int}
+     */
+    private function proofCoverage(array $checks): array
+    {
+        $items = collect($checks)
+            ->filter(fn (array $check): bool => (bool) ($check['confirmable'] ?? false))
+            ->map(function (array $check): array {
+                $confirmation = $check['confirmation'] ?? null;
+
+                if (! $confirmation) {
+                    return [
+                        'key' => $check['key'],
+                        'label' => $check['label'],
+                        'note_status' => 'No evidence note recorded',
+                        'status' => 'missing',
+                        'status_label' => 'Missing',
+                        'summary' => 'No confirmation recorded.',
+                    ];
+                }
+
+                $isStale = $confirmation['freshness_status'] === 'stale';
+                $ageLabel = $confirmation['age_label'];
+                $summary = $ageLabel
+                    ? sprintf('Confirmed by %s %s.', $confirmation['confirmed_by'], $ageLabel)
+                    : sprintf('Confirmed by %s.', $confirmation['confirmed_by']);
+
+                return [
+                    'key' => $check['key'],
+                    'label' => $check['label'],
+                    'note_status' => $confirmation['note_present']
+                        ? 'Evidence note recorded'
+                        : 'No evidence note recorded',
+                    'status' => $isStale ? 'stale' : 'fresh',
+                    'status_label' => $isStale ? 'Refresh due' : 'Fresh',
+                    'summary' => $summary,
+                ];
+            })
+            ->values();
+
+        return [
+            'fresh_count' => $items->where('status', 'fresh')->count(),
+            'items' => $items->all(),
+            'missing_count' => $items->where('status', 'missing')->count(),
+            'stale_count' => $items->where('status', 'stale')->count(),
         ];
     }
 
