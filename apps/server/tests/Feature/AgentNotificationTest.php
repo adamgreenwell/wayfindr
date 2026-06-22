@@ -808,6 +808,30 @@ test('agents can review visible unread and recent alerts in an alert center', fu
         ->assertDontSee('This should not be visible.');
 });
 
+test('alert center explains personal alert delivery context', function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => [
+            'mode' => 'assigned',
+            'email' => true,
+            'cadence' => 'digest',
+        ],
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/alerts')
+        ->assertOk()
+        ->assertSee('Alert delivery context')
+        ->assertSee('Current mode')
+        ->assertSee('Only conversations and tickets assigned to me')
+        ->assertSee('Only assigned conversations and tickets create new alerts for you.')
+        ->assertSee('Dashboard alerts remain the source of truth for support work that needs attention.')
+        ->assertSee('Email delivery')
+        ->assertSee('Digest preferred')
+        ->assertSee('Digest delivery is preferred when the scheduler runs. Dashboard alerts still appear here immediately.')
+        ->assertSee(route('dashboard.profile.show'), false)
+        ->assertSee('Change alert preferences');
+});
+
 test('agents can filter the alert center to unread visible alerts', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);

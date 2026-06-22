@@ -49,6 +49,7 @@ class AgentAlertController extends Controller
                 $alertSearch,
             ),
             'alertEmptyState' => $this->alertEmptyState($alertFilter, $alertKind, $alertSearch),
+            'alertDeliveryContext' => $this->alertDeliveryContext($agent),
             'alertSnapshot' => $this->alertSnapshot($notifications, $filteredUnreadNotifications->count()),
             'activeAlertFilters' => $this->activeAlertFilters($alertFilter, $alertKind, $alertSearch),
             'notifications' => $notifications,
@@ -83,6 +84,47 @@ class AgentAlertController extends Controller
             ->markAsRead();
 
         return $this->redirectAfterAlertAction($request);
+    }
+
+    /**
+     * @return array{
+     *     source_detail: string,
+     *     profile_href: string,
+     *     items: list<array{label: string, value: string, detail: string}>
+     * }
+     */
+    private function alertDeliveryContext(User $agent): array
+    {
+        $mode = $agent->alertMode();
+        $cadence = $agent->alertCadence();
+        $emailEnabled = $agent->alertEmailEnabled();
+
+        return [
+            'source_detail' => 'Dashboard alerts remain the source of truth for support work that needs attention.',
+            'profile_href' => route('dashboard.profile.show'),
+            'items' => [
+                [
+                    'label' => 'Current mode',
+                    'value' => User::alertModeOptions()[$mode],
+                    'detail' => match ($mode) {
+                        User::ALERT_MODE_ASSIGNED => 'Only assigned conversations and tickets create new alerts for you.',
+                        User::ALERT_MODE_QUIET => 'Quiet mode pauses new alerts without changing existing visible alerts.',
+                        default => 'Eligible support work from sites you can support can create alerts.',
+                    },
+                ],
+                [
+                    'label' => 'Email delivery',
+                    'value' => $emailEnabled
+                        ? ($cadence === User::ALERT_CADENCE_DIGEST ? 'Digest preferred' : 'Immediate email')
+                        : 'Email off',
+                    'detail' => match (true) {
+                        ! $emailEnabled => 'Email alerts are off for your profile. The alert center remains available here.',
+                        $cadence === User::ALERT_CADENCE_DIGEST => 'Digest delivery is preferred when the scheduler runs. Dashboard alerts still appear here immediately.',
+                        default => 'Immediate email delivery is enabled when mail is configured. Dashboard alerts still appear here immediately.',
+                    },
+                ],
+            ],
+        ];
     }
 
     /**

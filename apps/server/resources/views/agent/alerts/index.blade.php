@@ -68,6 +68,23 @@
             </div>
         </div>
 
+        <div class="notice-copy notice-copy-bordered" aria-labelledby="alert-delivery-context-heading">
+            <p><strong id="alert-delivery-context-heading">Alert delivery context</strong></p>
+            <p>{{ $alertDeliveryContext['source_detail'] }}</p>
+            <div class="meta-grid" aria-label="Personal alert delivery context">
+                @foreach ($alertDeliveryContext['items'] as $deliveryContextItem)
+                    <div class="meta-item">
+                        <span class="meta-label">{{ $deliveryContextItem['label'] }}</span>
+                        <span class="meta-value">{{ $deliveryContextItem['value'] }}</span>
+                        <p class="field-help">{{ $deliveryContextItem['detail'] }}</p>
+                    </div>
+                @endforeach
+            </div>
+            <div class="notice-actions">
+                <a class="button secondary" href="{{ $alertDeliveryContext['profile_href'] }}">Change alert preferences</a>
+            </div>
+        </div>
+
         <form class="section-form compact-form" method="GET" action="{{ route('dashboard.alerts.index') }}" aria-label="Filter alerts">
             @if ($alertFilter === 'unread')
                 <input type="hidden" name="alert_filter" value="unread">
