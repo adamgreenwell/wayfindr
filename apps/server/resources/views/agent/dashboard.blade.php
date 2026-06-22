@@ -54,6 +54,37 @@
                 </div>
             </section>
 
+            <section class="section" aria-labelledby="ticket-next-steps-heading">
+                <div class="section-header">
+                    <div>
+                        <h2 id="ticket-next-steps-heading">Ticket next steps</h2>
+                        <p class="lede">
+                            {{ $ticketNextSteps['open_count'] }} open {{ \Illuminate\Support\Str::plural('ticket', $ticketNextSteps['open_count']) }} needing movement
+                        </p>
+                    </div>
+                    <a class="button secondary" href="{{ $ticketNextSteps['queue_href'] }}">Open ticket queue</a>
+                </div>
+
+                @if ($ticketNextSteps['items'] === [])
+                    <p class="empty">No open tickets need movement right now.</p>
+                @else
+                    <div class="management-list">
+                        @foreach ($ticketNextSteps['items'] as $ticketNextStep)
+                            <a class="management-link" href="{{ $ticketNextStep['href'] }}">
+                                <span>
+                                    <strong>{{ $ticketNextStep['title'] }}</strong>
+                                    <span class="lede">
+                                        {{ $ticketNextStep['count'].' '.\Illuminate\Support\Str::plural($ticketNextStep['label'], $ticketNextStep['count']) }}
+                                    </span>
+                                    <span class="table-note">{{ $ticketNextStep['detail'] }}</span>
+                                </span>
+                                <span class="management-action">{{ $ticketNextStep['action'] }}</span>
+                            </a>
+                        @endforeach
+                    </div>
+                @endif
+            </section>
+
             <section class="section" aria-labelledby="manage-heading">
                 <div class="section-header">
                     <h2 id="manage-heading">Workspace shortcuts</h2>

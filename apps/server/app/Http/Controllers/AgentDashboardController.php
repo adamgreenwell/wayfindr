@@ -53,6 +53,7 @@ class AgentDashboardController extends Controller
             'realtimeHealth' => $realtimeHealthSummary,
             'sites' => $sites,
             'supportQueues' => $this->supportQueues($agent, $cobrowseConsentState),
+            'ticketNextSteps' => $this->ticketNextSteps($agent),
             'unreadNotificationCount' => $unreadNotificationCount,
             'unreadNotifications' => $unreadNotifications,
             'visitorSupportReadiness' => $visitorSupportReadiness->summary(
@@ -115,6 +116,102 @@ class AgentDashboardController extends Controller
                 ->count(),
             'open_tickets_count' => (clone $visibleOpenTickets)->count(),
             'unassigned_tickets_count' => (clone $visibleOpenTickets)->whereNull('assignee_id')->count(),
+        ];
+    }
+
+    /**
+     * @return array{
+     *     open_count: int,
+     *     queue_href: string,
+     *     items: array<int, array{
+     *         action: string,
+     *         detail: string,
+     *         href: string,
+     *         label: string,
+     *         state: string,
+     *         title: string,
+     *         count: int
+     *     }>
+     * }
+     */
+    private function ticketNextSteps(User $agent): array
+    {
+        $visibleOpenTickets = Ticket::query()
+            ->where('status', 'open')
+            ->where('account_id', $agent->account_id)
+            ->whereHas('site', fn ($query) => $query->visibleToAgent($agent));
+
+        $openTicketCount = (clone $visibleOpenTickets)->count();
+        $tickets = (clone $visibleOpenTickets)
+            ->with(['conversation.latestMessage', 'latestEscalationEvent', 'site'])
+            ->latest('updated_at')
+            ->latest('id')
+            ->get();
+        $counts = $tickets->countBy(fn (Ticket $ticket): string => $this->ticketNextStepState($ticket));
+        $definitions = $this->ticketNextStepDefinitions();
+
+        return [
+            'items' => collect(array_keys($definitions))
+                ->map(function (string $state) use ($counts, $definitions): array {
+                    return [
+                        ...$definitions[$state],
+                        'count' => (int) ($counts[$state] ?? 0),
+                        'href' => route('dashboard.tickets.index', ['ticket_attention' => $state]),
+                        'state' => $state,
+                    ];
+                })
+                ->filter(fn (array $item): bool => $item['count'] > 0)
+                ->take(4)
+                ->values()
+                ->all(),
+            'open_count' => $openTicketCount,
+            'queue_href' => route('dashboard.tickets.index'),
+        ];
+    }
+
+    private function ticketNextStepState(Ticket $ticket): string
+    {
+        return $ticket->hasRecentEscalation()
+            ? 'escalated'
+            : $ticket->attentionState();
+    }
+
+    /**
+     * @return array<string, array{action: string, detail: string, label: string, title: string}>
+     */
+    private function ticketNextStepDefinitions(): array
+    {
+        return [
+            'escalated' => [
+                'action' => 'Review escalations',
+                'detail' => 'Recently escalated tickets should get eyes before routine queue work.',
+                'label' => 'recent escalation',
+                'title' => 'Recently escalated',
+            ],
+            'needs_reply' => [
+                'action' => 'Open replies',
+                'detail' => 'Visitors replied last and are waiting for an agent response.',
+                'label' => 'needs reply',
+                'title' => 'Reply to visitor',
+            ],
+            'needs_owner' => [
+                'action' => 'Assign owners',
+                'detail' => 'Unassigned tickets need an owner before the next step gets lost.',
+                'label' => 'needs owner',
+                'title' => 'Assign an owner',
+            ],
+            'needs_agent' => [
+                'action' => 'Review updates',
+                'detail' => 'Assigned tickets are ready for an agent update, note, or status change.',
+                'label' => 'needs agent',
+                'title' => 'Add the next update',
+            ],
+            'waiting_on_customer' => [
+                'action' => 'Check waiting tickets',
+                'detail' => 'Agent replied last. Keep these visible until the visitor answers.',
+                'label' => 'waiting on customer',
+                'title' => 'Wait on customer',
+            ],
         ];
     }
 

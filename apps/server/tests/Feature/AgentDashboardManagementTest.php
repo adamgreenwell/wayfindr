@@ -3,7 +3,9 @@
 use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\Conversation;
+use App\Models\ConversationMessage;
 use App\Models\Site;
+use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -33,6 +35,84 @@ test('dashboard gives agents a clear place to manage their workspace', function 
         ->assertDontSee('/dashboard/account/audit', false)
         ->assertDontSee('Operator readiness')
         ->assertDontSee('/dashboard/readiness', false);
+});
+
+test('dashboard summarizes visible ticket next steps', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'name' => 'Ada Agent',
+    ]);
+    $teammate = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'name' => 'Tess Teammate',
+    ]);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $hiddenSite = Site::factory()->for($account)->create(['name' => 'Hidden Docs']);
+    $hiddenSite->supportAgents()->attach($teammate);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-dashboard']);
+
+    $needsReplyConversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-DASHREPLY',
+    ]);
+    ConversationMessage::factory()->for($needsReplyConversation)->create([
+        'body' => 'Can someone reply before closing this?',
+        'sender_id' => $visitor->id,
+        'sender_type' => Visitor::class,
+    ]);
+    Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($visitor, 'requester')
+        ->for($needsReplyConversation)
+        ->for($agent, 'assignee')
+        ->create(['subject' => 'Customer cannot log in']);
+
+    Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($visitor, 'requester')
+        ->create(['subject' => 'Needs owner assignment']);
+
+    $waitingConversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-DASHWAIT',
+    ]);
+    ConversationMessage::factory()->for($waitingConversation)->create([
+        'body' => 'I sent the next step.',
+        'sender_id' => $agent->id,
+        'sender_type' => User::class,
+    ]);
+    Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($visitor, 'requester')
+        ->for($waitingConversation)
+        ->for($agent, 'assignee')
+        ->create(['subject' => 'Waiting on customer confirmation']);
+
+    Ticket::factory()
+        ->for($account)
+        ->for($hiddenSite)
+        ->create(['subject' => 'Hidden site ticket']);
+
+    $this->actingAs($agent)
+        ->get('/dashboard')
+        ->assertOk()
+        ->assertSee('Ticket next steps')
+        ->assertSee('3 open tickets needing movement')
+        ->assertSee('Reply to visitor')
+        ->assertSee('1 needs reply')
+        ->assertSee(route('dashboard.tickets.index', ['ticket_attention' => 'needs_reply']), false)
+        ->assertSee('Assign an owner')
+        ->assertSee('1 needs owner')
+        ->assertSee(route('dashboard.tickets.index', ['ticket_attention' => 'needs_owner']), false)
+        ->assertSee('Wait on customer')
+        ->assertSee('1 waiting on customer')
+        ->assertSee(route('dashboard.tickets.index', ['ticket_attention' => 'waiting_on_customer']), false)
+        ->assertDontSee('Customer cannot log in')
+        ->assertDontSee('Needs owner assignment')
+        ->assertDontSee('Waiting on customer confirmation')
+        ->assertDontSee('Hidden site ticket');
 });
 
 test('dashboard gives account admins a command center for account administration', function (): void {
