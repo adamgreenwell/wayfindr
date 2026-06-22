@@ -41,6 +41,7 @@ class AgentAlertController extends Controller
             'alertKind' => $alertKind,
             'alertSearch' => $alertSearch,
             'alertSnapshot' => $this->alertSnapshot($notifications, $filteredUnreadNotifications->count()),
+            'activeAlertFilters' => $this->activeAlertFilters($alertFilter, $alertKind, $alertSearch),
             'notifications' => $notifications,
             'notificationCount' => $notifications->count(),
             'unreadNotificationCount' => $filteredUnreadNotifications->count(),
@@ -241,5 +242,53 @@ class AgentAlertController extends Controller
         }
 
         return $params;
+    }
+
+    /**
+     * @return array<int, array{label: string, href: string}>
+     */
+    private function activeAlertFilters(string $alertFilter, string $alertKind, string $alertSearch): array
+    {
+        $alertQuery = $this->alertReturnParams($alertFilter, $alertKind, $alertSearch);
+        $filters = [];
+
+        if ($alertKind !== 'all') {
+            $filters[] = $this->alertFilterChip(
+                'alert_kind',
+                'Type: '.$this->alertKindLabels()[$alertKind],
+                $alertQuery,
+            );
+        }
+
+        if ($alertSearch !== '') {
+            $filters[] = $this->alertFilterChip('alert_search', 'Search: '.$alertSearch, $alertQuery);
+        }
+
+        return $filters;
+    }
+
+    /**
+     * @param  array<string, string>  $alertQuery
+     * @return array{label: string, href: string}
+     */
+    private function alertFilterChip(string $queryKey, string $label, array $alertQuery): array
+    {
+        unset($alertQuery[$queryKey]);
+
+        return [
+            'label' => $label,
+            'href' => route('dashboard.alerts.index', $alertQuery),
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function alertKindLabels(): array
+    {
+        return [
+            'conversation' => 'Conversation alerts',
+            'ticket' => 'Ticket alerts',
+        ];
     }
 }

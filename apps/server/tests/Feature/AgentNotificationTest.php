@@ -914,10 +914,16 @@ test('agents can narrow alert center alerts by kind and reference search', funct
     $hiddenSite->supportAgents()->sync([$remainingAgent->id]);
 
     $this->actingAs($agent)
-        ->get('/dashboard/alerts?alert_kind=conversation&alert_search=WF-FILTER1')
+        ->get('/dashboard/alerts?alert_filter=unread&alert_kind=conversation&alert_search=WF-FILTER1')
         ->assertOk()
         ->assertSee('Alert type')
         ->assertSee('Search alerts')
+        ->assertSee('Active alert filters')
+        ->assertSee('Type: Conversation alerts')
+        ->assertSee('Search: WF-FILTER1')
+        ->assertSee('/dashboard/alerts?alert_filter=unread&amp;alert_search=WF-FILTER1', false)
+        ->assertSee('/dashboard/alerts?alert_filter=unread&amp;alert_kind=conversation', false)
+        ->assertSee('/dashboard/alerts?alert_filter=unread', false)
         ->assertSee('Filterable install help')
         ->assertSee('WF-FILTER1')
         ->assertSee('Showing 1 matching conversation alert.')

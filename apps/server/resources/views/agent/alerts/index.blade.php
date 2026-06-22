@@ -98,6 +98,24 @@
             <span id="alert-search-help" class="table-note">Search visible alert context only; restricted support work stays hidden.</span>
         </form>
 
+        @if ($activeAlertFilters !== [])
+            <div class="filter-summary" aria-label="Active alert filters">
+                <div>
+                    <strong>Active alert filters</strong>
+                    <p class="lede">Alerts narrowed to the support work matching this view.</p>
+                </div>
+                <div class="filter-chips">
+                    @foreach ($activeAlertFilters as $activeFilter)
+                        <a class="filter-chip" href="{{ $activeFilter['href'] }}">
+                            {{ $activeFilter['label'] }}
+                            <span aria-hidden="true">x</span>
+                        </a>
+                    @endforeach
+                    <a class="filter-chip filter-chip-clear" href="{{ route('dashboard.alerts.index', $alertFilter === 'unread' ? ['alert_filter' => 'unread'] : []) }}">Clear all alert filters</a>
+                </div>
+            </div>
+        @endif
+
         <div class="meta-grid" aria-label="Alert snapshot">
             @foreach ($alertSnapshot as $snapshotItem)
                 <div class="meta-item">
