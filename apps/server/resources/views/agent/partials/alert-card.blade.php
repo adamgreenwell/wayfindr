@@ -28,6 +28,10 @@
     @if ($notificationKind === 'ticket_assigned')
         <p class="lede">Ticket assigned</p>
         <p class="message-body">{{ data_get($notificationData, 'assigned_by_name', 'Someone') }} assigned this ticket to you.</p>
+        <p class="field-help">
+            <strong>Why this alert:</strong>
+            This ticket was assigned to you. Open the ticket or mark this alert read once triaged.
+        </p>
         <p class="lede">
             <a class="text-link" href="{{ data_get($notificationData, 'url') }}">
                 Ticket #{{ data_get($notificationData, 'ticket_id') }}
@@ -40,6 +44,10 @@
             {{ $messageCount === 1 ? '1 new message' : $messageCount.' new messages' }}
         </p>
         <p class="message-body">{{ data_get($notificationData, 'message_preview') }}</p>
+        <p class="field-help">
+            <strong>Why this alert:</strong>
+            Visitor reply is waiting on a conversation you can support. Open the conversation or mark this alert read once handled.
+        </p>
         <p class="lede">
             <a class="text-link" href="{{ data_get($notificationData, 'url') }}">
                 {{ data_get($notificationData, 'support_code') }}
