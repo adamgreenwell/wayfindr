@@ -371,6 +371,141 @@ test('ticket detail timeline summarizes conversation, internal note, and activit
     }
 });
 
+test('ticket detail timeline filters by visibility type', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-21 18:00:00', 'UTC'));
+
+    try {
+        [$agent, $site, $visitor, $conversation] = ticketWorkStateContext();
+
+        ConversationMessage::factory()->for($conversation)->create([
+            'body' => 'Customer-visible visitor timeline item.',
+            'created_at' => now()->subMinutes(8),
+            'sender_id' => $visitor->id,
+            'sender_type' => Visitor::class,
+        ]);
+        ConversationMessage::factory()->for($conversation)->create([
+            'body' => 'Customer-visible agent timeline item.',
+            'created_at' => now()->subMinutes(7),
+            'sender_id' => $agent->id,
+            'sender_type' => User::class,
+        ]);
+
+        $ticket = Ticket::factory()
+            ->for($agent->account)
+            ->for($site)
+            ->for($conversation)
+            ->for($visitor, 'requester')
+            ->for($agent, 'assignee')
+            ->create([
+                'subject' => 'Timeline filter follow-up',
+            ]);
+
+        AuditEvent::factory()
+            ->for($agent->account)
+            ->for($ticket, 'subject')
+            ->create([
+                'action' => 'ticket.note_added',
+                'actor_id' => $agent->id,
+                'actor_type' => User::class,
+                'metadata' => [
+                    'body' => 'Private timeline filter detail.',
+                ],
+                'occurred_at' => now()->subMinutes(6),
+                'site_id' => $site->id,
+            ]);
+        AuditEvent::factory()
+            ->for($agent->account)
+            ->for($ticket, 'subject')
+            ->create([
+                'action' => 'ticket.pending',
+                'actor_id' => $agent->id,
+                'actor_type' => User::class,
+                'metadata' => [
+                    'pending_note' => 'Ticket activity timeline filter detail.',
+                ],
+                'occurred_at' => now()->subMinutes(5),
+                'site_id' => $site->id,
+            ]);
+
+        $defaultTimeline = $this->actingAs($agent)
+            ->get(route('dashboard.tickets.show', $ticket))
+            ->assertOk()
+            ->assertSee('Timeline')
+            ->assertSee('4 events')
+            ->assertSee('All events')
+            ->assertSee('Customer-visible')
+            ->assertSee('Internal notes')
+            ->assertSee('Ticket activity');
+
+        $defaultTimelineHtml = Str::betweenFirst($defaultTimeline->content(), '<section class="section" aria-labelledby="ticket-timeline-heading">', '</section>');
+
+        expect($defaultTimelineHtml)
+            ->toContain('Customer-visible visitor timeline item.')
+            ->toContain('Customer-visible agent timeline item.')
+            ->toContain('Private timeline filter detail.')
+            ->toContain('Ticket activity timeline filter detail.');
+
+        $conversationTimeline = $this->actingAs($agent)
+            ->get("/dashboard/tickets/{$ticket->id}?timeline_filter=conversation")
+            ->assertOk()
+            ->assertSee('2 of 4 events');
+
+        $conversationTimelineHtml = Str::betweenFirst($conversationTimeline->content(), '<section class="section" aria-labelledby="ticket-timeline-heading">', '</section>');
+
+        expect($conversationTimelineHtml)
+            ->toContain('Customer-visible visitor timeline item.')
+            ->toContain('Customer-visible agent timeline item.')
+            ->not->toContain('Private timeline filter detail.')
+            ->not->toContain('Ticket activity timeline filter detail.');
+
+        $internalTimeline = $this->actingAs($agent)
+            ->get("/dashboard/tickets/{$ticket->id}?timeline_filter=internal_notes")
+            ->assertOk()
+            ->assertSee('1 of 4 events');
+
+        $internalTimelineHtml = Str::betweenFirst($internalTimeline->content(), '<section class="section" aria-labelledby="ticket-timeline-heading">', '</section>');
+
+        expect($internalTimelineHtml)
+            ->toContain('Private timeline filter detail.')
+            ->not->toContain('Customer-visible visitor timeline item.')
+            ->not->toContain('Ticket activity timeline filter detail.');
+
+        $activityTimeline = $this->actingAs($agent)
+            ->get("/dashboard/tickets/{$ticket->id}?timeline_filter=ticket_activity")
+            ->assertOk()
+            ->assertSee('1 of 4 events');
+
+        $activityTimelineHtml = Str::betweenFirst($activityTimeline->content(), '<section class="section" aria-labelledby="ticket-timeline-heading">', '</section>');
+
+        expect($activityTimelineHtml)
+            ->toContain('Ticket activity timeline filter detail.')
+            ->not->toContain('Customer-visible visitor timeline item.')
+            ->not->toContain('Private timeline filter detail.');
+
+        $emptyTimelineTicket = Ticket::factory()
+            ->for($agent->account)
+            ->for($site)
+            ->for($conversation)
+            ->for($visitor, 'requester')
+            ->for($agent, 'assignee')
+            ->create([
+                'subject' => 'Timeline empty state follow-up',
+            ]);
+
+        $emptyTimeline = $this->actingAs($agent)
+            ->get("/dashboard/tickets/{$emptyTimelineTicket->id}?timeline_filter=internal_notes")
+            ->assertOk()
+            ->assertSee('0 of 2 events');
+
+        $emptyTimelineHtml = Str::betweenFirst($emptyTimeline->content(), '<section class="section" aria-labelledby="ticket-timeline-heading">', '</section>');
+
+        expect($emptyTimelineHtml)
+            ->toContain('No internal note timeline events yet.');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 /**
  * @return array{0: User, 1: Site, 2: Visitor, 3?: Conversation}
  */

@@ -279,7 +279,13 @@
             <section class="section" aria-labelledby="ticket-timeline-heading">
                 <div class="section-header">
                     <h2 id="ticket-timeline-heading">Timeline</h2>
-                    <span class="lede">{{ $ticketTimeline->count() }} events</span>
+                    <span class="lede">
+                        @if ($ticketTimelineFilter === 'all')
+                            {{ $ticketTimelineTotalCount }} events
+                        @else
+                            {{ $ticketTimeline->count() }} of {{ $ticketTimelineTotalCount }} events
+                        @endif
+                    </span>
                 </div>
 
                 <div class="meta-grid">
@@ -290,6 +296,31 @@
                             <span class="lede">{{ $timelineSummaryItem['description'] }}</span>
                         </div>
                     @endforeach
+                </div>
+
+                <div class="filter-summary" aria-label="Timeline filters">
+                    <div>
+                        <strong>Timeline visibility</strong>
+                        <p class="lede">Narrow the ticket history without hiding the full summary above.</p>
+                    </div>
+                    <div class="filter-chips">
+                        @foreach ($ticketTimelineFilters as $timelineFilterValue => $timelineFilterLabel)
+                            @php
+                                $timelineFilterQuery = $ticketReturnQuery;
+
+                                if ($timelineFilterValue !== 'all') {
+                                    $timelineFilterQuery['timeline_filter'] = $timelineFilterValue;
+                                }
+                            @endphp
+                            <a
+                                class="filter-chip"
+                                href="{{ route('dashboard.tickets.show', ['ticket' => $ticket] + $timelineFilterQuery) }}"
+                                @if ($ticketTimelineFilter === $timelineFilterValue) aria-current="page" @endif
+                            >
+                                {{ $timelineFilterLabel }}
+                            </a>
+                        @endforeach
+                    </div>
                 </div>
 
                 <div class="timeline-list">
@@ -310,7 +341,7 @@
                             </div>
                         </article>
                     @empty
-                        <div class="empty-state">No ticket timeline events yet.</div>
+                        <div class="empty-state">{{ $ticketTimelineEmptyMessage }}</div>
                     @endforelse
                 </div>
             </section>

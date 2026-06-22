@@ -60,7 +60,9 @@ class AgentTicketController extends Controller
         ]);
 
         $ticketReturnQuery = $this->ticketQueueReturnQuery($request);
-        $ticketTimeline = $this->ticketTimeline($ticket);
+        $ticketTimelineFilter = $this->ticketTimelineFilter($request);
+        $fullTicketTimeline = $this->ticketTimeline($ticket);
+        $ticketTimeline = $this->filteredTicketTimeline($fullTicketTimeline, $ticketTimelineFilter);
 
         return view('agent.tickets.show', [
             'account' => $agent->account()->firstOrFail(),
@@ -96,8 +98,12 @@ class AgentTicketController extends Controller
             'priorVisitorConversations' => $this->priorVisitorConversations($ticket),
             'priorVisitorTickets' => $this->priorVisitorTickets($ticket),
             'linkedConversationMessages' => $this->linkedConversationMessages($ticket),
+            'ticketTimelineEmptyMessage' => $this->ticketTimelineEmptyMessage($ticketTimelineFilter),
+            'ticketTimelineFilter' => $ticketTimelineFilter,
+            'ticketTimelineFilters' => $this->ticketTimelineFilters(),
             'ticketTimeline' => $ticketTimeline,
-            'ticketTimelineSummary' => $this->ticketTimelineSummary($ticketTimeline),
+            'ticketTimelineSummary' => $this->ticketTimelineSummary($fullTicketTimeline),
+            'ticketTimelineTotalCount' => $fullTicketTimeline->count(),
         ]);
     }
 
@@ -795,6 +801,58 @@ class AgentTicketController extends Controller
             ->merge($activityItems)
             ->sortBy(fn (array $item): string => ($item['occurred_at']?->format('U.u') ?? '0').'-'.str_pad((string) $item['sequence'], 10, '0', STR_PAD_LEFT))
             ->values();
+    }
+
+    private function ticketTimelineFilter(Request $request): string
+    {
+        $filter = $request->query('timeline_filter');
+
+        return is_string($filter) && array_key_exists($filter, $this->ticketTimelineFilters())
+            ? $filter
+            : 'all';
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function ticketTimelineFilters(): array
+    {
+        return [
+            'all' => 'All events',
+            'conversation' => 'Customer-visible',
+            'internal_notes' => 'Internal notes',
+            'ticket_activity' => 'Ticket activity',
+        ];
+    }
+
+    /**
+     * @param  Collection<int, array{type: string, label: string, actor: string, badge: string, body: string|null, occurred_at: CarbonInterface|null, sequence: int}>  $ticketTimeline
+     * @return Collection<int, array{type: string, label: string, actor: string, badge: string, body: string|null, occurred_at: CarbonInterface|null, sequence: int}>
+     */
+    private function filteredTicketTimeline(Collection $ticketTimeline, string $filter): Collection
+    {
+        return match ($filter) {
+            'conversation' => $ticketTimeline
+                ->filter(fn (array $item): bool => in_array($item['type'], ['agent-message', 'visitor-message'], true))
+                ->values(),
+            'internal_notes' => $ticketTimeline
+                ->where('type', 'internal-note')
+                ->values(),
+            'ticket_activity' => $ticketTimeline
+                ->where('type', 'ticket-activity')
+                ->values(),
+            default => $ticketTimeline,
+        };
+    }
+
+    private function ticketTimelineEmptyMessage(string $filter): string
+    {
+        return match ($filter) {
+            'conversation' => 'No customer-visible timeline events yet.',
+            'internal_notes' => 'No internal note timeline events yet.',
+            'ticket_activity' => 'No ticket activity timeline events yet.',
+            default => 'No ticket timeline events yet.',
+        };
     }
 
     /**
