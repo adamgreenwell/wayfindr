@@ -2,6 +2,7 @@
             @php
                 $conversationActivityPreview = $conversation->queueActivityPreview();
                 $conversationNextAction = $conversation->nextAction();
+                $visitorReadTone = $conversation->visitorReadState() === 'seen' ? 'ready' : 'manual';
             @endphp
 
             <a class="text-link" href="{{ $conversationBackUrl }}">Back to conversations</a>
@@ -40,6 +41,19 @@
                         <span class="meta-value">{{ $conversationNextAction['title'] }}</span>
                         <span class="lede">{{ $conversationNextAction['body'] }}</span>
                         <a class="text-link health-action" href="{{ $conversationNextAction['href'] }}">{{ $conversationNextAction['cta'] }}</a>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Reply visibility</span>
+                        <span
+                            class="readiness-status"
+                            data-status="{{ $visitorReadTone }}"
+                            data-visitor-read-label
+                            data-visitor-read-context-label
+                            aria-live="polite"
+                        >
+                            {{ $conversation->visitorReadLabel() }}
+                        </span>
+                        <span class="lede" data-visitor-read-detail>{{ $conversation->visitorReadDetail() }}</span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">Latest activity</span>
@@ -1004,8 +1018,8 @@
                 var visitorPresenceLabel = document.querySelector('[data-visitor-presence-label]');
                 var visitorPresenceDetail = document.querySelector('[data-visitor-presence-detail]');
                 var visitorPresenceLastSeen = document.querySelector('[data-visitor-presence-last-seen]');
-                var visitorReadLabel = document.querySelector('[data-visitor-read-label]');
-                var visitorReadDetail = document.querySelector('[data-visitor-read-detail]');
+                var visitorReadLabels = document.querySelectorAll('[data-visitor-read-label]');
+                var visitorReadDetails = document.querySelectorAll('[data-visitor-read-detail]');
                 var transportPanel = document.querySelector('[data-cobrowse-transport-panel]');
                 var transportLabel = document.querySelector('[data-cobrowse-transport-label]');
                 var transportMessage = document.querySelector('[data-cobrowse-transport-message]');
@@ -1035,7 +1049,7 @@
                 var csrf = document.querySelector('meta[name="csrf-token"]');
                 var hasCobrowseTargets = Boolean(panel && status);
                 var hasPresenceTargets = Boolean(visitorPresenceLabel && visitorPresenceDetail);
-                var hasReadTargets = Boolean(visitorReadLabel && visitorReadDetail);
+                var hasReadTargets = visitorReadLabels.length > 0 && visitorReadDetails.length > 0;
                 var hasTransportTargets = Boolean(transportLabel && transportMessage && transportStateLabel);
                 var hasSnapshotFreshnessTargets = Boolean(snapshotStatus && snapshotFreshnessLabel && snapshotFreshnessMessage && snapshotFreshnessReported);
                 var hasSnapshotRecoveryTargets = Boolean(snapshotRecovery && snapshotRecoveryLabel && snapshotRecoveryMessage);
@@ -1084,13 +1098,26 @@
                     }
                 }
 
+                function readStatusFor(state) {
+                    return state === 'seen' ? 'ready' : 'manual';
+                }
+
                 function updateVisitorRead(visitorRead) {
                     if (!hasReadTargets || !visitorRead) {
                         return;
                     }
 
-                    visitorReadLabel.textContent = visitorRead.label || 'No agent reply yet';
-                    visitorReadDetail.textContent = visitorRead.detail || 'No agent reply has been sent.';
+                    visitorReadLabels.forEach(function (visitorReadLabel) {
+                        visitorReadLabel.textContent = visitorRead.label || 'No agent reply yet';
+
+                        if (visitorReadLabel.hasAttribute('data-status')) {
+                            visitorReadLabel.dataset.status = readStatusFor(visitorRead.state || 'none');
+                        }
+                    });
+
+                    visitorReadDetails.forEach(function (visitorReadDetail) {
+                        visitorReadDetail.textContent = visitorRead.detail || 'No agent reply has been sent.';
+                    });
 
                     var messageId = visitorRead.message_id ? String(visitorRead.message_id) : '';
                     var agentMessageSeen = messageId

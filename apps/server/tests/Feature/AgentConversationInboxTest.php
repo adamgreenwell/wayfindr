@@ -1370,6 +1370,55 @@ test('dashboard keeps visitor read state in conversation detail instead of the q
     }
 });
 
+test('conversation context surfaces visitor read state before the reply composer', function (): void {
+    config()->set('broadcasting.default', 'reverb');
+    config()->set('broadcasting.connections.reverb.key', 'reverb-key');
+    config()->set('broadcasting.connections.reverb.secret', 'reverb-secret');
+    config()->set('broadcasting.connections.reverb.app_id', 'reverb-app');
+    config()->set('broadcasting.connections.reverb.options.host', 'wayfindr.test');
+    config()->set('broadcasting.connections.reverb.options.port', 443);
+    config()->set('broadcasting.connections.reverb.options.scheme', 'https');
+
+    Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00', 'UTC'));
+
+    try {
+        $account = Account::factory()->create(['name' => 'Acme Support']);
+        $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+        $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-READTOP',
+            'subject' => 'Read state belongs up top',
+            'status' => 'open',
+            'last_message_at' => now()->subMinutes(4),
+        ]);
+
+        ConversationMessage::factory()->for($conversation)->create([
+            'sender_type' => User::class,
+            'sender_id' => $agent->id,
+            'body' => 'Can you try this step?',
+            'created_at' => now()->subMinutes(4),
+        ]);
+
+        $this->actingAs($agent)
+            ->get('/dashboard/conversations/WF-READTOP')
+            ->assertOk()
+            ->assertSeeInOrder([
+                'Context',
+                'Reply visibility',
+                'Not seen yet',
+                'Latest agent reply has not been seen.',
+                'Reply',
+                'Visitor read',
+                'Not seen yet',
+            ])
+            ->assertSee('data-visitor-read-context-label', false)
+            ->assertSee("document.querySelectorAll('[data-visitor-read-label]')", false);
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('dashboard keeps visitor typing out of queue and conversation detail context', function (): void {
     Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00', 'UTC'));
 
@@ -3050,7 +3099,7 @@ test('agent can view their account conversation timeline', function (): void {
         expect(substr_count($response->content(), 'message visitor grouped'))->toBe(1);
         expect(substr_count($response->content(), 'message agent grouped'))->toBe(0);
         expect(substr_count($response->content(), 'Seen by visitor 7 minutes ago'))->toBe(1);
-        expect(substr_count($response->content(), 'Not seen yet'))->toBe(2);
+        expect(substr_count($response->content(), 'Not seen yet'))->toBe(3);
     } finally {
         Carbon::setTestNow();
     }
