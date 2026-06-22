@@ -624,6 +624,64 @@ test('account external issue readiness counts audit only sync failures', functio
         ->assertDontSee('raw provider exception should stay hidden');
 });
 
+test('account external issue readiness only links unresolved failed tickets to the failed queue', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'name' => 'Ada Admin',
+    ]);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->create(['subject' => 'Resolved external sync']);
+    $connection = ExternalIssueProviderConnection::factory()
+        ->for($account)
+        ->create([
+            'provider' => 'github',
+            'name' => 'Engineering GitHub',
+        ]);
+    $project = SiteExternalIssueProject::factory()
+        ->for($account)
+        ->for($site)
+        ->for($connection, 'providerConnection')
+        ->create(['project_key' => 'adamgreenwell/wayfindr']);
+
+    $failureMetadata = [
+        'provider' => 'github',
+        'project_key' => 'adamgreenwell/wayfindr',
+        'site_external_issue_project_id' => $project->id,
+    ];
+
+    AuditEvent::factory()
+        ->for($account)
+        ->for($site)
+        ->for($ticket, 'subject')
+        ->create([
+            'action' => 'ticket.external_sync_failed',
+            'metadata' => $failureMetadata,
+            'occurred_at' => now()->subMinutes(10),
+        ]);
+    AuditEvent::factory()
+        ->for($account)
+        ->for($site)
+        ->for($ticket, 'subject')
+        ->create([
+            'action' => 'ticket.external_issue_created',
+            'metadata' => $failureMetadata + ['external_key' => '#456'],
+            'occurred_at' => now()->subMinute(),
+        ]);
+
+    $this->actingAs($admin)
+        ->get('/dashboard/account')
+        ->assertOk()
+        ->assertSee('External issue readiness')
+        ->assertDontSee(route('dashboard.tickets.index', [
+            'ticket_status' => 'all',
+            'ticket_external' => 'failed',
+        ]));
+});
+
 test('account external issue readiness treats provider only setup as unmapped', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $admin = User::factory()->for($account)->create([

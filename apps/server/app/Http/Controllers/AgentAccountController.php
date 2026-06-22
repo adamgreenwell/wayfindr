@@ -7,10 +7,12 @@ use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\Site;
 use App\Models\SiteExternalIssueProject;
+use App\Models\Ticket;
 use App\Models\User;
 use App\Support\AccountAlertReadiness;
 use App\Support\ExternalIssueProvider;
 use App\Support\ExternalIssueSyncStatus;
+use App\Support\TicketExternalIssueState;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -149,6 +151,11 @@ class AgentAccountController extends Controller
             ->selectRaw('sync_status, count(*) as aggregate')
             ->groupBy('sync_status')
             ->pluck('aggregate', 'sync_status');
+        $queueStateCounts = TicketExternalIssueState::countsForQuery(
+            Ticket::query()
+                ->where('account_id', $account->id)
+                ->whereIn('site_id', $visibleSiteIds)
+        );
         $visibleFailureEvents = fn () => $account->auditEvents()
             ->where('action', 'ticket.external_sync_failed')
             ->whereIn('site_id', $visibleSiteIds);
@@ -161,6 +168,8 @@ class AgentAccountController extends Controller
             $visibleFailureEvents()->count(),
         );
         $pendingCount = (int) ($statusCounts[ExternalIssueSyncStatus::PENDING] ?? 0);
+        $failedQueueCount = (int) ($queueStateCounts[TicketExternalIssueState::FAILED] ?? 0);
+        $pendingQueueCount = (int) ($queueStateCounts[TicketExternalIssueState::PENDING] ?? 0);
 
         [$label, $tone, $detail] = match (true) {
             $connections->isEmpty() => [
@@ -214,7 +223,7 @@ class AgentAccountController extends Controller
                     'label' => 'Sync failed',
                     'value' => $this->countLabel($failedCount, 'sync failed', 'sync failed'),
                     'tone' => $failedCount > 0 ? 'attention' : 'ready',
-                    'href' => $failedCount > 0
+                    'href' => $failedQueueCount > 0
                         ? route('dashboard.tickets.index', [
                             'ticket_status' => 'all',
                             'ticket_external' => 'failed',
@@ -226,7 +235,7 @@ class AgentAccountController extends Controller
                     'label' => 'Sync pending',
                     'value' => $this->countLabel($pendingCount, 'sync pending', 'sync pending'),
                     'tone' => $pendingCount > 0 ? 'manual' : 'ready',
-                    'href' => $pendingCount > 0
+                    'href' => $pendingQueueCount > 0
                         ? route('dashboard.tickets.index', [
                             'ticket_status' => 'all',
                             'ticket_external' => 'pending',

@@ -3,12 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Models\Account;
-use App\Models\AuditEvent;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
-use App\Support\ExternalIssueSyncStatus;
 use App\Support\TicketCategory;
+use App\Support\TicketExternalIssueState;
 use App\Support\TicketPriority;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\Request;
@@ -16,14 +15,6 @@ use Illuminate\Support\Collection;
 
 class AgentTicketQueueController extends Controller
 {
-    private const string EXTERNAL_ISSUE_FAILED = 'failed';
-
-    private const string EXTERNAL_ISSUE_PENDING = 'pending';
-
-    private const string EXTERNAL_ISSUE_LINKED = 'linked';
-
-    private const string EXTERNAL_ISSUE_NONE = 'none';
-
     public function __invoke(Request $request): View
     {
         $agent = $request->user();
@@ -113,10 +104,10 @@ class AgentTicketQueueController extends Controller
             : 'all';
         $ticketExternalIssueFilters = [
             'all' => 'Any external issue',
-            self::EXTERNAL_ISSUE_FAILED => 'Needs attention',
-            self::EXTERNAL_ISSUE_PENDING => 'Sync pending',
-            self::EXTERNAL_ISSUE_LINKED => 'Linked',
-            self::EXTERNAL_ISSUE_NONE => 'No external issue',
+            TicketExternalIssueState::FAILED => 'Needs attention',
+            TicketExternalIssueState::PENDING => 'Sync pending',
+            TicketExternalIssueState::LINKED => 'Linked',
+            TicketExternalIssueState::NONE => 'No external issue',
         ];
         $ticketExternalIssue = $request->query('ticket_external', 'all');
         $ticketExternalIssue = is_string($ticketExternalIssue) && array_key_exists($ticketExternalIssue, $ticketExternalIssueFilters)
@@ -157,11 +148,7 @@ class AgentTicketQueueController extends Controller
         $ticketResults = Ticket::query()
             ->with([
                 'assignee',
-                'auditEvents' => fn ($query) => $query->whereIn('action', [
-                    'ticket.external_issue_created',
-                    'ticket.external_link_removed',
-                    'ticket.external_sync_failed',
-                ]),
+                'auditEvents' => fn ($query) => $query->whereIn('action', TicketExternalIssueState::trackedAuditActions()),
                 'conversation.latestAgentMessage',
                 'conversation.latestMessage',
                 'externalLinks',
@@ -206,7 +193,7 @@ class AgentTicketQueueController extends Controller
             ->get();
         $ticketResults = $ticketResults
             ->filter(fn (Ticket $ticket): bool => $ticketExternalIssue === 'all'
-                || $this->ticketExternalIssueState($ticket) === $ticketExternalIssue)
+                || TicketExternalIssueState::forTicket($ticket) === $ticketExternalIssue)
             ->values();
         $ticketQueueSummary = $this->ticketQueueSummary($ticketResults, $ticketQuery, $ticketAttentionFilters);
         $tickets = $ticketResults
@@ -255,7 +242,7 @@ class AgentTicketQueueController extends Controller
             'ticketExternalIssueFilters' => $ticketExternalIssueFilters,
             'ticketExternalIssueStates' => $tickets
                 ->mapWithKeys(fn (Ticket $ticket): array => [
-                    $ticket->id => $this->ticketExternalIssueStateCue($this->ticketExternalIssueState($ticket)),
+                    $ticket->id => $this->ticketExternalIssueStateCue(TicketExternalIssueState::forTicket($ticket)),
                 ]),
             'ticketQuery' => $ticketQuery,
             'ticketSearch' => $ticketSearch,
@@ -469,59 +456,23 @@ class AgentTicketQueueController extends Controller
             : $ticket->attentionSortRank();
     }
 
-    private function ticketExternalIssueState(Ticket $ticket): string
-    {
-        $externalLinks = $ticket->externalLinks
-            ->filter(fn ($externalLink): bool => (int) $externalLink->account_id === (int) $ticket->account_id
-                && (int) $externalLink->ticket_id === (int) $ticket->id);
-
-        $auditEvents = $ticket->auditEvents
-            ->where('account_id', $ticket->account_id);
-        $successfulIssueCreations = $auditEvents
-            ->where('action', 'ticket.external_issue_created')
-            ->values();
-        $removedExternalLinks = $auditEvents
-            ->where('action', 'ticket.external_link_removed')
-            ->values();
-        $currentSuccessfulIssueCreations = $successfulIssueCreations
-            ->reject(fn (AuditEvent $event): bool => $this->externalIssueCreationWasRemoved($event, $removedExternalLinks))
-            ->values();
-        $failedEvents = $auditEvents
-            ->where('action', 'ticket.external_sync_failed')
-            ->reject(fn (AuditEvent $event): bool => $this->externalIssueFailureWasResolved($event, $successfulIssueCreations));
-
-        if ($externalLinks->where('sync_status', ExternalIssueSyncStatus::FAILED)->isNotEmpty() || $failedEvents->isNotEmpty()) {
-            return self::EXTERNAL_ISSUE_FAILED;
-        }
-
-        if ($externalLinks->where('sync_status', ExternalIssueSyncStatus::PENDING)->isNotEmpty()) {
-            return self::EXTERNAL_ISSUE_PENDING;
-        }
-
-        if ($externalLinks->isNotEmpty() || $currentSuccessfulIssueCreations->isNotEmpty()) {
-            return self::EXTERNAL_ISSUE_LINKED;
-        }
-
-        return self::EXTERNAL_ISSUE_NONE;
-    }
-
     /**
      * @return array{label: string, tone: string, detail: string}
      */
     private function ticketExternalIssueStateCue(string $state): array
     {
         return match ($state) {
-            self::EXTERNAL_ISSUE_FAILED => [
+            TicketExternalIssueState::FAILED => [
                 'label' => 'Needs attention',
                 'tone' => 'attention',
                 'detail' => 'Open the ticket to review safe retry options.',
             ],
-            self::EXTERNAL_ISSUE_PENDING => [
+            TicketExternalIssueState::PENDING => [
                 'label' => 'Sync pending',
                 'tone' => 'manual',
                 'detail' => 'Waiting for external tracker confirmation.',
             ],
-            self::EXTERNAL_ISSUE_LINKED => [
+            TicketExternalIssueState::LINKED => [
                 'label' => 'Linked',
                 'tone' => 'ready',
                 'detail' => 'External tracker reference is attached.',
@@ -532,98 +483,5 @@ class AgentTicketQueueController extends Controller
                 'detail' => 'Wayfindr is the only tracker for this ticket.',
             ],
         };
-    }
-
-    /**
-     * @param  Collection<int, AuditEvent>  $successfulIssueCreations
-     */
-    private function externalIssueFailureWasResolved(AuditEvent $failure, Collection $successfulIssueCreations): bool
-    {
-        $failedProjectId = data_get($failure->metadata, 'site_external_issue_project_id');
-        $failedProvider = data_get($failure->metadata, 'provider');
-
-        if (! is_numeric($failedProjectId) || ! is_string($failedProvider)) {
-            return false;
-        }
-
-        return $successfulIssueCreations->contains(function (AuditEvent $success) use ($failure, $failedProjectId, $failedProvider): bool {
-            return (int) data_get($success->metadata, 'site_external_issue_project_id') === (int) $failedProjectId
-                && data_get($success->metadata, 'provider') === $failedProvider
-                && $this->externalIssueEventIsAfter($success, $failure);
-        });
-    }
-
-    /**
-     * @param  Collection<int, AuditEvent>  $removedExternalLinks
-     */
-    private function externalIssueCreationWasRemoved(AuditEvent $creation, Collection $removedExternalLinks): bool
-    {
-        return $removedExternalLinks->contains(function (AuditEvent $removal) use ($creation): bool {
-            return $this->externalIssueEventsReferenceSameLink($creation, $removal)
-                && $this->externalIssueEventIsAfter($removal, $creation);
-        });
-    }
-
-    private function externalIssueEventsReferenceSameLink(AuditEvent $left, AuditEvent $right): bool
-    {
-        $leftProvider = data_get($left->metadata, 'provider');
-        $rightProvider = data_get($right->metadata, 'provider');
-
-        if (! is_string($leftProvider) || $leftProvider !== $rightProvider) {
-            return false;
-        }
-
-        $leftReference = $this->externalIssueEventReference($left);
-        $rightReference = $this->externalIssueEventReference($right);
-
-        if ($leftReference !== null && $rightReference !== null) {
-            return $leftReference === $rightReference
-                && $this->externalIssueEventsReferenceSameProject($left, $right, true);
-        }
-
-        return $this->externalIssueEventsReferenceSameProject($left, $right, false);
-    }
-
-    private function externalIssueEventsReferenceSameProject(AuditEvent $left, AuditEvent $right, bool $allowMissingProject): bool
-    {
-        $leftProjectId = data_get($left->metadata, 'site_external_issue_project_id');
-        $rightProjectId = data_get($right->metadata, 'site_external_issue_project_id');
-
-        if (is_numeric($leftProjectId) && is_numeric($rightProjectId)) {
-            return (int) $leftProjectId === (int) $rightProjectId;
-        }
-
-        $leftProjectKey = data_get($left->metadata, 'project_key');
-        $rightProjectKey = data_get($right->metadata, 'project_key');
-
-        if (is_string($leftProjectKey) && $leftProjectKey !== '' && is_string($rightProjectKey) && $rightProjectKey !== '') {
-            return $leftProjectKey === $rightProjectKey;
-        }
-
-        return $allowMissingProject;
-    }
-
-    private function externalIssueEventReference(AuditEvent $event): ?string
-    {
-        $reference = data_get($event->metadata, 'external_key')
-            ?: data_get($event->metadata, 'external_id');
-
-        return is_string($reference) && trim($reference) !== ''
-            ? trim($reference)
-            : null;
-    }
-
-    private function externalIssueEventIsAfter(AuditEvent $candidate, AuditEvent $reference): bool
-    {
-        if (! $candidate->occurred_at || ! $reference->occurred_at) {
-            return (int) $candidate->id > (int) $reference->id;
-        }
-
-        if ($candidate->occurred_at->greaterThan($reference->occurred_at)) {
-            return true;
-        }
-
-        return $candidate->occurred_at->equalTo($reference->occurred_at)
-            && (int) $candidate->id > (int) $reference->id;
     }
 }

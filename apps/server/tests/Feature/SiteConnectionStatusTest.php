@@ -6,6 +6,7 @@ use App\Models\AuditEvent;
 use App\Models\ExternalIssueProviderConnection;
 use App\Models\Site;
 use App\Models\SiteExternalIssueProject;
+use App\Models\Ticket;
 use App\Models\TicketExternalLink;
 use App\Models\User;
 use App\Models\Visitor;
@@ -342,9 +343,14 @@ test('site settings show external issue readiness for a mapped site', function (
             'project_key' => 'adamgreenwell/wayfindr',
             'sync_status' => ExternalIssueSyncStatus::PENDING,
         ]);
+    $failedTicket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->create(['subject' => 'External sync failed']);
     AuditEvent::factory()
         ->for($account)
         ->for($site)
+        ->for($failedTicket, 'subject')
         ->create([
             'action' => 'ticket.external_sync_failed',
             'metadata' => [
@@ -509,6 +515,70 @@ test('site external issue readiness counts audit failures beyond the displayed t
         ->assertDontSee('adamgreenwell/wayfindr-5');
 
     expect(substr_count($response->getContent(), 'external sync failure'))->toBe(3);
+});
+
+test('site external issue readiness only links unresolved failed tickets to the failed queue', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Wayfindr Public Site',
+        'domain' => 'wayfindr.cc',
+    ]);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->create(['subject' => 'Resolved external sync']);
+    $connection = ExternalIssueProviderConnection::factory()
+        ->for($account)
+        ->create([
+            'name' => 'Engineering GitHub',
+            'provider' => 'github',
+            'capabilities' => [
+                'create_issue' => true,
+                'add_comment' => true,
+                'sync_status' => false,
+            ],
+        ]);
+    $project = SiteExternalIssueProject::factory()
+        ->for($account)
+        ->for($site)
+        ->for($connection, 'providerConnection')
+        ->create(['project_key' => 'adamgreenwell/wayfindr']);
+
+    $failureMetadata = [
+        'provider' => 'github',
+        'project_key' => 'adamgreenwell/wayfindr',
+        'site_external_issue_project_id' => $project->id,
+    ];
+
+    AuditEvent::factory()
+        ->for($account)
+        ->for($site)
+        ->for($ticket, 'subject')
+        ->create([
+            'action' => 'ticket.external_sync_failed',
+            'metadata' => $failureMetadata,
+            'occurred_at' => now()->subMinutes(10),
+        ]);
+    AuditEvent::factory()
+        ->for($account)
+        ->for($site)
+        ->for($ticket, 'subject')
+        ->create([
+            'action' => 'ticket.external_issue_created',
+            'metadata' => $failureMetadata + ['external_key' => '#456'],
+            'occurred_at' => now()->subMinute(),
+        ]);
+
+    $this->actingAs($admin)
+        ->get("/dashboard/sites/{$site->id}")
+        ->assertOk()
+        ->assertSee('External issue readiness')
+        ->assertDontSee(route('dashboard.tickets.index', [
+            'ticket_status' => 'all',
+            'ticket_site' => $site->id,
+            'ticket_external' => 'failed',
+        ]));
 });
 
 test('site settings guide agents when the widget has not checked in yet', function (): void {

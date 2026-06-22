@@ -6,12 +6,14 @@ use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\Site;
+use App\Models\Ticket;
 use App\Models\User;
 use App\Support\ExternalIssueCapability;
 use App\Support\ExternalIssueProvider;
 use App\Support\ExternalIssueSyncStatus;
 use App\Support\OperatorReadiness;
 use App\Support\SiteInstallHealth;
+use App\Support\TicketExternalIssueState;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -334,6 +336,11 @@ class AgentSiteController extends Controller
             ->where('account_id', $site->account_id)
             ->where('action', 'ticket.external_sync_failed');
         $auditFailureCount = $failureEvents()->count();
+        $queueStateCounts = TicketExternalIssueState::countsForQuery(
+            Ticket::query()
+                ->where('account_id', $site->account_id)
+                ->where('site_id', $site->id)
+        );
         $recentFailures = $failureEvents()
             ->latest('occurred_at')
             ->latest('id')
@@ -348,6 +355,8 @@ class AgentSiteController extends Controller
 
         $failedCount = max((int) ($statusCounts[ExternalIssueSyncStatus::FAILED] ?? 0), $auditFailureCount);
         $pendingCount = (int) ($statusCounts[ExternalIssueSyncStatus::PENDING] ?? 0);
+        $failedQueueCount = (int) ($queueStateCounts[TicketExternalIssueState::FAILED] ?? 0);
+        $pendingQueueCount = (int) ($queueStateCounts[TicketExternalIssueState::PENDING] ?? 0);
         $statusItems = collect(ExternalIssueSyncStatus::options())
             ->map(fn (string $label, string $status): array => [
                 'key' => $status,
@@ -415,7 +424,7 @@ class AgentSiteController extends Controller
                     'label' => 'Sync failed',
                     'value' => $failedCount.' sync failed',
                     'tone' => $failedCount > 0 ? 'attention' : 'ready',
-                    'href' => $failedCount > 0
+                    'href' => $failedQueueCount > 0
                         ? route('dashboard.tickets.index', [
                             'ticket_status' => 'all',
                             'ticket_site' => $site->id,
@@ -428,7 +437,7 @@ class AgentSiteController extends Controller
                     'label' => 'Sync pending',
                     'value' => $pendingCount.' sync pending',
                     'tone' => $pendingCount > 0 ? 'manual' : 'ready',
-                    'href' => $pendingCount > 0
+                    'href' => $pendingQueueCount > 0
                         ? route('dashboard.tickets.index', [
                             'ticket_status' => 'all',
                             'ticket_site' => $site->id,
