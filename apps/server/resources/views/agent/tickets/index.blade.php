@@ -7,7 +7,7 @@
                 <div class="section-header">
                     <h2 id="tickets-heading">Ticket queue</h2>
                     <div class="section-actions">
-                        <span class="lede">{{ $tickets->count() }} {{ $ticketStatusSummary }}</span>
+                        <span class="lede">{{ $ticketQueueCountSummary['heading'] }}</span>
                         @foreach ($ticketStatusFilters as $filterValue => $filterLabel)
                             @php
                                 $statusParams = $ticketQuery;
@@ -176,6 +176,7 @@
                     <div>
                         <strong>Queue focus</strong>
                         <p class="lede">What this ticket queue is showing before you open a row.</p>
+                        <p class="lede">{{ $ticketQueueCountSummary['detail'] }}</p>
                     </div>
                     <div class="filter-chips">
                         @foreach ($ticketQueueFocusItems as $ticketQueueFocusItem)

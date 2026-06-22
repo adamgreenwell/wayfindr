@@ -207,6 +207,13 @@ class AgentTicketQueueController extends Controller
                 -$ticket->created_at->getTimestamp(),
             ])
             ->values();
+        $ticketQueueCountSummary = $this->ticketQueueCountSummary(
+            $tickets,
+            $ticketResults,
+            $ticketStatusSummary,
+            $ticketAttention,
+            $ticketAttentionFilters,
+        );
 
         return [
             'ticketAttention' => $ticketAttention,
@@ -220,6 +227,7 @@ class AgentTicketQueueController extends Controller
             'ticketLabelFilters' => $ticketLabelFilters,
             'ticketPriority' => $ticketPriority,
             'ticketPriorityFilters' => $ticketPriorityFilters,
+            'ticketQueueCountSummary' => $ticketQueueCountSummary,
             'ticketQueueSummary' => $ticketQueueSummary,
             'ticketActiveFilters' => $this->activeTicketFilters(
                 $ticketQuery,
@@ -443,6 +451,36 @@ class AgentTicketQueueController extends Controller
                 ];
             })
             ->all();
+    }
+
+    /**
+     * @param  Collection<int, Ticket>  $tickets
+     * @param  Collection<int, Ticket>  $ticketResults
+     * @param  array<string, string>  $ticketAttentionFilters
+     * @return array{heading: string, detail: string}
+     */
+    private function ticketQueueCountSummary(Collection $tickets, Collection $ticketResults, string $ticketStatusSummary, string $ticketAttention, array $ticketAttentionFilters): array
+    {
+        $shownCount = $tickets->count();
+        $matchingCount = $ticketResults->count();
+        $nextStepNarrowed = $ticketAttention !== 'all' && $shownCount !== $matchingCount;
+
+        if (! $nextStepNarrowed) {
+            return [
+                'detail' => 'Showing '.$this->ticketCountLabel($shownCount).' matching the current queue filters.',
+                'heading' => $shownCount.' '.$ticketStatusSummary,
+            ];
+        }
+
+        return [
+            'detail' => 'Showing '.$this->ticketCountLabel($shownCount).' after the '.$ticketAttentionFilters[$ticketAttention].' next-step filter. '.$this->ticketCountLabel($matchingCount).' match the other queue filters.',
+            'heading' => $shownCount.' shown of '.$matchingCount.' matching tickets',
+        ];
+    }
+
+    private function ticketCountLabel(int $count): string
+    {
+        return $count.' '.($count === 1 ? 'ticket' : 'tickets');
     }
 
     private function ticketDashboardAttentionState(Ticket $ticket): string
