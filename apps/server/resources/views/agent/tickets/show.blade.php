@@ -13,6 +13,7 @@
                 $ticketNextAction = $ticket->nextAction();
                 $ticketReplyVisibility = $ticket->replyVisibility();
                 $ticketStatusActionReadiness = $ticket->statusActionReadiness();
+                $ticketLifecycleNote = $ticket->latestLifecycleNote();
                 $requesterReference = $ticket->requester?->email
                     ?? $ticket->requester?->name
                     ?? $ticket->requester?->anonymous_id
@@ -30,6 +31,16 @@
                         <span class="meta-value">{{ ucfirst($ticket->status) }}</span>
                         <span class="lede">{{ $ticket->attentionDescription() }}</span>
                     </div>
+                    @if ($ticketLifecycleNote)
+                        <div class="meta-item">
+                            <span class="meta-label">Lifecycle note</span>
+                            <span class="meta-value">{{ $ticketLifecycleNote['label'] }}</span>
+                            <span class="lede">{{ $ticketLifecycleNote['body'] }}</span>
+                            <span class="table-note">
+                                {{ $ticketLifecycleNote['actor'] }} - {{ $ticketLifecycleNote['occurred_at']->diffForHumans() }}
+                            </span>
+                        </div>
+                    @endif
                     <div class="meta-item">
                         <span class="meta-label">Owner</span>
                         <span class="meta-value">{{ $ticket->assignee?->name ?? 'Unassigned' }}</span>

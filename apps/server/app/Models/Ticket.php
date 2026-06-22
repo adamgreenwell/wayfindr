@@ -283,6 +283,37 @@ class Ticket extends Model
         };
     }
 
+    /**
+     * @return array{label: string, body: string, actor: string, occurred_at: CarbonInterface}|null
+     */
+    public function latestLifecycleNote(): ?array
+    {
+        $event = $this->auditEvents()
+            ->whereIn('action', [
+                'ticket.pending',
+                'ticket.closed',
+                'ticket.reopened',
+                'ticket.escalated',
+            ])
+            ->with('actor')
+            ->latest('occurred_at')
+            ->latest('id')
+            ->first();
+
+        if (! $event?->occurred_at || $this->lifecycleNoteBody($event) === '') {
+            return null;
+        }
+
+        return [
+            'actor' => $event->actor_type === Visitor::class
+                ? 'Visitor'
+                : ($event->actor?->name ?? 'System'),
+            'body' => $this->lifecycleNoteBody($event),
+            'label' => $this->lifecycleNoteLabel($event),
+            'occurred_at' => $event->occurred_at,
+        ];
+    }
+
     public function attentionSortRank(): int
     {
         return match ($this->attentionState()) {
@@ -368,6 +399,30 @@ class Ticket extends Model
         $body = (string) Str::of((string) $body)->squish();
 
         return Str::limit($body, 150);
+    }
+
+    private function lifecycleNoteBody(AuditEvent $event): string
+    {
+        $body = match ($event->action) {
+            'ticket.pending' => data_get($event->metadata, 'pending_note'),
+            'ticket.closed' => data_get($event->metadata, 'resolution_note'),
+            'ticket.reopened' => data_get($event->metadata, 'reopen_note'),
+            'ticket.escalated' => data_get($event->metadata, 'reason'),
+            default => null,
+        };
+
+        return (string) Str::of((string) $body)->squish();
+    }
+
+    private function lifecycleNoteLabel(AuditEvent $event): string
+    {
+        return match ($event->action) {
+            'ticket.pending' => 'Ticket marked pending',
+            'ticket.closed' => 'Ticket closed',
+            'ticket.reopened' => 'Ticket reopened',
+            'ticket.escalated' => 'Ticket escalated',
+            default => 'Lifecycle update',
+        };
     }
 
     public function categoryLabel(): string

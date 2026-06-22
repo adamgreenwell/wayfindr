@@ -290,6 +290,140 @@ test('ticket detail work state keeps internal notes out of the summary preview',
         ->not->toContain('private escalation note for agents only');
 });
 
+test('ticket detail work state surfaces the latest lifecycle handoff note', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-21 19:00:00', 'UTC'));
+
+    try {
+        [$agent, $site, $visitor] = ticketWorkStateContext(false);
+
+        $ticket = Ticket::factory()
+            ->for($agent->account)
+            ->for($site)
+            ->for($visitor, 'requester')
+            ->for($agent, 'assignee')
+            ->create([
+                'closed_at' => now()->subMinutes(3),
+                'status' => 'closed',
+                'subject' => 'Lifecycle handoff context',
+            ]);
+
+        AuditEvent::factory()
+            ->for($agent->account)
+            ->for($ticket, 'subject')
+            ->create([
+                'action' => 'ticket.pending',
+                'actor_id' => $agent->id,
+                'actor_type' => User::class,
+                'metadata' => [
+                    'pending_note' => 'Waiting on customer billing contact.',
+                ],
+                'occurred_at' => now()->subMinutes(8),
+                'site_id' => $site->id,
+            ]);
+
+        AuditEvent::factory()
+            ->for($agent->account)
+            ->for($ticket, 'subject')
+            ->create([
+                'action' => 'ticket.closed',
+                'actor_id' => $agent->id,
+                'actor_type' => User::class,
+                'metadata' => [
+                    'resolution_note' => 'Customer confirmed the billing export is fixed.',
+                ],
+                'occurred_at' => now()->subMinutes(3),
+                'site_id' => $site->id,
+            ]);
+
+        AuditEvent::factory()
+            ->for($agent->account)
+            ->for($ticket, 'subject')
+            ->create([
+                'action' => 'ticket.note_added',
+                'actor_id' => $agent->id,
+                'actor_type' => User::class,
+                'metadata' => [
+                    'body' => 'Private note that should stay in the timeline.',
+                ],
+                'occurred_at' => now()->subMinute(),
+                'site_id' => $site->id,
+            ]);
+
+        $response = $this->actingAs($agent)
+            ->get(route('dashboard.tickets.show', $ticket))
+            ->assertOk()
+            ->assertSeeInOrder([
+                'Work state',
+                'Lifecycle note',
+                'Ticket closed',
+                'Customer confirmed the billing export is fixed.',
+                'Ada Agent',
+                '3 minutes ago',
+                'Support reference',
+            ]);
+
+        expect(Str::between($response->content(), 'Work state', 'Support reference'))
+            ->not->toContain('Private note that should stay in the timeline.')
+            ->not->toContain('Waiting on customer billing contact.');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+test('ticket detail work state hides stale lifecycle notes after a blank transition', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-21 19:30:00', 'UTC'));
+
+    try {
+        [$agent, $site, $visitor] = ticketWorkStateContext(false);
+
+        $ticket = Ticket::factory()
+            ->for($agent->account)
+            ->for($site)
+            ->for($visitor, 'requester')
+            ->for($agent, 'assignee')
+            ->create([
+                'status' => 'open',
+                'subject' => 'Blank reopen context',
+            ]);
+
+        AuditEvent::factory()
+            ->for($agent->account)
+            ->for($ticket, 'subject')
+            ->create([
+                'action' => 'ticket.closed',
+                'actor_id' => $agent->id,
+                'actor_type' => User::class,
+                'metadata' => [
+                    'resolution_note' => 'Older resolution that should no longer summarize the ticket.',
+                ],
+                'occurred_at' => now()->subMinutes(10),
+                'site_id' => $site->id,
+            ]);
+
+        AuditEvent::factory()
+            ->for($agent->account)
+            ->for($ticket, 'subject')
+            ->create([
+                'action' => 'ticket.reopened',
+                'actor_id' => $agent->id,
+                'actor_type' => User::class,
+                'metadata' => [],
+                'occurred_at' => now()->subMinutes(2),
+                'site_id' => $site->id,
+            ]);
+
+        $response = $this->actingAs($agent)
+            ->get(route('dashboard.tickets.show', $ticket))
+            ->assertOk();
+
+        expect(Str::between($response->content(), 'Work state', 'Support reference'))
+            ->not->toContain('Lifecycle note')
+            ->not->toContain('Older resolution that should no longer summarize the ticket.');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('ticket detail timeline summarizes conversation, internal note, and activity visibility', function (): void {
     Carbon::setTestNow(Carbon::parse('2026-06-21 17:00:00', 'UTC'));
 
