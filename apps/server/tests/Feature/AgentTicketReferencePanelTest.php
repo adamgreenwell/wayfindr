@@ -7,6 +7,7 @@ use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -39,7 +40,7 @@ test('ticket detail shows a compact support reference for linked tickets', funct
             'subject' => 'Reference ticket',
         ]);
 
-    $this->actingAs($agent)
+    $response = $this->actingAs($agent)
         ->get(route('dashboard.tickets.show', $ticket))
         ->assertOk()
         ->assertSee('Support reference')
@@ -52,6 +53,18 @@ test('ticket detail shows a compact support reference for linked tickets', funct
         ->assertSee('visitor@example.test')
         ->assertSee('Latest visitor page')
         ->assertSee('https://docs.example.test/account');
+
+    $ticketHeader = Str::between(
+        $response->content(),
+        '<h1>Reference ticket</h1>',
+        '<section class="section" aria-labelledby="ticket-map-heading">',
+    );
+
+    expect($ticketHeader)
+        ->toContain('Ticket #'.$ticket->id)
+        ->toContain('WF-REFERENCE')
+        ->toContain(route('dashboard.conversations.show', $conversation->support_code))
+        ->toContain('Copy support code WF-REFERENCE');
 });
 
 test('ticket detail gives agents a section map for available workspaces', function (): void {
