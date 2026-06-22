@@ -124,6 +124,7 @@ class AgentAccountController extends Controller
      *         project_key: string,
      *         project_name: string|null,
      *         capabilities: list<string>,
+     *         handoff: array{label: string, detail: string, tone: string},
      *         href: string,
      *         enabled: bool
      *     }>,
@@ -251,6 +252,7 @@ class AgentAccountController extends Controller
                 'project_key' => $project->project_key,
                 'project_name' => $project->project_name,
                 'capabilities' => $project->capabilityLabels(),
+                'handoff' => $this->externalIssueProjectHandoff($project),
                 'href' => $project->site
                     ? route('dashboard.sites.show', $project->site).'#external-issue-routing-heading'
                     : route('dashboard.sites.index'),
@@ -269,6 +271,42 @@ class AgentAccountController extends Controller
                         : null,
                     'occurred_at' => $event->occurred_at,
                 ]),
+        ];
+    }
+
+    /**
+     * @return array{label: string, detail: string, tone: string}
+     */
+    private function externalIssueProjectHandoff(SiteExternalIssueProject $project): array
+    {
+        if (! $project->providerConnection?->is_enabled) {
+            return [
+                'label' => 'Blocked',
+                'detail' => 'Provider connection is disabled.',
+                'tone' => 'attention',
+            ];
+        }
+
+        if (! $project->hasSupportedIssueCreationProvider()) {
+            return [
+                'label' => 'Link only',
+                'detail' => 'Wayfindr issue creation is not available for this provider yet.',
+                'tone' => 'manual',
+            ];
+        }
+
+        if ($project->supportsIssueCreationHandoff()) {
+            return [
+                'label' => 'Handoff ready',
+                'detail' => 'Can create external issues.',
+                'tone' => 'ready',
+            ];
+        }
+
+        return [
+            'label' => 'Link only',
+            'detail' => 'External issue creation is not enabled.',
+            'tone' => 'manual',
         ];
     }
 

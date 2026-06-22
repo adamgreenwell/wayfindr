@@ -22,6 +22,8 @@ class SiteExternalIssueProject extends Model
     /** @use HasFactory<SiteExternalIssueProjectFactory> */
     use HasFactory;
 
+    private const ISSUE_CREATION_PROVIDERS = ['github', 'gitlab'];
+
     protected function casts(): array
     {
         return [
@@ -52,6 +54,18 @@ class SiteExternalIssueProject extends Model
     public function hasCapability(string $capability): bool
     {
         return $this->providerConnection?->hasCapability($capability) ?? false;
+    }
+
+    public function hasSupportedIssueCreationProvider(): bool
+    {
+        return in_array($this->providerConnection?->provider, self::ISSUE_CREATION_PROVIDERS, true);
+    }
+
+    public function supportsIssueCreationHandoff(): bool
+    {
+        return $this->hasSupportedIssueCreationProvider()
+            && $this->providerConnection?->is_enabled === true
+            && $this->hasCapability('create_issue');
     }
 
     /**

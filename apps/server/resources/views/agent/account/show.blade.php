@@ -165,6 +165,7 @@
                                         <th scope="col">Provider</th>
                                         <th scope="col">Project</th>
                                         <th scope="col">Capabilities</th>
+                                        <th scope="col">External issue handoff</th>
                                         <th scope="col">Manage</th>
                                     </tr>
                                 </thead>
@@ -191,6 +192,12 @@
                                                 @empty
                                                     <span>Link only</span>
                                                 @endforelse
+                                            </td>
+                                            <td>
+                                                <span class="readiness-status" data-status="{{ $project['handoff']['tone'] }}">
+                                                    {{ $project['handoff']['label'] }}
+                                                </span>
+                                                <span class="lede">{{ $project['handoff']['detail'] }}</span>
                                             </td>
                                             <td>
                                                 <a class="text-link" href="{{ $project['href'] }}">Manage routing</a>

@@ -705,6 +705,104 @@ test('account external issue readiness treats provider only setup as unmapped', 
         ->assertSee('0 mapped projects');
 });
 
+test('account external issue readiness labels project handoff states', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'name' => 'Ada Admin',
+    ]);
+    $readySite = Site::factory()->for($account)->create(['name' => 'Docs']);
+    $linkOnlySite = Site::factory()->for($account)->create(['name' => 'Knowledge Base']);
+    $disabledSite = Site::factory()->for($account)->create(['name' => 'Status Portal']);
+    $unsupportedSite = Site::factory()->for($account)->create(['name' => 'Roadmap']);
+
+    $readyConnection = ExternalIssueProviderConnection::factory()
+        ->for($account)
+        ->create([
+            'name' => 'Ready GitHub',
+            'provider' => 'github',
+            'capabilities' => [
+                'create_issue' => true,
+                'add_comment' => true,
+                'sync_status' => false,
+            ],
+        ]);
+    $linkOnlyConnection = ExternalIssueProviderConnection::factory()
+        ->for($account)
+        ->create([
+            'name' => 'Readonly GitHub',
+            'provider' => 'github',
+            'capabilities' => [
+                'create_issue' => false,
+                'add_comment' => false,
+                'sync_status' => false,
+            ],
+        ]);
+    $disabledConnection = ExternalIssueProviderConnection::factory()
+        ->for($account)
+        ->create([
+            'name' => 'Dormant GitLab',
+            'provider' => 'gitlab',
+            'is_enabled' => false,
+            'capabilities' => [
+                'create_issue' => true,
+                'add_comment' => true,
+                'sync_status' => false,
+            ],
+        ]);
+    $unsupportedConnection = ExternalIssueProviderConnection::factory()
+        ->for($account)
+        ->create([
+            'name' => 'Future Bitbucket',
+            'provider' => 'bitbucket',
+            'capabilities' => [
+                'create_issue' => true,
+                'add_comment' => true,
+                'sync_status' => false,
+            ],
+        ]);
+
+    SiteExternalIssueProject::factory()
+        ->for($account)
+        ->for($readySite)
+        ->for($readyConnection, 'providerConnection')
+        ->create(['project_key' => 'acme/docs']);
+    SiteExternalIssueProject::factory()
+        ->for($account)
+        ->for($linkOnlySite)
+        ->for($linkOnlyConnection, 'providerConnection')
+        ->create(['project_key' => 'acme/kb']);
+    SiteExternalIssueProject::factory()
+        ->for($account)
+        ->for($disabledSite)
+        ->for($disabledConnection, 'providerConnection')
+        ->create(['project_key' => 'acme/status']);
+    SiteExternalIssueProject::factory()
+        ->for($account)
+        ->for($unsupportedSite)
+        ->for($unsupportedConnection, 'providerConnection')
+        ->create(['project_key' => 'acme/roadmap']);
+
+    $this->actingAs($admin)
+        ->get('/dashboard/account')
+        ->assertOk()
+        ->assertSee('External issue handoff')
+        ->assertSeeInOrder([
+            'acme/docs',
+            'Handoff ready',
+            'Can create external issues.',
+            'acme/kb',
+            'Link only',
+            'External issue creation is not enabled.',
+            'acme/roadmap',
+            'Link only',
+            'Wayfindr issue creation is not available for this provider yet.',
+            'acme/status',
+            'Blocked',
+            'Provider connection is disabled.',
+        ]);
+});
+
 test('account admins can inspect team alert readiness without leaking provider details', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $admin = User::factory()->for($account)->create([

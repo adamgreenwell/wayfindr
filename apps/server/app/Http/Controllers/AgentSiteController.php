@@ -6,6 +6,7 @@ use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\Site;
+use App\Models\SiteExternalIssueProject;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Support\ExternalIssueCapability;
@@ -304,9 +305,7 @@ class AgentSiteController extends Controller
     private function externalIssueHandoffProjectCount(Site $site): int
     {
         return $site->externalIssueProjects
-            ->filter(fn ($project): bool => in_array($project->providerConnection?->provider, ['github', 'gitlab'], true)
-                && $project->providerConnection?->is_enabled === true
-                && $project->hasCapability('create_issue'))
+            ->filter(fn (SiteExternalIssueProject $project): bool => $project->supportsIssueCreationHandoff())
             ->count();
     }
 
