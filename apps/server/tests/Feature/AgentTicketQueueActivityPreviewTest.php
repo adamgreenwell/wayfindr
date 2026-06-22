@@ -359,6 +359,85 @@ test('ticket queue keeps timing context aligned for unassigned linked tickets', 
     }
 });
 
+test('ticket queue shows current lifecycle notes without stale blank-transition notes', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-21 16:00:00', 'UTC'));
+
+    try {
+        [$agent, $site, $visitor] = ticketQueuePreviewContext(false);
+
+        $pendingTicket = Ticket::factory()
+            ->for($agent->account)
+            ->for($site)
+            ->for($visitor, 'requester')
+            ->for($agent, 'assignee')
+            ->create([
+                'status' => 'pending',
+                'subject' => 'Waiting on finance logs',
+            ]);
+        $reopenedTicket = Ticket::factory()
+            ->for($agent->account)
+            ->for($site)
+            ->for($visitor, 'requester')
+            ->for($agent, 'assignee')
+            ->create([
+                'status' => 'open',
+                'subject' => 'Reopened without note',
+            ]);
+
+        AuditEvent::factory()
+            ->for($agent->account)
+            ->for($pendingTicket, 'subject')
+            ->create([
+                'action' => 'ticket.pending',
+                'actor_id' => $agent->id,
+                'actor_type' => User::class,
+                'metadata' => [
+                    'pending_note' => 'Waiting on export logs from finance.',
+                ],
+                'occurred_at' => now()->subMinutes(5),
+                'site_id' => $site->id,
+            ]);
+        AuditEvent::factory()
+            ->for($agent->account)
+            ->for($reopenedTicket, 'subject')
+            ->create([
+                'action' => 'ticket.closed',
+                'actor_id' => $agent->id,
+                'actor_type' => User::class,
+                'metadata' => [
+                    'resolution_note' => 'Older resolution that should not summarize the queue row.',
+                ],
+                'occurred_at' => now()->subMinutes(10),
+                'site_id' => $site->id,
+            ]);
+        AuditEvent::factory()
+            ->for($agent->account)
+            ->for($reopenedTicket, 'subject')
+            ->create([
+                'action' => 'ticket.reopened',
+                'actor_id' => $agent->id,
+                'actor_type' => User::class,
+                'metadata' => [],
+                'occurred_at' => now()->subMinutes(2),
+                'site_id' => $site->id,
+            ]);
+
+        $this->actingAs($agent)
+            ->get(route('dashboard.tickets.index', ['ticket_status' => 'all']))
+            ->assertOk()
+            ->assertSeeInOrder([
+                'Lifecycle note',
+                'Ticket marked pending',
+                'Waiting on export logs from finance.',
+                'Ada Agent',
+                '5 minutes ago',
+            ])
+            ->assertDontSee('Older resolution that should not summarize the queue row.');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 /**
  * @return array{0: User, 1: Site, 2: Visitor, 3?: Conversation}
  */

@@ -254,11 +254,22 @@
                                         <td>
                                             @php
                                                 $recentEscalation = $ticket->latestRecentEscalationEvent();
+                                                $ticketLifecycleNote = $ticket->latestLifecycleNote();
                                             @endphp
                                             <strong>{{ $ticket->attentionLabel() }}</strong>
                                             <div class="lede">{{ $ticket->attentionDescription() }}</div>
                                             @if ($recentEscalation)
                                                 <div class="lede">{{ $ticket->escalationAudienceLabelFor($agent) }}</div>
+                                            @endif
+                                            @if ($ticketLifecycleNote)
+                                                <div class="table-note">
+                                                    <strong>Lifecycle note</strong>
+                                                    {{ $ticketLifecycleNote['label'] }}:
+                                                    {{ $ticketLifecycleNote['body'] }}
+                                                </div>
+                                                <span class="table-note">
+                                                    {{ $ticketLifecycleNote['actor'] }} - {{ $ticketLifecycleNote['occurred_at']->diffForHumans() }}
+                                                </span>
                                             @endif
                                         </td>
                                         <td>

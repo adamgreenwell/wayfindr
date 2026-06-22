@@ -154,6 +154,7 @@ class AgentTicketQueueController extends Controller
                 'externalLinks',
                 'labels',
                 'latestEscalationEvent.actor',
+                'latestLifecycleEvent.actor',
                 'site',
             ])
             ->where('account_id', $account->id)

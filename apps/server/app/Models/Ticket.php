@@ -288,17 +288,9 @@ class Ticket extends Model
      */
     public function latestLifecycleNote(): ?array
     {
-        $event = $this->auditEvents()
-            ->whereIn('action', [
-                'ticket.pending',
-                'ticket.closed',
-                'ticket.reopened',
-                'ticket.escalated',
-            ])
-            ->with('actor')
-            ->latest('occurred_at')
-            ->latest('id')
-            ->first();
+        $event = $this->relationLoaded('latestLifecycleEvent')
+            ? $this->latestLifecycleEvent
+            : $this->latestLifecycleEvent()->with('actor')->first();
 
         if (! $event?->occurred_at || $this->lifecycleNoteBody($event) === '') {
             return null;
@@ -449,6 +441,20 @@ class Ticket extends Model
                 'occurred_at' => 'max',
                 'id' => 'max',
             ], fn (Builder $query) => $query->where('action', 'ticket.escalated'));
+    }
+
+    public function latestLifecycleEvent(): MorphOne
+    {
+        return $this->morphOne(AuditEvent::class, 'subject')
+            ->ofMany([
+                'occurred_at' => 'max',
+                'id' => 'max',
+            ], fn (Builder $query) => $query->whereIn('action', [
+                'ticket.pending',
+                'ticket.closed',
+                'ticket.reopened',
+                'ticket.escalated',
+            ]));
     }
 
     public function latestRecentEscalationEvent(): ?AuditEvent
