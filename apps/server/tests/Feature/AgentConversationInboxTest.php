@@ -1057,6 +1057,74 @@ test('conversation queue snapshot respects current site and search context', fun
         ->assertDontSee('Checkout from other site');
 });
 
+test('conversation queue distinguishes shown conversations from broader matching filters', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $otherSite = Site::factory()->for($account)->create(['name' => 'Other Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-checkout']);
+    $otherVisitor = Visitor::factory()->for($otherSite)->create(['anonymous_id' => 'anon-other']);
+
+    $needsReplyConversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-COUNTMATCH1',
+        'subject' => 'Checkout needs help',
+        'status' => 'open',
+        'last_message_at' => now()->subMinutes(3),
+    ]);
+    ConversationMessage::factory()->for($needsReplyConversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'Checkout is stuck.',
+        'created_at' => now()->subMinutes(3),
+    ]);
+
+    $waitingConversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-COUNTMATCH2',
+        'subject' => 'Checkout waiting on visitor',
+        'status' => 'open',
+        'last_message_at' => now()->subMinutes(2),
+    ]);
+    ConversationMessage::factory()->for($waitingConversation)->create([
+        'sender_type' => User::class,
+        'sender_id' => $agent->id,
+        'body' => 'Can you try again?',
+        'created_at' => now()->subMinutes(2),
+    ]);
+
+    $resolvedConversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-COUNTMATCH3',
+        'subject' => 'Checkout customer replied later',
+        'status' => 'open',
+        'last_message_at' => now()->subMinute(),
+    ]);
+    ConversationMessage::factory()->for($resolvedConversation)->create([
+        'sender_type' => User::class,
+        'sender_id' => $agent->id,
+        'body' => 'This should be all set.',
+        'created_at' => now()->subMinute(),
+    ]);
+
+    Conversation::factory()->for($otherSite)->for($otherVisitor)->create([
+        'support_code' => 'WF-COUNTOTHER',
+        'subject' => 'Checkout from another site',
+        'status' => 'open',
+    ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.conversations.index', [
+            'conversation_filter' => 'needs_reply',
+            'conversation_site' => $site->id,
+            'conversation_search' => 'Checkout',
+        ]))
+        ->assertOk()
+        ->assertSee('1 shown of 3 matching conversations')
+        ->assertSee('Showing 1 conversation after the Needs reply support-lane filter. 3 conversations match the other queue filters.')
+        ->assertSee('Checkout needs help')
+        ->assertDontSee('Checkout waiting on visitor')
+        ->assertDontSee('Checkout customer replied later')
+        ->assertDontSee('Checkout from another site');
+});
+
 test('dashboard shows visitor presence state in the conversation queue', function (): void {
     Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00', 'UTC'));
 

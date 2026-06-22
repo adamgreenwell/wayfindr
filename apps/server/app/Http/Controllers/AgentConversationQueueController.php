@@ -45,6 +45,7 @@ class AgentConversationQueueController extends Controller
      *     conversationPresence: string,
      *     conversationPresenceFilters: array<string, string>,
      *     conversationQuery: array<string, string|int>,
+     *     conversationQueueCountSummary: array{heading: string, detail: string},
      *     conversationQueueSummary: array<int, array{state: string, label: string, count: int, href: string, active: bool}>,
      *     conversationSearch: string,
      *     conversationSite: int|null,
@@ -119,6 +120,13 @@ class AgentConversationQueueController extends Controller
             $conversationSite,
             $conversationSearch,
         );
+        $matchingConversationCount = $this->matchingConversationCount(
+            $agent,
+            $conversationStatus,
+            $conversationPresence,
+            $conversationSite,
+            $conversationSearch,
+        );
 
         $conversations = Conversation::query()
             ->with([
@@ -174,6 +182,15 @@ class AgentConversationQueueController extends Controller
                 ))
                 ->values();
         }
+        $conversationQueueCountSummary = $this->conversationQueueCountSummary(
+            $conversations,
+            $matchingConversationCount,
+            $conversationFilter,
+            $conversationFilters,
+            $conversationHasActiveRefinement,
+            $newActivityConversationCount,
+            $cobrowseAttentionConversationCount,
+        );
 
         return [
             'activeConversationFilters' => $this->activeConversationFilters($conversationQuery, $conversationSite, $sites, $conversationSearch, $conversationPresence, $conversationPresenceFilters),
@@ -185,6 +202,7 @@ class AgentConversationQueueController extends Controller
             'conversationPresence' => $conversationPresence,
             'conversationPresenceFilters' => $conversationPresenceFilters,
             'conversationQuery' => $conversationQuery,
+            'conversationQueueCountSummary' => $conversationQueueCountSummary,
             'conversationQueueSummary' => $conversationQueueSummary,
             'conversationSearch' => $conversationSearch,
             'conversationSite' => $conversationSite,
@@ -376,6 +394,87 @@ class AgentConversationQueueController extends Controller
             'label' => $label,
             'state' => $state,
         ];
+    }
+
+    private function matchingConversationCount(User $agent, string $conversationStatus, string $conversationPresence, ?int $conversationSite, string $conversationSearch): int
+    {
+        $query = Conversation::query()
+            ->where('status', $conversationStatus)
+            ->whereHas('site', fn (Builder $query) => $query->visibleToAgent($agent))
+            ->when($conversationSite, fn (Builder $query) => $query->where('site_id', $conversationSite))
+            ->when($conversationSearch !== '', function (Builder $query) use ($conversationSearch): void {
+                $searchPattern = $this->conversationSearchPattern($conversationSearch);
+
+                $query->where(function (Builder $query) use ($searchPattern): void {
+                    $this->whereLiteralLike($query, 'subject', $searchPattern);
+                    $this->whereLiteralLike($query, 'support_code', $searchPattern, 'or');
+                    $query->orWhereHas('visitor', function (Builder $query) use ($searchPattern): void {
+                        $this->whereLiteralLike($query, 'anonymous_id', $searchPattern);
+                        $this->whereLiteralLike($query, 'external_id', $searchPattern, 'or');
+                        $this->whereLiteralLike($query, 'name', $searchPattern, 'or');
+                        $this->whereLiteralLike($query, 'email', $searchPattern, 'or');
+                    });
+                });
+            });
+
+        if ($conversationPresence !== 'all') {
+            $this->applyConversationPresenceFilter($query, $conversationPresence);
+        }
+
+        return $query->count();
+    }
+
+    /**
+     * @param  Collection<int, Conversation>  $conversations
+     * @param  array<string, string>  $conversationFilters
+     * @return array{heading: string, detail: string}
+     */
+    private function conversationQueueCountSummary(Collection $conversations, int $matchingConversationCount, string $conversationFilter, array $conversationFilters, bool $conversationHasActiveRefinement, int $newActivityConversationCount, int $cobrowseAttentionConversationCount): array
+    {
+        $shownCount = $conversations->count();
+        $supportLaneNarrowed = ! in_array($conversationFilter, ['all', 'closed'], true)
+            && $shownCount !== $matchingConversationCount;
+
+        if ($supportLaneNarrowed) {
+            $heading = $shownCount.' shown of '.$matchingConversationCount.' matching conversations';
+
+            if ($conversationFilter === 'new_activity') {
+                $heading = ($shownCount === 1 ? '1 needs attention' : $shownCount.' need attention')
+                    .' shown of '.$matchingConversationCount.' matching conversations';
+            }
+
+            return [
+                'detail' => 'Showing '.$this->conversationCountLabel($shownCount).' after the '.$conversationFilters[$conversationFilter].' support-lane filter. '.$this->conversationCountLabel($matchingConversationCount).' match the other queue filters.',
+                'heading' => $heading,
+            ];
+        }
+
+        if ($conversationFilter === 'closed') {
+            return [
+                'detail' => 'Showing '.$this->conversationCountLabel($shownCount).' matching the current queue filters.',
+                'heading' => $shownCount === 1 ? '1 closed' : $shownCount.' closed',
+            ];
+        }
+
+        if ($conversationHasActiveRefinement) {
+            return [
+                'detail' => 'Showing '.$this->conversationCountLabel($shownCount).' matching the current queue filters.',
+                'heading' => $shownCount === 1 ? '1 open matching' : $shownCount.' open matching',
+            ];
+        }
+
+        return [
+            'detail' => 'Showing '.$this->conversationCountLabel($shownCount).' matching the current queue filters.',
+            'heading' => $shownCount.' open · '
+                .($newActivityConversationCount === 1 ? '1 needs attention' : $newActivityConversationCount.' need attention')
+                .' · '
+                .($cobrowseAttentionConversationCount === 1 ? '1 cobrowse session needs attention' : $cobrowseAttentionConversationCount.' cobrowse sessions need attention'),
+        ];
+    }
+
+    private function conversationCountLabel(int $count): string
+    {
+        return $count.' '.($count === 1 ? 'conversation' : 'conversations');
     }
 
     /**

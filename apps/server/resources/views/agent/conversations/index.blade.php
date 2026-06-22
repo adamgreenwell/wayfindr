@@ -9,17 +9,7 @@
                 <div class="section-header">
                     <h2 id="conversations-heading">Conversation queue</h2>
                     <div class="section-actions">
-                        <span class="lede">
-                            @if ($conversationFilter === 'closed')
-                                {{ $conversations->count() === 1 ? '1 closed' : $conversations->count().' closed' }}
-                            @elseif ($activeConversationFilters !== [])
-                                {{ $conversations->count() === 1 ? '1 open matching' : $conversations->count().' open matching' }}
-                            @else
-                                {{ $conversations->count() }} open ·
-                                {{ $newActivityConversationCount === 1 ? '1 needs attention' : $newActivityConversationCount.' need attention' }} ·
-                                {{ $cobrowseAttentionConversationCount === 1 ? '1 cobrowse session needs attention' : $cobrowseAttentionConversationCount.' cobrowse sessions need attention' }}
-                            @endif
-                        </span>
+                        <span class="lede">{{ $conversationQueueCountSummary['heading'] }}</span>
                         @foreach ($conversationFilters as $filterValue => $filterLabel)
                             @php
                                 $filterParams = $conversationQuery;
@@ -116,6 +106,7 @@
                         <div>
                             <strong>Queue snapshot</strong>
                             <p class="lede">Support-lane counts respect the current site, search, and presence context before the table narrows further.</p>
+                            <p class="lede">{{ $conversationQueueCountSummary['detail'] }}</p>
                         </div>
                         <div class="filter-chips">
                             @foreach ($conversationQueueSummary as $conversationSummary)
