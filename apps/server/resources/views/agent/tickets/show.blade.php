@@ -327,7 +327,10 @@
                             </div>
                         </article>
                     @empty
-                        <div class="empty-state">No labels yet.</div>
+                        <div class="empty-state">
+                            <strong>No labels on this ticket yet.</strong>
+                            <p class="lede">Use labels when this ticket needs repeatable triage cues, escalation context, or queue filtering.</p>
+                        </div>
                     @endforelse
                 </div>
 
@@ -676,7 +679,10 @@
                             </form>
                         </article>
                     @empty
-                        <div class="empty-state">No external issue links yet.</div>
+                        <div class="empty-state">
+                            <strong>No external issue links yet.</strong>
+                            <p class="lede">Attach an external reference only when another tracker owns part of the follow-up. Wayfindr can stay the source of truth when it does not.</p>
+                        </div>
                     @endforelse
                 </div>
 
@@ -1079,7 +1085,10 @@
                             <p>{{ data_get($note->metadata, 'body') }}</p>
                         </article>
                     @empty
-                        <div class="empty-state">No internal notes yet.</div>
+                        <div class="empty-state">
+                            <strong>No internal notes yet.</strong>
+                            <p class="lede">Use notes for private handoff context, not customer-visible replies.</p>
+                        </div>
                     @endforelse
                 </div>
 
@@ -1262,7 +1271,10 @@
                             @endif
                         </article>
                     @empty
-                        <div class="empty-state">No ticket activity yet.</div>
+                        <div class="empty-state">
+                            <strong>No ticket activity yet.</strong>
+                            <p class="lede">Lifecycle, assignment, label, reply, and external-link updates will appear here once the team works the ticket.</p>
+                        </div>
                     @endforelse
                 </div>
             </section>

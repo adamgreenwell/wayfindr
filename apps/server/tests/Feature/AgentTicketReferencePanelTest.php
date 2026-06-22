@@ -110,6 +110,30 @@ test('ticket detail gives agents a section map for available workspaces', functi
         ->assertSee('href="#ticket-activity-heading"', false);
 });
 
+test('ticket detail guides agents through empty workspaces', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->create([
+            'subject' => 'Sparse ticket',
+        ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.tickets.show', $ticket))
+        ->assertOk()
+        ->assertSee('No labels on this ticket yet.')
+        ->assertSee('Use labels when this ticket needs repeatable triage cues, escalation context, or queue filtering.')
+        ->assertSee('No external issue links yet.')
+        ->assertSee('Attach an external reference only when another tracker owns part of the follow-up. Wayfindr can stay the source of truth when it does not.')
+        ->assertSee('No internal notes yet.')
+        ->assertSee('Use notes for private handoff context, not customer-visible replies.')
+        ->assertSee('No ticket activity yet.')
+        ->assertSee('Lifecycle, assignment, label, reply, and external-link updates will appear here once the team works the ticket.');
+});
+
 test('ticket detail reference handles standalone tickets without a linked conversation', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
