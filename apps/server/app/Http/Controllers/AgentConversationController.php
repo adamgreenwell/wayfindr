@@ -44,7 +44,7 @@ class AgentConversationController extends Controller
             ->orderBy('id')
             ->get();
         $tickets = $conversation->tickets()
-            ->with('assignee')
+            ->with(['assignee', 'conversation.latestAgentMessage', 'conversation.latestMessage'])
             ->latest()
             ->get();
         $conversationReturnQuery = $this->conversationQueueReturnQuery($request);

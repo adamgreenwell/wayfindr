@@ -80,8 +80,10 @@ class Conversation extends Model
     public function latestAgentMessage(): HasOne
     {
         return $this->hasOne(ConversationMessage::class)
-            ->where('sender_type', User::class)
-            ->latestOfMany('created_at');
+            ->ofMany([
+                'created_at' => 'max',
+                'id' => 'max',
+            ], fn (Builder $query) => $query->where('sender_type', User::class));
     }
 
     public function readStates(): HasMany

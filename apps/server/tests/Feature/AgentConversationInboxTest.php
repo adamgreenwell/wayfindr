@@ -5776,6 +5776,81 @@ test('agent can close a linked ticket from their account conversation', function
         ->assertSee('Reopen ticket');
 });
 
+test('conversation detail surfaces linked ticket work cues', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-23 14:00:00', 'UTC'));
+
+    try {
+        $account = Account::factory()->create(['name' => 'Acme Support']);
+        $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+        $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+        $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-TICKETCUES',
+            'subject' => 'Checkout trouble',
+            'status' => 'open',
+            'last_message_at' => now()->subMinutes(4),
+        ]);
+        ConversationMessage::factory()->for($conversation)->create([
+            'sender_type' => User::class,
+            'sender_id' => $agent->id,
+            'body' => 'Try billing again after clearing the saved card.',
+            'created_at' => now()->subMinutes(6),
+        ]);
+        ConversationMessage::factory()->for($conversation)->create([
+            'sender_type' => Visitor::class,
+            'sender_id' => $visitor->id,
+            'body' => 'Checkout still fails after I enter billing.',
+            'created_at' => now()->subMinutes(4),
+        ]);
+        $ticket = Ticket::factory()
+            ->for($account)
+            ->for($site)
+            ->for($conversation)
+            ->for($visitor, 'requester')
+            ->for($agent, 'assignee')
+            ->create([
+                'subject' => 'Escalated checkout issue',
+                'status' => 'open',
+                'priority' => 'high',
+                'category' => 'billing',
+                'created_at' => now()->subMinutes(10),
+            ]);
+
+        $response = $this->actingAs($agent)
+            ->get('/dashboard/conversations/WF-TICKETCUES')
+            ->assertOk()
+            ->assertSee('Linked ticket work')
+            ->assertSee('Escalated checkout issue')
+            ->assertSee('Needs reply')
+            ->assertSee('Visitor replied last.')
+            ->assertSee('Opened 10 minutes ago')
+            ->assertSee('Waiting on reply for 4 minutes')
+            ->assertSee('Latest visitor message')
+            ->assertSee('Checkout still fails after I enter billing.')
+            ->assertSee('Not seen yet')
+            ->assertSee('Reply to visitor')
+            ->assertSee('Visitor replied last. Send a clear response, then mark the ticket pending or close it when the outcome is settled.')
+            ->assertSee("/dashboard/tickets/{$ticket->id}", false)
+            ->assertSee('Assign ticket')
+            ->assertSee('Mark pending')
+            ->assertSee('Close ticket');
+
+        $ticketPanel = str($response->getContent())
+            ->after('id="tickets-heading"')
+            ->before('id="cobrowse-heading"')
+            ->toString();
+
+        expect($ticketPanel)
+            ->toContain('Linked ticket work')
+            ->toContain('Visitor message')
+            ->toContain('Checkout still fails after I enter billing.')
+            ->toContain('Not seen yet')
+            ->not->toContain('No agent reply yet');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('agent can close a linked ticket with a resolution note from the conversation', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
