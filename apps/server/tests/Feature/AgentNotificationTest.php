@@ -808,6 +808,49 @@ test('agents can review visible unread and recent alerts in an alert center', fu
         ->assertDontSee('This should not be visible.');
 });
 
+test('alert center cards surface the next triage move', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $assigningAgent = User::factory()->for($account)->create(['name' => 'Bea Builder']);
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Acme Docs',
+        'public_key' => 'site_public_docs',
+    ]);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs-next']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'assigned_agent_id' => $agent->id,
+        'support_code' => 'WF-NEXTMOVE',
+        'subject' => 'Install next step',
+    ]);
+    $message = ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'Can someone help me finish the install?',
+    ]);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($agent, 'assignee')
+        ->create([
+            'subject' => 'Billing handoff',
+            'priority' => 'high',
+        ]);
+
+    $agent->notify(new ConversationNeedsReply($message));
+    $agent->notify(new TicketAssigned($ticket, $assigningAgent));
+
+    $this->actingAs($agent)
+        ->get('/dashboard/alerts')
+        ->assertOk()
+        ->assertSee('Next move')
+        ->assertSee('Open the conversation and reply while the visitor is waiting.')
+        ->assertSee('Open conversation')
+        ->assertSee('/dashboard/conversations/WF-NEXTMOVE', false)
+        ->assertSee('Open the assigned ticket and decide the owner, priority, or next status.')
+        ->assertSee('Open ticket')
+        ->assertSee("/dashboard/tickets/{$ticket->id}", false);
+});
+
 test('alert center explains personal alert delivery context', function (): void {
     $agent = User::factory()->for(Account::factory())->create([
         'alert_preferences' => [

@@ -3,6 +3,15 @@
     $notificationKind = data_get($notificationData, 'kind');
     $messageCount = max(1, (int) data_get($notificationData, 'message_count', 1));
     $alertStatusLabel = $notification->unread() ? 'Unread' : 'Read';
+    $alertActionUrl = data_get($notificationData, 'url');
+
+    if ($notificationKind === 'ticket_assigned') {
+        $alertActionLabel = 'Open ticket';
+        $alertNextMove = 'Open the assigned ticket and decide the owner, priority, or next status.';
+    } else {
+        $alertActionLabel = 'Open conversation';
+        $alertNextMove = 'Open the conversation and reply while the visitor is waiting.';
+    }
 @endphp
 
 <article class="message">
@@ -32,6 +41,10 @@
             <strong>Why this alert:</strong>
             This ticket was assigned to you. Open the ticket or mark this alert read once triaged.
         </p>
+        <p class="field-help">
+            <strong>Next move:</strong>
+            {{ $alertNextMove }}
+        </p>
         <p class="lede">
             <a class="text-link" href="{{ data_get($notificationData, 'url') }}">
                 Ticket #{{ data_get($notificationData, 'ticket_id') }}
@@ -48,6 +61,10 @@
             <strong>Why this alert:</strong>
             Visitor reply is waiting on a conversation you can support. Open the conversation or mark this alert read once handled.
         </p>
+        <p class="field-help">
+            <strong>Next move:</strong>
+            {{ $alertNextMove }}
+        </p>
         <p class="lede">
             <a class="text-link" href="{{ data_get($notificationData, 'url') }}">
                 {{ data_get($notificationData, 'support_code') }}
@@ -56,24 +73,30 @@
         </p>
     @endif
 
-    @if ($notification->unread())
-        <form method="POST" action="{{ route('dashboard.alerts.read', $notification) }}">
-            @csrf
-            @isset($alertReturnTo)
-                <input type="hidden" name="return_to" value="{{ $alertReturnTo }}">
-            @endisset
-            @if (($alertFilter ?? null) === 'unread')
-                <input type="hidden" name="alert_filter" value="unread">
-            @endif
-            @if (($alertKind ?? 'all') !== 'all')
-                <input type="hidden" name="alert_kind" value="{{ $alertKind }}">
-            @endif
-            @if (($alertSearch ?? '') !== '')
-                <input type="hidden" name="alert_search" value="{{ $alertSearch }}">
-            @endif
-            <button class="button secondary" type="submit">Mark read</button>
-        </form>
-    @else
-        <p class="lede">Already read.</p>
-    @endif
+    <div class="section-actions">
+        @if ($alertActionUrl)
+            <a class="button" href="{{ $alertActionUrl }}">{{ $alertActionLabel }}</a>
+        @endif
+
+        @if ($notification->unread())
+            <form method="POST" action="{{ route('dashboard.alerts.read', $notification) }}">
+                @csrf
+                @isset($alertReturnTo)
+                    <input type="hidden" name="return_to" value="{{ $alertReturnTo }}">
+                @endisset
+                @if (($alertFilter ?? null) === 'unread')
+                    <input type="hidden" name="alert_filter" value="unread">
+                @endif
+                @if (($alertKind ?? 'all') !== 'all')
+                    <input type="hidden" name="alert_kind" value="{{ $alertKind }}">
+                @endif
+                @if (($alertSearch ?? '') !== '')
+                    <input type="hidden" name="alert_search" value="{{ $alertSearch }}">
+                @endif
+                <button class="button secondary" type="submit">Mark read</button>
+            </form>
+        @else
+            <p class="lede">Already read.</p>
+        @endif
+    </div>
 </article>
