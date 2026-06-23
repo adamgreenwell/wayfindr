@@ -553,6 +553,46 @@
                     <span class="lede">{{ $ticketExternalIssueHealth['total'] }} total</span>
                 </div>
 
+                <div id="ticket-external-handoff-readiness" aria-labelledby="ticket-external-handoff-readiness-heading">
+                    <div class="section-header">
+                        <h2 id="ticket-external-handoff-readiness-heading">External handoff readiness</h2>
+                        <span class="readiness-status" data-status="{{ $ticketExternalIssueHandoffReadiness['tone'] }}">{{ $ticketExternalIssueHandoffReadiness['label'] }}</span>
+                    </div>
+
+                    <div class="meta-grid">
+                        <div class="meta-item">
+                            <span class="meta-label">Issue creation</span>
+                            <span class="meta-value">{{ $ticketExternalIssueHandoffReadiness['summary'] }}</span>
+                            <span class="lede">{{ $ticketExternalIssueHandoffReadiness['detail'] }}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Data boundary</span>
+                            <span class="meta-value">Safe summary only</span>
+                            <span class="lede">No raw transcripts, cobrowse snapshots, visitor identifiers, or internal notes are exported by default.</span>
+                        </div>
+                    </div>
+
+                    @if ($ticketExternalIssueHandoffReadiness['projects']->isEmpty())
+                        <p class="empty">No external issue project is mapped for this site yet.</p>
+                    @else
+                        <div class="message-list">
+                            @foreach ($ticketExternalIssueHandoffReadiness['projects'] as $project)
+                                <article class="message-card">
+                                    <div class="message-meta">
+                                        <strong>{{ $project['provider_name'] }}</strong>
+                                        <span>{{ $project['provider_label'] }}</span>
+                                    </div>
+                                    <p>
+                                        <span>{{ $project['project_key'] }}</span>
+                                        <span class="readiness-status" data-status="{{ $project['state']['tone'] }}">{{ $project['state']['label'] }}</span>
+                                    </p>
+                                    <p class="lede">{{ $project['state']['detail'] }}</p>
+                                </article>
+                            @endforeach
+                        </div>
+                    @endif
+                </div>
+
                 <div id="ticket-external-issue-health" aria-labelledby="ticket-external-issue-health-heading">
                     <div class="section-header">
                         <h2 id="ticket-external-issue-health-heading">External issue health</h2>

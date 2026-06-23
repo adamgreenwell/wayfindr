@@ -95,6 +95,7 @@ class AgentTicketController extends Controller
             'ticketPriorityGuidance' => TicketPriority::guidanceOptions(),
             'ticket' => $ticket,
             'ticketArtifactCoverage' => $this->ticketArtifactCoverage($ticket),
+            'ticketExternalIssueHandoffReadiness' => $this->ticketExternalIssueHandoffReadiness($ticket),
             'ticketExternalIssueHealth' => $this->ticketExternalIssueHealth($ticket),
             'visitorContext' => $this->visitorContext($ticket, $visitorContextSanitizer),
             'priorVisitorConversations' => $this->priorVisitorConversations($ticket),
@@ -1103,6 +1104,53 @@ class AgentTicketController extends Controller
                 && $project->providerConnection->is_enabled
                 && $project->hasCapability('create_issue'))
             ->values();
+    }
+
+    /**
+     * @return array{
+     *     label: string,
+     *     tone: string,
+     *     summary: string,
+     *     detail: string,
+     *     projects: Collection<int, array{provider_name: string, provider_label: string, project_key: string, state: array{label: string, detail: string, tone: string}}>
+     * }
+     */
+    private function ticketExternalIssueHandoffReadiness(Ticket $ticket): array
+    {
+        $projects = $ticket->site->externalIssueProjects
+            ->filter(fn (SiteExternalIssueProject $project): bool => (int) $project->account_id === (int) $ticket->account_id
+                && (int) $project->site_id === (int) $ticket->site_id)
+            ->values();
+        $readyCount = $projects
+            ->filter(fn (SiteExternalIssueProject $project): bool => $project->supportsIssueCreationHandoff())
+            ->count();
+        $mappedCount = $projects->count();
+
+        return [
+            'label' => match (true) {
+                $mappedCount === 0 => 'Not configured',
+                $readyCount > 0 => 'Ready to create',
+                default => 'Setup needed',
+            },
+            'tone' => match (true) {
+                $readyCount > 0 => 'ready',
+                $mappedCount === 0 => 'manual',
+                default => 'attention',
+            },
+            'summary' => $readyCount.' handoff-ready '.Str::plural('project', $readyCount),
+            'detail' => match (true) {
+                $mappedCount === 0 => 'Map external issue routing in site settings before creating issues from tickets.',
+                $readyCount > 0 => 'Create an external issue only when another tracker owns part of the follow-up.',
+                default => 'Manual references can still be attached when another tracker already has an issue.',
+            },
+            'projects' => $projects
+                ->map(fn (SiteExternalIssueProject $project): array => [
+                    'provider_name' => $project->providerConnection?->name ?? 'External tracker',
+                    'provider_label' => $project->providerLabel(),
+                    'project_key' => $project->project_key,
+                    'state' => $project->issueCreationHandoffState(),
+                ]),
+        ];
     }
 
     /**

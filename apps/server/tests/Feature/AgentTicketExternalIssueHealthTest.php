@@ -12,6 +12,119 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
+test('ticket detail shows external handoff readiness for issue creation projects', function (): void {
+    [$agent, $ticket] = ticketExternalIssueHealthContext();
+    $connection = ExternalIssueProviderConnection::factory()
+        ->for($ticket->account)
+        ->create([
+            'provider' => 'github',
+            'name' => 'Engineering GitHub',
+            'credentials' => ['token' => 'ghp_ticket_secret'],
+            'capabilities' => [
+                'create_issue' => true,
+                'add_comment' => false,
+                'sync_status' => false,
+            ],
+        ]);
+
+    SiteExternalIssueProject::factory()
+        ->for($ticket->account)
+        ->for($ticket->site)
+        ->for($connection, 'providerConnection')
+        ->create([
+            'project_key' => 'adamgreenwell/wayfindr',
+            'project_name' => 'Wayfindr',
+        ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.tickets.show', $ticket))
+        ->assertOk()
+        ->assertSeeInOrder([
+            'External handoff readiness',
+            'Ready to create',
+            '1 handoff-ready project',
+            'Engineering GitHub',
+            'GitHub',
+            'adamgreenwell/wayfindr',
+            'Handoff ready',
+            'Safe summary only',
+        ])
+        ->assertSee('Create an external issue only when another tracker owns part of the follow-up.')
+        ->assertSee('No raw transcripts, cobrowse snapshots, visitor identifiers, or internal notes are exported by default.')
+        ->assertDontSee('ghp_ticket_secret');
+});
+
+test('ticket detail explains link only and blocked external handoff mappings', function (): void {
+    [$agent, $ticket] = ticketExternalIssueHealthContext();
+    $linkOnlyConnection = ExternalIssueProviderConnection::factory()
+        ->for($ticket->account)
+        ->create([
+            'provider' => 'github',
+            'name' => 'Readonly GitHub',
+            'capabilities' => [
+                'create_issue' => false,
+                'add_comment' => false,
+                'sync_status' => false,
+            ],
+        ]);
+    $disabledConnection = ExternalIssueProviderConnection::factory()
+        ->for($ticket->account)
+        ->create([
+            'is_enabled' => false,
+            'provider' => 'gitlab',
+            'name' => 'Dormant GitLab',
+            'capabilities' => [
+                'create_issue' => true,
+                'add_comment' => false,
+                'sync_status' => false,
+            ],
+        ]);
+
+    SiteExternalIssueProject::factory()
+        ->for($ticket->account)
+        ->for($ticket->site)
+        ->for($linkOnlyConnection, 'providerConnection')
+        ->create(['project_key' => 'acme/kb']);
+    SiteExternalIssueProject::factory()
+        ->for($ticket->account)
+        ->for($ticket->site)
+        ->for($disabledConnection, 'providerConnection')
+        ->create(['project_key' => 'acme/status']);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.tickets.show', $ticket))
+        ->assertOk()
+        ->assertSeeInOrder([
+            'External handoff readiness',
+            'Setup needed',
+            '0 handoff-ready projects',
+            'Readonly GitHub',
+            'acme/kb',
+            'Link only',
+            'External issue creation is not enabled.',
+            'Dormant GitLab',
+            'acme/status',
+            'Blocked',
+            'Provider connection is disabled.',
+        ])
+        ->assertSee('Manual references can still be attached when another tracker already has an issue.');
+});
+
+test('ticket detail guides agents when external issue routing is unmapped', function (): void {
+    [$agent, $ticket] = ticketExternalIssueHealthContext();
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.tickets.show', $ticket))
+        ->assertOk()
+        ->assertSeeInOrder([
+            'External handoff readiness',
+            'Not configured',
+            '0 handoff-ready projects',
+            'Map external issue routing in site settings before creating issues from tickets.',
+            'No external issue project is mapped for this site yet.',
+        ]);
+});
+
 test('ticket detail shows healthy external issue health for linked external issues', function (): void {
     [$agent, $ticket] = ticketExternalIssueHealthContext();
 

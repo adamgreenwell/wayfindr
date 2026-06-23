@@ -105,6 +105,9 @@ Expected pieces:
 - A site-level external issue health readout that summarizes local link sync
   states and recent sanitized provider failures without calling external
   providers or exposing credentials.
+- A ticket-level external handoff readiness readout that shows whether the
+  ticket's site has an issue-creation-capable project mapping before an agent
+  tries to send work to another tracker.
 - Adapter interfaces for creating an external issue, adding comments, fetching
   status, and handling webhooks when supported.
 - Audit events for external issue creation, sync attempts, sync failures, and
