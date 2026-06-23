@@ -26,6 +26,83 @@
                 </section>
             @endif
 
+            @php
+                $accountMapItems = [
+                    [
+                        'label' => 'Account boundary',
+                        'detail' => 'Role, site count, visible scope, and support assignments.',
+                        'href' => '#account-context-heading',
+                    ],
+                    [
+                        'label' => 'Role boundary',
+                        'detail' => 'How account authority differs from site-level access.',
+                        'href' => '#role-boundary-heading',
+                    ],
+                    [
+                        'label' => 'Site access',
+                        'detail' => 'Which support sites and queues are visible to the roster.',
+                        'href' => '#site-access-matrix',
+                    ],
+                ];
+
+                if ($canViewExternalIssueReadiness && $externalIssueReadiness) {
+                    $accountMapItems[] = [
+                        'label' => 'External issue readiness',
+                        'detail' => 'Provider routing health for ticket handoff.',
+                        'href' => '#external-issue-readiness-heading',
+                    ];
+                }
+
+                $accountMapItems[] = [
+                    'label' => 'Account activity',
+                    'detail' => 'Recent account access, roster, and support-scope changes.',
+                    'href' => '#account-activity-heading',
+                ];
+
+                if ($canCreateAgents) {
+                    $accountMapItems[] = [
+                        'label' => 'Add agent',
+                        'detail' => 'Invite a teammate with a generated temporary password.',
+                        'href' => '#add-agent-heading',
+                    ];
+                }
+
+                if ($canViewAlertDelivery && $agentAlertReadinessSummary) {
+                    $accountMapItems[] = [
+                        'label' => 'Team alert readiness',
+                        'detail' => 'Notification delivery posture across active agents.',
+                        'href' => '#team-alert-readiness-heading',
+                    ];
+                }
+
+                $accountMapItems[] = [
+                    'label' => 'Agents',
+                    'detail' => 'Roster, role, support scope, workload, and delivery state.',
+                    'href' => '#agents',
+                ];
+            @endphp
+
+            <section class="section" aria-labelledby="account-map-heading">
+                <div class="section-header">
+                    <div>
+                        <h2 id="account-map-heading">Account map</h2>
+                        <p class="lede">Jump to the account sections available to your role.</p>
+                    </div>
+                    <span class="lede">{{ count($accountMapItems) }} {{ \Illuminate\Support\Str::plural('section', count($accountMapItems)) }}</span>
+                </div>
+                <div class="management-list">
+                    @foreach ($accountMapItems as $accountMapItem)
+                        <a class="management-link" href="{{ $accountMapItem['href'] }}">
+                            <span>
+                                <strong>{{ $accountMapItem['label'] }}</strong>
+                                <span class="lede">{{ $accountMapItem['detail'] }}</span>
+                            </span>
+                            <span class="management-action">Open</span>
+                        </a>
+                    @endforeach
+                </div>
+            </section>
+
             <section class="section" aria-labelledby="account-context-heading">
                 <div class="section-header">
                     <h2 id="account-context-heading">{{ $account->name }}</h2>

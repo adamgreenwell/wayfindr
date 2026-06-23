@@ -81,6 +81,59 @@ test('agent can inspect their account role and same-account roster', function ()
         ->assertDontSee('Restricted Store');
 });
 
+test('account overview gives admins a section map for management work', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'name' => 'Ada Admin',
+    ]);
+    Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+
+    $this->actingAs($admin)
+        ->get('/dashboard/account')
+        ->assertOk()
+        ->assertSee('Account map')
+        ->assertSee('Jump to the account sections available to your role.')
+        ->assertSee('href="#account-context-heading"', false)
+        ->assertSee('Account boundary')
+        ->assertSee('href="#role-boundary-heading"', false)
+        ->assertSee('Role boundary')
+        ->assertSee('href="#site-access-matrix"', false)
+        ->assertSee('Site access')
+        ->assertSee('href="#external-issue-readiness-heading"', false)
+        ->assertSee('External issue readiness')
+        ->assertSee('href="#account-activity-heading"', false)
+        ->assertSee('Account activity')
+        ->assertSee('href="#add-agent-heading"', false)
+        ->assertSee('Add agent')
+        ->assertSee('href="#team-alert-readiness-heading"', false)
+        ->assertSee('Team alert readiness')
+        ->assertSee('href="#agents"', false)
+        ->assertSee('Agents');
+});
+
+test('account overview section map hides admin only sections from regular agents', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'name' => 'Bea Builder',
+    ]);
+    Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/account')
+        ->assertOk()
+        ->assertSee('Account map')
+        ->assertSee('href="#account-context-heading"', false)
+        ->assertSee('href="#role-boundary-heading"', false)
+        ->assertSee('href="#site-access-matrix"', false)
+        ->assertSee('href="#account-activity-heading"', false)
+        ->assertSee('href="#agents"', false)
+        ->assertDontSee('href="#external-issue-readiness-heading"', false)
+        ->assertDontSee('href="#add-agent-heading"', false)
+        ->assertDontSee('href="#team-alert-readiness-heading"', false);
+});
+
 test('agent can inspect visible site access from the account overview', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $owner = User::factory()->for($account)->create([
