@@ -83,17 +83,19 @@ test('operator console shows a safe focus summary for the current instance postu
         'note' => 'Restore proof mentioned anon-focus-secret.',
     ]);
 
-    AuditEvent::query()->create([
-        'account_id' => $operator->account_id,
-        'actor_type' => $operator->getMorphClass(),
-        'actor_id' => $operator->id,
-        'action' => 'operator_readiness.confirmed',
-        'metadata' => [
-            'key' => 'scheduler',
-            'note' => 'Support code WF-OPFOCUS was checked.',
-        ],
-        'occurred_at' => now()->subMinutes(5),
-    ]);
+    foreach (range(1, 9) as $index) {
+        AuditEvent::query()->create([
+            'account_id' => $operator->account_id,
+            'actor_type' => $operator->getMorphClass(),
+            'actor_id' => $operator->id,
+            'action' => 'operator_readiness.confirmed',
+            'metadata' => [
+                'key' => 'scheduler',
+                'note' => 'Support code WF-OPFOCUS was checked.',
+            ],
+            'occurred_at' => now()->subMinutes($index),
+        ]);
+    }
 
     $this->actingAs($operator)
         ->get('/operator')
@@ -104,7 +106,7 @@ test('operator console shows a safe focus summary for the current instance postu
         ->assertSee('Proof coverage')
         ->assertSee('1 current / 1 stale / 0 missing')
         ->assertSee('Safe activity')
-        ->assertSee('1 safe event')
+        ->assertSee('9 total safe events')
         ->assertSee('Support data')
         ->assertSee('Hidden here')
         ->assertSee('Use this console to keep the installation healthy without opening customer support data.')

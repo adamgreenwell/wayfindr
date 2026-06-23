@@ -3,6 +3,7 @@
         $readinessConfirmationRoute = route('operator.readiness.confirmations.store');
         $operatorActivityCount = $operatorActivity->count();
         $operatorActivityLabel = $operatorActivityCount === 1 ? '1 safe event' : $operatorActivityCount.' safe events';
+        $operatorActivityTotalLabel = $operatorActivityTotal === 1 ? '1 total safe event' : $operatorActivityTotal.' total safe events';
         $proofCoverageSummary = sprintf(
             '%d current / %d stale / %d missing',
             $readiness['proof_coverage']['fresh_count'],
@@ -39,7 +40,7 @@
             </div>
             <div class="meta-item">
                 <span class="meta-label">Safe activity</span>
-                <span class="meta-value">{{ $operatorActivityLabel }}</span>
+                <span class="meta-value">{{ $operatorActivityTotalLabel }}</span>
             </div>
             <div class="meta-item">
                 <span class="meta-label">Support data</span>

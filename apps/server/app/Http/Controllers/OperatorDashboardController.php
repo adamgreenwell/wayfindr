@@ -21,6 +21,7 @@ class OperatorDashboardController extends Controller
         return view('operator.dashboard', [
             'operator' => $request->user(),
             'operatorActivity' => $this->operatorActivity(),
+            'operatorActivityTotal' => $this->operatorActivityTotal(),
             'readiness' => $readiness->summary(),
             'systemIdentity' => $systemIdentity->summary(),
         ]);
@@ -45,6 +46,13 @@ class OperatorDashboardController extends Controller
                 'label' => $this->operatorActivityLabel($event),
                 'occurred_at' => $event->occurred_at,
             ]);
+    }
+
+    private function operatorActivityTotal(): int
+    {
+        return AuditEvent::query()
+            ->whereIn('action', $this->operatorActivityActions())
+            ->count();
     }
 
     /**
