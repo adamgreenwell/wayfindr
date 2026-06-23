@@ -14,6 +14,127 @@ use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
+test('ticket detail opens with an agent brief for the next ticket move', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-23 15:00:00', 'UTC'));
+
+    try {
+        [$agent, $site, $visitor, $conversation] = ticketWorkStateContext();
+
+        ConversationMessage::factory()->for($conversation)->create([
+            'body' => 'Checkout still fails after I enter billing.',
+            'created_at' => now()->subMinutes(4),
+            'sender_id' => $visitor->id,
+            'sender_type' => Visitor::class,
+        ]);
+
+        $ticket = Ticket::factory()
+            ->for($agent->account)
+            ->for($site)
+            ->for($conversation)
+            ->for($visitor, 'requester')
+            ->for($agent, 'assignee')
+            ->create([
+                'category' => 'billing',
+                'priority' => 'high',
+                'subject' => 'Checkout billing failure',
+            ]);
+
+        AuditEvent::factory()
+            ->for($agent->account)
+            ->for($ticket, 'subject')
+            ->create([
+                'action' => 'ticket.note_added',
+                'actor_id' => $agent->id,
+                'actor_type' => User::class,
+                'metadata' => [
+                    'body' => 'Private finance escalation context.',
+                ],
+                'occurred_at' => now()->subMinutes(2),
+                'site_id' => $site->id,
+            ]);
+
+        $response = $this->actingAs($agent)
+            ->get(route('dashboard.tickets.show', $ticket))
+            ->assertOk()
+            ->assertSeeInOrder([
+                'Ticket brief',
+                'Needs reply',
+                'Reply to visitor',
+                'Ticket map',
+            ]);
+
+        $briefHtml = Str::betweenFirst(
+            $response->content(),
+            '<section class="section agent-brief" aria-labelledby="ticket-agent-brief-heading">',
+            '</section>'
+        );
+
+        expect($briefHtml)
+            ->toContain('Checkout billing failure')
+            ->toContain('Ada Agent')
+            ->toContain('High')
+            ->toContain('Billing')
+            ->toContain('Visitor message')
+            ->toContain('Checkout still fails after I enter billing.')
+            ->toContain('Waiting on reply for 4 minutes')
+            ->toContain('Jump to reply')
+            ->toContain('href="#ticket-reply"')
+            ->toContain('WF-WORKSTATE')
+            ->not->toContain('Private finance escalation context.');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+test('ticket detail agent brief keeps pending tickets calm', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-06-23 16:00:00', 'UTC'));
+
+    try {
+        [$agent, $site, $visitor, $conversation] = ticketWorkStateContext();
+
+        ConversationMessage::factory()->for($conversation)->create([
+            'body' => 'I sent the next troubleshooting step.',
+            'created_at' => now()->subMinutes(12),
+            'seen_at' => now()->subMinutes(9),
+            'sender_id' => $agent->id,
+            'sender_type' => User::class,
+        ]);
+
+        $ticket = Ticket::factory()
+            ->for($agent->account)
+            ->for($site)
+            ->for($conversation)
+            ->for($visitor, 'requester')
+            ->for($agent, 'assignee')
+            ->create([
+                'status' => 'pending',
+                'subject' => 'Waiting on customer confirmation',
+            ]);
+
+        $response = $this->actingAs($agent)
+            ->get(route('dashboard.tickets.show', $ticket))
+            ->assertOk();
+
+        $briefHtml = Str::betweenFirst(
+            $response->content(),
+            '<section class="section agent-brief" aria-labelledby="ticket-agent-brief-heading">',
+            '</section>'
+        );
+
+        expect($briefHtml)
+            ->toContain('Waiting on customer confirmation')
+            ->toContain('Waiting on customer')
+            ->toContain('Wait on customer')
+            ->toContain('Visitor saw reply')
+            ->toContain('Seen 9 minutes ago')
+            ->toContain('Status safety')
+            ->toContain('Pending ticket')
+            ->toContain('This ticket is pending. Reopen it when the visitor answers or new work is needed.');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 test('ticket detail work state summarizes latest visitor activity and reply action', function (): void {
     [$agent, $site, $visitor, $conversation] = ticketWorkStateContext();
 

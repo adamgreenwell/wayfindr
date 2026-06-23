@@ -63,6 +63,82 @@
                     ['label' => 'Activity', 'href' => '#ticket-activity-heading'],
                 ];
             @endphp
+            <section class="section agent-brief" aria-labelledby="ticket-agent-brief-heading">
+                <div class="section-header">
+                    <div>
+                        <h2 id="ticket-agent-brief-heading">Ticket brief</h2>
+                        <p class="lede">{{ $ticket->subject }}</p>
+                    </div>
+                    <span class="readiness-status" data-status="{{ $ticketReplyVisibility['tone'] }}">
+                        {{ $ticket->attentionLabel() }}
+                    </span>
+                </div>
+
+                <div class="meta-grid">
+                    <div class="meta-item">
+                        <span class="meta-label">Owner</span>
+                        <span class="meta-value">{{ $ticket->assignee?->name ?? 'Unassigned' }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Priority</span>
+                        <span class="meta-value">{{ ucfirst($ticket->priority) }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Category</span>
+                        <span class="meta-value">{{ $ticket->categoryLabel() }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Reference</span>
+                        <span class="meta-value">
+                            @if ($ticket->conversation)
+                                <x-support-code-reference
+                                    :code="$ticket->conversation->support_code"
+                                    :href="route('dashboard.conversations.show', $ticket->conversation->support_code)"
+                                />
+                            @else
+                                Ticket #{{ $ticket->id }}
+                            @endif
+                        </span>
+                    </div>
+                </div>
+
+                <div class="notice-copy notice-copy-bordered">
+                    <p><strong>{{ $ticketActivityPreview['label'] }}</strong></p>
+                    <p>{{ $ticketActivityPreview['body'] }}</p>
+                    <p class="table-note">{{ $ticketTiming['wait_label'] }}</p>
+                </div>
+
+                <div class="filter-summary">
+                    <div>
+                        <strong>{{ $ticketNextAction['title'] }}</strong>
+                        <p class="lede">{{ $ticketNextAction['body'] }}</p>
+                    </div>
+                    <div class="filter-chips">
+                        <a class="button" href="{{ $ticketNextAction['href'] }}">
+                            {{ $ticketNextAction['cta'] }}
+                        </a>
+                        @if ($ticket->conversation)
+                            <a class="button secondary" href="{{ route('dashboard.conversations.show', $ticket->conversation->support_code) }}">
+                                Open conversation
+                            </a>
+                        @endif
+                    </div>
+                </div>
+
+                <div class="meta-grid">
+                    <div class="meta-item">
+                        <span class="meta-label">Reply visibility</span>
+                        <span class="meta-value">{{ $ticketReplyVisibility['label'] }}</span>
+                        <span class="lede">{{ $ticketReplyVisibility['detail'] }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Status safety</span>
+                        <span class="meta-value">{{ $ticketStatusActionReadiness['title'] }}</span>
+                        <span class="lede">{{ $ticketStatusActionReadiness['detail'] }}</span>
+                    </div>
+                </div>
+            </section>
+
             <section class="section" aria-labelledby="ticket-map-heading">
                 <div class="section-header">
                     <h2 id="ticket-map-heading">Ticket map</h2>
