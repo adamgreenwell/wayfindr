@@ -337,13 +337,30 @@ test('conversation detail gives agents a section map for the workspace', functio
         ->assertOk()
         ->assertSee('Conversation map')
         ->assertSee('Jump to what this conversation needs next.')
+        ->assertSeeInOrder([
+            'Conversation map',
+            'Context',
+            'Visitor',
+            'Messages',
+            'Reply',
+            'Ticket',
+            'Cobrowse',
+            'Status',
+        ])
         ->assertSee('href="#conversation-context-heading"', false)
         ->assertSee('href="#visitor-context-heading"', false)
-        ->assertSee('href="#tickets-heading"', false)
-        ->assertSee('href="#cobrowse-heading"', false)
         ->assertSee('href="#messages-heading"', false)
         ->assertSee('href="#reply-heading"', false)
-        ->assertSee('href="#conversation-status-action"', false);
+        ->assertSee('href="#tickets-heading"', false)
+        ->assertSee('href="#cobrowse-heading"', false)
+        ->assertSee('href="#conversation-status-action"', false)
+        ->assertSeeInOrder([
+            'id="visitor-context-heading"',
+            'id="messages-heading"',
+            'id="reply-heading"',
+            'id="tickets-heading"',
+            'id="cobrowse-heading"',
+        ], false);
 });
 
 test('conversation detail recommends the next action for the conversation state', function (): void {

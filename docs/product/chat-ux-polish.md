@@ -72,3 +72,15 @@ Read labels avoid implying delivery guarantees:
 
 These labels should remain secondary context. They help agents decide whether to
 wait, clarify, or follow up without turning normal visitor silence into an alarm.
+
+## Conversation Workspace Priority
+
+Conversation detail pages should keep the primary support loop close to the top:
+context, visitor reference, messages, then reply. Tickets and cobrowse remain
+important adjacent workspaces, but they should not force agents to scroll past
+diagnostics before reading or answering the visitor.
+
+This order matters most when cobrowse is active, because page state, snapshots,
+replay previews, and transport telemetry can grow long. The agent should be able
+to answer the visitor first, then move into ticketing or cobrowse when the
+current step calls for it.
