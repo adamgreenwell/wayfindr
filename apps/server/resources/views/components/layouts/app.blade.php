@@ -1168,6 +1168,10 @@
             </header>
 
             <main class="page">
+                @if (session('support_code_lookup_result'))
+                    <p class="status-message">{{ session('support_code_lookup_result') }}</p>
+                @endif
+
                 {{ $slot }}
             </main>
         </div>

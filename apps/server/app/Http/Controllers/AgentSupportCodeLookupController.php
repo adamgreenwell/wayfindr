@@ -38,7 +38,9 @@ class AgentSupportCodeLookupController extends Controller
             $visitor = $this->visibleVisitor($lookupReference, $agent);
 
             if ($visitor) {
-                return redirect()->route('dashboard.visitors.show', $visitor);
+                return redirect()
+                    ->route('dashboard.visitors.show', $visitor)
+                    ->with('support_code_lookup_result', $this->visitorMatchedMessage($lookupReference));
             }
 
             return $this->notFound($lookupReference);
@@ -65,7 +67,9 @@ class AgentSupportCodeLookupController extends Controller
                 ->first();
 
             if ($ticket && Gate::forUser($agent)->allows('view', $ticket)) {
-                return redirect()->route('dashboard.tickets.show', $ticket);
+                return redirect()
+                    ->route('dashboard.tickets.show', $ticket)
+                    ->with('support_code_lookup_result', $this->ticketMatchedMessage($ticketReferenceId));
             }
 
             if (! ctype_digit($lookupReference)) {
@@ -84,7 +88,9 @@ class AgentSupportCodeLookupController extends Controller
         $visitor = $this->visibleVisitor($lookupReference, $agent);
 
         if ($visitor && Gate::forUser($agent)->allows('view', $visitor)) {
-            return redirect()->route('dashboard.visitors.show', $visitor);
+            return redirect()
+                ->route('dashboard.visitors.show', $visitor)
+                ->with('support_code_lookup_result', $this->visitorMatchedMessage($lookupReference));
         }
 
         return $this->notFound($this->displayReference($lookupReference, $supportCode));
@@ -168,10 +174,14 @@ class AgentSupportCodeLookupController extends Controller
             ->first(fn (Ticket $ticket): bool => Gate::forUser($agent)->allows('view', $ticket));
 
         if ($ticket) {
-            return redirect()->route('dashboard.tickets.show', $ticket);
+            return redirect()
+                ->route('dashboard.tickets.show', $ticket)
+                ->with('support_code_lookup_result', $this->supportCodeMatchedMessage($supportCode));
         }
 
-        return redirect()->route('dashboard.conversations.show', $conversation->support_code);
+        return redirect()
+            ->route('dashboard.conversations.show', $conversation->support_code)
+            ->with('support_code_lookup_result', $this->supportCodeMatchedMessage($supportCode));
     }
 
     private function supportCodeReference(string $lookupReference): string
@@ -201,6 +211,21 @@ class AgentSupportCodeLookupController extends Controller
             ->latest('last_seen_at')
             ->latest('id')
             ->first();
+    }
+
+    private function supportCodeMatchedMessage(string $supportCode): string
+    {
+        return 'Matched support code '.$supportCode.'.';
+    }
+
+    private function ticketMatchedMessage(int $ticketId): string
+    {
+        return 'Matched ticket reference Ticket #'.$ticketId.'.';
+    }
+
+    private function visitorMatchedMessage(string $lookupReference): string
+    {
+        return 'Matched visitor ID '.$lookupReference.'.';
     }
 
     private function displayReference(string $lookupReference, string $supportCode): string

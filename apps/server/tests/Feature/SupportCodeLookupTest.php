@@ -53,6 +53,29 @@ test('agents can jump to a visible conversation by support code', function (): v
         ->assertRedirect(route('dashboard.conversations.show', $conversation->support_code));
 });
 
+test('successful support code lookups tell agents what matched', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $conversation = Conversation::factory()->for($site)->create([
+        'support_code' => 'WF-MATCHED',
+        'subject' => 'Matched conversation',
+    ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.support-code.lookup', [
+            'support_code' => ' wf-matched ',
+        ]))
+        ->assertRedirect(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertSessionHas('support_code_lookup_result', 'Matched support code WF-MATCHED.');
+
+    $this->actingAs($agent)
+        ->withSession(['support_code_lookup_result' => 'Matched support code WF-MATCHED.'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->assertSee('Matched support code WF-MATCHED.');
+});
+
 test('agents can jump to a visible conversation from pasted support code context', function (string $reference): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create();
@@ -131,6 +154,31 @@ test('agents jump to the linked ticket when a visible support code has one', fun
         ->assertRedirect(route('dashboard.tickets.show', $ticket));
 });
 
+test('successful ticket reference lookups tell agents what matched', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->create([
+            'subject' => 'Matched ticket',
+        ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.support-code.lookup', [
+            'support_code' => 'Ticket #'.$ticket->id,
+        ]))
+        ->assertRedirect(route('dashboard.tickets.show', $ticket))
+        ->assertSessionHas('support_code_lookup_result', 'Matched ticket reference Ticket #'.$ticket->id.'.');
+
+    $this->actingAs($agent)
+        ->withSession(['support_code_lookup_result' => 'Matched ticket reference Ticket #'.$ticket->id.'.'])
+        ->get(route('dashboard.tickets.show', $ticket))
+        ->assertOk()
+        ->assertSee('Matched ticket reference Ticket #'.$ticket->id.'.');
+});
+
 test('agents can jump to a visible ticket by ticket reference', function (string $ticketReference): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create();
@@ -187,6 +235,29 @@ test('agents can jump to a visible visitor profile by anonymous visitor id', fun
             'support_code' => ' anon-support-trail ',
         ]))
         ->assertRedirect(route('dashboard.visitors.show', $visitor));
+});
+
+test('successful visitor id lookups tell agents what matched', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-match-context',
+        'external_id' => 'customer-match-context',
+    ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.support-code.lookup', [
+            'support_code' => 'customer-match-context',
+        ]))
+        ->assertRedirect(route('dashboard.visitors.show', $visitor))
+        ->assertSessionHas('support_code_lookup_result', 'Matched visitor ID customer-match-context.');
+
+    $this->actingAs($agent)
+        ->withSession(['support_code_lookup_result' => 'Matched visitor ID customer-match-context.'])
+        ->get(route('dashboard.visitors.show', $visitor))
+        ->assertOk()
+        ->assertSee('Matched visitor ID customer-match-context.');
 });
 
 test('agents can jump to a visible visitor profile by host visitor id', function (): void {
