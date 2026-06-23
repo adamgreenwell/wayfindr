@@ -155,7 +155,20 @@
                 @endif
 
                 @if ($conversations->isEmpty())
-                    <p class="empty">{{ $conversationEmptyMessage }}</p>
+                    <div class="empty empty-state">
+                        <strong>{{ $conversationEmptyState['heading'] }}</strong>
+                        <p class="lede">{{ $conversationEmptyState['detail'] }}</p>
+
+                        @if ($conversationEmptyState['actions'] !== [])
+                            <div class="empty-state-actions">
+                                @foreach ($conversationEmptyState['actions'] as $emptyStateAction)
+                                    <a class="button secondary" href="{{ $emptyStateAction['href'] }}">
+                                        {{ $emptyStateAction['label'] }}
+                                    </a>
+                                @endforeach
+                            </div>
+                        @endif
+                    </div>
                 @else
                     <div class="table-wrap">
                         <table>

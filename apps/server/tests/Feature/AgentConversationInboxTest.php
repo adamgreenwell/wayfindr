@@ -679,6 +679,58 @@ test('dashboard searches conversations by subject support code and visitor refer
         ->assertDontSee('Invoice export problem');
 });
 
+test('conversation queue gives agents a clearer empty search recovery state', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-conversation-empty']);
+
+    Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-EMPTYSEARCH',
+        'subject' => 'Checkout question',
+        'status' => 'open',
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations?conversation_search=missing')
+        ->assertOk()
+        ->assertSee('No conversations match "missing".')
+        ->assertSee('Search covers subject, support code, visitor ID, visitor name, and visitor email.')
+        ->assertSee('Clear search')
+        ->assertSee('Clear all conversation filters')
+        ->assertDontSee('Checkout question');
+});
+
+test('conversation queue gives agents a clearer empty support lane recovery state', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-conversation-lane']);
+
+    $waitingConversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-WAITONLY',
+        'subject' => 'Visitor has the next step',
+        'status' => 'open',
+        'last_message_at' => now()->subMinute(),
+    ]);
+    ConversationMessage::factory()->for($waitingConversation)->create([
+        'sender_type' => User::class,
+        'sender_id' => $agent->id,
+        'body' => 'Can you try this next?',
+        'created_at' => now()->subMinute(),
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations?conversation_filter=needs_reply')
+        ->assertOk()
+        ->assertSee('No conversations need a reply right now.')
+        ->assertSee('Try another support lane or clear the lane filter.')
+        ->assertSee('1 conversation matches the other queue filters.')
+        ->assertSee('Clear support lane')
+        ->assertSee('Clear all conversation filters')
+        ->assertDontSee('Visitor has the next step');
+});
+
 test('dashboard filters conversations by visible site', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $otherAccount = Account::factory()->create(['name' => 'Other Support']);

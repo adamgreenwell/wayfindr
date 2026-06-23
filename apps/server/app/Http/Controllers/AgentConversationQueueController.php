@@ -40,6 +40,7 @@ class AgentConversationQueueController extends Controller
      *     cobrowseTransportByConversationId: Collection<int, array{label: string, message: string, last_report: string, pressure: string, guidance: string, tone: string}>,
      *     cobrowseAttentionConversationCount: int,
      *     conversationEmptyMessage: string,
+     *     conversationEmptyState: array{actions: array<int, array{href: string, label: string}>, detail: string, heading: string},
      *     conversationFilter: string,
      *     conversationFilters: array<string, string>,
      *     conversationPresence: string,
@@ -191,12 +192,21 @@ class AgentConversationQueueController extends Controller
             $newActivityConversationCount,
             $cobrowseAttentionConversationCount,
         );
+        $conversationEmptyState = $this->conversationEmptyState(
+            $conversationEmptyMessage,
+            $conversationFilter,
+            $conversationHasActiveRefinement,
+            $conversationQuery,
+            $conversationSearch,
+            $matchingConversationCount,
+        );
 
         return [
             'activeConversationFilters' => $this->activeConversationFilters($conversationQuery, $conversationSite, $sites, $conversationSearch, $conversationPresence, $conversationPresenceFilters),
             'cobrowseAttentionConversationCount' => $cobrowseAttentionConversationCount,
             'cobrowseTransportByConversationId' => $cobrowseTransportByConversationId,
             'conversationEmptyMessage' => $conversationEmptyMessage,
+            'conversationEmptyState' => $conversationEmptyState,
             'conversationFilter' => $conversationFilter,
             'conversationFilters' => $conversationFilters,
             'conversationPresence' => $conversationPresence,
@@ -472,9 +482,111 @@ class AgentConversationQueueController extends Controller
         ];
     }
 
+    /**
+     * @param  array<string, string|int>  $conversationQuery
+     * @return array{actions: array<int, array{href: string, label: string}>, detail: string, heading: string}
+     */
+    private function conversationEmptyState(
+        string $conversationEmptyMessage,
+        string $conversationFilter,
+        bool $conversationHasActiveRefinement,
+        array $conversationQuery,
+        string $conversationSearch,
+        int $matchingConversationCount,
+    ): array {
+        $state = [
+            'actions' => [],
+            'detail' => match ($conversationFilter) {
+                'closed' => 'Closed conversations will appear here after agents close support threads.',
+                default => 'New visitor conversations will appear here as support starts.',
+            },
+            'heading' => $conversationEmptyMessage,
+        ];
+
+        if ($conversationSearch !== '') {
+            $state['heading'] = sprintf('No conversations match "%s".', $conversationSearch);
+            $state['detail'] = 'Search covers subject, support code, visitor ID, visitor name, and visitor email.';
+            $state['actions'][] = $this->conversationEmptyAction('conversation_search', 'Clear search', $conversationQuery);
+            $state['actions'][] = [
+                'href' => route('dashboard.conversations.index'),
+                'label' => 'Clear all conversation filters',
+            ];
+
+            return $state;
+        }
+
+        if ($conversationHasActiveRefinement) {
+            $clearRefinementsQuery = $conversationQuery;
+            unset($clearRefinementsQuery['conversation_site'], $clearRefinementsQuery['conversation_presence']);
+
+            $state['detail'] = 'Try another site or presence filter, or clear the filters to return to the broader queue.';
+            $state['actions'][] = [
+                'href' => route('dashboard.conversations.index', $clearRefinementsQuery),
+                'label' => 'Clear filters',
+            ];
+            $state['actions'][] = [
+                'href' => route('dashboard.conversations.index'),
+                'label' => 'Clear all conversation filters',
+            ];
+
+            return $state;
+        }
+
+        $supportLaneIsEmpty = ! in_array($conversationFilter, ['all', 'closed'], true)
+            && $matchingConversationCount > 0;
+
+        if ($supportLaneIsEmpty) {
+            $state['heading'] = match ($conversationFilter) {
+                'assigned_to_me' => 'No conversations are assigned to you in this queue.',
+                'cobrowse_attention' => 'No active cobrowse sessions need attention.',
+                'needs_reply' => 'No conversations need a reply right now.',
+                'new_activity' => 'No conversations need attention right now.',
+                'unassigned' => 'No unassigned conversations in this queue.',
+                default => $conversationEmptyMessage,
+            };
+            $state['detail'] = 'Try another support lane or clear the lane filter. '
+                .$this->conversationCountMatchLabel($matchingConversationCount).' the other queue filters.';
+            $state['actions'][] = $this->conversationEmptyAction('conversation_filter', 'Clear support lane', $conversationQuery);
+            $state['actions'][] = [
+                'href' => route('dashboard.conversations.index'),
+                'label' => 'Clear all conversation filters',
+            ];
+
+            return $state;
+        }
+
+        if ($conversationFilter === 'closed') {
+            $state['actions'][] = [
+                'href' => route('dashboard.conversations.index'),
+                'label' => 'Show active conversations',
+            ];
+        }
+
+        return $state;
+    }
+
     private function conversationCountLabel(int $count): string
     {
         return $count.' '.($count === 1 ? 'conversation' : 'conversations');
+    }
+
+    private function conversationCountMatchLabel(int $count): string
+    {
+        return $this->conversationCountLabel($count).' '.($count === 1 ? 'matches' : 'match');
+    }
+
+    /**
+     * @param  array<string, string|int>  $conversationQuery
+     * @return array{href: string, label: string}
+     */
+    private function conversationEmptyAction(string $queryKey, string $label, array $conversationQuery): array
+    {
+        unset($conversationQuery[$queryKey]);
+
+        return [
+            'href' => route('dashboard.conversations.index', $conversationQuery),
+            'label' => $label,
+        ];
     }
 
     /**
