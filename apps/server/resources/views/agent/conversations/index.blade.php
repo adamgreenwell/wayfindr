@@ -69,6 +69,7 @@
                                 value="{{ $conversationSearch }}"
                                 placeholder="Subject, support code, or visitor"
                             >
+                            <p class="field-help">Search by subject, support code, visitor ID, visitor name, or visitor email.</p>
                         </div>
 
                         <div class="meta-item">

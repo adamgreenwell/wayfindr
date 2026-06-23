@@ -126,7 +126,14 @@
 
                         <div class="meta-item">
                             <label class="meta-label" for="ticket_search">Search</label>
-                            <input id="ticket_search" name="ticket_search" type="search" value="{{ $ticketSearch }}">
+                            <input
+                                id="ticket_search"
+                                name="ticket_search"
+                                type="search"
+                                value="{{ $ticketSearch }}"
+                                placeholder="Ticket #123, support code, subject, requester"
+                            >
+                            <p class="field-help">Search by ticket number, subject, description, support code, requester, email, or anonymous visitor ID.</p>
                         </div>
 
                         <div class="meta-item">

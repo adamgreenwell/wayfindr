@@ -679,6 +679,24 @@ test('dashboard searches conversations by subject support code and visitor refer
         ->assertDontSee('Invoice export problem');
 });
 
+test('queue search inputs explain searchable references before agents miss', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations')
+        ->assertOk()
+        ->assertSee('placeholder="Subject, support code, or visitor"', false)
+        ->assertSee('Search by subject, support code, visitor ID, visitor name, or visitor email.');
+
+    $this->actingAs($agent)
+        ->get('/dashboard/tickets')
+        ->assertOk()
+        ->assertSee('placeholder="Ticket #123, support code, subject, requester"', false)
+        ->assertSee('Search by ticket number, subject, description, support code, requester, email, or anonymous visitor ID.');
+});
+
 test('conversation queue gives agents a clearer empty search recovery state', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
