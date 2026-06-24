@@ -174,7 +174,7 @@ verify_host_page_widget_config() {
         }
     ' "$html_file" > "$scripts_file"
 
-    while IFS= read -r script_src; do
+    while IFS= read -r script_src || [[ -n "$script_src" ]]; do
         [[ -z "$script_src" ]] && continue
 
         script_url="$(resolve_url "$host_page_url" "$script_src")"
