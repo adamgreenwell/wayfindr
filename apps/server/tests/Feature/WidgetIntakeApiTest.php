@@ -12,6 +12,7 @@ use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Route;
 
 uses(RefreshDatabase::class);
 
@@ -140,6 +141,59 @@ test('widget bootstrap rejects an unknown public key', function (): void {
     ])
         ->assertNotFound()
         ->assertJsonPath('message', 'Site not found.');
+});
+
+test('public widget api routes declare named rate limiters', function (): void {
+    $expectedMiddlewareByRoute = [
+        'widget.bootstrap' => 'throttle:widget-bootstrap',
+        'widget.broadcasting.auth' => 'throttle:widget-broadcast-auth',
+        'conversations.store' => 'throttle:widget-conversation',
+        'conversations.cobrowse.show' => 'throttle:widget-cobrowse',
+        'conversations.cobrowse-consent.store' => 'throttle:widget-cobrowse',
+        'conversations.cobrowse-telemetry.store' => 'throttle:widget-cobrowse',
+        'conversations.cobrowse-page-state.store' => 'throttle:widget-cobrowse',
+        'conversations.cobrowse-snapshot.store' => 'throttle:widget-cobrowse',
+        'conversations.cobrowse-mutations.store' => 'throttle:widget-cobrowse',
+        'conversations.messages.index' => 'throttle:widget-message',
+        'conversations.messages.store' => 'throttle:widget-message',
+        'conversations.typing.store' => 'throttle:widget-message',
+    ];
+
+    foreach ($expectedMiddlewareByRoute as $routeName => $middleware) {
+        expect(Route::getRoutes()->getByName($routeName)?->gatherMiddleware())
+            ->toContain($middleware);
+    }
+});
+
+test('widget bootstrap is rate limited by site and client address', function (): void {
+    config(['wayfindr.widget_rate_limits.bootstrap_per_minute' => 2]);
+
+    Site::factory()->create(['public_key' => 'site_public_docs']);
+
+    $payload = [
+        'site_public_key' => 'site_public_docs',
+        'anonymous_id' => 'anon-rate-limit',
+        'page_url' => 'https://docs.example.test/install',
+    ];
+
+    $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.10'])
+        ->postJson('/api/widget/bootstrap', $payload)
+        ->assertCreated();
+
+    $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.10'])
+        ->postJson('/api/widget/bootstrap', $payload)
+        ->assertOk();
+
+    $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.10'])
+        ->postJson('/api/widget/bootstrap', array_replace($payload, [
+            'anonymous_id' => 'anon-rate-limit-rotated',
+        ]))
+        ->assertStatus(429)
+        ->assertHeader('Retry-After');
+
+    $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.11'])
+        ->postJson('/api/widget/bootstrap', $payload)
+        ->assertOk();
 });
 
 test('conversation creation uses the site scoped visitor', function (): void {

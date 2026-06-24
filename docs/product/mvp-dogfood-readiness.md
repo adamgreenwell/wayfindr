@@ -112,7 +112,8 @@ the platform.
 
 After this contract, the next MVP-hardening slices should prefer:
 
-1. Public widget API abuse controls and documented rate-limit posture.
+1. Public widget API abuse controls and documented rate-limit posture. See
+   [Widget API Abuse Controls](widget-api-abuse-controls.md).
 2. A repeatable host-project smoke test from widget load to ticket creation.
 3. Operator-visible dogfood readiness summary for the gates above.
 4. Retention visibility and plain-language data responsibility reminders.

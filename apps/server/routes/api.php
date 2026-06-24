@@ -13,24 +13,36 @@ use App\Http\Controllers\Widget\ConversationMessageController;
 use App\Http\Controllers\Widget\ConversationTypingController;
 use Illuminate\Support\Facades\Route;
 
-Route::post('/widget/bootstrap', BootstrapController::class)->name('widget.bootstrap');
-Route::post('/widget/broadcasting/auth', BroadcastAuthController::class)->name('widget.broadcasting.auth');
-Route::post('/conversations', [ConversationController::class, 'store'])->name('conversations.store');
-Route::get('/conversations/{supportCode}/cobrowse', CobrowseStatusController::class)
-    ->name('conversations.cobrowse.show');
-Route::post('/conversations/{supportCode}/cobrowse-consent', [CobrowseConsentController::class, 'store'])
-    ->name('conversations.cobrowse-consent.store');
-Route::post('/conversations/{supportCode}/cobrowse-telemetry', [CobrowseTelemetryController::class, 'store'])
-    ->name('conversations.cobrowse-telemetry.store');
-Route::post('/conversations/{supportCode}/cobrowse-page-state', [CobrowsePageStateController::class, 'store'])
-    ->name('conversations.cobrowse-page-state.store');
-Route::post('/conversations/{supportCode}/cobrowse-snapshot', [CobrowseSnapshotController::class, 'store'])
-    ->name('conversations.cobrowse-snapshot.store');
-Route::post('/conversations/{supportCode}/cobrowse-mutations', [CobrowseMutationController::class, 'store'])
-    ->name('conversations.cobrowse-mutations.store');
-Route::get('/conversations/{supportCode}/messages', [ConversationMessageController::class, 'index'])
-    ->name('conversations.messages.index');
-Route::post('/conversations/{supportCode}/messages', [ConversationMessageController::class, 'store'])
-    ->name('conversations.messages.store');
-Route::post('/conversations/{supportCode}/typing', ConversationTypingController::class)
-    ->name('conversations.typing.store');
+Route::post('/widget/bootstrap', BootstrapController::class)
+    ->middleware('throttle:widget-bootstrap')
+    ->name('widget.bootstrap');
+Route::post('/widget/broadcasting/auth', BroadcastAuthController::class)
+    ->middleware('throttle:widget-broadcast-auth')
+    ->name('widget.broadcasting.auth');
+Route::post('/conversations', [ConversationController::class, 'store'])
+    ->middleware('throttle:widget-conversation')
+    ->name('conversations.store');
+
+Route::middleware('throttle:widget-cobrowse')->group(function (): void {
+    Route::get('/conversations/{supportCode}/cobrowse', CobrowseStatusController::class)
+        ->name('conversations.cobrowse.show');
+    Route::post('/conversations/{supportCode}/cobrowse-consent', [CobrowseConsentController::class, 'store'])
+        ->name('conversations.cobrowse-consent.store');
+    Route::post('/conversations/{supportCode}/cobrowse-telemetry', [CobrowseTelemetryController::class, 'store'])
+        ->name('conversations.cobrowse-telemetry.store');
+    Route::post('/conversations/{supportCode}/cobrowse-page-state', [CobrowsePageStateController::class, 'store'])
+        ->name('conversations.cobrowse-page-state.store');
+    Route::post('/conversations/{supportCode}/cobrowse-snapshot', [CobrowseSnapshotController::class, 'store'])
+        ->name('conversations.cobrowse-snapshot.store');
+    Route::post('/conversations/{supportCode}/cobrowse-mutations', [CobrowseMutationController::class, 'store'])
+        ->name('conversations.cobrowse-mutations.store');
+});
+
+Route::middleware('throttle:widget-message')->group(function (): void {
+    Route::get('/conversations/{supportCode}/messages', [ConversationMessageController::class, 'index'])
+        ->name('conversations.messages.index');
+    Route::post('/conversations/{supportCode}/messages', [ConversationMessageController::class, 'store'])
+        ->name('conversations.messages.store');
+    Route::post('/conversations/{supportCode}/typing', ConversationTypingController::class)
+        ->name('conversations.typing.store');
+});
