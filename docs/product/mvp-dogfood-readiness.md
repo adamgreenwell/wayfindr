@@ -39,7 +39,9 @@ confirm:
 - The scheduler runs once per minute.
 - Reverb is running and routed through HTTPS when realtime delivery is enabled.
 - The deploy script restarts queues and Reverb after each release.
-- Outbound mail is configured and `php artisan wayfindr:mail-test` succeeds.
+- Outbound mail is configured and
+  `php artisan wayfindr:mail-test --to="verified-recipient@example.com"`
+  succeeds.
 - Backups are configured outside the application and have a restore path.
 - The first account owner can reach `/dashboard`, `/dashboard/readiness`, and
   `/operator`.
