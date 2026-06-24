@@ -143,6 +143,15 @@ test('widget bootstrap rejects an unknown public key', function (): void {
         ->assertJsonPath('message', 'Site not found.');
 });
 
+test('widget bootstrap validates non scalar public keys after rate limit hashing', function (): void {
+    $this->postJson('/api/widget/bootstrap', [
+        'site_public_key' => ['site_public_docs'],
+        'anonymous_id' => 'anon-browser-123',
+    ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['site_public_key']);
+});
+
 test('public widget api routes declare named rate limiters', function (): void {
     $expectedMiddlewareByRoute = [
         'widget.bootstrap' => 'throttle:widget-bootstrap',

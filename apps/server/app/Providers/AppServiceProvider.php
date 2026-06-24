@@ -70,7 +70,14 @@ class AppServiceProvider extends ServiceProvider
         return implode('|', [
             $scope,
             $request->ip() ?? 'unknown-ip',
-            hash('sha256', (string) $request->input('site_public_key', 'unknown-site')),
+            hash('sha256', $this->widgetSitePublicKeyForRateLimit($request)),
         ]);
+    }
+
+    private function widgetSitePublicKeyForRateLimit(Request $request): string
+    {
+        $sitePublicKey = $request->input('site_public_key');
+
+        return is_scalar($sitePublicKey) ? (string) $sitePublicKey : 'unknown-site';
     }
 }
