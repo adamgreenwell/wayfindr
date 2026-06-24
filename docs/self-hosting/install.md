@@ -15,6 +15,12 @@ privacy notices, and deletion/export workflows. Review
 [data-responsibility.md](../privacy/data-responsibility.md) before using
 Wayfindr with real visitors.
 
+For controlled project dogfooding, review
+[MVP Dogfood Readiness](../product/mvp-dogfood-readiness.md) before routing
+real visitor traffic to an install. It defines the minimum support loop,
+runtime gates, and safety boundaries that should be true before Wayfindr is
+used outside local testing.
+
 Use [laravel-forge.md](laravel-forge.md) for the current Forge deployment
 checklist, deploy script templates, environment values, queue worker, scheduler,
 and smoke test.

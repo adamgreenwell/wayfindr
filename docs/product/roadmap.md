@@ -34,6 +34,9 @@ foundation now includes:
 These are the nearest product slices because they improve the daily support
 experience without opening broad integration or platform-service work too soon.
 
+- MVP dogfood hardening: use
+  [MVP Dogfood Readiness](mvp-dogfood-readiness.md) as the gate for controlled
+  installs inside trusted projects before broadening self-hosted expectations.
 - Chat UX polish: message grouping, composer states, delivery/read affordances,
   timestamp-based visitor presence, typing/presence when the base interaction
   feels calm, and preserved manual refresh fallbacks. See
