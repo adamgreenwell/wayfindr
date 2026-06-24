@@ -1,10 +1,8 @@
 <?php
 
-test('homepage identifies the Wayfindr server', function (): void {
-    $response = $this->get('/');
-
-    $response->assertStatus(200);
-    $response->assertSee('Wayfindr Server');
+test('homepage points agents to the login screen', function (): void {
+    $this->get('/')
+        ->assertRedirect('/login');
 });
 
 test('health endpoint reports ok status', function (): void {

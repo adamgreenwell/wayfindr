@@ -70,6 +70,9 @@ Manual refresh must remain a valid fallback. Realtime delivery makes the
 experience better, but the dogfood loop should not collapse if a websocket is
 temporarily unavailable.
 
+Use [MVP Demo Rehearsal](mvp-demo-rehearsal.md) to prove this loop against a
+specific staging install and host page before showing it to a trusted group.
+
 ## Required Safety Boundaries
 
 Dogfood readiness requires these boundaries to hold:
