@@ -73,17 +73,32 @@ WAYFINDR_AGENT_PASSWORD="agent-password" \
 scripts/smoke/support-loop.sh
 ```
 
+When `WAYFINDR_HOST_PAGE_URL` is set, the visitor side runs through Chromium
+against the real host page: it opens the widget, sends the visitor message,
+captures the generated support code, and then lets the agent/ticket checks
+continue. If Chromium is not installed for Playwright yet, run:
+
+```bash
+npx --yes --package playwright playwright install chromium
+```
+
 Optional values:
 
+- `WAYFINDR_VISITOR_SMOKE_MODE=api` skips the browser path and uses direct API
+  calls for the visitor side. This is useful for local fallback checks, but it
+  does not prove the host page widget loaded.
 - `WAYFINDR_SMOKE_SUBJECT` changes the conversation subject.
 - `WAYFINDR_SMOKE_MESSAGE` changes the visitor message body.
 - `WAYFINDR_SMOKE_TICKET_CATEGORY` defaults to `question`.
 - `WAYFINDR_SMOKE_TICKET_PRIORITY` defaults to `normal`.
-- `WAYFINDR_ANONYMOUS_ID` pins the test visitor reference.
+- `WAYFINDR_ANONYMOUS_ID` pins the test visitor reference for API mode.
+- `WAYFINDR_WIDGET_BROWSER_HEADED=1` runs the host-page browser visibly.
+- `WAYFINDR_WIDGET_BROWSER_TIMEOUT_MS` adjusts the browser smoke timeout.
 
-When `WAYFINDR_HOST_PAGE_URL` is set, the script also checks that the host page
-or its linked JavaScript exposes the expected Wayfindr app URL and site public
-key. This catches a stale host deploy before the demo starts.
+When `WAYFINDR_VISITOR_SMOKE_MODE=api` and `WAYFINDR_HOST_PAGE_URL` is set, the
+script falls back to a static check that the host page or its linked JavaScript
+exposes the expected Wayfindr app URL and site public key. That catches a stale
+host deploy, but the browser mode is the stronger demo gate.
 
 ## Manual Demo Path
 

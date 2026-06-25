@@ -44,7 +44,9 @@ make public-info-test
 Browser-level Pest tests are intentionally not enabled yet. When Wayfindr needs
 full browser coverage for the dashboard or embedded widget, add Pest's browser
 plugin as its own slice so the Playwright dependencies and CI expectations are
-clear.
+clear. The smoke scripts may still use an ephemeral Playwright install for
+runtime checks; that is separate from adding browser tests to the automated
+suite.
 
 ## Smoke Scripts
 
@@ -61,7 +63,10 @@ scripts/smoke/widget-intake.sh
 ```
 
 The full support-loop smoke signs in as an agent, opens the conversation,
-creates a ticket, and verifies the ticket detail page:
+creates a ticket, and verifies the ticket detail page. When
+`WAYFINDR_HOST_PAGE_URL` is set, the visitor side uses Chromium to load the
+real host page widget and send the first message before the agent/ticket checks
+continue:
 
 ```bash
 WAYFINDR_BASE_URL="https://support.example.com" \
@@ -71,6 +76,16 @@ WAYFINDR_AGENT_EMAIL="agent@example.com" \
 WAYFINDR_AGENT_PASSWORD="agent-password" \
 scripts/smoke/support-loop.sh
 ```
+
+If Chromium is missing for Playwright, install it once with:
+
+```bash
+npx --yes --package playwright playwright install chromium
+```
+
+Set `WAYFINDR_VISITOR_SMOKE_MODE=api` to skip the browser visitor path and use
+direct API calls instead. API mode is useful for local fallback checks, but it
+does not prove the host page loaded the widget.
 
 Both scripts create real test records in the target Wayfindr install. Use a
 staging site key or disposable local data, and keep credentials outside the

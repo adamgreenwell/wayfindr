@@ -6,6 +6,7 @@ site_public_key="${WAYFINDR_SITE_PUBLIC_KEY:?Set WAYFINDR_SITE_PUBLIC_KEY}"
 agent_email="${WAYFINDR_AGENT_EMAIL:?Set WAYFINDR_AGENT_EMAIL}"
 agent_password="${WAYFINDR_AGENT_PASSWORD:?Set WAYFINDR_AGENT_PASSWORD}"
 host_page_url="${WAYFINDR_HOST_PAGE_URL:-}"
+visitor_smoke_mode="${WAYFINDR_VISITOR_SMOKE_MODE:-}"
 subject="${WAYFINDR_SMOKE_SUBJECT:-MVP support loop smoke}"
 message="${WAYFINDR_SMOKE_MESSAGE:-Hello from the Wayfindr support-loop smoke.}"
 ticket_category="${WAYFINDR_SMOKE_TICKET_CATEGORY:-question}"
@@ -13,9 +14,18 @@ ticket_priority="${WAYFINDR_SMOKE_TICKET_PRIORITY:-normal}"
 anonymous_id="${WAYFINDR_ANONYMOUS_ID:-anon-support-loop-smoke-$(date +%s)}"
 tmp_dir="$(mktemp -d)"
 cookie_jar="$tmp_dir/cookies.txt"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 base_url="${base_url%/}"
 page_url="${host_page_url:-$base_url/smoke}"
+
+if [[ -z "$visitor_smoke_mode" ]]; then
+    if [[ -n "$host_page_url" ]]; then
+        visitor_smoke_mode="browser"
+    else
+        visitor_smoke_mode="api"
+    fi
+fi
 
 cleanup() {
     rm -rf "$tmp_dir"
@@ -190,54 +200,105 @@ verify_host_page_widget_config() {
     exit 1
 }
 
+run_api_visitor_smoke() {
+    verify_host_page_widget_config
+
+    echo "Bootstrapping widget visitor through API fallback..."
+    bootstrap_payload="$(json_object \
+        site_public_key "$site_public_key" \
+        anonymous_id "$anonymous_id" \
+        page_url "$page_url")"
+    bootstrap_response="$(post_json '/api/widget/bootstrap' "$bootstrap_payload")"
+    visitor_token="$(printf '%s' "$bootstrap_response" | json_value 'data.visitor.token')"
+
+    if [[ -z "$visitor_token" ]]; then
+        echo "Unable to read visitor token from bootstrap response." >&2
+        exit 1
+    fi
+
+    echo "Creating visitor conversation through API fallback..."
+    conversation_payload="$(json_object \
+        site_public_key "$site_public_key" \
+        anonymous_id "$anonymous_id" \
+        visitor_token "$visitor_token" \
+        subject "$subject" \
+        page_url "$page_url")"
+    conversation_response="$(post_json '/api/conversations' "$conversation_payload")"
+    support_code="$(printf '%s' "$conversation_response" | json_value 'data.support_code')"
+
+    if [[ -z "$support_code" ]]; then
+        echo "Unable to read support_code from conversation response." >&2
+        exit 1
+    fi
+
+    support_code_path="$(urlencode "$support_code")"
+
+    echo "Sending visitor message to $support_code through API fallback..."
+    message_payload="$(json_object \
+        site_public_key "$site_public_key" \
+        anonymous_id "$anonymous_id" \
+        visitor_token "$visitor_token" \
+        body "$message")"
+    post_json "/api/conversations/$support_code_path/messages" "$message_payload" >/dev/null
+}
+
+run_browser_visitor_smoke() {
+    if [[ -z "$host_page_url" ]]; then
+        echo "WAYFINDR_VISITOR_SMOKE_MODE=browser requires WAYFINDR_HOST_PAGE_URL." >&2
+        exit 1
+    fi
+
+    require_command npx
+
+    local output_json="$tmp_dir/host-widget-smoke.json"
+
+    echo "Sending visitor message through host page widget..."
+    WAYFINDR_BASE_URL="$base_url" \
+        WAYFINDR_HOST_PAGE_URL="$host_page_url" \
+        WAYFINDR_SITE_PUBLIC_KEY="$site_public_key" \
+        WAYFINDR_SMOKE_MESSAGE="$message" \
+        WAYFINDR_HOST_WIDGET_SMOKE_SCRIPT="$script_dir/host-widget-message.cjs" \
+        WAYFINDR_WIDGET_SMOKE_ARTIFACT_DIR="$tmp_dir/playwright" \
+        WAYFINDR_WIDGET_SMOKE_OUTPUT="$output_json" \
+        npx --yes --package playwright --call 'NODE_PATH="$(dirname "$(dirname "$(command -v playwright)")")" node "$WAYFINDR_HOST_WIDGET_SMOKE_SCRIPT"'
+
+    if [[ ! -f "$output_json" ]]; then
+        echo "Host widget smoke did not write $output_json." >&2
+        exit 1
+    fi
+
+    support_code="$(json_value 'support_code' < "$output_json")"
+
+    if [[ -z "$support_code" ]]; then
+        echo "Unable to read support_code from host widget smoke output." >&2
+        cat "$output_json" >&2
+        exit 1
+    fi
+
+    support_code_path="$(urlencode "$support_code")"
+}
+
 require_command curl
 require_command grep
 require_command php
 
 trap cleanup EXIT
 
-verify_host_page_widget_config
-
 echo "Checking health endpoint..."
 curl -fsS "$base_url/up" >/dev/null
 
-echo "Bootstrapping widget visitor..."
-bootstrap_payload="$(json_object \
-    site_public_key "$site_public_key" \
-    anonymous_id "$anonymous_id" \
-    page_url "$page_url")"
-bootstrap_response="$(post_json '/api/widget/bootstrap' "$bootstrap_payload")"
-visitor_token="$(printf '%s' "$bootstrap_response" | json_value 'data.visitor.token')"
-
-if [[ -z "$visitor_token" ]]; then
-    echo "Unable to read visitor token from bootstrap response." >&2
-    exit 1
-fi
-
-echo "Creating visitor conversation..."
-conversation_payload="$(json_object \
-    site_public_key "$site_public_key" \
-    anonymous_id "$anonymous_id" \
-    visitor_token "$visitor_token" \
-    subject "$subject" \
-    page_url "$page_url")"
-conversation_response="$(post_json '/api/conversations' "$conversation_payload")"
-support_code="$(printf '%s' "$conversation_response" | json_value 'data.support_code')"
-
-if [[ -z "$support_code" ]]; then
-    echo "Unable to read support_code from conversation response." >&2
-    exit 1
-fi
-
-support_code_path="$(urlencode "$support_code")"
-
-echo "Sending visitor message to $support_code..."
-message_payload="$(json_object \
-    site_public_key "$site_public_key" \
-    anonymous_id "$anonymous_id" \
-    visitor_token "$visitor_token" \
-    body "$message")"
-post_json "/api/conversations/$support_code_path/messages" "$message_payload" >/dev/null
+case "$visitor_smoke_mode" in
+    api)
+        run_api_visitor_smoke
+        ;;
+    browser)
+        run_browser_visitor_smoke
+        ;;
+    *)
+        echo "Unknown WAYFINDR_VISITOR_SMOKE_MODE: $visitor_smoke_mode. Use api or browser." >&2
+        exit 1
+        ;;
+esac
 
 echo "Signing in as agent..."
 login_page="$tmp_dir/login.html"
