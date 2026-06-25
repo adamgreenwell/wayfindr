@@ -36,14 +36,16 @@ async function run() {
       return response.request().method() === 'POST'
         && response.status() >= 200
         && response.status() < 300
-        && isExpectedApiPath(response.url(), '/api/conversations');
+        && isExpectedApiPath(response.url(), '/api/conversations')
+        && usesExpectedSitePublicKey(response.request());
     }, { timeout: timeoutMs });
 
     const messageResponsePromise = page.waitForResponse((response) => {
       return response.request().method() === 'POST'
         && response.status() >= 200
         && response.status() < 300
-        && isExpectedMessagePath(response.url());
+        && isExpectedMessagePath(response.url())
+        && usesExpectedSitePublicKey(response.request());
     }, { timeout: timeoutMs });
 
     await page.locator('.wayfindr-widget__send').first().click();
@@ -122,6 +124,26 @@ function isExpectedMessagePath(url) {
 
   return parsedUrl.origin === parsedBaseUrl.origin
     && /^\/api\/conversations\/[^/]+\/messages$/.test(parsedUrl.pathname);
+}
+
+function usesExpectedSitePublicKey(request) {
+  const payload = requestJsonBody(request);
+
+  return payload?.site_public_key === sitePublicKey;
+}
+
+function requestJsonBody(request) {
+  const postData = request.postData();
+
+  if (! postData) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(postData);
+  } catch (error) {
+    return null;
+  }
 }
 
 async function captureFailureScreenshot(page) {
