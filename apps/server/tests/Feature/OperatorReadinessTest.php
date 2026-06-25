@@ -52,6 +52,10 @@ test('account owner can inspect operator readiness diagnostics', function (): vo
         ->assertSee('Scheduler')
         ->assertSee('Backups and restore')
         ->assertSee('Ready')
+        ->assertSee('Dogfood readiness')
+        ->assertSee('Controlled MVP gates for demo and staging use.')
+        ->assertSee('Full support-loop smoke')
+        ->assertSee('Data responsibility review')
         ->assertSee('php artisan wayfindr:mail-test --to=you@example.com')
         ->assertSee('php artisan queue:failed')
         ->assertSee('php artisan queue:work')
@@ -964,6 +968,176 @@ test('readiness diagnostics include a guided post install smoke path', function 
             'status' => 'manual',
         ]),
     );
+});
+
+test('readiness diagnostics include a dogfood gate summary', function (): void {
+    config([
+        'app.url' => 'https://support.example.test',
+        'app.key' => 'base64:'.base64_encode(str_repeat('a', 32)),
+        'broadcasting.default' => 'reverb',
+        'broadcasting.connections.reverb.app_id' => 'wayfindr-production',
+        'broadcasting.connections.reverb.key' => 'wayfindr-key',
+        'broadcasting.connections.reverb.secret' => 'wayfindr-secret',
+        'broadcasting.connections.reverb.options.host' => 'support.example.test',
+        'broadcasting.connections.reverb.options.port' => 443,
+        'broadcasting.connections.reverb.options.scheme' => 'https',
+        'mail.default' => 'smtp',
+        'mail.mailers.smtp.host' => 'smtp.example.test',
+        'mail.mailers.smtp.port' => 587,
+        'mail.from.address' => 'support@example.test',
+        'queue.default' => 'database',
+    ]);
+
+    $readiness = app(OperatorReadiness::class)->summary();
+    $summary = $readiness['dogfood_summary'];
+    $items = collect($summary['items'])->keyBy('key');
+
+    expect($summary)->toMatchArray([
+        'status' => 'manual',
+        'label' => 'Manual proof needed',
+        'attention_count' => 0,
+    ])
+        ->and(array_keys($items->all()))->toBe([
+            'production_https_host',
+            'demo_account_site',
+            'host_widget_install',
+            'support_loop_smoke',
+            'ticket_workflow',
+            'alerts_email',
+            'cobrowse_observe_mode',
+            'operator_boundary',
+            'data_responsibility',
+        ])
+        ->and($items->get('production_https_host'))->toMatchArray([
+            'label' => 'Production-like HTTPS host',
+            'status' => 'ready',
+        ])
+        ->and($items->get('host_widget_install'))->toMatchArray([
+            'label' => 'Host project widget install',
+            'status' => 'manual',
+        ])
+        ->and($items->get('support_loop_smoke'))->toMatchArray([
+            'label' => 'Full support-loop smoke',
+            'status' => 'manual',
+        ])
+        ->and($items->get('support_loop_smoke')['commands'][0])->toContain('scripts/smoke/support-loop.sh')
+        ->and($items->get('support_loop_smoke')['commands'][0])->toContain('WAYFINDR_HOST_PAGE_URL')
+        ->and($items->get('alerts_email'))->toMatchArray([
+            'label' => 'Alerts and email',
+            'status' => 'manual',
+        ])
+        ->and($items->get('operator_boundary'))->toMatchArray([
+            'label' => 'Operator readiness boundary',
+            'status' => 'ready',
+        ])
+        ->and($items->get('data_responsibility'))->toMatchArray([
+            'label' => 'Data responsibility review',
+            'status' => 'manual',
+            'docs_url' => 'https://github.com/adamgreenwell/wayfindr/blob/main/docs/privacy/data-responsibility.md',
+        ]);
+});
+
+test('dogfood support loop gate allows manual refresh when realtime is not ready', function (): void {
+    config([
+        'app.url' => 'https://support.example.test',
+        'app.key' => 'base64:'.base64_encode(str_repeat('a', 32)),
+        'broadcasting.default' => 'reverb',
+        'broadcasting.connections.reverb.app_id' => null,
+        'broadcasting.connections.reverb.key' => null,
+        'broadcasting.connections.reverb.secret' => null,
+        'broadcasting.connections.reverb.options.host' => null,
+        'broadcasting.connections.reverb.options.port' => null,
+        'broadcasting.connections.reverb.options.scheme' => null,
+        'mail.default' => 'smtp',
+        'mail.mailers.smtp.host' => 'smtp.example.test',
+        'mail.mailers.smtp.port' => 587,
+        'mail.from.address' => 'support@example.test',
+        'queue.default' => 'database',
+    ]);
+
+    $readiness = app(OperatorReadiness::class)->summary();
+    $widgetSmoke = collect($readiness['smoke_path'])->firstWhere('key', 'widget_smoke');
+    $supportLoop = collect($readiness['dogfood_summary']['items'])->firstWhere('key', 'support_loop_smoke');
+
+    expect($widgetSmoke)->toMatchArray([
+        'status' => 'attention',
+    ])
+        ->and($supportLoop)->toMatchArray([
+            'label' => 'Full support-loop smoke',
+            'status' => 'manual',
+            'status_label' => 'Manual proof',
+        ])
+        ->and($supportLoop['summary'])->toContain('Manual refresh remains acceptable')
+        ->and($supportLoop['detail'])->toContain('manual refresh as a stated fallback');
+});
+
+test('dogfood support loop gate blocks when queue workers are disabled', function (): void {
+    config([
+        'app.url' => 'https://support.example.test',
+        'app.key' => 'base64:'.base64_encode(str_repeat('a', 32)),
+        'broadcasting.default' => 'reverb',
+        'broadcasting.connections.reverb.app_id' => 'wayfindr-production',
+        'broadcasting.connections.reverb.key' => 'wayfindr-key',
+        'broadcasting.connections.reverb.secret' => 'wayfindr-secret',
+        'broadcasting.connections.reverb.options.host' => 'support.example.test',
+        'broadcasting.connections.reverb.options.port' => 443,
+        'broadcasting.connections.reverb.options.scheme' => 'https',
+        'mail.default' => 'smtp',
+        'mail.mailers.smtp.host' => 'smtp.example.test',
+        'mail.mailers.smtp.port' => 587,
+        'mail.from.address' => 'support@example.test',
+        'queue.default' => 'sync',
+    ]);
+
+    $readiness = app(OperatorReadiness::class)->summary();
+    $queueWorker = collect($readiness['checks'])->firstWhere('key', 'queue_worker');
+    $supportLoop = collect($readiness['dogfood_summary']['items'])->firstWhere('key', 'support_loop_smoke');
+
+    expect($queueWorker)->toMatchArray([
+        'status' => 'attention',
+        'summary' => 'QUEUE_CONNECTION is sync.',
+    ])
+        ->and($readiness['dogfood_summary'])->toMatchArray([
+            'status' => 'attention',
+            'label' => 'Dogfood blocked',
+        ])
+        ->and($supportLoop)->toMatchArray([
+            'label' => 'Full support-loop smoke',
+            'status' => 'attention',
+            'status_label' => 'Needs attention',
+            'summary' => 'Fix the blocked app/runtime checks before running the browser-backed support-loop smoke.',
+        ]);
+});
+
+test('dogfood gate summary blocks on insecure public app urls', function (): void {
+    config([
+        'app.url' => 'http://localhost',
+        'app.key' => 'base64:'.base64_encode(str_repeat('a', 32)),
+        'mail.default' => 'smtp',
+        'mail.mailers.smtp.host' => 'smtp.example.test',
+        'mail.mailers.smtp.port' => 587,
+        'mail.from.address' => 'support@example.test',
+        'queue.default' => 'database',
+    ]);
+
+    $readiness = app(OperatorReadiness::class)->summary();
+    $summary = $readiness['dogfood_summary'];
+    $items = collect($summary['items'])->keyBy('key');
+
+    expect($summary)->toMatchArray([
+        'status' => 'attention',
+        'label' => 'Dogfood blocked',
+    ])
+        ->and($items->get('production_https_host'))->toMatchArray([
+            'status' => 'attention',
+            'status_label' => 'Needs attention',
+        ])
+        ->and($items->get('host_widget_install'))->toMatchArray([
+            'status' => 'attention',
+        ])
+        ->and($items->get('support_loop_smoke'))->toMatchArray([
+            'status' => 'attention',
+        ]);
 });
 
 test('readiness smoke path reflects cobrowse transport attention without leaking support data', function (): void {

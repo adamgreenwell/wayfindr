@@ -32,6 +32,8 @@
                 </div>
             </section>
 
+            <x-operator-dogfood-summary :dogfood-summary="$readiness['dogfood_summary']" />
+
             <x-operator-next-step :confirmation-route="$readinessConfirmationRoute" :next-step="$readiness['next_step']" />
 
             <x-operator-smoke-path :confirmation-route="$readinessConfirmationRoute" :smoke-path="$readiness['smoke_path']" />

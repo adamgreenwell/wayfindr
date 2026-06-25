@@ -119,6 +119,8 @@
         </div>
     </section>
 
+    <x-operator-dogfood-summary :dogfood-summary="$readiness['dogfood_summary']" />
+
     <section class="section" aria-labelledby="readiness-proof-coverage-heading">
         <div class="section-header">
             <div>

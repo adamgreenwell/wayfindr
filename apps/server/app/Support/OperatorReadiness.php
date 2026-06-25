@@ -37,6 +37,7 @@ class OperatorReadiness
      *     attention_count: int,
      *     checks: array<int, array{action: string, commands?: array<int, string>, detail: string, key: string, label: string, status: string, status_label: string, summary: string}>,
      *     cobrowse_budget_defaults: array<int, array{description: string, items: array<int, array{label: string, value: string}>, label: string}>,
+     *     dogfood_summary: array{attention_count: int, items: array<int, array{action: string, commands: array<int, string>, detail: string, docs_url: string|null, key: string, label: string, status: string, status_label: string, summary: string}>, label: string, manual_count: int, ready_count: int, status: string, summary: string},
      *     label: string,
      *     manual_count: int,
      *     next_step: array{action: string, commands?: array<int, string>, detail: string, key: string, label: string, status: string, status_label: string, summary: string},
@@ -68,11 +69,13 @@ class OperatorReadiness
         $readyCount = count(array_filter($checks, fn (array $check): bool => $check['status'] === 'ready'));
         $checksByKey = collect($checks)->keyBy('key')->all();
         $smokePath = $this->postInstallSmokePath($checksByKey);
+        $smokePathByKey = collect($smokePath)->keyBy('key')->all();
 
         return [
             'attention_count' => $attentionCount,
             'checks' => $checks,
             'cobrowse_budget_defaults' => CobrowsePayloadBudget::readinessDefaults(),
+            'dogfood_summary' => $this->dogfoodSummary($checksByKey, $smokePathByKey),
             'label' => $attentionCount > 0 ? 'Needs attention' : 'Ready',
             'manual_count' => $manualCount,
             'next_step' => $this->nextStep($checks, $smokePath),
@@ -567,6 +570,205 @@ class OperatorReadiness
     }
 
     /**
+     * @param  array<string, array{action: string, commands?: array<int, string>, detail: string, key: string, label: string, status: string, status_label: string, summary: string}>  $checks
+     * @param  array<string, array{action: string, commands: array<int, string>, key: string, label: string, status: string, status_label: string, summary: string}>  $smokePath
+     * @return array{attention_count: int, items: array<int, array{action: string, commands: array<int, string>, detail: string, docs_url: string|null, key: string, label: string, status: string, status_label: string, summary: string}>, label: string, manual_count: int, ready_count: int, status: string, summary: string}
+     */
+    private function dogfoodSummary(array $checks, array $smokePath): array
+    {
+        $supportLoopStatus = $this->dogfoodDependencyStatus($checks, [
+            'application_key',
+            'public_url',
+            'database_connection',
+            'queue_worker',
+            'storage_paths',
+        ]);
+        $supportLoopStatus = $supportLoopStatus === 'attention' ? 'attention' : 'manual';
+
+        $ticketWorkflowStatus = $this->dogfoodDependencyStatus($checks, [
+            'database_connection',
+            'storage_paths',
+        ]);
+        $ticketWorkflowStatus = $ticketWorkflowStatus === 'attention' ? 'attention' : 'manual';
+
+        $alertStatus = $this->dogfoodDependencyStatus($checks, [
+            'mail_transport',
+            'scheduler',
+            'alert_digest_delivery',
+        ]);
+        $dataResponsibility = config('wayfindr.data_responsibility');
+        $dataResponsibility = is_array($dataResponsibility) ? $dataResponsibility : [];
+        $dataResponsibilityMessage = (string) ($dataResponsibility['message'] ?? 'Review the self-hosted data responsibility guidance.');
+        $dataResponsibilityGuidance = (string) ($dataResponsibility['guidance'] ?? 'Keep privacy notices, retention expectations, and support data handling aligned with how this installation is used.');
+        $dataResponsibilityDocsUrl = $this->stringOrNull($dataResponsibility['docs_url'] ?? null);
+        $supportLoopCommand = 'WAYFINDR_BASE_URL="https://support.example.com" WAYFINDR_HOST_PAGE_URL="https://docs.example.com/help" WAYFINDR_SITE_PUBLIC_KEY="site_public_key_here" WAYFINDR_AGENT_EMAIL="agent@example.com" WAYFINDR_AGENT_PASSWORD="agent-password" scripts/smoke/support-loop.sh';
+        $widgetSmoke = $smokePath['widget_smoke'] ?? null;
+
+        $items = [
+            $this->dogfoodGate(
+                key: 'production_https_host',
+                label: 'Production-like HTTPS host',
+                status: $this->statusFromCheck($checks, 'public_url'),
+                summary: $checks['public_url']['summary'] ?? 'Confirm the public app URL is the HTTPS URL used for the demo.',
+                detail: 'Agents, widgets, cookies, callbacks, and smoke scripts need the same public HTTPS origin.',
+                action: 'Open APP_URL from outside the server, confirm /up returns 200, then sign in from /login on that public domain.',
+            ),
+            $this->dogfoodGate(
+                key: 'demo_account_site',
+                label: 'Demo account and site',
+                status: 'manual',
+                summary: 'Confirm a demo account, agent login, support site, and site public key exist.',
+                detail: 'Wayfindr keeps support data out of operator readiness, so this remains a safe manual gate.',
+                action: 'Sign in as the demo agent, confirm the account and site are visible, then copy the intended site public key for the host widget.',
+            ),
+            $this->dogfoodGate(
+                key: 'host_widget_install',
+                label: 'Host project widget install',
+                status: $this->statusFromCheck($checks, 'public_url') === 'attention' ? 'attention' : 'manual',
+                summary: 'Confirm the real host page loads the intended Wayfindr widget and site public key.',
+                detail: 'The host project is outside this app, so the strongest proof is the browser-backed smoke script against the live host page.',
+                action: 'Run the full support-loop smoke with the real host page URL before demo traffic arrives.',
+                commands: [$supportLoopCommand],
+            ),
+            $this->dogfoodGate(
+                key: 'support_loop_smoke',
+                label: 'Full support-loop smoke',
+                status: $supportLoopStatus,
+                summary: $supportLoopStatus === 'attention'
+                    ? 'Fix the blocked app/runtime checks before running the browser-backed support-loop smoke.'
+                    : 'Run the browser-backed smoke from widget load through ticket creation. Manual refresh remains acceptable if realtime is not demo-ready.',
+                detail: $widgetSmoke
+                    ? sprintf('Current live-update signal: %s. The MVP dogfood loop can still pass with manual refresh as a stated fallback.', $widgetSmoke['summary'])
+                    : 'The MVP dogfood loop must prove visitor message, agent reply, support-code lookup, and ticket creation.',
+                action: 'Run scripts/smoke/support-loop.sh with the staging app URL, host page URL, site public key, and disposable demo agent credentials.',
+                commands: [$supportLoopCommand],
+                docsUrl: 'https://github.com/adamgreenwell/wayfindr/blob/main/docs/product/mvp-demo-rehearsal.md#full-support-loop-smoke',
+            ),
+            $this->dogfoodGate(
+                key: 'ticket_workflow',
+                label: 'Durable ticket workflow',
+                status: $ticketWorkflowStatus,
+                summary: $ticketWorkflowStatus === 'attention'
+                    ? 'Fix database or storage readiness before relying on tickets.'
+                    : 'Manually prove ticket assignment, labels, replies, status changes, and support-code lookup.',
+                detail: 'The smoke creates the first ticket; the demo rehearsal should also work the ticket through the human-facing lifecycle.',
+                action: 'After the smoke creates a ticket, assign it, label it, reply, move it through one status change, and find it again by support code.',
+            ),
+            $this->dogfoodGate(
+                key: 'alerts_email',
+                label: 'Alerts and email',
+                status: $alertStatus,
+                summary: $alertStatus === 'attention'
+                    ? 'Mail, scheduler, or digest delivery needs attention before email alerts are part of the demo.'
+                    : 'Confirm alert preferences and email delivery match the demo agent configuration.',
+                detail: 'Dogfood does not require every agent to use email, but configured alert paths should be honest before a live demo.',
+                action: 'Run the mail test, confirm scheduler status, and verify alert preference behavior for the disposable demo agent.',
+                commands: ['php artisan wayfindr:mail-test --to=you@example.com', 'php artisan schedule:list'],
+            ),
+            $this->dogfoodGate(
+                key: 'cobrowse_observe_mode',
+                label: 'Consent-based cobrowse observe mode',
+                status: $this->statusFromCheck($checks, 'cobrowse_transport'),
+                summary: $checks['cobrowse_transport']['summary'] ?? 'Confirm cobrowse transport before relying on observe mode.',
+                detail: 'The dogfood demo should request observe-only cobrowse, receive explicit visitor consent, and avoid pre-consent page state.',
+                action: 'Run a consented cobrowse smoke after the support-loop smoke, then confirm aggregate transport state stays healthy.',
+                commands: ['php artisan wayfindr:cobrowse-transport-smoke'],
+            ),
+            $this->dogfoodGate(
+                key: 'operator_boundary',
+                label: 'Operator readiness boundary',
+                status: 'ready',
+                summary: 'Operator readiness surfaces show instance posture without customer support data.',
+                detail: 'The operator console is for runtime gaps, safe activity, smoke guidance, and manual evidence status.',
+                action: 'Use /operator and /dashboard/readiness during the demo, and keep conversation bodies, ticket contents, visitor identifiers, and proof notes out of operator review.',
+            ),
+            $this->dogfoodGate(
+                key: 'data_responsibility',
+                label: 'Data responsibility review',
+                status: 'manual',
+                summary: $dataResponsibilityMessage,
+                detail: $dataResponsibilityGuidance,
+                action: 'Review the data responsibility docs before using real visitor traffic, then explain the current retention and privacy boundaries during the demo.',
+                docsUrl: $dataResponsibilityDocsUrl,
+            ),
+        ];
+
+        $attentionCount = count(array_filter($items, fn (array $item): bool => $item['status'] === 'attention'));
+        $manualCount = count(array_filter($items, fn (array $item): bool => $item['status'] === 'manual'));
+        $readyCount = count(array_filter($items, fn (array $item): bool => $item['status'] === 'ready'));
+        $status = $attentionCount > 0 ? 'attention' : ($manualCount > 0 ? 'manual' : 'ready');
+
+        return [
+            'attention_count' => $attentionCount,
+            'items' => $items,
+            'label' => match ($status) {
+                'ready' => 'Ready for controlled dogfood',
+                'manual' => 'Manual proof needed',
+                default => 'Dogfood blocked',
+            },
+            'manual_count' => $manualCount,
+            'ready_count' => $readyCount,
+            'status' => $status,
+            'summary' => sprintf(
+                '%d ready / %d manual / %d blocked',
+                $readyCount,
+                $manualCount,
+                $attentionCount,
+            ),
+        ];
+    }
+
+    /**
+     * @param  array<int, string>  $commands
+     * @return array{action: string, commands: array<int, string>, detail: string, docs_url: string|null, key: string, label: string, status: string, status_label: string, summary: string}
+     */
+    private function dogfoodGate(
+        string $key,
+        string $label,
+        string $status,
+        string $summary,
+        string $detail,
+        string $action,
+        array $commands = [],
+        ?string $docsUrl = null,
+    ): array {
+        return [
+            'action' => $action,
+            'commands' => $commands,
+            'detail' => $detail,
+            'docs_url' => $docsUrl,
+            'key' => $key,
+            'label' => $label,
+            'status' => $status,
+            'status_label' => match ($status) {
+                'ready' => 'Ready',
+                'manual' => 'Manual proof',
+                default => 'Needs attention',
+            },
+            'summary' => $summary,
+        ];
+    }
+
+    /**
+     * @param  array<string, array{status: string}>  $checks
+     * @param  array<int, string>  $keys
+     */
+    private function dogfoodDependencyStatus(array $checks, array $keys): string
+    {
+        $statuses = array_map(fn (string $key): string => $this->statusFromCheck($checks, $key), $keys);
+
+        if (in_array('attention', $statuses, true)) {
+            return 'attention';
+        }
+
+        if (in_array('manual', $statuses, true)) {
+            return 'manual';
+        }
+
+        return 'ready';
+    }
+
+    /**
      * @param  array<int, string>  $commands
      * @return array{action: string, commands: array<int, string>, confirmation: array{age_label: string|null, confirmed_at: string|null, confirmed_by: string, freshness_status: string, key: string, note_present: bool, stale_after_days: int|null}|null, confirmation_key: string, confirmable: bool, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
      */
@@ -820,6 +1022,17 @@ class OperatorReadiness
     private function hasValue(mixed $value): bool
     {
         return is_string($value) ? trim($value) !== '' : $value !== null;
+    }
+
+    private function stringOrNull(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $value = trim($value);
+
+        return $value === '' ? null : $value;
     }
 
     private function isLocalHost(string $host): bool
