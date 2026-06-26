@@ -121,6 +121,8 @@
 
     <x-operator-dogfood-summary :dogfood-summary="$readiness['dogfood_summary']" />
 
+    <x-operator-retention-summary :retention-summary="$readiness['retention_summary']" />
+
     <section class="section" aria-labelledby="readiness-proof-coverage-heading">
         <div class="section-header">
             <div>

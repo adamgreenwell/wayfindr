@@ -14,6 +14,35 @@ return [
         'docs_url' => 'https://github.com/adamgreenwell/wayfindr/blob/main/docs/privacy/data-responsibility.md',
     ],
 
+    'retention' => [
+        'label' => 'Operator-owned retention',
+        'status' => 'manual',
+        'summary' => 'Automatic retention controls are not enabled yet.',
+        'description' => 'Assume application records, logs, and backups persist according to infrastructure defaults until an operator removes them or the host lifecycle removes them.',
+        'docs_url' => 'https://github.com/adamgreenwell/wayfindr/blob/main/docs/privacy/data-inventory.md#retention-posture',
+        'items' => [
+            [
+                'label' => 'Application records',
+                'value' => 'Manual lifecycle',
+                'description' => 'Conversations, messages, tickets, visitors, cobrowse metadata, and audit records stay in the application database until an operator removes or prunes them.',
+            ],
+            [
+                'label' => 'Logs and backups',
+                'value' => 'Infrastructure lifecycle',
+                'description' => 'Server logs, snapshots, database dumps, and storage backups follow host and provider retention policies outside Wayfindr.',
+            ],
+            [
+                'label' => 'Automatic deletion',
+                'value' => 'Not shipped yet',
+                'description' => 'Deletion, export, and retention controls remain future work; explain that before real support traffic.',
+            ],
+        ],
+        'reminders' => [
+            'Review privacy notices before real visitor traffic reaches the install.',
+            'Keep retention expectations aligned with backups, logs, and support workflows.',
+        ],
+    ],
+
     'widget_rate_limits' => [
         'bootstrap_per_minute' => (int) env('WAYFINDR_WIDGET_BOOTSTRAP_RATE_LIMIT', 120),
         'broadcast_auth_per_minute' => (int) env('WAYFINDR_WIDGET_BROADCAST_AUTH_RATE_LIMIT', 120),

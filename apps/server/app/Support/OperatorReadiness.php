@@ -43,6 +43,7 @@ class OperatorReadiness
      *     next_step: array{action: string, commands?: array<int, string>, detail: string, key: string, label: string, status: string, status_label: string, summary: string},
      *     proof_coverage: array{fresh_count: int, items: array<int, array{key: string, label: string, note_status: string, status: string, status_label: string, summary: string}>, missing_count: int, stale_count: int},
      *     ready_count: int,
+     *     retention_summary: array{description: string, docs_url: string|null, items: array<int, array{description: string, label: string, value: string}>, label: string, reminders: array<int, string>, status: string, status_label: string, summary: string},
      *     smoke_path: array<int, array{action: string, commands: array<int, string>, key: string, label: string, status: string, status_label: string, summary: string}>
      * }
      */
@@ -81,6 +82,7 @@ class OperatorReadiness
             'next_step' => $this->nextStep($checks, $smokePath),
             'proof_coverage' => $this->proofCoverage($checks),
             'ready_count' => $readyCount,
+            'retention_summary' => $this->retentionSummary(),
             'smoke_path' => $smokePath,
         ];
     }
@@ -769,6 +771,75 @@ class OperatorReadiness
     }
 
     /**
+     * @return array{description: string, docs_url: string|null, items: array<int, array{description: string, label: string, value: string}>, label: string, reminders: array<int, string>, status: string, status_label: string, summary: string}
+     */
+    private function retentionSummary(): array
+    {
+        $retention = config('wayfindr.retention');
+        $retention = is_array($retention) ? $retention : [];
+        $status = in_array($retention['status'] ?? null, ['ready', 'manual', 'attention'], true)
+            ? $retention['status']
+            : 'manual';
+
+        return [
+            'description' => $this->stringOrDefault(
+                $retention['description'] ?? null,
+                'Assume application records, logs, and backups persist according to infrastructure defaults until an operator removes them or the host lifecycle removes them.',
+            ),
+            'docs_url' => $this->stringOrNull($retention['docs_url'] ?? null),
+            'items' => $this->retentionSummaryItems($retention['items'] ?? null),
+            'label' => $this->stringOrDefault($retention['label'] ?? null, 'Operator-owned retention'),
+            'reminders' => $this->retentionSummaryReminders($retention['reminders'] ?? null),
+            'status' => $status,
+            'status_label' => match ($status) {
+                'ready' => 'Documented',
+                'attention' => 'Needs attention',
+                default => 'Manual ownership',
+            },
+            'summary' => $this->stringOrDefault(
+                $retention['summary'] ?? null,
+                'Automatic retention controls are not enabled yet.',
+            ),
+        ];
+    }
+
+    /**
+     * @return array<int, array{description: string, label: string, value: string}>
+     */
+    private function retentionSummaryItems(mixed $items): array
+    {
+        if (! is_array($items)) {
+            return [];
+        }
+
+        return collect($items)
+            ->filter(fn (mixed $item): bool => is_array($item))
+            ->map(fn (array $item): array => [
+                'description' => $this->stringOrDefault($item['description'] ?? null, ''),
+                'label' => $this->stringOrDefault($item['label'] ?? null, 'Retention item'),
+                'value' => $this->stringOrDefault($item['value'] ?? null, 'Review required'),
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function retentionSummaryReminders(mixed $reminders): array
+    {
+        if (! is_array($reminders)) {
+            return [];
+        }
+
+        return collect($reminders)
+            ->map(fn (mixed $reminder): ?string => $this->stringOrNull($reminder))
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    /**
      * @param  array<int, string>  $commands
      * @return array{action: string, commands: array<int, string>, confirmation: array{age_label: string|null, confirmed_at: string|null, confirmed_by: string, freshness_status: string, key: string, note_present: bool, stale_after_days: int|null}|null, confirmation_key: string, confirmable: bool, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
      */
@@ -1033,6 +1104,11 @@ class OperatorReadiness
         $value = trim($value);
 
         return $value === '' ? null : $value;
+    }
+
+    private function stringOrDefault(mixed $value, string $default): string
+    {
+        return $this->stringOrNull($value) ?? $default;
     }
 
     private function isLocalHost(string $host): bool

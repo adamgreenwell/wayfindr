@@ -56,6 +56,10 @@ test('account owner can inspect operator readiness diagnostics', function (): vo
         ->assertSee('Controlled MVP gates for demo and staging use.')
         ->assertSee('Full support-loop smoke')
         ->assertSee('Data responsibility review')
+        ->assertSee('Retention posture')
+        ->assertSee('Automatic retention controls are not enabled yet.')
+        ->assertSee('Application records')
+        ->assertSee('Automatic deletion')
         ->assertSee('php artisan wayfindr:mail-test --to=you@example.com')
         ->assertSee('php artisan queue:failed')
         ->assertSee('php artisan queue:work')
@@ -1035,6 +1039,62 @@ test('readiness diagnostics include a dogfood gate summary', function (): void {
             'status' => 'manual',
             'docs_url' => 'https://github.com/adamgreenwell/wayfindr/blob/main/docs/privacy/data-responsibility.md',
         ]);
+});
+
+test('readiness diagnostics include config backed retention visibility', function (): void {
+    config([
+        'wayfindr.retention' => [
+            'label' => 'Pilot 30-day retention',
+            'status' => 'ready',
+            'summary' => 'Pilot retention is documented for the demo install.',
+            'description' => 'Records are reviewed before production traffic is allowed.',
+            'docs_url' => 'https://docs.example.test/retention',
+            'items' => [
+                [
+                    'label' => 'Conversations and messages',
+                    'value' => '30 days',
+                    'description' => 'The operator reviews conversation records after each pilot cycle.',
+                ],
+                [
+                    'label' => 'Backups',
+                    'value' => 'Host policy',
+                    'description' => 'Backups follow the host lifecycle outside Wayfindr.',
+                ],
+            ],
+            'reminders' => [
+                'Tell pilot users how long support records are kept.',
+                '',
+                'Review backup retention before the demo.',
+            ],
+        ],
+    ]);
+
+    $readiness = app(OperatorReadiness::class)->summary();
+
+    expect($readiness['retention_summary'])->toMatchArray([
+        'label' => 'Pilot 30-day retention',
+        'status' => 'ready',
+        'status_label' => 'Documented',
+        'summary' => 'Pilot retention is documented for the demo install.',
+        'description' => 'Records are reviewed before production traffic is allowed.',
+        'docs_url' => 'https://docs.example.test/retention',
+        'items' => [
+            [
+                'label' => 'Conversations and messages',
+                'value' => '30 days',
+                'description' => 'The operator reviews conversation records after each pilot cycle.',
+            ],
+            [
+                'label' => 'Backups',
+                'value' => 'Host policy',
+                'description' => 'Backups follow the host lifecycle outside Wayfindr.',
+            ],
+        ],
+        'reminders' => [
+            'Tell pilot users how long support records are kept.',
+            'Review backup retention before the demo.',
+        ],
+    ]);
 });
 
 test('dogfood support loop gate allows manual refresh when realtime is not ready', function (): void {
