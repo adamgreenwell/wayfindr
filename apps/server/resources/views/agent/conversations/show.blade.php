@@ -693,7 +693,20 @@
                             /
                             {{ $cobrowseConsent['replay_preview']['skipped_mutations'] }}
                         </span>
+                        <span
+                            class="readiness-status"
+                            data-status="{{ $cobrowseConsent['replay_preview']['drift']['tone'] }}"
+                            data-cobrowse-replay-drift-status
+                        >{{ $cobrowseConsent['replay_preview']['drift']['label'] }}</span>
                     </div>
+
+                    @if ($cobrowseConsent['replay_preview']['drift']['state'] !== 'steady')
+                        <p
+                            class="lede realtime-note"
+                            data-cobrowse-replay-drift-message
+                            data-recommend-resync="{{ $cobrowseConsent['replay_preview']['drift']['recommend_resync'] ? 'true' : 'false' }}"
+                        >{{ $cobrowseConsent['replay_preview']['drift']['message'] }} ({{ $cobrowseConsent['replay_preview']['drift']['summary'] }})</p>
+                    @endif
 
                     <div class="cobrowse-preview-frame">
                         <iframe

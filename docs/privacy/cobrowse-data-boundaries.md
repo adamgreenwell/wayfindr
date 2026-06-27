@@ -141,7 +141,16 @@ When telemetry or mutation diagnostics show reconnects, dropped batches, skipped
 records, or stale reports, Wayfindr should tell agents how much to trust the
 preview and when to confirm fast-changing details through chat. Fresh reports
 with recent dropped or skipped page changes should be treated as degraded rather
-than fully live. The visitor experience should stay simple: allow, decline,
+than fully live.
+
+Wayfindr also watches for replay drift on the agent side. Mutations are
+addressed by structural paths, so when the visitor's live page diverges from the
+snapshot the agent is viewing, those paths stop resolving. Wayfindr counts
+mutations that resolve to no node separately from unsupported or malformed
+records, and when a sustained share of addressable mutations drift it recommends
+the agent request a fresh snapshot rather than trusting an increasingly stale
+reconstruction. Drift detection is metadata-only: it counts outcomes and never
+records raw snapshot HTML, page text, or mutation payloads. The visitor experience should stay simple: allow, decline,
 stop, and clear copy about sensitive fields being masked.
 
 ## Operator Readiness Boundary

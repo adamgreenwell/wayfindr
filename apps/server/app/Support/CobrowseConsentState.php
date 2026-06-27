@@ -19,7 +19,7 @@ class CobrowseConsentState
     ) {}
 
     /**
-     * @return array{label: string, message: string, status: string, lifecycle: array<string, string>|null, transport: array<string, string>, payload_budget: array<string, string>|null, telemetry: array<string, string>|null, page_state: array<string, string>|null, snapshot: array<string, mixed>|null, snapshot_recovery: array<string, string>|null, mutation_stream: array<string, string>|null, replay_preview: array<string, string>|null, resync_request: array<string, mixed>|null}
+     * @return array{label: string, message: string, status: string, lifecycle: array<string, string>|null, transport: array<string, string>, payload_budget: array<string, string>|null, telemetry: array<string, string>|null, page_state: array<string, string>|null, snapshot: array<string, mixed>|null, snapshot_recovery: array<string, string>|null, mutation_stream: array<string, string>|null, replay_preview: array<string, mixed>|null, resync_request: array<string, mixed>|null}
      */
     public function forConversation(Conversation $conversation): array
     {
