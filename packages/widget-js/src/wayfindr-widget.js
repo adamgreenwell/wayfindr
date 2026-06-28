@@ -1822,11 +1822,70 @@
     return normalized;
   }
 
+  function forEachChildNode(node, callback) {
+    Array.prototype.slice.call((node && node.childNodes) || []).forEach(callback);
+  }
+
+  // Deep-clone a node for capture, inlining open shadow roots so web-component
+  // content is visible (and maskable) in the snapshot. Closed shadow roots are
+  // inaccessible by design and are simply absent. Falls back to a plain deep
+  // clone for nodes without shadow content, so behavior is unchanged for pages
+  // that do not use shadow DOM.
+  function cloneForCapture(node) {
+    if (!node) {
+      return null;
+    }
+
+    if (node.nodeType !== 1) {
+      return node.cloneNode(true);
+    }
+
+    var clone = node.cloneNode(false);
+    var tagName = String(node.tagName || '').toLowerCase();
+    var ownerDocument = node.ownerDocument;
+
+    if (node.shadowRoot && ownerDocument) {
+      var shadowContainer = ownerDocument.createElement('div');
+      shadowContainer.setAttribute('data-wayfindr-shadow-content', '');
+
+      forEachChildNode(node.shadowRoot, function (child) {
+        var clonedChild = cloneForCapture(child);
+
+        if (clonedChild) {
+          shadowContainer.appendChild(clonedChild);
+        }
+      });
+
+      clone.appendChild(shadowContainer);
+    }
+
+    // cloneNode(false) does not copy <template> content, so reattach it.
+    if (tagName === 'template' && node.content && clone.content) {
+      forEachChildNode(node.content, function (child) {
+        var clonedChild = cloneForCapture(child);
+
+        if (clonedChild) {
+          clone.content.appendChild(clonedChild);
+        }
+      });
+    }
+
+    forEachChildNode(node, function (child) {
+      var clonedChild = cloneForCapture(child);
+
+      if (clonedChild) {
+        clone.appendChild(clonedChild);
+      }
+    });
+
+    return clone;
+  }
+
   function createCobrowseSnapshot(doc, options) {
     options = options || {};
 
     var location = options.location || (doc && doc.location) || null;
-    var source = doc && doc.body ? doc.body.cloneNode(true) : null;
+    var source = doc && doc.body ? cloneForCapture(doc.body) : null;
 
     if (!source) {
       return {
@@ -2007,7 +2066,7 @@
   }
 
   function addedMutation(record, element, options) {
-    var clone = element.cloneNode(true);
+    var clone = cloneForCapture(element);
     var maskedCount;
 
     removeMatching(clone, DEFAULT_REMOVE_SELECTORS);

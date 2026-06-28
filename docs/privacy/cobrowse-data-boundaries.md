@@ -43,6 +43,28 @@ After consent, the widget may send:
 Those payloads should remain compact, bounded, and recoverable. They should not
 be treated as a permanent recording of the visitor's browser.
 
+## Capture Scope
+
+The snapshot captures the page body, including the content of **open** shadow
+roots, which are inlined so web-component content is visible to the agent.
+Sensitive-field masking and form-value clearing run over inlined shadow content
+the same way they run over light DOM, so nothing in an open shadow tree bypasses
+masking.
+
+Some page content is intentionally out of scope and will simply be absent from
+the preview rather than partially captured:
+
+- **Closed shadow roots** are inaccessible to the widget by browser design.
+- **Cross-origin iframes** are inaccessible by browser design; same-origin
+  iframe capture is not implemented yet.
+- `canvas`, `svg`, and other removed elements are dropped before send.
+
+Live mutation streaming observes the main document tree. Changes made *inside*
+an existing shadow root are not streamed as individual mutations; they are
+picked up on the next snapshot (including pressure- or agent-requested resyncs).
+These gaps are visibility limitations, not masking gaps: absent content cannot
+leak.
+
 ## Payload Budget Boundary
 
 Wayfindr treats cobrowse payload budgets as a product contract, not incidental
