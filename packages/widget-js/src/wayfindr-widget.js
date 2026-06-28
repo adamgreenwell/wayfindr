@@ -391,7 +391,10 @@
       '    <strong>' + escapeHtml(options.title || 'Wayfindr Support') + '</strong>',
       '    <button class="wayfindr-widget__close" type="button" aria-label="Close support chat">&times;</button>',
       '  </header>',
-      '  <div class="wayfindr-widget__timeline" role="log" aria-live="polite" aria-relevant="additions text" aria-atomic="false" aria-label="Conversation messages" hidden></div>',
+      '  <div class="wayfindr-widget__timeline-wrap">',
+      '    <div class="wayfindr-widget__timeline" role="log" aria-live="polite" aria-relevant="additions text" aria-atomic="false" aria-label="Conversation messages" hidden></div>',
+      '    <button class="wayfindr-widget__jump" type="button" hidden>New messages ↓</button>',
+      '  </div>',
       '  <div class="wayfindr-widget__notice" data-state="empty" role="status" aria-live="polite" aria-atomic="true">',
       '    <p class="wayfindr-widget__notice-copy">No messages yet. Send a message and support will see it here.</p>',
       '    <button class="wayfindr-widget__notice-retry" type="button" hidden>Try again</button>',
@@ -424,6 +427,7 @@
     var close = rootEl.querySelector('.wayfindr-widget__close');
     var form = rootEl.querySelector('.wayfindr-widget__form');
     var timeline = rootEl.querySelector('.wayfindr-widget__timeline');
+    var jump = rootEl.querySelector('.wayfindr-widget__jump');
     var notice = rootEl.querySelector('.wayfindr-widget__notice');
     var noticeCopy = rootEl.querySelector('.wayfindr-widget__notice-copy');
     var noticeRetry = rootEl.querySelector('.wayfindr-widget__notice-retry');
@@ -531,7 +535,30 @@
       }
     }
 
+    function timelineIsAtBottom() {
+      return (timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight) <= 24;
+    }
+
+    function scrollTimelineToBottom() {
+      timeline.scrollTop = timeline.scrollHeight;
+    }
+
+    function showJumpCue() {
+      if (jump) {
+        jump.hidden = false;
+      }
+    }
+
+    function hideJumpCue() {
+      if (jump) {
+        jump.hidden = true;
+      }
+    }
+
     function renderMessages(nextMessages) {
+      var previousCount = messages.length;
+      var wasAtBottom = previousCount === 0 || timelineIsAtBottom();
+
       messages = Array.isArray(nextMessages) ? nextMessages : messages;
       timeline.textContent = '';
 
@@ -594,6 +621,22 @@
 
       timeline.hidden = messages.length === 0;
       renderConversationNotice();
+
+      var newestMessage = messages[messages.length - 1] || null;
+      var newestIsVisitor = !!newestMessage && (newestMessage.sender || {}).kind !== 'agent';
+
+      if (messages.length === 0) {
+        hideJumpCue();
+      } else if (wasAtBottom || newestIsVisitor) {
+        // Keep the latest message in view when the visitor is already at the
+        // bottom or just sent a message themselves.
+        scrollTimelineToBottom();
+        hideJumpCue();
+      } else if (messages.length > previousCount) {
+        // The visitor has scrolled up; offer a gentle cue instead of yanking
+        // them down to a message they did not ask to jump to.
+        showJumpCue();
+      }
 
       refresh.hidden = false;
       scheduleRenderedReadReceipt();
@@ -1444,6 +1487,17 @@
     });
     refresh.addEventListener('click', function () {
       refreshMessages();
+    });
+    if (jump) {
+      jump.addEventListener('click', function () {
+        scrollTimelineToBottom();
+        hideJumpCue();
+      });
+    }
+    timeline.addEventListener('scroll', function () {
+      if (timelineIsAtBottom()) {
+        hideJumpCue();
+      }
     });
     noticeRetry.addEventListener('click', function () {
       if (noticeRetryAction) {
@@ -2684,6 +2738,8 @@
       '.wayfindr-widget__message{display:grid;gap:4px;width:88%;border:1px solid #d8dfdc;border-radius:8px;padding:9px 10px;background:#fff}',
       '.wayfindr-widget__message--agent{justify-self:end;background:#eef6f3;border-color:#cfe1dc}',
       '.wayfindr-widget__message--grouped{margin-top:-6px}',
+      '.wayfindr-widget__timeline-wrap{position:relative}',
+      '.wayfindr-widget__jump{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);border:1px solid #cfe1dc;background:#eef6f3;color:#1d2523;border-radius:999px;padding:4px 12px;font-size:12px;line-height:1.2;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.12)}',
       '.wayfindr-widget__day-separator{display:flex;align-items:center;justify-content:center;margin:2px 0}',
       '.wayfindr-widget__day-label{color:#62706b;font-size:11px;line-height:1.2;background:#eef1ef;border-radius:999px;padding:2px 10px;white-space:nowrap}',
       '.wayfindr-widget__message-meta{display:flex;align-items:center;justify-content:space-between;gap:10px}',

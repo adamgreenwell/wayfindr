@@ -6112,3 +6112,125 @@ test('separates widget messages by day with calm date dividers', async () => {
   assert.equal(separators[0].querySelector('time').dateTime, '2026-05-22');
   assert.equal(separators[1].querySelector('time').dateTime, '2026-05-23');
 });
+
+function jumpCueWidget(dom, getIncludeNewMessage) {
+  return Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    storage: memoryStorage(),
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    fetch: async (url) => {
+      const path = new URL(url).pathname;
+
+      if (path === '/api/widget/bootstrap') {
+        return jsonResponse(201, {
+          data: {
+            site: { public_key: 'site_public_docs', settings: {} },
+            visitor: { anonymous_id: 'anon-browser-123', token: 'visitor-token-123' },
+          },
+        });
+      }
+
+      if (path === '/api/conversations') {
+        return jsonResponse(201, { data: { support_code: 'WF-TEST123', status: 'open' } });
+      }
+
+      if (path === '/api/conversations/WF-TEST123/cobrowse') {
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-TEST123' },
+            cobrowse: { status: 'unavailable', consent: 'unavailable', requested_by: null },
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-TEST123/messages') {
+        const messages = [
+          { id: 1, sender: { kind: 'visitor', name: 'Visitor' }, type: 'text', body: 'First thought.', created_at: '2026-05-23T14:00:00.000000Z' },
+        ];
+
+        if (getIncludeNewMessage()) {
+          messages.push({ id: 2, sender: { kind: 'agent', name: 'Ada Agent' }, type: 'text', body: 'Newer reply.', created_at: '2026-05-23T14:05:00.000000Z' });
+        }
+
+        return jsonResponse(200, { data: { conversation: { support_code: 'WF-TEST123', status: 'open' }, messages } });
+      }
+
+      throw new Error('Unexpected request ' + url);
+    },
+  });
+}
+
+function stubScroll(element, scrollHeight, clientHeight, scrollTop) {
+  let top = scrollTop;
+
+  Object.defineProperty(element, 'scrollHeight', { configurable: true, get: () => scrollHeight });
+  Object.defineProperty(element, 'clientHeight', { configurable: true, get: () => clientHeight });
+  Object.defineProperty(element, 'scrollTop', { configurable: true, get: () => top, set: (value) => { top = value; } });
+}
+
+test('shows a jump-to-latest cue when a reply arrives while the visitor is scrolled up', async () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+  let includeNewMessage = false;
+  const widget = jumpCueWidget(dom, () => includeNewMessage);
+
+  widget.open();
+  widget.root.querySelector('.wayfindr-widget__textarea').value = 'First thought.';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+    new dom.window.Event('submit', { bubbles: true, cancelable: true }),
+  );
+  await settle();
+
+  const timeline = widget.root.querySelector('.wayfindr-widget__timeline');
+  const jump = widget.root.querySelector('.wayfindr-widget__jump');
+
+  // Nothing to jump to right after the first message lands.
+  assert.equal(jump.hidden, true);
+
+  // Simulate the visitor having scrolled up, then a new agent reply arrives.
+  stubScroll(timeline, 1000, 280, 0);
+  includeNewMessage = true;
+  widget.root.querySelector('.wayfindr-widget__refresh').dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+  await settle();
+
+  assert.equal(jump.hidden, false);
+
+  // Activating the cue jumps to the latest message and dismisses the cue.
+  jump.dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+  assert.equal(jump.hidden, true);
+  assert.equal(timeline.scrollTop, 1000);
+});
+
+test('keeps the latest reply in view without a cue when already at the bottom', async () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+  let includeNewMessage = false;
+  const widget = jumpCueWidget(dom, () => includeNewMessage);
+
+  widget.open();
+  widget.root.querySelector('.wayfindr-widget__textarea').value = 'First thought.';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+    new dom.window.Event('submit', { bubbles: true, cancelable: true }),
+  );
+  await settle();
+
+  const timeline = widget.root.querySelector('.wayfindr-widget__timeline');
+  const jump = widget.root.querySelector('.wayfindr-widget__jump');
+
+  // Visitor is at the bottom when the new reply arrives.
+  stubScroll(timeline, 1000, 280, 720);
+  includeNewMessage = true;
+  widget.root.querySelector('.wayfindr-widget__refresh').dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+  await settle();
+
+  assert.equal(jump.hidden, true);
+  assert.equal(timeline.scrollTop, 1000);
+});
