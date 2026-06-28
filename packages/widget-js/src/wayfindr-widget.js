@@ -622,17 +622,20 @@
       timeline.hidden = messages.length === 0;
       renderConversationNotice();
 
+      var grew = messages.length > previousCount;
       var newestMessage = messages[messages.length - 1] || null;
       var newestIsVisitor = !!newestMessage && (newestMessage.sender || {}).kind !== 'agent';
 
       if (messages.length === 0) {
         hideJumpCue();
-      } else if (wasAtBottom || newestIsVisitor) {
+      } else if (wasAtBottom || (newestIsVisitor && grew)) {
         // Keep the latest message in view when the visitor is already at the
-        // bottom or just sent a message themselves.
+        // bottom or has just sent a new message. Requiring growth means a poll
+        // or refresh that re-renders an already-seen visitor message will not
+        // yank a visitor who has scrolled up to reread earlier replies.
         scrollTimelineToBottom();
         hideJumpCue();
-      } else if (messages.length > previousCount) {
+      } else if (grew) {
         // The visitor has scrolled up; offer a gentle cue instead of yanking
         // them down to a message they did not ask to jump to.
         showJumpCue();

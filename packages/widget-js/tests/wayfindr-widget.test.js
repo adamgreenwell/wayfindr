@@ -6234,3 +6234,31 @@ test('keeps the latest reply in view without a cue when already at the bottom', 
   assert.equal(jump.hidden, true);
   assert.equal(timeline.scrollTop, 1000);
 });
+
+test('does not yank a scrolled-up visitor when a refresh brings no new messages', async () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+  // includeNewMessage stays false, so the last message remains the visitor's own
+  // and refreshes return the same list (no growth) -- the regression Codex flagged.
+  const widget = jumpCueWidget(dom, () => false);
+
+  widget.open();
+  widget.root.querySelector('.wayfindr-widget__textarea').value = 'First thought.';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+    new dom.window.Event('submit', { bubbles: true, cancelable: true }),
+  );
+  await settle();
+
+  const timeline = widget.root.querySelector('.wayfindr-widget__timeline');
+  const jump = widget.root.querySelector('.wayfindr-widget__jump');
+
+  // Visitor scrolls up to reread; the last message in the thread is their own.
+  stubScroll(timeline, 1000, 280, 0);
+  widget.root.querySelector('.wayfindr-widget__refresh').dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+  await settle();
+
+  // No new messages, so the visitor stays where they scrolled and sees no cue.
+  assert.equal(jump.hidden, true);
+  assert.equal(timeline.scrollTop, 0);
+});
