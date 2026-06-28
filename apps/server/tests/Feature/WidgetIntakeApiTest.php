@@ -23,6 +23,7 @@ test('widget bootstrap creates a site scoped visitor and returns safe config', f
         'public_key' => 'site_public_docs',
         'settings' => [
             'mask_selectors' => ['input[type="password"]', '[data-secret]'],
+            'mask_terms' => ['contraseña', 'NHS number'],
             'internal_note' => 'do not leak this',
         ],
     ]);
@@ -38,6 +39,7 @@ test('widget bootstrap creates a site scoped visitor and returns safe config', f
         ->assertJsonPath('data.site.public_key', 'site_public_docs')
         ->assertJsonPath('data.site.name', 'Docs Site')
         ->assertJsonPath('data.site.settings.mask_selectors', ['input[type="password"]', '[data-secret]'])
+        ->assertJsonPath('data.site.settings.mask_terms', ['contraseña', 'NHS number'])
         ->assertJsonPath('data.visitor.anonymous_id', 'anon-browser-123');
 
     $payload = $response->json('data');

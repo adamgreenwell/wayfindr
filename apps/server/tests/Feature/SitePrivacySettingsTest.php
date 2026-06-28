@@ -162,6 +162,31 @@ test('account admins can update mask selectors for their account site', function
     expect($site->fresh()->settings)->toBe([
         'mask_selectors' => ['[data-secret]', 'input[name="token"]'],
         'internal_note' => 'keep me',
+        'mask_terms' => [],
+    ]);
+});
+
+test('account admins can configure extra sensitive field terms for their account site', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create([
+        'settings' => [
+            'mask_selectors' => ['[data-secret]'],
+        ],
+    ]);
+
+    $this->actingAs($agent)
+        ->from("/dashboard/sites/{$site->id}")
+        ->put("/dashboard/sites/{$site->id}", [
+            'mask_selectors' => '[data-secret]',
+            'mask_terms' => " contraseña \n\nNHS number\ncontraseña\n",
+        ])
+        ->assertRedirect("/dashboard/sites/{$site->id}")
+        ->assertSessionHas('status', 'Site privacy settings saved.');
+
+    expect($site->fresh()->settings)->toBe([
+        'mask_selectors' => ['[data-secret]'],
+        'mask_terms' => ['contraseña', 'NHS number'],
     ]);
 });
 

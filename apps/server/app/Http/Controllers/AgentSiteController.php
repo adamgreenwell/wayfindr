@@ -124,6 +124,7 @@ class AgentSiteController extends Controller
             ->get();
         $supportAgentIds = $this->eligibleSupportAgentIds($site);
         $maskSelectors = $this->maskSelectors($site);
+        $maskTerms = $this->maskTerms($site);
         $externalIssueHealth = $this->externalIssueHealth($site);
 
         return view('agent.sites.show', [
@@ -140,6 +141,7 @@ class AgentSiteController extends Controller
             'externalIssueProviderConnections' => $externalIssueProviderConnections,
             'externalIssueProviders' => ExternalIssueProvider::options(),
             'maskSelectors' => $maskSelectors,
+            'maskTerms' => $maskTerms,
             'operatorSmokePath' => $readiness->summary()['smoke_path'],
             'site' => $site,
             'siteActivity' => $this->siteActivityItems($site, $agent),
@@ -487,10 +489,12 @@ class AgentSiteController extends Controller
 
         $validated = $request->validate([
             'mask_selectors' => ['nullable', 'string', 'max:4000'],
+            'mask_terms' => ['nullable', 'string', 'max:4000'],
         ]);
 
         $settings = $site->settings ?? [];
         $settings['mask_selectors'] = $this->parseMaskSelectors($validated['mask_selectors'] ?? '');
+        $settings['mask_terms'] = $this->parseMaskTerms($validated['mask_terms'] ?? '');
 
         $site->forceFill(['settings' => $settings])->save();
 
@@ -858,14 +862,45 @@ class AgentSiteController extends Controller
     /**
      * @return array<int, string>
      */
+    private function maskTerms(Site $site): array
+    {
+        $terms = $site->settings['mask_terms'] ?? [];
+
+        return is_array($terms) ? array_values(array_filter($terms, 'is_string')) : [];
+    }
+
+    /**
+     * @return array<int, string>
+     */
     private function parseMaskSelectors(string $value): array
     {
-        $selectors = preg_split('/\R/', $value) ?: [];
-        $selectors = array_map(fn (string $selector): string => trim($selector), $selectors);
-        $selectors = array_filter($selectors, fn (string $selector): bool => $selector !== '');
-        $selectors = array_map(fn (string $selector): string => mb_substr($selector, 0, 255), $selectors);
+        return $this->parseLines($value);
+    }
 
-        return array_values(array_unique($selectors));
+    /**
+     * @return array<int, string>
+     */
+    private function parseMaskTerms(string $value): array
+    {
+        return $this->parseLines($value);
+    }
+
+    /**
+     * Split operator textarea input into trimmed, bounded, unique lines. Used
+     * for both mask selectors and inferred-sensitivity terms. Both are public
+     * widget configuration, so they must hold only CSS selectors or plain terms,
+     * never secrets.
+     *
+     * @return array<int, string>
+     */
+    private function parseLines(string $value): array
+    {
+        $lines = preg_split('/\R/', $value) ?: [];
+        $lines = array_map(fn (string $line): string => trim($line), $lines);
+        $lines = array_filter($lines, fn (string $line): bool => $line !== '');
+        $lines = array_map(fn (string $line): string => mb_substr($line, 0, 255), $lines);
+
+        return array_values(array_unique($lines));
     }
 
     /**

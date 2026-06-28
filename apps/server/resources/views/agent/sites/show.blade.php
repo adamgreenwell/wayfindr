@@ -745,6 +745,18 @@
                             Add one CSS selector per line. These selectors are sent to the widget as public configuration, so do not put private notes or secrets here.
                         </p>
 
+                        <div class="field">
+                            <label for="mask_terms">Extra sensitive field terms</label>
+                            <textarea id="mask_terms" name="mask_terms" spellcheck="false">{{ old('mask_terms', implode("\n", $maskTerms)) }}</textarea>
+                            @error('mask_terms')
+                                <p class="field-error">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <p class="field-help">
+                            Add one term per line to extend automatic sensitive-field detection for this site's language or domain (for example <code>contraseña</code> or <code>NHS number</code>). Terms are matched against field labels and attributes. They are public widget configuration, so use plain words only, never secrets.
+                        </p>
+
                         <div class="notice-list">
                             <p><code>data-wayfindr-mask</code> and <code>data-wayfindr-private</code> force masking for known sensitive areas.</p>
                             <p><code>data-wayfindr-allow</code> is only for deliberate false positives where the content is safe to share.</p>
@@ -763,6 +775,16 @@
                         <div class="notice-list">
                             @foreach ($maskSelectors as $maskSelector)
                                 <p><code>{{ $maskSelector }}</code></p>
+                            @endforeach
+                        </div>
+                    @endif
+
+                    @if (count($maskTerms) === 0)
+                        <p class="empty">No extra sensitive field terms are configured.</p>
+                    @else
+                        <div class="notice-list">
+                            @foreach ($maskTerms as $maskTerm)
+                                <p><code>{{ $maskTerm }}</code></p>
                             @endforeach
                         </div>
                     @endif

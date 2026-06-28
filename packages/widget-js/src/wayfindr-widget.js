@@ -127,6 +127,7 @@
     var visitorToken = options.visitorToken || null;
     var realtime = resolveRealtime(options, fetcher);
     var maskSelectors = [];
+    var sensitiveTerms = [];
 
     if (!apiBaseUrl) {
       throw new Error('Wayfindr requires an apiBaseUrl option.');
@@ -172,6 +173,7 @@
           }
 
           maskSelectors = siteMaskSelectors(result);
+          sensitiveTerms = siteSensitiveTerms(result);
 
           return result;
         });
@@ -302,6 +304,9 @@
       },
       getMaskSelectors: function () {
         return maskSelectors.slice();
+      },
+      getSensitiveTerms: function () {
+        return sensitiveTerms.slice();
       },
       subscribeToConversation: function (supportCode, onMessage, onConnectionState, onTyping) {
         if (!realtime) {
@@ -963,6 +968,7 @@
         var snapshot = createCobrowseSnapshot(doc, {
           location: location,
           maskSelectors: client.getMaskSelectors(),
+          sensitiveTerms: client.getSensitiveTerms(),
         });
 
         snapshot.resyncRequestId = requestId;
@@ -1156,6 +1162,7 @@
         document: doc,
         location: location,
         maskSelectors: client.getMaskSelectors(),
+        sensitiveTerms: client.getSensitiveTerms(),
         sequence: mutationSequence + 1,
         droppedCount: droppedMutationBatches,
         skippedCount: queuedSkippedCount,
@@ -1196,6 +1203,7 @@
         var snapshot = createCobrowseSnapshot(doc, {
           location: location,
           maskSelectors: client.getMaskSelectors(),
+          sensitiveTerms: client.getSensitiveTerms(),
         });
 
         snapshot.mutationSequence = batch.sequence;
@@ -1254,6 +1262,7 @@
             await client.reportCobrowseSnapshot(supportCode, createCobrowseSnapshot(doc, {
               location: location,
               maskSelectors: client.getMaskSelectors(),
+              sensitiveTerms: client.getSensitiveTerms(),
             }));
           } catch (error) {
             // Snapshot reporting should never undo a successful consent change.
@@ -1788,6 +1797,31 @@
     }) : [];
   }
 
+  function siteSensitiveTerms(result) {
+    var settings = result && result.site ? result.site.settings || {} : {};
+    var terms = settings.mask_terms;
+
+    if (!Array.isArray(terms)) {
+      return [];
+    }
+
+    var normalized = [];
+
+    terms.forEach(function (term) {
+      if (typeof term !== 'string') {
+        return;
+      }
+
+      var token = normalizeSensitiveToken(term);
+
+      if (token && normalized.indexOf(token) === -1) {
+        normalized.push(token);
+      }
+    });
+
+    return normalized;
+  }
+
   function createCobrowseSnapshot(doc, options) {
     options = options || {};
 
@@ -1808,7 +1842,7 @@
     removeMatching(source, DEFAULT_REMOVE_SELECTORS);
 
     var maskedCount = maskMatching(source, DEFAULT_MASK_SELECTORS.concat(options.maskSelectors || []));
-    maskedCount += maskInferredSensitiveElements(source);
+    maskedCount += maskInferredSensitiveElements(source, options.sensitiveTerms || []);
     clearFormControlValues(source);
 
     return {
@@ -1827,6 +1861,7 @@
     var doc = options.document || null;
     var location = options.location || (doc && doc.location) || null;
     var maskSelectors = DEFAULT_MASK_SELECTORS.concat(options.maskSelectors || []);
+    var sensitiveTerms = options.sensitiveTerms || [];
     var maxMutations = options.maxMutations || 50;
     var mutations = [];
     var skippedCount = Number(options.skippedCount || 0);
@@ -1840,6 +1875,7 @@
 
       var mutation = mutationFromRecord(record, {
         maskSelectors: maskSelectors,
+        sensitiveTerms: sensitiveTerms,
       });
 
       if (!mutation) {
@@ -1918,7 +1954,7 @@
     return {
       type: 'text',
       path: elementPath(element),
-      text: isMaskedElement(element, options.maskSelectors)
+      text: isMaskedElement(element, options.maskSelectors, options.sensitiveTerms)
         ? '[masked]'
         : truncateString(normalizeWhitespace(target.data || target.textContent || ''), 5000),
     };
@@ -1936,7 +1972,7 @@
       type: 'attribute',
       path: elementPath(element),
       attributeName: attributeName,
-      attributeValue: isMaskedElement(element, options.maskSelectors)
+      attributeValue: isMaskedElement(element, options.maskSelectors, options.sensitiveTerms)
         ? '[masked]'
         : truncateString(String(element.getAttribute(attributeName) || ''), 2048),
     };
@@ -1975,10 +2011,10 @@
     var maskedCount;
 
     removeMatching(clone, DEFAULT_REMOVE_SELECTORS);
-    maskedCount = isMaskedElement(element, options.maskSelectors)
+    maskedCount = isMaskedElement(element, options.maskSelectors, options.sensitiveTerms)
       ? maskWholeElement(clone)
       : maskMatching(clone, options.maskSelectors);
-    maskedCount += maskInferredSensitiveElements(clone);
+    maskedCount += maskInferredSensitiveElements(clone, options.sensitiveTerms);
     clearFormControlValues(clone);
 
     return {
@@ -1999,7 +2035,7 @@
     return {
       type: 'text',
       path: elementPath(element),
-      text: isMaskedElement(element, options.maskSelectors)
+      text: isMaskedElement(element, options.maskSelectors, options.sensitiveTerms)
         ? '[masked]'
         : truncateString(normalizeWhitespace(node.textContent || ''), 5000),
     };
@@ -2046,14 +2082,14 @@
     return masked.length;
   }
 
-  function maskInferredSensitiveElements(source) {
+  function maskInferredSensitiveElements(source, extraTerms) {
     var masked = [];
 
     allElements(source).forEach(function (element) {
       if (
         masked.indexOf(element) !== -1
         || isAlreadyMaskedElement(element)
-        || !isInferredSensitiveElement(element, source)
+        || !isInferredSensitiveElement(element, source, extraTerms)
       ) {
         return;
       }
@@ -2119,30 +2155,30 @@
     return elementMatchesOrClosest(element, DEFAULT_REMOVE_SELECTORS);
   }
 
-  function isMaskedElement(element, selectors) {
+  function isMaskedElement(element, selectors, extraTerms) {
     return elementMatchesOrClosest(element, selectors || DEFAULT_MASK_SELECTORS)
-      || isInferredSensitiveElement(element, element ? element.ownerDocument : null);
+      || isInferredSensitiveElement(element, element ? element.ownerDocument : null, extraTerms);
   }
 
-  function isInferredSensitiveElement(element, source) {
+  function isInferredSensitiveElement(element, source, extraTerms) {
     if (!element || elementMatchesOrClosest(element, ['[data-wayfindr-allow]'])) {
       return false;
     }
 
-    if (hasSensitiveAttribute(element)) {
+    if (hasSensitiveAttribute(element, extraTerms)) {
       return true;
     }
 
-    return isFormControl(element) && hasSensitiveLabel(element, source || element.ownerDocument);
+    return isFormControl(element) && hasSensitiveLabel(element, source || element.ownerDocument, extraTerms);
   }
 
-  function hasSensitiveAttribute(element) {
+  function hasSensitiveAttribute(element, extraTerms) {
     return SENSITIVE_FIELD_ATTRIBUTES.some(function (attributeName) {
-      return hasSensitiveTerm(element.getAttribute(attributeName));
+      return hasSensitiveTerm(element.getAttribute(attributeName), extraTerms);
     });
   }
 
-  function hasSensitiveLabel(element, source) {
+  function hasSensitiveLabel(element, source, extraTerms) {
     var id = element.getAttribute('id');
     var labels = [];
 
@@ -2167,18 +2203,22 @@
     }
 
     return labels.some(function (label) {
-      return hasSensitiveTerm(label.textContent || '');
+      return hasSensitiveTerm(label.textContent || '', extraTerms);
     });
   }
 
-  function hasSensitiveTerm(value) {
+  function hasSensitiveTerm(value, extraTerms) {
     var normalized = normalizeSensitiveToken(value);
 
     if (!normalized) {
       return false;
     }
 
-    return SENSITIVE_FIELD_TERMS.some(function (term) {
+    var terms = extraTerms && extraTerms.length
+      ? SENSITIVE_FIELD_TERMS.concat(extraTerms)
+      : SENSITIVE_FIELD_TERMS;
+
+    return terms.some(function (term) {
       return normalized.indexOf(term) !== -1;
     });
   }

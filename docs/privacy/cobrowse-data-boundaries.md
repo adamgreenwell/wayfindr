@@ -127,6 +127,17 @@ Operators can also add site-level mask selectors in the Wayfindr dashboard.
 Those selectors are public widget configuration, so they should contain only
 CSS selectors and never private notes or secrets.
 
+The built-in sensitive-term inference is English-term based. Operators can add
+site-level sensitive terms in the Wayfindr dashboard to extend inference for
+their own language or domain (for example `contraseña` or `NHS number`) without
+modifying the widget source. Like mask selectors, these terms are public widget
+configuration and must contain only plain words, never secrets. Terms are
+normalized before matching, so non-Latin scripts that normalize away (for
+example terms written only in CJK characters) may not match through inference;
+explicit `data-wayfindr-mask` / `data-wayfindr-private` markers and mask
+selectors remain the reliable cross-language control, and the widget still
+clears all non-allowed form-control values regardless of language.
+
 ## AI Boundary
 
 AI can eventually help suggest masking selectors or flag risky page structures,

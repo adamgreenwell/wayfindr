@@ -55,7 +55,7 @@ class BootstrapController extends Controller
     }
 
     /**
-     * @return array{name: string, domain: string|null, public_key: string, settings: array{mask_selectors: array<int, string>}}
+     * @return array{name: string, domain: string|null, public_key: string, settings: array{mask_selectors: array<int, string>, mask_terms: array<int, string>}}
      */
     private function sitePayload(Site $site): array
     {
@@ -64,9 +64,18 @@ class BootstrapController extends Controller
             'domain' => $site->domain,
             'public_key' => $site->public_key,
             'settings' => [
-                'mask_selectors' => $site->settings['mask_selectors'] ?? [],
+                'mask_selectors' => $this->stringList($site->settings['mask_selectors'] ?? []),
+                'mask_terms' => $this->stringList($site->settings['mask_terms'] ?? []),
             ],
         ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function stringList(mixed $value): array
+    {
+        return is_array($value) ? array_values(array_filter($value, 'is_string')) : [];
     }
 
     /**
