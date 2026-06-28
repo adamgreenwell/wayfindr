@@ -57,6 +57,9 @@ the preview rather than partially captured:
 - **Closed shadow roots** are inaccessible to the widget by browser design.
 - **Cross-origin iframes** are inaccessible by browser design; same-origin
   iframe capture is not implemented yet.
+- **`<template>` content** is an inert, unrendered fragment that the masking
+  helpers cannot traverse, so it is dropped rather than captured (it can never be
+  partially serialized and leak).
 - `canvas`, `svg`, and other removed elements are dropped before send.
 
 Live mutation streaming observes the main document tree. Changes made *inside*

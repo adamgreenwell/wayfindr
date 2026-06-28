@@ -28,8 +28,8 @@ test('inlines open shadow DOM content into the snapshot', () => {
   const snapshot = Wayfindr.createCobrowseSnapshot(doc, { location: dom.window.location });
 
   assert.equal(snapshot.html.includes('Shadow visible text'), true);
-  // Inlined shadow content is marked for provenance.
-  assert.match(snapshot.html, /data-wayfindr-shadow-content/);
+  // Inlined shadow content lives in a uniquely tagged wrapper for provenance.
+  assert.match(snapshot.html, /<wayfindr-shadow-content/);
 });
 
 test('masks sensitive fields inside open shadow DOM before export', () => {
@@ -62,13 +62,52 @@ test('does not capture closed shadow roots', () => {
   assert.equal(snapshot.html.includes('CLOSED-CONTENT'), false);
 });
 
-test('preserves template content when capturing (regression for deep clone)', () => {
-  const dom = documentWithBody('<template id="t"><p>TEMPLATE-CONTENT</p></template>');
+test('does not serialize inert template content (masking cannot reach it)', () => {
+  // querySelectorAll-based masking does not descend into template.content, so
+  // capturing it could leak unmasked markup. The inert, unrendered content is
+  // dropped instead.
+  const dom = documentWithBody('<template id="t"><input name="ssn" value="123-45-6789"><p>TEMPLATE-CONTENT</p></template>');
   const doc = dom.window.document;
 
   const snapshot = Wayfindr.createCobrowseSnapshot(doc, { location: dom.window.location });
 
-  assert.equal(snapshot.html.includes('TEMPLATE-CONTENT'), true);
+  assert.equal(snapshot.html.includes('123-45-6789'), false);
+  assert.equal(snapshot.html.includes('TEMPLATE-CONTENT'), false);
+});
+
+test('does not leak sensitive template content nested inside an open shadow root', () => {
+  const dom = documentWithBody('<div id="host"></div>');
+  const doc = dom.window.document;
+  const shadow = doc.querySelector('#host').attachShadow({ mode: 'open' });
+  shadow.innerHTML = '<p>Visible shadow copy.</p><template><input name="ssn" value="SHADOW-TEMPLATE-SSN"></template>';
+
+  const snapshot = Wayfindr.createCobrowseSnapshot(doc, { location: dom.window.location });
+
+  assert.equal(snapshot.html.includes('Visible shadow copy.'), true);
+  assert.equal(snapshot.html.includes('SHADOW-TEMPLATE-SSN'), false);
+});
+
+test('shadow wrapper keeps light-DOM nth-of-type ordering stable', () => {
+  // The host has light-DOM div children plus an open shadow root. The shadow
+  // wrapper must not shift the light divs' nth-of-type indices, or replayed
+  // mutation paths (computed from the real DOM) would resolve to the wrapper.
+  const dom = documentWithBody('<div id="host"><div>light-one</div><div>light-two</div></div>');
+  const doc = dom.window.document;
+  const shadow = doc.querySelector('#host').attachShadow({ mode: 'open' });
+  shadow.innerHTML = '<div>shadow-div</div>';
+
+  const snapshot = Wayfindr.createCobrowseSnapshot(doc, { location: dom.window.location });
+
+  const rendered = new JSDOM(`<!doctype html><html><body>${snapshot.html}</body></html>`).window.document;
+  const host = rendered.querySelector('#host');
+  const lightDivs = Array.prototype.filter.call(host.children, (el) => el.tagName.toLowerCase() === 'div');
+
+  // The first/second real div children are still the light ones, in order.
+  assert.equal(lightDivs[0].textContent, 'light-one');
+  assert.equal(lightDivs[1].textContent, 'light-two');
+  // Shadow content is present but isolated in the non-colliding wrapper tag.
+  assert.equal(host.querySelector('wayfindr-shadow-content') !== null, true);
+  assert.equal(snapshot.html.includes('shadow-div'), true);
 });
 
 test('captures and masks shadow DOM in an added mutation subtree', () => {

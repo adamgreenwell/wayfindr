@@ -1840,13 +1840,33 @@
       return node.cloneNode(true);
     }
 
-    var clone = node.cloneNode(false);
     var tagName = String(node.tagName || '').toLowerCase();
+
+    // <template> content is an inert fragment that the preview never renders and
+    // that the querySelectorAll-based masking helpers cannot reach, so copying
+    // it would serialize unmasked markup. Capture the empty shell only.
+    if (tagName === 'template') {
+      return node.cloneNode(false);
+    }
+
+    var clone = node.cloneNode(false);
     var ownerDocument = node.ownerDocument;
 
+    forEachChildNode(node, function (child) {
+      var clonedChild = cloneForCapture(child);
+
+      if (clonedChild) {
+        clone.appendChild(clonedChild);
+      }
+    });
+
+    // Inline open shadow content after the light children, inside a uniquely
+    // tagged wrapper. Mutation paths are computed from the real (light) DOM with
+    // nth-of-type, so the wrapper must not share a tag with any real element or
+    // it would shift those indices and make replayed paths resolve to the wrong
+    // node. A custom <wayfindr-shadow-content> tag never appears in a real path.
     if (node.shadowRoot && ownerDocument) {
-      var shadowContainer = ownerDocument.createElement('div');
-      shadowContainer.setAttribute('data-wayfindr-shadow-content', '');
+      var shadowContainer = ownerDocument.createElement('wayfindr-shadow-content');
 
       forEachChildNode(node.shadowRoot, function (child) {
         var clonedChild = cloneForCapture(child);
@@ -1858,25 +1878,6 @@
 
       clone.appendChild(shadowContainer);
     }
-
-    // cloneNode(false) does not copy <template> content, so reattach it.
-    if (tagName === 'template' && node.content && clone.content) {
-      forEachChildNode(node.content, function (child) {
-        var clonedChild = cloneForCapture(child);
-
-        if (clonedChild) {
-          clone.content.appendChild(clonedChild);
-        }
-      });
-    }
-
-    forEachChildNode(node, function (child) {
-      var clonedChild = cloneForCapture(child);
-
-      if (clonedChild) {
-        clone.appendChild(clonedChild);
-      }
-    });
 
     return clone;
   }
