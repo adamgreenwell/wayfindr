@@ -65,7 +65,11 @@ class OperatorReadiness
             $this->backupsRestore(),
         ];
 
-        $attentionCount = count(array_filter($checks, fn (array $check): bool => $check['status'] === 'attention'));
+        $retentionSummary = $this->retentionSummary();
+        $retentionNeedsAttention = ($retentionSummary['status'] ?? null) === 'attention';
+
+        $attentionCount = count(array_filter($checks, fn (array $check): bool => $check['status'] === 'attention'))
+            + ($retentionNeedsAttention ? 1 : 0);
         $manualCount = count(array_filter($checks, fn (array $check): bool => $check['status'] === 'manual'));
         $readyCount = count(array_filter($checks, fn (array $check): bool => $check['status'] === 'ready'));
         $checksByKey = collect($checks)->keyBy('key')->all();
@@ -79,10 +83,10 @@ class OperatorReadiness
             'dogfood_summary' => $this->dogfoodSummary($checksByKey, $smokePathByKey),
             'label' => $attentionCount > 0 ? 'Needs attention' : 'Ready',
             'manual_count' => $manualCount,
-            'next_step' => $this->nextStep($checks, $smokePath),
+            'next_step' => $this->nextStep($checks, $smokePath, $retentionSummary),
             'proof_coverage' => $this->proofCoverage($checks),
             'ready_count' => $readyCount,
-            'retention_summary' => $this->retentionSummary(),
+            'retention_summary' => $retentionSummary,
             'smoke_path' => $smokePath,
         ];
     }
@@ -992,7 +996,7 @@ class OperatorReadiness
      * @param  array<int, array{action: string, commands: array<int, string>, key: string, label: string, status: string, status_label: string, summary: string}>  $smokePath
      * @return array{action: string, commands?: array<int, string>, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
      */
-    private function nextStep(array $checks, array $smokePath): array
+    private function nextStep(array $checks, array $smokePath, array $retentionSummary = []): array
     {
         foreach ($checks as $check) {
             if ($check['status'] === 'attention') {
@@ -1001,6 +1005,18 @@ class OperatorReadiness
                     'label' => sprintf('Fix %s', $check['label']),
                 ];
             }
+        }
+
+        if (($retentionSummary['status'] ?? null) === 'attention') {
+            return $this->check(
+                key: 'retention_posture',
+                label: 'Fix retention posture',
+                status: 'attention',
+                summary: $this->stringOrDefault($retentionSummary['summary'] ?? null, 'Retention posture needs attention.'),
+                detail: $this->stringOrDefault($retentionSummary['description'] ?? null, 'A configured retention status is blocking readiness.'),
+                action: 'Resolve the configured retention attention before onboarding real visitor traffic.',
+                statusLabel: $this->stringOrNull($retentionSummary['status_label'] ?? null),
+            );
         }
 
         foreach ($smokePath as $step) {

@@ -1097,6 +1097,50 @@ test('readiness diagnostics include config backed retention visibility', functio
     ]);
 });
 
+test('configured retention attention raises the readiness total and next step', function (): void {
+    $readyEnv = [
+        'app.url' => 'https://support.example.test',
+        'app.key' => 'base64:'.base64_encode(str_repeat('a', 32)),
+        'broadcasting.default' => 'reverb',
+        'broadcasting.connections.reverb.app_id' => 'wayfindr-production',
+        'broadcasting.connections.reverb.key' => 'wayfindr-key',
+        'broadcasting.connections.reverb.secret' => 'wayfindr-secret',
+        'broadcasting.connections.reverb.options.host' => 'support.example.test',
+        'broadcasting.connections.reverb.options.port' => 443,
+        'broadcasting.connections.reverb.options.scheme' => 'https',
+        'mail.default' => 'smtp',
+        'mail.mailers.smtp.host' => 'smtp.example.test',
+        'mail.mailers.smtp.port' => 587,
+        'mail.from.address' => 'support@example.test',
+        'queue.default' => 'database',
+    ];
+
+    config($readyEnv + ['wayfindr.retention' => ['status' => 'ready']]);
+    $ready = app(OperatorReadiness::class)->summary();
+
+    config($readyEnv + ['wayfindr.retention' => [
+        'status' => 'attention',
+        'summary' => 'Retention review is overdue for this install.',
+        'description' => 'The operator flagged retention as needing attention before traffic.',
+    ]]);
+    $blocked = app(OperatorReadiness::class)->summary();
+
+    // A configured retention attention now contributes to the top-level totals
+    // instead of only living in the retention summary.
+    expect($blocked['attention_count'])->toBe($ready['attention_count'] + 1)
+        ->and($blocked['label'])->toBe('Needs attention')
+        ->and($blocked['retention_summary']['status'])->toBe('attention')
+        ->and($blocked['next_step']['status'])->toBe('attention');
+
+    // When no runtime check is blocking, retention attention is the next step,
+    // ahead of manual smoke steps, so it cannot be missed.
+    $blockedByCheck = collect($blocked['checks'])->contains(fn (array $check): bool => $check['status'] === 'attention');
+
+    if (! $blockedByCheck) {
+        expect($blocked['next_step']['key'])->toBe('retention_posture');
+    }
+});
+
 test('dogfood support loop gate allows manual refresh when realtime is not ready', function (): void {
     config([
         'app.url' => 'https://support.example.test',
