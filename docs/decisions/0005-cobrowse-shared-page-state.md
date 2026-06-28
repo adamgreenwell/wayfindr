@@ -31,4 +31,4 @@ Shared page state gives Wayfindr better defaults for:
 - Transport telemetry is first-class so hosts can see latency, payload size, reconnects, and dropped updates before tuning infrastructure.
 - Resync and transport audit events stay metadata-only. They may record request IDs, outcomes, reasons, timestamps, and safe counters, but never raw snapshot HTML, page text, mutation payloads, or visitor-entered content.
 - Reverb can carry early cobrowse events while traffic is modest.
-- A separate cobrowse relay may be introduced later for high-throughput, ephemeral streams without moving auth, consent, audit, or account ownership out of Laravel.
+- A separate cobrowse relay may be introduced later for high-throughput, ephemeral streams without moving auth, consent, audit, or account ownership out of Laravel. The [cobrowse relay decision gate](../architecture/cobrowse-relay-decision-gate.md) defines the quantitative signals that would justify evaluating one.
