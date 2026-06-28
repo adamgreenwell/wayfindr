@@ -36,8 +36,38 @@ class CobrowseReplayPreview
         'src',
         'srcdoc',
         'srcset',
-        'style',
     ];
+
+    /**
+     * Allowlisted inline-style properties for the replay preview. Layout, color,
+     * and typography only; nothing that can take a url() or fetch a resource.
+     * The server is the source of truth, so styling that is not on this list (or
+     * whose value fails the safe-value grammar) is dropped regardless of what a
+     * widget sends.
+     *
+     * @var list<string>
+     */
+    private const SAFE_STYLE_PROPERTIES = [
+        'display', 'box-sizing', 'width', 'height', 'min-width', 'max-width',
+        'min-height', 'max-height', 'margin', 'margin-top', 'margin-right',
+        'margin-bottom', 'margin-left', 'padding', 'padding-top', 'padding-right',
+        'padding-bottom', 'padding-left', 'border', 'border-width', 'border-style',
+        'border-color', 'border-top', 'border-right', 'border-bottom', 'border-left',
+        'border-radius', 'flex-direction', 'flex-wrap', 'justify-content',
+        'align-items', 'align-content', 'gap', 'row-gap', 'column-gap', 'color',
+        'background-color', 'opacity', 'visibility', 'font-family', 'font-size',
+        'font-weight', 'font-style', 'line-height', 'text-align', 'text-decoration',
+        'text-decoration-line', 'text-transform', 'white-space', 'letter-spacing',
+        'word-spacing', 'vertical-align', 'list-style-type',
+    ];
+
+    /**
+     * Function names allowed inside a style value (e.g. rgb(...)). Any other
+     * function call, including url(), disqualifies the whole declaration.
+     *
+     * @var list<string>
+     */
+    private const SAFE_STYLE_FUNCTIONS = ['rgb', 'rgba', 'hsl', 'hsla'];
 
     /**
      * @var list<string>
@@ -146,10 +176,81 @@ class CobrowseReplayPreview
         foreach ($attributes as $attributeName) {
             $normalizedName = strtolower($attributeName);
 
+            if ($normalizedName === 'style') {
+                $safeStyle = $this->sanitizeStyleAttribute((string) $element->getAttribute($attributeName));
+
+                if ($safeStyle === '') {
+                    $element->removeAttribute($attributeName);
+                } else {
+                    $element->setAttribute('style', $safeStyle);
+                }
+
+                continue;
+            }
+
             if (str_starts_with($normalizedName, 'on') || in_array($normalizedName, self::UNSAFE_ATTRIBUTE_NAMES, true)) {
                 $element->removeAttribute($attributeName);
             }
         }
+    }
+
+    /**
+     * Keep only allowlisted declarations whose values pass a conservative
+     * safe-value grammar. Drops url(), @import, expression(), behaviors, markup
+     * breakouts, and any function call other than the allowed color functions.
+     */
+    private function sanitizeStyleAttribute(string $style): string
+    {
+        $safe = [];
+
+        foreach (explode(';', $style) as $declaration) {
+            $parts = explode(':', $declaration, 2);
+
+            if (count($parts) !== 2) {
+                continue;
+            }
+
+            $property = strtolower(trim($parts[0]));
+            $value = trim($parts[1]);
+
+            if ($property === '' || $value === '' || ! in_array($property, self::SAFE_STYLE_PROPERTIES, true)) {
+                continue;
+            }
+
+            if ($this->isSafeStyleValue($value)) {
+                $safe[] = $property.':'.$value;
+            }
+        }
+
+        return implode(';', $safe);
+    }
+
+    private function isSafeStyleValue(string $value): bool
+    {
+        if (mb_strlen($value) > 256) {
+            return false;
+        }
+
+        $normalized = strtolower($value);
+
+        foreach (['url(', '@import', 'expression(', 'javascript:', 'image-set(', '/*', '*/', '<', '>', '{', '}', '\\'] as $needle) {
+            if (str_contains($normalized, $needle)) {
+                return false;
+            }
+        }
+
+        // Any function call in the value must be an allowlisted color function.
+        if (preg_match_all('/([a-z-]+)\s*\(/', $normalized, $matches)) {
+            foreach ($matches[1] as $functionName) {
+                if (! in_array($functionName, self::SAFE_STYLE_FUNCTIONS, true)) {
+                    return false;
+                }
+            }
+        }
+
+        // Conservative character allowlist: alphanumerics and safe CSS value
+        // punctuation (covers colors, lengths, keywords, quoted font names).
+        return preg_match('/^[a-z0-9#%.,()\\/\\s_"\'-]+$/i', $value) === 1;
     }
 
     private function sanitizeFormControl(DOMElement $element): void
