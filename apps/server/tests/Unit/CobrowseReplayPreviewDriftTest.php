@@ -46,6 +46,28 @@ test('distinguishes applied, drift, unsupported, and invalid outcomes', function
         ->and($result['drift']['addressable'])->toBe(2); // 1 applied + 1 unresolved
 });
 
+test('treats malformed or legacy mutation paths as invalid, not drift', function (): void {
+    $validPath = 'body:nth-of-type(1) > div:nth-of-type(1) > p:nth-of-type(1)';
+
+    $result = (new CobrowseReplayPreview)->fromMetadata(replayBatch([
+        ['type' => 'text', 'path' => $validPath, 'text' => 'Applied copy.'],
+        // Legacy nth-child syntax that pathToXPath does not support.
+        ['type' => 'text', 'path' => 'body > main > p:nth-child(2)', 'text' => 'LEGACY'],
+        // Path that does not start at body.
+        ['type' => 'text', 'path' => 'div:nth-of-type(1)', 'text' => 'NOBODY'],
+    ]));
+
+    expect($result['srcdoc'])
+        ->toContain('Applied copy.')
+        ->and($result['srcdoc'])->not->toContain('LEGACY')
+        ->and($result['srcdoc'])->not->toContain('NOBODY');
+
+    // Malformed paths are excluded from the drift signal: only the applied
+    // mutation is addressable, and nothing counts as drift.
+    expect($result['drift']['drift_count'])->toBe(0)
+        ->and($result['drift']['addressable'])->toBe(1);
+});
+
 test('recommends a resync once drift dominates the addressable mutations', function (): void {
     $applied = ['type' => 'text', 'path' => 'body:nth-of-type(1) > div:nth-of-type(1) > p:nth-of-type(1)', 'text' => 'Applied.'];
     $drifted = ['type' => 'text', 'path' => 'body:nth-of-type(1) > div:nth-of-type(1) > p:nth-of-type(40)', 'text' => 'NOPE'];

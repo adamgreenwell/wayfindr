@@ -248,10 +248,10 @@ class CobrowseReplayPreview
      */
     private function applyTextMutation(DOMDocument $document, string $path, mixed $text): string
     {
-        $element = $this->elementForPath($document, $path);
+        [$status, $element] = $this->resolvePath($document, $path);
 
-        if (! $element) {
-            return 'unresolved';
+        if ($status !== 'ok') {
+            return $status;
         }
 
         if (! is_string($text)) {
@@ -268,10 +268,10 @@ class CobrowseReplayPreview
      */
     private function applyAttributeMutation(DOMDocument $document, string $path, mixed $name, mixed $value): string
     {
-        $element = $this->elementForPath($document, $path);
+        [$status, $element] = $this->resolvePath($document, $path);
 
-        if (! $element) {
-            return 'unresolved';
+        if ($status !== 'ok') {
+            return $status;
         }
 
         if (! is_string($name) || ! is_scalar($value)) {
@@ -294,10 +294,10 @@ class CobrowseReplayPreview
      */
     private function applyAddedMutation(DOMDocument $document, string $path, mixed $html): string
     {
-        $parent = $this->elementForPath($document, $path);
+        [$status, $parent] = $this->resolvePath($document, $path);
 
-        if (! $parent) {
-            return 'unresolved';
+        if ($status !== 'ok') {
+            return $status;
         }
 
         if (! is_string($html) || $html === '') {
@@ -333,17 +333,28 @@ class CobrowseReplayPreview
             || str_starts_with($attributeName, 'aria-');
     }
 
-    private function elementForPath(DOMDocument $document, string $path): ?DOMElement
+    /**
+     * Resolve a mutation path, distinguishing an unsupported path syntax from a
+     * supported path that no longer matches a node. Only the latter is drift;
+     * malformed or legacy paths are invalid and must not feed the drift ratio.
+     *
+     * @return array{0: 'ok'|'invalid'|'unresolved', 1: ?DOMElement}
+     */
+    private function resolvePath(DOMDocument $document, string $path): array
     {
         $xpath = $this->pathToXPath($path);
 
         if ($xpath === null) {
-            return null;
+            return ['invalid', null];
         }
 
         $node = (new DOMXPath($document))->query($xpath)?->item(0);
 
-        return $node instanceof DOMElement ? $node : null;
+        if (! $node instanceof DOMElement) {
+            return ['unresolved', null];
+        }
+
+        return ['ok', $node];
     }
 
     private function pathToXPath(string $path): ?string
