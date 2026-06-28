@@ -12,6 +12,7 @@
                 $lastSeenAt = $latestVisitor?->last_seen_at;
                 $lastPageUrl = data_get($latestVisitor?->metadata, 'last_page_url');
                 $installHealth = \App\Support\SiteInstallHealth::fromVisitor($latestVisitor);
+                $installHostDiagnostic = \App\Support\SiteInstallHealth::hostDiagnostic($latestVisitor, $site->domain);
                 $installAttentionTarget = $site->domain ?? 'the site';
                 $installAttentionSiteUrl = $site->domain ? 'https://'.$site->domain : null;
                 $installAttentionGuidance = $installHealth['label'] === 'Not installed'
@@ -283,6 +284,14 @@
                     @else
                         <p><strong>Last verified page</strong>: Not reported yet.</p>
                     @endif
+                </div>
+
+                <div class="meta-grid realtime-grid">
+                    <div class="meta-item">
+                        <span class="meta-label">Host check</span>
+                        <span class="readiness-status" data-status="{{ $installHostDiagnostic['tone'] }}" data-install-host-status>{{ $installHostDiagnostic['label'] }}</span>
+                        <span class="lede" data-install-host-detail>{{ $installHostDiagnostic['detail'] }}</span>
+                    </div>
                 </div>
             </section>
 
