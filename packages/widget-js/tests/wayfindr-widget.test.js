@@ -6033,3 +6033,82 @@ function messageSummaries(widget) {
       + message.querySelector('.wayfindr-widget__message-body').textContent;
   });
 }
+
+test('separates widget messages by day with calm date dividers', async () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    storage: memoryStorage(),
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    fetch: async (url) => {
+      const path = new URL(url).pathname;
+
+      if (path === '/api/widget/bootstrap') {
+        return jsonResponse(201, {
+          data: {
+            site: { public_key: 'site_public_docs', settings: {} },
+            visitor: { anonymous_id: 'anon-browser-123', token: 'visitor-token-123' },
+          },
+        });
+      }
+
+      if (path === '/api/conversations') {
+        return jsonResponse(201, { data: { support_code: 'WF-TEST123', status: 'open' } });
+      }
+
+      if (path === '/api/conversations/WF-TEST123/cobrowse') {
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-TEST123' },
+            cobrowse: { status: 'unavailable', consent: 'unavailable', requested_by: null },
+          },
+        });
+      }
+
+      if (path === '/api/conversations/WF-TEST123/messages') {
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-TEST123', status: 'open' },
+            messages: [
+              { id: 1, sender: { kind: 'visitor', name: 'Visitor' }, type: 'text', body: 'First thought.', created_at: '2026-05-22T14:00:00.000000Z' },
+              { id: 2, sender: { kind: 'visitor', name: 'Visitor' }, type: 'text', body: 'Same day follow-up.', created_at: '2026-05-22T14:01:00.000000Z' },
+              { id: 3, sender: { kind: 'agent', name: 'Ada Agent' }, type: 'text', body: 'Next day reply.', created_at: '2026-05-23T09:00:00.000000Z' },
+            ],
+          },
+        });
+      }
+
+      throw new Error('Unexpected request ' + url);
+    },
+  });
+
+  widget.open();
+  widget.root.querySelector('.wayfindr-widget__textarea').value = 'First thought.';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+    new dom.window.Event('submit', { bubbles: true, cancelable: true }),
+  );
+
+  await settle();
+
+  const timeline = widget.root.querySelector('.wayfindr-widget__timeline');
+  const separators = [...timeline.querySelectorAll('.wayfindr-widget__day-separator')];
+  const messages = [...timeline.querySelectorAll('.wayfindr-widget__message')];
+
+  // One divider per distinct day, not per message.
+  assert.equal(separators.length, 2);
+  assert.equal(messages.length, 3);
+  // A divider opens the timeline, before the first message.
+  assert.equal(timeline.firstElementChild.classList.contains('wayfindr-widget__day-separator'), true);
+  // Dividers carry the machine-readable day in <time datetime>.
+  assert.equal(separators[0].querySelector('time').dateTime, '2026-05-22');
+  assert.equal(separators[1].querySelector('time').dateTime, '2026-05-23');
+});

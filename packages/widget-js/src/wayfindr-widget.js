@@ -535,7 +535,21 @@
       messages = Array.isArray(nextMessages) ? nextMessages : messages;
       timeline.textContent = '';
 
+      var previousDayKey = null;
+
       messages.forEach(function (message, index) {
+        var dayKey = messageDayKey(message.created_at);
+
+        if (dayKey && dayKey !== previousDayKey) {
+          var separator = createDaySeparator(doc, message.created_at);
+
+          if (separator) {
+            timeline.appendChild(separator);
+          }
+
+          previousDayKey = dayKey;
+        }
+
         var sender = message.sender || {};
         var senderKind = sender.kind === 'agent' ? 'agent' : 'visitor';
         var item = doc.createElement('article');
@@ -1701,6 +1715,72 @@
     return time;
   }
 
+  function parseMessageDate(value) {
+    if (!value) {
+      return null;
+    }
+
+    var date = new Date(String(value));
+
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  function dayKeyFromDate(date) {
+    return date.getFullYear() + '-' + pad2(date.getMonth() + 1) + '-' + pad2(date.getDate());
+  }
+
+  function messageDayKey(value) {
+    var date = parseMessageDate(value);
+
+    return date ? dayKeyFromDate(date) : null;
+  }
+
+  function createDaySeparator(doc, value) {
+    var date = parseMessageDate(value);
+
+    if (!date) {
+      return null;
+    }
+
+    var separator = doc.createElement('div');
+    separator.className = 'wayfindr-widget__day-separator';
+    separator.setAttribute('role', 'separator');
+
+    var label = doc.createElement('time');
+    label.className = 'wayfindr-widget__day-label';
+    label.dateTime = dayKeyFromDate(date);
+    label.textContent = formatDayLabel(date);
+
+    separator.appendChild(label);
+
+    return separator;
+  }
+
+  function formatDayLabel(date) {
+    var today = new Date();
+    var todayKey = dayKeyFromDate(today);
+    var yesterdayKey = dayKeyFromDate(new Date(today.getTime() - 24 * 60 * 60 * 1000));
+    var key = dayKeyFromDate(date);
+
+    if (key === todayKey) {
+      return 'Today';
+    }
+
+    if (key === yesterdayKey) {
+      return 'Yesterday';
+    }
+
+    try {
+      return date.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+    } catch (error) {
+      return dayKeyFromDate(date);
+    }
+  }
+
+  function pad2(value) {
+    return (value < 10 ? '0' : '') + value;
+  }
+
   function createMessageDelivery(doc, senderKind) {
     if (senderKind !== 'visitor') {
       return null;
@@ -2544,6 +2624,8 @@
       '.wayfindr-widget__message{display:grid;gap:4px;width:88%;border:1px solid #d8dfdc;border-radius:8px;padding:9px 10px;background:#fff}',
       '.wayfindr-widget__message--agent{justify-self:end;background:#eef6f3;border-color:#cfe1dc}',
       '.wayfindr-widget__message--grouped{margin-top:-6px}',
+      '.wayfindr-widget__day-separator{display:flex;align-items:center;justify-content:center;margin:2px 0}',
+      '.wayfindr-widget__day-label{color:#62706b;font-size:11px;line-height:1.2;background:#eef1ef;border-radius:999px;padding:2px 10px;white-space:nowrap}',
       '.wayfindr-widget__message-meta{display:flex;align-items:center;justify-content:space-between;gap:10px}',
       '.wayfindr-widget__message-name{color:#62706b;font-size:12px;line-height:1.2}',
       '.wayfindr-widget__message--grouped .wayfindr-widget__message-name{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}',
