@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\SiteExternalIssueProject;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Support\ExternalIssues\ExternalIssueFailureGuidance;
 use App\Support\ExternalIssues\GitHubIssueCreationFailed;
 use App\Support\ExternalIssues\GitHubIssueCreator;
 use App\Support\ExternalIssues\GitLabIssueCreationFailed;
@@ -44,7 +45,10 @@ class AgentTicketExternalIssueController extends Controller
                 'message' => Str::limit($exception->getMessage(), 300),
             ]);
 
-            return $this->externalIssueError($ticket, 'GitHub issue could not be created.');
+            return $this->externalIssueError(
+                $ticket,
+                ExternalIssueFailureGuidance::for('GitHub', $exception->status(), $exception->getMessage()),
+            );
         }
 
         $externalLink = $ticket->externalLinks()->create([
@@ -107,7 +111,10 @@ class AgentTicketExternalIssueController extends Controller
                 'message' => Str::limit($exception->getMessage(), 300),
             ]);
 
-            return $this->externalIssueError($ticket, 'GitLab issue could not be created.');
+            return $this->externalIssueError(
+                $ticket,
+                ExternalIssueFailureGuidance::for('GitLab', $exception->status(), $exception->getMessage()),
+            );
         }
 
         $externalLink = $ticket->externalLinks()->create([

@@ -246,7 +246,7 @@ test('GitLab issue creation failure is audited without storing credentials or le
             'site_external_issue_project_id' => $project->id,
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHasErrors(['external_issue' => 'GitLab issue could not be created.']);
+        ->assertSessionHasErrors(['external_issue' => 'GitLab could not find the project. Check the project key and that the token can access it.']);
 
     $this->assertDatabaseCount('ticket_external_links', 0);
 

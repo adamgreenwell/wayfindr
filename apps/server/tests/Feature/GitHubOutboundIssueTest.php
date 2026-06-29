@@ -196,7 +196,7 @@ test('GitHub issue creation failure is audited without storing credentials', fun
             'site_external_issue_project_id' => $project->id,
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHasErrors('external_issue');
+        ->assertSessionHasErrors(['external_issue' => 'GitHub rejected the issue. The project may have issues disabled, or a field was invalid.']);
 
     $this->assertDatabaseCount('ticket_external_links', 0);
 
@@ -215,6 +215,29 @@ test('GitHub issue creation failure is audited without storing credentials', fun
         ->and(json_encode($auditEvent->metadata))->not->toContain('ghp_test_secret');
 });
 
+test('GitHub issue creation surfaces actionable guidance when the repository is not found', function (): void {
+    $fixture = githubOutboundIssueFixture();
+    $ticket = $fixture['ticket'];
+    $project = $fixture['project'];
+    $agent = $fixture['agent'];
+
+    Http::fake([
+        'https://api.github.com/repos/adamgreenwell/wayfindr/issues' => Http::response([
+            'message' => 'Not Found',
+        ], 404),
+    ]);
+
+    $this->actingAs($agent)
+        ->from("/dashboard/tickets/{$ticket->id}")
+        ->post("/dashboard/tickets/{$ticket->id}/external-issues/github", [
+            'site_external_issue_project_id' => $project->id,
+        ])
+        ->assertRedirect("/dashboard/tickets/{$ticket->id}")
+        ->assertSessionHasErrors(['external_issue' => 'GitHub could not find the project. Check the project key and that the token can access it.']);
+
+    $this->assertDatabaseCount('ticket_external_links', 0);
+});
+
 test('GitHub connection failures are audited without crashing the agent request', function (): void {
     $fixture = githubOutboundIssueFixture();
     $ticket = $fixture['ticket'];
@@ -231,7 +254,7 @@ test('GitHub connection failures are audited without crashing the agent request'
             'site_external_issue_project_id' => $project->id,
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHasErrors('external_issue');
+        ->assertSessionHasErrors(['external_issue' => 'GitHub request failed before a response was received.']);
 
     $this->assertDatabaseCount('ticket_external_links', 0);
 
