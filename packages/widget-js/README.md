@@ -82,6 +82,7 @@ The widget currently supports the first visitor loop:
 - show explicit allow/decline controls only after support requests cobrowse,
 - focus the cobrowse consent choice when a new request appears without repeatedly stealing focus during status polls,
 - grant, decline, or revoke cobrowse consent,
+- keep a persistent active-sharing indicator on the launcher (with an accessible label) while cobrowse is granted, so a visitor who closes the panel still sees that their page is being shared,
 - report lightweight cobrowse connection telemetry after consent,
 - report when an agent-requested cobrowse snapshot reaches its bounded retry limit,
 - report passive page state after consent,

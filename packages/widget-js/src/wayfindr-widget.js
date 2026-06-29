@@ -932,6 +932,20 @@
         ? (cobrowseVisitorNotice || 'Cobrowse is active. Sensitive fields stay masked.')
         : requester + ' wants to view this page with sensitive fields masked.';
 
+      // The cobrowse controls live inside the panel, so a visitor who grants
+      // cobrowse and then closes the panel would otherwise lose any sign that
+      // their page is still shared. Surface a persistent indicator on the
+      // launcher (shown while the panel is closed) so sharing is never silent.
+      if (launcher) {
+        if (granted) {
+          launcher.setAttribute('data-cobrowse-active', 'true');
+          launcher.setAttribute('aria-label', launcher.textContent + ' — sharing this page with support');
+        } else {
+          launcher.removeAttribute('data-cobrowse-active');
+          launcher.removeAttribute('aria-label');
+        }
+      }
+
       if (requested && wasHidden && !cobrowse.hidden) {
         if (isPanelReadable({ panel: panel, document: doc })) {
           cobrowseAllow.focus();
@@ -2916,7 +2930,8 @@
       '.wayfindr-widget *{box-sizing:border-box}',
       '.wayfindr-widget [hidden]{display:none!important}',
       '.wayfindr-widget__launcher,.wayfindr-widget__send{border:0;border-radius:999px;background:#0d6f68;color:#fff;box-shadow:0 12px 30px rgba(8,37,34,.18);cursor:pointer;font:700 14px/1 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}',
-      '.wayfindr-widget__launcher{min-height:48px;padding:0 18px}',
+      '.wayfindr-widget__launcher{position:relative;min-height:48px;padding:0 18px}',
+      '.wayfindr-widget__launcher[data-cobrowse-active="true"]::after{content:"";position:absolute;top:-3px;right:-3px;width:14px;height:14px;border-radius:999px;background:#e0b500;border:2px solid #fff;box-shadow:0 0 0 2px rgba(224,181,0,.35)}',
       '.wayfindr-widget__send{min-height:40px;padding:0 14px;border-radius:6px}',
       '.wayfindr-widget__launcher:hover,.wayfindr-widget__send:hover{background:#094f4b}',
       '.wayfindr-widget__send:disabled{cursor:wait;opacity:.7}',

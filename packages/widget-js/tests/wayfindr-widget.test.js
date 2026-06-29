@@ -4484,6 +4484,78 @@ test('defers cobrowse consent focus until a closed widget is reopened', async ()
   widget.destroy();
 });
 
+test('marks the launcher while cobrowse is active so closed-panel sharing stays visible', async () => {
+  const dom = new JSDOM(
+    '<!doctype html><html><head><title>Install Guide</title></head><body><main><p>Public install content.</p></main><div id="support"></div></body></html>',
+    { url: 'https://docs.example.test/install' },
+  );
+
+  let cobrowseStatus = { status: 'unavailable', consent: 'unavailable', requested_by: null };
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    storage: memoryStorage(),
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    fetch: async (url) => {
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return jsonResponse(201, {
+          data: {
+            site: { public_key: 'site_public_docs', settings: {} },
+            visitor: { anonymous_id: 'anon-browser-123', token: 'visitor-token-123' },
+          },
+        });
+      }
+
+      if (url.endsWith('/api/conversations')) {
+        return jsonResponse(201, { data: { support_code: 'WF-TEST123', status: 'open' } });
+      }
+
+      if (url.includes('/cobrowse?')) {
+        return jsonResponse(200, { data: { conversation: { support_code: 'WF-TEST123' }, cobrowse: cobrowseStatus } });
+      }
+
+      return jsonResponse(200, { data: {} });
+    },
+  });
+
+  widget.open();
+  widget.root.querySelector('.wayfindr-widget__textarea').value = 'Can you help me?';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+    new dom.window.Event('submit', { bubbles: true, cancelable: true }),
+  );
+  await settle();
+
+  const launcher = widget.root.querySelector('.wayfindr-widget__launcher');
+
+  // A pending request is not active sharing, so the launcher stays unmarked.
+  cobrowseStatus = { status: 'requested', consent: 'requested', requested_by: { name: 'Ada Agent' } };
+  await widget.refreshCobrowseStatus();
+  await settle();
+  assert.equal(launcher.hasAttribute('data-cobrowse-active'), false);
+
+  // Granted: the launcher carries a persistent, labelled active-sharing cue.
+  cobrowseStatus = { status: 'granted', consent: 'granted', requested_by: { name: 'Ada Agent' } };
+  await widget.refreshCobrowseStatus();
+  await settle();
+  assert.equal(launcher.getAttribute('data-cobrowse-active'), 'true');
+  assert.match(launcher.getAttribute('aria-label'), /sharing this page with support/);
+
+  // Ended: the cue clears so a stale "sharing" indicator never lingers.
+  cobrowseStatus = { status: 'ended', consent: 'ended', requested_by: { name: 'Ada Agent' } };
+  await widget.refreshCobrowseStatus();
+  await settle();
+  assert.equal(launcher.hasAttribute('data-cobrowse-active'), false);
+  assert.equal(launcher.hasAttribute('aria-label'), false);
+
+  widget.destroy();
+});
+
 test('reports skipped-only widget mutation batches when the client payload budget is exhausted', async () => {
   const dom = new JSDOM([
     '<!doctype html><html><head><title>Install Guide</title></head><body>',
