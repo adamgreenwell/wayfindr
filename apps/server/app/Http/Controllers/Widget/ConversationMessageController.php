@@ -14,6 +14,7 @@ use App\Models\Visitor;
 use App\Support\VisitorSessionToken;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ConversationMessageController extends Controller
 {
@@ -88,35 +89,46 @@ class ConversationMessageController extends Controller
 
         $clientMessageId = $this->normalizeClientMessageId($validated['client_message_id'] ?? null);
 
-        if ($clientMessageId !== null) {
-            $existing = $conversation->messages()
-                ->where('sender_type', Visitor::class)
-                ->where('metadata->client_message_id', $clientMessageId)
-                ->first();
+        [$message, $created] = DB::transaction(function () use ($conversation, $validated, $clientMessageId) {
+            // Lock the conversation row so the idempotency check and the insert
+            // are atomic. Without this, two concurrent sends sharing a
+            // client_message_id could both pass the lookup before either row is
+            // visible and both create a message.
+            Conversation::query()->whereKey($conversation->getKey())->lockForUpdate()->first();
 
-            if ($existing) {
-                // Idempotent retry: a lost response on the first attempt must not
-                // create a duplicate. The message was already accepted, so return
-                // it without creating a second row or re-broadcasting.
-                return $this->storedMessageResponse($conversation, $existing);
+            if ($clientMessageId !== null) {
+                $existing = $conversation->messages()
+                    ->where('sender_type', Visitor::class)
+                    ->where('metadata->client_message_id', $clientMessageId)
+                    ->first();
+
+                if ($existing) {
+                    // Idempotent retry: the message was already accepted, so
+                    // return it without creating a second row or re-broadcasting.
+                    return [$existing, false];
+                }
             }
+
+            $message = $conversation->messages()->create([
+                'sender_type' => Visitor::class,
+                'sender_id' => $conversation->visitor_id,
+                'type' => 'text',
+                'body' => $validated['body'],
+                'metadata' => $clientMessageId !== null ? ['client_message_id' => $clientMessageId] : [],
+            ]);
+
+            $conversation->forceFill([
+                'status' => 'open',
+                'closed_at' => null,
+                'last_message_at' => $message->created_at,
+            ])->save();
+
+            return [$message, true];
+        });
+
+        if ($created) {
+            event(new ConversationMessageCreated($message));
         }
-
-        $message = $conversation->messages()->create([
-            'sender_type' => Visitor::class,
-            'sender_id' => $conversation->visitor_id,
-            'type' => 'text',
-            'body' => $validated['body'],
-            'metadata' => $clientMessageId !== null ? ['client_message_id' => $clientMessageId] : [],
-        ]);
-
-        $conversation->forceFill([
-            'status' => 'open',
-            'closed_at' => null,
-            'last_message_at' => $message->created_at,
-        ])->save();
-
-        event(new ConversationMessageCreated($message));
 
         return $this->storedMessageResponse($conversation, $message);
     }
