@@ -144,6 +144,14 @@ selectors, and common sensitive-looking fields before snapshot data leaves the
 visitor browser. Host pages can mark sensitive regions with
 `data-wayfindr-mask` or `data-wayfindr-private`; `data-wayfindr-allow` should
 only be used for deliberate false positives.
+`createCobrowseSnapshot` also captures a small allowlist of computed styles
+(color, background-color, fonts, line-height, text alignment/transform/
+decoration, border-radius) so the agent replay preview resembles the visitor
+page. Inherited values are only emitted when they differ from the parent, any
+`url()`/resource-bearing value is skipped, and a styled-element budget bounds
+the payload (`maxStyledElements`, default 800; `captureStyles: false` disables
+it). The server replay sanitizer remains the enforcement boundary for which
+declarations survive.
 `createCobrowseMutationBatch` applies the same masking posture to text, safe
 attribute, added-node, and removed-node mutation records before they are sent.
 

@@ -1981,7 +1981,85 @@
   // inaccessible by design and are simply absent. Falls back to a plain deep
   // clone for nodes without shadow content, so behavior is unchanged for pages
   // that do not use shadow DOM.
-  function cloneForCapture(node) {
+  // Computed-style properties captured into the snapshot so the agent preview
+  // resembles the visitor page. Inherited properties are emitted only when they
+  // differ from the parent; "own" properties only when not at their default.
+  // The set is intentionally small (color + typography + surface) to stay within
+  // the snapshot payload budget. The server style sanitizer is the enforcement
+  // boundary and drops anything outside its allowlist.
+  var CAPTURED_INHERITED_STYLE_PROPERTIES = [
+    'color', 'font-family', 'font-size', 'font-weight', 'font-style',
+    'line-height', 'text-align', 'text-transform',
+  ];
+
+  var CAPTURED_OWN_STYLE_PROPERTIES = ['background-color', 'border-radius', 'text-decoration-line'];
+
+  function isCapturableStyleValue(value) {
+    if (!value || value.length > 200) {
+      return false;
+    }
+
+    var lower = value.toLowerCase();
+
+    // Never capture anything that could fetch a resource or inject markup. The
+    // captured set excludes url()-bearing properties, but guard the value too.
+    return lower.indexOf('url(') === -1
+      && lower.indexOf('image-set(') === -1
+      && lower.indexOf('expression(') === -1
+      && lower.indexOf('<') === -1
+      && lower.indexOf('>') === -1;
+  }
+
+  function isDefaultOwnStyleValue(property, value) {
+    if (property === 'background-color') {
+      return value === 'rgba(0, 0, 0, 0)' || value === 'transparent';
+    }
+
+    if (property === 'border-radius') {
+      return value === '0px' || value === '0px 0px 0px 0px';
+    }
+
+    if (property === 'text-decoration-line') {
+      return value === 'none';
+    }
+
+    return false;
+  }
+
+  // readValue / readParentValue: (property) => string. readParentValue is null
+  // for a style root (so it establishes the base for inherited properties).
+  function buildCapturedStyle(readValue, readParentValue) {
+    var declarations = [];
+
+    CAPTURED_INHERITED_STYLE_PROPERTIES.forEach(function (property) {
+      var value = readValue(property);
+
+      if (! isCapturableStyleValue(value)) {
+        return;
+      }
+
+      // Inherited: only emit when it actually changes from the parent.
+      if (readParentValue && readParentValue(property) === value) {
+        return;
+      }
+
+      declarations.push(property + ':' + value);
+    });
+
+    CAPTURED_OWN_STYLE_PROPERTIES.forEach(function (property) {
+      var value = readValue(property);
+
+      if (! isCapturableStyleValue(value) || isDefaultOwnStyleValue(property, value)) {
+        return;
+      }
+
+      declarations.push(property + ':' + value);
+    });
+
+    return declarations.join(';');
+  }
+
+  function cloneForCapture(node, styleContext) {
     if (!node) {
       return null;
     }
@@ -2001,9 +2079,48 @@
 
     var clone = node.cloneNode(false);
     var ownerDocument = node.ownerDocument;
+    var childStyleContext = styleContext;
+
+    if (
+      styleContext
+      && styleContext.view
+      && typeof styleContext.view.getComputedStyle === 'function'
+      && styleContext.budget.captured < styleContext.budget.max
+    ) {
+      try {
+        var computed = styleContext.view.getComputedStyle(node);
+        var readValue = function (property) {
+          return computed.getPropertyValue(property);
+        };
+
+        // The snapshot serializes body.innerHTML, so the body's own style is
+        // dropped; skip emitting it and let the body's children act as style
+        // roots that establish the base inherited values.
+        if (! styleContext.isRoot) {
+          var captured = buildCapturedStyle(readValue, styleContext.readParentValue);
+
+          if (captured) {
+            var existing = clone.getAttribute('style');
+            clone.setAttribute('style', existing ? existing + ';' + captured : captured);
+          }
+
+          styleContext.budget.captured += 1;
+        }
+
+        childStyleContext = {
+          view: styleContext.view,
+          budget: styleContext.budget,
+          isRoot: false,
+          readParentValue: styleContext.isRoot ? null : readValue,
+        };
+      } catch (error) {
+        // Style capture is best-effort; fall back to structural cloning.
+        childStyleContext = styleContext;
+      }
+    }
 
     forEachChildNode(node, function (child) {
-      var clonedChild = cloneForCapture(child);
+      var clonedChild = cloneForCapture(child, childStyleContext);
 
       if (clonedChild) {
         clone.appendChild(clonedChild);
@@ -2019,7 +2136,7 @@
       var shadowContainer = ownerDocument.createElement('wayfindr-shadow-content');
 
       forEachChildNode(node.shadowRoot, function (child) {
-        var clonedChild = cloneForCapture(child);
+        var clonedChild = cloneForCapture(child, childStyleContext);
 
         if (clonedChild) {
           shadowContainer.appendChild(clonedChild);
@@ -2036,7 +2153,19 @@
     options = options || {};
 
     var location = options.location || (doc && doc.location) || null;
-    var source = doc && doc.body ? cloneForCapture(doc.body) : null;
+    var view = options.view || (doc && doc.defaultView) || null;
+    var styleContext = (options.captureStyles === false || !view || typeof view.getComputedStyle !== 'function')
+      ? null
+      : {
+        view: view,
+        readParentValue: null,
+        isRoot: true,
+        budget: {
+          captured: 0,
+          max: typeof options.maxStyledElements === 'number' ? options.maxStyledElements : 800,
+        },
+      };
+    var source = doc && doc.body ? cloneForCapture(doc.body, styleContext) : null;
 
     if (!source) {
       return {
