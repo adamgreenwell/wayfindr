@@ -54,6 +54,7 @@ class OperatorReadiness
         $checks = [
             $this->applicationKey(),
             $this->publicUrl(),
+            $this->securityPosture(),
             $this->databaseConnection(),
             $this->mailTransport(),
             $this->queueWorker(),
@@ -165,6 +166,49 @@ class OperatorReadiness
             summary: sprintf('APP_URL is %s.', $url),
             detail: 'Wayfindr can generate public links and widget snippets from the production URL.',
             action: 'Keep APP_URL stable and update it intentionally when changing domains.'
+        );
+    }
+
+    /**
+     * @return array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
+     */
+    private function securityPosture(): array
+    {
+        $debugEnabled = (bool) config('app.debug');
+        $environment = (string) app()->environment();
+
+        if ($debugEnabled && app()->environment('production')) {
+            return $this->check(
+                key: 'security_posture',
+                label: 'Security posture',
+                status: 'attention',
+                summary: 'Debug mode is enabled in production.',
+                detail: 'APP_DEBUG=true in production exposes stack traces, environment values, and configuration to anyone who triggers an error, which can leak database credentials, API keys, and visitor data.',
+                action: 'Set APP_DEBUG=false in the environment, then run php artisan config:cache so the cached config reflects it.',
+                commands: ['php artisan config:cache']
+            );
+        }
+
+        if ($debugEnabled) {
+            return $this->check(
+                key: 'security_posture',
+                label: 'Security posture',
+                status: 'ready',
+                summary: sprintf('Debug mode is on in the %s environment.', $environment),
+                detail: 'Debug mode is expected outside production. A production install must keep APP_DEBUG=false so errors never expose stack traces, environment values, or secrets.',
+                action: 'Keep APP_ENV=production and APP_DEBUG=false on the live install, then run php artisan config:cache after changing them.',
+                commands: ['php artisan config:cache']
+            );
+        }
+
+        return $this->check(
+            key: 'security_posture',
+            label: 'Security posture',
+            status: 'ready',
+            summary: 'Debug mode is disabled.',
+            detail: sprintf('APP_DEBUG is off in the %s environment, so application errors will not expose stack traces, environment values, or secrets.', $environment),
+            action: 'Keep APP_DEBUG=false in production and re-run php artisan config:cache after environment changes.',
+            commands: ['php artisan config:cache']
         );
     }
 

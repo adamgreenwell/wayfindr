@@ -870,6 +870,49 @@ test('readiness diagnostics accept a public https app url and outbound mail tran
     ]);
 });
 
+test('readiness security posture flags debug mode enabled in production', function (): void {
+    $this->app->detectEnvironment(fn (): string => 'production');
+    config(['app.debug' => true]);
+
+    $readiness = app(OperatorReadiness::class)->summary();
+    $security = collect($readiness['checks'])->firstWhere('key', 'security_posture');
+
+    expect($security)->toMatchArray([
+        'label' => 'Security posture',
+        'status' => 'attention',
+        'summary' => 'Debug mode is enabled in production.',
+        'commands' => ['php artisan config:cache'],
+    ])
+        ->and($security['detail'])->toContain('APP_DEBUG=true')
+        ->and(collect($readiness['checks'])->where('status', 'attention')->pluck('key'))->toContain('security_posture');
+});
+
+test('readiness security posture is ready when debug is disabled in production', function (): void {
+    $this->app->detectEnvironment(fn (): string => 'production');
+    config(['app.debug' => false]);
+
+    $readiness = app(OperatorReadiness::class)->summary();
+    $security = collect($readiness['checks'])->firstWhere('key', 'security_posture');
+
+    expect($security)->toMatchArray([
+        'label' => 'Security posture',
+        'status' => 'ready',
+        'summary' => 'Debug mode is disabled.',
+    ]);
+});
+
+test('readiness security posture stays ready when debug is on outside production', function (): void {
+    // Debug mode is expected in non-production environments; do not nag operators there.
+    config(['app.debug' => true]);
+
+    $readiness = app(OperatorReadiness::class)->summary();
+    $security = collect($readiness['checks'])->firstWhere('key', 'security_posture');
+
+    expect($security['status'])->toBe('ready')
+        ->and($security['summary'])->toBe('Debug mode is on in the testing environment.')
+        ->and(collect($readiness['checks'])->where('status', 'attention')->pluck('key'))->not->toContain('security_posture');
+});
+
 test('readiness diagnostics flag smtp mail that still points at local defaults', function (): void {
     config([
         'mail.default' => 'smtp',
