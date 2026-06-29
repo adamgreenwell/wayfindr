@@ -1533,7 +1533,11 @@
                             return;
                         }
 
-                        if (config.previewUrl) {
+                        // Only mutation batches change the rendered preview, so
+                        // only they trigger a live re-fetch. Other kinds (page
+                        // state, consent lifecycle) keep the calm manual cue so
+                        // frequent page-state reports do not refetch needlessly.
+                        if (config.previewUrl && updateKind === 'mutations') {
                             setStatus('New cobrowse changes received. Updating the preview…', 'listening');
                             refreshCobrowsePreview();
                         } else {
