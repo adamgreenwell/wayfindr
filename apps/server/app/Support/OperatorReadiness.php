@@ -5,8 +5,10 @@ namespace App\Support;
 use App\Models\OperatorReadinessConfirmation;
 use App\Models\User;
 use Carbon\CarbonInterface;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Throwable;
 
 class OperatorReadiness
@@ -56,6 +58,7 @@ class OperatorReadiness
             $this->publicUrl(),
             $this->securityPosture(),
             $this->databaseConnection(),
+            $this->cacheStore(),
             $this->mailTransport(),
             $this->queueWorker(),
             $this->realtimeBroadcasting(),
@@ -239,6 +242,72 @@ class OperatorReadiness
             summary: sprintf('The %s connection responded.', $connection),
             detail: 'Wayfindr can reach the configured database.',
             action: 'Keep migrations in the deploy script so schema changes land with releases.'
+        );
+    }
+
+    /**
+     * @return array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
+     */
+    private function cacheStore(): array
+    {
+        $store = (string) config('cache.default', 'file');
+
+        if (in_array($store, ['array', 'null'], true)) {
+            if (app()->environment('production')) {
+                return $this->check(
+                    key: 'cache_store',
+                    label: 'Cache store',
+                    status: 'attention',
+                    summary: sprintf('CACHE_STORE is %s in production.', $store),
+                    detail: 'The array and null cache stores do not persist between requests or across workers, so cached config, rate limiters, and locks will not behave correctly in production.',
+                    action: 'Set CACHE_STORE to a shared, persistent store such as redis, memcached, database, or file.'
+                );
+            }
+
+            return $this->check(
+                key: 'cache_store',
+                label: 'Cache store',
+                status: 'ready',
+                summary: sprintf('CACHE_STORE is %s.', $store),
+                detail: 'Non-persistent cache stores are expected outside production. A production install should use a shared, persistent store.',
+                action: 'Use redis, memcached, database, or file for the cache store before relying on it in production.'
+            );
+        }
+
+        try {
+            $probeKey = 'wayfindr:readiness:cache:'.Str::random(12);
+            Cache::store()->put($probeKey, '1', 5);
+            $roundTripped = Cache::store()->get($probeKey) === '1';
+            Cache::store()->forget($probeKey);
+        } catch (Throwable $exception) {
+            return $this->check(
+                key: 'cache_store',
+                label: 'Cache store',
+                status: 'attention',
+                summary: sprintf('The %s cache store could not be reached.', $store),
+                detail: $exception->getMessage(),
+                action: 'Check the cache server connection and credentials (for redis or memcached), then retry.'
+            );
+        }
+
+        if (! $roundTripped) {
+            return $this->check(
+                key: 'cache_store',
+                label: 'Cache store',
+                status: 'attention',
+                summary: sprintf('The %s cache store did not return a written value.', $store),
+                detail: 'A readiness probe wrote a value to the cache but read back a different result, which usually means the store is misconfigured or evicting immediately.',
+                action: 'Review the cache store configuration and capacity, then retry.'
+            );
+        }
+
+        return $this->check(
+            key: 'cache_store',
+            label: 'Cache store',
+            status: 'ready',
+            summary: sprintf('The %s cache store responded.', $store),
+            detail: 'Wayfindr wrote and read back a value from the configured cache store.',
+            action: 'Keep the cache store shared across web and queue workers.'
         );
     }
 
