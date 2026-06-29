@@ -72,6 +72,7 @@ The widget currently supports the first visitor loop:
 - show calm connection trouble copy if fallback message polling cannot reach Wayfindr, then clear it after a successful refresh,
 - render the visitor-visible conversation message timeline with timestamps, simple message grouping, day dividers (Today/Yesterday/date) between messages from different days, and sent cues for visitor messages,
 - keep the latest message in view when the visitor is already at the bottom, and show a gentle "New messages" jump cue instead of force-scrolling when a reply arrives while they have scrolled up,
+- stay usable on small or short screens: the panel is bounded to the viewport height (flex column) so the message timeline shrinks and scrolls while the composer stays reachable, with tighter offsets on narrow mobile widths,
 - expose the timeline, notices, typing hints, and delivery status through polite live regions so assistive technology can announce new context without rereading the whole widget,
 - expose the launcher/panel state to assistive technology and let keyboard visitors close the panel with Escape,
 - show fresh support typing hints and expire them locally when they become stale,

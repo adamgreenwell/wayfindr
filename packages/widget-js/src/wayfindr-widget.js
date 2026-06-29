@@ -2751,10 +2751,12 @@
       '.wayfindr-widget__send{min-height:40px;padding:0 14px;border-radius:6px}',
       '.wayfindr-widget__launcher:hover,.wayfindr-widget__send:hover{background:#094f4b}',
       '.wayfindr-widget__send:disabled{cursor:wait;opacity:.7}',
-      '.wayfindr-widget__panel{width:min(360px,calc(100vw - 32px));border:1px solid #d8dfdc;border-radius:8px;background:#fff;box-shadow:0 20px 55px rgba(8,37,34,.2);overflow:hidden}',
+      '.wayfindr-widget__panel{display:flex;flex-direction:column;width:min(360px,calc(100vw - 32px));max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);border:1px solid #d8dfdc;border-radius:8px;background:#fff;box-shadow:0 20px 55px rgba(8,37,34,.2);overflow:hidden}',
+      '.wayfindr-widget__panel>*{flex-shrink:0}',
+      '.wayfindr-widget__panel>.wayfindr-widget__timeline-wrap{flex:0 1 auto;min-height:0}',
       '.wayfindr-widget__header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid #d8dfdc;background:#f7f7f3}',
       '.wayfindr-widget__close{border:0;background:transparent;color:#62706b;cursor:pointer;font:700 24px/1 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:0}',
-      '.wayfindr-widget__timeline{display:grid;gap:10px;max-height:280px;overflow:auto;padding:14px 16px;border-bottom:1px solid #eef1ef;background:#fbfbf8}',
+      '.wayfindr-widget__timeline{display:grid;gap:10px;flex:1 1 auto;min-height:0;max-height:280px;overflow:auto;padding:14px 16px;border-bottom:1px solid #eef1ef;background:#fbfbf8}',
       '.wayfindr-widget__notice{display:grid;gap:10px;margin:0;padding:14px 16px;border-bottom:1px solid #eef1ef;background:#fbfbf8;color:#62706b;font-size:13px;line-height:1.4}',
       '.wayfindr-widget__notice[data-state="warning"]{background:#fffaf0;color:#5f4b20}',
       '.wayfindr-widget__notice-copy{margin:0}',
@@ -2766,7 +2768,7 @@
       '.wayfindr-widget__message{display:grid;gap:4px;width:88%;border:1px solid #d8dfdc;border-radius:8px;padding:9px 10px;background:#fff}',
       '.wayfindr-widget__message--agent{justify-self:end;background:#eef6f3;border-color:#cfe1dc}',
       '.wayfindr-widget__message--grouped{margin-top:-6px}',
-      '.wayfindr-widget__timeline-wrap{position:relative}',
+      '.wayfindr-widget__timeline-wrap{position:relative;display:flex;flex-direction:column;min-height:0}',
       '.wayfindr-widget__jump{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);border:1px solid #cfe1dc;background:#eef6f3;color:#1d2523;border-radius:999px;padding:4px 12px;font-size:12px;line-height:1.2;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.12)}',
       '.wayfindr-widget__day-separator{display:flex;align-items:center;justify-content:center;margin:2px 0}',
       '.wayfindr-widget__day-label{color:#62706b;font-size:11px;line-height:1.2;background:#eef1ef;border-radius:999px;padding:2px 10px;white-space:nowrap}',
@@ -2795,7 +2797,7 @@
       '.wayfindr-widget__cobrowse-decline:hover{border-color:#0d6f68;color:#0d6f68}',
       '.wayfindr-widget__cobrowse-allow:disabled,.wayfindr-widget__cobrowse-decline:disabled{cursor:wait;opacity:.7}',
       '.wayfindr-widget__status{min-height:20px;margin:0;padding:0 16px 16px;color:#62706b;font-size:13px}',
-      '@media (max-width:480px){.wayfindr-widget{right:12px;bottom:12px}.wayfindr-widget__panel{width:calc(100vw - 24px)}}',
+      '@media (max-width:480px){.wayfindr-widget{right:12px;bottom:12px}.wayfindr-widget__panel{width:calc(100vw - 24px);max-height:calc(100dvh - 24px)}}',
     ].join('');
 
     doc.head.appendChild(style);
