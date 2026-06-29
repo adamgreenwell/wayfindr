@@ -1,7 +1,5 @@
 <x-layouts.app title="Tickets" :agent="$agent" :account="$account">
-            <p><a class="text-link" href="{{ route('dashboard') }}">Back to dashboard</a></p>
-            <h1>Tickets</h1>
-            <p class="lede">Structured support work for {{ $account->name }}.</p>
+            <x-page-header title="Tickets" :subtitle="'Structured support work for '.$account->name.'.'" :back-href="route('dashboard')" back-label="Back to dashboard" />
 
             <section id="tickets" class="section" aria-labelledby="tickets-heading">
                 <div class="section-header">

@@ -1,7 +1,5 @@
 <x-layouts.app title="Add Site" :agent="$agent" :account="$account">
-            <a class="text-link" href="{{ route('dashboard') }}">Back to dashboard</a>
-            <h1>Add site</h1>
-            <p class="lede">Create a new Wayfindr install target for {{ $account->name }}.</p>
+            <x-page-header title="Add site" :subtitle="'Create a new Wayfindr install target for '.$account->name.'.'" :back-href="route('dashboard')" back-label="Back to dashboard" />
 
             <section class="section" aria-labelledby="new-site-heading">
                 <div class="section-header">

@@ -127,3 +127,20 @@ test('plain agents do not see account management links', function (): void {
         ->assertDontSee(route('dashboard.account.reply-templates.index'), false)
         ->assertDontSee(route('dashboard.account.labels.index'), false);
 });
+
+test('agent pages render the shared page header component', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'name' => 'Ada Admin',
+    ]);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee('page-header', false)
+        ->assertSee('page-header__back', false)
+        ->assertSee('Back to sites')
+        ->assertSee('Acme Docs');
+});

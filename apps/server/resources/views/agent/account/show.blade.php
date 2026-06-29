@@ -1,13 +1,9 @@
 <x-layouts.app title="Account" :agent="$agent" :account="$account">
-            <div class="section-header">
-                <div>
-                    <h1>Account</h1>
-                    <p class="lede">Your role, team roster, and visible support scope.</p>
-                </div>
-                <div class="section-actions">
+            <x-page-header title="Account" subtitle="Your role, team roster, and visible support scope.">
+                <x-slot:actions>
                     <span class="lede">{{ $agents->count() }} {{ \Illuminate\Support\Str::plural('agent', $agents->count()) }}</span>
-                </div>
-            </div>
+                </x-slot:actions>
+            </x-page-header>
 
             @if (session('status'))
                 <p class="status-message">{{ session('status') }}</p>

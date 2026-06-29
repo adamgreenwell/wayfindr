@@ -1,7 +1,5 @@
 <x-layouts.app title="Site Tester" :agent="$agent" :account="$account">
-            <a class="text-link" href="{{ route('dashboard.sites.show', $site) }}">Back to site settings</a>
-            <h1>{{ $site->name }} tester</h1>
-            <p class="lede">Hosted sample page for this site's widget, chat loop, and cobrowse masking.</p>
+            <x-page-header :title="$site->name.' tester'" subtitle="Hosted sample page for this site's widget, chat loop, and cobrowse masking." :back-href="route('dashboard.sites.show', $site)" back-label="Back to site settings" />
 
             <section class="section" aria-labelledby="tester-context-heading">
                 <div class="section-header">

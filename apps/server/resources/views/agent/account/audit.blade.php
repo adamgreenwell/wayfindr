@@ -1,15 +1,10 @@
 <x-layouts.app title="Account Audit" :agent="$agent" :account="$account">
-            <div class="section-header">
-                <div>
-                    <p class="lede"><a class="text-link" href="{{ route('dashboard.account.show') }}">Back to account</a></p>
-                    <h1>Account audit</h1>
-                    <p class="lede">Search account-level activity without exposing raw event metadata.</p>
-                </div>
-                <div class="section-actions">
+            <x-page-header title="Account audit" subtitle="Search account-level activity without exposing raw event metadata." :back-href="route('dashboard.account.show')" back-label="Back to account">
+                <x-slot:actions>
                     <span class="lede">{{ $auditEvents->count() }} shown</span>
                     <a class="button secondary" href="{{ route('dashboard.account.audit.export', $auditQuery) }}">Export CSV</a>
-                </div>
-            </div>
+                </x-slot:actions>
+            </x-page-header>
 
             <section class="section" aria-labelledby="audit-responsibility-heading">
                 <div class="section-header">

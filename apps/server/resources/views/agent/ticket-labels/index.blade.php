@@ -1,13 +1,5 @@
 <x-layouts.app title="Ticket labels" :agent="$agent" :account="$account">
-            <div class="section-header">
-                <div>
-                    <h1>Ticket labels</h1>
-                    <p class="lede">Manage account-wide labels used for ticket triage and dashboard filters.</p>
-                </div>
-                <div class="section-actions">
-                    <a class="button secondary" href="{{ route('dashboard.account.show') }}">Back to account</a>
-                </div>
-            </div>
+            <x-page-header title="Ticket labels" subtitle="Manage account-wide labels used for ticket triage and dashboard filters." :back-href="route('dashboard.account.show')" back-label="Back to account" />
 
             @if (session('status'))
                 <p class="status-message">{{ session('status') }}</p>

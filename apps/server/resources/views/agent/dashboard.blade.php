@@ -1,6 +1,5 @@
 <x-layouts.app title="Agent Dashboard" :agent="$agent" :account="$account">
-            <h1>{{ $account->name }}</h1>
-            <p class="lede">Signed in as {{ $agent->email }}</p>
+            <x-page-header :title="$account->name" :subtitle="'Signed in as '.$agent->email" />
 
             <section class="section" aria-labelledby="support-code-lookup-heading">
                 <div class="section-header">

@@ -1,8 +1,5 @@
 <x-layouts.app title="Agent Profile" :agent="$agent" :account="$account">
-    <header>
-        <h1>Agent profile</h1>
-        <p class="lede">Keep your agent identity and sign-in password current.</p>
-    </header>
+    <x-page-header title="Agent profile" subtitle="Keep your agent identity and sign-in password current." />
 
     @if (session('status'))
         <p class="status-message">{{ session('status') }}</p>

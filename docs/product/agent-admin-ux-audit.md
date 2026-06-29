@@ -51,17 +51,19 @@ a live look at staging:
 Broad + easy + high-impact, chosen so the demo never needs "this will get better
 sometime." None of these restructure the heavy detail pages (that's #511).
 
-1. ⬜ **Global section/CSS cohesion pass** — tighten shared section/card spacing,
-   type scale, and section-header treatment in the one stylesheet so every page
-   levels up at once.
+1. ✅ **Global section/CSS cohesion pass** — sections now carry a subtle shadow
+   so the cards lift off the page instead of reading as flat bordered boxes; the
+   shared page-header treatment (below) replaces the per-page header drift.
+   (Deeper visual-system work — type scale, spacing tokens — stays in #511.)
 2. ✅ **Nav completeness + wrap fix** — the primary nav now sits on its own
    full-width row (no more squeeze/wrap of a single item on wide screens);
    platform operators get an **Operator** nav item; admins reach the previously
    orphaned **Reply Templates** and **Ticket Labels** from a new Management
    group on the Account page (their natural `dashboard.account.*` home).
 3. ⬜ **Dashboard home focus** — trim redundant cards to a focused landing.
-4. ⬜ **Consistent page header** — shared back-link / title / subtitle /
-   primary-action header across pages.
+4. ✅ **Consistent page header** — a shared `<x-page-header>` component
+   (back link / title / subtitle / actions slot) now renders every agent and
+   admin page's header, replacing ~17 hand-rolled variants.
 
 ---
 
@@ -87,3 +89,6 @@ sometime." None of these restructure the heavy detail pages (that's #511).
 - **2026-06-29** — Stroke 2 (nav completeness + wrap fix) done: nav on its own
   row, Operator nav item for operators, Account Management group for Reply
   Templates + Ticket Labels. Full server suite green (796).
+- **2026-06-29** — Strokes 4 + 1 done together: new `<x-page-header>` component
+  applied across all 17 agent/admin pages; subtle section card shadow for depth.
+  Full server suite green (796). Remaining MVP stroke: 3 (dashboard home focus).

@@ -1,7 +1,5 @@
 <x-layouts.app title="Visitor profile" :agent="$agent" :account="$account">
-            <a class="text-link" href="{{ route('dashboard') }}">Back to dashboard</a>
-            <h1>Visitor profile</h1>
-            <p class="lede">{{ $visitor->site->name }} - {{ $visitorContext['anonymous_id'] }}</p>
+            <x-page-header title="Visitor profile" :subtitle="$visitor->site->name.' - '.$visitorContext['anonymous_id']" :back-href="route('dashboard')" back-label="Back to dashboard" />
 
             <section class="section" aria-labelledby="visitor-profile-heading">
                 <div class="section-header">

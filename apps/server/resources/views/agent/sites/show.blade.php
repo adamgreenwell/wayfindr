@@ -1,7 +1,5 @@
 <x-layouts.app title="Site Settings" :agent="$agent" :account="$account">
-            <a class="text-link" href="{{ route('dashboard.sites.index') }}">Back to sites</a>
-            <h1>{{ $site->name }}</h1>
-            <p class="lede">Privacy settings for {{ $site->domain ?? 'an unconfigured domain' }}</p>
+            <x-page-header :title="$site->name" :subtitle="'Privacy settings for '.($site->domain ?? 'an unconfigured domain')" :back-href="route('dashboard.sites.index')" back-label="Back to sites" />
 
             @if (session('status'))
                 <p class="status-message">{{ session('status') }}</p>

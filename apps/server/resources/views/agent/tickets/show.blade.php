@@ -1,16 +1,16 @@
 <x-layouts.app title="Ticket - {{ $ticket->subject }}" :agent="$agent" :account="$account">
-            <a class="text-link" href="{{ $ticketReturnLink['href'] }}">{{ $ticketReturnLink['label'] }}</a>
-            <h1>{{ $ticket->subject }}</h1>
-            <p class="lede">
-                Ticket #{{ $ticket->id }}
-                @if ($ticket->conversation)
-                    <span aria-hidden="true">-</span>
-                    <x-support-code-reference
-                        :code="$ticket->conversation->support_code"
-                        :href="route('dashboard.conversations.show', $ticket->conversation->support_code)"
-                    />
-                @endif
-            </p>
+            <x-page-header :title="$ticket->subject" :back-href="$ticketReturnLink['href']" :back-label="$ticketReturnLink['label']">
+                <p class="lede">
+                    Ticket #{{ $ticket->id }}
+                    @if ($ticket->conversation)
+                        <span aria-hidden="true">-</span>
+                        <x-support-code-reference
+                            :code="$ticket->conversation->support_code"
+                            :href="route('dashboard.conversations.show', $ticket->conversation->support_code)"
+                        />
+                    @endif
+                </p>
+            </x-page-header>
 
             @if (session('status'))
                 <p class="status-message">{{ session('status') }}</p>

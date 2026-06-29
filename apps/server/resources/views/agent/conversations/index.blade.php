@@ -1,9 +1,5 @@
 <x-layouts.app title="Conversations" :agent="$agent" :account="$account">
-            <p><a class="text-link" href="{{ route('dashboard') }}">Back to dashboard</a></p>
-            <h1>Conversations</h1>
-            <p class="lede">
-                {{ $conversationFilter === 'closed' ? 'Closed visitor conversations' : 'Active visitor conversations' }} for {{ $account->name }}.
-            </p>
+            <x-page-header title="Conversations" :subtitle="($conversationFilter === 'closed' ? 'Closed visitor conversations' : 'Active visitor conversations').' for '.$account->name.'.'" :back-href="route('dashboard')" back-label="Back to dashboard" />
 
             <section id="conversations" class="section" aria-labelledby="conversations-heading">
                 <div class="section-header">

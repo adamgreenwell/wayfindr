@@ -1,8 +1,7 @@
 <x-layouts.app title="Operator Readiness" :agent="$agent" :account="$account">
             @php($readinessConfirmationRoute = route('dashboard.readiness.confirmations.store'))
 
-            <h1>Operator readiness</h1>
-            <p class="lede">A calm install checkup for the pieces that usually make self-hosted support feel mysterious.</p>
+            <x-page-header title="Operator readiness" subtitle="A calm install checkup for the pieces that usually make self-hosted support feel mysterious." />
 
             <section class="section" aria-labelledby="readiness-summary-heading">
                 <div class="section-header">

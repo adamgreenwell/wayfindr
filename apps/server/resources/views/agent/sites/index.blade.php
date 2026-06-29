@@ -1,14 +1,10 @@
 <x-layouts.app title="Sites" :agent="$agent" :account="$account">
-            <div class="section-header">
-                <div>
-                    <h1>Sites</h1>
-                    <p class="lede">Manage widget installs, support access, privacy rules, and issue routing.</p>
-                </div>
-                <div class="section-actions">
+            <x-page-header title="Sites" subtitle="Manage widget installs, support access, privacy rules, and issue routing.">
+                <x-slot:actions>
                     <span class="lede">{{ $siteFilters['summary_label'] }}</span>
                     <a class="button secondary" href="{{ route('dashboard.sites.create') }}">Add site</a>
-                </div>
-            </div>
+                </x-slot:actions>
+            </x-page-header>
 
             @if (session('status'))
                 <p class="status-message">{{ session('status') }}</p>

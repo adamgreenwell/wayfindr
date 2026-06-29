@@ -19,9 +19,7 @@
                 ];
             @endphp
 
-            <a class="text-link" href="{{ $conversationBackUrl }}">Back to conversations</a>
-            <h1>{{ $conversation->subject ?? 'Untitled conversation' }}</h1>
-            <p class="lede">Support code {{ $conversation->support_code }}</p>
+            <x-page-header :title="$conversation->subject ?? 'Untitled conversation'" :subtitle="'Support code '.$conversation->support_code" :back-href="$conversationBackUrl" back-label="Back to conversations" />
 
             @if (session('status'))
                 <p class="status-message">{{ session('status') }}</p>

@@ -1,13 +1,5 @@
 <x-layouts.app title="Reply templates" :agent="$agent" :account="$account">
-            <div class="section-header">
-                <div>
-                    <h1>Reply templates</h1>
-                    <p class="lede">Manage account-wide helper replies for common visitor updates.</p>
-                </div>
-                <div class="section-actions">
-                    <a class="button secondary" href="{{ route('dashboard.account.show') }}">Back to account</a>
-                </div>
-            </div>
+            <x-page-header title="Reply templates" subtitle="Manage account-wide helper replies for common visitor updates." :back-href="route('dashboard.account.show')" back-label="Back to account" />
 
             @if (session('status'))
                 <p class="status-message">{{ session('status') }}</p>

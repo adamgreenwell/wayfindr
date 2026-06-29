@@ -1,7 +1,5 @@
 <x-layouts.app title="Alerts" :agent="$agent" :account="$account">
-    <p><a class="text-link" href="{{ route('dashboard') }}">Back to dashboard</a></p>
-    <h1>Alert center</h1>
-    <p class="lede">Visible support alerts for {{ $account->name }}.</p>
+    <x-page-header title="Alert center" :subtitle="'Visible support alerts for '.$account->name.'.'" :back-href="route('dashboard')" back-label="Back to dashboard" />
 
     <section class="section" aria-labelledby="alert-center-heading">
         @php

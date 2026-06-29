@@ -174,6 +174,42 @@
             color: var(--muted);
         }
 
+        .page-header__back {
+            display: inline-block;
+            margin-bottom: 10px;
+            color: var(--muted);
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .page-header__back::before {
+            content: "\2190\00a0";
+        }
+
+        .page-header__back:hover {
+            color: var(--accent-strong);
+        }
+
+        .page-header__bar {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .page-header__heading {
+            min-width: 0;
+        }
+
+        .page-header__actions {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
         .field {
             margin-top: 18px;
         }
@@ -312,6 +348,7 @@
             background: var(--surface);
             border: 1px solid var(--border);
             border-radius: 8px;
+            box-shadow: 0 1px 2px rgba(8, 37, 34, 0.04);
         }
 
         .section[id] {
