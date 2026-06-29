@@ -66,6 +66,7 @@ The widget currently supports the first visitor loop:
 - send visitor messages,
 - prevent duplicate sends while the visitor composer is busy,
 - preserve visitor drafts after recoverable send failures and offer a visible retry against the same conversation when possible,
+- attach a per-message idempotency key (`client_message_id`) so retrying a send whose first response was lost does not create a duplicate message,
 - show calm empty, error, and retry states without hiding the existing conversation,
 - explain when a refreshed conversation has been closed and that sending a new visitor message will reopen it,
 - show calm connection trouble copy if fallback message polling cannot reach Wayfindr, then clear it after a successful refresh,

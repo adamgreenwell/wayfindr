@@ -413,6 +413,47 @@ test('visitor can add a message to their conversation', function (): void {
     }
 });
 
+test('repeated client_message_id is idempotent and does not duplicate the message', function (): void {
+    $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create(['support_code' => 'WF-IDEM']);
+    $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+
+    $payload = [
+        'site_public_key' => 'site_public_docs',
+        'anonymous_id' => 'anon-docs',
+        'visitor_token' => $token,
+        'body' => 'Retried because the first response was lost.',
+        'client_message_id' => 'wf-test-key-123',
+    ];
+
+    $first = $this->postJson("/api/conversations/{$conversation->support_code}/messages", $payload)->assertCreated();
+    $second = $this->postJson("/api/conversations/{$conversation->support_code}/messages", $payload)->assertCreated();
+
+    // The retry returns the same message and creates no duplicate row.
+    expect($second->json('data.message.id'))->toBe($first->json('data.message.id'))
+        ->and(ConversationMessage::query()->where('conversation_id', $conversation->id)->count())->toBe(1);
+});
+
+test('messages without a client_message_id are each created', function (): void {
+    $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create(['support_code' => 'WF-NOIDEM']);
+    $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+
+    $payload = [
+        'site_public_key' => 'site_public_docs',
+        'anonymous_id' => 'anon-docs',
+        'visitor_token' => $token,
+        'body' => 'Same text, no idempotency key.',
+    ];
+
+    $this->postJson("/api/conversations/{$conversation->support_code}/messages", $payload)->assertCreated();
+    $this->postJson("/api/conversations/{$conversation->support_code}/messages", $payload)->assertCreated();
+
+    expect(ConversationMessage::query()->where('conversation_id', $conversation->id)->count())->toBe(2);
+});
+
 test('visitor message fetch broadcasts fresh visitor presence', function (): void {
     Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00', 'UTC'));
 

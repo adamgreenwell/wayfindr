@@ -346,7 +346,12 @@ test('starts a conversation and sends the first visitor message', async () => {
     },
   });
   assert.equal(calls[2].url, 'http://127.0.0.1:8000/api/conversations/WF-TEST123/messages');
-  assert.deepEqual(JSON.parse(calls[2].options.body), {
+  const firstMessageBody = JSON.parse(calls[2].options.body);
+  // The widget attaches an idempotency key so retries do not duplicate the send.
+  assert.equal(typeof firstMessageBody.client_message_id, 'string');
+  assert.ok(firstMessageBody.client_message_id.length > 0);
+  delete firstMessageBody.client_message_id;
+  assert.deepEqual(firstMessageBody, {
     site_public_key: 'site_public_docs',
     anonymous_id: 'anon-browser-123',
     visitor_token: 'visitor-token-123',
@@ -2147,6 +2152,15 @@ test('preserves failed first message drafts and retries without recreating the c
     messageSummaries(widget),
     ['VisitorCan you help me?'],
   );
+
+  // The original send and its retry must carry the same idempotency key so the
+  // server can dedupe a retry whose first response was lost.
+  const messagePosts = calls.filter((call) => new URL(call.url).pathname === '/api/conversations/WF-RETRY123/messages' && call.options.method === 'POST');
+  const firstKey = JSON.parse(messagePosts[0].options.body).client_message_id;
+  const retryKey = JSON.parse(messagePosts[1].options.body).client_message_id;
+  assert.equal(typeof firstKey, 'string');
+  assert.ok(firstKey.length > 0);
+  assert.equal(retryKey, firstKey);
 
   widget.destroy();
 });
