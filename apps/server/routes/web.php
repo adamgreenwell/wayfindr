@@ -170,6 +170,8 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.tickets.assignee.update');
     Route::post('/dashboard/tickets/{ticket}/escalations', [AgentTicketController::class, 'storeEscalation'])
         ->name('dashboard.tickets.escalations.store');
+    Route::get('/dashboard/conversations/{supportCode}/cobrowse/preview', [AgentConversationController::class, 'cobrowsePreview'])
+        ->name('dashboard.conversations.cobrowse.preview');
     Route::post('/dashboard/conversations/{supportCode}/cobrowse/request', [AgentConversationController::class, 'requestCobrowse'])
         ->name('dashboard.conversations.cobrowse.request');
     Route::post('/dashboard/conversations/{supportCode}/cobrowse/resync', [AgentConversationController::class, 'requestCobrowseResync'])

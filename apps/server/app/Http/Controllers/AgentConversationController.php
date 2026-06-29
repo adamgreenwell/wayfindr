@@ -17,6 +17,7 @@ use App\Support\TicketCategory;
 use App\Support\TicketPriority;
 use App\Support\VisitorContextSanitizer;
 use Illuminate\Contracts\View\View;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -357,6 +358,31 @@ class AgentConversationController extends Controller
             ->with('status', 'Ticket created.');
     }
 
+    /**
+     * Return the latest server-sanitized cobrowse replay preview as JSON so the
+     * agent dashboard can refresh it live in place without a full page reload.
+     * This reuses the exact CobrowseConsentState shape the page renders, so the
+     * broadcast path never carries raw page HTML — the sanitizer stays the
+     * enforcement boundary on every refresh.
+     */
+    public function cobrowsePreview(Request $request, string $supportCode, CobrowseConsentState $cobrowseConsentState): JsonResponse
+    {
+        $agent = $request->user();
+        $conversation = $this->conversationForAgent($agent, $supportCode, 'view');
+
+        $state = $cobrowseConsentState->forConversation($conversation);
+
+        return response()->json([
+            'data' => [
+                'status' => $state['status'] ?? 'unavailable',
+                'replay_preview' => $state['replay_preview'] ?? null,
+                'snapshot' => [
+                    'freshness' => $state['snapshot']['freshness'] ?? null,
+                ],
+            ],
+        ]);
+    }
+
     public function requestCobrowse(Request $request, string $supportCode): RedirectResponse
     {
         $agent = $request->user();
@@ -655,6 +681,7 @@ class AgentConversationController extends Controller
             'eventName' => 'conversation.cobrowse.updated',
             'host' => (string) $host,
             'port' => (int) $port,
+            'previewUrl' => route('dashboard.conversations.cobrowse.preview', $conversation->support_code),
             'readEventName' => 'conversation.read.updated',
             'scheme' => (string) $scheme,
             'presenceEventName' => 'conversation.presence.updated',

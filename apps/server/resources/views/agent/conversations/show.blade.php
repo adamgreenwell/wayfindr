@@ -689,9 +689,9 @@
                     <div class="section-header">
                         <strong>Replay preview</strong>
                         <span class="lede">
-                            {{ $cobrowseConsent['replay_preview']['applied_mutations'] }}
+                            <span data-cobrowse-replay-applied>{{ $cobrowseConsent['replay_preview']['applied_mutations'] }}</span>
                             /
-                            {{ $cobrowseConsent['replay_preview']['skipped_mutations'] }}
+                            <span data-cobrowse-replay-skipped>{{ $cobrowseConsent['replay_preview']['skipped_mutations'] }}</span>
                         </span>
                         <span
                             class="readiness-status"
@@ -700,13 +700,12 @@
                         >{{ $cobrowseConsent['replay_preview']['drift']['label'] }}</span>
                     </div>
 
-                    @if ($cobrowseConsent['replay_preview']['drift']['state'] !== 'steady')
-                        <p
-                            class="lede realtime-note"
-                            data-cobrowse-replay-drift-message
-                            data-recommend-resync="{{ $cobrowseConsent['replay_preview']['drift']['recommend_resync'] ? 'true' : 'false' }}"
-                        >{{ $cobrowseConsent['replay_preview']['drift']['message'] }} ({{ $cobrowseConsent['replay_preview']['drift']['summary'] }})</p>
-                    @endif
+                    <p
+                        class="lede realtime-note"
+                        data-cobrowse-replay-drift-message
+                        data-recommend-resync="{{ $cobrowseConsent['replay_preview']['drift']['recommend_resync'] ? 'true' : 'false' }}"
+                        @unless ($cobrowseConsent['replay_preview']['drift']['state'] !== 'steady') hidden @endunless
+                    >{{ $cobrowseConsent['replay_preview']['drift']['message'] }} ({{ $cobrowseConsent['replay_preview']['drift']['summary'] }})</p>
 
                     <div class="cobrowse-preview-frame">
                         <iframe
@@ -714,10 +713,11 @@
                             title="Cobrowse replay preview"
                             sandbox
                             srcdoc="{{ $cobrowseConsent['replay_preview']['srcdoc'] }}"
+                            data-cobrowse-replay-frame
                         ></iframe>
                     </div>
                 @else
-                    <p class="empty realtime-note">No replay preview yet.</p>
+                    <p class="empty realtime-note" data-cobrowse-replay-empty>No replay preview yet.</p>
                 @endif
 
                 @if ($cobrowseConsent['payload_budget'])
@@ -867,6 +867,11 @@
                 var panel = document.querySelector('[data-cobrowse-update-panel]');
                 var status = document.querySelector('[data-cobrowse-update-status]');
                 var refresh = document.querySelector('[data-cobrowse-refresh]');
+                var previewFrame = document.querySelector('[data-cobrowse-replay-frame]');
+                var previewApplied = document.querySelector('[data-cobrowse-replay-applied]');
+                var previewSkipped = document.querySelector('[data-cobrowse-replay-skipped]');
+                var previewDriftStatus = document.querySelector('[data-cobrowse-replay-drift-status]');
+                var previewDriftMessage = document.querySelector('[data-cobrowse-replay-drift-message]');
                 var visitorPresenceLabel = document.querySelector('[data-visitor-presence-label]');
                 var visitorPresenceDetail = document.querySelector('[data-visitor-presence-detail]');
                 var visitorPresenceLastSeen = document.querySelector('[data-visitor-presence-last-seen]');
@@ -917,6 +922,13 @@
 
                 if (refresh) {
                     refresh.addEventListener('click', function () {
+                        if (config.previewUrl) {
+                            setStatus('Refreshing the preview…', 'listening');
+                            refreshCobrowsePreview();
+
+                            return;
+                        }
+
                         window.location.reload();
                     });
                 }
@@ -928,6 +940,115 @@
 
                     status.textContent = message;
                     panel.dataset.state = state || 'idle';
+                }
+
+                var previewRefreshInFlight = false;
+                var previewRefreshQueued = false;
+
+                // Swap the server-sanitized preview into the existing iframe in
+                // place and refresh the applied/skipped and drift labels. Returns
+                // false when there is nothing to update (no preview yet, or the
+                // preview section was not rendered at page load).
+                function applyPreviewState(preview) {
+                    if (!preview || !previewFrame) {
+                        return false;
+                    }
+
+                    if (typeof preview.srcdoc === 'string') {
+                        previewFrame.srcdoc = preview.srcdoc;
+                    }
+
+                    if (previewApplied && typeof preview.applied_mutations === 'string') {
+                        previewApplied.textContent = preview.applied_mutations;
+                    }
+
+                    if (previewSkipped && typeof preview.skipped_mutations === 'string') {
+                        previewSkipped.textContent = preview.skipped_mutations;
+                    }
+
+                    var drift = preview.drift || null;
+
+                    if (drift && previewDriftStatus) {
+                        previewDriftStatus.textContent = drift.label || '';
+                        previewDriftStatus.dataset.status = drift.tone || 'manual';
+                    }
+
+                    if (drift && previewDriftMessage) {
+                        var summary = drift.summary ? ' (' + drift.summary + ')' : '';
+                        previewDriftMessage.textContent = (drift.message || '') + summary;
+                        previewDriftMessage.dataset.recommendResync = drift.recommend_resync ? 'true' : 'false';
+                        previewDriftMessage.hidden = drift.state === 'steady';
+                    }
+
+                    return true;
+                }
+
+                // Fetch the latest sanitized preview and apply it live. The
+                // broadcast only carries metadata, so the iframe content always
+                // comes back through the server sanitizer here, never the socket.
+                function refreshCobrowsePreview() {
+                    if (!config.previewUrl) {
+                        if (refresh) {
+                            refresh.hidden = false;
+                        }
+
+                        return;
+                    }
+
+                    if (previewRefreshInFlight) {
+                        previewRefreshQueued = true;
+
+                        return;
+                    }
+
+                    previewRefreshInFlight = true;
+
+                    fetch(config.previewUrl, {
+                        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                        credentials: 'same-origin',
+                    })
+                        .then(function (response) {
+                            if (!response.ok) {
+                                throw new Error('Preview refresh failed: ' + response.status);
+                            }
+
+                            return response.json();
+                        })
+                        .then(function (body) {
+                            var data = body && body.data ? body.data : {};
+                            var preview = data.replay_preview || null;
+
+                            if (preview && !previewFrame) {
+                                // The first preview arrived after page load; a
+                                // reload renders the section that does not exist yet.
+                                window.location.reload();
+
+                                return;
+                            }
+
+                            if (applyPreviewState(preview)) {
+                                if (refresh) {
+                                    refresh.hidden = true;
+                                }
+
+                                setStatus('Preview updated with the latest cobrowse changes.', 'listening');
+                            }
+                        })
+                        .catch(function () {
+                            if (refresh) {
+                                refresh.hidden = false;
+                            }
+
+                            setStatus('Could not refresh the preview automatically. Use Refresh preview to try again.', 'warning');
+                        })
+                        .then(function () {
+                            previewRefreshInFlight = false;
+
+                            if (previewRefreshQueued) {
+                                previewRefreshQueued = false;
+                                refreshCobrowsePreview();
+                            }
+                        });
                 }
 
                 function presenceStatusFor(state) {
@@ -1386,10 +1507,16 @@
 
                         if (updateKind === 'snapshot') {
                             updateSnapshotFreshness(summary.snapshot);
-                            setStatus('Fresh snapshot received live. Refresh the preview when you are ready.', 'available');
 
-                            if (refresh) {
-                                refresh.hidden = false;
+                            if (config.previewUrl) {
+                                setStatus('Fresh snapshot received. Updating the preview…', 'listening');
+                                refreshCobrowsePreview();
+                            } else {
+                                setStatus('Fresh snapshot received live. Refresh the preview when you are ready.', 'available');
+
+                                if (refresh) {
+                                    refresh.hidden = false;
+                                }
                             }
 
                             return;
@@ -1406,10 +1533,15 @@
                             return;
                         }
 
-                        setStatus('New cobrowse update available. Refresh the preview when you are ready.', 'available');
+                        if (config.previewUrl) {
+                            setStatus('New cobrowse changes received. Updating the preview…', 'listening');
+                            refreshCobrowsePreview();
+                        } else {
+                            setStatus('New cobrowse update available. Refresh the preview when you are ready.', 'available');
 
-                        if (refresh) {
-                            refresh.hidden = false;
+                            if (refresh) {
+                                refresh.hidden = false;
+                            }
                         }
                     }
 

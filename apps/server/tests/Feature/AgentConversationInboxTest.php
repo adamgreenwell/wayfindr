@@ -8050,6 +8050,129 @@ test('agent can see a sandboxed cobrowse replay preview on a conversation', func
         ->assertDontSee('mutation-token');
 });
 
+test('agent can fetch the sanitized cobrowse replay preview as json for live refresh', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-REPLAYJSON',
+        'subject' => 'Checkout trouble',
+        'status' => 'open',
+    ]);
+
+    CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinute(),
+        'ended_at' => null,
+        'metadata' => [
+            'snapshot' => [
+                'page_url' => 'https://docs.example.test/install?step=2',
+                'title' => 'Install Guide',
+                'html' => '<main><h1>Install Guide</h1><p>Original public copy.</p><button aria-expanded="false">Details</button><script>window.secret="steal-token"</script></main>',
+                'text' => 'Install Guide. [masked]',
+                'node_count' => 6,
+                'masked_count' => 1,
+                'reported_at' => now()->subMinute()->toJSON(),
+            ],
+            'mutations' => [
+                'batch_count' => 1,
+                'mutation_count' => 2,
+                'dropped_count' => 0,
+                'skipped_count' => 0,
+                'last_sequence' => 1,
+                'last_page_url' => 'https://docs.example.test/install?step=2',
+                'last_reported_at' => now()->toJSON(),
+                'recent_batches' => [
+                    [
+                        'sequence' => 1,
+                        'mutation_count' => 2,
+                        'dropped_count' => 0,
+                        'skipped_count' => 0,
+                        'page_url' => 'https://docs.example.test/install?step=2',
+                        'reported_at' => now()->toJSON(),
+                        'mutations' => [
+                            [
+                                'type' => 'text',
+                                'path' => 'body:nth-of-type(1) > main:nth-of-type(1) > p:nth-of-type(1)',
+                                'text' => 'Updated public copy.',
+                            ],
+                            [
+                                'type' => 'added',
+                                'path' => 'body:nth-of-type(1) > main:nth-of-type(1)',
+                                'html' => '<p>Fresh public hint.</p><script>window.secret="mutation-token"</script>',
+                                'text' => 'Fresh public hint.',
+                                'node_count' => 1,
+                                'masked_count' => 0,
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    $response = $this->actingAs($agent)
+        ->getJson(route('dashboard.conversations.cobrowse.preview', 'WF-REPLAYJSON'))
+        ->assertOk()
+        ->assertJsonPath('data.status', 'granted')
+        ->assertJsonPath('data.replay_preview.applied_mutations', '2 applied')
+        ->assertJsonPath('data.replay_preview.skipped_mutations', '0 skipped')
+        ->assertJsonPath('data.replay_preview.drift.state', 'steady');
+
+    $srcdoc = $response->json('data.replay_preview.srcdoc');
+
+    expect($srcdoc)->toBeString();
+    expect($srcdoc)->toContain('Updated public copy.');
+    expect($srcdoc)->toContain('Fresh public hint.');
+    // The sanitizer remains the boundary: scripted/value-derived content never
+    // reaches the agent through the live refresh path.
+    expect($srcdoc)->not->toContain('steal-token');
+    expect($srcdoc)->not->toContain('mutation-token');
+    expect($srcdoc)->not->toContain('<script');
+});
+
+test('agent cannot fetch the cobrowse replay preview for another account conversation', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create();
+
+    $otherAccount = Account::factory()->create(['name' => 'Other Support']);
+    $otherSite = Site::factory()->for($otherAccount)->create(['name' => 'Other Docs']);
+    $otherVisitor = Visitor::factory()->for($otherSite)->create();
+    Conversation::factory()->for($otherSite)->for($otherVisitor)->create([
+        'support_code' => 'WF-OTHERLP',
+        'status' => 'open',
+    ]);
+
+    $this->actingAs($agent)
+        ->getJson(route('dashboard.conversations.cobrowse.preview', 'WF-OTHERLP'))
+        ->assertNotFound();
+});
+
+test('cobrowse replay preview endpoint returns a null preview when no snapshot exists', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-NOSNAP',
+        'status' => 'open',
+    ]);
+
+    CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'requested',
+        'consented_at' => null,
+        'ended_at' => null,
+        'metadata' => [],
+    ]);
+
+    $this->actingAs($agent)
+        ->getJson(route('dashboard.conversations.cobrowse.preview', 'WF-NOSNAP'))
+        ->assertOk()
+        ->assertJsonPath('data.status', 'pending')
+        ->assertJsonPath('data.replay_preview', null);
+});
+
 test('agent cobrowse replay preview skips mutations already covered by a recovery snapshot', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);

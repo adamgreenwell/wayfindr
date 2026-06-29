@@ -189,6 +189,14 @@ reconstruction. Drift detection is metadata-only: it counts outcomes and never
 records raw snapshot HTML, page text, or mutation payloads. The visitor experience should stay simple: allow, decline,
 stop, and clear copy about sensitive fields being masked.
 
+When the agent preview updates live, the realtime path keeps the same boundary.
+The cobrowse broadcast carries only metadata (page URL, title, counts, sequence,
+snapshot freshness, transport pressure, telemetry) and never raw HTML or mutation
+payloads. On each update the agent dashboard re-fetches the preview from a
+server endpoint that runs the same sanitizer used to render the page, so the
+sanitizer stays the single enforcement boundary on every refresh — the socket
+never becomes a side channel for unsanitized page content.
+
 ## Operator Readiness Boundary
 
 Platform operator readiness may summarize aggregate cobrowse transport health
