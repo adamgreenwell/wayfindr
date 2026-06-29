@@ -250,17 +250,22 @@ class OperatorReadiness
      */
     private function cacheStore(): array
     {
-        $store = (string) config('cache.default', 'file');
+        $default = (string) config('cache.default', 'file');
+        $isFailover = $this->cacheStoreDriver($default) === 'failover';
+        $persistentStores = $this->persistentCacheStores($default);
 
-        if (in_array($store, ['array', 'null'], true)) {
+        // A store (or failover chain) with no persistent backing only matters in
+        // production, where non-persistent caches silently break shared config,
+        // rate limiters, and locks. Outside production it is expected.
+        if ($persistentStores === []) {
             if (app()->environment('production')) {
                 return $this->check(
                     key: 'cache_store',
                     label: 'Cache store',
                     status: 'attention',
-                    summary: sprintf('CACHE_STORE is %s in production.', $store),
-                    detail: 'The array and null cache stores do not persist between requests or across workers, so cached config, rate limiters, and locks will not behave correctly in production.',
-                    action: 'Set CACHE_STORE to a shared, persistent store such as redis, memcached, database, or file.'
+                    summary: sprintf('CACHE_STORE is %s in production.', $default),
+                    detail: 'The configured cache store does not persist between requests or across workers, so cached config, rate limiters, and locks will not behave correctly in production.',
+                    action: 'Set CACHE_STORE to a shared, persistent store such as redis, memcached, database, or file (a failover chain must include a persistent store).'
                 );
             }
 
@@ -268,47 +273,86 @@ class OperatorReadiness
                 key: 'cache_store',
                 label: 'Cache store',
                 status: 'ready',
-                summary: sprintf('CACHE_STORE is %s.', $store),
+                summary: sprintf('CACHE_STORE is %s.', $default),
                 detail: 'Non-persistent cache stores are expected outside production. A production install should use a shared, persistent store.',
                 action: 'Use redis, memcached, database, or file for the cache store before relying on it in production.'
             );
         }
 
-        try {
-            $probeKey = 'wayfindr:readiness:cache:'.Str::random(12);
-            Cache::store()->put($probeKey, '1', 5);
-            $roundTripped = Cache::store()->get($probeKey) === '1';
-            Cache::store()->forget($probeKey);
-        } catch (Throwable $exception) {
-            return $this->check(
-                key: 'cache_store',
-                label: 'Cache store',
-                status: 'attention',
-                summary: sprintf('The %s cache store could not be reached.', $store),
-                detail: $exception->getMessage(),
-                action: 'Check the cache server connection and credentials (for redis or memcached), then retry.'
-            );
-        }
+        // Probe the persistent backends directly. For a failover chain this means
+        // each persistent member, so a broken primary is surfaced even when a
+        // non-persistent fallback would otherwise let the round-trip pass.
+        foreach ($persistentStores as $name) {
+            $failure = $this->probeCacheStore($name);
 
-        if (! $roundTripped) {
-            return $this->check(
-                key: 'cache_store',
-                label: 'Cache store',
-                status: 'attention',
-                summary: sprintf('The %s cache store did not return a written value.', $store),
-                detail: 'A readiness probe wrote a value to the cache but read back a different result, which usually means the store is misconfigured or evicting immediately.',
-                action: 'Review the cache store configuration and capacity, then retry.'
-            );
+            if ($failure !== null) {
+                $where = ($isFailover && $name !== $default)
+                    ? sprintf('The %s store in the %s cache chain', $name, $default)
+                    : sprintf('The %s cache store', $name);
+
+                return $this->check(
+                    key: 'cache_store',
+                    label: 'Cache store',
+                    status: 'attention',
+                    summary: sprintf('%s could not be verified.', $where),
+                    detail: $failure,
+                    action: 'Check the cache server connection and credentials (for redis or memcached) or the cache table (for the database store), then retry.'
+                );
+            }
         }
 
         return $this->check(
             key: 'cache_store',
             label: 'Cache store',
             status: 'ready',
-            summary: sprintf('The %s cache store responded.', $store),
-            detail: 'Wayfindr wrote and read back a value from the configured cache store.',
+            summary: $isFailover
+                ? sprintf('The %s cache chain responded.', $default)
+                : sprintf('The %s cache store responded.', $default),
+            detail: 'Wayfindr wrote and read back a value from the persistent cache backend'.(count($persistentStores) > 1 ? 's' : '').'.',
             action: 'Keep the cache store shared across web and queue workers.'
         );
+    }
+
+    private function cacheStoreDriver(string $name): ?string
+    {
+        $driver = config("cache.stores.{$name}.driver");
+
+        return is_string($driver) ? $driver : null;
+    }
+
+    /**
+     * Persistent backends to probe for the configured cache store. A failover
+     * chain expands to its persistent member stores; non-persistent stores
+     * (array/null) are excluded because they cannot prove a shared cache works.
+     *
+     * @return list<string>
+     */
+    private function persistentCacheStores(string $default): array
+    {
+        $members = $this->cacheStoreDriver($default) === 'failover'
+            ? array_values(array_filter((array) config("cache.stores.{$default}.stores", []), 'is_string'))
+            : [$default];
+
+        return array_values(array_filter(
+            $members,
+            fn (string $name): bool => ! in_array($this->cacheStoreDriver($name), ['array', 'null', null], true),
+        ));
+    }
+
+    private function probeCacheStore(string $name): ?string
+    {
+        try {
+            $probeKey = 'wayfindr:readiness:cache:'.Str::random(12);
+            Cache::store($name)->put($probeKey, '1', 5);
+            $roundTripped = Cache::store($name)->get($probeKey) === '1';
+            Cache::store($name)->forget($probeKey);
+        } catch (Throwable $exception) {
+            return $exception->getMessage();
+        }
+
+        return $roundTripped
+            ? null
+            : 'A readiness probe wrote a value to the cache but read back a different result, which usually means the store is misconfigured or evicting immediately.';
     }
 
     /**

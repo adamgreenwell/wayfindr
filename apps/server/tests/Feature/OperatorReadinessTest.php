@@ -943,13 +943,28 @@ test('readiness flags a non-persistent cache store in production', function (): 
 
 test('readiness flags a cache store that cannot be reached', function (): void {
     config(['cache.default' => 'redis']);
-    Cache::shouldReceive('store')->andThrow(new RuntimeException('Connection refused'));
+    Cache::shouldReceive('store')->with('redis')->andThrow(new RuntimeException('Connection refused'));
 
     $readiness = app(OperatorReadiness::class)->summary();
     $cache = collect($readiness['checks'])->firstWhere('key', 'cache_store');
 
     expect($cache['status'])->toBe('attention')
-        ->and($cache['summary'])->toContain('could not be reached');
+        ->and($cache['summary'])->toContain('redis cache store could not be verified');
+});
+
+test('readiness flags a failed persistent store inside a cache failover chain', function (): void {
+    // The repo's failover store chains [database, array]. A round-trip would
+    // otherwise pass through the array fallback and hide a broken primary, so the
+    // persistent member (database) must be probed directly.
+    config(['cache.default' => 'failover']);
+    Cache::shouldReceive('store')->with('database')->andThrow(new RuntimeException('no such table: cache'));
+
+    $readiness = app(OperatorReadiness::class)->summary();
+    $cache = collect($readiness['checks'])->firstWhere('key', 'cache_store');
+
+    expect($cache['status'])->toBe('attention')
+        ->and($cache['summary'])->toContain('database')
+        ->and($cache['summary'])->toContain('failover');
 });
 
 test('readiness diagnostics flag smtp mail that still points at local defaults', function (): void {
