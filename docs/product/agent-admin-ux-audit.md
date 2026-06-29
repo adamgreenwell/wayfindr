@@ -6,6 +6,8 @@ passes know where we came from and where to go. The deeper restructuring lives
 in issue #511 (post-MVP holistic UI re-evaluation); this document is the record
 that feeds it.
 
+**Status: MVP UX cohesion pass shipped and live-validated on stage (2026-06-29). All four strokes done; remaining work tracked in #511.**
+
 Status legend: ✅ done · 🔭 deferred to #511 · ⬜ planned
 
 ---
@@ -102,3 +104,14 @@ sometime." None of these restructure the heavy detail pages (that's #511).
   search and workspace-shortcuts cards; relocated lookup not-found feedback to
   the layout. **All four MVP strokes complete.** Full suite green (797). Next:
   a live stage pass to eyeball the visual changes, then the #511 follow-up.
+- **2026-06-29** — Live stage validation (wayfindr.on-forge.com, all four
+  strokes deployed): confirmed the nav holds one row (no wrap), the shared
+  page header renders consistently on the dashboard, conversation list,
+  conversation detail, and account page, sections read as lifted cards, and the
+  home opens on support queues + next steps with the duplicate cards gone. No
+  visual regressions. Admin-only bits (Account Management links, Operator nav)
+  are correctly gated and verified by tests rather than live (stage login is a
+  plain agent). True narrow-viewport screenshots weren't capturable via the
+  tooling; the only mobile-specific change (topbar stacking) is covered by the
+  explicit grid-area template and the broader agent mobile pass stays in #511.
+  **MVP UX cohesion pass closed.** Remaining items all live under #511.
