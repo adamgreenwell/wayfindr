@@ -73,6 +73,7 @@ test('injects responsive panel styles so the composer stays reachable on short s
   // screen; the timeline is the shrinkable area while other rows hold their size.
   assert.ok(css.includes('.wayfindr-widget__panel{display:flex;flex-direction:column;'), 'panel should be a flex column');
   assert.ok(css.includes('max-height:calc(100dvh - 40px)'), 'panel should be bounded to the dynamic viewport height');
+  assert.ok(css.includes('overflow:auto}'), 'panel scrolls as a fallback so a short empty state never clips the composer');
   assert.ok(css.includes('.wayfindr-widget__panel>*{flex-shrink:0}'), 'panel rows should not shrink by default');
   assert.ok(css.includes('.wayfindr-widget__panel>.wayfindr-widget__timeline-wrap{flex:0 1 auto;min-height:0}'), 'timeline wrap should be the shrinkable row');
   assert.ok(css.includes('.wayfindr-widget__timeline{display:grid;gap:10px;flex:1 1 auto;min-height:0;max-height:280px;'), 'timeline keeps its compact cap but can shrink and scroll');
