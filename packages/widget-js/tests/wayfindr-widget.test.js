@@ -1299,6 +1299,77 @@ test('binds Laravel custom broadcast names for built-in Pusher subscriptions', (
   ]);
 });
 
+test('sends the composer on Enter and keeps Shift+Enter for newlines', async () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+  const calls = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-enter',
+    storage: memoryStorage(),
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    fetch: async (url, options) => {
+      calls.push({ url, options });
+
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return jsonResponse(201, {
+          data: {
+            site: { public_key: 'site_public_docs', settings: {} },
+            visitor: { anonymous_id: 'anon-enter', token: 'visitor-token-enter' },
+          },
+        });
+      }
+
+      if (url.endsWith('/api/conversations')) {
+        return jsonResponse(201, { data: { support_code: 'WF-ENTER1', status: 'open' } });
+      }
+
+      if (url.includes('/cobrowse?')) {
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-ENTER1' },
+            cobrowse: { status: 'unavailable', consent: 'unavailable', requested_by: null },
+          },
+        });
+      }
+
+      return jsonResponse(200, {
+        data: { conversation: { support_code: 'WF-ENTER1', status: 'open' }, messages: [] },
+      });
+    },
+  });
+
+  widget.open();
+
+  const textarea = widget.root.querySelector('.wayfindr-widget__textarea');
+  textarea.value = 'Draft line one';
+
+  // Shift+Enter must not send; it keeps the newline affordance for the visitor.
+  textarea.dispatchEvent(
+    new dom.window.KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true }),
+  );
+  await settle();
+
+  assert.equal(calls.some((call) => call.url.endsWith('/api/conversations')), false);
+
+  // Plain Enter sends the current draft.
+  textarea.dispatchEvent(
+    new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+  );
+  await settle();
+
+  const conversationCall = calls.find((call) => call.url.endsWith('/api/conversations'));
+  assert.ok(conversationCall, 'Enter should start the conversation send');
+  assert.equal(JSON.parse(conversationCall.options.body).subject, 'Draft line one');
+});
+
 test('renders the embedded conversation timeline and refreshes replies', async () => {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
     url: 'https://docs.example.test/install',

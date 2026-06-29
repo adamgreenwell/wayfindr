@@ -64,6 +64,7 @@ The widget currently supports the first visitor loop:
 - bootstrap the site config, anonymous visitor, and signed visitor token,
 - start a conversation,
 - send visitor messages,
+- send a visitor message by pressing Enter, while Shift+Enter keeps a newline and an active IME composition is never interrupted,
 - prevent duplicate sends while the visitor composer is busy,
 - preserve visitor drafts after recoverable send failures and offer a visible retry against the same conversation when possible,
 - attach a per-message idempotency key (`client_message_id`) so retrying a send whose first response was lost does not create a duplicate message,

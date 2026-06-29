@@ -1525,13 +1525,24 @@
         reportTyping(true);
       }
     });
-    doc.addEventListener('visibilitychange', handleVisibilityChange);
-
-    function retryComposerSend() {
-      if (composerBusy) {
+    textarea.addEventListener('keydown', function (event) {
+      // Enter sends the message; Shift+Enter keeps the newline for multi-line
+      // drafts. Ignore Enter while an IME composition is active (keyCode 229 /
+      // isComposing) so composing CJK input does not send a partial message.
+      if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) {
         return;
       }
 
+      if (event.isComposing || event.keyCode === 229) {
+        return;
+      }
+
+      event.preventDefault();
+      submitComposerForm();
+    });
+    doc.addEventListener('visibilitychange', handleVisibilityChange);
+
+    function submitComposerForm() {
       if (typeof form.requestSubmit === 'function') {
         form.requestSubmit();
 
@@ -1544,6 +1555,14 @@
       if (EventConstructor) {
         form.dispatchEvent(new EventConstructor('submit', { bubbles: true, cancelable: true }));
       }
+    }
+
+    function retryComposerSend() {
+      if (composerBusy) {
+        return;
+      }
+
+      submitComposerForm();
     }
 
     form.addEventListener('submit', async function (event) {
