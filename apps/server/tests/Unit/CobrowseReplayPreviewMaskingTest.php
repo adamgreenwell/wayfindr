@@ -79,6 +79,25 @@ test('masks explicit sensitive elements the widget should have masked', function
         ->and($srcdoc)->toContain('Visible copy.');
 });
 
+test('masks value and placeholder on explicitly sensitive form controls', function (): void {
+    // A masked form control serializes value/placeholder attributes, so masking
+    // text content alone would let a raw placeholder reach the agent.
+    $preview = new CobrowseReplayPreview;
+
+    $result = $preview->fromMetadata([
+        'snapshot' => [
+            'html' => '<input data-wayfindr-mask value="RAW-CARD-VALUE" placeholder="RAW-CARD-PLACEHOLDER">',
+        ],
+    ]);
+
+    $srcdoc = $result['srcdoc'];
+
+    expect($srcdoc)
+        ->not->toContain('RAW-CARD-VALUE')
+        ->and($srcdoc)->not->toContain('RAW-CARD-PLACEHOLDER')
+        ->and($srcdoc)->toContain('[masked]');
+});
+
 test('only applies safe mutation types and attributes during replay', function (): void {
     $preview = new CobrowseReplayPreview;
 

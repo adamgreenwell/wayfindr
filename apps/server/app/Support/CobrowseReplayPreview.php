@@ -189,9 +189,32 @@ class CobrowseReplayPreview
         }
 
         foreach ($nodes as $node) {
-            if ($node instanceof DOMElement) {
-                $node->textContent = '[masked]';
+            if (! $node instanceof DOMElement) {
+                continue;
             }
+
+            $tagName = strtolower($node->tagName);
+
+            if (in_array($tagName, ['input', 'textarea', 'select'], true)) {
+                // For a sensitive form control, masking textContent is not enough
+                // (an input serializes its value/placeholder attributes). Mirror
+                // the widget and mask both so nothing reaches the agent in clear.
+                if ($node->hasAttribute('value')) {
+                    $node->setAttribute('value', '[masked]');
+                }
+
+                if ($node->hasAttribute('placeholder')) {
+                    $node->setAttribute('placeholder', '[masked]');
+                }
+
+                if ($tagName !== 'input') {
+                    $node->textContent = '[masked]';
+                }
+
+                continue;
+            }
+
+            $node->textContent = '[masked]';
         }
     }
 
