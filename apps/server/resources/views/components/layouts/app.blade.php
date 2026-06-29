@@ -1054,7 +1054,10 @@
         @media (max-width: 1100px) {
             .topbar-inner {
                 grid-template-columns: 1fr;
-                grid-template-areas: none;
+                grid-template-areas:
+                    "main"
+                    "nav"
+                    "actions";
                 padding: 16px 0;
             }
 
