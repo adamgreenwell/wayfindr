@@ -60,7 +60,13 @@ sometime." None of these restructure the heavy detail pages (that's #511).
    platform operators get an **Operator** nav item; admins reach the previously
    orphaned **Reply Templates** and **Ticket Labels** from a new Management
    group on the Account page (their natural `dashboard.account.*` home).
-3. ⬜ **Dashboard home focus** — trim redundant cards to a focused landing.
+3. ✅ **Dashboard home focus** — removed the two cards that only duplicated
+   other surfaces: the "Find support trail" search card (the topbar search is on
+   every page; its not-found feedback moved to the shared layout so it now works
+   from any page) and the "Workspace shortcuts" card (profile/sites/account nav
+   duplicates). The home now leads with support queues + conversation/ticket
+   next steps. (A bolder cut — moving the at-a-glance Team/Sites/Alerts/Realtime
+   panels off the home entirely — is left as a taste call for #511.)
 4. ✅ **Consistent page header** — a shared `<x-page-header>` component
    (back link / title / subtitle / actions slot) now renders every agent and
    admin page's header, replacing ~17 hand-rolled variants.
@@ -92,3 +98,7 @@ sometime." None of these restructure the heavy detail pages (that's #511).
 - **2026-06-29** — Strokes 4 + 1 done together: new `<x-page-header>` component
   applied across all 17 agent/admin pages; subtle section card shadow for depth.
   Full server suite green (796). Remaining MVP stroke: 3 (dashboard home focus).
+- **2026-06-29** — Stroke 3 (dashboard home focus) done: removed the duplicate
+  search and workspace-shortcuts cards; relocated lookup not-found feedback to
+  the layout. **All four MVP strokes complete.** Full suite green (797). Next:
+  a live stage pass to eyeball the visual changes, then the #511 follow-up.

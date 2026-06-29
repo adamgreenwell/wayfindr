@@ -12,7 +12,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
-test('dashboard gives agents a clear place to manage their workspace', function (): void {
+test('dashboard focuses on support work without duplicating nav shortcuts', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create([
         'account_role' => AccountRole::Agent,
@@ -22,17 +22,14 @@ test('dashboard gives agents a clear place to manage their workspace', function 
     $this->actingAs($agent)
         ->get('/dashboard')
         ->assertOk()
-        ->assertSee('Workspace shortcuts')
-        ->assertSee('Profile and alerts')
-        ->assertSee('/dashboard/profile', false)
-        ->assertSee('Sites and widget installs')
-        ->assertSee('/dashboard/sites', false)
-        ->assertSee('Account and team')
-        ->assertSee('/dashboard/account', false)
+        // The focused landing keeps the support-work content...
+        ->assertSee('Support queues')
+        ->assertSee('Conversation next steps')
+        // ...but drops the cards that only duplicated the topbar search and nav.
+        ->assertDontSee('Workspace shortcuts')
+        ->assertDontSee('Open a visible conversation, ticket, or visitor profile')
+        // Admin-only surfaces stay hidden for plain agents.
         ->assertDontSee('Admin command center')
-        ->assertDontSee('Team and roles')
-        ->assertDontSee('Audit log')
-        ->assertDontSee('/dashboard/account/audit', false)
         ->assertDontSee('Operator readiness')
         ->assertDontSee('/dashboard/readiness', false);
 });

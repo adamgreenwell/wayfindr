@@ -1,31 +1,6 @@
 <x-layouts.app title="Agent Dashboard" :agent="$agent" :account="$account">
             <x-page-header :title="$account->name" :subtitle="'Signed in as '.$agent->email" />
 
-            <section class="section" aria-labelledby="support-code-lookup-heading">
-                <div class="section-header">
-                    <h2 id="support-code-lookup-heading">Find support trail</h2>
-                    <span class="lede">Jump by support code, ticket reference, or visitor ID</span>
-                </div>
-
-                @if (session('support_code_lookup_status'))
-                    <div class="empty empty-state">
-                        <strong>{{ session('support_code_lookup_status') }}</strong>
-                        <p>Try a support code like WF-ABC123, a ticket reference like Ticket #123, or a visitor ID.</p>
-                        <p>Records outside your support access stay hidden.</p>
-                    </div>
-                @endif
-
-                <form class="section-form" method="GET" action="{{ route('dashboard.support-code.lookup') }}">
-                    <div class="field">
-                        <label for="support_code">Support code, ticket reference, or visitor ID</label>
-                        <input id="support_code" name="support_code" type="search" value="{{ old('support_code') }}" placeholder="WF-ABC123, Ticket #123, or anon-visitor" autocomplete="off">
-                        <p class="field-help">Open a visible conversation, ticket, or visitor profile from the reference the visitor gives you.</p>
-                    </div>
-
-                    <button class="button" type="submit">Find record</button>
-                </form>
-            </section>
-
             <section class="section" aria-labelledby="support-queues-heading">
                 <div class="section-header">
                     <h2 id="support-queues-heading">Support queues</h2>
@@ -117,37 +92,6 @@
                         @endforeach
                     </div>
                 @endif
-            </section>
-
-            <section class="section" aria-labelledby="manage-heading">
-                <div class="section-header">
-                    <h2 id="manage-heading">Workspace shortcuts</h2>
-                    <span class="lede">Common workspace paths</span>
-                </div>
-
-                <div class="management-list">
-                    <a class="management-link" href="{{ route('dashboard.profile.show') }}">
-                        <span>
-                            <strong>Profile and alerts</strong>
-                            <span class="lede">Update your name, password, and notification mode.</span>
-                        </span>
-                        <span class="management-action">Open</span>
-                    </a>
-                    <a class="management-link" href="{{ route('dashboard.sites.index') }}">
-                        <span>
-                            <strong>Sites and widget installs</strong>
-                            <span class="lede">Review connected sites, install snippets, privacy rules, and support access.</span>
-                        </span>
-                        <span class="management-action">Open</span>
-                    </a>
-                    <a class="management-link" href="{{ route('dashboard.account.show') }}">
-                        <span>
-                            <strong>Account and team</strong>
-                            <span class="lede">See account roles, team access, active agents, and support scope.</span>
-                        </span>
-                        <span class="management-action">Open</span>
-                    </a>
-                </div>
             </section>
 
             <section class="section" aria-labelledby="visitor-support-readiness-heading">

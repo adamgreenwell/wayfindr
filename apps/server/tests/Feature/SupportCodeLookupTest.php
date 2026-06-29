@@ -10,17 +10,17 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
-test('agents can see the support code lookup on the dashboard', function (): void {
+test('agents can reach the support code lookup from the dashboard shell', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
 
+    // The lookup lives in the shared topbar (on every page); the dashboard no
+    // longer duplicates it as its own card.
     $this->actingAs($agent)
         ->get('/dashboard')
         ->assertOk()
-        ->assertSee('Find support trail')
-        ->assertSee('Jump by support code, ticket reference, or visitor ID')
-        ->assertSee('Support code, ticket reference, or visitor ID')
-        ->assertSee('support_code')
+        ->assertSee('aria-label="Find support trail"', false)
+        ->assertSee('name="support_code"', false)
         ->assertSee(route('dashboard.support-code.lookup'), false);
 });
 

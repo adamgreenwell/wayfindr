@@ -1236,6 +1236,14 @@
                     <p class="status-message">{{ session('support_code_lookup_result') }}</p>
                 @endif
 
+                @if (session('support_code_lookup_status'))
+                    <div class="empty empty-state" role="status">
+                        <strong>{{ session('support_code_lookup_status') }}</strong>
+                        <p>Try a support code like WF-ABC123, a ticket reference like Ticket #123, or a visitor ID.</p>
+                        <p>Records outside your support access stay hidden.</p>
+                    </div>
+                @endif
+
                 {{ $slot }}
             </main>
         </div>
