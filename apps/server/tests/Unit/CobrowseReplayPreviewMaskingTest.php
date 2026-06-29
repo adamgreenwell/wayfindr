@@ -52,6 +52,33 @@ test('re-sanitizes hostile snapshot html the widget should have masked', functio
         ->and($srcdoc)->toContain('Visible copy.');
 });
 
+test('masks explicit sensitive elements the widget should have masked', function (): void {
+    // Found via live end-to-end validation: the widget masks these selectors
+    // before sending, but an older or hostile widget could send them raw, and
+    // the server (source of truth) must mask their content for the agent.
+    $preview = new CobrowseReplayPreview;
+
+    $result = $preview->fromMetadata([
+        'snapshot' => [
+            'html' => implode('', [
+                '<p>Visible copy.</p>',
+                '<div data-secret>RAW-SECRET-VALUE</div>',
+                '<span data-wayfindr-mask>RAW-MASK-VALUE</span>',
+                '<div data-wayfindr-private>RAW-PRIVATE-VALUE</div>',
+            ]),
+        ],
+    ]);
+
+    $srcdoc = $result['srcdoc'];
+
+    expect($srcdoc)
+        ->not->toContain('RAW-SECRET-VALUE')
+        ->and($srcdoc)->not->toContain('RAW-MASK-VALUE')
+        ->and($srcdoc)->not->toContain('RAW-PRIVATE-VALUE')
+        ->and($srcdoc)->toContain('[masked]')
+        ->and($srcdoc)->toContain('Visible copy.');
+});
+
 test('only applies safe mutation types and attributes during replay', function (): void {
     $preview = new CobrowseReplayPreview;
 

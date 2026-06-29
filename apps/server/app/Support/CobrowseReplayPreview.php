@@ -163,6 +163,36 @@ class CobrowseReplayPreview
             $this->sanitizeAttributes($element);
             $this->sanitizeFormControl($element);
         }
+
+        $this->maskSensitiveElements($document);
+    }
+
+    /**
+     * Mask the text content of elements the widget marks sensitive
+     * (data-secret / data-wayfindr-mask / data-wayfindr-private). The stock
+     * widget masks these before sending, but the server is the source of truth:
+     * an older or hostile widget could send them unmasked, and they must never
+     * reach the agent replay preview in the clear.
+     */
+    private function maskSensitiveElements(DOMDocument $document): void
+    {
+        $matches = (new DOMXPath($document))->query('//*[@data-secret or @data-wayfindr-mask or @data-wayfindr-private]');
+
+        if (! $matches) {
+            return;
+        }
+
+        $nodes = [];
+
+        foreach ($matches as $node) {
+            $nodes[] = $node;
+        }
+
+        foreach ($nodes as $node) {
+            if ($node instanceof DOMElement) {
+                $node->textContent = '[masked]';
+            }
+        }
     }
 
     private function sanitizeAttributes(DOMElement $element): void
