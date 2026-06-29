@@ -2059,6 +2059,13 @@
     return declarations.join(';');
   }
 
+  // Sensitive fields and form controls must never have computed styles
+  // serialized: their styling can be derived from raw values or validity state,
+  // which would leak a signal the masking pass is meant to remove.
+  function shouldSkipStyleCapture(node, maskSelectors, sensitiveTerms) {
+    return isFormControl(node) || isMaskedElement(node, maskSelectors, sensitiveTerms);
+  }
+
   function cloneForCapture(node, styleContext) {
     if (!node) {
       return null;
@@ -2094,23 +2101,35 @@
         };
 
         // The snapshot serializes body.innerHTML, so the body's own style is
-        // dropped; skip emitting it and let the body's children act as style
-        // roots that establish the base inherited values.
+        // dropped; skip emitting it (and don't count it against the budget) and
+        // let the body's children act as style roots that establish the base
+        // inherited values.
+        //
+        // Never serialize styles for masked elements or form controls: a page
+        // could style a sensitive field by its raw value or validity (e.g.
+        // input[value^="4"] or :valid setting a background), which would leak a
+        // value-derived signal even though the field itself is masked. Their
+        // computed style is still read so children inherit accurate parent
+        // values for comparison; it is just not written to the clone.
         if (! styleContext.isRoot) {
-          var captured = buildCapturedStyle(readValue, styleContext.readParentValue);
-
-          if (captured) {
-            var existing = clone.getAttribute('style');
-            clone.setAttribute('style', existing ? existing + ';' + captured : captured);
-          }
-
           styleContext.budget.captured += 1;
+
+          if (! shouldSkipStyleCapture(node, styleContext.maskSelectors, styleContext.sensitiveTerms)) {
+            var captured = buildCapturedStyle(readValue, styleContext.readParentValue);
+
+            if (captured) {
+              var existing = clone.getAttribute('style');
+              clone.setAttribute('style', existing ? existing + ';' + captured : captured);
+            }
+          }
         }
 
         childStyleContext = {
           view: styleContext.view,
           budget: styleContext.budget,
           isRoot: false,
+          maskSelectors: styleContext.maskSelectors,
+          sensitiveTerms: styleContext.sensitiveTerms,
           readParentValue: styleContext.isRoot ? null : readValue,
         };
       } catch (error) {
@@ -2160,6 +2179,8 @@
         view: view,
         readParentValue: null,
         isRoot: true,
+        maskSelectors: DEFAULT_MASK_SELECTORS.concat(options.maskSelectors || []),
+        sensitiveTerms: options.sensitiveTerms || [],
         budget: {
           captured: 0,
           max: typeof options.maxStyledElements === 'number' ? options.maxStyledElements : 800,

@@ -31,6 +31,8 @@ function snapshotWithStyles(stylesByKey, options) {
     '  <p data-cs="diff">changed</p>',
     '  <div data-cs="boxed">box</div>',
     '  <a data-cs="evil">bg</a>',
+    '  <input data-cs="field" name="card">',
+    '  <div data-cs="hidden-secret" data-secret>secret box</div>',
     '</div>',
     '</body></html>',
   ].join(''), { url: 'https://host.example.test/page' });
@@ -47,6 +49,10 @@ const STYLES = {
   diff: { color: 'rgb(200, 0, 0)', 'font-family': 'Arial' },
   boxed: { color: 'rgb(10, 20, 30)', 'background-color': 'rgb(240, 240, 240)', 'border-radius': '8px' },
   evil: { 'background-color': 'url(https://evil.example/x.png)' },
+  // A field whose background is derived from its (sensitive) value/validity.
+  field: { 'background-color': 'rgb(255, 0, 0)' },
+  // A masked element with a value-derived background.
+  'hidden-secret': { 'background-color': 'rgb(0, 255, 0)' },
 };
 
 test('captures color, background, and radius into the snapshot', () => {
@@ -78,6 +84,15 @@ test('honors the styled-element budget', () => {
   // Only the first captured element keeps styles; later ones degrade to structural.
   assert.match(html, /color:rgb\(10, 20, 30\)/);
   assert.equal(html.includes('border-radius:8px'), false);
+});
+
+test('never captures styles for form controls or masked elements', () => {
+  // A value-derived style on a sensitive field must not leak through the snapshot
+  // even though the field's value itself is masked.
+  const html = snapshotWithStyles(STYLES);
+
+  assert.equal(html.includes('rgb(255, 0, 0)'), false); // form control bg skipped
+  assert.equal(html.includes('rgb(0, 255, 0)'), false); // masked element bg skipped
 });
 
 test('captures nothing when style capture is disabled', () => {
