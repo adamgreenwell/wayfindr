@@ -95,6 +95,7 @@ class AgentAccountController extends Controller
             'canCreateAgents' => $agent->isAdmin(),
             'canViewExternalIssueReadiness' => $agent->isAdmin(),
             'canViewAlertDelivery' => $agent->isAdmin(),
+            'canManageAccountSettings' => $agent->isAdmin(),
             'canManageAgentAccess' => $agent->isAdmin(),
             'canManageRoles' => $agent->isOwner(),
             'canViewAudit' => $agent->isAdmin(),

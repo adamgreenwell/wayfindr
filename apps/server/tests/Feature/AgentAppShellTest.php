@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\AccountRole;
+use App\Enums\PlatformRole;
 use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\Site;
@@ -42,6 +43,7 @@ test('authenticated agent pages share primary app navigation', function (): void
         ->assertDontSee('/dashboard#sites', false)
         ->assertSee('/dashboard/account', false)
         ->assertSee('/dashboard/sites/new', false)
+        ->assertDontSee(route('operator.dashboard'), false)
         ->assertSee('Ada Agent')
         ->assertSee('Acme Support')
         ->assertSee('Sign out');
@@ -79,4 +81,49 @@ test('account admins see operator readiness navigation', function (): void {
         ->assertOk()
         ->assertSee('Readiness')
         ->assertSee('/dashboard/readiness', false);
+});
+
+test('platform operators see the operator console in navigation', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $operator = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Owner,
+        'platform_role' => PlatformRole::Operator,
+        'name' => 'Olive Operator',
+    ]);
+
+    $this->actingAs($operator)
+        ->get('/dashboard')
+        ->assertOk()
+        ->assertSee('Operator')
+        ->assertSee(route('operator.dashboard'), false);
+});
+
+test('account admins reach reply templates and ticket labels from the account page', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'name' => 'Ada Admin',
+    ]);
+
+    $this->actingAs($admin)
+        ->get('/dashboard/account')
+        ->assertOk()
+        ->assertSee('Reply templates')
+        ->assertSee(route('dashboard.account.reply-templates.index'), false)
+        ->assertSee('Ticket labels')
+        ->assertSee(route('dashboard.account.labels.index'), false);
+});
+
+test('plain agents do not see account management links', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'name' => 'Ada Agent',
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/account')
+        ->assertOk()
+        ->assertDontSee(route('dashboard.account.reply-templates.index'), false)
+        ->assertDontSee(route('dashboard.account.labels.index'), false);
 });

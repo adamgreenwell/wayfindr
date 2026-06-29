@@ -66,12 +66,16 @@
         .topbar-inner {
             min-height: 72px;
             display: grid;
-            grid-template-columns: minmax(150px, 0.7fr) auto minmax(440px, 1.3fr);
+            grid-template-columns: minmax(0, 1fr) auto;
+            grid-template-areas:
+                "main actions"
+                "nav nav";
             align-items: center;
-            gap: 16px;
+            gap: 10px 16px;
         }
 
         .topbar-main {
+            grid-area: main;
             min-width: 0;
         }
 
@@ -94,11 +98,15 @@
         }
 
         .app-nav {
+            grid-area: nav;
             display: flex;
             align-items: center;
             flex-wrap: wrap;
             gap: 4px;
-            justify-content: center;
+            justify-content: flex-start;
+            border-top: 1px solid var(--border);
+            margin-top: 4px;
+            padding-top: 8px;
         }
 
         .app-nav-link {
@@ -123,6 +131,7 @@
         }
 
         .topbar-actions {
+            grid-area: actions;
             display: flex;
             align-items: center;
             flex-wrap: wrap;
@@ -1045,7 +1054,14 @@
         @media (max-width: 1100px) {
             .topbar-inner {
                 grid-template-columns: 1fr;
+                grid-template-areas: none;
                 padding: 16px 0;
+            }
+
+            .app-nav {
+                border-top: 0;
+                margin-top: 0;
+                padding-top: 0;
             }
 
             .app-nav,
@@ -1129,6 +1145,14 @@
                     'href' => route('dashboard.readiness.show'),
                     'active' => request()->routeIs('dashboard.readiness.*'),
                 ]]);
+            }
+
+            if ($agent->isPlatformOperator()) {
+                $navigationItems[] = [
+                    'label' => 'Operator',
+                    'href' => route('operator.dashboard'),
+                    'active' => request()->routeIs('operator.*'),
+                ];
             }
         @endphp
 

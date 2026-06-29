@@ -312,6 +312,31 @@
                 </section>
             @endif
 
+            @if ($canManageAccountSettings)
+                <section class="section" aria-labelledby="account-management-heading">
+                    <div class="section-header">
+                        <h2 id="account-management-heading">Management</h2>
+                        <span class="lede">Account-wide settings</span>
+                    </div>
+                    <div class="management-list">
+                        <a class="management-link" href="{{ route('dashboard.account.reply-templates.index') }}">
+                            <span>
+                                <strong>Reply templates</strong>
+                                <span class="lede">Saved replies agents can insert into conversations.</span>
+                            </span>
+                            <span class="management-action">Manage</span>
+                        </a>
+                        <a class="management-link" href="{{ route('dashboard.account.labels.index') }}">
+                            <span>
+                                <strong>Ticket labels</strong>
+                                <span class="lede">Shared labels for organizing and filtering tickets.</span>
+                            </span>
+                            <span class="management-action">Manage</span>
+                        </a>
+                    </div>
+                </section>
+            @endif
+
             <section class="section" aria-labelledby="account-activity-heading">
                 <div class="section-header">
                     <h2 id="account-activity-heading">Recent account activity</h2>
