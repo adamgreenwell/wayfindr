@@ -121,6 +121,28 @@ test('no preview view is recorded when there is no rendered preview', function (
     expect(previewViewedEvents())->toHaveCount(0);
 });
 
+test('the throttle window is claimed atomically so racing requests cannot double-record', function (): void {
+    $fixture = previewAuditFixture();
+
+    $this->actingAs($fixture['agent'])
+        ->getJson('/dashboard/conversations/WF-AUDITME/cobrowse/preview')
+        ->assertOk();
+
+    expect(previewViewedEvents())->toHaveCount(1);
+
+    // Simulate a concurrent racer: it passed the exists() check before the
+    // first request's row was visible. Deleting the row reproduces that state —
+    // the database check now passes, so only the atomic cache claim stands
+    // between the racer and a duplicate event.
+    AuditEvent::query()->where('action', 'cobrowse.preview_viewed')->delete();
+
+    $this->actingAs($fixture['agent'])
+        ->getJson('/dashboard/conversations/WF-AUDITME/cobrowse/preview')
+        ->assertOk();
+
+    expect(previewViewedEvents())->toHaveCount(0);
+});
+
 test('preview view audit metadata never contains preview content', function (): void {
     $fixture = previewAuditFixture();
 

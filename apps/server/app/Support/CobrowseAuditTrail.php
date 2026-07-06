@@ -6,6 +6,7 @@ use App\Models\CobrowseSession;
 use App\Models\User;
 use App\Models\Visitor;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
 
 class CobrowseAuditTrail
 {
@@ -98,12 +99,29 @@ class CobrowseAuditTrail
 
     private function recentlyRecordedPreviewView(CobrowseSession $session, User $agent): bool
     {
-        return $session->auditEvents()
+        $recorded = $session->auditEvents()
             ->where('action', 'cobrowse.preview_viewed')
             ->where('actor_type', $agent::class)
             ->where('actor_id', $agent->getKey())
             ->where('occurred_at', '>=', now()->subMinutes(self::PREVIEW_VIEW_THROTTLE_MINUTES))
             ->exists();
+
+        if ($recorded) {
+            return true;
+        }
+
+        // Concurrent requests (multiple tabs, a reload racing the live refresh
+        // loop) can all pass the exists() check before any row commits. Claim
+        // the throttle window atomically — Cache::add is add-if-absent on every
+        // store — so only one racer records. The database check above remains
+        // the durable source of truth if the cache entry is evicted early.
+        $claimKey = sprintf(
+            'cobrowse:preview-viewed:%s:%s',
+            $session->getKey(),
+            $agent->getKey(),
+        );
+
+        return ! Cache::add($claimKey, true, now()->addMinutes(self::PREVIEW_VIEW_THROTTLE_MINUTES));
     }
 
     /**
