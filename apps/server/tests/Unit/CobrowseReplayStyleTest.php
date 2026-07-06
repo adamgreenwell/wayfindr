@@ -31,6 +31,20 @@ test('keeps allowlisted layout, color, and typography declarations', function ()
         ->and($srcdoc)->toContain('Styled copy.');
 });
 
+test('keeps container layout declarations captured by the widget', function (): void {
+    // #520: the widget captures layout on flex/grid containers; the sanitizer
+    // must let those declarations through while the value grammar still holds.
+    $srcdoc = styledPreview('display:grid;grid-template-columns:480.5px 480.5px;gap:24px;padding:16px 24px;max-width:1120px;justify-content:space-between');
+
+    expect($srcdoc)
+        ->toContain('display:grid')
+        ->and($srcdoc)->toContain('grid-template-columns:480.5px 480.5px')
+        ->and($srcdoc)->toContain('gap:24px')
+        ->and($srcdoc)->toContain('padding:16px 24px')
+        ->and($srcdoc)->toContain('max-width:1120px')
+        ->and($srcdoc)->toContain('justify-content:space-between');
+});
+
 test('drops url()-bearing declarations and the resource they reference', function (): void {
     $srcdoc = styledPreview('color:red;background-image:url(https://evil.example/x.png)');
 

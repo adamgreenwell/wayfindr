@@ -149,7 +149,11 @@ only be used for deliberate false positives.
 `createCobrowseSnapshot` also captures a small allowlist of computed styles
 (color, background-color, fonts, line-height, text alignment/transform/
 decoration, border-radius) so the agent replay preview resembles the visitor
-page. Inherited values are only emitted when they differ from the parent, any
+page. Flex and grid **containers** additionally capture their layout styles
+(display, flex-direction/wrap, justify-content, align-items, gap,
+grid-template-columns, padding, margin, max-width) so multi-column structure
+survives the replay without serializing box metrics for every element.
+Inherited values are only emitted when they differ from the parent, any
 `url()`/resource-bearing value is skipped, and a styled-element budget bounds
 the payload (`maxStyledElements`, default 800; `captureStyles: false` disables
 it). The server replay sanitizer remains the enforcement boundary for which

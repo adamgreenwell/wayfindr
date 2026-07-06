@@ -102,3 +102,88 @@ test('captures nothing when style capture is disabled', () => {
   assert.equal(html.includes('border-radius'), false);
   assert.equal(html.includes('color:rgb'), false);
 });
+
+test('captures layout styles on flex and grid containers only', () => {
+  const html = snapshotWithStyles({
+    root: { color: 'rgb(10, 20, 30)' },
+    // "same" acts as a flex container in this scenario.
+    same: {
+      color: 'rgb(10, 20, 30)',
+      display: 'flex',
+      'flex-direction': 'column',
+      'justify-content': 'space-between',
+      'align-items': 'center',
+      gap: '24px',
+      padding: '16px 24px',
+    },
+    // "diff" is a grid container with resolved px tracks.
+    diff: {
+      color: 'rgb(10, 20, 30)',
+      display: 'grid',
+      'grid-template-columns': '480px 480px',
+      'max-width': '1120px',
+    },
+    // "boxed" is an ordinary block: no layout capture even with layout props set.
+    boxed: {
+      color: 'rgb(10, 20, 30)',
+      display: 'block',
+      'justify-content': 'center',
+      padding: '8px',
+    },
+  });
+
+  assert.match(html, /display:flex/);
+  assert.match(html, /flex-direction:column/);
+  assert.match(html, /justify-content:space-between/);
+  assert.match(html, /align-items:center/);
+  assert.match(html, /gap:24px/);
+  assert.match(html, /padding:16px 24px/);
+  assert.match(html, /display:grid/);
+  assert.match(html, /grid-template-columns:480px 480px/);
+  assert.match(html, /max-width:1120px/);
+  assert.equal(html.includes('display:block'), false);
+  assert.equal(html.includes('justify-content:center'), false);
+  assert.equal(html.includes('padding:8px'), false);
+});
+
+test('skips default-valued layout styles on containers', () => {
+  const html = snapshotWithStyles({
+    same: {
+      display: 'flex',
+      'flex-direction': 'row',
+      'flex-wrap': 'nowrap',
+      'justify-content': 'normal',
+      'align-items': 'normal',
+      gap: 'normal normal',
+      'grid-template-columns': 'none',
+      padding: '0px',
+      margin: '0px',
+      'max-width': 'none',
+    },
+  });
+
+  assert.match(html, /display:flex/);
+  assert.equal(html.includes('flex-direction'), false);
+  assert.equal(html.includes('flex-wrap'), false);
+  assert.equal(html.includes('justify-content'), false);
+  assert.equal(html.includes('align-items'), false);
+  assert.equal(html.includes('gap:'), false);
+  assert.equal(html.includes('grid-template-columns'), false);
+  assert.equal(html.includes('padding'), false);
+  assert.equal(html.includes('margin:'), false);
+  assert.equal(html.includes('max-width'), false);
+});
+
+test('never captures layout styles on masked containers', () => {
+  // A masked element that is also a flex container must stay fully unstyled.
+  const html = snapshotWithStyles({
+    'hidden-secret': {
+      display: 'flex',
+      'justify-content': 'space-between',
+      gap: '12px',
+    },
+  });
+
+  assert.equal(html.includes('justify-content:space-between'), false);
+  assert.equal(html.includes('gap:12px'), false);
+});
