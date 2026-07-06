@@ -174,6 +174,24 @@ test('skips default-valued layout styles on containers', () => {
   assert.equal(html.includes('max-width'), false);
 });
 
+test('strips named grid lines so the track sizes survive the server grammar', () => {
+  // Computed grid-template-columns can include bracketed line names; the server
+  // value grammar rejects brackets, so they must be stripped at capture or the
+  // whole declaration (and the grid) would silently drop.
+  const html = snapshotWithStyles({
+    diff: {
+      display: 'grid',
+      'grid-template-columns': '[content-start] 480px [mid] 480px [content-end]',
+    },
+  });
+
+  assert.match(html, /grid-template-columns:480px 480px/);
+  // No bracketed line names may survive inside the captured declaration (the
+  // snapshot legitimately contains "[masked]" placeholders elsewhere).
+  assert.doesNotMatch(html, /grid-template-columns[^"]*\[/);
+  assert.equal(html.includes('content-start'), false);
+});
+
 test('never captures layout styles on masked containers', () => {
   // A masked element that is also a flex container must stay fully unstyled.
   const html = snapshotWithStyles({

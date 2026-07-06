@@ -2069,6 +2069,18 @@
     return false;
   }
 
+  // Browsers include named grid lines ("[content-start] 480px [content-end]")
+  // in the computed grid-template-columns value. The server's value grammar
+  // rejects brackets, which would silently drop the whole declaration and
+  // collapse the grid; the track sizes alone replay fine, so strip the names.
+  function normalizeLayoutStyleValue(property, value) {
+    if (property === 'grid-template-columns') {
+      return value.replace(/\[[^\]]*\]/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+
+    return value;
+  }
+
   function isDefaultLayoutStyleValue(property, value) {
     if (property === 'flex-direction') {
       return value === 'row';
@@ -2137,7 +2149,7 @@
       declarations.push('display:' + display);
 
       CAPTURED_LAYOUT_STYLE_PROPERTIES.forEach(function (property) {
-        var value = readValue(property);
+        var value = normalizeLayoutStyleValue(property, readValue(property));
 
         if (! isCapturableStyleValue(value) || isDefaultLayoutStyleValue(property, value)) {
           return;
