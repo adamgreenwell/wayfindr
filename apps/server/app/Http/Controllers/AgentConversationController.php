@@ -29,7 +29,7 @@ use Illuminate\Validation\ValidationException;
 
 class AgentConversationController extends Controller
 {
-    public function show(Request $request, string $supportCode, CobrowseConsentState $cobrowseConsentState, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions): View
+    public function show(Request $request, string $supportCode, CobrowseConsentState $cobrowseConsentState, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, CobrowseAuditTrail $cobrowseAuditTrail): View
     {
         $agent = $request->user();
 
@@ -38,6 +38,9 @@ class AgentConversationController extends Controller
 
         $this->markConversationNotificationsRead($agent, $conversation);
         $conversation->markReadFor($agent);
+
+        $cobrowseConsent = $cobrowseConsentState->forConversation($conversation);
+        $this->recordCobrowsePreviewView($conversation, $agent, $cobrowseAuditTrail, $cobrowseConsent, 'page_view');
 
         $messages = $conversation->messages()
             ->with('sender')
@@ -54,7 +57,7 @@ class AgentConversationController extends Controller
             'account' => $agent->account()->firstOrFail(),
             'accountAgents' => $this->supportAgentsForSite($conversation->site),
             'agent' => $agent,
-            'cobrowseConsent' => $cobrowseConsentState->forConversation($conversation),
+            'cobrowseConsent' => $cobrowseConsent,
             'conversation' => $conversation,
             'conversationBackUrl' => route('dashboard.conversations.index', $conversationReturnQuery),
             'conversationReturnQuery' => $conversationReturnQuery,
@@ -365,12 +368,13 @@ class AgentConversationController extends Controller
      * broadcast path never carries raw page HTML — the sanitizer stays the
      * enforcement boundary on every refresh.
      */
-    public function cobrowsePreview(Request $request, string $supportCode, CobrowseConsentState $cobrowseConsentState): JsonResponse
+    public function cobrowsePreview(Request $request, string $supportCode, CobrowseConsentState $cobrowseConsentState, CobrowseAuditTrail $cobrowseAuditTrail): JsonResponse
     {
         $agent = $request->user();
         $conversation = $this->conversationForAgent($agent, $supportCode, 'view');
 
         $state = $cobrowseConsentState->forConversation($conversation);
+        $this->recordCobrowsePreviewView($conversation, $agent, $cobrowseAuditTrail, $state, 'live_refresh');
 
         return response()->json([
             'data' => [
@@ -613,6 +617,28 @@ class AgentConversationController extends Controller
             ->whereIn('status', ['requested', 'granted'])
             ->latest('id')
             ->first();
+    }
+
+    /**
+     * Audit that the agent saw a rendered replay preview. Only fires when a
+     * preview actually exists — loading a conversation with no snapshot is not
+     * "seeing the visitor's screen". Throttling lives in the audit trail.
+     *
+     * @param  array<string, mixed>  $cobrowseState
+     */
+    private function recordCobrowsePreviewView(Conversation $conversation, User $agent, CobrowseAuditTrail $cobrowseAuditTrail, array $cobrowseState, string $trigger): void
+    {
+        $preview = $cobrowseState['replay_preview'] ?? null;
+
+        if (! is_array($preview)) {
+            return;
+        }
+
+        $session = $conversation->cobrowseSessions()->latest('id')->first();
+
+        if ($session) {
+            $cobrowseAuditTrail->previewViewed($session, $agent, $trigger, $preview);
+        }
     }
 
     private function markConversationNotificationsRead(User $agent, Conversation $conversation): void

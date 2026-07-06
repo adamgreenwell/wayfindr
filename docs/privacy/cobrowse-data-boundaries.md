@@ -197,6 +197,15 @@ server endpoint that runs the same sanitizer used to render the page, so the
 sanitizer stays the single enforcement boundary on every refresh — the socket
 never becomes a side channel for unsanitized page content.
 
+Preview access itself is audited. When an agent actually sees a rendered replay
+preview (on the conversation page or through the live refresh endpoint),
+Wayfindr records a `cobrowse.preview_viewed` audit event — throttled per agent
+and session so the refresh loop cannot flood the log — whose metadata carries
+provenance only (support code, trigger, snapshot report time, applied/skipped
+counts, drift state) and never preview content. "Who watched the visitor's
+screen, and when" stays answerable without storing anything new about the
+visitor.
+
 ## Operator Readiness Boundary
 
 Platform operator readiness may summarize aggregate cobrowse transport health
