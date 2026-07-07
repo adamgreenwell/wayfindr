@@ -122,12 +122,7 @@
     var anonymousId = options.anonymousId;
     var visitorExternalId = normalizeVisitorExternalId(options.visitorExternalId);
     var fetcher = options.fetch || (root && root.fetch ? root.fetch.bind(root) : null);
-    // Undefined means "not provided" — including when a wrapper forwards
-    // `storage: options.storage` from options that never set the key, which is
-    // how Wayfindr.init embeds silently lost all persistence (the old
-    // hasOwnProperty check saw the forwarded key and skipped the default).
-    // Explicit null still disables storage on purpose.
-    var storage = options.storage !== undefined ? options.storage : defaultStorage();
+    var storage = resolveStorageOption(options);
     var visitorToken = options.visitorToken || null;
     var realtime = resolveRealtime(options, fetcher);
     var maskSelectors = [];
@@ -371,7 +366,10 @@
       anonymousId: options.anonymousId,
       visitorExternalId: options.visitorExternalId,
       fetch: options.fetch,
-      storage: options.storage,
+      // Resolve here rather than forwarding options.storage blindly: property
+      // access would flatten an inherited value into an own property on the
+      // client config, bypassing the own-property guard in resolveStorageOption.
+      storage: resolveStorageOption(options),
       visitorToken: options.visitorToken,
       realtime: options.realtime,
       reverb: options.reverb,
@@ -448,7 +446,7 @@
     // The client persists the visitor identity per site; the widget persists
     // the active conversation reference alongside it so a page reload resumes
     // the visitor's thread instead of starting a new conversation.
-    var widgetStorage = options.storage !== undefined ? options.storage : defaultStorage();
+    var widgetStorage = resolveStorageOption(options);
     var storedSupportCode = storageGet(widgetStorage, supportCodeStorageKey(options.sitePublicKey));
     var resumePromise = null;
     var conversationStatus = null;
@@ -3033,6 +3031,20 @@
     } catch (error) {
       // Private browsing and locked-down embeds can reject storage writes.
     }
+  }
+
+  // A storage override only counts when it is the caller's own, defined
+  // property. Undefined means "not provided" — including when a wrapper
+  // forwards `storage: options.storage` from options that never set the key,
+  // which is how Wayfindr.init embeds silently lost all persistence — and an
+  // inherited property (Object.create chains, prototype pollution) is never
+  // treated as an explicit choice. Explicit null still disables storage.
+  function resolveStorageOption(options) {
+    if (Object.prototype.hasOwnProperty.call(options, 'storage') && options.storage !== undefined) {
+      return options.storage;
+    }
+
+    return defaultStorage();
   }
 
   function defaultStorage() {

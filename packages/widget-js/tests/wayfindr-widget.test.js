@@ -1506,6 +1506,67 @@ test('init without a storage option persists to default browser storage', async 
   }
 });
 
+test('ignores inherited storage properties when selecting the default', async () => {
+  // An options object can inherit "storage" (Object.create chains, prototype
+  // pollution). Only an own, defined property counts as an explicit override;
+  // anything inherited must fall through to the browser default.
+  const fakeLocalStorage = memoryStorage();
+  const hadDocument = Object.prototype.hasOwnProperty.call(globalThis, 'document');
+  const originalDocument = globalThis.document;
+  const hadLocalStorage = Object.prototype.hasOwnProperty.call(globalThis, 'localStorage');
+  const originalLocalStorage = globalThis.localStorage;
+
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+
+  globalThis.document = dom.window.document;
+  globalThis.localStorage = fakeLocalStorage;
+
+  try {
+    const bogusStorage = {
+      getItem: () => {
+        throw new Error('inherited storage must not be used');
+      },
+      setItem: () => {
+        throw new Error('inherited storage must not be used');
+      },
+    };
+    const options = Object.assign(Object.create({ storage: bogusStorage }), {
+      document: dom.window.document,
+      location: dom.window.location,
+      mount: '#support',
+      apiBaseUrl: 'http://127.0.0.1:8000/',
+      sitePublicKey: 'site_public_docs',
+      mutationFlushMs: 0,
+      cobrowseStatusPollMs: 0,
+      fetch: resumeFetchMock([]),
+    });
+
+    const widget = Wayfindr.init(options);
+
+    assert.match(
+      fakeLocalStorage.getItem('wayfindr:site_public_docs:anonymous-id') || '',
+      /^anon_/,
+      'inherited storage must be ignored in favor of the browser default',
+    );
+
+    widget.destroy();
+  } finally {
+    if (hadDocument) {
+      globalThis.document = originalDocument;
+    } else {
+      delete globalThis.document;
+    }
+
+    if (hadLocalStorage) {
+      globalThis.localStorage = originalLocalStorage;
+    } else {
+      delete globalThis.localStorage;
+    }
+  }
+});
+
 test('resumes the persisted conversation after a page reload', async () => {
   const storage = memoryStorage();
   const supportCodeKey = 'wayfindr:site_public_docs:support-code';
