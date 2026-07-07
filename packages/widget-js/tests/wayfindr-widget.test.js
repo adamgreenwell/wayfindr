@@ -1370,6 +1370,198 @@ test('sends the composer on Enter and keeps Shift+Enter for newlines', async () 
   assert.equal(JSON.parse(conversationCall.options.body).subject, 'Draft line one');
 });
 
+function resumeFetchMock(calls, options) {
+  options = options || {};
+
+  return async (url, fetchOptions) => {
+    calls.push({ url, options: fetchOptions });
+
+    if (url.endsWith('/api/widget/bootstrap')) {
+      return jsonResponse(201, {
+        data: {
+          site: { public_key: 'site_public_docs', settings: {} },
+          visitor: { anonymous_id: 'anon-resume', token: 'visitor-token-resume' },
+        },
+      });
+    }
+
+    if (url.endsWith('/api/conversations')) {
+      return jsonResponse(201, { data: { support_code: 'WF-RESUME1', status: 'open' } });
+    }
+
+    if (url.includes('/api/conversations/WF-RESUME1/messages') && fetchOptions && fetchOptions.method === 'POST') {
+      return jsonResponse(201, {
+        data: {
+          conversation: { support_code: 'WF-RESUME1' },
+          message: {
+            sender: { kind: 'visitor', name: 'Visitor' },
+            type: 'text',
+            body: 'Can you help me?',
+            created_at: '2026-05-23T14:00:00.000000Z',
+          },
+        },
+      });
+    }
+
+    if (url.includes('/cobrowse?')) {
+      return jsonResponse(200, {
+        data: {
+          conversation: { support_code: 'WF-RESUME1' },
+          cobrowse: { status: 'unavailable', consent: 'unavailable', requested_by: null },
+        },
+      });
+    }
+
+    if (options.messages) {
+      return options.messages(url);
+    }
+
+    return jsonResponse(200, {
+      data: {
+        conversation: { support_code: 'WF-RESUME1', status: 'open' },
+        messages: [
+          {
+            id: 1,
+            sender: { kind: 'visitor', name: 'Visitor' },
+            type: 'text',
+            body: 'Can you help me?',
+            created_at: '2026-05-23T14:00:00.000000Z',
+          },
+          {
+            id: 2,
+            sender: { kind: 'agent', name: 'Ada Agent' },
+            type: 'text',
+            body: 'Happy to help.',
+            created_at: '2026-05-23T14:01:00.000000Z',
+          },
+        ],
+      },
+    });
+  };
+}
+
+test('resumes the persisted conversation after a page reload', async () => {
+  const storage = memoryStorage();
+  const supportCodeKey = 'wayfindr:site_public_docs:support-code';
+
+  // First page view: the visitor starts a conversation.
+  const dom1 = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+  const firstCalls = [];
+  const widget1 = Wayfindr.init({
+    document: dom1.window.document,
+    location: dom1.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    storage,
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    fetch: resumeFetchMock(firstCalls),
+  });
+
+  widget1.open();
+  widget1.root.querySelector('.wayfindr-widget__textarea').value = 'Can you help me?';
+  widget1.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+    new dom1.window.Event('submit', { bubbles: true, cancelable: true }),
+  );
+  await settle();
+
+  assert.equal(storage.getItem(supportCodeKey), 'WF-RESUME1');
+  widget1.destroy();
+
+  // "Reload": a fresh widget with the same storage resumes the conversation
+  // without starting a new one.
+  const dom2 = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+  const secondCalls = [];
+  const widget2 = Wayfindr.init({
+    document: dom2.window.document,
+    location: dom2.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    storage,
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    fetch: resumeFetchMock(secondCalls),
+  });
+
+  await settle();
+
+  assert.deepEqual(messageSummaries(widget2), ['VisitorCan you help me?', 'Ada AgentHappy to help.']);
+  assert.equal(
+    secondCalls.some((call) => call.url.endsWith('/api/conversations') && call.options && call.options.method === 'POST'),
+    false,
+    'resume must not start a new conversation',
+  );
+  assert.match(widget2.root.querySelector('.wayfindr-widget__status').textContent, /Conversation restored/);
+
+  widget2.destroy();
+});
+
+test('clears a stored support code the server rejects and starts fresh', async () => {
+  const storage = memoryStorage();
+  const supportCodeKey = 'wayfindr:site_public_docs:support-code';
+  storage.setItem(supportCodeKey, 'WF-RESUME1');
+
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+  const calls = [];
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    storage,
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    fetch: resumeFetchMock(calls, {
+      messages: () => jsonResponse(404, { message: 'No visible conversation.' }),
+    }),
+  });
+
+  await settle();
+
+  assert.equal(storage.getItem(supportCodeKey), null);
+  assert.deepEqual(messageSummaries(widget), []);
+
+  widget.destroy();
+});
+
+test('keeps a stored support code through transient resume failures', async () => {
+  const storage = memoryStorage();
+  const supportCodeKey = 'wayfindr:site_public_docs:support-code';
+  storage.setItem(supportCodeKey, 'WF-RESUME1');
+
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    storage,
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    fetch: async () => {
+      throw new TypeError('network down');
+    },
+  });
+
+  await settle();
+
+  assert.equal(storage.getItem(supportCodeKey), 'WF-RESUME1');
+
+  widget.destroy();
+});
+
 test('renders the embedded conversation timeline and refreshes replies', async () => {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
     url: 'https://docs.example.test/install',
@@ -6213,6 +6405,7 @@ function memoryStorage() {
   return {
     getItem: (key) => values.get(key) ?? null,
     setItem: (key, value) => values.set(key, value),
+    removeItem: (key) => values.delete(key),
   };
 }
 

@@ -445,6 +445,12 @@
     var bootstrapped = false;
     var supportCode = null;
     var conversationActivated = false;
+    // The client persists the visitor identity per site; the widget persists
+    // the active conversation reference alongside it so a page reload resumes
+    // the visitor's thread instead of starting a new conversation.
+    var hasWidgetStorageOption = Object.prototype.hasOwnProperty.call(options, 'storage');
+    var widgetStorage = hasWidgetStorageOption ? options.storage : defaultStorage();
+    var storedSupportCode = storageGet(widgetStorage, supportCodeStorageKey(options.sitePublicKey));
     var conversationStatus = null;
     var messages = [];
     var realtimeSubscription = null;
@@ -1623,6 +1629,7 @@
 
           applyConversationStatus(conversation);
           supportCode = conversation.support_code;
+          storageSet(widgetStorage, supportCodeStorageKey(options.sitePublicKey), supportCode);
           var firstMessage = await client.sendMessage(supportCode, body, pendingClientMessageId);
           applyConversationStatus(firstMessage.conversation);
           appendMessage(firstMessage.message);
@@ -1646,6 +1653,40 @@
         setComposerBusy(false);
       }
     });
+
+    // Resume the visitor's persisted conversation after a page reload: restore
+    // the timeline, realtime/polling loops, and cobrowse status through the
+    // same paths a fresh conversation uses. A server rejection (stale code,
+    // revoked token, foreign reference) clears the stored code and falls back
+    // to a fresh start without alarming the visitor; a transient network
+    // failure keeps the code for the next load.
+    async function resumeConversation(candidateCode) {
+      try {
+        if (!bootstrapped) {
+          await client.bootstrap(location ? location.href : null, visitorContext);
+          bootstrapped = true;
+        }
+
+        var result = await client.fetchMessages(candidateCode);
+
+        supportCode = candidateCode;
+        applyConversationStatus(result.conversation);
+        renderMessages(result.messages || []);
+        renderAgentTyping(result.agent_typing);
+        renderConversationNotice();
+        activateConversation();
+        status.textContent = 'Conversation restored. Support code ' + supportCode + '.';
+        await refreshCobrowseStatus({ silent: true });
+      } catch (error) {
+        if (error && typeof error.status === 'number' && error.status >= 400 && error.status < 500) {
+          storageRemove(widgetStorage, supportCodeStorageKey(options.sitePublicKey));
+        }
+      }
+    }
+
+    if (storedSupportCode) {
+      resumeConversation(storedSupportCode);
+    }
 
     return {
       anonymousId: client.anonymousId,
@@ -2831,6 +2872,10 @@
     return 'wayfindr:' + sitePublicKey + ':visitor-token';
   }
 
+  function supportCodeStorageKey(sitePublicKey) {
+    return 'wayfindr:' + sitePublicKey + ':support-code';
+  }
+
   function requireVisitorToken(visitorToken) {
     if (!visitorToken) {
       throw new Error('Wayfindr visitor session is not bootstrapped.');
@@ -2876,7 +2921,7 @@
     });
 
     if (!response.ok) {
-      throw new Error(data.message || 'Wayfindr request failed with status ' + response.status + '.');
+      throw responseError(response, data);
     }
 
     return data.data;
@@ -2888,10 +2933,19 @@
     });
 
     if (!response.ok) {
-      throw new Error(data.message || 'Wayfindr request failed with status ' + response.status + '.');
+      throw responseError(response, data);
     }
 
     return data;
+  }
+
+  // Carry the HTTP status on the error so callers can tell a server rejection
+  // (a stale or foreign reference) from a transient network failure.
+  function responseError(response, data) {
+    var error = new Error(data.message || 'Wayfindr request failed with status ' + response.status + '.');
+    error.status = response.status;
+
+    return error;
   }
 
   function toQueryString(values) {
@@ -2956,6 +3010,16 @@
     try {
       if (storage) {
         storage.setItem(key, value);
+      }
+    } catch (error) {
+      // Private browsing and locked-down embeds can reject storage writes.
+    }
+  }
+
+  function storageRemove(storage, key) {
+    try {
+      if (storage) {
+        storage.removeItem(key);
       }
     } catch (error) {
       // Private browsing and locked-down embeds can reject storage writes.

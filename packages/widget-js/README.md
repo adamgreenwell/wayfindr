@@ -63,6 +63,7 @@ The widget currently supports the first visitor loop:
 
 - bootstrap the site config, anonymous visitor, and signed visitor token,
 - start a conversation,
+- resume the visitor's conversation across page reloads: the active support code is persisted per site alongside the visitor identity (localStorage), the timeline is restored on load, and a stale or foreign stored code is cleared quietly after the server rejects it,
 - send visitor messages,
 - send a visitor message by pressing Enter, while Shift+Enter keeps a newline and an active IME composition is never interrupted,
 - prevent duplicate sends while the visitor composer is busy,
