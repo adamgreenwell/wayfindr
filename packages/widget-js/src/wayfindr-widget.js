@@ -2304,6 +2304,49 @@
     return isFormControl(node) || isMaskedElement(node, maskSelectors, sensitiveTerms);
   }
 
+  // Decorative elements with no content of their own — skeleton blocks,
+  // gradient panels, dots, spacers — get their size from stylesheet rules the
+  // capture pass cannot see, so they collapse to nothing in the replay. For
+  // content-empty elements, capture the rendered pixel box instead: the
+  // preview renders at the visitor's reported viewport width, so pixel boxes
+  // replay faithfully. Inline elements ignore width/height and are skipped.
+  var EMPTY_ELEMENT_SIZE_MAX_PX = 4000;
+
+  function isContentEmptyElement(node) {
+    if (node.childElementCount > 0) {
+      return false;
+    }
+
+    var text = node.textContent;
+
+    return !text || String(text).trim() === '';
+  }
+
+  function buildEmptyElementSizeStyle(node, readValue) {
+    if (! isContentEmptyElement(node) || readValue('display') === 'inline') {
+      return '';
+    }
+
+    var declarations = [];
+
+    ['width', 'height'].forEach(function (property) {
+      var value = readValue(property);
+      var parsed = /^(\d+(?:\.\d+)?)px$/.exec(value || '');
+
+      if (! parsed) {
+        return;
+      }
+
+      var pixels = parseFloat(parsed[1]);
+
+      if (pixels > 0 && pixels <= EMPTY_ELEMENT_SIZE_MAX_PX) {
+        declarations.push(property + ':' + value);
+      }
+    });
+
+    return declarations.join(';');
+  }
+
   function isSafeSvgAttributeValue(name, value) {
     var raw = String(value || '');
     var lower = raw.toLowerCase();
@@ -2496,6 +2539,11 @@
 
           if (! shouldSkipStyleCapture(node, styleContext.maskSelectors, styleContext.sensitiveTerms)) {
             var captured = buildCapturedStyle(readValue, styleContext.readParentValue);
+            var emptySize = buildEmptyElementSizeStyle(node, readValue);
+
+            if (emptySize) {
+              captured = captured ? captured + ';' + emptySize : emptySize;
+            }
 
             if (captured) {
               var existing = clone.getAttribute('style');

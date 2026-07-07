@@ -78,6 +78,13 @@ No image URL reaches the agent, who must never fetch visitor resources, and no
 pixel data ever leaves the visitor page. Rendering real imagery would require a
 future explicit, site-configured opt-in; it is not part of the default posture.
 
+Content-empty decorative elements (skeleton blocks, panels, dots, spacers)
+additionally carry their rendered pixel box (width and height) so they keep
+their footprint in the replay instead of collapsing. Masked elements and form
+controls are excluded from this, as from all style capture: an element's box
+can encode value-derived signals (`ch`-unit widths, validity styling), and no
+styling of masked content is ever serialized.
+
 Live mutation streaming observes the main document tree. Changes made *inside*
 an existing shadow root are not streamed as individual mutations; they are
 picked up on the next snapshot (including pressure- or agent-requested resyncs).

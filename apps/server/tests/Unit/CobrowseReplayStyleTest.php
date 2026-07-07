@@ -118,6 +118,16 @@ test('rejects dangerous values even on allowlisted properties', function (): voi
         ->and($srcdoc)->toContain('background-color:rgb(0,0,0)');
 });
 
+test('keeps the pixel boxes captured for content-empty decorative elements', function (): void {
+    // #536: the widget sizes content-empty elements (skeletons, panels, dots)
+    // with their rendered pixel box so they keep their footprint in the replay.
+    $srcdoc = styledPreview('background-color:rgb(240,240,240);width:480px;height:120.5px');
+
+    expect($srcdoc)
+        ->toContain('width:480px')
+        ->and($srcdoc)->toContain('height:120.5px');
+});
+
 test('allows only color functions inside values', function (): void {
     // calc() is not allowlisted as a function, so the whole declaration drops.
     $srcdoc = styledPreview('width:calc(100% - 10px);color:hsl(200,50%,50%)');
