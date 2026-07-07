@@ -5,6 +5,7 @@ use App\Console\Commands\BootstrapWayfindrCommand;
 use App\Console\Commands\CobrowseTransportSmokeCommand;
 use App\Console\Commands\CreateAgentCommand;
 use App\Console\Commands\MailTestCommand;
+use App\Console\Commands\PruneCobrowseContentCommand;
 use App\Console\Commands\SendAlertDigestsCommand;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -24,6 +25,7 @@ return Application::configure(basePath: dirname(__DIR__))
         CobrowseTransportSmokeCommand::class,
         CreateAgentCommand::class,
         MailTestCommand::class,
+        PruneCobrowseContentCommand::class,
         SendAlertDigestsCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
