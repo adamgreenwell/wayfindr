@@ -84,6 +84,7 @@ test('cobrowse state updates use a private conversation channel and safe payload
                 'page_state' => [
                     'page_url' => 'https://docs.example.test/install',
                     'title' => 'Install Guide',
+                    'viewport_width' => 1456,
                     'reported_at' => $reportedAt,
                 ],
                 'snapshot' => [
@@ -126,6 +127,7 @@ test('cobrowse state updates use a private conversation channel and safe payload
             ])
             ->and($payload['summary']['title'])->toBe('Install Guide')
             ->and($payload['summary']['page_url'])->toBe('https://docs.example.test/install')
+            ->and($payload['summary']['viewport_width'])->toBe(1456)
             ->and(data_get($payload, 'summary.snapshot'))->toMatchArray([
                 'reported_at' => $reportedAt,
                 'freshness' => [

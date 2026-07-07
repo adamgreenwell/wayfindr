@@ -1027,11 +1027,25 @@
                     // Keep the preview rendered at the visitor's reported viewport
                     // width across live swaps (the width can change if the visitor
                     // resizes or moves devices).
-                    if (typeof preview.viewport_width === 'number' && preview.viewport_width > 0) {
-                        previewFrame.setAttribute('data-viewport-width', String(preview.viewport_width));
+                    syncPreviewViewport(preview.viewport_width);
+
+                    return true;
+                }
+
+                // Resize the preview to the visitor's reported viewport width. Also
+                // driven directly from the metadata-only broadcast summary, so a
+                // resize-only page_state update fixes the geometry immediately
+                // without refetching preview content.
+                function syncPreviewViewport(viewportWidth) {
+                    if (!previewFrame) {
+                        return;
+                    }
+
+                    if (typeof viewportWidth === 'number' && viewportWidth > 0) {
+                        previewFrame.setAttribute('data-viewport-width', String(viewportWidth));
 
                         if (previewViewportLabel) {
-                            previewViewportLabel.textContent = 'Visitor viewport ' + preview.viewport_width.toLocaleString() + 'px';
+                            previewViewportLabel.textContent = 'Visitor viewport ' + viewportWidth.toLocaleString() + 'px';
                             previewViewportLabel.hidden = false;
                         }
                     } else {
@@ -1046,8 +1060,6 @@
                     if (typeof window.wayfindrSizeCobrowsePreview === 'function') {
                         window.wayfindrSizeCobrowsePreview();
                     }
-
-                    return true;
                 }
 
                 // Fetch the latest sanitized preview and apply it live. The
@@ -1571,6 +1583,14 @@
                         var telemetry = updateLiveCobrowseTelemetry(cobrowsePayload);
                         var updateKind = cobrowsePayload.update ? cobrowsePayload.update.kind : '';
                         var summary = cobrowsePayload.summary || {};
+
+                        // The metadata-only summary carries the visitor's clamped
+                        // viewport width on every update kind, so a resize-only
+                        // page_state report fixes the preview geometry immediately
+                        // without refetching preview content.
+                        if (typeof summary.viewport_width === 'number' && summary.viewport_width > 0) {
+                            syncPreviewViewport(summary.viewport_width);
+                        }
 
                         if (updateKind === 'snapshot') {
                             updateSnapshotFreshness(summary.snapshot);

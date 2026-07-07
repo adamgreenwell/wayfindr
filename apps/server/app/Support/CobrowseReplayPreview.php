@@ -130,7 +130,7 @@ class CobrowseReplayPreview
             'applied_mutations' => number_format($counts['applied']).' applied',
             'skipped_mutations' => number_format($skipped).' skipped',
             'drift' => (new CobrowseReplayDrift)->evaluate($counts),
-            'viewport_width' => $this->reportedViewportWidth($metadata),
+            'viewport_width' => self::reportedViewportWidth($metadata),
         ];
     }
 
@@ -138,10 +138,12 @@ class CobrowseReplayPreview
      * The visitor's reported viewport width, so the preview can render at the
      * captured geometry instead of the dashboard column's. Uses the page-state
      * report (the latest known viewport); out-of-range values are unreported.
+     * Public because the metadata-only broadcast carries the same clamped
+     * value, letting the dashboard resize the preview without refetching it.
      *
      * @param  array<string, mixed>  $metadata
      */
-    private function reportedViewportWidth(array $metadata): ?int
+    public static function reportedViewportWidth(array $metadata): ?int
     {
         $width = $metadata['page_state']['viewport_width'] ?? null;
 

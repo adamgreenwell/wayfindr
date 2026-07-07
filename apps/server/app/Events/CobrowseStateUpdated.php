@@ -3,6 +3,7 @@
 namespace App\Events;
 
 use App\Models\CobrowseSession;
+use App\Support\CobrowseReplayPreview;
 use App\Support\CobrowseSnapshotFreshness;
 use App\Support\CobrowseTransportPressure;
 use Illuminate\Broadcasting\InteractsWithSockets;
@@ -99,6 +100,7 @@ class CobrowseStateUpdated implements ShouldBroadcastNow
         return array_filter([
             'page_url' => $pageState['page_url'] ?? $snapshot['page_url'] ?? $mutations['last_page_url'] ?? null,
             'title' => $pageState['title'] ?? $snapshot['title'] ?? null,
+            'viewport_width' => CobrowseReplayPreview::reportedViewportWidth($metadata),
             'batch_count' => $mutations['batch_count'] ?? null,
             'mutation_count' => $mutations['mutation_count'] ?? null,
             'last_sequence' => $mutations['last_sequence'] ?? null,
