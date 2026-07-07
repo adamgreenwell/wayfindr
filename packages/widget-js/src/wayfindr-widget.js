@@ -2551,57 +2551,66 @@
 
   // The snapshot serializes body.innerHTML, so the page-level background — the
   // single most visible style on many pages — never rides along with element
-  // capture. Read the background family from the body, falling back
-  // per-property to the root element (browsers propagate a transparent body's
-  // background from <html>), under the same gradient-only rules as element
+  // capture. Read the background family from a single source element: the body
+  // when it paints any background of its own, otherwise the root element
+  // (whose background paints the canvas behind a transparent body). Merging
+  // per property instead would composite the root's gradient over an opaque
+  // body, which browsers never do. Same gradient-only rules as element
   // capture: color math only, never a resource fetch.
+  var PAGE_BACKGROUND_PROPERTIES = ['background-color', 'background-image'];
+
   function capturePageBackgroundStyle(doc, view) {
     if (!doc || !view || typeof view.getComputedStyle !== 'function') {
       return '';
     }
 
-    var candidates = [doc.body, doc.documentElement].filter(Boolean);
+    var readSource = null;
 
-    function readCaptured(property) {
-      for (var index = 0; index < candidates.length; index += 1) {
-        var value;
+    [doc.body, doc.documentElement].filter(Boolean).some(function (element) {
+      var computed;
 
-        try {
-          value = view.getComputedStyle(candidates[index]).getPropertyValue(property);
-        } catch (error) {
-          continue;
-        }
-
-        if (isCapturableOwnStyleValue(property, value) && ! isDefaultOwnStyleValue(property, value)) {
-          return { value: value, element: candidates[index] };
-        }
+      try {
+        computed = view.getComputedStyle(element);
+      } catch (error) {
+        return false;
       }
 
-      return null;
+      var read = function (property) {
+        return computed.getPropertyValue(property);
+      };
+
+      var paintsBackground = PAGE_BACKGROUND_PROPERTIES.some(function (property) {
+        var value = read(property);
+
+        return isCapturableOwnStyleValue(property, value) && ! isDefaultOwnStyleValue(property, value);
+      });
+
+      if (paintsBackground) {
+        readSource = read;
+      }
+
+      return paintsBackground;
+    });
+
+    if (!readSource) {
+      return '';
     }
 
     var declarations = [];
-    var color = readCaptured('background-color');
 
-    if (color) {
-      declarations.push('background-color:' + color.value);
-    }
+    PAGE_BACKGROUND_PROPERTIES.forEach(function (property) {
+      var value = readSource(property);
 
-    var image = readCaptured('background-image');
-
-    if (image) {
-      declarations.push('background-image:' + image.value);
-
-      // Patterned backgrounds (grid lines, stripes) are gradients tiled by
-      // background-size; without it a tiled pattern replays as one page-sized
-      // gradient. Read it from the element the image came from.
-      var size = '';
-
-      try {
-        size = view.getComputedStyle(image.element).getPropertyValue('background-size');
-      } catch (error) {
-        size = '';
+      if (isCapturableOwnStyleValue(property, value) && ! isDefaultOwnStyleValue(property, value)) {
+        declarations.push(property + ':' + value);
       }
+    });
+
+    // Patterned backgrounds (grid lines, stripes) are gradients tiled by
+    // background-size; without it a tiled pattern replays as one page-sized
+    // gradient.
+    if (declarations.join(';').indexOf('background-image:') !== -1) {
+      var size = readSource('background-size');
 
       if (size && size.indexOf('auto') === -1 && isCapturableStyleValue(size)) {
         declarations.push('background-size:' + size);

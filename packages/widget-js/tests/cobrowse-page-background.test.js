@@ -59,6 +59,18 @@ test('falls back to the root element when the body background is transparent', (
   assert.equal(snapshot.bodyStyle, 'background-color:rgb(18, 24, 22)');
 });
 
+test('an opaque body never composites the root background over it', () => {
+  // In browsers the root background paints the canvas behind the body, not a
+  // per-property fallback: html{gradient} body{white} shows white behind the
+  // content, so the replay must too.
+  const snapshot = pageBackgroundSnapshot({
+    body: { 'background-color': 'rgb(255, 255, 255)' },
+    root: { 'background-color': 'rgb(18, 24, 22)', 'background-image': GRID_GRADIENT, 'background-size': '24px 24px' },
+  });
+
+  assert.equal(snapshot.bodyStyle, 'background-color:rgb(255, 255, 255)');
+});
+
 test('never captures url()-bearing page backgrounds', () => {
   const snapshot = pageBackgroundSnapshot({
     body: {
