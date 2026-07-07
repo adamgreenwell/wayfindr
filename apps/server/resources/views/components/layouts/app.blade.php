@@ -843,13 +843,21 @@
             padding: 16px;
         }
 
-        .cobrowse-preview {
-            display: block;
-            width: 100%;
-            min-height: 360px;
+        .cobrowse-preview-scale {
+            height: 360px;
+            overflow: hidden;
             border: 1px solid var(--border);
             border-radius: 6px;
             background: #ffffff;
+        }
+
+        .cobrowse-preview {
+            display: block;
+            width: 100%;
+            height: 100%;
+            border: 0;
+            background: #ffffff;
+            transform-origin: 0 0;
         }
 
         .live-update {

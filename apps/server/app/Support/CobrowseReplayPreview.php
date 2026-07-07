@@ -85,8 +85,17 @@ class CobrowseReplayPreview
     ];
 
     /**
+     * Visitor viewport widths outside this range are treated as unreported: a
+     * hostile or broken widget must not be able to force an absurd preview
+     * geometry onto the agent dashboard.
+     */
+    private const MIN_VIEWPORT_WIDTH = 320;
+
+    private const MAX_VIEWPORT_WIDTH = 3840;
+
+    /**
      * @param  array<string, mixed>  $metadata
-     * @return array{srcdoc: string, applied_mutations: string, skipped_mutations: string, drift: array<string, mixed>}|null
+     * @return array{srcdoc: string, applied_mutations: string, skipped_mutations: string, drift: array<string, mixed>, viewport_width: int|null}|null
      */
     public function fromMetadata(array $metadata): ?array
     {
@@ -121,7 +130,30 @@ class CobrowseReplayPreview
             'applied_mutations' => number_format($counts['applied']).' applied',
             'skipped_mutations' => number_format($skipped).' skipped',
             'drift' => (new CobrowseReplayDrift)->evaluate($counts),
+            'viewport_width' => $this->reportedViewportWidth($metadata),
         ];
+    }
+
+    /**
+     * The visitor's reported viewport width, so the preview can render at the
+     * captured geometry instead of the dashboard column's. Uses the page-state
+     * report (the latest known viewport); out-of-range values are unreported.
+     *
+     * @param  array<string, mixed>  $metadata
+     */
+    private function reportedViewportWidth(array $metadata): ?int
+    {
+        $width = $metadata['page_state']['viewport_width'] ?? null;
+
+        if (! is_numeric($width)) {
+            return null;
+        }
+
+        $width = (int) $width;
+
+        return ($width >= self::MIN_VIEWPORT_WIDTH && $width <= self::MAX_VIEWPORT_WIDTH)
+            ? $width
+            : null;
     }
 
     private function loadDocument(string $html): DOMDocument

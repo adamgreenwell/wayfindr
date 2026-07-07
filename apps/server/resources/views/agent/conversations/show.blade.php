@@ -691,6 +691,11 @@
                             /
                             <span data-cobrowse-replay-skipped>{{ $cobrowseConsent['replay_preview']['skipped_mutations'] }}</span>
                         </span>
+                        @if ($cobrowseConsent['replay_preview']['viewport_width'])
+                            <span class="lede" data-cobrowse-viewport-label>Visitor viewport {{ number_format($cobrowseConsent['replay_preview']['viewport_width']) }}px</span>
+                        @else
+                            <span class="lede" data-cobrowse-viewport-label hidden></span>
+                        @endif
                         <span
                             class="readiness-status"
                             data-status="{{ $cobrowseConsent['replay_preview']['drift']['tone'] }}"
@@ -706,14 +711,54 @@
                     >{{ $cobrowseConsent['replay_preview']['drift']['message'] }} ({{ $cobrowseConsent['replay_preview']['drift']['summary'] }})</p>
 
                     <div class="cobrowse-preview-frame">
-                        <iframe
-                            class="cobrowse-preview"
-                            title="Cobrowse replay preview"
-                            sandbox
-                            srcdoc="{{ $cobrowseConsent['replay_preview']['srcdoc'] }}"
-                            data-cobrowse-replay-frame
-                        ></iframe>
+                        <div class="cobrowse-preview-scale">
+                            <iframe
+                                class="cobrowse-preview"
+                                title="Cobrowse replay preview"
+                                sandbox
+                                srcdoc="{{ $cobrowseConsent['replay_preview']['srcdoc'] }}"
+                                data-cobrowse-replay-frame
+                                @if ($cobrowseConsent['replay_preview']['viewport_width']) data-viewport-width="{{ $cobrowseConsent['replay_preview']['viewport_width'] }}" @endif
+                            ></iframe>
+                        </div>
                     </div>
+
+                    <script>
+                        (function () {
+                            // Render the sandboxed preview at the visitor's reported viewport
+                            // width, scaled down to fit the dashboard column (never scaled up),
+                            // so captured layout keeps the visitor's real proportions instead
+                            // of wrapping at whatever width the column happens to be.
+                            function sizeCobrowsePreview() {
+                                var frame = document.querySelector('[data-cobrowse-replay-frame]');
+
+                                if (!frame || !frame.parentElement) {
+                                    return;
+                                }
+
+                                var wrap = frame.parentElement;
+                                var viewportWidth = parseInt(frame.getAttribute('data-viewport-width') || '', 10);
+
+                                if (!viewportWidth || viewportWidth <= 0 || wrap.clientWidth <= 0) {
+                                    frame.style.width = '';
+                                    frame.style.height = '';
+                                    frame.style.transform = '';
+
+                                    return;
+                                }
+
+                                var scale = Math.min(1, wrap.clientWidth / viewportWidth);
+
+                                frame.style.width = viewportWidth + 'px';
+                                frame.style.height = Math.round(wrap.clientHeight / scale) + 'px';
+                                frame.style.transform = 'scale(' + scale + ')';
+                            }
+
+                            window.wayfindrSizeCobrowsePreview = sizeCobrowsePreview;
+                            window.addEventListener('resize', sizeCobrowsePreview);
+                            sizeCobrowsePreview();
+                        })();
+                    </script>
                 @else
                     <p class="empty realtime-note" data-cobrowse-replay-empty>No replay preview yet.</p>
                 @endif
@@ -870,6 +915,7 @@
                 var previewSkipped = document.querySelector('[data-cobrowse-replay-skipped]');
                 var previewDriftStatus = document.querySelector('[data-cobrowse-replay-drift-status]');
                 var previewDriftMessage = document.querySelector('[data-cobrowse-replay-drift-message]');
+                var previewViewportLabel = document.querySelector('[data-cobrowse-viewport-label]');
                 var visitorPresenceLabel = document.querySelector('[data-visitor-presence-label]');
                 var visitorPresenceDetail = document.querySelector('[data-visitor-presence-detail]');
                 var visitorPresenceLastSeen = document.querySelector('[data-visitor-presence-last-seen]');
@@ -976,6 +1022,29 @@
                         previewDriftMessage.textContent = (drift.message || '') + summary;
                         previewDriftMessage.dataset.recommendResync = drift.recommend_resync ? 'true' : 'false';
                         previewDriftMessage.hidden = drift.state === 'steady';
+                    }
+
+                    // Keep the preview rendered at the visitor's reported viewport
+                    // width across live swaps (the width can change if the visitor
+                    // resizes or moves devices).
+                    if (typeof preview.viewport_width === 'number' && preview.viewport_width > 0) {
+                        previewFrame.setAttribute('data-viewport-width', String(preview.viewport_width));
+
+                        if (previewViewportLabel) {
+                            previewViewportLabel.textContent = 'Visitor viewport ' + preview.viewport_width.toLocaleString() + 'px';
+                            previewViewportLabel.hidden = false;
+                        }
+                    } else {
+                        previewFrame.removeAttribute('data-viewport-width');
+
+                        if (previewViewportLabel) {
+                            previewViewportLabel.textContent = '';
+                            previewViewportLabel.hidden = true;
+                        }
+                    }
+
+                    if (typeof window.wayfindrSizeCobrowsePreview === 'function') {
+                        window.wayfindrSizeCobrowsePreview();
                     }
 
                     return true;

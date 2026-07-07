@@ -7973,6 +7973,10 @@ test('agent can see a sandboxed cobrowse replay preview on a conversation', func
         'consented_at' => now()->subMinute(),
         'ended_at' => null,
         'metadata' => [
+            'page_state' => [
+                'viewport_width' => 1456,
+                'viewport_height' => 830,
+            ],
             'snapshot' => [
                 'page_url' => 'https://docs.example.test/install?step=2',
                 'title' => 'Install Guide',
@@ -8046,6 +8050,8 @@ test('agent can see a sandboxed cobrowse replay preview on a conversation', func
         ->assertSee('aria-expanded=&quot;true&quot;', false)
         ->assertSee('3 applied')
         ->assertSee('0 skipped')
+        ->assertSee('data-viewport-width="1456"', false)
+        ->assertSee('Visitor viewport 1,456px')
         ->assertDontSee('steal-token')
         ->assertDontSee('mutation-token');
 });
@@ -8066,6 +8072,10 @@ test('agent can fetch the sanitized cobrowse replay preview as json for live ref
         'consented_at' => now()->subMinute(),
         'ended_at' => null,
         'metadata' => [
+            'page_state' => [
+                'viewport_width' => 1456,
+                'viewport_height' => 830,
+            ],
             'snapshot' => [
                 'page_url' => 'https://docs.example.test/install?step=2',
                 'title' => 'Install Guide',
@@ -8118,7 +8128,8 @@ test('agent can fetch the sanitized cobrowse replay preview as json for live ref
         ->assertJsonPath('data.status', 'granted')
         ->assertJsonPath('data.replay_preview.applied_mutations', '2 applied')
         ->assertJsonPath('data.replay_preview.skipped_mutations', '0 skipped')
-        ->assertJsonPath('data.replay_preview.drift.state', 'steady');
+        ->assertJsonPath('data.replay_preview.drift.state', 'steady')
+        ->assertJsonPath('data.replay_preview.viewport_width', 1456);
 
     $srcdoc = $response->json('data.replay_preview.srcdoc');
 
