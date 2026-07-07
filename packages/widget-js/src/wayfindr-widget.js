@@ -312,6 +312,7 @@
           title: snapshot.title,
           html: snapshot.html,
           text: snapshot.text,
+          body_style: snapshot.bodyStyle || null,
           node_count: snapshot.nodeCount,
           masked_count: snapshot.maskedCount,
           mutation_sequence: snapshot.mutationSequence,
@@ -2548,6 +2549,68 @@
     return clone;
   }
 
+  // The snapshot serializes body.innerHTML, so the page-level background — the
+  // single most visible style on many pages — never rides along with element
+  // capture. Read the background family from the body, falling back
+  // per-property to the root element (browsers propagate a transparent body's
+  // background from <html>), under the same gradient-only rules as element
+  // capture: color math only, never a resource fetch.
+  function capturePageBackgroundStyle(doc, view) {
+    if (!doc || !view || typeof view.getComputedStyle !== 'function') {
+      return '';
+    }
+
+    var candidates = [doc.body, doc.documentElement].filter(Boolean);
+
+    function readCaptured(property) {
+      for (var index = 0; index < candidates.length; index += 1) {
+        var value;
+
+        try {
+          value = view.getComputedStyle(candidates[index]).getPropertyValue(property);
+        } catch (error) {
+          continue;
+        }
+
+        if (isCapturableOwnStyleValue(property, value) && ! isDefaultOwnStyleValue(property, value)) {
+          return { value: value, element: candidates[index] };
+        }
+      }
+
+      return null;
+    }
+
+    var declarations = [];
+    var color = readCaptured('background-color');
+
+    if (color) {
+      declarations.push('background-color:' + color.value);
+    }
+
+    var image = readCaptured('background-image');
+
+    if (image) {
+      declarations.push('background-image:' + image.value);
+
+      // Patterned backgrounds (grid lines, stripes) are gradients tiled by
+      // background-size; without it a tiled pattern replays as one page-sized
+      // gradient. Read it from the element the image came from.
+      var size = '';
+
+      try {
+        size = view.getComputedStyle(image.element).getPropertyValue('background-size');
+      } catch (error) {
+        size = '';
+      }
+
+      if (size && size.indexOf('auto') === -1 && isCapturableStyleValue(size)) {
+        declarations.push('background-size:' + size);
+      }
+    }
+
+    return declarations.join(';');
+  }
+
   function createCobrowseSnapshot(doc, options) {
     options = options || {};
 
@@ -2574,6 +2637,7 @@
         title: doc && doc.title ? doc.title : '',
         html: '',
         text: '',
+        bodyStyle: '',
         nodeCount: 0,
         maskedCount: 0,
       };
@@ -2590,6 +2654,7 @@
       title: doc.title || '',
       html: truncateString(source.innerHTML || '', options.maxHtmlLength || 60000),
       text: truncateString(normalizeWhitespace(source.textContent || ''), options.maxTextLength || 10000),
+      bodyStyle: styleContext ? capturePageBackgroundStyle(doc, view) : '',
       nodeCount: source.querySelectorAll ? source.querySelectorAll('*').length : 0,
       maskedCount: maskedCount,
     };

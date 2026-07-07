@@ -98,7 +98,7 @@ class CobrowseReplayPreview
         'border-radius', 'box-shadow', 'flex-direction', 'flex-wrap', 'justify-content',
         'align-items', 'align-content', 'gap', 'row-gap', 'column-gap',
         'grid-template-columns', 'color',
-        'background-color', 'background-image', 'opacity', 'visibility', 'font-family', 'font-size',
+        'background-color', 'background-image', 'background-size', 'opacity', 'visibility', 'font-family', 'font-size',
         'font-weight', 'font-style', 'line-height', 'text-align', 'text-decoration',
         'text-decoration-line', 'text-transform', 'white-space', 'letter-spacing',
         'word-spacing', 'vertical-align', 'list-style-type',
@@ -175,7 +175,10 @@ class CobrowseReplayPreview
         $skipped = $counts['unresolved'] + $counts['unsupported'] + $counts['invalid'];
 
         return [
-            'srcdoc' => $this->wrapPreviewHtml($this->bodyHtml($document)),
+            'srcdoc' => $this->wrapPreviewHtml(
+                $this->bodyHtml($document),
+                $this->sanitizeBodyStyle((string) ($snapshot['body_style'] ?? ''))
+            ),
             'applied_mutations' => number_format($counts['applied']).' applied',
             'skipped_mutations' => number_format($skipped).' skipped',
             'drift' => (new CobrowseReplayDrift)->evaluate($counts),
@@ -825,7 +828,34 @@ class CobrowseReplayPreview
         return $children;
     }
 
-    private function wrapPreviewHtml(string $bodyHtml): string
+    /**
+     * The only declarations honored from the widget-reported page background.
+     * The body override must not become a way to restyle the preview shell
+     * (display, pointer-events, typography), so everything outside the
+     * background family is dropped even though the general style allowlist
+     * would accept it on an element.
+     *
+     * @var list<string>
+     */
+    private const BODY_STYLE_PROPERTIES = [
+        'background-color', 'background-image', 'background-size',
+    ];
+
+    private function sanitizeBodyStyle(string $style): string
+    {
+        $safe = array_filter(
+            explode(';', $this->sanitizeStyleAttribute($style)),
+            fn (string $declaration): bool => in_array(
+                strtolower(trim(explode(':', $declaration, 2)[0])),
+                self::BODY_STYLE_PROPERTIES,
+                true
+            )
+        );
+
+        return implode(';', $safe);
+    }
+
+    private function wrapPreviewHtml(string $bodyHtml, string $bodyStyle = ''): string
     {
         return '<!doctype html><html><head><meta charset="utf-8"><style>'
             .'html{color-scheme:light;}'
@@ -834,6 +864,7 @@ class CobrowseReplayPreview
             .'[hidden]{display:none!important;}'
             .'input,button,select,textarea{font:inherit;}'
             .'wayfindr-img-placeholder{display:inline-block;background:#eef2f0;border:1px dashed #b5c2bd;color:#62706b;font:11px/1.4 ui-sans-serif,system-ui,sans-serif;overflow:hidden;vertical-align:middle;padding:2px 4px;}'
+            .($bodyStyle !== '' ? 'body{'.$bodyStyle.'}' : '')
             .'</style></head><body>'.$bodyHtml.'</body></html>';
     }
 }

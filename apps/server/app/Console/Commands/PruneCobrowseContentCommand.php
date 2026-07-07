@@ -58,7 +58,7 @@ class PruneCobrowseContentCommand extends Command
     {
         $snapshot = $metadata['snapshot'] ?? null;
 
-        if (is_array($snapshot) && (filled($snapshot['html'] ?? null) || filled($snapshot['text'] ?? null))) {
+        if (is_array($snapshot) && (filled($snapshot['html'] ?? null) || filled($snapshot['text'] ?? null) || filled($snapshot['body_style'] ?? null))) {
             return true;
         }
 
@@ -78,7 +78,7 @@ class PruneCobrowseContentCommand extends Command
     private function pruneMetadata(array $metadata): array
     {
         if (is_array($metadata['snapshot'] ?? null)) {
-            unset($metadata['snapshot']['html'], $metadata['snapshot']['text']);
+            unset($metadata['snapshot']['html'], $metadata['snapshot']['text'], $metadata['snapshot']['body_style']);
         }
 
         if (is_array($metadata['mutations'] ?? null)) {

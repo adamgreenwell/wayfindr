@@ -36,6 +36,7 @@ function retentionSession(array $overrides = []): CobrowseSession
                 'title' => 'Install Guide',
                 'html' => '<main><p>Raw visitor page content.</p></main>',
                 'text' => 'Raw visitor page content.',
+                'body_style' => 'background-color:rgb(250,247,242)',
                 'html_hash' => hash('sha256', '<main><p>Raw visitor page content.</p></main>'),
                 'html_length' => 45,
                 'node_count' => 2,
@@ -68,6 +69,7 @@ test('prunes raw content from ended sessions past the retention window', functio
     // Content is gone…
     expect($metadata['snapshot'])->not->toHaveKey('html')
         ->and($metadata['snapshot'])->not->toHaveKey('text')
+        ->and($metadata['snapshot'])->not->toHaveKey('body_style')
         ->and($metadata['mutations'])->not->toHaveKey('recent_batches')
         ->and(json_encode($metadata))->not->toContain('Raw visitor page content')
         ->and(json_encode($metadata))->not->toContain('Late visitor content')

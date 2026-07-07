@@ -135,3 +135,59 @@ test('removes the style attribute entirely when nothing survives', function (): 
         ->and($srcdoc)->not->toContain('evil.example')
         ->and($srcdoc)->toContain('Styled copy.');
 });
+
+// Page-level background (#535): the widget reports the page's background
+// family as snapshot.body_style; the preview emits it as a body override
+// after the wrapper defaults, restricted to the background family so the
+// override can never restyle the preview shell.
+
+function backgroundPreview(string $bodyStyle): string
+{
+    $result = (new CobrowseReplayPreview)->fromMetadata([
+        'snapshot' => ['html' => '<p>Copy.</p>', 'body_style' => $bodyStyle],
+    ]);
+
+    return $result['srcdoc'];
+}
+
+test('renders the reported page background as a body override', function (): void {
+    $srcdoc = backgroundPreview(
+        'background-color:rgb(250,247,242);'
+        .'background-image:repeating-linear-gradient(rgba(29,37,35,0.05) 0px, rgba(29,37,35,0.05) 1px, rgba(0,0,0,0) 1px, rgba(0,0,0,0) 24px);'
+        .'background-size:24px 24px'
+    );
+
+    expect($srcdoc)
+        ->toContain('body{background-color:rgb(250,247,242);background-image:repeating-linear-gradient(')
+        ->and($srcdoc)->toContain('background-size:24px 24px}');
+});
+
+test('body override honors only the background family', function (): void {
+    // display/pointer-events/color pass the general element allowlist, but the
+    // body override must not restyle the preview shell.
+    $srcdoc = backgroundPreview('display:none;pointer-events:auto;color:rgb(9,9,9);background-color:rgb(1,2,3)');
+
+    expect($srcdoc)
+        ->toContain('body{background-color:rgb(1,2,3)}')
+        ->and($srcdoc)->not->toContain('color:rgb(9,9,9)')
+        ->and($srcdoc)->not->toContain('pointer-events:auto');
+});
+
+test('hostile page backgrounds are dropped whole', function (): void {
+    // url() images and brace breakouts both fail the value grammar; nothing
+    // survives, so no body override is emitted at all.
+    $srcdoc = backgroundPreview('background-image:url(https://evil.example/bg.png);background-color:rgb(0,0,0)}body{color:red');
+
+    expect($srcdoc)
+        ->not->toContain('evil.example')
+        ->and($srcdoc)->not->toContain('color:red')
+        ->and(substr_count($srcdoc, 'body{'))->toBe(1);
+});
+
+test('no body override is emitted without a reported page background', function (): void {
+    $result = (new CobrowseReplayPreview)->fromMetadata([
+        'snapshot' => ['html' => '<p>Copy.</p>'],
+    ]);
+
+    expect(substr_count($result['srcdoc'], 'body{'))->toBe(1);
+});

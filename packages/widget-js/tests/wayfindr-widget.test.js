@@ -736,6 +736,7 @@ test('reports cobrowse snapshots through the public visitor API', async () => {
     title: 'Install Guide',
     html: '<main><p>Hello visitor.</p><input value="[masked]"></main>',
     text: 'Hello visitor. [masked]',
+    bodyStyle: 'background-color:rgb(250, 247, 242)',
     nodeCount: 4,
     maskedCount: 1,
     mutationSequence: 7,
@@ -751,6 +752,7 @@ test('reports cobrowse snapshots through the public visitor API', async () => {
     title: 'Install Guide',
     html: '<main><p>Hello visitor.</p><input value="[masked]"></main>',
     text: 'Hello visitor. [masked]',
+    body_style: 'background-color:rgb(250, 247, 242)',
     node_count: 4,
     masked_count: 1,
     mutation_sequence: 7,
@@ -760,6 +762,32 @@ test('reports cobrowse snapshots through the public visitor API', async () => {
     sensitive_terms: [],
   });
   assert.equal(result.snapshot.masked_count, 1);
+});
+
+test('omits body_style when the snapshot captured no page background', async () => {
+  const calls = [];
+  const client = Wayfindr.createClient({
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    visitorToken: 'visitor-token-123',
+    fetch: async (url, options) => {
+      calls.push({ url, options });
+
+      return jsonResponse(200, { data: { snapshot: {} } });
+    },
+  });
+
+  await client.reportCobrowseSnapshot('WF-TEST123', {
+    pageUrl: 'https://docs.example.test/install',
+    html: '<main><p>Hello.</p></main>',
+    text: 'Hello.',
+    bodyStyle: '',
+    nodeCount: 2,
+    maskedCount: 0,
+  });
+
+  assert.equal('body_style' in JSON.parse(calls[0].options.body), false);
 });
 
 test('reports the bootstrap-time masking ruleset with each snapshot', async () => {
