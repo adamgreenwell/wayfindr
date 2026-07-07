@@ -103,6 +103,53 @@ test('captures nothing when style capture is disabled', () => {
   assert.equal(html.includes('color:rgb'), false);
 });
 
+test('captures gradients, borders, shadows, and opacity', () => {
+  const html = snapshotWithStyles({
+    same: {
+      'background-image': 'linear-gradient(135deg, rgb(13, 111, 104) 0%, rgb(9, 79, 75) 100%)',
+      border: '1px solid rgb(216, 223, 220)',
+      'box-shadow': 'rgba(8, 37, 34, 0.18) 0px 12px 30px 0px',
+      opacity: '0.85',
+    },
+  });
+
+  assert.match(html, /background-image:linear-gradient\(135deg, rgb\(13, 111, 104\) 0%, rgb\(9, 79, 75\) 100%\)/);
+  assert.match(html, /border:1px solid rgb\(216, 223, 220\)/);
+  assert.match(html, /box-shadow:rgba\(8, 37, 34, 0.18\) 0px 12px 30px 0px/);
+  assert.match(html, /opacity:0.85/);
+});
+
+test('skips default box-definition values', () => {
+  const html = snapshotWithStyles({
+    same: {
+      'background-image': 'none',
+      border: '0px none rgb(29, 37, 35)',
+      'box-shadow': 'none',
+      opacity: '1',
+    },
+  });
+
+  assert.equal(html.includes('background-image'), false);
+  assert.equal(html.includes('border:'), false);
+  assert.equal(html.includes('box-shadow'), false);
+  assert.equal(html.includes('opacity'), false);
+});
+
+test('only gradient background images are captured', () => {
+  const html = snapshotWithStyles({
+    // url() is rejected by the resource guard; non-gradient functions are
+    // rejected by the gradient prefix requirement.
+    same: { 'background-image': 'url(https://evil.example/x.png)' },
+    diff: { 'background-image': 'cross-fade(rgb(1, 2, 3), rgb(4, 5, 6))' },
+    boxed: { 'background-image': 'paint(fancy)' },
+  });
+
+  assert.equal(html.includes('background-image'), false);
+  assert.equal(html.includes('evil.example'), false);
+  assert.equal(html.includes('cross-fade'), false);
+  assert.equal(html.includes('paint('), false);
+});
+
 test('captures layout styles on flex and grid containers only', () => {
   const html = snapshotWithStyles({
     root: { color: 'rgb(10, 20, 30)' },

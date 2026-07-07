@@ -149,7 +149,9 @@ visitor browser. Host pages can mark sensitive regions with
 only be used for deliberate false positives.
 `createCobrowseSnapshot` also captures a small allowlist of computed styles
 (color, background-color, fonts, line-height, text alignment/transform/
-decoration, border-radius) so the agent replay preview resembles the visitor
+decoration, border-radius, plus surface definition: CSS **gradient**
+backgrounds with color-function stops only, border, box-shadow, and opacity)
+so the agent replay preview resembles the visitor
 page. Flex and grid **containers** additionally capture their layout styles
 (display, flex-direction/wrap, justify-content, align-items, gap,
 grid-template-columns, padding, margin, max-width) so multi-column structure

@@ -45,6 +45,27 @@ test('keeps container layout declarations captured by the widget', function (): 
         ->and($srcdoc)->toContain('justify-content:space-between');
 });
 
+test('keeps gradient backgrounds, shadows, and box definition (#521)', function (): void {
+    $srcdoc = styledPreview('background-image:linear-gradient(135deg, rgb(13,111,104) 0%, rgba(9,79,75,0.9) 100%);box-shadow:rgba(8,37,34,0.18) 0px 12px 30px 0px;border:1px solid rgb(216,223,220);opacity:0.85');
+
+    expect($srcdoc)
+        ->toContain('background-image:linear-gradient(135deg, rgb(13,111,104) 0%, rgba(9,79,75,0.9) 100%)')
+        ->and($srcdoc)->toContain('box-shadow:rgba(8,37,34,0.18) 0px 12px 30px 0px')
+        ->and($srcdoc)->toContain('border:1px solid rgb(216,223,220)')
+        ->and($srcdoc)->toContain('opacity:0.85');
+});
+
+test('drops gradients whose stops are not color functions', function (): void {
+    // Every function inside a value must be allowlisted, so a gradient cannot
+    // smuggle a resource fetch through its stops.
+    $srcdoc = styledPreview('background-image:linear-gradient(rgb(1,2,3), url(https://evil.example/x.png));color:red');
+
+    expect($srcdoc)
+        ->not->toContain('background-image')
+        ->and($srcdoc)->not->toContain('evil.example')
+        ->and($srcdoc)->toContain('color:red');
+});
+
 test('drops url()-bearing declarations and the resource they reference', function (): void {
     $srcdoc = styledPreview('color:red;background-image:url(https://evil.example/x.png)');
 

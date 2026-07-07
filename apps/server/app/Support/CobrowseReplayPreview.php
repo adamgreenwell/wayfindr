@@ -53,10 +53,10 @@ class CobrowseReplayPreview
         'margin-bottom', 'margin-left', 'padding', 'padding-top', 'padding-right',
         'padding-bottom', 'padding-left', 'border', 'border-width', 'border-style',
         'border-color', 'border-top', 'border-right', 'border-bottom', 'border-left',
-        'border-radius', 'flex-direction', 'flex-wrap', 'justify-content',
+        'border-radius', 'box-shadow', 'flex-direction', 'flex-wrap', 'justify-content',
         'align-items', 'align-content', 'gap', 'row-gap', 'column-gap',
         'grid-template-columns', 'color',
-        'background-color', 'opacity', 'visibility', 'font-family', 'font-size',
+        'background-color', 'background-image', 'opacity', 'visibility', 'font-family', 'font-size',
         'font-weight', 'font-style', 'line-height', 'text-align', 'text-decoration',
         'text-decoration-line', 'text-transform', 'white-space', 'letter-spacing',
         'word-spacing', 'vertical-align', 'list-style-type',
@@ -64,11 +64,18 @@ class CobrowseReplayPreview
 
     /**
      * Function names allowed inside a style value (e.g. rgb(...)). Any other
-     * function call, including url(), disqualifies the whole declaration.
+     * function call, including url(), disqualifies the whole declaration. The
+     * gradient family is safe because every function *inside* a gradient must
+     * also be on this list, so stops are restricted to color functions — a
+     * gradient smuggling url() or image-set() drops the whole declaration.
      *
      * @var list<string>
      */
-    private const SAFE_STYLE_FUNCTIONS = ['rgb', 'rgba', 'hsl', 'hsla'];
+    private const SAFE_STYLE_FUNCTIONS = [
+        'rgb', 'rgba', 'hsl', 'hsla',
+        'linear-gradient', 'radial-gradient', 'conic-gradient',
+        'repeating-linear-gradient', 'repeating-radial-gradient', 'repeating-conic-gradient',
+    ];
 
     /**
      * @var list<string>

@@ -2073,7 +2073,10 @@
     'line-height', 'text-align', 'text-transform',
   ];
 
-  var CAPTURED_OWN_STYLE_PROPERTIES = ['background-color', 'border-radius', 'text-decoration-line'];
+  var CAPTURED_OWN_STYLE_PROPERTIES = [
+    'background-color', 'background-image', 'border', 'border-radius',
+    'box-shadow', 'opacity', 'text-decoration-line',
+  ];
 
   // Layout is only captured on flex/grid containers. Containers are a small
   // minority of nodes, so this restores multi-column structure (heroes, navs,
@@ -2085,8 +2088,8 @@
     'grid-template-columns', 'padding', 'margin', 'max-width',
   ];
 
-  function isCapturableStyleValue(value) {
-    if (!value || value.length > 200) {
+  function isCapturableStyleValue(value, maxLength) {
+    if (!value || value.length > (maxLength || 200)) {
       return false;
     }
 
@@ -2101,13 +2104,57 @@
       && lower.indexOf('>') === -1;
   }
 
+  // Gradients and multi-shadow lists legitimately run longer than the default
+  // value cap; everything else keeps the tight bound.
+  function ownStyleValueMaxLength(property) {
+    if (property === 'background-image') {
+      return 500;
+    }
+
+    if (property === 'box-shadow') {
+      return 300;
+    }
+
+    return 200;
+  }
+
+  function isCapturableOwnStyleValue(property, value) {
+    if (! isCapturableStyleValue(value, ownStyleValueMaxLength(property))) {
+      return false;
+    }
+
+    // background-image is only captured when it is purely a CSS gradient —
+    // color math, no resource fetch. The generic guard above already rejects
+    // url()/image-set(); this prefix check rejects everything else
+    // (cross-fade(), element(), paint()) rather than allowlisting per case.
+    if (property === 'background-image') {
+      return /^(repeating-)?(linear|radial|conic)-gradient\(/.test(value);
+    }
+
+    return true;
+  }
+
   function isDefaultOwnStyleValue(property, value) {
     if (property === 'background-color') {
       return value === 'rgba(0, 0, 0, 0)' || value === 'transparent';
     }
 
+    if (property === 'background-image' || property === 'box-shadow') {
+      return value === 'none';
+    }
+
+    if (property === 'border') {
+      // Computed border shorthand with no visible border reads
+      // "0px none rgb(...)" (the color tracks the text color).
+      return value.indexOf('0px') === 0;
+    }
+
     if (property === 'border-radius') {
       return value === '0px' || value === '0px 0px 0px 0px';
+    }
+
+    if (property === 'opacity') {
+      return value === '1';
     }
 
     if (property === 'text-decoration-line') {
@@ -2184,7 +2231,7 @@
     CAPTURED_OWN_STYLE_PROPERTIES.forEach(function (property) {
       var value = readValue(property);
 
-      if (! isCapturableStyleValue(value) || isDefaultOwnStyleValue(property, value)) {
+      if (! isCapturableOwnStyleValue(property, value) || isDefaultOwnStyleValue(property, value)) {
         return;
       }
 
