@@ -23,7 +23,49 @@ class CobrowseReplayPreview
         'object',
         'script',
         'style',
-        'svg',
+    ];
+
+    /**
+     * Inline SVG survives the replay only through a hard allowlist: elements
+     * outside this list (script, foreignObject, image, animate, filter, …) are
+     * dropped with their entire subtree. Names are lowercase because the HTML
+     * parser lowercases foreign content; browsers re-adjust the known SVG
+     * casings (linearGradient, viewBox, …) when parsing the preview.
+     *
+     * @var list<string>
+     */
+    private const SVG_ALLOWED_ELEMENTS = [
+        'svg', 'g', 'path', 'rect', 'circle', 'ellipse', 'line', 'polyline',
+        'polygon', 'text', 'tspan', 'defs', 'lineargradient', 'radialgradient',
+        'stop', 'symbol', 'use', 'clippath', 'title', 'desc',
+    ];
+
+    /**
+     * @var list<string>
+     */
+    private const SVG_ALLOWED_ATTRIBUTES = [
+        'viewbox', 'xmlns', 'width', 'height', 'x', 'y', 'x1', 'y1', 'x2', 'y2',
+        'cx', 'cy', 'r', 'rx', 'ry', 'd', 'points', 'fill', 'stroke',
+        'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'stroke-dasharray',
+        'stroke-miterlimit', 'fill-rule', 'clip-rule', 'clip-path', 'opacity',
+        'fill-opacity', 'stroke-opacity', 'transform', 'offset', 'stop-color',
+        'stop-opacity', 'gradientunits', 'gradienttransform',
+        'preserveaspectratio', 'aria-hidden', 'role', 'class', 'id',
+        'href', 'xlink:href',
+    ];
+
+    private const SVG_MAX_ELEMENTS = 200;
+
+    /**
+     * Attributes an image placeholder may carry over from the original <img>,
+     * so masking markers and inferred-sensitive matching keep working.
+     *
+     * @var list<string>
+     */
+    private const IMAGE_PLACEHOLDER_COPIED_ATTRIBUTES = [
+        'id', 'class', 'aria-label', 'data-wayfindr-mask', 'data-wayfindr-private',
+        'data-secret', 'data-field', 'data-wayfindr-field', 'data-testid',
+        'data-test', 'data-cy',
     ];
 
     /**
@@ -195,6 +237,9 @@ class CobrowseReplayPreview
             }
         }
 
+        $this->sanitizeSvgElements($document);
+        $this->replaceImagesWithPlaceholders($document);
+
         $elements = [];
 
         foreach ($document->getElementsByTagName('*') as $element) {
@@ -202,11 +247,160 @@ class CobrowseReplayPreview
         }
 
         foreach ($elements as $element) {
+            // SVG subtrees were fully sanitized above under their own, stricter
+            // allowlist; the generic pass would strip legitimate internal
+            // references (use href="#id") that the SVG rules already vetted.
+            if ($this->isSvgOrInsideSvg($element)) {
+                continue;
+            }
+
             $this->sanitizeAttributes($element);
             $this->sanitizeFormControl($element);
         }
 
         $this->maskSensitiveElements($document);
+    }
+
+    private function isSvgOrInsideSvg(DOMElement $element): bool
+    {
+        for ($node = $element; $node instanceof DOMElement; $node = $node->parentNode) {
+            if (strtolower($node->nodeName) === 'svg') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function sanitizeSvgElements(DOMDocument $document): void
+    {
+        $roots = [];
+
+        foreach ($document->getElementsByTagName('svg') as $node) {
+            // Only top-level svg roots; nested svg is handled by the recursion.
+            if (! $node->parentNode instanceof DOMElement || ! $this->isSvgOrInsideSvg($node->parentNode)) {
+                $roots[] = $node;
+            }
+        }
+
+        foreach ($roots as $root) {
+            if ($root->getElementsByTagName('*')->length > self::SVG_MAX_ELEMENTS) {
+                $root->parentNode?->removeChild($root);
+
+                continue;
+            }
+
+            $this->sanitizeSvgNode($root);
+        }
+    }
+
+    private function sanitizeSvgNode(DOMElement $element): void
+    {
+        $attributes = [];
+
+        foreach ($element->attributes ?? [] as $attribute) {
+            $attributes[] = $attribute->nodeName;
+        }
+
+        foreach ($attributes as $attributeName) {
+            $name = strtolower($attributeName);
+
+            if (! in_array($name, self::SVG_ALLOWED_ATTRIBUTES, true)
+                || ! $this->isSafeSvgAttributeValue($name, (string) $element->getAttribute($attributeName))) {
+                $element->removeAttribute($attributeName);
+            }
+        }
+
+        $children = [];
+
+        foreach ($element->childNodes as $child) {
+            $children[] = $child;
+        }
+
+        foreach ($children as $child) {
+            if (! $child instanceof DOMElement) {
+                continue; // Text inside <text>/<title>/<desc> is page-text data.
+            }
+
+            if (! in_array(strtolower($child->nodeName), self::SVG_ALLOWED_ELEMENTS, true)) {
+                // Disallowed elements are dropped with their entire subtree.
+                $element->removeChild($child);
+
+                continue;
+            }
+
+            $this->sanitizeSvgNode($child);
+        }
+    }
+
+    private function isSafeSvgAttributeValue(string $name, string $value): bool
+    {
+        $lower = strtolower($value);
+
+        foreach (['<', '>', 'javascript:', 'data:'] as $needle) {
+            if (str_contains($lower, $needle)) {
+                return false;
+            }
+        }
+
+        if ($name === 'href' || $name === 'xlink:href') {
+            return preg_match('/^#[a-z0-9_:.-]+$/i', $value) === 1;
+        }
+
+        // Internal paint-server references (fill="url(#gradient)") are the only
+        // url() form allowed anywhere inside SVG.
+        if (str_contains($lower, 'url(')) {
+            return preg_match('/^url\(#[a-z0-9_:.-]+\)$/i', trim($value)) === 1;
+        }
+
+        return true;
+    }
+
+    /**
+     * Replace every <img> with a same-size placeholder: layout space and alt
+     * text survive, but no image URL reaches the agent (who must never fetch
+     * visitor resources) and no pixel data is ever inlined. The custom tag
+     * cannot collide with nth-of-type mutation paths.
+     */
+    private function replaceImagesWithPlaceholders(DOMDocument $document): void
+    {
+        $images = [];
+
+        foreach ($document->getElementsByTagName('img') as $node) {
+            $images[] = $node;
+        }
+
+        foreach ($images as $image) {
+            $placeholder = $document->createElement('wayfindr-img-placeholder');
+
+            foreach (self::IMAGE_PLACEHOLDER_COPIED_ATTRIBUTES as $name) {
+                if ($image->hasAttribute($name)) {
+                    $placeholder->setAttribute($name, $image->getAttribute($name));
+                }
+            }
+
+            $sizes = [];
+
+            foreach (['width', 'height'] as $dimension) {
+                $value = (int) $image->getAttribute($dimension);
+
+                if ($value > 0 && $value <= 4000) {
+                    $sizes[] = $dimension.':'.$value.'px';
+                }
+            }
+
+            if ($sizes !== []) {
+                $placeholder->setAttribute('style', implode(';', $sizes));
+            }
+
+            $alt = trim((string) $image->getAttribute('alt'));
+
+            if ($alt !== '') {
+                $placeholder->textContent = mb_substr($alt, 0, 120);
+            }
+
+            $image->parentNode?->replaceChild($placeholder, $image);
+        }
     }
 
     /**
@@ -639,6 +833,7 @@ class CobrowseReplayPreview
             .'*{box-sizing:border-box;max-width:100%;}'
             .'[hidden]{display:none!important;}'
             .'input,button,select,textarea{font:inherit;}'
+            .'wayfindr-img-placeholder{display:inline-block;background:#eef2f0;border:1px dashed #b5c2bd;color:#62706b;font:11px/1.4 ui-sans-serif,system-ui,sans-serif;overflow:hidden;vertical-align:middle;padding:2px 4px;}'
             .'</style></head><body>'.$bodyHtml.'</body></html>';
     }
 }

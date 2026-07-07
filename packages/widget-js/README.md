@@ -147,6 +147,13 @@ selectors, and common sensitive-looking fields before snapshot data leaves the
 visitor browser. Host pages can mark sensitive regions with
 `data-wayfindr-mask` or `data-wayfindr-private`; `data-wayfindr-allow` should
 only be used for deliberate false positives.
+Inline SVG (logos, icons) survives capture through a hard element/attribute
+allowlist — no scripts, `foreignObject`, `image`, animation, event handlers, or
+external references; `url(#…)` paint refs only — with oversized SVGs dropped
+whole. Every `<img>` becomes a same-size `wayfindr-img-placeholder` carrying
+only its alt text (masked under the usual rules): no image URL or pixel data
+ever leaves the visitor page. The server re-applies both rules as the
+enforcement boundary.
 `createCobrowseSnapshot` also captures a small allowlist of computed styles
 (color, background-color, fonts, line-height, text alignment/transform/
 decoration, border-radius, plus surface definition: CSS **gradient**

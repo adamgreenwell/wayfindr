@@ -40,8 +40,42 @@
     'noscript',
     'iframe',
     'canvas',
-    'svg',
     '.wayfindr-widget',
+  ];
+
+  // Inline SVG is markup, not a network fetch, so it can survive capture when
+  // hard-sanitized: elements and attributes are allowlisted, everything else
+  // (script, foreignObject, image, animate, event handlers, external hrefs) is
+  // dropped with its subtree. The server sanitizer applies the same rules as
+  // the enforcement boundary.
+  var SVG_ALLOWED_ELEMENTS = [
+    'svg', 'g', 'path', 'rect', 'circle', 'ellipse', 'line', 'polyline',
+    'polygon', 'text', 'tspan', 'defs', 'lineargradient', 'radialgradient',
+    'stop', 'symbol', 'use', 'clippath', 'title', 'desc',
+  ];
+
+  var SVG_ALLOWED_ATTRIBUTES = [
+    'viewbox', 'xmlns', 'width', 'height', 'x', 'y', 'x1', 'y1', 'x2', 'y2',
+    'cx', 'cy', 'r', 'rx', 'ry', 'd', 'points', 'fill', 'stroke',
+    'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'stroke-dasharray',
+    'stroke-miterlimit', 'fill-rule', 'clip-rule', 'clip-path', 'opacity',
+    'fill-opacity', 'stroke-opacity', 'transform', 'offset', 'stop-color',
+    'stop-opacity', 'gradientunits', 'gradienttransform',
+    'preserveaspectratio', 'aria-hidden', 'role', 'class', 'id',
+    'href', 'xlink:href',
+  ];
+
+  // A huge inline SVG is more likely a data visualization than a logo, and it
+  // would eat the snapshot HTML budget; drop it entirely rather than partially.
+  var SVG_MAX_ELEMENTS = 200;
+
+  // Attributes copied from a replaced <img> onto its placeholder so the
+  // masking passes (explicit selectors and inferred sensitive terms) still see
+  // the markers they match on.
+  var IMAGE_PLACEHOLDER_COPIED_ATTRIBUTES = [
+    'id', 'class', 'aria-label', 'data-wayfindr-mask', 'data-wayfindr-private',
+    'data-secret', 'data-field', 'data-wayfindr-field', 'data-testid',
+    'data-test', 'data-cy',
   ];
   var SAFE_MUTATION_ATTRIBUTES = [
     'aria-current',
@@ -2264,6 +2298,140 @@
     return isFormControl(node) || isMaskedElement(node, maskSelectors, sensitiveTerms);
   }
 
+  function isSafeSvgAttributeValue(name, value) {
+    var raw = String(value || '');
+    var lower = raw.toLowerCase();
+
+    if (lower.indexOf('<') !== -1 || lower.indexOf('>') !== -1
+      || lower.indexOf('javascript:') !== -1 || lower.indexOf('data:') !== -1) {
+      return false;
+    }
+
+    if (name === 'href' || name === 'xlink:href') {
+      return /^#[a-z0-9_:.-]+$/i.test(raw);
+    }
+
+    // Internal paint-server references (fill="url(#gradient)") are the only
+    // url() form allowed anywhere inside captured SVG.
+    if (lower.indexOf('url(') !== -1) {
+      return /^url\(#[a-z0-9_:.-]+\)$/i.test(raw.trim());
+    }
+
+    return true;
+  }
+
+  function sanitizeSvgForCapture(node) {
+    if (!node || !node.ownerDocument || !node.querySelectorAll) {
+      return null;
+    }
+
+    if (node.querySelectorAll('*').length > SVG_MAX_ELEMENTS) {
+      return null;
+    }
+
+    return sanitizeSvgNode(node);
+  }
+
+  function sanitizeSvgNode(node) {
+    if (node.nodeType === 3) {
+      // Text inside <text>/<title>/<desc> is the same class of data as page
+      // text, which the snapshot already captures.
+      return node.cloneNode(true);
+    }
+
+    if (node.nodeType !== 1) {
+      return null;
+    }
+
+    var tagName = String(node.tagName || '').toLowerCase();
+
+    if (SVG_ALLOWED_ELEMENTS.indexOf(tagName) === -1) {
+      // Disallowed elements (script, foreignObject, image, animate, filter…)
+      // are dropped with their entire subtree rather than partially kept.
+      return null;
+    }
+
+    var clone = node.cloneNode(false);
+    var attributes = Array.prototype.slice.call(clone.attributes || []);
+
+    attributes.forEach(function (attribute) {
+      var name = String(attribute.name || '').toLowerCase();
+
+      if (SVG_ALLOWED_ATTRIBUTES.indexOf(name) === -1 || !isSafeSvgAttributeValue(name, attribute.value)) {
+        clone.removeAttribute(attribute.name);
+      }
+    });
+
+    forEachChildNode(node, function (child) {
+      var sanitized = sanitizeSvgNode(child);
+
+      if (sanitized) {
+        clone.appendChild(sanitized);
+      }
+    });
+
+    return clone;
+  }
+
+  // Replace an <img> with a same-size placeholder: layout space and alt text
+  // survive, but no image URL ever reaches the agent (who must not fetch
+  // visitor resources) and no pixel data ever leaves the visitor page. The
+  // custom tag never collides with nth-of-type mutation paths.
+  function imagePlaceholderForCapture(node) {
+    var ownerDocument = node.ownerDocument;
+
+    if (!ownerDocument) {
+      return null;
+    }
+
+    var placeholder = ownerDocument.createElement('wayfindr-img-placeholder');
+
+    IMAGE_PLACEHOLDER_COPIED_ATTRIBUTES.forEach(function (name) {
+      if (node.hasAttribute && node.hasAttribute(name)) {
+        placeholder.setAttribute(name, node.getAttribute(name));
+      }
+    });
+
+    var width = 0;
+    var height = 0;
+
+    if (typeof node.getBoundingClientRect === 'function') {
+      var rect = node.getBoundingClientRect();
+      width = Math.round(rect.width) || 0;
+      height = Math.round(rect.height) || 0;
+    }
+
+    if (!width && node.getAttribute) {
+      width = parseInt(node.getAttribute('width'), 10) || 0;
+    }
+
+    if (!height && node.getAttribute) {
+      height = parseInt(node.getAttribute('height'), 10) || 0;
+    }
+
+    var sizes = [];
+
+    if (width > 0 && width <= 4000) {
+      sizes.push('width:' + width + 'px');
+    }
+
+    if (height > 0 && height <= 4000) {
+      sizes.push('height:' + height + 'px');
+    }
+
+    if (sizes.length) {
+      placeholder.setAttribute('style', sizes.join(';'));
+    }
+
+    var alt = node.getAttribute ? normalizeWhitespace(node.getAttribute('alt') || '') : '';
+
+    if (alt) {
+      placeholder.textContent = truncateString(alt, 120);
+    }
+
+    return placeholder;
+  }
+
   function cloneForCapture(node, styleContext) {
     if (!node) {
       return null;
@@ -2274,6 +2442,14 @@
     }
 
     var tagName = String(node.tagName || '').toLowerCase();
+
+    if (tagName === 'svg') {
+      return sanitizeSvgForCapture(node);
+    }
+
+    if (tagName === 'img') {
+      return imagePlaceholderForCapture(node);
+    }
 
     // <template> content is an inert fragment that the preview never renders and
     // that the querySelectorAll-based masking helpers cannot reach, so copying

@@ -60,7 +60,23 @@ the preview rather than partially captured:
 - **`<template>` content** is an inert, unrendered fragment that the masking
   helpers cannot traverse, so it is dropped rather than captured (it can never be
   partially serialized and leak).
-- `canvas`, `svg`, and other removed elements are dropped before send.
+- `canvas`, `iframe`, `script`, and `style` elements are dropped before send.
+
+Inline **SVG** survives capture only through a hard allowlist, applied both in
+the widget and again by the server sanitizer: elements outside the allowlist
+(`script`, `foreignObject`, `image`, `animate`, filters, …) are dropped with
+their entire subtree, event handlers and external `href`/`xlink:href` are
+stripped, and `url(#…)` internal paint references are the only `url()` form
+permitted. Oversized SVGs (likely data visualizations rather than logos) are
+dropped whole rather than partially. Text inside SVG is the same class of data
+as page text.
+
+**Images are never transmitted.** Every `<img>` is replaced — in the widget and
+again by the server — with a same-size placeholder that preserves layout space
+and carries only the alt text (masked under the same rules as other content).
+No image URL reaches the agent, who must never fetch visitor resources, and no
+pixel data ever leaves the visitor page. Rendering real imagery would require a
+future explicit, site-configured opt-in; it is not part of the default posture.
 
 Live mutation streaming observes the main document tree. Changes made *inside*
 an existing shadow root are not streamed as individual mutations; they are
