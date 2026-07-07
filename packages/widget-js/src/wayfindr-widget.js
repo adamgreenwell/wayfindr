@@ -312,6 +312,7 @@
           title: snapshot.title,
           html: snapshot.html,
           text: snapshot.text,
+          body_style: snapshot.bodyStyle || null,
           node_count: snapshot.nodeCount,
           masked_count: snapshot.maskedCount,
           mutation_sequence: snapshot.mutationSequence,
@@ -2600,6 +2601,77 @@
     return clone;
   }
 
+  // The snapshot serializes body.innerHTML, so the page-level background — the
+  // single most visible style on many pages — never rides along with element
+  // capture. Read the background family from a single source element: the body
+  // when it paints any background of its own, otherwise the root element
+  // (whose background paints the canvas behind a transparent body). Merging
+  // per property instead would composite the root's gradient over an opaque
+  // body, which browsers never do. Same gradient-only rules as element
+  // capture: color math only, never a resource fetch.
+  var PAGE_BACKGROUND_PROPERTIES = ['background-color', 'background-image'];
+
+  function capturePageBackgroundStyle(doc, view) {
+    if (!doc || !view || typeof view.getComputedStyle !== 'function') {
+      return '';
+    }
+
+    var readSource = null;
+
+    [doc.body, doc.documentElement].filter(Boolean).some(function (element) {
+      var computed;
+
+      try {
+        computed = view.getComputedStyle(element);
+      } catch (error) {
+        return false;
+      }
+
+      var read = function (property) {
+        return computed.getPropertyValue(property);
+      };
+
+      var paintsBackground = PAGE_BACKGROUND_PROPERTIES.some(function (property) {
+        var value = read(property);
+
+        return isCapturableOwnStyleValue(property, value) && ! isDefaultOwnStyleValue(property, value);
+      });
+
+      if (paintsBackground) {
+        readSource = read;
+      }
+
+      return paintsBackground;
+    });
+
+    if (!readSource) {
+      return '';
+    }
+
+    var declarations = [];
+
+    PAGE_BACKGROUND_PROPERTIES.forEach(function (property) {
+      var value = readSource(property);
+
+      if (isCapturableOwnStyleValue(property, value) && ! isDefaultOwnStyleValue(property, value)) {
+        declarations.push(property + ':' + value);
+      }
+    });
+
+    // Patterned backgrounds (grid lines, stripes) are gradients tiled by
+    // background-size; without it a tiled pattern replays as one page-sized
+    // gradient.
+    if (declarations.join(';').indexOf('background-image:') !== -1) {
+      var size = readSource('background-size');
+
+      if (size && size.indexOf('auto') === -1 && isCapturableStyleValue(size)) {
+        declarations.push('background-size:' + size);
+      }
+    }
+
+    return declarations.join(';');
+  }
+
   function createCobrowseSnapshot(doc, options) {
     options = options || {};
 
@@ -2626,6 +2698,7 @@
         title: doc && doc.title ? doc.title : '',
         html: '',
         text: '',
+        bodyStyle: '',
         nodeCount: 0,
         maskedCount: 0,
       };
@@ -2642,6 +2715,7 @@
       title: doc.title || '',
       html: truncateString(source.innerHTML || '', options.maxHtmlLength || 60000),
       text: truncateString(normalizeWhitespace(source.textContent || ''), options.maxTextLength || 10000),
+      bodyStyle: styleContext ? capturePageBackgroundStyle(doc, view) : '',
       nodeCount: source.querySelectorAll ? source.querySelectorAll('*').length : 0,
       maskedCount: maskedCount,
     };

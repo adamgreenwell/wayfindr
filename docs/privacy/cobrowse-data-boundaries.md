@@ -85,6 +85,15 @@ controls are excluded from this, as from all style capture: an element's box
 can encode value-derived signals (`ch`-unit widths, validity styling), and no
 styling of masked content is ever serialized.
 
+The **page-level background** is captured as a style summary, not a resource:
+the widget reads the body's (or the root element's) background color,
+gradient-only background image, and tile size under the same rules as element
+style capture — `url()`-based backgrounds are never captured or fetched — and
+the server re-sanitizes the reported value down to the background family alone
+before rendering it on the preview shell, so it can never restyle or hide the
+preview. Like snapshot HTML, the reported page background is pruned by the
+retention command once an ended session ages out.
+
 Live mutation streaming observes the main document tree. Changes made *inside*
 an existing shadow root are not streamed as individual mutations; they are
 picked up on the next snapshot (including pressure- or agent-requested resyncs).

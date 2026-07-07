@@ -33,6 +33,7 @@ class CobrowseSnapshotController extends Controller
             'text' => ['required', 'string', 'max:'.CobrowsePayloadBudget::SNAPSHOT_TEXT_MAX_CHARACTERS],
             'node_count' => ['required', 'integer', 'min:0', 'max:100000'],
             'masked_count' => ['required', 'integer', 'min:0', 'max:100000'],
+            'body_style' => ['sometimes', 'nullable', 'string', 'max:1000'],
             'mutation_sequence' => ['nullable', 'integer', 'min:0', 'max:1000000000'],
             'resync_request_id' => ['nullable', 'string', 'max:120'],
             'mask_selectors' => ['sometimes', 'array', 'max:100'],
@@ -83,6 +84,10 @@ class CobrowseSnapshotController extends Controller
             'masked_count' => $validated['masked_count'],
             'reported_at' => now()->toJSON(),
         ];
+
+        if (filled($validated['body_style'] ?? null)) {
+            $snapshot['body_style'] = (string) $validated['body_style'];
+        }
 
         if (array_key_exists('mutation_sequence', $validated)) {
             $snapshot['mutation_sequence'] = (int) $validated['mutation_sequence'];
