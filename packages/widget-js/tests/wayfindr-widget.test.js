@@ -1440,6 +1440,72 @@ function resumeFetchMock(calls, options) {
   };
 }
 
+test('init without a storage option persists to default browser storage', async () => {
+  // Regression for the wayfindr.cc embed: Wayfindr.init forwards
+  // `storage: options.storage` to the client, so options that never set the
+  // key still produced an own "storage" property (value undefined). The old
+  // hasOwnProperty check treated that as "storage provided" and skipped the
+  // localStorage default — meaning real init embeds never persisted the
+  // anonymous id, visitor token, or support code at all.
+  const fakeLocalStorage = memoryStorage();
+  const hadDocument = Object.prototype.hasOwnProperty.call(globalThis, 'document');
+  const originalDocument = globalThis.document;
+  const hadLocalStorage = Object.prototype.hasOwnProperty.call(globalThis, 'localStorage');
+  const originalLocalStorage = globalThis.localStorage;
+
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+
+  globalThis.document = dom.window.document;
+  globalThis.localStorage = fakeLocalStorage;
+
+  try {
+    const calls = [];
+    const widget = Wayfindr.init({
+      document: dom.window.document,
+      location: dom.window.location,
+      mount: '#support',
+      apiBaseUrl: 'http://127.0.0.1:8000/',
+      sitePublicKey: 'site_public_docs',
+      mutationFlushMs: 0,
+      cobrowseStatusPollMs: 0,
+      fetch: resumeFetchMock(calls),
+    });
+
+    // Identity is persisted at init through the default storage.
+    assert.match(
+      fakeLocalStorage.getItem('wayfindr:site_public_docs:anonymous-id') || '',
+      /^anon_/,
+      'the anonymous id must persist without an explicit storage option',
+    );
+
+    widget.open();
+    widget.root.querySelector('.wayfindr-widget__textarea').value = 'Can you help me?';
+    widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+      new dom.window.Event('submit', { bubbles: true, cancelable: true }),
+    );
+    await settle();
+
+    assert.equal(fakeLocalStorage.getItem('wayfindr:site_public_docs:support-code'), 'WF-RESUME1');
+    assert.equal(fakeLocalStorage.getItem('wayfindr:site_public_docs:visitor-token'), 'visitor-token-resume');
+
+    widget.destroy();
+  } finally {
+    if (hadDocument) {
+      globalThis.document = originalDocument;
+    } else {
+      delete globalThis.document;
+    }
+
+    if (hadLocalStorage) {
+      globalThis.localStorage = originalLocalStorage;
+    } else {
+      delete globalThis.localStorage;
+    }
+  }
+});
+
 test('resumes the persisted conversation after a page reload', async () => {
   const storage = memoryStorage();
   const supportCodeKey = 'wayfindr:site_public_docs:support-code';

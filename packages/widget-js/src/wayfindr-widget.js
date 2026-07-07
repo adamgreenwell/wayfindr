@@ -122,8 +122,12 @@
     var anonymousId = options.anonymousId;
     var visitorExternalId = normalizeVisitorExternalId(options.visitorExternalId);
     var fetcher = options.fetch || (root && root.fetch ? root.fetch.bind(root) : null);
-    var hasStorageOption = Object.prototype.hasOwnProperty.call(options, 'storage');
-    var storage = hasStorageOption ? options.storage : null;
+    // Undefined means "not provided" — including when a wrapper forwards
+    // `storage: options.storage` from options that never set the key, which is
+    // how Wayfindr.init embeds silently lost all persistence (the old
+    // hasOwnProperty check saw the forwarded key and skipped the default).
+    // Explicit null still disables storage on purpose.
+    var storage = options.storage !== undefined ? options.storage : defaultStorage();
     var visitorToken = options.visitorToken || null;
     var realtime = resolveRealtime(options, fetcher);
     var maskSelectors = [];
@@ -135,10 +139,6 @@
 
     if (!sitePublicKey) {
       throw new Error('Wayfindr requires a sitePublicKey option.');
-    }
-
-    if (!hasStorageOption) {
-      storage = defaultStorage();
     }
 
     if (!anonymousId) {
@@ -448,8 +448,7 @@
     // The client persists the visitor identity per site; the widget persists
     // the active conversation reference alongside it so a page reload resumes
     // the visitor's thread instead of starting a new conversation.
-    var hasWidgetStorageOption = Object.prototype.hasOwnProperty.call(options, 'storage');
-    var widgetStorage = hasWidgetStorageOption ? options.storage : defaultStorage();
+    var widgetStorage = options.storage !== undefined ? options.storage : defaultStorage();
     var storedSupportCode = storageGet(widgetStorage, supportCodeStorageKey(options.sitePublicKey));
     var resumePromise = null;
     var conversationStatus = null;
