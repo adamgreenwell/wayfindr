@@ -1562,6 +1562,81 @@ test('keeps a stored support code through transient resume failures', async () =
   widget.destroy();
 });
 
+test('a message sent while resume is in flight continues the restored conversation', async () => {
+  const storage = memoryStorage();
+  storage.setItem('wayfindr:site_public_docs:support-code', 'WF-RESUME1');
+
+  // Hold the resume timeline fetch open so the visitor can "beat" it.
+  let releaseResume;
+  const resumeGate = new Promise((resolve) => {
+    releaseResume = resolve;
+  });
+  let gated = false;
+
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+  const calls = [];
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    storage,
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    fetch: resumeFetchMock(calls, {
+      messages: async () => {
+        if (!gated) {
+          gated = true;
+          await resumeGate;
+        }
+
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-RESUME1', status: 'open' },
+            messages: [
+              {
+                id: 1,
+                sender: { kind: 'visitor', name: 'Visitor' },
+                type: 'text',
+                body: 'Can you help me?',
+                created_at: '2026-05-23T14:00:00.000000Z',
+              },
+            ],
+          },
+        });
+      },
+    }),
+  });
+
+  // The visitor sends before resume has resolved.
+  widget.open();
+  widget.root.querySelector('.wayfindr-widget__textarea').value = 'Quick follow-up';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+    new dom.window.Event('submit', { bubbles: true, cancelable: true }),
+  );
+
+  releaseResume();
+  await settle();
+
+  // The send waited for resume: it continued WF-RESUME1 instead of racing it
+  // into a brand-new conversation.
+  assert.equal(
+    calls.some((call) => call.url.endsWith('/api/conversations') && call.options && call.options.method === 'POST'),
+    false,
+    'no new conversation may be created while resume is in flight',
+  );
+  assert.equal(
+    calls.some((call) => call.url.includes('/api/conversations/WF-RESUME1/messages') && call.options && call.options.method === 'POST'),
+    true,
+    'the queued message continues the restored conversation',
+  );
+
+  widget.destroy();
+});
+
 test('renders the embedded conversation timeline and refreshes replies', async () => {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
     url: 'https://docs.example.test/install',

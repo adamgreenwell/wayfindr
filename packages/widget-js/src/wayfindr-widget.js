@@ -451,6 +451,7 @@
     var hasWidgetStorageOption = Object.prototype.hasOwnProperty.call(options, 'storage');
     var widgetStorage = hasWidgetStorageOption ? options.storage : defaultStorage();
     var storedSupportCode = storageGet(widgetStorage, supportCodeStorageKey(options.sitePublicKey));
+    var resumePromise = null;
     var conversationStatus = null;
     var messages = [];
     var realtimeSubscription = null;
@@ -1610,6 +1611,15 @@
       }
 
       try {
+        // A resume of a stored conversation may still be in flight on a slow
+        // reload. Wait for it (it never rejects) so a quick first message
+        // continues the restored thread instead of racing it and creating a
+        // duplicate conversation.
+        if (resumePromise) {
+          await resumePromise;
+          resumePromise = null;
+        }
+
         if (!bootstrapped) {
           await client.bootstrap(location ? location.href : null, visitorContext);
           bootstrapped = true;
@@ -1685,7 +1695,7 @@
     }
 
     if (storedSupportCode) {
-      resumeConversation(storedSupportCode);
+      resumePromise = resumeConversation(storedSupportCode);
     }
 
     return {
