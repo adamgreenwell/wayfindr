@@ -2147,6 +2147,19 @@
     return parsed && Math.abs(parseFloat(parsed[1])) <= POSITION_OFFSET_MAX_PX;
   }
 
+  // Once inside fixed/sticky page chrome (intentionally left in flow),
+  // absolute descendants must not be captured either: their containing block
+  // is the dropped ancestor, so their offsets would re-anchor to the wrong
+  // element in the replay. A relative element re-establishes a faithful
+  // containing block below the chrome, lifting the suppression.
+  function nextPositionSuppressed(position, suppressed) {
+    if (position === 'fixed' || position === 'sticky') {
+      return true;
+    }
+
+    return position === 'relative' ? false : suppressed;
+  }
+
   function isCapturableStyleValue(value, maxLength) {
     if (!value || value.length > (maxLength || 200)) {
       return false;
@@ -2269,7 +2282,7 @@
 
   // readValue / readParentValue: (property) => string. readParentValue is null
   // for a style root (so it establishes the base for inherited properties).
-  function buildCapturedStyle(readValue, readParentValue) {
+  function buildCapturedStyle(readValue, readParentValue, suppressAbsolute) {
     var declarations = [];
 
     CAPTURED_INHERITED_STYLE_PROPERTIES.forEach(function (property) {
@@ -2315,7 +2328,10 @@
 
     var position = readValue('position');
 
-    if (CAPTURED_POSITION_VALUES.indexOf(position) !== -1) {
+    if (
+      CAPTURED_POSITION_VALUES.indexOf(position) !== -1
+      && ! (position === 'absolute' && suppressAbsolute)
+    ) {
       // position:relative is captured even with no offsets: it establishes
       // the containing block that absolute descendants anchor to.
       declarations.push('position:' + position);
@@ -2583,7 +2599,7 @@
           styleContext.budget.captured += 1;
 
           if (! shouldSkipStyleCapture(node, styleContext.maskSelectors, styleContext.sensitiveTerms)) {
-            var captured = buildCapturedStyle(readValue, styleContext.readParentValue);
+            var captured = buildCapturedStyle(readValue, styleContext.readParentValue, styleContext.positionSuppressed);
             var emptySize = buildEmptyElementSizeStyle(node, readValue);
 
             if (emptySize) {
@@ -2604,6 +2620,7 @@
           maskSelectors: styleContext.maskSelectors,
           sensitiveTerms: styleContext.sensitiveTerms,
           readParentValue: styleContext.isRoot ? null : readValue,
+          positionSuppressed: nextPositionSuppressed(readValue('position'), styleContext.positionSuppressed),
         };
       } catch (error) {
         // Style capture is best-effort; fall back to structural cloning.
@@ -2723,6 +2740,7 @@
         view: view,
         readParentValue: null,
         isRoot: true,
+        positionSuppressed: false,
         maskSelectors: DEFAULT_MASK_SELECTORS.concat(options.maskSelectors || []),
         sensitiveTerms: options.sensitiveTerms || [],
         budget: {

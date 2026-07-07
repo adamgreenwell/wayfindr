@@ -91,3 +91,36 @@ test('never captures positioning for masked elements', () => {
 
   assert.equal(html.includes('position:'), false);
 });
+
+test('suppresses absolute capture inside fixed or sticky chrome', () => {
+  // The close button's containing block is the fixed banner, which is
+  // intentionally left in flow — capturing the button's offsets would
+  // re-anchor it to the wrong element and float it over the preview.
+  const html = positionedSnapshot(
+    '<div data-cs="banner"><button data-cs="close">×</button></div>',
+    {
+      banner: { position: 'fixed', top: '0px', 'z-index': '100' },
+      close: { position: 'absolute', top: '8px', right: '8px' },
+    }
+  );
+
+  assert.equal(html.includes('position:'), false);
+  assert.equal(html.includes('top:8px'), false);
+});
+
+test('a relative wrapper below fixed chrome re-establishes capture', () => {
+  // The relative panel is itself captured, so it is a faithful containing
+  // block in the replay — its absolute descendants anchor correctly again.
+  const html = positionedSnapshot(
+    '<div data-cs="banner"><div data-cs="panel"><span data-cs="badge">1</span></div></div>',
+    {
+      banner: { position: 'fixed', top: '0px' },
+      panel: { position: 'relative' },
+      badge: { position: 'absolute', top: '4px', right: '4px' },
+    }
+  );
+
+  assert.match(html, /position:relative/);
+  assert.match(html, /position:absolute;top:4px;right:4px/);
+  assert.equal(html.includes('position:fixed'), false);
+});

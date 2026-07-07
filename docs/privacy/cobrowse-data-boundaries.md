@@ -91,8 +91,11 @@ styling of masked content is ever serialized.
 intentionally never captured, in the widget or past the server's targeted
 value rule: page chrome stays in normal flow rather than pinning over the
 preview, and a hostile widget cannot use positioning to cover the preview
-shell. Masked elements and form controls are excluded as from all style
-capture.
+shell. Absolute elements *inside* fixed/sticky chrome are suppressed with
+their dropped ancestor — their containing block is gone, so captured offsets
+would re-anchor them over unrelated content — until a captured relative
+element re-establishes a faithful containing block below the chrome. Masked
+elements and form controls are excluded as from all style capture.
 
 The **page-level background** is captured as a style summary, not a resource:
 the widget reads the body's (or the root element's) background color,
