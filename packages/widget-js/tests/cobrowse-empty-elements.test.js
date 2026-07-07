@@ -98,3 +98,36 @@ test('never sizes masked elements or form controls', () => {
   assert.equal(html.includes('width:300px'), false);
   assert.equal(html.includes('width:240px'), false);
 });
+
+test('never sizes open shadow hosts from their light DOM', () => {
+  // A shadow host with no light children is not "empty": its rendered box is
+  // derived from shadow content that has not been masked yet at sizing time.
+  const dom = new JSDOM(
+    '<!doctype html><html><head><title>T</title></head><body><div data-cs="host"></div></body></html>',
+    { url: 'https://host.example.test/page' }
+  );
+  const host = dom.window.document.querySelector('[data-cs="host"]');
+  const inner = dom.window.document.createElement('span');
+
+  inner.textContent = 'shadow content';
+  host.attachShadow({ mode: 'open' }).appendChild(inner);
+
+  const html = Wayfindr.createCobrowseSnapshot(dom.window.document, {
+    location: dom.window.location,
+    view: {
+      getComputedStyle(element) {
+        const key = element.getAttribute ? element.getAttribute('data-cs') : null;
+        const map = key === 'host'
+          ? { display: 'inline-block', width: '320px', height: '44px' }
+          : {};
+
+        return { getPropertyValue: (property) => map[property] || '' };
+      },
+    },
+  }).html;
+
+  assert.equal(html.includes('width:320px'), false);
+  assert.equal(html.includes('height:44px'), false);
+  // The shadow content itself is still captured through the shadow wrapper.
+  assert.match(html, /shadow content/);
+});

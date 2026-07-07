@@ -2313,7 +2313,11 @@
   var EMPTY_ELEMENT_SIZE_MAX_PX = 4000;
 
   function isContentEmptyElement(node) {
-    if (node.childElementCount > 0) {
+    // An open shadow host is not empty: its shadow subtree renders inside it
+    // (and is captured and masked through the shadow wrapper). Sizing the host
+    // from its light DOM alone would serialize a box derived from
+    // not-yet-masked shadow content.
+    if (node.shadowRoot || node.childElementCount > 0) {
       return false;
     }
 
