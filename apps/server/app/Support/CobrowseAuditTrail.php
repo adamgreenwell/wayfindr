@@ -73,6 +73,81 @@ class CobrowseAuditTrail
     }
 
     /**
+     * Record a snapshot keyframe's provenance: when it was captured, how much
+     * was masked, and — crucially — which masking ruleset was in force at
+     * capture time, so masking is provable later even after the site's rules
+     * change. Metadata is provenance only, never snapshot content.
+     *
+     * @param  array<string, mixed>  $snapshot
+     * @param  array<int, string>  $maskSelectors
+     * @param  array<int, string>  $sensitiveTerms
+     */
+    public function snapshotReceived(CobrowseSession $session, Visitor $actor, array $snapshot, array $maskSelectors, array $sensitiveTerms): void
+    {
+        $this->record($session, $actor, 'cobrowse.snapshot_received', [
+            'support_code' => $this->supportCode($session),
+            'reported_at' => $this->stringOrNull($snapshot['reported_at'] ?? null),
+            'page_url' => $this->stringOrNull($snapshot['page_url'] ?? null),
+            'node_count' => $this->intOrNull($snapshot['node_count'] ?? null),
+            'masked_count' => $this->intOrNull($snapshot['masked_count'] ?? null),
+            'html_length' => $this->intOrNull($snapshot['html_length'] ?? null),
+            'mutation_sequence' => $this->intOrNull($snapshot['mutation_sequence'] ?? null),
+            'resync_request_id' => $this->stringOrNull($snapshot['resync_request_id'] ?? null),
+            'masking_ruleset' => $this->maskingRulesetProvenance($maskSelectors, $sensitiveTerms),
+        ]);
+    }
+
+    /**
+     * The hash pins the exact site ruleset in force at capture time; the
+     * bounded lists keep the trail human-readable. Both are public widget
+     * configuration (never secrets). The stock widget's built-in masking
+     * defaults are code-versioned, proxied here by the release version.
+     *
+     * @param  array<int, string>  $maskSelectors
+     * @param  array<int, string>  $sensitiveTerms
+     * @return array<string, mixed>
+     */
+    private function maskingRulesetProvenance(array $maskSelectors, array $sensitiveTerms): array
+    {
+        $selectors = $this->boundedRulesetList($maskSelectors);
+        $terms = $this->boundedRulesetList($sensitiveTerms);
+
+        return [
+            'hash' => hash('sha256', (string) json_encode([$maskSelectors, $sensitiveTerms])),
+            'site_mask_selectors' => $selectors['items'],
+            'site_mask_selector_count' => count($maskSelectors),
+            'site_sensitive_terms' => $terms['items'],
+            'site_sensitive_term_count' => count($sensitiveTerms),
+            'truncated' => $selectors['truncated'] || $terms['truncated'],
+            'release' => $this->stringOrNull(config('wayfindr.release.version')),
+        ];
+    }
+
+    /**
+     * @param  array<int, string>  $items
+     * @return array{items: array<int, string>, truncated: bool}
+     */
+    private function boundedRulesetList(array $items): array
+    {
+        $clean = array_values(array_filter($items, 'is_string'));
+        $kept = array_slice($clean, 0, 50);
+        $truncated = count($clean) > 50;
+
+        foreach ($kept as $item) {
+            if (mb_strlen($item) > 120) {
+                $truncated = true;
+
+                break;
+            }
+        }
+
+        return [
+            'items' => array_map(static fn (string $item): string => mb_substr($item, 0, 120), $kept),
+            'truncated' => $truncated,
+        ];
+    }
+
+    /**
      * Record that an agent actually viewed a rendered replay preview, so "who
      * watched the visitor's screen, and when" is auditable. Throttled per
      * agent + session so the live auto-refresh loop cannot flood the audit log;

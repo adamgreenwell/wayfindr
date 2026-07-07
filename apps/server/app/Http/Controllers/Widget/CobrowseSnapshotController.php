@@ -105,6 +105,14 @@ class CobrowseSnapshotController extends Controller
             }
         }
 
+        $this->cobrowseAuditTrail->snapshotReceived(
+            $cobrowseSession,
+            $visitor,
+            $snapshot,
+            $this->stringList($site->settings['mask_selectors'] ?? []),
+            $this->stringList($site->settings['mask_terms'] ?? []),
+        );
+
         event(new CobrowseStateUpdated($cobrowseSession, 'snapshot'));
 
         return response()->json([
@@ -119,6 +127,14 @@ class CobrowseSnapshotController extends Controller
                 'snapshot' => $snapshot,
             ],
         ]);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function stringList(mixed $value): array
+    {
+        return is_array($value) ? array_values(array_filter($value, 'is_string')) : [];
     }
 
     /**

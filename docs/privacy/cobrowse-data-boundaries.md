@@ -222,6 +222,15 @@ counts, drift state) and never preview content. "Who watched the visitor's
 screen, and when" stays answerable without storing anything new about the
 visitor.
 
+Snapshots leave a matching provenance record. Each reported snapshot writes a
+`cobrowse.snapshot_received` audit event carrying the capture time, node and
+masked counts, and — crucially — the site masking ruleset (mask selectors and
+sensitive terms) in force at capture time, pinned by a hash and bounded for
+readability. Masking is therefore provable per keyframe even after a site's
+rules change later, and the event never contains snapshot content. Paired with
+the preview-view log, "what ruleset governed what the agent saw at time T" is
+reconstructible from the audit trail alone.
+
 ## Operator Readiness Boundary
 
 Platform operator readiness may summarize aggregate cobrowse transport health
