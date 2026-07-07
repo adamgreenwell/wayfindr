@@ -316,6 +316,12 @@
           masked_count: snapshot.maskedCount,
           mutation_sequence: snapshot.mutationSequence,
           resync_request_id: snapshot.resyncRequestId,
+          // The site-level masking ruleset this widget actually masked with —
+          // the one cached from bootstrap, which can differ from the site's
+          // current settings if an admin edits them mid-session. The server
+          // audits it as capture-time provenance.
+          mask_selectors: maskSelectors,
+          sensitive_terms: sensitiveTerms,
         }));
       },
       reportCobrowseMutations: function (supportCode, batch) {

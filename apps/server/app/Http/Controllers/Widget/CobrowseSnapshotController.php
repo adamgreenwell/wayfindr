@@ -35,6 +35,10 @@ class CobrowseSnapshotController extends Controller
             'masked_count' => ['required', 'integer', 'min:0', 'max:100000'],
             'mutation_sequence' => ['nullable', 'integer', 'min:0', 'max:1000000000'],
             'resync_request_id' => ['nullable', 'string', 'max:120'],
+            'mask_selectors' => ['sometimes', 'array', 'max:100'],
+            'mask_selectors.*' => ['string', 'max:255'],
+            'sensitive_terms' => ['sometimes', 'array', 'max:100'],
+            'sensitive_terms.*' => ['string', 'max:255'],
         ]);
 
         $site = Site::query()
@@ -105,12 +109,28 @@ class CobrowseSnapshotController extends Controller
             }
         }
 
+        // Provenance prefers the ruleset the widget says it actually masked
+        // with (cached from its bootstrap) over the site's current settings,
+        // which may have been edited mid-session. Absent fields mean an older
+        // widget, so the receipt-time settings are recorded as a fallback.
+        $reportedRuleset = null;
+
+        if (array_key_exists('mask_selectors', $validated) || array_key_exists('sensitive_terms', $validated)) {
+            $reportedRuleset = [
+                'selectors' => $this->stringList($validated['mask_selectors'] ?? []),
+                'terms' => $this->stringList($validated['sensitive_terms'] ?? []),
+            ];
+        }
+
         $this->cobrowseAuditTrail->snapshotReceived(
             $cobrowseSession,
             $visitor,
             $snapshot,
-            $this->stringList($site->settings['mask_selectors'] ?? []),
-            $this->stringList($site->settings['mask_terms'] ?? []),
+            $reportedRuleset,
+            [
+                'selectors' => $this->stringList($site->settings['mask_selectors'] ?? []),
+                'terms' => $this->stringList($site->settings['mask_terms'] ?? []),
+            ],
         );
 
         event(new CobrowseStateUpdated($cobrowseSession, 'snapshot'));

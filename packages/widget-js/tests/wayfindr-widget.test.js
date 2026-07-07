@@ -754,8 +754,61 @@ test('reports cobrowse snapshots through the public visitor API', async () => {
     node_count: 4,
     masked_count: 1,
     mutation_sequence: 7,
+    // Ruleset provenance: the site-level masking configuration this client is
+    // operating with (empty here — no bootstrap has populated it).
+    mask_selectors: [],
+    sensitive_terms: [],
   });
   assert.equal(result.snapshot.masked_count, 1);
+});
+
+test('reports the bootstrap-time masking ruleset with each snapshot', async () => {
+  // Provenance must reflect the rules the widget actually masked with — the
+  // ones cached from bootstrap — even if an admin edits the site settings
+  // later in the session.
+  const calls = [];
+  const client = Wayfindr.createClient({
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    fetch: async (url, options) => {
+      calls.push({ url, options });
+
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return jsonResponse(201, {
+          data: {
+            site: {
+              public_key: 'site_public_docs',
+              settings: {
+                mask_selectors: ['.checkout-card'],
+                mask_terms: ['NHS Number'],
+              },
+            },
+            visitor: { anonymous_id: 'anon-browser-123', token: 'visitor-token-123' },
+          },
+        });
+      }
+
+      return jsonResponse(200, { data: { snapshot: {} } });
+    },
+  });
+
+  await client.bootstrap('https://docs.example.test/install');
+  await client.reportCobrowseSnapshot('WF-TEST123', {
+    pageUrl: 'https://docs.example.test/install',
+    html: '<main><p>Hello.</p></main>',
+    text: 'Hello.',
+    nodeCount: 2,
+    maskedCount: 0,
+  });
+
+  const snapshotCall = calls.find((call) => call.url.endsWith('/cobrowse-snapshot'));
+  const payload = JSON.parse(snapshotCall.options.body);
+
+  assert.deepEqual(payload.mask_selectors, ['.checkout-card']);
+  // Terms are reported in the widget's normalized matching form — the form
+  // that was actually used for inference — not the raw configured string.
+  assert.deepEqual(payload.sensitive_terms, ['nhs number']);
 });
 
 test('reports cobrowse mutation batches through the public visitor API', async () => {

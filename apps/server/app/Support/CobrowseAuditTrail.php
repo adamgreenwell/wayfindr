@@ -74,15 +74,15 @@ class CobrowseAuditTrail
 
     /**
      * Record a snapshot keyframe's provenance: when it was captured, how much
-     * was masked, and — crucially — which masking ruleset was in force at
-     * capture time, so masking is provable later even after the site's rules
-     * change. Metadata is provenance only, never snapshot content.
+     * was masked, and — crucially — which masking ruleset was actually in
+     * force at capture time, so masking is provable later even after the
+     * site's rules change. Metadata is provenance only, never snapshot content.
      *
      * @param  array<string, mixed>  $snapshot
-     * @param  array<int, string>  $maskSelectors
-     * @param  array<int, string>  $sensitiveTerms
+     * @param  array{selectors: array<int, string>, terms: array<int, string>}|null  $reportedRuleset
+     * @param  array{selectors: array<int, string>, terms: array<int, string>}  $siteRuleset
      */
-    public function snapshotReceived(CobrowseSession $session, Visitor $actor, array $snapshot, array $maskSelectors, array $sensitiveTerms): void
+    public function snapshotReceived(CobrowseSession $session, Visitor $actor, array $snapshot, ?array $reportedRuleset, array $siteRuleset): void
     {
         $this->record($session, $actor, 'cobrowse.snapshot_received', [
             'support_code' => $this->supportCode($session),
@@ -93,34 +93,51 @@ class CobrowseAuditTrail
             'html_length' => $this->intOrNull($snapshot['html_length'] ?? null),
             'mutation_sequence' => $this->intOrNull($snapshot['mutation_sequence'] ?? null),
             'resync_request_id' => $this->stringOrNull($snapshot['resync_request_id'] ?? null),
-            'masking_ruleset' => $this->maskingRulesetProvenance($maskSelectors, $sensitiveTerms),
+            'masking_ruleset' => $this->maskingRulesetProvenance($reportedRuleset, $siteRuleset),
         ]);
     }
 
     /**
-     * The hash pins the exact site ruleset in force at capture time; the
-     * bounded lists keep the trail human-readable. Both are public widget
-     * configuration (never secrets). The stock widget's built-in masking
-     * defaults are code-versioned, proxied here by the release version.
+     * The widget masks with the ruleset it cached at bootstrap, which can
+     * differ from the site's current settings if an admin edits them
+     * mid-session — so provenance records what the widget reports it applied
+     * (source: widget_reported), falling back to the receipt-time site
+     * settings only for widgets that predate ruleset reporting. The hash pins
+     * the full untruncated ruleset; matches_site_settings makes a mid-session
+     * rules change visible in the trail. Rulesets are public widget
+     * configuration (never secrets); the stock widget's built-in defaults are
+     * code-versioned, proxied here by the release version.
      *
-     * @param  array<int, string>  $maskSelectors
-     * @param  array<int, string>  $sensitiveTerms
+     * @param  array{selectors: array<int, string>, terms: array<int, string>}|null  $reportedRuleset
+     * @param  array{selectors: array<int, string>, terms: array<int, string>}  $siteRuleset
      * @return array<string, mixed>
      */
-    private function maskingRulesetProvenance(array $maskSelectors, array $sensitiveTerms): array
+    private function maskingRulesetProvenance(?array $reportedRuleset, array $siteRuleset): array
     {
-        $selectors = $this->boundedRulesetList($maskSelectors);
-        $terms = $this->boundedRulesetList($sensitiveTerms);
+        $applied = $reportedRuleset ?? $siteRuleset;
+        $appliedHash = $this->rulesetHash($applied);
+        $selectors = $this->boundedRulesetList($applied['selectors']);
+        $terms = $this->boundedRulesetList($applied['terms']);
 
         return [
-            'hash' => hash('sha256', (string) json_encode([$maskSelectors, $sensitiveTerms])),
-            'site_mask_selectors' => $selectors['items'],
-            'site_mask_selector_count' => count($maskSelectors),
-            'site_sensitive_terms' => $terms['items'],
-            'site_sensitive_term_count' => count($sensitiveTerms),
+            'source' => $reportedRuleset !== null ? 'widget_reported' : 'site_settings_at_receipt',
+            'hash' => $appliedHash,
+            'mask_selectors' => $selectors['items'],
+            'mask_selector_count' => count($applied['selectors']),
+            'sensitive_terms' => $terms['items'],
+            'sensitive_term_count' => count($applied['terms']),
             'truncated' => $selectors['truncated'] || $terms['truncated'],
+            'matches_site_settings' => $appliedHash === $this->rulesetHash($siteRuleset),
             'release' => $this->stringOrNull(config('wayfindr.release.version')),
         ];
+    }
+
+    /**
+     * @param  array{selectors: array<int, string>, terms: array<int, string>}  $ruleset
+     */
+    private function rulesetHash(array $ruleset): string
+    {
+        return hash('sha256', (string) json_encode([$ruleset['selectors'], $ruleset['terms']]));
     }
 
     /**
