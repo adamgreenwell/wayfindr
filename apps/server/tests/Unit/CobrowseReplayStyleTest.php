@@ -99,8 +99,10 @@ test('drops url()-bearing declarations and the resource they reference', functio
         ->and($srcdoc)->not->toContain('url(');
 });
 
-test('drops non-allowlisted properties', function (): void {
-    $srcdoc = styledPreview('color:red;position:fixed;z-index:9999;cursor:url(x)');
+test('drops non-allowlisted properties and out-of-policy values', function (): void {
+    // position and z-index are allowlisted since #540, but fixed and
+    // five-digit stacking values fail their targeted value rules.
+    $srcdoc = styledPreview('color:red;position:fixed;z-index:99999;cursor:url(x)');
 
     expect($srcdoc)
         ->toContain('color:red')
@@ -138,7 +140,7 @@ test('allows only color functions inside values', function (): void {
 });
 
 test('removes the style attribute entirely when nothing survives', function (): void {
-    $srcdoc = styledPreview('background-image:url(https://evil.example/x);position:absolute');
+    $srcdoc = styledPreview('background-image:url(https://evil.example/x);position:fixed');
 
     expect($srcdoc)
         ->not->toContain('style=')
@@ -200,4 +202,42 @@ test('no body override is emitted without a reported page background', function 
     ]);
 
     expect(substr_count($result['srcdoc'], 'body{'))->toBe(1);
+});
+
+// Positioned overlays (#540): relative/absolute composition replays with px
+// offsets and a bounded z-index; fixed and sticky are rejected by a targeted
+// value rule so a hostile widget cannot pin content over the preview shell.
+
+test('keeps positioned-overlay declarations', function (): void {
+    $srcdoc = styledPreview('position:absolute;top:48px;right:40px;bottom:32px;left:531px;z-index:1');
+
+    expect($srcdoc)
+        ->toContain('position:absolute')
+        ->and($srcdoc)->toContain('top:48px')
+        ->and($srcdoc)->toContain('right:40px')
+        ->and($srcdoc)->toContain('bottom:32px')
+        ->and($srcdoc)->toContain('left:531px')
+        ->and($srcdoc)->toContain('z-index:1');
+});
+
+test('keeps relative positioning and negative offsets', function (): void {
+    $srcdoc = styledPreview('position:relative;top:-12.5px;z-index:-1');
+
+    expect($srcdoc)
+        ->toContain('position:relative')
+        ->and($srcdoc)->toContain('top:-12.5px')
+        ->and($srcdoc)->toContain('z-index:-1');
+});
+
+test('drops fixed and sticky positioning whole', function (): void {
+    expect(styledPreview('position:fixed;color:red'))
+        ->not->toContain('position')
+        ->toContain('color:red')
+        ->and(styledPreview('position:sticky;color:red'))->not->toContain('position');
+});
+
+test('drops unbounded or non-integer z-index values', function (): void {
+    expect(styledPreview('z-index:99999;color:red'))->not->toContain('z-index')
+        ->and(styledPreview('z-index:auto;color:red'))->not->toContain('z-index')
+        ->and(styledPreview('z-index:calc(1);color:red'))->not->toContain('z-index');
 });

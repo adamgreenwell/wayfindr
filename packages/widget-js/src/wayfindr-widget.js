@@ -2129,6 +2129,24 @@
     'grid-template-columns', 'padding', 'margin', 'max-width',
   ];
 
+  // Composition built on positioning instead of flex/grid (floating cards,
+  // overlays, badges) collapses into normal flow without these. relative and
+  // absolute replay faithfully now that the preview renders at the visitor's
+  // viewport width; fixed and sticky are intentionally left uncaptured — page
+  // chrome (banners, navbars) stays in flow rather than pinning over the
+  // preview.
+  var CAPTURED_POSITION_VALUES = ['relative', 'absolute'];
+
+  var CAPTURED_POSITION_OFFSET_PROPERTIES = ['top', 'right', 'bottom', 'left'];
+
+  var POSITION_OFFSET_MAX_PX = 10000;
+
+  function capturablePositionOffset(value) {
+    var parsed = /^(-?\d+(?:\.\d+)?)px$/.exec(value || '');
+
+    return parsed && Math.abs(parseFloat(parsed[1])) <= POSITION_OFFSET_MAX_PX;
+  }
+
   function isCapturableStyleValue(value, maxLength) {
     if (!value || value.length > (maxLength || 200)) {
       return false;
@@ -2293,6 +2311,28 @@
 
         declarations.push(property + ':' + value);
       });
+    }
+
+    var position = readValue('position');
+
+    if (CAPTURED_POSITION_VALUES.indexOf(position) !== -1) {
+      // position:relative is captured even with no offsets: it establishes
+      // the containing block that absolute descendants anchor to.
+      declarations.push('position:' + position);
+
+      CAPTURED_POSITION_OFFSET_PROPERTIES.forEach(function (property) {
+        var value = readValue(property);
+
+        if (capturablePositionOffset(value)) {
+          declarations.push(property + ':' + value);
+        }
+      });
+
+      var zIndex = readValue('z-index');
+
+      if (/^-?\d{1,4}$/.test(zIndex || '')) {
+        declarations.push('z-index:' + zIndex);
+      }
     }
 
     return declarations.join(';');

@@ -85,6 +85,15 @@ controls are excluded from this, as from all style capture: an element's box
 can encode value-derived signals (`ch`-unit widths, validity styling), and no
 styling of masked content is ever serialized.
 
+**Positioned composition** (floating cards, overlays, badges) replays through
+`position: relative`/`absolute` with pixel offsets and a bounded integer
+`z-index` — pure geometry, no new resource vectors. `fixed` and `sticky` are
+intentionally never captured, in the widget or past the server's targeted
+value rule: page chrome stays in normal flow rather than pinning over the
+preview, and a hostile widget cannot use positioning to cover the preview
+shell. Masked elements and form controls are excluded as from all style
+capture.
+
 The **page-level background** is captured as a style summary, not a resource:
 the widget reads the body's (or the root element's) background color,
 gradient-only background image, and tile size under the same rules as element

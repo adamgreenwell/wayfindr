@@ -98,6 +98,7 @@ class CobrowseReplayPreview
         'border-radius', 'box-shadow', 'flex-direction', 'flex-wrap', 'justify-content',
         'align-items', 'align-content', 'gap', 'row-gap', 'column-gap',
         'grid-template-columns', 'color',
+        'position', 'top', 'right', 'bottom', 'left', 'z-index',
         'background-color', 'background-image', 'background-size', 'opacity', 'visibility', 'font-family', 'font-size',
         'font-weight', 'font-style', 'line-height', 'text-align', 'text-decoration',
         'text-decoration-line', 'text-transform', 'white-space', 'letter-spacing',
@@ -534,6 +535,17 @@ class CobrowseReplayPreview
     {
         if (mb_strlen($value) > (self::STYLE_VALUE_MAX_LENGTHS[$property] ?? 256)) {
             return false;
+        }
+
+        // Positioned replay is geometry-only and keyword-bounded: fixed and
+        // sticky must never survive, so a hostile widget cannot pin content
+        // over the preview, and z-index stays a small integer.
+        if ($property === 'position') {
+            return in_array(strtolower($value), ['relative', 'absolute'], true);
+        }
+
+        if ($property === 'z-index') {
+            return preg_match('/^-?\d{1,4}$/', $value) === 1;
         }
 
         $normalized = strtolower($value);
