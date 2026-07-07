@@ -94,6 +94,9 @@ test('provenance records the ruleset the widget reports it actually masked with'
             'mutation_sequence' => 7,
         ])
         ->and($event->metadata['reported_at'])->not->toBeNull()
+        // The content hash anchors the keyframe: the HTML itself is pruned on
+        // the retention schedule, but a claimed copy stays verifiable forever.
+        ->and($event->metadata['html_hash'])->toBe(hash('sha256', '<main><h1>Install Guide</h1><p>Secret-adjacent visitor copy.</p></main>'))
         ->and($event->metadata['masking_ruleset'])->toMatchArray([
             'source' => 'widget_reported',
             'hash' => hash('sha256', (string) json_encode([$bootstrapSelectors, $bootstrapTerms])),

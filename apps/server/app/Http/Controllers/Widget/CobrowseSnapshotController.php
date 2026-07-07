@@ -73,6 +73,10 @@ class CobrowseSnapshotController extends Controller
             'title' => $validated['title'] ?? null,
             'html' => $validated['html'],
             'text' => $validated['text'],
+            // Content hash anchors this keyframe: the HTML itself is pruned on
+            // the retention schedule, but the hash lets any later claimed copy
+            // of "what the agent saw" be verified or refuted from the trail.
+            'html_hash' => hash('sha256', $validated['html']),
             'html_length' => mb_strlen($validated['html']),
             'text_length' => mb_strlen($validated['text']),
             'node_count' => $validated['node_count'],

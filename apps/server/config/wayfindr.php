@@ -14,10 +14,14 @@ return [
         'docs_url' => 'https://github.com/adamgreenwell/wayfindr/blob/main/docs/privacy/data-responsibility.md',
     ],
 
+    'cobrowse' => [
+        'content_retention_hours' => (int) env('WAYFINDR_COBROWSE_CONTENT_RETENTION_HOURS', 72),
+    ],
+
     'retention' => [
         'label' => 'Operator-owned retention',
         'status' => 'manual',
-        'summary' => 'Automatic retention controls are not enabled yet.',
+        'summary' => 'Cobrowse page content is pruned automatically; broader retention stays operator-owned.',
         'description' => 'Assume application records, logs, and backups persist according to infrastructure defaults until an operator removes them or the host lifecycle removes them.',
         'docs_url' => 'https://github.com/adamgreenwell/wayfindr/blob/main/docs/privacy/data-inventory.md#retention-posture',
         'items' => [
@@ -32,9 +36,14 @@ return [
                 'description' => 'Server logs, snapshots, database dumps, and storage backups follow host and provider retention policies outside Wayfindr.',
             ],
             [
+                'label' => 'Cobrowse page content',
+                'value' => 'Auto-pruned '.((int) env('WAYFINDR_COBROWSE_CONTENT_RETENTION_HOURS', 72)).' hours after a session ends',
+                'description' => 'The scheduled wayfindr:prune-cobrowse-content command strips raw snapshot HTML, page text, and retained mutation batches from ended cobrowse sessions, keeping only content-free provenance (counts, timestamps, hashes, and audit events).',
+            ],
+            [
                 'label' => 'Automatic deletion',
-                'value' => 'Not shipped yet',
-                'description' => 'Deletion, export, and retention controls remain future work; explain that before real support traffic.',
+                'value' => 'Cobrowse content only',
+                'description' => 'Beyond cobrowse page content, deletion, export, and retention controls remain future work; explain that before real support traffic.',
             ],
         ],
         'reminders' => [

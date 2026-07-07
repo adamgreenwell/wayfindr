@@ -91,6 +91,7 @@ class CobrowseAuditTrail
             'node_count' => $this->intOrNull($snapshot['node_count'] ?? null),
             'masked_count' => $this->intOrNull($snapshot['masked_count'] ?? null),
             'html_length' => $this->intOrNull($snapshot['html_length'] ?? null),
+            'html_hash' => $this->stringOrNull($snapshot['html_hash'] ?? null),
             'mutation_sequence' => $this->intOrNull($snapshot['mutation_sequence'] ?? null),
             'resync_request_id' => $this->stringOrNull($snapshot['resync_request_id'] ?? null),
             'masking_ruleset' => $this->maskingRulesetProvenance($reportedRuleset, $siteRuleset),

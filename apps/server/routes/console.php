@@ -11,3 +11,7 @@ Artisan::command('inspire', function () {
 Schedule::command('wayfindr:send-alert-digests')
     ->hourly()
     ->description('Queue metadata-only Wayfindr alert digest email.');
+
+Schedule::command('wayfindr:prune-cobrowse-content')
+    ->hourly()
+    ->description('Strip raw cobrowse page content from ended sessions past the retention window.');

@@ -224,12 +224,27 @@ visitor.
 
 Snapshots leave a matching provenance record. Each reported snapshot writes a
 `cobrowse.snapshot_received` audit event carrying the capture time, node and
-masked counts, and — crucially — the site masking ruleset (mask selectors and
-sensitive terms) in force at capture time, pinned by a hash and bounded for
-readability. Masking is therefore provable per keyframe even after a site's
-rules change later, and the event never contains snapshot content. Paired with
-the preview-view log, "what ruleset governed what the agent saw at time T" is
-reconstructible from the audit trail alone.
+masked counts, a **content hash** of the snapshot HTML, and — crucially — the
+masking ruleset the widget actually applied (its bootstrap-cached mask
+selectors and sensitive terms), pinned by a hash, bounded for readability, and
+flagged when it diverges from the site's current settings. Masking is
+therefore provable per keyframe even after a site's rules change later, and
+the event never contains snapshot content. Paired with the preview-view log,
+"what ruleset governed what the agent saw at time T" is reconstructible from
+the audit trail alone.
+
+Cobrowse content is deliberately **not** retained as history. Wayfindr keeps
+only the latest snapshot per session, and the scheduled
+`wayfindr:prune-cobrowse-content` command strips raw snapshot HTML, page text,
+and retained mutation batches from ended sessions after a configurable window
+(`WAYFINDR_COBROWSE_CONTENT_RETENTION_HOURS`, default 72), keeping the
+content-free provenance — counts, timestamps, page URLs, hashes, and audit
+events — on its own longer terms. The content hash makes ephemeral keyframes
+*verifiable* without being *stored*: a later claimed copy of what an agent saw
+can be confirmed or refuted against the trail. Storing keyframe content
+history was considered and rejected for the default posture — cobrowse is
+shared page state, not a recording — and would only return as an explicit
+site-level opt-in.
 
 ## Operator Readiness Boundary
 
