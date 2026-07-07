@@ -312,7 +312,7 @@ class CobrowseReplayPreview
                 continue;
             }
 
-            if ($this->isSafeStyleValue($value)) {
+            if ($this->isSafeStyleValue($value, $property)) {
                 $safe[] = $property.':'.$value;
             }
         }
@@ -320,9 +320,22 @@ class CobrowseReplayPreview
         return implode(';', $safe);
     }
 
-    private function isSafeStyleValue(string $value): bool
+    /**
+     * Per-property value length caps, aligned with the widget's capture caps:
+     * gradients and multi-shadow lists legitimately run longer than the
+     * conservative default, and a mismatch would make the widget serialize
+     * surfaces the server then silently drops.
+     *
+     * @var array<string, int>
+     */
+    private const STYLE_VALUE_MAX_LENGTHS = [
+        'background-image' => 500,
+        'box-shadow' => 300,
+    ];
+
+    private function isSafeStyleValue(string $value, string $property = ''): bool
     {
-        if (mb_strlen($value) > 256) {
+        if (mb_strlen($value) > (self::STYLE_VALUE_MAX_LENGTHS[$property] ?? 256)) {
             return false;
         }
 

@@ -55,6 +55,29 @@ test('keeps gradient backgrounds, shadows, and box definition (#521)', function 
         ->and($srcdoc)->toContain('opacity:0.85');
 });
 
+test('keeps long gradients within the aligned per-property cap', function (): void {
+    // The widget captures gradients up to 500 chars; the server cap must match
+    // or values between 257 and 500 chars serialize client-side and silently
+    // drop here. Build a many-stop gradient between the old 256 default and
+    // the aligned 500 cap.
+    $stops = [];
+
+    for ($i = 0; $i <= 14; $i++) {
+        $stops[] = sprintf('rgb(%d, %d, %d) %d%%', 10 + $i, 20 + $i, 30 + $i, $i * 7);
+    }
+
+    $gradient = 'linear-gradient(135deg, '.implode(', ', $stops).')';
+
+    expect(mb_strlen($gradient))->toBeGreaterThan(256)->toBeLessThanOrEqual(500)
+        ->and(styledPreview('background-image:'.$gradient))->toContain('background-image:'.$gradient);
+
+    // Values beyond the aligned cap still drop.
+    $oversized = 'linear-gradient(135deg, '.implode(', ', array_merge($stops, $stops, $stops)).')';
+
+    expect(mb_strlen($oversized))->toBeGreaterThan(500)
+        ->and(styledPreview('background-image:'.$oversized))->not->toContain('background-image');
+});
+
 test('drops gradients whose stops are not color functions', function (): void {
     // Every function inside a value must be allowlisted, so a gradient cannot
     // smuggle a resource fetch through its stops.
