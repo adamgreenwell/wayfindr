@@ -252,3 +252,44 @@ test('never captures layout styles on masked containers', () => {
   assert.equal(html.includes('justify-content:space-between'), false);
   assert.equal(html.includes('gap:12px'), false);
 });
+
+// max-width on all elements (#542): plain block columns constrained by
+// max-width (like a hero copy column) kept their constraint only when they
+// happened to be flex/grid containers; now every element carries a plain
+// px/% max-width, so headlines wrap where the real page wraps.
+
+test('captures max-width on plain block elements', () => {
+  const dom = new JSDOM(
+    '<!doctype html><html><head><title>T</title></head><body><div data-cs="copy">A very long headline</div></body></html>',
+    { url: 'https://host.example.test/page' }
+  );
+
+  const html = Wayfindr.createCobrowseSnapshot(dom.window.document, {
+    location: dom.window.location,
+    view: fakeView({ copy: { display: 'block', 'max-width': '660px' } }),
+  }).html;
+
+  assert.match(html, /max-width:660px/);
+});
+
+test('captures only plain length max-width values', () => {
+  const dom = new JSDOM(
+    '<!doctype html><html><head><title>T</title></head><body>'
+    + '<div data-cs="pct">a</div><div data-cs="keyword">b</div><div data-cs="none">c</div>'
+    + '</body></html>',
+    { url: 'https://host.example.test/page' }
+  );
+
+  const html = Wayfindr.createCobrowseSnapshot(dom.window.document, {
+    location: dom.window.location,
+    view: fakeView({
+      pct: { display: 'block', 'max-width': '90%' },
+      keyword: { display: 'block', 'max-width': 'min-content' },
+      none: { display: 'block', 'max-width': 'none' },
+    }),
+  }).html;
+
+  assert.match(html, /max-width:90%/);
+  assert.equal(html.includes('min-content'), false);
+  assert.equal(html.includes('max-width:none'), false);
+});

@@ -2116,7 +2116,7 @@
 
   var CAPTURED_OWN_STYLE_PROPERTIES = [
     'background-color', 'background-image', 'border', 'border-radius',
-    'box-shadow', 'opacity', 'text-decoration-line',
+    'box-shadow', 'max-width', 'opacity', 'text-decoration-line',
   ];
 
   // Layout is only captured on flex/grid containers. Containers are a small
@@ -2126,7 +2126,7 @@
 
   var CAPTURED_LAYOUT_STYLE_PROPERTIES = [
     'flex-direction', 'flex-wrap', 'justify-content', 'align-items', 'gap',
-    'grid-template-columns', 'padding', 'margin', 'max-width',
+    'grid-template-columns', 'padding', 'margin',
   ];
 
   // Composition built on positioning instead of flex/grid (floating cards,
@@ -2203,6 +2203,13 @@
       return /^(repeating-)?(linear|radial|conic)-gradient\(/.test(value);
     }
 
+    // max-width constrains plain block columns (it can never cause overflow),
+    // so it is captured on every element — but only as a plain length.
+    // Keyword sizes (min-content, fit-content(...)) stay uncaptured.
+    if (property === 'max-width') {
+      return /^\d+(?:\.\d+)?(px|%)$/.test(value);
+    }
+
     return true;
   }
 
@@ -2223,6 +2230,10 @@
 
     if (property === 'border-radius') {
       return value === '0px' || value === '0px 0px 0px 0px';
+    }
+
+    if (property === 'max-width') {
+      return value === 'none';
     }
 
     if (property === 'opacity') {
@@ -2271,10 +2282,6 @@
 
     if (property === 'padding' || property === 'margin') {
       return value === '0px' || value === '0px 0px 0px 0px';
-    }
-
-    if (property === 'max-width') {
-      return value === 'none';
     }
 
     return false;
