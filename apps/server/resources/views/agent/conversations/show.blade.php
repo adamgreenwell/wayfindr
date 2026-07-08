@@ -754,9 +754,30 @@
                                 frame.style.transform = 'scale(' + scale + ')';
                             }
 
+                            // Chrome can leave the transform-scaled sandboxed iframe
+                            // unpainted after parsing its srcdoc: the layer gets promoted
+                            // but never rasterized, so the preview sits blank while every
+                            // diagnostic reads live. Rebuilding the box across a forced
+                            // reflow reliably repaints; visibility toggles and will-change
+                            // hints do not. Lives in this always-rendered block so
+                            // non-realtime installs get the initial repaint too.
+                            function repaintCobrowsePreview() {
+                                var frame = document.querySelector('[data-cobrowse-replay-frame]');
+
+                                if (!frame) {
+                                    return;
+                                }
+
+                                frame.style.display = 'none';
+                                void frame.offsetHeight;
+                                frame.style.display = '';
+                            }
+
                             window.wayfindrSizeCobrowsePreview = sizeCobrowsePreview;
+                            window.wayfindrRepaintCobrowsePreview = repaintCobrowsePreview;
                             window.addEventListener('resize', sizeCobrowsePreview);
                             sizeCobrowsePreview();
+                            repaintCobrowsePreview();
                         })();
                     </script>
                 @else
@@ -912,23 +933,14 @@
                 var refresh = document.querySelector('[data-cobrowse-refresh]');
                 var previewFrame = document.querySelector('[data-cobrowse-replay-frame]');
 
-                // Chrome can leave the transform-scaled sandboxed iframe
-                // unpainted after (re)parsing its srcdoc: the layer gets
-                // promoted but never rasterized, so the preview sits blank
-                // while every diagnostic reads live. Rebuilding the box across
-                // a forced reflow reliably repaints; visibility toggles and
-                // will-change hints do not.
+                // The repaint helper is defined next to the preview iframe in
+                // its always-rendered block (so non-realtime installs get the
+                // initial repaint); live swaps reuse it through the window hook.
                 function forcePreviewPaint() {
-                    if (!previewFrame) {
-                        return;
+                    if (typeof window.wayfindrRepaintCobrowsePreview === 'function') {
+                        window.wayfindrRepaintCobrowsePreview();
                     }
-
-                    previewFrame.style.display = 'none';
-                    void previewFrame.offsetHeight;
-                    previewFrame.style.display = '';
                 }
-
-                forcePreviewPaint();
                 var previewApplied = document.querySelector('[data-cobrowse-replay-applied]');
                 var previewSkipped = document.querySelector('[data-cobrowse-replay-skipped]');
                 var previewDriftStatus = document.querySelector('[data-cobrowse-replay-drift-status]');
