@@ -129,3 +129,9 @@ sometime." None of these restructure the heavy detail pages (that's #511).
   tablist, arrow keys, `#tab-<id>` deep links, legacy in-panel anchors still
   resolve); preview scale re-syncs on tab reveal. The "conversation map"
   band-aid is retired — the page needed a table of contents, now it has doors.
+- **2026-07-08** — **WS2 (#553)**: ticket detail rebuilt on the same tabs —
+  brief stays above as the always-visible summary; Work (state + escalation +
+  actions + internal notes) default, Conversation (badged with the linked
+  support code), External, Details (artifacts/reference/context/labels/
+  details/visitor), Activity (timeline + activity). The "ticket map" is
+  retired. Note-leak tests re-scoped to the work-state section boundary.

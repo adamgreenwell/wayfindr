@@ -60,7 +60,7 @@ test('ticket detail opens with an agent brief for the next ticket move', functio
                 'Ticket brief',
                 'Needs reply',
                 'Reply to visitor',
-                'Ticket map',
+                'Ticket workspace',
             ]);
 
         $briefHtml = Str::betweenFirst(
@@ -407,7 +407,7 @@ test('ticket detail work state keeps internal notes out of the summary preview',
             'Support reference',
         ]);
 
-    expect(Str::between($response->content(), 'Work state', 'Support reference'))
+    expect(Str::betweenFirst($response->content(), 'id="ticket-work-state-heading"', '</section>'))
         ->not->toContain('private escalation note for agents only');
 });
 
@@ -483,7 +483,7 @@ test('ticket detail work state surfaces the latest lifecycle handoff note', func
                 'Support reference',
             ]);
 
-        expect(Str::between($response->content(), 'Work state', 'Support reference'))
+        expect(Str::betweenFirst($response->content(), 'id="ticket-work-state-heading"', '</section>'))
             ->not->toContain('Private note that should stay in the timeline.')
             ->not->toContain('Waiting on customer billing contact.');
     } finally {

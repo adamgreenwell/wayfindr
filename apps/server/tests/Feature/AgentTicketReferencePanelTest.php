@@ -59,7 +59,7 @@ test('ticket detail shows a compact support reference for linked tickets', funct
     $ticketHeader = Str::between(
         $response->content(),
         '<h1>Reference ticket</h1>',
-        '<section class="section" aria-labelledby="ticket-map-heading">',
+        '<section class="section" aria-labelledby="ticket-work-state-heading">',
     );
 
     expect($ticketHeader)
@@ -69,7 +69,7 @@ test('ticket detail shows a compact support reference for linked tickets', funct
         ->toContain('Copy support code WF-REFERENCE');
 });
 
-test('ticket detail gives agents a section map for available workspaces', function (): void {
+test('ticket detail organizes the workspace into tabs', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
     $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
@@ -94,22 +94,41 @@ test('ticket detail gives agents a section map for available workspaces', functi
             'subject' => 'Mapped ticket',
         ]);
 
-    $this->actingAs($agent)
+    $response = $this->actingAs($agent)
         ->get(route('dashboard.tickets.show', $ticket))
         ->assertOk()
-        ->assertSee('Ticket map')
-        ->assertSee('href="#ticket-work-state-heading"', false)
-        ->assertSee('href="#ticket-reference-heading"', false)
-        ->assertSee('href="#ticket-labels-heading"', false)
-        ->assertSee('href="#ticket-timeline-heading"', false)
-        ->assertSee('href="#linked-conversation-heading"', false)
-        ->assertSee('href="#ticket-reply"', false)
-        ->assertSee('href="#external-links-heading"', false)
-        ->assertSee('href="#ticket-visitor-context-heading"', false)
-        ->assertSee('href="#ticket-actions-heading"', false)
-        ->assertSee('href="#ticket-details-heading"', false)
-        ->assertSee('href="#ticket-notes-heading"', false)
-        ->assertSee('href="#ticket-activity-heading"', false);
+        // The tabbed workspace replaces the old "ticket map" jump list: the
+        // agent's work is the default tab and everything else is one click
+        // away instead of a 50-section scroll.
+        ->assertDontSee('Ticket map')
+        ->assertSee('role="tablist"', false)
+        ->assertSeeInOrder([
+            'data-tab="work"',
+            'data-tab="conversation"',
+            'data-tab="external"',
+            'data-tab="details"',
+            'data-tab="activity"',
+        ], false)
+        ->assertSeeInOrder([
+            'data-tab-panel="work"',
+            'data-tab-panel="conversation"',
+            'data-tab-panel="external"',
+            'data-tab-panel="details"',
+            'data-tab-panel="activity"',
+        ], false)
+        // The linked conversation's support code badges the tab itself.
+        ->assertSee('WF-MAP')
+        // Legacy anchors survive inside the panels for deep links.
+        ->assertSee('id="ticket-work-state-heading"', false)
+        ->assertSee('id="linked-conversation-heading"', false)
+        ->assertSee('id="external-links-heading"', false)
+        ->assertSee('id="ticket-notes-heading"', false)
+        ->assertSee('id="ticket-activity-heading"', false);
+
+    // The work panel is the active default; the rest start hidden.
+    $html = $response->getContent();
+    expect(preg_match('/data-tab-panel="work"[^>]*hidden/', $html))->toBe(0)
+        ->and(preg_match('/hidden[^>]*data-tab-panel="activity"|data-tab-panel="activity"[^>]*hidden/', $html))->toBe(1);
 });
 
 test('ticket detail guides agents through empty workspaces', function (): void {
