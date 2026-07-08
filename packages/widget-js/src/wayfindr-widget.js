@@ -500,6 +500,7 @@
     var cobrowseVisitorNotice = null;
     var pendingCobrowseConsentFocus = false;
     var mutationObserver = null;
+    var cobrowseResumeInFlight = false;
     var pendingMutationRecords = [];
     var skippedMutationRecords = 0;
     var mutationFlushTimer = null;
@@ -1363,6 +1364,10 @@
         });
 
         if (cobrowseGranted) {
+          // Claim the kickoff so a concurrent status poll cannot run the
+          // resume path (#544) while this sequence is mid-flight.
+          cobrowseResumeInFlight = true;
+
           try {
             await client.reportCobrowseTelemetry(supportCode, {
               rttMs: Date.now() - startedAt,
@@ -1391,6 +1396,7 @@
           }
 
           startMutationStream();
+          cobrowseResumeInFlight = false;
         } else {
           stopMutationStream();
         }
@@ -1415,6 +1421,7 @@
         var result = await client.fetchCobrowseStatus(supportCode);
 
         applyCobrowseStatus(result && result.cobrowse ? result.cobrowse : null);
+        await resumeCobrowseReporting();
 
         return result;
       } catch (error) {
@@ -1424,6 +1431,44 @@
 
         return null;
       }
+    }
+
+    // A reloaded page that resumes a conversation (#528) discovers an
+    // already-granted cobrowse session through the status poll instead of a
+    // consent click, so nothing restarted reporting: the widget showed
+    // "Cobrowse is active" while the agent preview stayed frozen (#544).
+    // Discovering granted-but-not-reporting re-runs the same sequence the
+    // consent click runs — fresh page state, fresh snapshot, mutation stream.
+    // Consent stays untouched: the session was granted and never ended, the
+    // visitor sees the active state with a Stop control, and revoking still
+    // stops everything through the same status handling.
+    async function resumeCobrowseReporting() {
+      if (!cobrowseGranted || mutationObserver || cobrowseResumeInFlight || !supportCode) {
+        return;
+      }
+
+      cobrowseResumeInFlight = true;
+
+      try {
+        await client.reportCobrowsePageState(supportCode, collectPageState());
+      } catch (error) {
+        // Best-effort: the next poll retries the resume.
+      }
+
+      try {
+        await client.reportCobrowseSnapshot(supportCode, createCobrowseSnapshot(doc, {
+          location: location,
+          maskSelectors: client.getMaskSelectors(),
+          sensitiveTerms: client.getSensitiveTerms(),
+        }));
+      } catch (error) {
+        // Best-effort: the agent can still pull a resync explicitly.
+      }
+
+      // Only consider the resume settled once the stream is observing;
+      // startMutationStream is a no-op without a body or observer support.
+      startMutationStream();
+      cobrowseResumeInFlight = false;
     }
 
     async function refreshMessages(options) {

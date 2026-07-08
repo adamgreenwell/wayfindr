@@ -43,6 +43,13 @@ After consent, the widget may send:
 Those payloads should remain compact, bounded, and recoverable. They should not
 be treated as a permanent recording of the visitor's browser.
 
+A page reload does not end consent: when a reloaded page resumes its
+conversation and discovers its cobrowse session still granted and un-ended,
+the widget resumes reporting (fresh page state, fresh snapshot, mutation
+stream) so the state the visitor sees — "Cobrowse is active" with a Stop
+control — stays honest. Revoking or stopping cobrowse ends reporting through
+the same status handling regardless of how reporting started.
+
 ## Capture Scope
 
 The snapshot captures the page body, including the content of **open** shadow

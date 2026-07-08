@@ -6927,3 +6927,106 @@ test('does not yank a scrolled-up visitor when a refresh brings no new messages'
   assert.equal(jump.hidden, true);
   assert.equal(timeline.scrollTop, 0);
 });
+
+test('resumes cobrowse reporting when a reloaded page discovers a granted session', async () => {
+  // #544: reporting only started on the consent click, so a reloaded page
+  // that resumed its conversation showed "Cobrowse is active" while sending
+  // nothing — the agent preview froze until a manual resync. Discovering a
+  // granted session through the status refresh must re-run the same
+  // sequence the consent click runs: page state, fresh snapshot, mutation
+  // stream.
+  const storage = memoryStorage();
+  storage.setItem('wayfindr:site_public_docs:support-code', 'WF-RESUME1');
+
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div><main><p>Page copy.</p></main></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+  const calls = [];
+
+  Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-resume',
+    storage,
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    fetch: async (url, fetchOptions) => {
+      calls.push({ url, options: fetchOptions });
+
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return jsonResponse(201, {
+          data: {
+            site: { public_key: 'site_public_docs', settings: {} },
+            visitor: { anonymous_id: 'anon-resume', token: 'visitor-token-resume' },
+          },
+        });
+      }
+
+      if (url.includes('/cobrowse?')) {
+        return jsonResponse(200, {
+          data: {
+            conversation: { support_code: 'WF-RESUME1' },
+            cobrowse: {
+              status: 'granted',
+              consent: 'granted',
+              requested_by: { name: 'Ada Agent' },
+              resync: { requested: false, request_id: null },
+            },
+          },
+        });
+      }
+
+      if (url.endsWith('/cobrowse-page-state') || url.endsWith('/cobrowse-snapshot')) {
+        return jsonResponse(200, { data: { conversation: { support_code: 'WF-RESUME1' }, snapshot: {} } });
+      }
+
+      return jsonResponse(200, {
+        data: { conversation: { support_code: 'WF-RESUME1', status: 'open' }, messages: [] },
+      });
+    },
+  });
+
+  await settle();
+  await settle();
+
+  const snapshotPosts = calls.filter((call) => call.url.endsWith('/cobrowse-snapshot'));
+  const pageStatePosts = calls.filter((call) => call.url.endsWith('/cobrowse-page-state'));
+
+  assert.equal(snapshotPosts.length, 1, 'resume must send exactly one fresh snapshot');
+  assert.equal(pageStatePosts.length, 1, 'resume must report page state');
+
+  const snapshotBody = JSON.parse(snapshotPosts[0].options.body);
+  assert.match(snapshotBody.html, /Page copy\./);
+});
+
+test('does not resume cobrowse reporting for sessions that are not granted', async () => {
+  const storage = memoryStorage();
+  storage.setItem('wayfindr:site_public_docs:support-code', 'WF-RESUME1');
+
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+  const calls = [];
+
+  Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-resume',
+    storage,
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    fetch: resumeFetchMock(calls),
+  });
+
+  await settle();
+  await settle();
+
+  assert.equal(calls.some((call) => call.url.endsWith('/cobrowse-snapshot')), false);
+  assert.equal(calls.some((call) => call.url.endsWith('/cobrowse-page-state')), false);
+});
