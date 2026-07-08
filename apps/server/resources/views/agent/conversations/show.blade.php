@@ -911,6 +911,24 @@
                 var status = document.querySelector('[data-cobrowse-update-status]');
                 var refresh = document.querySelector('[data-cobrowse-refresh]');
                 var previewFrame = document.querySelector('[data-cobrowse-replay-frame]');
+
+                // Chrome can leave the transform-scaled sandboxed iframe
+                // unpainted after (re)parsing its srcdoc: the layer gets
+                // promoted but never rasterized, so the preview sits blank
+                // while every diagnostic reads live. Rebuilding the box across
+                // a forced reflow reliably repaints; visibility toggles and
+                // will-change hints do not.
+                function forcePreviewPaint() {
+                    if (!previewFrame) {
+                        return;
+                    }
+
+                    previewFrame.style.display = 'none';
+                    void previewFrame.offsetHeight;
+                    previewFrame.style.display = '';
+                }
+
+                forcePreviewPaint();
                 var previewApplied = document.querySelector('[data-cobrowse-replay-applied]');
                 var previewSkipped = document.querySelector('[data-cobrowse-replay-skipped]');
                 var previewDriftStatus = document.querySelector('[data-cobrowse-replay-drift-status]');
@@ -1028,6 +1046,11 @@
                     // width across live swaps (the width can change if the visitor
                     // resizes or moves devices).
                     syncPreviewViewport(preview.viewport_width);
+
+                    // After the swap and the re-applied scale transform, force
+                    // the repaint — every srcdoc replacement can re-trigger the
+                    // blank-layer stall the initial load hits.
+                    forcePreviewPaint();
 
                     return true;
                 }

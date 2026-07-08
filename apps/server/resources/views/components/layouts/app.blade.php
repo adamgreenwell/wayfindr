@@ -858,10 +858,6 @@
             border: 0;
             background: #ffffff;
             transform-origin: 0 0;
-            /* Chrome can skip the initial paint of a transform-scaled sandboxed
-               iframe, leaving the preview blank until something forces a repaint;
-               promoting it to its own compositor layer avoids that. */
-            will-change: transform;
         }
 
         .live-update {
