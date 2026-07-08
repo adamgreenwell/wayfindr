@@ -308,13 +308,20 @@
                 </section>
             @endif
 
-            @if ($canManageAccountSettings)
-                <section class="section" aria-labelledby="account-management-heading">
-                    <div class="section-header">
-                        <h2 id="account-management-heading">Management</h2>
-                        <span class="lede">Account-wide settings</span>
-                    </div>
-                    <div class="management-list">
+            <section class="section" aria-labelledby="account-management-heading">
+                <div class="section-header">
+                    <h2 id="account-management-heading">Management</h2>
+                    <span class="lede">Account-wide settings</span>
+                </div>
+                <div class="management-list">
+                    <a class="management-link" href="{{ route('dashboard.account.integrations') }}">
+                        <span>
+                            <strong>Integrations</strong>
+                            <span class="lede">External issue providers and where each site hands tickets off.</span>
+                        </span>
+                        <span class="management-action">{{ $canManageAccountSettings ? 'Manage' : 'View' }}</span>
+                    </a>
+                    @if ($canManageAccountSettings)
                         <a class="management-link" href="{{ route('dashboard.account.reply-templates.index') }}">
                             <span>
                                 <strong>Reply templates</strong>
@@ -329,9 +336,9 @@
                             </span>
                             <span class="management-action">Manage</span>
                         </a>
-                    </div>
-                </section>
-            @endif
+                    @endif
+                </div>
+            </section>
 
             <section class="section" aria-labelledby="account-activity-heading">
                 <div class="section-header">

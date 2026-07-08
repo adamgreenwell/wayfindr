@@ -20,6 +20,7 @@ class AgentExternalIssueProviderConnectionController extends Controller
         $account = $agent->account()->firstOrFail();
 
         $validated = $request->validate([
+            'return_to' => ['nullable', 'string', Rule::in(['integrations'])],
             'site_id' => ['nullable', 'integer', Rule::exists('sites', 'id')->where('account_id', $account->id)],
             'provider' => ['required', 'string', Rule::in(ExternalIssueProvider::values())],
             'name' => ['required', 'string', 'max:255'],
@@ -39,11 +40,17 @@ class AgentExternalIssueProviderConnectionController extends Controller
             'is_enabled' => true,
         ]);
 
-        return $this->redirectAfterUpdate($account, $validated['site_id'] ?? null, 'Provider connection saved.');
+        return $this->redirectAfterUpdate($account, $validated['site_id'] ?? null, 'Provider connection saved.', $validated['return_to'] ?? null);
     }
 
-    private function redirectAfterUpdate(Account $account, mixed $siteId, string $status): RedirectResponse
+    private function redirectAfterUpdate(Account $account, mixed $siteId, string $status, ?string $returnTo = null): RedirectResponse
     {
+        if ($returnTo === 'integrations') {
+            return redirect()
+                ->route('dashboard.account.integrations')
+                ->with('status', $status);
+        }
+
         if (is_numeric($siteId) && $account->sites()->whereKey((int) $siteId)->exists()) {
             return redirect()
                 ->route('dashboard.sites.show', (int) $siteId)

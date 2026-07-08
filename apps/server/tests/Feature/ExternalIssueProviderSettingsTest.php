@@ -23,7 +23,9 @@ test('account admins can create encrypted external issue provider connections', 
         ->get("/dashboard/sites/{$site->id}")
         ->assertOk()
         ->assertSee('External issue routing')
-        ->assertSee('Add provider connection');
+        // Connection setup moved to the account-level Integrations home
+        // (#554); the site page cross-links instead of embedding the form.
+        ->assertSee(route('dashboard.account.integrations'));
 
     $this->actingAs($admin)
         ->from("/dashboard/sites/{$site->id}")

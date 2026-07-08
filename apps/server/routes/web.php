@@ -5,6 +5,7 @@ use App\Http\Controllers\AgentAccountAgentController;
 use App\Http\Controllers\AgentAccountAgentRoleController;
 use App\Http\Controllers\AgentAccountAuditController;
 use App\Http\Controllers\AgentAccountController;
+use App\Http\Controllers\AgentAccountIntegrationsController;
 use App\Http\Controllers\AgentAlertController;
 use App\Http\Controllers\AgentConversationController;
 use App\Http\Controllers\AgentConversationQueueController;
@@ -62,6 +63,8 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.profile.password.update');
     Route::get('/dashboard/account', AgentAccountController::class)
         ->name('dashboard.account.show');
+    Route::get('/dashboard/account/integrations', [AgentAccountIntegrationsController::class, 'show'])
+        ->name('dashboard.account.integrations');
     Route::get('/dashboard/account/audit', [AgentAccountAuditController::class, 'index'])
         ->name('dashboard.account.audit.index');
     Route::get('/dashboard/account/audit/export', [AgentAccountAuditController::class, 'export'])

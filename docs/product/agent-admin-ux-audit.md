@@ -135,3 +135,13 @@ sometime." None of these restructure the heavy detail pages (that's #511).
   support code), External, Details (artifacts/reference/context/labels/
   details/visitor), Activity (timeline + activity). The "ticket map" is
   retired. Note-leak tests re-scoped to the work-state section boundary.
+- **2026-07-08** — WS1+WS2 live-validated on stage: tabs render with live
+  badges, cobrowse preview sizes on tab reveal, hash deep links + the
+  round-trip tab memory verified against the real timeline-filter flow.
+- **2026-07-08** — **WS3 (#554)**: account-level Integrations home at
+  `/dashboard/account/integrations` — provider connections listed for every
+  agent ("managed by an account admin" hint for non-admins), the add form
+  moved off the bottom of site detail (site pages cross-link instead), a
+  per-site project-mapping overview, empty-state setup guidance, and an
+  always-visible Integrations entry in the Account Management group. The #22
+  feature finally has a front door.

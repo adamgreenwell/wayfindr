@@ -587,79 +587,20 @@
                     @endif
                 </div>
 
+                <div class="section-header">
+                    <strong>Provider connections</strong>
+                    <span class="lede">Account-owned</span>
+                </div>
+
+                <p class="lede">
+                    Provider connections are shared by every site in this account and managed from the
+                    <a class="text-link" href="{{ route('dashboard.account.integrations') }}">Integrations home</a>.
+                    @unless ($canManageIntegrations)
+                        Connections are managed by an account admin.
+                    @endunless
+                </p>
+
                 @if ($canManageIntegrations)
-                    <form class="section-form" method="POST" action="{{ route('dashboard.external-issue-provider-connections.store') }}">
-                        @csrf
-                        <input type="hidden" name="site_id" value="{{ $site->id }}">
-
-                        <div class="section-header">
-                            <strong>Add provider connection</strong>
-                            <span class="lede">Account-owned</span>
-                        </div>
-
-                        <div class="field">
-                            <label for="provider">Provider</label>
-                            <select id="provider" name="provider">
-                                @foreach ($externalIssueProviders as $value => $label)
-                                    <option value="{{ $value }}" @selected(old('provider', 'github') === $value)>
-                                        {{ $label }}
-                                    </option>
-                                @endforeach
-                            </select>
-                            @error('provider')
-                                <p class="field-error">{{ $message }}</p>
-                            @enderror
-                        </div>
-
-                        <div class="field">
-                            <label for="provider_connection_name">Connection name</label>
-                            <input id="provider_connection_name" name="name" type="text" value="{{ old('name') }}" placeholder="Engineering GitHub">
-                            @error('name')
-                                <p class="field-error">{{ $message }}</p>
-                            @enderror
-                        </div>
-
-                        <div class="field">
-                            <label for="base_url">Base URL</label>
-                            <input id="base_url" name="base_url" type="url" value="{{ old('base_url') }}" placeholder="https://api.github.com">
-                            @error('base_url')
-                                <p class="field-error">{{ $message }}</p>
-                            @enderror
-                        </div>
-
-                        <div class="field">
-                            <label for="credential_token">Token or credential placeholder</label>
-                            <input id="credential_token" name="credential_token" type="password" value="" autocomplete="new-password">
-                            @error('credential_token')
-                                <p class="field-error">{{ $message }}</p>
-                            @enderror
-                        </div>
-
-                        <div class="notice-list">
-                            @foreach ($externalIssueCapabilities as $value => $label)
-                                <label class="check-row" for="capability_{{ $value }}">
-                                    <input
-                                        id="capability_{{ $value }}"
-                                        name="capabilities[]"
-                                        type="checkbox"
-                                        value="{{ $value }}"
-                                        @checked(in_array($value, $selectedCapabilities, true))
-                                    >
-                                    <span>Provider can {{ strtolower($label) }}</span>
-                                </label>
-                            @endforeach
-                        </div>
-
-                        @error('capabilities')
-                            <p class="field-error">{{ $message }}</p>
-                        @enderror
-                        @error('capabilities.*')
-                            <p class="field-error">{{ $message }}</p>
-                        @enderror
-
-                        <button class="button" type="submit">Save provider connection</button>
-                    </form>
-
                     <form class="section-form" method="POST" action="{{ route('dashboard.sites.external-issue-projects.store', $site) }}">
                         @csrf
 
