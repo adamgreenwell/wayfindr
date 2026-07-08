@@ -1350,6 +1350,14 @@
 
       var startedAt = Date.now();
 
+      // Claim the kickoff for the whole consent update: the server commits
+      // the grant as soon as the POST lands, so a status poll racing this
+      // request could otherwise see "granted" and run the resume path (#544)
+      // before this sequence reports — double-sending page state and
+      // snapshot. Claiming up front also keeps a mid-revoke poll from
+      // resuming reporting off stale granted status.
+      cobrowseResumeInFlight = true;
+
       cobrowseAllow.disabled = true;
       cobrowseDecline.disabled = true;
       status.textContent = nextGranted ? 'Granting cobrowse consent...' : 'Revoking cobrowse consent...';
@@ -1364,10 +1372,6 @@
         });
 
         if (cobrowseGranted) {
-          // Claim the kickoff so a concurrent status poll cannot run the
-          // resume path (#544) while this sequence is mid-flight.
-          cobrowseResumeInFlight = true;
-
           try {
             await client.reportCobrowseTelemetry(supportCode, {
               rttMs: Date.now() - startedAt,
@@ -1396,7 +1400,6 @@
           }
 
           startMutationStream();
-          cobrowseResumeInFlight = false;
         } else {
           stopMutationStream();
         }
@@ -1405,6 +1408,7 @@
       } catch (error) {
         status.textContent = error.message || 'Wayfindr could not update cobrowse consent.';
       } finally {
+        cobrowseResumeInFlight = false;
         cobrowseAllow.disabled = false;
         cobrowseDecline.disabled = false;
       }
