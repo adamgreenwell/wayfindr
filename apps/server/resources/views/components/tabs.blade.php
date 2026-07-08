@@ -31,6 +31,31 @@
 @once
     <script>
         (function () {
+            // The active tab survives server round-trips (failed validation
+            // redirects, filter links, refreshes): fragments never reach the
+            // server, so the client remembers per page + container instead.
+            // An agent who submits a form from a panel lands back on that
+            // panel with the validation feedback visible.
+            function tabStorageKey(container) {
+                return 'wayfindr:tabs:' + window.location.pathname + ':' + container.id;
+            }
+
+            function rememberTab(container, tabId) {
+                try {
+                    window.sessionStorage.setItem(tabStorageKey(container), tabId);
+                } catch (error) {
+                    // Storage may be unavailable (private mode); tabs still work.
+                }
+            }
+
+            function rememberedTab(container) {
+                try {
+                    return window.sessionStorage.getItem(tabStorageKey(container));
+                } catch (error) {
+                    return null;
+                }
+            }
+
             function activateTab(container, tabId, focusTab) {
                 var buttons = container.querySelectorAll('[role="tab"]');
                 var panels = container.querySelectorAll('[data-tab-panel]');
@@ -49,6 +74,8 @@
                 panels.forEach(function (panel) {
                     panel.hidden = panel.dataset.tabPanel !== tabId;
                 });
+
+                rememberTab(container, tabId);
 
                 window.dispatchEvent(new CustomEvent('wayfindr:tab-shown', {
                     detail: { tabs: container.id, panel: tabId },
@@ -97,7 +124,7 @@
                     var hash = window.location.hash.replace(/^#/, '');
 
                     if (!hash) {
-                        return;
+                        return false;
                     }
 
                     var direct = hash.indexOf('tab-') === 0 ? hash.slice(4) : null;
@@ -105,7 +132,7 @@
                     if (direct && container.querySelector('[data-tab-panel="' + direct + '"]')) {
                         activateTab(container, direct, false);
 
-                        return;
+                        return true;
                     }
 
                     var anchor = document.getElementById(hash);
@@ -114,11 +141,28 @@
                     if (panel && container.contains(panel)) {
                         activateTab(container, panel.dataset.tabPanel, false);
                         anchor.scrollIntoView();
+
+                        return true;
                     }
+
+                    return false;
                 }
 
                 window.addEventListener('hashchange', resolveHash);
-                resolveHash();
+
+                // Selection priority at load: an explicit hash wins, then the
+                // remembered tab for this page, then the server-rendered
+                // default. The memory is what carries the active tab across
+                // full round-trips — failed validation redirects land the
+                // agent back on the panel with the feedback, and filter links
+                // that only change the query string keep their tab open.
+                if (! resolveHash()) {
+                    var remembered = rememberedTab(container);
+
+                    if (remembered && container.querySelector('[data-tab-panel="' + remembered + '"]')) {
+                        activateTab(container, remembered, false);
+                    }
+                }
             }
 
             document.querySelectorAll('[data-tabs]').forEach(initTabs);
