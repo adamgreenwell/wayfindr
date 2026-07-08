@@ -88,25 +88,37 @@
                 });
 
                 // Deep links: #tab-<id> selects a tab; an anchor to any element
-                // inside a panel (old in-page heading links, shared URLs) selects
-                // the panel containing it, then scrolls to the anchor.
-                var hash = window.location.hash.replace(/^#/, '');
+                // inside a panel (old in-page heading links, shared URLs, CTAs
+                // that jump between panels) selects the panel containing it,
+                // then scrolls to the anchor. Resolved at load AND on every
+                // hash change, so same-page links from one panel into another
+                // reveal their target instead of pointing at a hidden element.
+                function resolveHash() {
+                    var hash = window.location.hash.replace(/^#/, '');
 
-                if (hash) {
+                    if (!hash) {
+                        return;
+                    }
+
                     var direct = hash.indexOf('tab-') === 0 ? hash.slice(4) : null;
 
                     if (direct && container.querySelector('[data-tab-panel="' + direct + '"]')) {
                         activateTab(container, direct, false);
-                    } else {
-                        var anchor = document.getElementById(hash);
-                        var panel = anchor ? anchor.closest('[data-tab-panel]') : null;
 
-                        if (panel && container.contains(panel)) {
-                            activateTab(container, panel.dataset.tabPanel, false);
-                            anchor.scrollIntoView();
-                        }
+                        return;
+                    }
+
+                    var anchor = document.getElementById(hash);
+                    var panel = anchor ? anchor.closest('[data-tab-panel]') : null;
+
+                    if (panel && container.contains(panel)) {
+                        activateTab(container, panel.dataset.tabPanel, false);
+                        anchor.scrollIntoView();
                     }
                 }
+
+                window.addEventListener('hashchange', resolveHash);
+                resolveHash();
             }
 
             document.querySelectorAll('[data-tabs]').forEach(initTabs);
