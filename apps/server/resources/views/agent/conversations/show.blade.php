@@ -791,27 +791,27 @@
                                 return rect.bottom > 0 && rect.top < viewportHeight;
                             }
 
+                            // The toggle must only run (and clear the flag) when the frame
+                            // is on screen RIGHT NOW: observer callbacks can deliver stale
+                            // queued entries (a fast scroll past the preview queues an
+                            // intersecting entry followed by a non-intersecting one), so
+                            // visibility is always re-read from live geometry at toggle time.
+                            function attemptPreviewRepaint() {
+                                if (previewNeedsRepaint && frameIsOnScreen()) {
+                                    repaintCobrowsePreview();
+                                }
+                            }
+
                             if (repaintFrame) {
                                 repaintFrame.addEventListener('load', function () {
                                     previewNeedsRepaint = true;
-
-                                    if (frameIsOnScreen()) {
-                                        repaintCobrowsePreview();
-                                    }
+                                    attemptPreviewRepaint();
                                 });
 
                                 if (typeof IntersectionObserver === 'function') {
-                                    new IntersectionObserver(function (entries) {
-                                        var visible = entries.some(function (entry) {
-                                            return entry.isIntersecting;
-                                        });
-
-                                        if (visible && previewNeedsRepaint) {
-                                            repaintCobrowsePreview();
-                                        }
-                                    }).observe(repaintFrame);
-                                } else if (frameIsOnScreen()) {
-                                    repaintCobrowsePreview();
+                                    new IntersectionObserver(attemptPreviewRepaint).observe(repaintFrame);
+                                } else {
+                                    attemptPreviewRepaint();
                                 }
                             }
 
