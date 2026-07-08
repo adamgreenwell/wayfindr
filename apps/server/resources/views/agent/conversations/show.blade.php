@@ -758,9 +758,13 @@
                             // unpainted after parsing its srcdoc: the layer gets promoted
                             // but never rasterized, so the preview sits blank while every
                             // diagnostic reads live. Rebuilding the box across a forced
-                            // reflow reliably repaints; visibility toggles and will-change
-                            // hints do not. Lives in this always-rendered block so
-                            // non-realtime installs get the initial repaint too.
+                            // reflow reliably repaints — but only once the srcdoc document
+                            // has finished loading; nudging mid-parse does nothing and the
+                            // stall lands afterwards. So the toggle runs from the frame's
+                            // load event, which also re-fires on every live srcdoc swap;
+                            // the immediate call covers a document that finished loading
+                            // before this script attached the listener. Lives in this
+                            // always-rendered block so non-realtime installs are covered.
                             function repaintCobrowsePreview() {
                                 var frame = document.querySelector('[data-cobrowse-replay-frame]');
 
@@ -773,8 +777,13 @@
                                 frame.style.display = '';
                             }
 
+                            var repaintFrame = document.querySelector('[data-cobrowse-replay-frame]');
+
+                            if (repaintFrame) {
+                                repaintFrame.addEventListener('load', repaintCobrowsePreview);
+                            }
+
                             window.wayfindrSizeCobrowsePreview = sizeCobrowsePreview;
-                            window.wayfindrRepaintCobrowsePreview = repaintCobrowsePreview;
                             window.addEventListener('resize', sizeCobrowsePreview);
                             sizeCobrowsePreview();
                             repaintCobrowsePreview();
@@ -932,15 +941,6 @@
                 var status = document.querySelector('[data-cobrowse-update-status]');
                 var refresh = document.querySelector('[data-cobrowse-refresh]');
                 var previewFrame = document.querySelector('[data-cobrowse-replay-frame]');
-
-                // The repaint helper is defined next to the preview iframe in
-                // its always-rendered block (so non-realtime installs get the
-                // initial repaint); live swaps reuse it through the window hook.
-                function forcePreviewPaint() {
-                    if (typeof window.wayfindrRepaintCobrowsePreview === 'function') {
-                        window.wayfindrRepaintCobrowsePreview();
-                    }
-                }
                 var previewApplied = document.querySelector('[data-cobrowse-replay-applied]');
                 var previewSkipped = document.querySelector('[data-cobrowse-replay-skipped]');
                 var previewDriftStatus = document.querySelector('[data-cobrowse-replay-drift-status]');
@@ -1056,13 +1056,11 @@
 
                     // Keep the preview rendered at the visitor's reported viewport
                     // width across live swaps (the width can change if the visitor
-                    // resizes or moves devices).
+                    // resizes or moves devices). The repaint after the swap needs
+                    // no call here: the frame's persistent load listener (in the
+                    // preview block) fires when the replaced srcdoc finishes
+                    // parsing — the only moment the repaint actually works.
                     syncPreviewViewport(preview.viewport_width);
-
-                    // After the swap and the re-applied scale transform, force
-                    // the repaint — every srcdoc replacement can re-trigger the
-                    // blank-layer stall the initial load hits.
-                    forcePreviewPaint();
 
                     return true;
                 }
