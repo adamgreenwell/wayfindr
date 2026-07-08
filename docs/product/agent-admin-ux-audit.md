@@ -6,7 +6,12 @@ passes know where we came from and where to go. The deeper restructuring lives
 in issue #511 (post-MVP holistic UI re-evaluation); this document is the record
 that feeds it.
 
-**Status: MVP UX cohesion pass shipped and live-validated on stage (2026-06-29). All four strokes done; remaining work tracked in #511.**
+**Status: #511 is now the active epic (2026-07-08). Guiding principle (Adam):
+"UI and UX that is unobtrusive and enables the agent to find what they need for
+a customer right now rather than ask an end-user to wait while they look for
+something." Tabs over long scrolls. Workstreams: WS1 #552 (conversation tabs),
+WS2 #553 (ticket tabs), WS3 #554 (Integrations home), WS4 #555 (Settings hub +
+home cut), WS5 #556 (agent mobile), WS6 #557 (empty states/onboarding).**
 
 Status legend: ✅ done · 🔭 deferred to #511 · ⬜ planned
 
@@ -115,3 +120,12 @@ sometime." None of these restructure the heavy detail pages (that's #511).
   tooling; the only mobile-specific change (topbar stacking) is covered by the
   explicit grid-area template and the broader agent mobile pass stays in #511.
   **MVP UX cohesion pass closed.** Remaining items all live under #511.
+- **2026-07-08** — #511 promoted to active epic (cobrowse declared MVP-complete;
+  MVP support loop dogfooded green, #551). Tabs chosen over long scrolls.
+  **WS1 (#552)**: conversation detail rebuilt as a tabbed workspace —
+  Conversation (context + messages + reply) default, Cobrowse (replay preview
+  promoted above the transport diagnostics), Visitor, Ticket (linked-count
+  badge). Reusable `<x-tabs>`/`<x-tab-panel>` components extracted (accessible
+  tablist, arrow keys, `#tab-<id>` deep links, legacy in-panel anchors still
+  resolve); preview scale re-syncs on tab reveal. The "conversation map"
+  band-aid is retired — the page needed a table of contents, now it has doors.

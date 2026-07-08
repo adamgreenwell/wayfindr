@@ -8,15 +8,6 @@
                     'unseen' => 'attention',
                     default => 'manual',
                 };
-                $conversationMapSections = [
-                    ['label' => 'Context', 'href' => '#conversation-context-heading'],
-                    ['label' => 'Visitor', 'href' => '#visitor-context-heading'],
-                    ['label' => 'Messages', 'href' => '#messages-heading'],
-                    ['label' => 'Reply', 'href' => '#reply-heading'],
-                    ['label' => 'Ticket', 'href' => '#tickets-heading'],
-                    ['label' => 'Cobrowse', 'href' => '#cobrowse-heading'],
-                    ['label' => 'Status', 'href' => '#conversation-status-action'],
-                ];
             @endphp
 
             <x-page-header :title="$conversation->subject ?? 'Untitled conversation'" :subtitle="'Support code '.$conversation->support_code" :back-href="$conversationBackUrl" back-label="Back to conversations" />
@@ -25,27 +16,17 @@
                 <p class="status-message">{{ session('status') }}</p>
             @endif
 
-            <section class="section" aria-labelledby="conversation-map-heading">
-                <div class="section-header">
-                    <h2 id="conversation-map-heading">Conversation map</h2>
-                    <span class="lede">Jump to what this conversation needs next.</span>
-                </div>
-
-                <div class="filter-summary" aria-label="Conversation detail sections">
-                    <div>
-                        <strong>Available sections</strong>
-                        <p class="lede">Use the map when the full conversation workspace gets long.</p>
-                    </div>
-                    <div class="filter-chips">
-                        @foreach ($conversationMapSections as $conversationMapSection)
-                            <a class="filter-chip" href="{{ $conversationMapSection['href'] }}">
-                                {{ $conversationMapSection['label'] }}
-                            </a>
-                        @endforeach
-                    </div>
-                </div>
-            </section>
-
+            <x-tabs
+                id="conversation-workspace"
+                label="Conversation workspace"
+                :tabs="[
+                    ['id' => 'conversation', 'label' => 'Conversation'],
+                    ['id' => 'cobrowse', 'label' => 'Cobrowse', 'badge' => $cobrowseConsent['transport']['label'] ?? null],
+                    ['id' => 'visitor', 'label' => 'Visitor'],
+                    ['id' => 'ticket', 'label' => 'Ticket', 'badge' => $tickets->isEmpty() ? null : $tickets->count().' linked'],
+                ]"
+            >
+                <x-tab-panel id="conversation" active>
             <section class="section" aria-labelledby="conversation-context-heading">
                 <div class="section-header">
                     <h2 id="conversation-context-heading">Context</h2>
@@ -147,215 +128,10 @@
                 </form>
             </section>
 
-            <section class="section" aria-labelledby="visitor-context-heading">
-                <div class="section-header">
-                    <h2 id="visitor-context-heading">Visitor at a glance</h2>
-                    <div class="section-actions">
-                        <span class="lede">Safe context only</span>
-                        @if ($conversation->visitor)
-                            <a class="button secondary" href="{{ route('dashboard.visitors.show', $conversation->visitor) }}">Open visitor profile</a>
-                        @endif
-                    </div>
-                </div>
-
-                <div class="meta-grid">
-                    <div class="meta-item">
-                        <span class="meta-label">Visitor</span>
-                        <span class="meta-value">{{ $visitorContext['anonymous_id'] }}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Host visitor ID</span>
-                        <span class="meta-value">{{ $visitorContext['external_id'] ?? 'Not provided' }}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Presence</span>
-                        <span class="readiness-status" data-status="{{ in_array($visitorContext['presence']['state'], ['active', 'recent'], true) ? 'ready' : 'manual' }}" data-visitor-presence-label aria-live="polite">
-                            {{ $visitorContext['presence']['label'] }}
-                        </span>
-                        <span class="lede" data-visitor-presence-detail>{{ $visitorContext['presence']['detail'] }}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Last seen</span>
-                        <span class="meta-value" data-visitor-presence-last-seen>{{ $visitorContext['last_seen_at']?->diffForHumans() ?? 'Not reported' }}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Latest page</span>
-                        <span class="meta-value">{{ $visitorContext['last_page_url'] ?? 'Not reported' }}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Entry page</span>
-                        <span class="meta-value">{{ $visitorContext['started_page_url'] ?? 'Not reported' }}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">History on this site</span>
-                        <span class="meta-value">{{ $priorConversations->count() }} previous</span>
-                    </div>
-                </div>
-
-                <div class="section-header">
-                    <strong>Support references</strong>
-                    <span class="lede">Current and same-visitor records</span>
-                </div>
-
-                <div class="meta-grid">
-                    <div class="meta-item">
-                        <span class="meta-label">Current support code</span>
-                        <span class="meta-value">
-                            <x-support-code-reference
-                                :code="$conversation->support_code"
-                                :href="route('dashboard.support-code.lookup', ['support_code' => $conversation->support_code])"
-                            />
-                        </span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Visitor reference</span>
-                        <span class="meta-value">{{ $visitorContext['external_id'] ?? $visitorContext['anonymous_id'] }}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Same visitor support codes</span>
-                        <span class="meta-value">{{ $priorConversations->count() }} previous</span>
-                        @if ($priorConversations->isEmpty())
-                            <div class="notice-list">
-                                <p>No previous support codes yet.</p>
-                            </div>
-                        @else
-                            <div class="notice-list">
-                                @foreach ($priorConversations as $priorConversation)
-                                    <p>
-                                        <a class="text-link" href="{{ route('dashboard.conversations.show', $priorConversation->support_code) }}">
-                                            {{ $priorConversation->support_code }}
-                                        </a>
-                                        <span class="lede">{{ $priorConversation->subject ?? 'Untitled conversation' }}</span>
-                                    </p>
-                                @endforeach
-                            </div>
-                        @endif
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Reference note</span>
-                        <span class="meta-value">Use these references when the visitor or another agent needs to find this support trail again.</span>
-                    </div>
-                </div>
-
-                <div class="notice-copy notice-copy-bordered">
-                    <p><strong>Data boundary</strong></p>
-                    <p>Use this context to answer the current request. Do not collect, export, or infer extra visitor data without consent.</p>
-                </div>
-
-                <div class="section-header">
-                    <strong>Host context</strong>
-                    <span class="lede">{{ count($visitorContext['host_context']) }} fields</span>
-                </div>
-
-                @if ($visitorContext['host_context'] === [])
-                    <p class="empty">No host-provided context yet.</p>
-                @else
-                    <div class="table-wrap">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th scope="col">Field</th>
-                                    <th scope="col">Value</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach ($visitorContext['host_context'] as $field => $value)
-                                    <tr>
-                                        <td>{{ $field }}</td>
-                                        <td>{{ $value }}</td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </div>
-                @endif
-
-                <div class="section-header">
-                    <strong>Prior conversations</strong>
-                    <span class="lede">{{ $priorConversations->count() }} previous</span>
-                </div>
-
-                @if ($priorConversations->isEmpty())
-                    <p class="empty">No prior conversations for this visitor on this site.</p>
-                @else
-                    <div class="timeline-list">
-                        @foreach ($priorConversations as $priorConversation)
-                            <article class="timeline-item">
-                                <div class="timeline-content">
-                                    <a class="text-link" href="{{ route('dashboard.conversations.show', $priorConversation->support_code) }}">
-                                        {{ $priorConversation->subject ?? 'Untitled conversation' }}
-                                    </a>
-                                    <div class="timeline-meta">
-                                        <span>{{ $priorConversation->support_code }}</span>
-                                        <span>{{ ucfirst($priorConversation->status) }}</span>
-                                        <span>Owner: {{ $priorConversation->assignedAgent?->name ?? 'Unassigned' }}</span>
-                                        <span>Last activity: {{ $priorConversation->last_message_at?->diffForHumans() ?? $priorConversation->created_at->diffForHumans() }}</span>
-                                    </div>
-                                    <div class="timeline-meta">
-                                        <strong>Linked ticket</strong>
-                                        @forelse ($priorConversation->tickets as $ticket)
-                                            <a class="text-link" href="{{ route('dashboard.tickets.show', $ticket) }}">
-                                                {{ $ticket->subject }}
-                                            </a>
-                                            <span>{{ ucfirst($ticket->status) }}</span>
-                                        @empty
-                                            <span>No ticket</span>
-                                        @endforelse
-                                    </div>
-                                </div>
-                            </article>
-                        @endforeach
-                    </div>
-                @endif
-            </section>
-
             @include('agent.conversations.partials.chat-workspace')
+                </x-tab-panel>
 
-            <section class="section" aria-labelledby="tickets-heading">
-                <div class="section-header">
-                    <h2 id="tickets-heading">Ticket</h2>
-                    <span class="lede">{{ $tickets->isEmpty() ? 'Not created' : $tickets->count().' linked' }}</span>
-                </div>
-
-                @if ($tickets->isEmpty())
-                    <form class="section-form" method="POST" action="{{ route('dashboard.conversations.tickets.store', $conversation->support_code) }}">
-                        @csrf
-                        @include('agent.conversations.partials.return-query-fields')
-
-                        <div class="field">
-                            <label for="category">Category</label>
-                            <select id="category" name="category">
-                                <option value="">Uncategorized</option>
-                                @foreach ($ticketCategories as $value => $category)
-                                    <option value="{{ $value }}" @selected(old('category') === $value)>{{ $category['label'] }}</option>
-                                @endforeach
-                            </select>
-                            <x-ticket-category-guidance :categories="$ticketCategoryGuidance" />
-                            @error('category')
-                                <p class="field-error">{{ $message }}</p>
-                            @enderror
-                        </div>
-
-                        <div class="field">
-                            <label for="priority">Priority</label>
-                            <select id="priority" name="priority">
-                                @foreach ($ticketPriorities as $value => $priority)
-                                    <option value="{{ $value }}" @selected(old('priority', 'normal') === $value)>{{ $priority['label'] }}</option>
-                                @endforeach
-                            </select>
-                            <x-ticket-priority-guidance :priorities="$ticketPriorityGuidance" />
-                            @error('priority')
-                                <p class="field-error">{{ $message }}</p>
-                            @enderror
-                        </div>
-
-                        <button class="button" type="submit">Create ticket</button>
-                    </form>
-                @else
-                    @include('agent.conversations.partials.linked-ticket-work')
-                @endif
-            </section>
-
+                <x-tab-panel id="cobrowse">
             <section class="section" aria-labelledby="cobrowse-heading">
                 <div class="section-header">
                     <h2 id="cobrowse-heading">Cobrowse</h2>
@@ -507,6 +283,157 @@
                             @endforeach
                         </div>
                     @endif
+                @endif
+
+                @if ($cobrowseConsent['replay_preview'])
+                    <div class="section-header">
+                        <strong>Replay preview</strong>
+                        <span class="lede">
+                            <span data-cobrowse-replay-applied>{{ $cobrowseConsent['replay_preview']['applied_mutations'] }}</span>
+                            /
+                            <span data-cobrowse-replay-skipped>{{ $cobrowseConsent['replay_preview']['skipped_mutations'] }}</span>
+                        </span>
+                        @if ($cobrowseConsent['replay_preview']['viewport_width'])
+                            <span class="lede" data-cobrowse-viewport-label>Visitor viewport {{ number_format($cobrowseConsent['replay_preview']['viewport_width']) }}px</span>
+                        @else
+                            <span class="lede" data-cobrowse-viewport-label hidden></span>
+                        @endif
+                        <span
+                            class="readiness-status"
+                            data-status="{{ $cobrowseConsent['replay_preview']['drift']['tone'] }}"
+                            data-cobrowse-replay-drift-status
+                        >{{ $cobrowseConsent['replay_preview']['drift']['label'] }}</span>
+                    </div>
+
+                    <p
+                        class="lede realtime-note"
+                        data-cobrowse-replay-drift-message
+                        data-recommend-resync="{{ $cobrowseConsent['replay_preview']['drift']['recommend_resync'] ? 'true' : 'false' }}"
+                        @unless ($cobrowseConsent['replay_preview']['drift']['state'] !== 'steady') hidden @endunless
+                    >{{ $cobrowseConsent['replay_preview']['drift']['message'] }} ({{ $cobrowseConsent['replay_preview']['drift']['summary'] }})</p>
+
+                    <div class="cobrowse-preview-frame">
+                        <div class="cobrowse-preview-scale">
+                            <iframe
+                                class="cobrowse-preview"
+                                title="Cobrowse replay preview"
+                                sandbox
+                                srcdoc="{{ $cobrowseConsent['replay_preview']['srcdoc'] }}"
+                                data-cobrowse-replay-frame
+                                @if ($cobrowseConsent['replay_preview']['viewport_width']) data-viewport-width="{{ $cobrowseConsent['replay_preview']['viewport_width'] }}" @endif
+                            ></iframe>
+                        </div>
+                    </div>
+
+                    <script>
+                        (function () {
+                            // Render the sandboxed preview at the visitor's reported viewport
+                            // width, scaled down to fit the dashboard column (never scaled up),
+                            // so captured layout keeps the visitor's real proportions instead
+                            // of wrapping at whatever width the column happens to be.
+                            function sizeCobrowsePreview() {
+                                var frame = document.querySelector('[data-cobrowse-replay-frame]');
+
+                                if (!frame || !frame.parentElement) {
+                                    return;
+                                }
+
+                                var wrap = frame.parentElement;
+                                var viewportWidth = parseInt(frame.getAttribute('data-viewport-width') || '', 10);
+
+                                if (!viewportWidth || viewportWidth <= 0 || wrap.clientWidth <= 0) {
+                                    frame.style.width = '';
+                                    frame.style.height = '';
+                                    frame.style.transform = '';
+
+                                    return;
+                                }
+
+                                var scale = Math.min(1, wrap.clientWidth / viewportWidth);
+
+                                frame.style.width = viewportWidth + 'px';
+                                frame.style.height = Math.round(wrap.clientHeight / scale) + 'px';
+                                frame.style.transform = 'scale(' + scale + ')';
+                            }
+
+                            // Chrome can leave the transform-scaled sandboxed iframe
+                            // unpainted after parsing its srcdoc: the layer gets promoted
+                            // but never rasterized, so the preview sits blank while every
+                            // diagnostic reads live. Rebuilding the box across a forced
+                            // reflow repaints it, but only when BOTH conditions hold: the
+                            // srcdoc document has finished loading (nudging mid-parse does
+                            // nothing) AND the frame is in the viewport (nudging offscreen
+                            // does nothing, and the preview sits below the fold on a cold
+                            // page load). So every frame `load` arms a needs-repaint flag
+                            // and an IntersectionObserver fires the toggle at the first
+                            // moment the loaded frame is actually visible — immediately for
+                            // live swaps the agent is watching, on scroll-in otherwise.
+                            // Lives in this always-rendered block so non-realtime installs
+                            // are covered. CSS zoom instead of transform would avoid the
+                            // stall entirely but re-lays-out the inner document at the
+                            // zoomed box width, losing the visitor's true viewport geometry.
+                            var repaintFrame = document.querySelector('[data-cobrowse-replay-frame]');
+                            var previewNeedsRepaint = true;
+
+                            function repaintCobrowsePreview() {
+                                if (!repaintFrame) {
+                                    return;
+                                }
+
+                                repaintFrame.style.display = 'none';
+                                void repaintFrame.offsetHeight;
+                                repaintFrame.style.display = '';
+                                previewNeedsRepaint = false;
+                            }
+
+                            function frameIsOnScreen() {
+                                var rect = repaintFrame.getBoundingClientRect();
+                                var viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+
+                                return rect.bottom > 0 && rect.top < viewportHeight;
+                            }
+
+                            // The toggle must only run (and clear the flag) when the frame
+                            // is on screen RIGHT NOW: observer callbacks can deliver stale
+                            // queued entries (a fast scroll past the preview queues an
+                            // intersecting entry followed by a non-intersecting one), so
+                            // visibility is always re-read from live geometry at toggle time.
+                            function attemptPreviewRepaint() {
+                                if (previewNeedsRepaint && frameIsOnScreen()) {
+                                    repaintCobrowsePreview();
+                                }
+                            }
+
+                            if (repaintFrame) {
+                                repaintFrame.addEventListener('load', function () {
+                                    previewNeedsRepaint = true;
+                                    attemptPreviewRepaint();
+                                });
+
+                                if (typeof IntersectionObserver === 'function') {
+                                    new IntersectionObserver(attemptPreviewRepaint).observe(repaintFrame);
+                                } else {
+                                    attemptPreviewRepaint();
+                                }
+                            }
+
+                            // Inside a hidden tab panel the wrapper measures 0 wide, so the
+                            // scale can only be computed once the Cobrowse tab is revealed.
+                            // The repaint machinery follows on its own: the reveal makes the
+                            // frame intersect, which fires the deferred repaint.
+                            window.addEventListener('wayfindr:tab-shown', function (event) {
+                                if (event.detail && event.detail.panel === 'cobrowse') {
+                                    sizeCobrowsePreview();
+                                }
+                            });
+
+                            window.wayfindrSizeCobrowsePreview = sizeCobrowsePreview;
+                            window.addEventListener('resize', sizeCobrowsePreview);
+                            sizeCobrowsePreview();
+                        })();
+                    </script>
+                @else
+                    <p class="empty realtime-note" data-cobrowse-replay-empty>No replay preview yet.</p>
                 @endif
 
                 @if ($cobrowseConsent['transport'])
@@ -683,146 +610,6 @@
                     <p class="empty realtime-note">No mutation stream diagnostics yet.</p>
                 @endif
 
-                @if ($cobrowseConsent['replay_preview'])
-                    <div class="section-header">
-                        <strong>Replay preview</strong>
-                        <span class="lede">
-                            <span data-cobrowse-replay-applied>{{ $cobrowseConsent['replay_preview']['applied_mutations'] }}</span>
-                            /
-                            <span data-cobrowse-replay-skipped>{{ $cobrowseConsent['replay_preview']['skipped_mutations'] }}</span>
-                        </span>
-                        @if ($cobrowseConsent['replay_preview']['viewport_width'])
-                            <span class="lede" data-cobrowse-viewport-label>Visitor viewport {{ number_format($cobrowseConsent['replay_preview']['viewport_width']) }}px</span>
-                        @else
-                            <span class="lede" data-cobrowse-viewport-label hidden></span>
-                        @endif
-                        <span
-                            class="readiness-status"
-                            data-status="{{ $cobrowseConsent['replay_preview']['drift']['tone'] }}"
-                            data-cobrowse-replay-drift-status
-                        >{{ $cobrowseConsent['replay_preview']['drift']['label'] }}</span>
-                    </div>
-
-                    <p
-                        class="lede realtime-note"
-                        data-cobrowse-replay-drift-message
-                        data-recommend-resync="{{ $cobrowseConsent['replay_preview']['drift']['recommend_resync'] ? 'true' : 'false' }}"
-                        @unless ($cobrowseConsent['replay_preview']['drift']['state'] !== 'steady') hidden @endunless
-                    >{{ $cobrowseConsent['replay_preview']['drift']['message'] }} ({{ $cobrowseConsent['replay_preview']['drift']['summary'] }})</p>
-
-                    <div class="cobrowse-preview-frame">
-                        <div class="cobrowse-preview-scale">
-                            <iframe
-                                class="cobrowse-preview"
-                                title="Cobrowse replay preview"
-                                sandbox
-                                srcdoc="{{ $cobrowseConsent['replay_preview']['srcdoc'] }}"
-                                data-cobrowse-replay-frame
-                                @if ($cobrowseConsent['replay_preview']['viewport_width']) data-viewport-width="{{ $cobrowseConsent['replay_preview']['viewport_width'] }}" @endif
-                            ></iframe>
-                        </div>
-                    </div>
-
-                    <script>
-                        (function () {
-                            // Render the sandboxed preview at the visitor's reported viewport
-                            // width, scaled down to fit the dashboard column (never scaled up),
-                            // so captured layout keeps the visitor's real proportions instead
-                            // of wrapping at whatever width the column happens to be.
-                            function sizeCobrowsePreview() {
-                                var frame = document.querySelector('[data-cobrowse-replay-frame]');
-
-                                if (!frame || !frame.parentElement) {
-                                    return;
-                                }
-
-                                var wrap = frame.parentElement;
-                                var viewportWidth = parseInt(frame.getAttribute('data-viewport-width') || '', 10);
-
-                                if (!viewportWidth || viewportWidth <= 0 || wrap.clientWidth <= 0) {
-                                    frame.style.width = '';
-                                    frame.style.height = '';
-                                    frame.style.transform = '';
-
-                                    return;
-                                }
-
-                                var scale = Math.min(1, wrap.clientWidth / viewportWidth);
-
-                                frame.style.width = viewportWidth + 'px';
-                                frame.style.height = Math.round(wrap.clientHeight / scale) + 'px';
-                                frame.style.transform = 'scale(' + scale + ')';
-                            }
-
-                            // Chrome can leave the transform-scaled sandboxed iframe
-                            // unpainted after parsing its srcdoc: the layer gets promoted
-                            // but never rasterized, so the preview sits blank while every
-                            // diagnostic reads live. Rebuilding the box across a forced
-                            // reflow repaints it, but only when BOTH conditions hold: the
-                            // srcdoc document has finished loading (nudging mid-parse does
-                            // nothing) AND the frame is in the viewport (nudging offscreen
-                            // does nothing, and the preview sits below the fold on a cold
-                            // page load). So every frame `load` arms a needs-repaint flag
-                            // and an IntersectionObserver fires the toggle at the first
-                            // moment the loaded frame is actually visible — immediately for
-                            // live swaps the agent is watching, on scroll-in otherwise.
-                            // Lives in this always-rendered block so non-realtime installs
-                            // are covered. CSS zoom instead of transform would avoid the
-                            // stall entirely but re-lays-out the inner document at the
-                            // zoomed box width, losing the visitor's true viewport geometry.
-                            var repaintFrame = document.querySelector('[data-cobrowse-replay-frame]');
-                            var previewNeedsRepaint = true;
-
-                            function repaintCobrowsePreview() {
-                                if (!repaintFrame) {
-                                    return;
-                                }
-
-                                repaintFrame.style.display = 'none';
-                                void repaintFrame.offsetHeight;
-                                repaintFrame.style.display = '';
-                                previewNeedsRepaint = false;
-                            }
-
-                            function frameIsOnScreen() {
-                                var rect = repaintFrame.getBoundingClientRect();
-                                var viewportHeight = window.innerHeight || document.documentElement.clientHeight;
-
-                                return rect.bottom > 0 && rect.top < viewportHeight;
-                            }
-
-                            // The toggle must only run (and clear the flag) when the frame
-                            // is on screen RIGHT NOW: observer callbacks can deliver stale
-                            // queued entries (a fast scroll past the preview queues an
-                            // intersecting entry followed by a non-intersecting one), so
-                            // visibility is always re-read from live geometry at toggle time.
-                            function attemptPreviewRepaint() {
-                                if (previewNeedsRepaint && frameIsOnScreen()) {
-                                    repaintCobrowsePreview();
-                                }
-                            }
-
-                            if (repaintFrame) {
-                                repaintFrame.addEventListener('load', function () {
-                                    previewNeedsRepaint = true;
-                                    attemptPreviewRepaint();
-                                });
-
-                                if (typeof IntersectionObserver === 'function') {
-                                    new IntersectionObserver(attemptPreviewRepaint).observe(repaintFrame);
-                                } else {
-                                    attemptPreviewRepaint();
-                                }
-                            }
-
-                            window.wayfindrSizeCobrowsePreview = sizeCobrowsePreview;
-                            window.addEventListener('resize', sizeCobrowsePreview);
-                            sizeCobrowsePreview();
-                        })();
-                    </script>
-                @else
-                    <p class="empty realtime-note" data-cobrowse-replay-empty>No replay preview yet.</p>
-                @endif
 
                 @if ($cobrowseConsent['payload_budget'])
                     <div class="section-header">
@@ -922,6 +709,220 @@
 
                 <p class="empty realtime-note" data-cobrowse-telemetry-empty @if ($cobrowseConsent['telemetry']) hidden @endif>No cobrowse connection telemetry yet.</p>
             </section>
+                </x-tab-panel>
+
+                <x-tab-panel id="visitor">
+            <section class="section" aria-labelledby="visitor-context-heading">
+                <div class="section-header">
+                    <h2 id="visitor-context-heading">Visitor at a glance</h2>
+                    <div class="section-actions">
+                        <span class="lede">Safe context only</span>
+                        @if ($conversation->visitor)
+                            <a class="button secondary" href="{{ route('dashboard.visitors.show', $conversation->visitor) }}">Open visitor profile</a>
+                        @endif
+                    </div>
+                </div>
+
+                <div class="meta-grid">
+                    <div class="meta-item">
+                        <span class="meta-label">Visitor</span>
+                        <span class="meta-value">{{ $visitorContext['anonymous_id'] }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Host visitor ID</span>
+                        <span class="meta-value">{{ $visitorContext['external_id'] ?? 'Not provided' }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Presence</span>
+                        <span class="readiness-status" data-status="{{ in_array($visitorContext['presence']['state'], ['active', 'recent'], true) ? 'ready' : 'manual' }}" data-visitor-presence-label aria-live="polite">
+                            {{ $visitorContext['presence']['label'] }}
+                        </span>
+                        <span class="lede" data-visitor-presence-detail>{{ $visitorContext['presence']['detail'] }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Last seen</span>
+                        <span class="meta-value" data-visitor-presence-last-seen>{{ $visitorContext['last_seen_at']?->diffForHumans() ?? 'Not reported' }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Latest page</span>
+                        <span class="meta-value">{{ $visitorContext['last_page_url'] ?? 'Not reported' }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Entry page</span>
+                        <span class="meta-value">{{ $visitorContext['started_page_url'] ?? 'Not reported' }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">History on this site</span>
+                        <span class="meta-value">{{ $priorConversations->count() }} previous</span>
+                    </div>
+                </div>
+
+                <div class="section-header">
+                    <strong>Support references</strong>
+                    <span class="lede">Current and same-visitor records</span>
+                </div>
+
+                <div class="meta-grid">
+                    <div class="meta-item">
+                        <span class="meta-label">Current support code</span>
+                        <span class="meta-value">
+                            <x-support-code-reference
+                                :code="$conversation->support_code"
+                                :href="route('dashboard.support-code.lookup', ['support_code' => $conversation->support_code])"
+                            />
+                        </span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Visitor reference</span>
+                        <span class="meta-value">{{ $visitorContext['external_id'] ?? $visitorContext['anonymous_id'] }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Same visitor support codes</span>
+                        <span class="meta-value">{{ $priorConversations->count() }} previous</span>
+                        @if ($priorConversations->isEmpty())
+                            <div class="notice-list">
+                                <p>No previous support codes yet.</p>
+                            </div>
+                        @else
+                            <div class="notice-list">
+                                @foreach ($priorConversations as $priorConversation)
+                                    <p>
+                                        <a class="text-link" href="{{ route('dashboard.conversations.show', $priorConversation->support_code) }}">
+                                            {{ $priorConversation->support_code }}
+                                        </a>
+                                        <span class="lede">{{ $priorConversation->subject ?? 'Untitled conversation' }}</span>
+                                    </p>
+                                @endforeach
+                            </div>
+                        @endif
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Reference note</span>
+                        <span class="meta-value">Use these references when the visitor or another agent needs to find this support trail again.</span>
+                    </div>
+                </div>
+
+                <div class="notice-copy notice-copy-bordered">
+                    <p><strong>Data boundary</strong></p>
+                    <p>Use this context to answer the current request. Do not collect, export, or infer extra visitor data without consent.</p>
+                </div>
+
+                <div class="section-header">
+                    <strong>Host context</strong>
+                    <span class="lede">{{ count($visitorContext['host_context']) }} fields</span>
+                </div>
+
+                @if ($visitorContext['host_context'] === [])
+                    <p class="empty">No host-provided context yet.</p>
+                @else
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Field</th>
+                                    <th scope="col">Value</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($visitorContext['host_context'] as $field => $value)
+                                    <tr>
+                                        <td>{{ $field }}</td>
+                                        <td>{{ $value }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
+
+                <div class="section-header">
+                    <strong>Prior conversations</strong>
+                    <span class="lede">{{ $priorConversations->count() }} previous</span>
+                </div>
+
+                @if ($priorConversations->isEmpty())
+                    <p class="empty">No prior conversations for this visitor on this site.</p>
+                @else
+                    <div class="timeline-list">
+                        @foreach ($priorConversations as $priorConversation)
+                            <article class="timeline-item">
+                                <div class="timeline-content">
+                                    <a class="text-link" href="{{ route('dashboard.conversations.show', $priorConversation->support_code) }}">
+                                        {{ $priorConversation->subject ?? 'Untitled conversation' }}
+                                    </a>
+                                    <div class="timeline-meta">
+                                        <span>{{ $priorConversation->support_code }}</span>
+                                        <span>{{ ucfirst($priorConversation->status) }}</span>
+                                        <span>Owner: {{ $priorConversation->assignedAgent?->name ?? 'Unassigned' }}</span>
+                                        <span>Last activity: {{ $priorConversation->last_message_at?->diffForHumans() ?? $priorConversation->created_at->diffForHumans() }}</span>
+                                    </div>
+                                    <div class="timeline-meta">
+                                        <strong>Linked ticket</strong>
+                                        @forelse ($priorConversation->tickets as $ticket)
+                                            <a class="text-link" href="{{ route('dashboard.tickets.show', $ticket) }}">
+                                                {{ $ticket->subject }}
+                                            </a>
+                                            <span>{{ ucfirst($ticket->status) }}</span>
+                                        @empty
+                                            <span>No ticket</span>
+                                        @endforelse
+                                    </div>
+                                </div>
+                            </article>
+                        @endforeach
+                    </div>
+                @endif
+            </section>
+                </x-tab-panel>
+
+                <x-tab-panel id="ticket">
+            <section class="section" aria-labelledby="tickets-heading">
+                <div class="section-header">
+                    <h2 id="tickets-heading">Ticket</h2>
+                    <span class="lede">{{ $tickets->isEmpty() ? 'Not created' : $tickets->count().' linked' }}</span>
+                </div>
+
+                @if ($tickets->isEmpty())
+                    <form class="section-form" method="POST" action="{{ route('dashboard.conversations.tickets.store', $conversation->support_code) }}">
+                        @csrf
+                        @include('agent.conversations.partials.return-query-fields')
+
+                        <div class="field">
+                            <label for="category">Category</label>
+                            <select id="category" name="category">
+                                <option value="">Uncategorized</option>
+                                @foreach ($ticketCategories as $value => $category)
+                                    <option value="{{ $value }}" @selected(old('category') === $value)>{{ $category['label'] }}</option>
+                                @endforeach
+                            </select>
+                            <x-ticket-category-guidance :categories="$ticketCategoryGuidance" />
+                            @error('category')
+                                <p class="field-error">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <div class="field">
+                            <label for="priority">Priority</label>
+                            <select id="priority" name="priority">
+                                @foreach ($ticketPriorities as $value => $priority)
+                                    <option value="{{ $value }}" @selected(old('priority', 'normal') === $value)>{{ $priority['label'] }}</option>
+                                @endforeach
+                            </select>
+                            <x-ticket-priority-guidance :priorities="$ticketPriorityGuidance" />
+                            @error('priority')
+                                <p class="field-error">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <button class="button" type="submit">Create ticket</button>
+                    </form>
+                @else
+                    @include('agent.conversations.partials.linked-ticket-work')
+                @endif
+            </section>
+                </x-tab-panel>
+
+            </x-tabs>
 
             <script>
                 (function () {

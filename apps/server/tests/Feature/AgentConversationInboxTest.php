@@ -274,9 +274,11 @@ test('conversation detail shows bounded latest activity previews', function (): 
             'Visitor at a glance',
         ]);
 
+    // Scope to the context section alone: in the tabbed workspace the
+    // messages list (which renders full bodies) follows it directly.
     $conversationContext = str($visitorResponse->getContent())
         ->after('id="conversation-context-heading"')
-        ->before('id="visitor-context-heading"');
+        ->before('id="messages-heading"');
 
     expect($conversationContext->toString())->not->toContain('private-tail-that-should-not-render');
 
@@ -303,7 +305,7 @@ test('conversation detail shows bounded latest activity previews', function (): 
         ]);
 });
 
-test('conversation detail gives agents a section map for the workspace', function (): void {
+test('conversation detail organizes the workspace into tabs', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Riley Agent']);
 
@@ -332,35 +334,41 @@ test('conversation detail gives agents a section map for the workspace', functio
             'subject' => 'Mapped ticket',
         ]);
 
-    $this->actingAs($agent)
+    $response = $this->actingAs($agent)
         ->get(route('dashboard.conversations.show', $conversation->support_code))
         ->assertOk()
-        ->assertSee('Conversation map')
-        ->assertSee('Jump to what this conversation needs next.')
+        // The tabbed workspace replaces the old "conversation map" jump list:
+        // the agent's work (messages + reply) is the default tab, everything
+        // else is one click away instead of a long scroll.
+        ->assertDontSee('Conversation map')
+        ->assertSee('role="tablist"', false)
         ->assertSeeInOrder([
-            'Conversation map',
-            'Context',
-            'Visitor',
-            'Messages',
-            'Reply',
-            'Ticket',
-            'Cobrowse',
-            'Status',
-        ])
-        ->assertSee('href="#conversation-context-heading"', false)
-        ->assertSee('href="#visitor-context-heading"', false)
-        ->assertSee('href="#messages-heading"', false)
-        ->assertSee('href="#reply-heading"', false)
-        ->assertSee('href="#tickets-heading"', false)
-        ->assertSee('href="#cobrowse-heading"', false)
-        ->assertSee('href="#conversation-status-action"', false)
+            'data-tab="conversation"',
+            'data-tab="cobrowse"',
+            'data-tab="visitor"',
+            'data-tab="ticket"',
+        ], false)
         ->assertSeeInOrder([
-            'id="visitor-context-heading"',
+            'data-tab-panel="conversation"',
+            'data-tab-panel="cobrowse"',
+            'data-tab-panel="visitor"',
+            'data-tab-panel="ticket"',
+        ], false)
+        // The linked-ticket count surfaces on the tab itself.
+        ->assertSee('1 linked')
+        // Every panel's content still renders (hidden, not omitted).
+        ->assertSeeInOrder([
             'id="messages-heading"',
-            'id="reply-heading"',
-            'id="tickets-heading"',
             'id="cobrowse-heading"',
+            'id="visitor-context-heading"',
+            'id="tickets-heading"',
         ], false);
+
+    // The conversation panel is the active default; the rest start hidden.
+    $html = $response->getContent();
+    expect($html)->toContain('data-tab-panel="conversation"')
+        ->and(preg_match('/data-tab-panel="conversation"[^>]*hidden/', $html))->toBe(0)
+        ->and(preg_match('/hidden[^>]*data-tab-panel="cobrowse"|data-tab-panel="cobrowse"[^>]*hidden/', $html))->toBe(1);
 });
 
 test('conversation detail recommends the next action for the conversation state', function (): void {
