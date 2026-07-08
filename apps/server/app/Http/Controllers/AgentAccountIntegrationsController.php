@@ -24,7 +24,12 @@ class AgentAccountIntegrationsController extends Controller
             ->orderBy('name')
             ->get();
 
+        // Same visibility rule as the account overview and queues: explicit
+        // support assignments restrict which sites an agent sees, and a site
+        // that would 404 for this agent must not leak its name or project
+        // keys through the mapping overview.
         $sites = $account->sites()
+            ->visibleToAgent($agent)
             ->with('externalIssueProjects.providerConnection')
             ->orderBy('name')
             ->get();

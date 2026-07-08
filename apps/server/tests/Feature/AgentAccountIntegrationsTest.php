@@ -116,3 +116,37 @@ test('saving a connection from the integrations home returns to it', function ()
 
     expect($fixture['account']->externalIssueProviderConnections()->count())->toBe(1);
 });
+
+test('the mapping overview honors site support-assignment visibility', function (): void {
+    $fixture = integrationsAccount();
+
+    $connection = ExternalIssueProviderConnection::factory()->for($fixture['account'])->create([
+        'name' => 'Engineering GitHub',
+        'provider' => 'github',
+    ]);
+
+    $restrictedSite = Site::factory()->for($fixture['account'])->create(['name' => 'Restricted Ops']);
+    $restrictedSite->supportAgents()->attach($fixture['admin']);
+    $restrictedSite->externalIssueProjects()->create([
+        'account_id' => $fixture['account']->id,
+        'external_issue_provider_connection_id' => $connection->id,
+        'project_key' => 'acme/secret-ops',
+        'project_name' => 'Secret Ops',
+    ]);
+
+    // The unassigned agent sees the account-wide fallback site, but the
+    // restricted site (which would 404 for them) leaks neither its name nor
+    // its project key through the overview.
+    $this->actingAs($fixture['agent'])
+        ->get(route('dashboard.account.integrations'))
+        ->assertOk()
+        ->assertSee('Acme Docs')
+        ->assertDontSee('Restricted Ops')
+        ->assertDontSee('acme/secret-ops');
+
+    $this->actingAs($fixture['admin'])
+        ->get(route('dashboard.account.integrations'))
+        ->assertOk()
+        ->assertSee('Restricted Ops')
+        ->assertSee('acme/secret-ops');
+});
