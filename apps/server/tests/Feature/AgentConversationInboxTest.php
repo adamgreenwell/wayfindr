@@ -3290,7 +3290,7 @@ test('dashboard exposes ticket queue filter links', function (): void {
         ->assertSee('/dashboard/tickets?ticket_filter=unassigned', false);
 });
 
-test('dashboard lists account agents with active workload counts', function (): void {
+test('the account roster lists agents with active workload counts', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $otherAccount = Account::factory()->create(['name' => 'Other Support']);
     $agent = User::factory()->for($account)->create([
@@ -3345,18 +3345,16 @@ test('dashboard lists account agents with active workload counts', function (): 
         ->create(['status' => 'open']);
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/account')
         ->assertOk()
-        ->assertSee('Team')
-        ->assertSee('Open conversations')
-        ->assertSee('Open tickets')
-        ->assertSeeInOrder(['Ada Agent', 'ada@example.test', '1', '1'])
-        ->assertSeeInOrder(['Bea Builder', 'bea@example.test', '0', '2'])
+        ->assertSee('Agents')
+        ->assertSeeInOrder(['Ada Agent', 'ada@example.test', '1 open conversation', '1 open ticket'])
+        ->assertSeeInOrder(['Bea Builder', 'bea@example.test', '2 open tickets'])
         ->assertDontSee('Otto Outside')
         ->assertDontSee('otto@example.test');
 });
 
-test('dashboard shows ready realtime status when reverb is configured', function (): void {
+test('readiness page shows ready realtime status when reverb is configured', function (): void {
     config()->set('broadcasting.default', 'reverb');
     config()->set('broadcasting.connections.reverb.key', 'reverb-key');
     config()->set('broadcasting.connections.reverb.secret', 'reverb-secret');
@@ -3366,10 +3364,10 @@ test('dashboard shows ready realtime status when reverb is configured', function
     config()->set('broadcasting.connections.reverb.options.scheme', 'https');
 
     $account = Account::factory()->create();
-    $agent = User::factory()->for($account)->create();
+    $agent = User::factory()->for($account)->create(['account_role' => 'admin']);
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/readiness')
         ->assertOk()
         ->assertSee('Realtime')
         ->assertSee('Ready')
@@ -3383,7 +3381,7 @@ test('dashboard shows ready realtime status when reverb is configured', function
         ->assertSee('Set');
 });
 
-test('dashboard shows realtime setup guidance when reverb is incomplete', function (): void {
+test('readiness page shows realtime setup guidance when reverb is incomplete', function (): void {
     config()->set('broadcasting.default', 'reverb');
     config()->set('broadcasting.connections.reverb.key', null);
     config()->set('broadcasting.connections.reverb.secret', null);
@@ -3393,10 +3391,10 @@ test('dashboard shows realtime setup guidance when reverb is incomplete', functi
     config()->set('broadcasting.connections.reverb.options.scheme', 'https');
 
     $account = Account::factory()->create();
-    $agent = User::factory()->for($account)->create();
+    $agent = User::factory()->for($account)->create(['account_role' => 'admin']);
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/readiness')
         ->assertOk()
         ->assertSee('Realtime')
         ->assertSee('Needs setup')
@@ -3411,14 +3409,14 @@ test('dashboard shows realtime setup guidance when reverb is incomplete', functi
         ->assertSee('Incomplete');
 });
 
-test('dashboard shows realtime disabled when broadcasting is not using reverb', function (): void {
+test('readiness page shows realtime disabled when broadcasting is not using reverb', function (): void {
     config()->set('broadcasting.default', 'log');
 
     $account = Account::factory()->create();
-    $agent = User::factory()->for($account)->create();
+    $agent = User::factory()->for($account)->create(['account_role' => 'admin']);
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/readiness')
         ->assertOk()
         ->assertSee('Realtime')
         ->assertSee('Disabled')
@@ -3427,12 +3425,12 @@ test('dashboard shows realtime disabled when broadcasting is not using reverb', 
         ->assertSee('log');
 });
 
-test('dashboard reminds operators to respect retained visitor data', function (): void {
+test('the account page reminds operators to respect retained visitor data', function (): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create();
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/account')
         ->assertOk()
         ->assertSee('Data responsibility')
         ->assertSee('Retaining visitor-supplied data may create privacy, security, and legal obligations.')

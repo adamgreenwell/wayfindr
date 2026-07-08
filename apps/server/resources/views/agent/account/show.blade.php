@@ -321,6 +321,13 @@
                         </span>
                         <span class="management-action">{{ $canManageAccountSettings ? 'Manage' : 'View' }}</span>
                     </a>
+                    <a class="management-link" href="{{ route('dashboard.sites.index') }}">
+                        <span>
+                            <strong>Sites</strong>
+                            <span class="lede">Connected sites, widget install health, and per-site settings.</span>
+                        </span>
+                        <span class="management-action">Open</span>
+                    </a>
                     @if ($canManageAccountSettings)
                         <a class="management-link" href="{{ route('dashboard.account.reply-templates.index') }}">
                             <span>
@@ -336,7 +343,38 @@
                             </span>
                             <span class="management-action">Manage</span>
                         </a>
+                        <a class="management-link" href="{{ route('dashboard.readiness.show') }}">
+                            <span>
+                                <strong>Readiness checks</strong>
+                                <span class="lede">Deploy, realtime, queue, and privacy checks before visitor pressure.</span>
+                            </span>
+                            <span class="management-action">Review</span>
+                        </a>
+                        <a class="management-link" href="{{ route('dashboard.account.audit.index') }}">
+                            <span>
+                                <strong>Audit log</strong>
+                                <span class="lede">Search account activity and export safe audit records.</span>
+                            </span>
+                            <span class="management-action">Open</span>
+                        </a>
                     @endif
+                </div>
+            </section>
+
+            <section class="section" aria-labelledby="data-responsibility-heading">
+                <div class="section-header">
+                    <h2 id="data-responsibility-heading">Data responsibility</h2>
+                    <span class="lede">{{ $dataResponsibility['label'] }}</span>
+                </div>
+
+                <div class="notice-copy">
+                    <p>{{ $dataResponsibility['message'] }}</p>
+                    <p>{{ $dataResponsibility['guidance'] }}</p>
+                    <p>
+                        <a class="text-link" href="{{ $dataResponsibility['docs_url'] }}" target="_blank" rel="noreferrer">
+                            Review the data responsibility docs
+                        </a>
+                    </p>
                 </div>
             </section>
 

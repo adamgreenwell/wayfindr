@@ -42,7 +42,6 @@ test('authenticated agent pages share primary app navigation', function (): void
         ->assertDontSee('/dashboard/readiness', false)
         ->assertDontSee('/dashboard#sites', false)
         ->assertSee('/dashboard/account', false)
-        ->assertSee('/dashboard/sites/new', false)
         ->assertDontSee(route('operator.dashboard'), false)
         ->assertSee('Ada Agent')
         ->assertSee('Acme Support')

@@ -194,27 +194,37 @@ test('dashboard summarizes visible conversation next steps', function (): void {
         ->assertDontSee('WF-HIDDENCHAT');
 });
 
-test('dashboard gives account admins a command center for account administration', function (): void {
+test('the account page is the management hub; the home stays queue-focused', function (): void {
     $admin = User::factory()->for(Account::factory())->create([
         'account_role' => AccountRole::Admin,
     ]);
 
+    // The home leads with the work and no longer duplicates management
+    // shortcuts or at-a-glance panels (#555).
     $this->actingAs($admin)
         ->get('/dashboard')
         ->assertOk()
-        ->assertSee('Admin command center')
-        ->assertSee('Team and roles')
-        ->assertSee('/dashboard/account#agents', false)
-        ->assertSee('Site access')
-        ->assertSee('/dashboard/account#site-access-matrix', false)
+        ->assertSee('Support queues')
+        ->assertDontSee('Admin command center')
+        ->assertDontSee('Data responsibility')
+        ->assertDontSee('id="team-heading"', false)
+        ->assertDontSee('id="realtime-heading"', false);
+
+    // Everything the command center pointed at is reachable from the
+    // Account management hub instead.
+    $this->actingAs($admin)
+        ->get('/dashboard/account')
+        ->assertOk()
+        ->assertSee('Management')
+        ->assertSee('Integrations')
+        ->assertSee('Sites')
+        ->assertSee('Reply templates')
         ->assertSee('Ticket labels')
-        ->assertSee('/dashboard/account/labels', false)
-        ->assertSee('Audit log')
-        ->assertSee('/dashboard/account/audit', false)
         ->assertSee('Readiness checks')
         ->assertSee('/dashboard/readiness', false)
-        ->assertSee('Add site')
-        ->assertSee('/dashboard/sites/new', false);
+        ->assertSee('Audit log')
+        ->assertSee('/dashboard/account/audit', false)
+        ->assertSee('Data responsibility');
 });
 
 test('dashboard shows a visitor support readiness checklist', function (): void {

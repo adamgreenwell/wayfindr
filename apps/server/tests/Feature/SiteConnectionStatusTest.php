@@ -15,7 +15,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
-test('dashboard shows site widget connection status from latest visitor check in', function (): void {
+test('the sites index shows widget connection status from latest visitor check in', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create();
     $connectedSite = Site::factory()->for($account)->create([
@@ -66,12 +66,9 @@ test('dashboard shows site widget connection status from latest visitor check in
     ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/sites')
         ->assertOk()
         ->assertSee('Install health')
-        ->assertSee('2 sites need setup attention.')
-        ->assertSee('Review site installs')
-        ->assertSee('/dashboard/sites#site-install-health', false)
         ->assertSee('Wayfindr Public Site')
         ->assertSee('Live')
         ->assertSee('Seen 5 minutes ago')

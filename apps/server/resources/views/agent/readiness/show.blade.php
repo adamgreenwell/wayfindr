@@ -41,6 +41,43 @@
 
             <x-operator-cobrowse-budget-defaults :budget-defaults="$readiness['cobrowse_budget_defaults']" />
 
+            <section class="section" aria-labelledby="realtime-heading">
+                <div class="section-header">
+                    <h2 id="realtime-heading">Realtime</h2>
+                    <span class="lede">{{ $realtimeHealth['label'] }}</span>
+                </div>
+
+                <div class="meta-grid realtime-grid">
+                    <div class="meta-item">
+                        <span class="meta-label">Broadcast driver</span>
+                        <span class="meta-value">{{ $realtimeHealth['driver'] }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Endpoint</span>
+                        <span class="meta-value">{{ $realtimeHealth['endpoint'] }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Scheme</span>
+                        <span class="meta-value">{{ $realtimeHealth['scheme'] }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">App ID</span>
+                        <span class="meta-value">{{ $realtimeHealth['has_app_id'] ? 'Set' : 'Missing' }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">App key</span>
+                        <span class="meta-value">{{ $realtimeHealth['has_app_key'] ? 'Set' : 'Missing' }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Secret</span>
+                        <span class="meta-value">{{ $realtimeHealth['has_app_secret'] ? 'Set' : 'Missing' }}</span>
+                    </div>
+                </div>
+
+                <p class="empty realtime-note">{{ $realtimeHealth['message'] }}</p>
+            </section>
+
+
             <section class="section" aria-labelledby="readiness-checks-heading">
                 <div class="section-header">
                     <h2 id="readiness-checks-heading">Checks</h2>

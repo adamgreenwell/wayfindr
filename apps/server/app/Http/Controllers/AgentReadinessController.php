@@ -3,12 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Support\OperatorReadiness;
+use App\Support\RealtimeHealth;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\Request;
 
 class AgentReadinessController extends Controller
 {
-    public function __invoke(Request $request, OperatorReadiness $readiness): View
+    public function __invoke(Request $request, OperatorReadiness $readiness, RealtimeHealth $realtimeHealth): View
     {
         $agent = $request->user();
 
@@ -19,6 +20,7 @@ class AgentReadinessController extends Controller
             'account' => $agent->account()->firstOrFail(),
             'agent' => $agent,
             'readiness' => $readiness->summary(),
+            'realtimeHealth' => $realtimeHealth->summary(),
         ]);
     }
 }

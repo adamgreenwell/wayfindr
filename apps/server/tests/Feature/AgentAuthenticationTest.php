@@ -44,7 +44,10 @@ test('agent can log in and view account scoped dashboard', function (): void {
 
     $this->get('/dashboard')
         ->assertOk()
-        ->assertSee('Acme Support')
+        ->assertSee('Acme Support');
+
+    $this->get('/dashboard/sites')
+        ->assertOk()
         ->assertSee('Acme Help')
         ->assertDontSee('Other Help');
 });

@@ -409,13 +409,13 @@ test('agents can send replies from managed account templates', function (): void
     );
 });
 
-test('dashboard links account admins to reply template management', function (): void {
+test('the account management hub links admins to reply template management', function (): void {
     $admin = User::factory()->for(Account::factory())->create([
         'account_role' => AccountRole::Admin,
     ]);
 
     $this->actingAs($admin)
-        ->get('/dashboard')
+        ->get('/dashboard/account')
         ->assertOk()
         ->assertSee('Reply templates')
         ->assertSee('/dashboard/account/reply-templates', false);

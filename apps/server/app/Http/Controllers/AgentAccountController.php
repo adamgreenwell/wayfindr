@@ -80,6 +80,7 @@ class AgentAccountController extends Controller
         ]);
 
         return view('agent.account.show', [
+            'dataResponsibility' => config('wayfindr.data_responsibility'),
             'account' => $account,
             'accountActivity' => $this->accountActivityItems($account, $visibleSiteIds),
             'agent' => $agent,

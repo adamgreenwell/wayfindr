@@ -15,7 +15,7 @@ test('agent can create a new site for their account', function (): void {
     $agent = User::factory()->for($account)->create();
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/sites')
         ->assertOk()
         ->assertSee('Add site')
         ->assertSee('/dashboard/sites/new', false);

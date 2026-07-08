@@ -145,3 +145,14 @@ sometime." None of these restructure the heavy detail pages (that's #511).
   per-site project-mapping overview, empty-state setup guidance, and an
   always-visible Integrations entry in the Account Management group. The #22
   feature finally has a front door.
+- **2026-07-08** — **WS4 (#555)**: the bolder home cut + the Account page as
+  the management hub. The dashboard home is now queues + next steps + the
+  readiness checklist only (357 → 141 lines); the Team, Sites, Alerts, and
+  Realtime panels, the Admin command center, and the Data responsibility card
+  are gone from it. Their functionality relocated, not deleted: alerts → the
+  alert center, team workload → the Account roster, site install health → the
+  sites index, realtime diagnostics → the readiness page, data responsibility
+  → the Account page, admin shortcuts → the (expanded) Account Management
+  group, which now also links Sites, Readiness checks, and the Audit log.
+  Eighteen tests re-pointed to the features' new homes — each preserved its
+  intent (leak guards re-scoped, not weakened).

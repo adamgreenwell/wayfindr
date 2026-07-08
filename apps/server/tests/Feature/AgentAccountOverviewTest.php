@@ -569,14 +569,14 @@ test('regular agents do not see account wide external issue readiness', function
         ->for($account)
         ->for($site)
         ->for($connection, 'providerConnection')
-        ->create(['project_key' => 'adamgreenwell/wayfindr']);
+        ->create(['project_key' => 'acme/private-ops-repo']);
 
     $this->actingAs($agent)
         ->get('/dashboard/account')
         ->assertOk()
         ->assertDontSee('External issue readiness')
         ->assertDontSee('Engineering GitHub')
-        ->assertDontSee('adamgreenwell/wayfindr');
+        ->assertDontSee('acme/private-ops-repo');
 });
 
 test('account external issue readiness follows visible site scope', function (): void {

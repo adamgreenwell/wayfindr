@@ -223,7 +223,7 @@ test('assigned conversation alerts batch repeated visitor messages', function ()
     ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/alerts')
         ->assertOk()
         ->assertSee('1 unread')
         ->assertSee('2 new messages')
@@ -620,7 +620,7 @@ test('dashboard shows unread conversation alerts', function (): void {
     ])->assertCreated();
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/alerts')
         ->assertOk()
         ->assertSee('Alerts')
         ->assertSee('1 unread')
@@ -647,7 +647,7 @@ test('dashboard shows unread ticket assignment alerts', function (): void {
     $assignedAgent->notify(new TicketAssigned($ticket, $assigningAgent));
 
     $this->actingAs($assignedAgent)
-        ->get('/dashboard')
+        ->get('/dashboard/alerts')
         ->assertOk()
         ->assertSee('Alerts')
         ->assertSee('1 unread')
@@ -680,23 +680,23 @@ test('dashboard exposes calm alert controls and empty state', function (): void 
     $notification = $agent->unreadNotifications()->firstOrFail();
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/alerts')
         ->assertOk()
-        ->assertSee('Mark all read')
+        ->assertSee('Mark unread alerts read')
         ->assertSee('Mark read')
         ->assertSee("/dashboard/alerts/{$notification->id}/read", false)
         ->assertSee('/dashboard/alerts/read', false)
-        ->assertDontSee('You’re caught up.');
+        ->assertDontSee('You are caught up.');
 
     $notification->markAsRead();
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/alerts')
         ->assertOk()
-        ->assertSee('You’re caught up.');
+        ->assertSee('0 unread');
 });
 
-test('dashboard explains when unread alerts overflow the visible panel', function (): void {
+test('the alert center lists every unread alert without a visible cap', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
     $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
@@ -717,14 +717,14 @@ test('dashboard explains when unread alerts overflow the visible panel', functio
     }
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/alerts')
         ->assertOk()
         ->assertSee('7 unread')
-        ->assertSee('Showing 5 latest alerts')
-        ->assertSee('2 more unread alerts are waiting outside this panel.')
-        ->assertSee('Open the linked queue items or mark alerts read once handled.')
-        ->assertSee('/dashboard/alerts', false)
-        ->assertSee('Open alert center');
+        // The home panel used to cap at five with an overflow note; the
+        // alert center shows the full list.
+        ->assertDontSee('Showing 5 latest alerts')
+        ->assertSee('WF-OVER1')
+        ->assertSee('WF-OVER7');
 });
 
 test('agents can review visible unread and recent alerts in an alert center', function (): void {

@@ -478,12 +478,6 @@ test('sites with only deactivated support assignments fall back to account-wide 
         ->assertSee('All account agents');
 
     $this->actingAs($agent)
-        ->get('/dashboard')
-        ->assertOk()
-        ->assertSee('Dormant Assignment Docs')
-        ->assertDontSee('Dormant assignment conversation');
-
-    $this->actingAs($agent)
         ->get('/dashboard/conversations')
         ->assertOk()
         ->assertSee('Dormant assignment conversation');
@@ -584,10 +578,9 @@ test('dashboard hides unread alerts for sites the agent can no longer support', 
     $agent->notify(new TicketAssigned($ticket, $teammate));
 
     $this->actingAs($agent)
-        ->get('/dashboard')
+        ->get('/dashboard/alerts')
         ->assertOk()
         ->assertSee('0 unread')
-        ->assertSee('You’re caught up.')
         ->assertDontSee('Restricted conversation')
         ->assertDontSee('Restricted ticket')
         ->assertDontSee('Restricted Docs')
