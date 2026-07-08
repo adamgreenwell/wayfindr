@@ -758,35 +758,66 @@
                             // unpainted after parsing its srcdoc: the layer gets promoted
                             // but never rasterized, so the preview sits blank while every
                             // diagnostic reads live. Rebuilding the box across a forced
-                            // reflow reliably repaints — but only once the srcdoc document
-                            // has finished loading; nudging mid-parse does nothing and the
-                            // stall lands afterwards. So the toggle runs from the frame's
-                            // load event, which also re-fires on every live srcdoc swap;
-                            // the immediate call covers a document that finished loading
-                            // before this script attached the listener. Lives in this
-                            // always-rendered block so non-realtime installs are covered.
-                            function repaintCobrowsePreview() {
-                                var frame = document.querySelector('[data-cobrowse-replay-frame]');
+                            // reflow repaints it, but only when BOTH conditions hold: the
+                            // srcdoc document has finished loading (nudging mid-parse does
+                            // nothing) AND the frame is in the viewport (nudging offscreen
+                            // does nothing, and the preview sits below the fold on a cold
+                            // page load). So every frame `load` arms a needs-repaint flag
+                            // and an IntersectionObserver fires the toggle at the first
+                            // moment the loaded frame is actually visible — immediately for
+                            // live swaps the agent is watching, on scroll-in otherwise.
+                            // Lives in this always-rendered block so non-realtime installs
+                            // are covered. CSS zoom instead of transform would avoid the
+                            // stall entirely but re-lays-out the inner document at the
+                            // zoomed box width, losing the visitor's true viewport geometry.
+                            var repaintFrame = document.querySelector('[data-cobrowse-replay-frame]');
+                            var previewNeedsRepaint = true;
 
-                                if (!frame) {
+                            function repaintCobrowsePreview() {
+                                if (!repaintFrame) {
                                     return;
                                 }
 
-                                frame.style.display = 'none';
-                                void frame.offsetHeight;
-                                frame.style.display = '';
+                                repaintFrame.style.display = 'none';
+                                void repaintFrame.offsetHeight;
+                                repaintFrame.style.display = '';
+                                previewNeedsRepaint = false;
                             }
 
-                            var repaintFrame = document.querySelector('[data-cobrowse-replay-frame]');
+                            function frameIsOnScreen() {
+                                var rect = repaintFrame.getBoundingClientRect();
+                                var viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+
+                                return rect.bottom > 0 && rect.top < viewportHeight;
+                            }
 
                             if (repaintFrame) {
-                                repaintFrame.addEventListener('load', repaintCobrowsePreview);
+                                repaintFrame.addEventListener('load', function () {
+                                    previewNeedsRepaint = true;
+
+                                    if (frameIsOnScreen()) {
+                                        repaintCobrowsePreview();
+                                    }
+                                });
+
+                                if (typeof IntersectionObserver === 'function') {
+                                    new IntersectionObserver(function (entries) {
+                                        var visible = entries.some(function (entry) {
+                                            return entry.isIntersecting;
+                                        });
+
+                                        if (visible && previewNeedsRepaint) {
+                                            repaintCobrowsePreview();
+                                        }
+                                    }).observe(repaintFrame);
+                                } else if (frameIsOnScreen()) {
+                                    repaintCobrowsePreview();
+                                }
                             }
 
                             window.wayfindrSizeCobrowsePreview = sizeCobrowsePreview;
                             window.addEventListener('resize', sizeCobrowsePreview);
                             sizeCobrowsePreview();
-                            repaintCobrowsePreview();
                         })();
                     </script>
                 @else
