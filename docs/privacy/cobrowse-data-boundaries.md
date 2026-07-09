@@ -117,11 +117,19 @@ before rendering it on the preview shell, so it can never restyle or hide the
 preview. Like snapshot HTML, the reported page background is pruned by the
 retention command once an ended session ages out.
 
-Live mutation streaming observes the main document tree. Changes made *inside*
-an existing shadow root are not streamed as individual mutations; they are
-picked up on the next snapshot (including pressure- or agent-requested resyncs).
-These gaps are visibility limitations, not masking gaps: absent content cannot
-leak.
+Live mutation streaming observes the main document tree. Added subtrees carry
+the same computed-style capture as the snapshot — colors, gradients, box
+definition, layout, positioned geometry, and sized decorative boxes — so
+SPA-inserted content replays styled, not just structurally correct. The added
+subtree is captured rooted at the inserted element, reading its real parent
+for the inherited baseline, and position suppression is seeded from the
+ancestor chain so an added absolute element inside fixed/sticky chrome is
+suppressed exactly as in a full snapshot. Masking, form-value clearing, and
+the masked/form-control style-capture skip apply identically. Changes made
+*inside* an existing shadow root are not streamed as individual mutations;
+they are picked up on the next snapshot (including pressure- or
+agent-requested resyncs). These gaps are visibility limitations, not masking
+gaps: absent content cannot leak.
 
 ## Payload Budget Boundary
 
