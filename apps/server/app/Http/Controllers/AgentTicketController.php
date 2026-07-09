@@ -74,6 +74,7 @@ class AgentTicketController extends Controller
             'externalIssueExportPreview' => $externalIssueExportPreview->forTicket($ticket),
             'githubIssueProjects' => $this->githubIssueProjectsForTicket($ticket),
             'gitlabIssueProjects' => $this->gitlabIssueProjectsForTicket($ticket),
+            'jiraIssueProjects' => $this->jiraIssueProjectsForTicket($ticket),
             'latestTicketEscalation' => $ticket->latestRecentEscalationEvent(),
             'noteTemplates' => AgentNoteTemplate::options(),
             'replyTemplates' => $replyTemplateOptions->forAgent($agent),
@@ -924,6 +925,11 @@ class AgentTicketController extends Controller
         return $this->issueProjectsForTicket($ticket, 'gitlab');
     }
 
+    private function jiraIssueProjectsForTicket(Ticket $ticket): Collection
+    {
+        return $this->issueProjectsForTicket($ticket, 'jira');
+    }
+
     /**
      * @return array{
      *     label: string,
@@ -1093,6 +1099,7 @@ class AgentTicketController extends Controller
         return match ($provider) {
             'github' => 'dashboard.tickets.external-issues.github.store',
             'gitlab' => 'dashboard.tickets.external-issues.gitlab.store',
+            'jira' => 'dashboard.tickets.external-issues.jira.store',
             default => null,
         };
     }

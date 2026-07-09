@@ -640,7 +640,7 @@
                     @endif
                 </div>
 
-                @if ($githubIssueProjects->isNotEmpty() || $gitlabIssueProjects->isNotEmpty())
+                @if ($githubIssueProjects->isNotEmpty() || $gitlabIssueProjects->isNotEmpty() || $jiraIssueProjects->isNotEmpty())
                     <div class="section-form">
                         <strong>External issue actions</strong>
                         <p class="lede">Create a conservative external issue from this ticket without exporting transcripts, cobrowse snapshots, or internal notes.</p>
@@ -689,6 +689,15 @@
                                 <input type="hidden" name="site_external_issue_project_id" value="{{ $gitlabIssueProject->id }}">
                                 <button class="button" type="submit">Create GitLab issue</button>
                                 <span class="lede">{{ $gitlabIssueProject->project_key }}</span>
+                            </form>
+                        @endforeach
+
+                        @foreach ($jiraIssueProjects as $jiraIssueProject)
+                            <form method="POST" action="{{ route('dashboard.tickets.external-issues.jira.store', $ticket) }}">
+                                @csrf
+                                <input type="hidden" name="site_external_issue_project_id" value="{{ $jiraIssueProject->id }}">
+                                <button class="button" type="submit">Create Jira issue</button>
+                                <span class="lede">{{ $jiraIssueProject->project_key }}</span>
                             </form>
                         @endforeach
                     </div>

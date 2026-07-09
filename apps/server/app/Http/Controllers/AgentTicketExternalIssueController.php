@@ -10,6 +10,8 @@ use App\Support\ExternalIssues\GitHubIssueCreationFailed;
 use App\Support\ExternalIssues\GitHubIssueCreator;
 use App\Support\ExternalIssues\GitLabIssueCreationFailed;
 use App\Support\ExternalIssues\GitLabIssueCreator;
+use App\Support\ExternalIssues\JiraIssueCreationFailed;
+use App\Support\ExternalIssues\JiraIssueCreator;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -148,6 +150,73 @@ class AgentTicketExternalIssueController extends Controller
         return redirect()
             ->back(302, [], route('dashboard'))
             ->with('status', 'GitLab issue created.');
+    }
+
+    public function storeJira(Request $request, Ticket $ticket, JiraIssueCreator $jiraIssueCreator): RedirectResponse
+    {
+        $agent = $request->user();
+
+        $this->authorizeTicketUpdate($agent, $ticket);
+
+        $validated = $request->validate([
+            'site_external_issue_project_id' => ['required', 'integer', 'exists:site_external_issue_projects,id'],
+        ]);
+
+        $ticket->loadMissing(['conversation', 'site']);
+        $project = $this->providerProjectForTicket($ticket, (int) $validated['site_external_issue_project_id'], 'jira');
+
+        if (! $project->hasCapability('create_issue')) {
+            return $this->externalIssueError($ticket, 'This Jira connection cannot create issues.');
+        }
+
+        try {
+            $createdIssue = $jiraIssueCreator->create($project, $ticket);
+        } catch (JiraIssueCreationFailed $exception) {
+            $this->recordActivity($ticket, $agent, 'ticket.external_sync_failed', [
+                'provider' => 'jira',
+                'project_key' => $project->project_key,
+                'site_external_issue_project_id' => $project->id,
+                'status' => $exception->status(),
+                'message' => Str::limit($exception->getMessage(), 300),
+            ]);
+
+            return $this->externalIssueError(
+                $ticket,
+                ExternalIssueFailureGuidance::for('Jira', $exception->status(), $exception->getMessage()),
+            );
+        }
+
+        $externalLink = $ticket->externalLinks()->create([
+            'account_id' => $ticket->account_id,
+            'site_id' => $ticket->site_id,
+            'provider' => 'jira',
+            'project_key' => $project->project_key,
+            'external_id' => $createdIssue['id'],
+            'external_key' => $createdIssue['key'],
+            'url' => $createdIssue['url'],
+            'sync_status' => 'linked',
+            'metadata' => [
+                'site_external_issue_project_id' => $project->id,
+                'external_issue_provider_connection_id' => $project->external_issue_provider_connection_id,
+                'created_via' => 'jira_adapter',
+                'jira_issue_key' => $createdIssue['key'],
+            ],
+        ]);
+
+        $this->recordActivity($ticket, $agent, 'ticket.external_issue_created', [
+            'external_link_id' => $externalLink->id,
+            'provider' => $externalLink->provider,
+            'project_key' => $externalLink->project_key,
+            'external_id' => $externalLink->external_id,
+            'external_key' => $externalLink->external_key,
+            'url' => $externalLink->url,
+            'sync_status' => $externalLink->sync_status,
+            'site_external_issue_project_id' => $project->id,
+        ]);
+
+        return redirect()
+            ->back(302, [], route('dashboard'))
+            ->with('status', 'Jira issue created.');
     }
 
     private function providerProjectForTicket(Ticket $ticket, int $projectId, string $provider): SiteExternalIssueProject
