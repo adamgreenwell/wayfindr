@@ -177,14 +177,14 @@ test('agent can create a conservative Jira issue from a mapped ticket', function
     )->toBe(1);
 });
 
-test('a colon-free credential rides as a Server or Data Center bearer token', function (): void {
+test('a colon-free credential targets Server/Data Center: bearer auth, REST v2, plain-text description', function (): void {
     $fixture = jiraOutboundIssueFixture([
         'base_url' => 'https://jira.acme.internal',
         'credentials' => ['token' => 'pat_datacenter_secret'],
     ]);
 
     Http::fake([
-        'https://jira.acme.internal/rest/api/3/issue' => Http::response(['id' => '77', 'key' => 'WAY-9'], 201),
+        'https://jira.acme.internal/rest/api/2/issue' => Http::response(['id' => '77', 'key' => 'WAY-9'], 201),
     ]);
 
     $this->actingAs($fixture['agent'])
@@ -193,12 +193,30 @@ test('a colon-free credential rides as a Server or Data Center bearer token', fu
         ])
         ->assertSessionHas('status', 'Jira issue created.');
 
-    Http::assertSent(fn (HttpClientRequest $request): bool => ($request->header('Authorization')[0] ?? '') === 'Bearer pat_datacenter_secret');
+    Http::assertSent(function (HttpClientRequest $request): bool {
+        $description = data_get($request->data(), 'fields.description');
+
+        expect(($request->header('Authorization')[0] ?? ''))->toBe('Bearer pat_datacenter_secret')
+            // Server/Data Center: REST v2, and the description is the plain
+            // scoped summary, not an ADF document.
+            ->and((string) $request->url())->toBe('https://jira.acme.internal/rest/api/2/issue')
+            ->and($description)->toBeString()
+            ->and($description)->toContain('Support code: WF-JIRA1')
+            ->and($description)->not->toContain('my card number is 4242 4242 4242 4242');
+
+        return true;
+    });
 
     $this->assertDatabaseHas('ticket_external_links', [
         'ticket_id' => $fixture['ticket']->id,
         'url' => 'https://jira.acme.internal/browse/WAY-9',
     ]);
+});
+
+test('Jira-only mappings count as handoff-ready in readiness surfaces', function (): void {
+    $fixture = jiraOutboundIssueFixture();
+
+    expect($fixture['project']->fresh()->load('providerConnection')->supportsIssueCreationHandoff())->toBeTrue();
 });
 
 test('a missing Jira base URL fails with guidance and records the sync failure', function (): void {

@@ -22,7 +22,7 @@ class SiteExternalIssueProject extends Model
     /** @use HasFactory<SiteExternalIssueProjectFactory> */
     use HasFactory;
 
-    private const ISSUE_CREATION_PROVIDERS = ['github', 'gitlab'];
+    private const ISSUE_CREATION_PROVIDERS = ['github', 'gitlab', 'jira'];
 
     protected function casts(): array
     {

@@ -23,13 +23,19 @@ class JiraIssueCreator
             throw new JiraIssueCreationFailed('Jira project key is missing.');
         }
 
+        // The credential shape decides the deployment, and the deployment
+        // decides the API: Jira Cloud is REST v3 with an ADF description;
+        // Server/Data Center is REST v2 with a plain-text description.
+        $isCloud = $this->isCloudCredential($project);
+        $body = $this->exportPreview->forTicket($ticket)['body'];
+
         try {
-            $response = $this->request($project)->post($this->issueEndpoint($project), [
+            $response = $this->request($project)->post($this->issueEndpoint($project, $isCloud), [
                 'fields' => [
                     'project' => ['key' => $projectKey],
                     'summary' => $ticket->subject,
                     'issuetype' => ['name' => 'Task'],
-                    'description' => $this->adfDocument($this->exportPreview->forTicket($ticket)['body']),
+                    'description' => $isCloud ? $this->adfDocument($body) : $body,
                 ],
             ]);
         } catch (ConnectionException) {
@@ -62,13 +68,7 @@ class JiraIssueCreator
      */
     private function request(SiteExternalIssueProject $project): PendingRequest
     {
-        $token = data_get($project->providerConnection?->credentials, 'token');
-
-        if (! is_string($token) || trim($token) === '') {
-            throw new JiraIssueCreationFailed('Jira credential is missing. Use email:api-token for Jira Cloud, or a personal access token for Jira Server/Data Center.');
-        }
-
-        $token = trim($token);
+        $token = $this->credentialToken($project);
         $request = Http::withHeaders(['Accept' => 'application/json']);
 
         if (str_contains($token, ':')) {
@@ -80,9 +80,25 @@ class JiraIssueCreator
         return $request->withToken($token);
     }
 
-    private function issueEndpoint(SiteExternalIssueProject $project): string
+    private function isCloudCredential(SiteExternalIssueProject $project): bool
     {
-        return $this->tenantBaseUrl($project).'/rest/api/3/issue';
+        return str_contains($this->credentialToken($project), ':');
+    }
+
+    private function credentialToken(SiteExternalIssueProject $project): string
+    {
+        $token = data_get($project->providerConnection?->credentials, 'token');
+
+        if (! is_string($token) || trim($token) === '') {
+            throw new JiraIssueCreationFailed('Jira credential is missing. Use email:api-token for Jira Cloud, or a personal access token for Jira Server/Data Center.');
+        }
+
+        return trim($token);
+    }
+
+    private function issueEndpoint(SiteExternalIssueProject $project, bool $isCloud): string
+    {
+        return $this->tenantBaseUrl($project).($isCloud ? '/rest/api/3/issue' : '/rest/api/2/issue');
     }
 
     /**
@@ -97,8 +113,10 @@ class JiraIssueCreator
             throw new JiraIssueCreationFailed('Jira base URL is missing. Set the connection base URL to your Jira site, like https://your-team.atlassian.net.');
         }
 
-        if (str_ends_with($baseUrl, '/rest/api/3')) {
-            $baseUrl = substr($baseUrl, 0, -strlen('/rest/api/3'));
+        foreach (['/rest/api/3', '/rest/api/2'] as $apiSuffix) {
+            if (str_ends_with($baseUrl, $apiSuffix)) {
+                $baseUrl = substr($baseUrl, 0, -strlen($apiSuffix));
+            }
         }
 
         return $baseUrl;
