@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Integrations\GitHubWebhookController;
 use App\Http\Controllers\Widget\BootstrapController;
 use App\Http\Controllers\Widget\BroadcastAuthController;
 use App\Http\Controllers\Widget\CobrowseConsentController;
@@ -46,3 +47,7 @@ Route::middleware('throttle:widget-message')->group(function (): void {
     Route::post('/conversations/{supportCode}/typing', ConversationTypingController::class)
         ->name('conversations.typing.store');
 });
+
+Route::post('/integrations/github/webhook/{connection}', GitHubWebhookController::class)
+    ->middleware('throttle:integrations-webhook')
+    ->name('integrations.github.webhook');

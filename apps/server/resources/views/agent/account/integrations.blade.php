@@ -105,6 +105,15 @@
                             @enderror
                         </div>
 
+                        <div class="field">
+                            <label for="webhook_secret">Inbound webhook secret</label>
+                            <input id="webhook_secret" name="webhook_secret" type="password" value="" autocomplete="new-password">
+                            <span class="lede">Optional. Set the same secret on the provider's webhook to sync issue state back onto linked tickets.</span>
+                            @error('webhook_secret')
+                                <p class="field-error">{{ $message }}</p>
+                            @enderror
+                        </div>
+
                         <div class="notice-list">
                             @foreach ($externalIssueCapabilities as $value => $label)
                                 <label class="check-row" for="capability_{{ $value }}">

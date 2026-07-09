@@ -714,6 +714,16 @@
                                 <span>{{ $externalLink->external_key ?? $externalLink->external_id ?? 'External record' }}</span>
                                 <span class="lede">{{ $externalLink->project_key }}</span>
                             </p>
+                            @php
+                                $externalState = data_get($externalLink->metadata, 'external_state');
+                                $externalStateLabel = $externalState === 'closed' ? 'closed' : 'open';
+                                $externalSyncedAt = $externalLink->last_synced_at
+                                    ? ', synced '.$externalLink->last_synced_at->diffForHumans()
+                                    : '';
+                            @endphp
+                            @if ($externalState)
+                                <p class="lede">Provider issue is <strong>{{ $externalStateLabel }}</strong>{{ $externalSyncedAt }}.</p>
+                            @endif
                             <p>
                                 <a class="text-link" href="{{ $externalLink->url }}" rel="noopener noreferrer" target="_blank">
                                     {{ $externalLink->url }}

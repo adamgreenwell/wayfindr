@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Policies\AlertPolicy;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\Gate;
@@ -56,6 +57,21 @@ class AppServiceProvider extends ServiceProvider
             'widget-cobrowse',
             fn (Request $request): Limit => $this->widgetLimit($request, 'cobrowse_per_minute', 'cobrowse')
         );
+
+        // Inbound integration webhooks are per-connection (the route binds a
+        // connection) and bursty; a generous per-connection ceiling keeps a
+        // noisy or hostile source from flooding without blocking normal
+        // issue-event traffic.
+        // Inbound integration webhooks are per-connection (the route binds a
+        // connection) and bursty; a generous per-connection ceiling keeps a
+        // noisy or hostile source from flooding without blocking normal
+        // issue-event traffic.
+        RateLimiter::for('integrations-webhook', function (Request $request): Limit {
+            $connection = $request->route('connection');
+            $key = $connection instanceof Model ? (string) $connection->getKey() : (string) $request->ip();
+
+            return Limit::perMinute(120)->by('integrations-webhook:'.$key);
+        });
     }
 
     private function widgetLimit(Request $request, string $configKey, string $scope): Limit

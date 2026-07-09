@@ -26,6 +26,7 @@ class AgentExternalIssueProviderConnectionController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'base_url' => ['nullable', 'url', 'max:2048'],
             'credential_token' => ['nullable', 'string', 'max:4096'],
+            'webhook_secret' => ['nullable', 'string', 'max:4096'],
             'capabilities' => ['nullable', 'array'],
             'capabilities.*' => ['string', Rule::in(ExternalIssueCapability::values())],
         ]);
@@ -34,7 +35,7 @@ class AgentExternalIssueProviderConnectionController extends Controller
             'provider' => $validated['provider'],
             'name' => trim($validated['name']),
             'base_url' => $this->blankToNull($validated['base_url'] ?? null),
-            'credentials' => $this->credentials($validated['credential_token'] ?? null),
+            'credentials' => $this->credentials($validated['credential_token'] ?? null, $validated['webhook_secret'] ?? null),
             'capabilities' => ExternalIssueCapability::flags($validated['capabilities'] ?? []),
             'settings' => [],
             'is_enabled' => true,
@@ -63,13 +64,23 @@ class AgentExternalIssueProviderConnectionController extends Controller
     }
 
     /**
-     * @return array{token: string}|null
+     * @return array<string, string>|null
      */
-    private function credentials(?string $token): ?array
+    private function credentials(?string $token, ?string $webhookSecret = null): ?array
     {
+        $credentials = [];
         $token = trim((string) $token);
+        $webhookSecret = trim((string) $webhookSecret);
 
-        return $token === '' ? null : ['token' => $token];
+        if ($token !== '') {
+            $credentials['token'] = $token;
+        }
+
+        if ($webhookSecret !== '') {
+            $credentials['webhook_secret'] = $webhookSecret;
+        }
+
+        return $credentials === [] ? null : $credentials;
     }
 
     private function blankToNull(?string $value): ?string
