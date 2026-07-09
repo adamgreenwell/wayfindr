@@ -156,3 +156,11 @@ sometime." None of these restructure the heavy detail pages (that's #511).
   group, which now also links Sites, Readiness checks, and the Audit log.
   Eighteen tests re-pointed to the features' new homes — each preserved its
   intent (leak guards re-scoped, not weakened).
+- **2026-07-08** — **WS5 (#556)**: agent mobile pass. Most of the ground was
+  already covered (every table wrapped in `.table-wrap`, grids collapse at
+  640px, topbar stacks at 1100px — earlier strokes aged well). Gap-closers:
+  the primary nav and workspace tab bars become thumb-scrollable single rows
+  under 640px instead of multi-row stacks that push the work down; the topbar
+  search input flexes instead of overflowing. Rules verified live by forcing
+  them onto the stage page under a 340px constraint (nav: 555px of items
+  scrolling in a single row).

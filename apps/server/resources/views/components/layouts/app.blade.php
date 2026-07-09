@@ -1177,6 +1177,51 @@
         }
 
         @media (max-width: 640px) {
+            /* Phones get thumb-scrollable single rows for the primary nav and
+               workspace tabs instead of multi-row wrapping that pushes the
+               work below the fold. */
+            .app-nav {
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+                padding-bottom: 8px;
+            }
+
+            .app-nav::-webkit-scrollbar {
+                display: none;
+            }
+
+            .app-nav-link {
+                white-space: nowrap;
+            }
+
+            .tabs__list {
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+            }
+
+            .tabs__list::-webkit-scrollbar {
+                display: none;
+            }
+
+            .tabs__tab {
+                white-space: nowrap;
+                padding: 10px 10px;
+            }
+
+            .topbar-actions {
+                flex-wrap: wrap;
+            }
+
+            .topbar-actions input {
+                flex: 1 1 160px;
+                min-width: 0;
+                max-width: 100%;
+            }
+
             .section-header {
                 align-items: flex-start;
                 flex-direction: column;
