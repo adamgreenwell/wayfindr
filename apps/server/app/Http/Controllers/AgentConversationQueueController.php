@@ -560,6 +560,15 @@ class AgentConversationQueueController extends Controller
                 'href' => route('dashboard.conversations.index'),
                 'label' => 'Show active conversations',
             ];
+        } else {
+            // True first-run: nothing filtered this queue empty — there are no
+            // conversations yet. Point at what creates them.
+            $state['detail'] = 'New visitor conversations will appear here as support starts. '
+                .'Conversations begin when a visitor opens the widget on a connected site.';
+            $state['actions'][] = [
+                'href' => route('dashboard.sites.index'),
+                'label' => 'Check widget installs',
+            ];
         }
 
         return $state;

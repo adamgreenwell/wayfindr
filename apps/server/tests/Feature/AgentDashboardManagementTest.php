@@ -301,3 +301,27 @@ test('dashboard shows a visitor support readiness checklist', function (): void 
         ->assertSee('Realtime delivery is configured.')
         ->assertSee('Queue driver is database.');
 });
+
+test('first-run queue empty states point at what creates the work', function (): void {
+    $account = Account::factory()->create(['name' => 'Fresh Support']);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+    ]);
+
+    // No conversations exist at all — not a filter artifact — so the queue
+    // points at the widget installs that create them.
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations')
+        ->assertOk()
+        ->assertSee('Conversations begin when a visitor opens the widget on a connected site.')
+        ->assertSee('Check widget installs')
+        ->assertSee('/dashboard/sites', false);
+
+    // Same for tickets: they come from conversations.
+    $this->actingAs($agent)
+        ->get('/dashboard/tickets')
+        ->assertOk()
+        ->assertSee('Tickets are created from conversations')
+        ->assertSee('Open conversations')
+        ->assertSee('/dashboard/conversations', false);
+});

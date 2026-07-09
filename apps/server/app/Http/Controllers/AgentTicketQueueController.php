@@ -509,9 +509,16 @@ class AgentTicketQueueController extends Controller
         ];
 
         if (! $ticketHasActiveRefinement) {
+            // True first-run: no filters narrowed this view — there are no
+            // tickets yet. Point at what creates them.
             return [
-                'actions' => [],
-                'detail' => 'When visitors need durable follow-up, tickets will land here.',
+                'actions' => [
+                    [
+                        'href' => route('dashboard.conversations.index'),
+                        'label' => 'Open conversations',
+                    ],
+                ],
+                'detail' => 'Tickets are created from conversations: open a thread and turn it into a durable ticket from its Ticket tab.',
                 'heading' => $ticketEmptyMessage,
             ];
         }

@@ -164,3 +164,12 @@ sometime." None of these restructure the heavy detail pages (that's #511).
   search input flexes instead of overflowing. Rules verified live by forcing
   them onto the stage page under a 340px constraint (nav: 555px of items
   scrolling in a single row).
+- **2026-07-08** — **WS6 (#557)**: empty states + first-run. The audit found
+  the ground mostly covered already — every queue/index has a structured,
+  filter- and search-aware empty state with clear-actions; Integrations got
+  its setup-guidance state in WS3; the home's readiness checklist is the
+  install guide. The genuine gap: the true first-run states (zero data, no
+  filters) described what *would* appear without pointing at what *creates*
+  it. Conversations now point at widget installs; tickets point at
+  conversations (with the create-from-thread cue). **All six #511
+  workstreams complete — the epic is done.**
