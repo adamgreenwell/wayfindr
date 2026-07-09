@@ -1,0 +1,157 @@
+<?php
+
+// Inbound Jira issue webhooks (#22, completing the three-provider inbound
+// story). Jira plain webhooks carry no standard signature, so Wayfindr
+// requires the connection secret in the X-Wayfindr-Webhook-Token header
+// (constant-time compared). Jira has no "closed" action — an issue is done
+// when its status enters the "done" status category — so the reflected
+// state comes from fields.status.statusCategory.key.
+
+use App\Models\Account;
+use App\Models\ExternalIssueProviderConnection;
+use App\Models\Site;
+use App\Models\Ticket;
+use App\Models\TicketExternalLink;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Testing\TestResponse;
+
+uses(RefreshDatabase::class);
+
+function jiraWebhookFixture(array $connectionOverrides = [], array $linkOverrides = []): array
+{
+    $account = Account::factory()->create();
+    $site = Site::factory()->for($account)->create();
+    $ticket = Ticket::factory()->for($account)->for($site)->create(['status' => 'open']);
+
+    $connection = ExternalIssueProviderConnection::factory()->for($account)->create(array_replace([
+        'provider' => 'jira',
+        'is_enabled' => true,
+        'base_url' => 'https://acme.atlassian.net',
+        'credentials' => ['token' => 'email:api', 'webhook_secret' => 'jira_hook_secret'],
+    ], $connectionOverrides));
+
+    $link = TicketExternalLink::factory()
+        ->for($account)
+        ->for($site)
+        ->for($ticket)
+        ->create(array_replace([
+            'provider' => 'jira',
+            'project_key' => 'WAY',
+            'external_id' => '10042',
+            'external_key' => 'WAY-7',
+            'url' => 'https://acme.atlassian.net/browse/WAY-7',
+            'sync_status' => 'linked',
+            'metadata' => ['external_issue_provider_connection_id' => $connection->id],
+        ], $linkOverrides));
+
+    return compact('account', 'site', 'ticket', 'connection', 'link');
+}
+
+function jiraIssuePayload(string $categoryKey, string|int $id = 10042, string $event = 'jira:issue_updated'): array
+{
+    return [
+        'webhookEvent' => $event,
+        'issue' => [
+            'id' => $id,
+            'key' => 'WAY-7',
+            'fields' => ['status' => ['statusCategory' => ['key' => $categoryKey]]],
+        ],
+    ];
+}
+
+function postJiraWebhook($test, ExternalIssueProviderConnection $connection, array $payload, ?string $token): TestResponse
+{
+    $headers = ['CONTENT_TYPE' => 'application/json'];
+
+    if ($token !== null) {
+        $headers['HTTP_X_WAYFINDR_WEBHOOK_TOKEN'] = $token;
+    }
+
+    return $test->call(
+        'POST',
+        route('integrations.jira.webhook', $connection),
+        [],
+        [],
+        [],
+        $headers,
+        json_encode($payload),
+    );
+}
+
+test('a done status category reflects closed and audits the change', function (): void {
+    $fixture = jiraWebhookFixture();
+
+    postJiraWebhook($this, $fixture['connection'], jiraIssuePayload('done'), 'jira_hook_secret')->assertOk();
+
+    $link = $fixture['link']->fresh();
+
+    expect($link->metadata['external_state'])->toBe('closed')
+        ->and($link->last_synced_at)->not->toBeNull();
+
+    expect(
+        $fixture['ticket']->auditEvents()
+            ->where('action', 'ticket.external_issue_state_changed')
+            ->where('metadata->source', 'jira_webhook')
+            ->count()
+    )->toBe(1);
+
+    expect($fixture['ticket']->fresh()->status)->toBe('open');
+});
+
+test('new and indeterminate status categories reflect open', function (): void {
+    $fixture = jiraWebhookFixture();
+    $fixture['link']->forceFill([
+        'metadata' => ['external_issue_provider_connection_id' => $fixture['connection']->id, 'external_state' => 'closed'],
+    ])->save();
+
+    postJiraWebhook($this, $fixture['connection'], jiraIssuePayload('indeterminate'), 'jira_hook_secret')->assertOk();
+
+    expect($fixture['link']->fresh()->metadata['external_state'])->toBe('open');
+});
+
+test('a wrong token is rejected and changes nothing', function (): void {
+    $fixture = jiraWebhookFixture();
+
+    postJiraWebhook($this, $fixture['connection'], jiraIssuePayload('done'), 'wrong')->assertStatus(401);
+
+    expect($fixture['link']->fresh()->metadata)->not->toHaveKey('external_state');
+});
+
+test('a missing token is rejected', function (): void {
+    $fixture = jiraWebhookFixture();
+
+    postJiraWebhook($this, $fixture['connection'], jiraIssuePayload('done'), null)->assertStatus(401);
+});
+
+test('a connection without a webhook secret refuses deliveries', function (): void {
+    $fixture = jiraWebhookFixture(['credentials' => ['token' => 'email:api']]);
+
+    postJiraWebhook($this, $fixture['connection'], jiraIssuePayload('done'), 'jira_hook_secret')->assertStatus(403);
+});
+
+test('non-issue events and unknown status categories are accepted without acting', function (): void {
+    $fixture = jiraWebhookFixture();
+
+    postJiraWebhook($this, $fixture['connection'], ['webhookEvent' => 'comment_created'], 'jira_hook_secret')
+        ->assertStatus(202);
+
+    postJiraWebhook($this, $fixture['connection'], jiraIssuePayload('unknown-category'), 'jira_hook_secret')
+        ->assertStatus(202);
+
+    expect($fixture['link']->fresh()->metadata)->not->toHaveKey('external_state');
+});
+
+test('an untracked issue is accepted without acting', function (): void {
+    $fixture = jiraWebhookFixture();
+
+    postJiraWebhook($this, $fixture['connection'], jiraIssuePayload('done', 999999), 'jira_hook_secret')
+        ->assertStatus(202);
+
+    expect($fixture['link']->fresh()->metadata)->not->toHaveKey('external_state');
+});
+
+test('a disabled or non-jira connection is not found', function (): void {
+    $fixture = jiraWebhookFixture(['is_enabled' => false]);
+
+    postJiraWebhook($this, $fixture['connection'], jiraIssuePayload('done'), 'jira_hook_secret')->assertNotFound();
+});

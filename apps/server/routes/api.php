@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Integrations\GitHubWebhookController;
 use App\Http\Controllers\Integrations\GitLabWebhookController;
+use App\Http\Controllers\Integrations\JiraWebhookController;
 use App\Http\Controllers\Widget\BootstrapController;
 use App\Http\Controllers\Widget\BroadcastAuthController;
 use App\Http\Controllers\Widget\CobrowseConsentController;
@@ -56,3 +57,7 @@ Route::post('/integrations/github/webhook/{connection}', GitHubWebhookController
 Route::post('/integrations/gitlab/webhook/{connection}', GitLabWebhookController::class)
     ->middleware('throttle:integrations-webhook')
     ->name('integrations.gitlab.webhook');
+
+Route::post('/integrations/jira/webhook/{connection}', JiraWebhookController::class)
+    ->middleware('throttle:integrations-webhook')
+    ->name('integrations.jira.webhook');
