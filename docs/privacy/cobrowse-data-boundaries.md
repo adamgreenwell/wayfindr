@@ -94,7 +94,11 @@ styling of masked content is ever serialized.
 
 **Positioned composition** (floating cards, overlays, badges) replays through
 `position: relative`/`absolute` with pixel offsets and a bounded integer
-`z-index` — pure geometry, no new resource vectors. `fixed` and `sticky` are
+`z-index` — pure geometry, no new resource vectors. **2D transforms** replay
+through the computed `matrix(a, b, c, d, tx, ty)` form only, with bounded
+finite components and the pixel `transform-origin` — tilts and rotations
+render, and a transformed element correctly anchors its absolute
+descendants; 3D matrices and unresolved transform functions stay uncaptured. `fixed` and `sticky` are
 intentionally never captured, in the widget or past the server's targeted
 value rule: page chrome stays in normal flow rather than pinning over the
 preview, and a hostile widget cannot use positioning to cover the preview

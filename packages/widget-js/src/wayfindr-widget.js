@@ -2196,6 +2196,55 @@
     return parsed && Math.abs(parseFloat(parsed[1])) <= POSITION_OFFSET_MAX_PX;
   }
 
+  // Tilted cards and badges are composed with 2D transforms, and a
+  // transformed element is the containing block for its absolute
+  // descendants — without the transform, both the tilt and the anchoring
+  // are lost. Computed transforms normalize to matrix(a, b, c, d, tx, ty);
+  // only that 2D form is captured, with bounded finite components (3D
+  // matrices and unresolved function forms stay uncaptured).
+  var TRANSFORM_SCALE_COMPONENT_MAX = 100;
+
+  function capturableTransformMatrix(value) {
+    var parsed = /^matrix\(([^)]+)\)$/.exec(value || '');
+
+    if (!parsed) {
+      return false;
+    }
+
+    var parts = parsed[1].split(',');
+
+    if (parts.length !== 6) {
+      return false;
+    }
+
+    for (var index = 0; index < 6; index += 1) {
+      var component = parseFloat(parts[index]);
+      var bound = index < 4 ? TRANSFORM_SCALE_COMPONENT_MAX : POSITION_OFFSET_MAX_PX;
+
+      if (!isFinite(component) || Math.abs(component) > bound) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  function capturableTransformOrigin(value) {
+    var parts = String(value || '').split(' ');
+
+    if (parts.length < 2 || parts.length > 3) {
+      return false;
+    }
+
+    for (var index = 0; index < parts.length; index += 1) {
+      if (! capturablePositionOffset(parts[index])) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   // Once inside fixed/sticky page chrome (intentionally left in flow),
   // absolute descendants must not be captured either: their containing block
   // is the dropped ancestor, so their offsets would re-anchor to the wrong
@@ -2380,6 +2429,18 @@
 
         declarations.push(property + ':' + value);
       });
+    }
+
+    var transform = readValue('transform');
+
+    if (capturableTransformMatrix(transform)) {
+      declarations.push('transform:' + transform);
+
+      var transformOrigin = readValue('transform-origin');
+
+      if (capturableTransformOrigin(transformOrigin)) {
+        declarations.push('transform-origin:' + transformOrigin);
+      }
     }
 
     var position = readValue('position');

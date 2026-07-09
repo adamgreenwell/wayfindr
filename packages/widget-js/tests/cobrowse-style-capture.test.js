@@ -293,3 +293,50 @@ test('captures only plain length max-width values', () => {
   assert.equal(html.includes('min-content'), false);
   assert.equal(html.includes('max-width:none'), false);
 });
+
+// 2D transform capture (#550): tilted cards/badges compose with transforms,
+// and a transformed element is the containing block for absolute
+// descendants — losing the transform loses both the tilt and the anchoring.
+// Only the computed matrix(a, b, c, d, tx, ty) form is captured, with
+// bounded finite components; 3D matrices stay uncaptured.
+
+test('captures 2D matrix transforms with their origin', () => {
+  const dom = new JSDOM(
+    '<!doctype html><html><head><title>T</title></head><body><div data-cs="card">Tilted</div></body></html>',
+    { url: 'https://host.example.test/page' }
+  );
+
+  const html = Wayfindr.createCobrowseSnapshot(dom.window.document, {
+    location: dom.window.location,
+    view: fakeView({
+      card: {
+        transform: 'matrix(0.999781, -0.0209424, 0.0209424, 0.999781, 0, 0)',
+        'transform-origin': '304.5px 217px',
+      },
+    }),
+  }).html;
+
+  assert.match(html, /transform:matrix\(0\.999781, -0\.0209424, 0\.0209424, 0\.999781, 0, 0\)/);
+  assert.match(html, /transform-origin:304\.5px 217px/);
+});
+
+test('never captures 3D, oversized, or non-matrix transforms', () => {
+  const dom = new JSDOM(
+    '<!doctype html><html><head><title>T</title></head><body>'
+    + '<div data-cs="none">a</div><div data-cs="threed">b</div><div data-cs="huge">c</div><div data-cs="func">d</div>'
+    + '</body></html>',
+    { url: 'https://host.example.test/page' }
+  );
+
+  const html = Wayfindr.createCobrowseSnapshot(dom.window.document, {
+    location: dom.window.location,
+    view: fakeView({
+      none: { transform: 'none' },
+      threed: { transform: 'matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)' },
+      huge: { transform: 'matrix(1, 0, 0, 1, 99999, 0)' },
+      func: { transform: 'rotate(15deg)' },
+    }),
+  }).html;
+
+  assert.equal(html.includes('transform:'), false);
+});

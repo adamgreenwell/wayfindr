@@ -241,3 +241,21 @@ test('drops unbounded or non-integer z-index values', function (): void {
         ->and(styledPreview('z-index:auto;color:red'))->not->toContain('z-index')
         ->and(styledPreview('z-index:calc(1);color:red'))->not->toContain('z-index');
 });
+
+// 2D transforms (#550): the matrix function joins the safe list so tilted
+// composition and transformed containing blocks replay; every other
+// transform function form is still rejected by the function allowlist.
+
+test('keeps 2D matrix transforms and their origin', function (): void {
+    $srcdoc = styledPreview('transform:matrix(0.999781, -0.0209424, 0.0209424, 0.999781, 0, 0);transform-origin:304.5px 217px');
+
+    expect($srcdoc)
+        ->toContain('transform:matrix(0.999781, -0.0209424, 0.0209424, 0.999781, 0, 0)')
+        ->and($srcdoc)->toContain('transform-origin:304.5px 217px');
+});
+
+test('drops non-matrix transform functions', function (): void {
+    expect(styledPreview('transform:rotate(15deg);color:red'))->not->toContain('transform:')
+        ->and(styledPreview('transform:matrix3d(1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1);color:red'))->not->toContain('transform:')
+        ->and(styledPreview('transform:translate(10px, 20px);color:red'))->not->toContain('transform:');
+});

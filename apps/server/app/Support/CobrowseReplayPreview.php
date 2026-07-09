@@ -99,6 +99,7 @@ class CobrowseReplayPreview
         'align-items', 'align-content', 'gap', 'row-gap', 'column-gap',
         'grid-template-columns', 'color',
         'position', 'top', 'right', 'bottom', 'left', 'z-index',
+        'transform', 'transform-origin',
         'background-color', 'background-image', 'background-size', 'opacity', 'visibility', 'font-family', 'font-size',
         'font-weight', 'font-style', 'line-height', 'text-align', 'text-decoration',
         'text-decoration-line', 'text-transform', 'white-space', 'letter-spacing',
@@ -115,7 +116,7 @@ class CobrowseReplayPreview
      * @var list<string>
      */
     private const SAFE_STYLE_FUNCTIONS = [
-        'rgb', 'rgba', 'hsl', 'hsla',
+        'rgb', 'rgba', 'hsl', 'hsla', 'matrix',
         'linear-gradient', 'radial-gradient', 'conic-gradient',
         'repeating-linear-gradient', 'repeating-radial-gradient', 'repeating-conic-gradient',
     ];
