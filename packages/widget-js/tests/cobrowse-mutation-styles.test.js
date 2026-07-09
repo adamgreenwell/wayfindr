@@ -141,3 +141,25 @@ test('added subtrees carry no styles when style capture is disabled', () => {
 
   assert.equal(added.html.includes('background-color'), false);
 });
+
+test('top-level additions under body carry full inherited typography', () => {
+  // The preview shell's body only receives background declarations, so an
+  // element added directly under <body> must emit its own color/font like a
+  // snapshot's body child — not suppress them as "same as the real body."
+  const dom = new JSDOM('<!doctype html><html><body data-cs="body"></body></html>', {
+    url: 'https://host.example.test/page',
+  });
+  const body = dom.window.document.body;
+
+  const banner = dom.window.document.createElement('div');
+  banner.setAttribute('data-cs', 'banner');
+  banner.textContent = 'Notice';
+
+  const html = addedMutationHtml(dom, banner, body, {
+    body: { color: 'rgb(20, 20, 20)', 'font-family': 'Georgia' },
+    banner: { color: 'rgb(20, 20, 20)', 'font-family': 'Georgia' },
+  });
+
+  assert.match(html, /color:rgb\(20, 20, 20\)/);
+  assert.match(html, /font-family:Georgia/);
+});

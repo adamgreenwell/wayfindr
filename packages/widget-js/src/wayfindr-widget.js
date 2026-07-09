@@ -2273,7 +2273,17 @@
     parent = (parent && parent.nodeType === 1 ? parent : element.parentElement) || null;
     var readParentValue = null;
 
-    if (parent) {
+    // The preview shell's <body> only receives background declarations
+    // (CobrowseReplayPreview only replays those onto it), so a snapshot roots
+    // at the body and lets its direct children emit their full inherited
+    // styles rather than comparing against the body. A top-level addition
+    // must match: with the body/html as the parent there is no inherited
+    // baseline, so page typography and color ride along on the added element
+    // instead of being suppressed as "same as body."
+    var parentTag = parent ? String(parent.tagName || '').toLowerCase() : '';
+    var parentEstablishesBaseline = parent && parentTag !== 'body' && parentTag !== 'html';
+
+    if (parentEstablishesBaseline) {
       try {
         var parentComputed = view.getComputedStyle(parent);
 
