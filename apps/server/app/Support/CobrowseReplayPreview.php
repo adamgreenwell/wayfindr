@@ -549,6 +549,19 @@ class CobrowseReplayPreview
             return preg_match('/^-?\d{1,4}$/', $value) === 1;
         }
 
+        // Transform geometry is bounded independently of the widget: the
+        // server is the enforcement boundary, so a stale or hostile widget
+        // must not move or scale preview content outside the intended clamps
+        // even if it bypasses the browser capture path. Only a single 2D
+        // matrix(a, b, c, d, tx, ty) with finite, bounded components survives.
+        if ($property === 'transform') {
+            return $this->isSafeTransformMatrix($value);
+        }
+
+        if ($property === 'transform-origin') {
+            return $this->isSafeTransformOrigin($value);
+        }
+
         $normalized = strtolower($value);
 
         foreach (['url(', '@import', 'expression(', 'javascript:', 'image-set(', '/*', '*/', '<', '>', '{', '}', '\\'] as $needle) {
@@ -569,6 +582,65 @@ class CobrowseReplayPreview
         // Conservative character allowlist: alphanumerics and safe CSS value
         // punctuation (covers colors, lengths, keywords, quoted font names).
         return preg_match('/^[a-z0-9#%.,()\\/\\s_"\'-]+$/i', $value) === 1;
+    }
+
+    /**
+     * A single 2D matrix(a, b, c, d, tx, ty): six finite numeric components,
+     * scale/skew bounded to ±100 and translation to ±10,000px, mirroring the
+     * widget's capture clamps. Anything else — extra functions, 3D matrices,
+     * non-numeric or out-of-range components — is rejected here so the server
+     * enforces the bound regardless of what a widget sends.
+     */
+    private function isSafeTransformMatrix(string $value): bool
+    {
+        if (preg_match('/^matrix\(([^)]*)\)$/', trim($value), $matches) !== 1) {
+            return false;
+        }
+
+        $components = array_map('trim', explode(',', $matches[1]));
+
+        if (count($components) !== 6) {
+            return false;
+        }
+
+        foreach ($components as $index => $component) {
+            if (preg_match('/^-?\d+(?:\.\d+)?$/', $component) !== 1) {
+                return false;
+            }
+
+            $bound = $index < 4 ? 100 : 10000;
+
+            if (abs((float) $component) > $bound) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * transform-origin as two or three space-separated pixel lengths, each
+     * bounded to ±10,000px — the widget's transform-origin capture form.
+     */
+    private function isSafeTransformOrigin(string $value): bool
+    {
+        $parts = preg_split('/\s+/', trim($value)) ?: [];
+
+        if (count($parts) < 2 || count($parts) > 3) {
+            return false;
+        }
+
+        foreach ($parts as $part) {
+            if (preg_match('/^(-?\d+(?:\.\d+)?)px$/', $part, $matches) !== 1) {
+                return false;
+            }
+
+            if (abs((float) $matches[1]) > 10000) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function sanitizeFormControl(DOMElement $element): void
