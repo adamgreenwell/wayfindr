@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Account;
+use App\Models\ExternalIssueProviderConnection;
 use App\Support\ExternalIssueCapability;
 use App\Support\ExternalIssueProvider;
 use Illuminate\Http\RedirectResponse;
@@ -42,6 +43,43 @@ class AgentExternalIssueProviderConnectionController extends Controller
         ]);
 
         return $this->redirectAfterUpdate($account, $validated['site_id'] ?? null, 'Provider connection saved.', $validated['return_to'] ?? null);
+    }
+
+    /**
+     * Set (or clear) the inbound webhook secret on an existing connection.
+     * The create form makes a new connection, so without this an existing
+     * connection's inbound sync could never be turned on. Only the webhook
+     * secret is editable here; other credentials are preserved.
+     */
+    public function updateWebhookSecret(Request $request, ExternalIssueProviderConnection $connection): RedirectResponse
+    {
+        $agent = $request->user();
+
+        abort_unless($agent?->isAdmin(), 403);
+
+        $account = $agent->account()->firstOrFail();
+        abort_unless($connection->account_id === $account->id, 404);
+
+        $validated = $request->validate([
+            'webhook_secret' => ['nullable', 'string', 'max:4096'],
+        ]);
+
+        $credentials = $connection->credentials ?? [];
+        $secret = trim((string) ($validated['webhook_secret'] ?? ''));
+
+        if ($secret === '') {
+            unset($credentials['webhook_secret']);
+        } else {
+            $credentials['webhook_secret'] = $secret;
+        }
+
+        $connection->forceFill([
+            'credentials' => $credentials === [] ? null : $credentials,
+        ])->save();
+
+        return redirect()
+            ->route('dashboard.account.integrations')
+            ->with('status', $secret === '' ? 'Inbound webhook secret cleared.' : 'Inbound webhook secret saved.');
     }
 
     private function redirectAfterUpdate(Account $account, mixed $siteId, string $status, ?string $returnTo = null): RedirectResponse

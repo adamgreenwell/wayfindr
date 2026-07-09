@@ -186,3 +186,77 @@ test('the integrations page surfaces inbound webhook setup per connection', func
         ->not->toContain(route('integrations.github.webhook', $connection))
         ->not->toContain('whsec');
 });
+
+test('a disabled connection is not shown as inbound-sync active', function (): void {
+    $fixture = integrationsAccount();
+
+    ExternalIssueProviderConnection::factory()->for($fixture['account'])->create([
+        'name' => 'Retired GitHub',
+        'provider' => 'github',
+        'is_enabled' => false,
+        'credentials' => ['token' => 'gh_token', 'webhook_secret' => 'whsec'],
+    ]);
+
+    $this->actingAs($fixture['admin'])
+        ->get(route('dashboard.account.integrations'))
+        ->assertOk()
+        ->assertDontSee('Inbound sync active.');
+});
+
+test('an admin can set and clear the inbound webhook secret on an existing connection', function (): void {
+    $fixture = integrationsAccount();
+
+    $connection = ExternalIssueProviderConnection::factory()->for($fixture['account'])->create([
+        'provider' => 'github',
+        'credentials' => ['token' => 'gh_token'],
+    ]);
+
+    expect($connection->fresh()->hasWebhookSecret())->toBeFalse();
+
+    $this->actingAs($fixture['admin'])
+        ->put(route('dashboard.external-issue-provider-connections.webhook-secret.update', $connection), [
+            'webhook_secret' => 'whsec_new',
+        ])
+        ->assertRedirect(route('dashboard.account.integrations'))
+        ->assertSessionHas('status', 'Inbound webhook secret saved.');
+
+    $connection->refresh();
+    expect($connection->hasWebhookSecret())->toBeTrue()
+        // The API token is preserved, not clobbered.
+        ->and(data_get($connection->credentials, 'token'))->toBe('gh_token');
+
+    // Clearing it removes only the secret.
+    $this->actingAs($fixture['admin'])
+        ->put(route('dashboard.external-issue-provider-connections.webhook-secret.update', $connection), [
+            'webhook_secret' => '',
+        ])
+        ->assertRedirect(route('dashboard.account.integrations'));
+
+    $connection->refresh();
+    expect($connection->hasWebhookSecret())->toBeFalse()
+        ->and(data_get($connection->credentials, 'token'))->toBe('gh_token');
+});
+
+test('a non-admin cannot set a webhook secret', function (): void {
+    $fixture = integrationsAccount();
+    $connection = ExternalIssueProviderConnection::factory()->for($fixture['account'])->create(['provider' => 'github']);
+
+    $this->actingAs($fixture['agent'])
+        ->put(route('dashboard.external-issue-provider-connections.webhook-secret.update', $connection), [
+            'webhook_secret' => 'whsec',
+        ])
+        ->assertForbidden();
+});
+
+test('an admin cannot set a webhook secret on another account\'s connection', function (): void {
+    $fixture = integrationsAccount();
+    $otherConnection = ExternalIssueProviderConnection::factory()
+        ->for(Account::factory())
+        ->create(['provider' => 'github']);
+
+    $this->actingAs($fixture['admin'])
+        ->put(route('dashboard.external-issue-provider-connections.webhook-secret.update', $otherConnection), [
+            'webhook_secret' => 'whsec',
+        ])
+        ->assertNotFound();
+});

@@ -53,15 +53,27 @@
                                 </span>
                                 <span class="management-action">{{ $connection->is_enabled ? 'Enabled' : 'Disabled' }}</span>
                             </div>
-                            @if ($connection->inboundWebhookUrl())
+                            @if ($connection->inboundWebhookUrl() && $connection->is_enabled)
                                 <div class="notice-copy notice-copy-bordered">
                                     @if ($connection->hasWebhookSecret())
                                         <p class="lede"><strong>Inbound sync active.</strong> Issue state changes sync back onto linked tickets.</p>
                                     @else
-                                        <p class="lede"><strong>Inbound sync not configured.</strong> Add a webhook secret above and point the provider at the URL below to sync issue state back.</p>
+                                        <p class="lede"><strong>Inbound sync not configured.</strong> Set a webhook secret on this connection and point the provider at the URL below to sync issue state back.</p>
                                     @endif
                                     @if ($canManageIntegrations)
                                         <p class="lede">Webhook URL: <code>{{ $connection->inboundWebhookUrl() }}</code></p>
+                                        <form class="section-form" method="POST" action="{{ route('dashboard.external-issue-provider-connections.webhook-secret.update', $connection) }}">
+                                            @csrf
+                                            @method('PUT')
+                                            <div class="field">
+                                                <label for="webhook_secret_{{ $connection->id }}">{{ $connection->hasWebhookSecret() ? 'Replace webhook secret' : 'Set webhook secret' }}</label>
+                                                <input id="webhook_secret_{{ $connection->id }}" name="webhook_secret" type="password" value="" autocomplete="new-password">
+                                                @error('webhook_secret')
+                                                    <p class="field-error">{{ $message }}</p>
+                                                @enderror
+                                            </div>
+                                            <button class="button secondary" type="submit">{{ $connection->hasWebhookSecret() ? 'Update secret' : 'Enable inbound sync' }}</button>
+                                        </form>
                                     @endif
                                 </div>
                             @endif
