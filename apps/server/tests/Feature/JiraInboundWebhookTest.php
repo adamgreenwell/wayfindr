@@ -1,11 +1,12 @@
 <?php
 
 // Inbound Jira issue webhooks (#22, completing the three-provider inbound
-// story). Jira plain webhooks carry no standard signature, so Wayfindr
-// requires the connection secret in the X-Wayfindr-Webhook-Token header
-// (constant-time compared). Jira has no "closed" action — an issue is done
-// when its status enters the "done" status category — so the reflected
-// state comes from fields.status.statusCategory.key.
+// story). Jira Cloud webhooks configured with a secret sign the delivery
+// with an X-Hub-Signature HMAC-SHA256 over the raw body (the same scheme as
+// GitHub), so authenticity is a constant-time HMAC comparison. Jira has no
+// "closed" action — an issue is done when its status enters the "done"
+// status category — so the reflected state comes from
+// fields.status.statusCategory.key.
 
 use App\Models\Account;
 use App\Models\ExternalIssueProviderConnection;
@@ -59,12 +60,13 @@ function jiraIssuePayload(string $categoryKey, string|int $id = 10042, string $e
     ];
 }
 
-function postJiraWebhook($test, ExternalIssueProviderConnection $connection, array $payload, ?string $token): TestResponse
+function postJiraWebhook($test, ExternalIssueProviderConnection $connection, array $payload, ?string $secret): TestResponse
 {
+    $body = json_encode($payload);
     $headers = ['CONTENT_TYPE' => 'application/json'];
 
-    if ($token !== null) {
-        $headers['HTTP_X_WAYFINDR_WEBHOOK_TOKEN'] = $token;
+    if ($secret !== null) {
+        $headers['HTTP_X_HUB_SIGNATURE'] = 'sha256='.hash_hmac('sha256', $body, $secret);
     }
 
     return $test->call(
@@ -74,7 +76,7 @@ function postJiraWebhook($test, ExternalIssueProviderConnection $connection, arr
         [],
         [],
         $headers,
-        json_encode($payload),
+        $body,
     );
 }
 
@@ -109,15 +111,15 @@ test('new and indeterminate status categories reflect open', function (): void {
     expect($fixture['link']->fresh()->metadata['external_state'])->toBe('open');
 });
 
-test('a wrong token is rejected and changes nothing', function (): void {
+test('a wrong signature is rejected and changes nothing', function (): void {
     $fixture = jiraWebhookFixture();
 
-    postJiraWebhook($this, $fixture['connection'], jiraIssuePayload('done'), 'wrong')->assertStatus(401);
+    postJiraWebhook($this, $fixture['connection'], jiraIssuePayload('done'), 'wrong-secret')->assertStatus(401);
 
     expect($fixture['link']->fresh()->metadata)->not->toHaveKey('external_state');
 });
 
-test('a missing token is rejected', function (): void {
+test('a missing signature is rejected', function (): void {
     $fixture = jiraWebhookFixture();
 
     postJiraWebhook($this, $fixture['connection'], jiraIssuePayload('done'), null)->assertStatus(401);

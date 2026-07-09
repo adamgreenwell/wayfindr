@@ -14,12 +14,14 @@ class JiraWebhookController extends Controller
 
     /**
      * Receive Jira issue webhooks and reflect the external issue's state onto
-     * the linked Wayfindr ticket. Jira plain webhooks carry no standard
-     * signature, so Wayfindr defines a convention: the webhook must send the
-     * connection's secret in the X-Wayfindr-Webhook-Token header, compared
-     * constant-time. Jira has no "closed" action — an issue is done when its
-     * status moves into the "done" status category — so the state is read
-     * from fields.status.statusCategory.key. Reflected, never enforced.
+     * the linked Wayfindr ticket. Jira Cloud webhooks configured with a
+     * secret sign the delivery with an HMAC-SHA256 in the X-Hub-Signature
+     * header (sha256=…) over the raw body — the same scheme as GitHub, one
+     * header name off — so authenticity is a constant-time HMAC comparison
+     * against the per-connection webhook secret. Jira has no "closed" action:
+     * an issue is done when its status moves into the "done" status category,
+     * so the state is read from fields.status.statusCategory.key. Reflected,
+     * never enforced.
      */
     public function __invoke(Request $request, ExternalIssueProviderConnection $connection): JsonResponse
     {
@@ -31,10 +33,8 @@ class JiraWebhookController extends Controller
             return response()->json(['message' => 'Webhook not configured.'], 403);
         }
 
-        $token = (string) $request->header('X-Wayfindr-Webhook-Token', '');
-
-        if (! hash_equals(trim($secret), $token)) {
-            return response()->json(['message' => 'Invalid token.'], 401);
+        if (! $this->signatureIsValid($request, trim($secret))) {
+            return response()->json(['message' => 'Invalid signature.'], 401);
         }
 
         $event = (string) $request->input('webhookEvent');
@@ -73,5 +73,18 @@ class JiraWebhookController extends Controller
         $this->sync->reflect($link, $state, 'jira_webhook');
 
         return response()->json(['message' => 'Synced.'], 200);
+    }
+
+    private function signatureIsValid(Request $request, string $secret): bool
+    {
+        $signature = (string) $request->header('X-Hub-Signature', '');
+
+        if (! str_starts_with($signature, 'sha256=')) {
+            return false;
+        }
+
+        $expected = 'sha256='.hash_hmac('sha256', $request->getContent(), $secret);
+
+        return hash_equals($expected, $signature);
     }
 }

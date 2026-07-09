@@ -108,7 +108,7 @@
                         <div class="field">
                             <label for="webhook_secret">Inbound webhook secret</label>
                             <input id="webhook_secret" name="webhook_secret" type="password" value="" autocomplete="new-password">
-                            <span class="lede">Optional. Set the same secret on the provider's webhook to sync issue state back onto linked tickets — GitHub signs it (X-Hub-Signature-256), GitLab sends it as X-Gitlab-Token, Jira as an X-Wayfindr-Webhook-Token header.</span>
+                            <span class="lede">Optional. Set the same secret on the provider's webhook to sync issue state back onto linked tickets — GitHub signs it (X-Hub-Signature-256), Jira signs it (X-Hub-Signature), and GitLab sends it as an X-Gitlab-Token header.</span>
                             @error('webhook_secret')
                                 <p class="field-error">{{ $message }}</p>
                             @enderror
