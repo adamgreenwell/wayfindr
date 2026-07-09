@@ -154,6 +154,13 @@ class AgentTicketQueueController extends Controller
             $ticketAttention,
             $ticketExternalIssue,
             $ticketSearch,
+            // First-run guidance only when the visible scope has no tickets
+            // at all — a status-only empty view (no closed tickets yet, say)
+            // must not tell agents to go create tickets they already have.
+            accountHasNoTickets: ! Ticket::query()
+                ->where('account_id', $account->id)
+                ->whereHas('site', fn ($query) => $query->visibleToAgent($agent))
+                ->exists(),
         );
         $ticketResults = Ticket::query()
             ->with([
@@ -501,7 +508,7 @@ class AgentTicketQueueController extends Controller
      * @param  array<string, string|int>  $ticketQuery
      * @return array{heading: string, detail: string, actions: array<int, array{label: string, href: string}>}
      */
-    private function ticketEmptyState(string $ticketEmptyMessage, bool $ticketHasActiveRefinement, array $ticketQuery, string $ticketAttention, string $ticketExternalIssue, string $ticketSearch): array
+    private function ticketEmptyState(string $ticketEmptyMessage, bool $ticketHasActiveRefinement, array $ticketQuery, string $ticketAttention, string $ticketExternalIssue, string $ticketSearch, bool $accountHasNoTickets = false): array
     {
         $clearAllAction = [
             'href' => route('dashboard.tickets.index'),
@@ -509,16 +516,31 @@ class AgentTicketQueueController extends Controller
         ];
 
         if (! $ticketHasActiveRefinement) {
-            // True first-run: no filters narrowed this view — there are no
-            // tickets yet. Point at what creates them.
+            if ($accountHasNoTickets) {
+                // True first-run: there are no tickets at all. Point at what
+                // creates them.
+                return [
+                    'actions' => [
+                        [
+                            'href' => route('dashboard.conversations.index'),
+                            'label' => 'Open conversations',
+                        ],
+                    ],
+                    'detail' => 'Tickets are created from conversations: open a thread and turn it into a durable ticket from its Ticket tab.',
+                    'heading' => $ticketEmptyMessage,
+                ];
+            }
+
+            // Tickets exist — this view is empty because of its status alone
+            // (no closed tickets yet, say).
             return [
                 'actions' => [
                     [
-                        'href' => route('dashboard.conversations.index'),
-                        'label' => 'Open conversations',
+                        'href' => route('dashboard.tickets.index', ['ticket_status' => 'all']),
+                        'label' => 'Show all tickets',
                     ],
                 ],
-                'detail' => 'Tickets are created from conversations: open a thread and turn it into a durable ticket from its Ticket tab.',
+                'detail' => 'When visitors need durable follow-up, tickets will land here.',
                 'heading' => $ticketEmptyMessage,
             ];
         }

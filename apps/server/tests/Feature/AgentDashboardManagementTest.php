@@ -325,3 +325,25 @@ test('first-run queue empty states point at what creates the work', function ():
         ->assertSee('Open conversations')
         ->assertSee('/dashboard/conversations', false);
 });
+
+test('status-only empty ticket views do not show first-run guidance', function (): void {
+    $account = Account::factory()->create(['name' => 'Busy Support']);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+    ]);
+    $site = Site::factory()->for($account)->create(['name' => 'Busy Docs']);
+    $visitor = Visitor::factory()->for($site)->create();
+    Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($visitor, 'requester')
+        ->create(['status' => 'open', 'subject' => 'Open work exists']);
+
+    // Tickets exist; the closed view is empty because nothing is closed —
+    // not because the agent should go create tickets.
+    $this->actingAs($agent)
+        ->get('/dashboard/tickets?ticket_status=closed')
+        ->assertOk()
+        ->assertDontSee('Tickets are created from conversations')
+        ->assertSee('Show all tickets');
+});
