@@ -150,3 +150,39 @@ test('the mapping overview honors site support-assignment visibility', function 
         ->assertSee('Restricted Ops')
         ->assertSee('acme/secret-ops');
 });
+
+test('the integrations page surfaces inbound webhook setup per connection', function (): void {
+    $fixture = integrationsAccount();
+
+    // A connection without a webhook secret prompts to configure inbound sync
+    // and shows the receiver URL admins point the provider at.
+    $connection = ExternalIssueProviderConnection::factory()->for($fixture['account'])->create([
+        'name' => 'Engineering GitHub',
+        'provider' => 'github',
+        'credentials' => ['token' => 'gh_token'],
+    ]);
+
+    $this->actingAs($fixture['admin'])
+        ->get(route('dashboard.account.integrations'))
+        ->assertOk()
+        ->assertSee('Inbound sync not configured.')
+        ->assertSee(route('integrations.github.webhook', $connection), false);
+
+    // With a secret set, the page reports inbound sync active.
+    $connection->forceFill(['credentials' => ['token' => 'gh_token', 'webhook_secret' => 'whsec']])->save();
+
+    $this->actingAs($fixture['admin'])
+        ->get(route('dashboard.account.integrations'))
+        ->assertOk()
+        ->assertSee('Inbound sync active.');
+
+    // Non-admins see the status but not the URL, and never the secret.
+    $response = $this->actingAs($fixture['agent'])
+        ->get(route('dashboard.account.integrations'))
+        ->assertOk()
+        ->assertSee('Inbound sync active.');
+
+    expect($response->getContent())
+        ->not->toContain(route('integrations.github.webhook', $connection))
+        ->not->toContain('whsec');
+});

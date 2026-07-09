@@ -65,4 +65,27 @@ class ExternalIssueProviderConnection extends Model
     {
         return ExternalIssueCapability::activeLabels($this->capabilities);
     }
+
+    public function hasWebhookSecret(): bool
+    {
+        return filled(data_get($this->credentials, 'webhook_secret'));
+    }
+
+    /**
+     * The inbound webhook receiver URL for this connection's provider, to
+     * configure on the provider side. Null for providers without a receiver.
+     * The URL is not a secret — inbound authenticity rests on the HMAC/token,
+     * not the endpoint — so it is safe to display.
+     */
+    public function inboundWebhookUrl(): ?string
+    {
+        $routeName = match ($this->provider) {
+            'github' => 'integrations.github.webhook',
+            'gitlab' => 'integrations.gitlab.webhook',
+            'jira' => 'integrations.jira.webhook',
+            default => null,
+        };
+
+        return $routeName === null ? null : route($routeName, $this);
+    }
 }

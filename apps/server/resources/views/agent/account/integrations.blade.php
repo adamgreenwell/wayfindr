@@ -53,6 +53,18 @@
                                 </span>
                                 <span class="management-action">{{ $connection->is_enabled ? 'Enabled' : 'Disabled' }}</span>
                             </div>
+                            @if ($connection->inboundWebhookUrl())
+                                <div class="notice-copy notice-copy-bordered">
+                                    @if ($connection->hasWebhookSecret())
+                                        <p class="lede"><strong>Inbound sync active.</strong> Issue state changes sync back onto linked tickets.</p>
+                                    @else
+                                        <p class="lede"><strong>Inbound sync not configured.</strong> Add a webhook secret above and point the provider at the URL below to sync issue state back.</p>
+                                    @endif
+                                    @if ($canManageIntegrations)
+                                        <p class="lede">Webhook URL: <code>{{ $connection->inboundWebhookUrl() }}</code></p>
+                                    @endif
+                                </div>
+                            @endif
                         @endforeach
                     </div>
                 @endif
