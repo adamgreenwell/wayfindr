@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Integrations\GitHubWebhookController;
+use App\Http\Controllers\Integrations\GitLabWebhookController;
 use App\Http\Controllers\Widget\BootstrapController;
 use App\Http\Controllers\Widget\BroadcastAuthController;
 use App\Http\Controllers\Widget\CobrowseConsentController;
@@ -51,3 +52,7 @@ Route::middleware('throttle:widget-message')->group(function (): void {
 Route::post('/integrations/github/webhook/{connection}', GitHubWebhookController::class)
     ->middleware('throttle:integrations-webhook')
     ->name('integrations.github.webhook');
+
+Route::post('/integrations/gitlab/webhook/{connection}', GitLabWebhookController::class)
+    ->middleware('throttle:integrations-webhook')
+    ->name('integrations.gitlab.webhook');

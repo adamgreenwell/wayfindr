@@ -4,12 +4,14 @@ namespace App\Http\Controllers\Integrations;
 
 use App\Http\Controllers\Controller;
 use App\Models\ExternalIssueProviderConnection;
-use App\Models\TicketExternalLink;
+use App\Support\ExternalIssues\InboundIssueStateSync;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class GitHubWebhookController extends Controller
 {
+    public function __construct(private readonly InboundIssueStateSync $sync) {}
+
     /**
      * Receive GitHub issue webhooks and reflect the external issue's state
      * onto the linked Wayfindr ticket. This is a public, unauthenticated
@@ -57,12 +59,7 @@ class GitHubWebhookController extends Controller
             return response()->json(['message' => 'Ignored.'], 202);
         }
 
-        $link = TicketExternalLink::query()
-            ->where('account_id', $connection->account_id)
-            ->where('provider', 'github')
-            ->where('external_id', (string) $externalId)
-            ->whereJsonContains('metadata->external_issue_provider_connection_id', $connection->id)
-            ->first();
+        $link = $this->sync->linkFor($connection, (string) $externalId);
 
         if (! $link) {
             // A valid delivery for an issue Wayfindr does not track: accept
@@ -70,7 +67,7 @@ class GitHubWebhookController extends Controller
             return response()->json(['message' => 'No linked ticket.'], 202);
         }
 
-        $this->reflectState($link, $state);
+        $this->sync->reflect($link, $state, 'github_webhook');
 
         return response()->json(['message' => 'Synced.'], 200);
     }
@@ -86,38 +83,5 @@ class GitHubWebhookController extends Controller
         $expected = 'sha256='.hash_hmac('sha256', $request->getContent(), $secret);
 
         return hash_equals($expected, $signature);
-    }
-
-    private function reflectState(TicketExternalLink $link, string $state): void
-    {
-        $previousState = data_get($link->metadata, 'external_state');
-
-        $link->forceFill([
-            'last_synced_at' => now(),
-            'metadata' => array_merge($link->metadata ?? [], [
-                'external_state' => $state,
-                'external_state_synced_at' => now()->toJSON(),
-            ]),
-        ])->save();
-
-        if ($previousState === $state) {
-            return;
-        }
-
-        $link->ticket?->auditEvents()->create([
-            'account_id' => $link->account_id,
-            'site_id' => $link->site_id,
-            'actor_type' => null,
-            'actor_id' => null,
-            'action' => 'ticket.external_issue_state_changed',
-            'metadata' => [
-                'provider' => 'github',
-                'project_key' => $link->project_key,
-                'external_key' => $link->external_key,
-                'external_state' => $state,
-                'source' => 'github_webhook',
-            ],
-            'occurred_at' => now(),
-        ]);
     }
 }
