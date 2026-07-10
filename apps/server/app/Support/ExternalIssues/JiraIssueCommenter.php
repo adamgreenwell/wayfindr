@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Http;
 class JiraIssueCommenter implements IssueCommenter
 {
     /**
-     * @return array{url: string|null}
+     * @return array{url: string|null, id: string|null}
      */
     public function comment(ExternalIssueProviderConnection $connection, TicketExternalLink $link, string $body): array
     {
@@ -38,7 +38,12 @@ class JiraIssueCommenter implements IssueCommenter
 
         // The comment response carries a REST self-URL, not a browse URL; fall
         // back to the issue link.
-        return ['url' => null];
+        $id = data_get($response->json(), 'id');
+
+        return [
+            'url' => null,
+            'id' => filled($id) ? (string) $id : null,
+        ];
     }
 
     private function request(string $token): PendingRequest

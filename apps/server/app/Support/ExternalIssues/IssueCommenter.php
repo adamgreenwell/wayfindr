@@ -13,7 +13,10 @@ use App\Models\TicketExternalLink;
 interface IssueCommenter
 {
     /**
-     * @return array{url: string|null}
+     * @return array{url: string|null, id: string|null} the created comment's URL
+     *                                                  (if any) and provider id,
+     *                                                  used for inbound echo-loop
+     *                                                  prevention
      *
      * @throws ExternalIssueCommentFailed
      */

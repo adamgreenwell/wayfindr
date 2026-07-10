@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Http;
 class GitHubIssueCommenter implements IssueCommenter
 {
     /**
-     * @return array{url: string|null}
+     * @return array{url: string|null, id: string|null}
      */
     public function comment(ExternalIssueProviderConnection $connection, TicketExternalLink $link, string $body): array
     {
@@ -43,9 +43,11 @@ class GitHubIssueCommenter implements IssueCommenter
         }
 
         $url = data_get($response->json(), 'html_url');
+        $id = data_get($response->json(), 'id');
 
         return [
             'url' => is_string($url) && trim($url) !== '' ? $url : null,
+            'id' => filled($id) ? (string) $id : null,
         ];
     }
 

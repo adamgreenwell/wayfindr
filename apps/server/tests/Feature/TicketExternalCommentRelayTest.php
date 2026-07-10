@@ -65,6 +65,7 @@ test('an opted-in note posts to the linked GitHub issue and records the relay', 
 
     Http::fake([
         'https://api.github.com/repos/acme/widgets/issues/42/comments' => Http::response([
+            'id' => 700123,
             'html_url' => 'https://github.com/acme/widgets/issues/42#issuecomment-1',
         ], 201),
     ]);
@@ -77,6 +78,9 @@ test('an opted-in note posts to the linked GitHub issue and records the relay', 
         ])
         ->assertRedirect("/dashboard/tickets/{$f['ticket']->id}")
         ->assertSessionHas('status', 'Ticket note added and posted to the linked issue.');
+
+    // The relayed comment id is remembered so the inbound webhook won't echo it back.
+    expect(data_get($f['link']->fresh()->metadata, 'synced_comment_ids'))->toContain('700123');
 
     Http::assertSent(function (HttpClientRequest $request): bool {
         expect($request->method())->toBe('POST')

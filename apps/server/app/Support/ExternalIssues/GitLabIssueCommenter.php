@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Http;
 class GitLabIssueCommenter implements IssueCommenter
 {
     /**
-     * @return array{url: string|null}
+     * @return array{url: string|null, id: string|null}
      */
     public function comment(ExternalIssueProviderConnection $connection, TicketExternalLink $link, string $body): array
     {
@@ -39,7 +39,12 @@ class GitLabIssueCommenter implements IssueCommenter
         }
 
         // The note payload has no stable public URL; fall back to the issue link.
-        return ['url' => null];
+        $id = data_get($response->json(), 'id');
+
+        return [
+            'url' => null,
+            'id' => filled($id) ? (string) $id : null,
+        ];
     }
 
     private function notesEndpoint(ExternalIssueProviderConnection $connection, TicketExternalLink $link): string

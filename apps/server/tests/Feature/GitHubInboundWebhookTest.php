@@ -8,6 +8,7 @@
 // auto-closed.
 
 use App\Models\Account;
+use App\Models\AuditEvent;
 use App\Models\ExternalIssueProviderConnection;
 use App\Models\Site;
 use App\Models\Ticket;
@@ -165,4 +166,92 @@ test('a non-github or disabled connection is not found', function (): void {
     $disabled = githubWebhookFixture(['is_enabled' => false]);
     postGithubWebhook($this, $disabled['connection'], ['action' => 'closed', 'issue' => ['id' => 1]], 'whsec_test')
         ->assertNotFound();
+});
+
+// --- Inbound comment relay (the other half of #22's comment relay) ---
+
+test('a signed issue_comment records an internal note from the external comment', function (): void {
+    $fixture = githubWebhookFixture();
+
+    postGithubWebhook($this, $fixture['connection'], [
+        'action' => 'created',
+        'issue' => ['id' => 456789],
+        'comment' => ['id' => 555, 'body' => 'Fix is deployed, please retest.', 'user' => ['login' => 'octocat']],
+    ], 'whsec_test', 'issue_comment')->assertOk();
+
+    $event = AuditEvent::where('action', 'ticket.external_comment_received')->first();
+
+    expect($event)->not->toBeNull()
+        ->and(data_get($event->metadata, 'body'))->toBe('Fix is deployed, please retest.')
+        ->and(data_get($event->metadata, 'author'))->toBe('octocat')
+        ->and(data_get($event->metadata, 'external_comment_id'))->toBe('555')
+        ->and(data_get($event->metadata, 'provider'))->toBe('github')
+        // The ledger remembers the id so a retry is a no-op.
+        ->and(data_get($fixture['link']->fresh()->metadata, 'synced_comment_ids'))->toContain('555');
+});
+
+test('a comment Wayfindr relayed is not echoed back as a note', function (): void {
+    $fixture = githubWebhookFixture();
+    $link = $fixture['link'];
+
+    // Simulate the outbound relay having posted (and remembered) this comment.
+    $link->forceFill(['metadata' => array_merge($link->metadata, ['synced_comment_ids' => ['555']])])->save();
+
+    postGithubWebhook($this, $fixture['connection'], [
+        'action' => 'created',
+        'issue' => ['id' => 456789],
+        'comment' => ['id' => 555, 'body' => 'This was our own relayed note.', 'user' => ['login' => 'wayfindr-bot']],
+    ], 'whsec_test', 'issue_comment')->assertStatus(202);
+
+    expect(AuditEvent::where('action', 'ticket.external_comment_received')->count())->toBe(0);
+});
+
+test('a repeated issue_comment delivery records the note only once', function (): void {
+    $fixture = githubWebhookFixture();
+    $payload = [
+        'action' => 'created',
+        'issue' => ['id' => 456789],
+        'comment' => ['id' => 900, 'body' => 'Retry me.', 'user' => ['login' => 'octocat']],
+    ];
+
+    postGithubWebhook($this, $fixture['connection'], $payload, 'whsec_test', 'issue_comment')->assertOk();
+    postGithubWebhook($this, $fixture['connection'], $payload, 'whsec_test', 'issue_comment')->assertStatus(202);
+
+    expect(AuditEvent::where('action', 'ticket.external_comment_received')->count())->toBe(1);
+});
+
+test('an edited comment action is ignored', function (): void {
+    $fixture = githubWebhookFixture();
+
+    postGithubWebhook($this, $fixture['connection'], [
+        'action' => 'edited',
+        'issue' => ['id' => 456789],
+        'comment' => ['id' => 1, 'body' => 'edited body', 'user' => ['login' => 'octocat']],
+    ], 'whsec_test', 'issue_comment')->assertStatus(202);
+
+    expect(AuditEvent::where('action', 'ticket.external_comment_received')->count())->toBe(0);
+});
+
+test('an issue_comment with a bad signature is rejected', function (): void {
+    $fixture = githubWebhookFixture();
+
+    postGithubWebhook($this, $fixture['connection'], [
+        'action' => 'created',
+        'issue' => ['id' => 456789],
+        'comment' => ['id' => 2, 'body' => 'forged', 'user' => ['login' => 'mallory']],
+    ], 'wrong-secret', 'issue_comment')->assertStatus(401);
+
+    expect(AuditEvent::where('action', 'ticket.external_comment_received')->count())->toBe(0);
+});
+
+test('a comment on an issue Wayfindr does not track is acknowledged without a note', function (): void {
+    $fixture = githubWebhookFixture();
+
+    postGithubWebhook($this, $fixture['connection'], [
+        'action' => 'created',
+        'issue' => ['id' => 999999],
+        'comment' => ['id' => 3, 'body' => 'unlinked', 'user' => ['login' => 'octocat']],
+    ], 'whsec_test', 'issue_comment')->assertStatus(202);
+
+    expect(AuditEvent::where('action', 'ticket.external_comment_received')->count())->toBe(0);
 });

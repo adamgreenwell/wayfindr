@@ -21,6 +21,7 @@ use App\Support\ExternalIssues\ExternalIssueCommentFailed;
 use App\Support\ExternalIssues\ExternalIssueExportPreview;
 use App\Support\ExternalIssues\GitHubIssueCommenter;
 use App\Support\ExternalIssues\GitLabIssueCommenter;
+use App\Support\ExternalIssues\InboundCommentSync;
 use App\Support\ExternalIssues\IssueCommenter;
 use App\Support\ExternalIssues\JiraIssueCommenter;
 use App\Support\ExternalIssueSyncStatus;
@@ -251,6 +252,10 @@ class AgentTicketController extends Controller
 
                 $posted++;
 
+                // Remember the comment we just created so the inbound webhook
+                // does not echo our own comment back onto the ticket as a note.
+                $this->markCommentSynced($link, $result['id'] ?? null);
+
                 // The note body is already recorded on the note_added event; the
                 // relay event stays content-free provenance.
                 $this->recordActivity($ticket, $agent, 'ticket.external_comment_posted', [
@@ -282,6 +287,15 @@ class AgentTicketController extends Controller
             'jira' => app(JiraIssueCommenter::class),
             default => null,
         };
+    }
+
+    private function markCommentSynced(TicketExternalLink $link, ?string $commentId): void
+    {
+        if ($commentId === null || trim($commentId) === '') {
+            return;
+        }
+
+        app(InboundCommentSync::class)->remember($link, $commentId);
     }
 
     public function storeLabel(Request $request, Ticket $ticket): RedirectResponse
@@ -928,10 +942,14 @@ class AgentTicketController extends Controller
             ->get()
             ->toBase()
             ->map(fn ($activity): array => [
-                'type' => $activity->action === 'ticket.note_added' ? 'internal-note' : 'ticket-activity',
+                'type' => in_array($activity->action, ['ticket.note_added', 'ticket.external_comment_received'], true) ? 'internal-note' : 'ticket-activity',
                 'label' => $this->ticketActivityLabel($activity),
                 'actor' => $this->ticketActivityActor($activity),
-                'badge' => $activity->action === 'ticket.note_added' ? 'Internal' : 'Ticket activity',
+                'badge' => match ($activity->action) {
+                    'ticket.note_added' => 'Internal',
+                    'ticket.external_comment_received' => 'From '.ExternalIssueProvider::label(data_get($activity->metadata, 'provider')),
+                    default => 'Ticket activity',
+                },
                 'body' => $this->ticketTimelineBody($activity),
                 'occurred_at' => $activity->occurred_at,
                 'sequence' => $activity->id,
@@ -1406,6 +1424,7 @@ class AgentTicketController extends Controller
             'ticket.external_sync_failed',
             'ticket.external_comment_posted',
             'ticket.external_comment_failed',
+            'ticket.external_comment_received',
             'ticket.visitor_replied',
         ];
     }
@@ -1432,6 +1451,7 @@ class AgentTicketController extends Controller
             'ticket.external_sync_failed',
             'ticket.external_comment_posted',
             'ticket.external_comment_failed',
+            'ticket.external_comment_received',
             'ticket.visitor_replied',
         ];
     }
@@ -1455,6 +1475,7 @@ class AgentTicketController extends Controller
             'ticket.external_sync_failed' => 'External sync failed: '.ExternalIssueProvider::label(data_get($activity->metadata, 'provider')),
             'ticket.external_comment_posted' => 'Note posted to '.ExternalIssueProvider::label(data_get($activity->metadata, 'provider')).' issue '.(data_get($activity->metadata, 'external_key') ?? ''),
             'ticket.external_comment_failed' => 'External comment failed: '.ExternalIssueProvider::label(data_get($activity->metadata, 'provider')),
+            'ticket.external_comment_received' => ExternalIssueProvider::label(data_get($activity->metadata, 'provider')).' comment received'.(filled(data_get($activity->metadata, 'author')) ? ' from '.data_get($activity->metadata, 'author') : ''),
             'ticket.assignee_updated' => 'Assignee changed from '.(data_get($activity->metadata, 'old_assignee_name') ?? 'Unassigned').' to '.(data_get($activity->metadata, 'new_assignee_name') ?? 'Unassigned'),
             'ticket.escalated' => 'Ticket escalated from '.(data_get($activity->metadata, 'old_assignee_name') ?? 'Unassigned').' to '.(data_get($activity->metadata, 'target_agent_name') ?? data_get($activity->metadata, 'new_assignee_name') ?? 'Unassigned'),
             'ticket.updated' => $this->ticketUpdatedLabel(data_get($activity->metadata, 'changes', [])),
@@ -1475,6 +1496,7 @@ class AgentTicketController extends Controller
     {
         return match ($activity->action) {
             'ticket.note_added' => data_get($activity->metadata, 'body'),
+            'ticket.external_comment_received' => data_get($activity->metadata, 'body'),
             'ticket.pending' => data_get($activity->metadata, 'pending_note'),
             'ticket.closed' => data_get($activity->metadata, 'resolution_note'),
             'ticket.reopened' => data_get($activity->metadata, 'reopen_note'),
