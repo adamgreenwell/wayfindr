@@ -16,6 +16,7 @@ return [
 
     'cobrowse' => [
         'content_retention_hours' => (int) env('WAYFINDR_COBROWSE_CONTENT_RETENTION_HOURS', 72),
+        'session_idle_expiry_minutes' => (int) env('WAYFINDR_COBROWSE_SESSION_IDLE_EXPIRY_MINUTES', 15),
     ],
 
     'retention' => [
