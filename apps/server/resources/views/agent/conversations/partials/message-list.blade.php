@@ -26,7 +26,7 @@
                     && $secondsSincePrevious <= 300;
                 $messageClasses = 'message '.($isAgent ? 'agent' : 'visitor').($isGrouped ? ' grouped' : '');
             @endphp
-            <article class="{{ $messageClasses }}">
+            <article class="{{ $messageClasses }}" data-message-id="{{ $transcriptMessage->id }}">
                 <div class="message-meta">
                     <strong class="{{ $isGrouped ? 'sr-only' : 'message-sender' }}">{{ $senderName }}</strong>
                     <span class="message-status-line">

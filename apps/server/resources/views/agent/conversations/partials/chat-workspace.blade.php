@@ -1,13 +1,15 @@
 <section class="section" aria-labelledby="messages-heading">
     <div class="section-header">
         <h2 id="messages-heading">Messages</h2>
-        <span class="lede">{{ $messages->count() }} total</span>
+        <span class="lede" data-transcript-count>{{ $messages->count() }} total</span>
     </div>
 
-    @include('agent.conversations.partials.message-list', [
-        'emptyMessage' => 'No messages yet.',
-        'transcriptMessages' => $messages,
-    ])
+    <div data-transcript>
+        @include('agent.conversations.partials.message-list', [
+            'emptyMessage' => 'No messages yet.',
+            'transcriptMessages' => $messages,
+        ])
+    </div>
 </section>
 
 <section class="section" aria-labelledby="reply-heading">

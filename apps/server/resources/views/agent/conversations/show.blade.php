@@ -1010,6 +1010,9 @@
                 var telemetryReconnects = document.querySelector('[data-cobrowse-telemetry-reconnects]');
                 var telemetrySamples = document.querySelector('[data-cobrowse-telemetry-samples]');
                 var csrf = document.querySelector('meta[name="csrf-token"]');
+                var transcript = document.querySelector('[data-transcript]');
+                var transcriptCount = document.querySelector('[data-transcript-count]');
+                var hasTranscriptTarget = Boolean(transcript);
                 var hasCobrowseTargets = Boolean(panel && status);
                 var hasPresenceTargets = Boolean(visitorPresenceLabel && visitorPresenceDetail);
                 var hasReadTargets = visitorReadLabels.length > 0 && visitorReadDetails.length > 0;
@@ -1018,7 +1021,7 @@
                 var hasSnapshotRecoveryTargets = Boolean(snapshotRecovery && snapshotRecoveryLabel && snapshotRecoveryMessage);
                 var hasTelemetryTargets = Boolean(telemetryGrid && telemetryRtt);
 
-                if (!config || (!hasCobrowseTargets && !hasPresenceTargets && !hasReadTargets && !hasTransportTargets && !hasSnapshotFreshnessTargets && !hasSnapshotRecoveryTargets && !hasTelemetryTargets) || !window.WebSocket) {
+                if (!config || (!hasCobrowseTargets && !hasPresenceTargets && !hasReadTargets && !hasTransportTargets && !hasSnapshotFreshnessTargets && !hasSnapshotRecoveryTargets && !hasTelemetryTargets && !hasTranscriptTarget) || !window.WebSocket) {
                     if (status) {
                         status.textContent = 'Live cobrowse updates are unavailable in this browser.';
                     }
@@ -1582,6 +1585,72 @@
                     return payload || {};
                 }
 
+                var transcriptRefreshInFlight = false;
+                var transcriptRefreshQueued = false;
+
+                function agentNearBottom() {
+                    return (window.innerHeight + window.scrollY) >= (document.body.scrollHeight - 240);
+                }
+
+                // Refetch the server-rendered transcript partial and swap it in.
+                // A full replace (rather than client-side bubble construction)
+                // reuses server escaping and grouping, and lets a reconnecting
+                // socket catch up on messages missed while it was down for free.
+                function refreshTranscript() {
+                    if (!transcript || !config.messagesUrl) {
+                        return;
+                    }
+
+                    if (transcriptRefreshInFlight) {
+                        transcriptRefreshQueued = true;
+
+                        return;
+                    }
+
+                    transcriptRefreshInFlight = true;
+                    var stickToBottom = agentNearBottom();
+
+                    fetch(config.messagesUrl, {
+                        credentials: 'same-origin',
+                        headers: { Accept: 'text/html' }
+                    })
+                        .then(function (response) {
+                            if (!response.ok) {
+                                throw new Error('Transcript refresh failed: ' + response.status);
+                            }
+
+                            return response.text();
+                        })
+                        .then(function (html) {
+                            transcript.innerHTML = html;
+
+                            if (transcriptCount) {
+                                var total = transcript.querySelectorAll('[data-message-id]').length;
+                                transcriptCount.textContent = total + ' total';
+                            }
+
+                            if (stickToBottom) {
+                                var items = transcript.querySelectorAll('[data-message-id]');
+                                var last = items[items.length - 1];
+
+                                if (last && typeof last.scrollIntoView === 'function') {
+                                    last.scrollIntoView({ block: 'end' });
+                                }
+                            }
+                        })
+                        .catch(function () {
+                            // Keep the existing transcript; the next event or reconnect retries.
+                        })
+                        .finally(function () {
+                            transcriptRefreshInFlight = false;
+
+                            if (transcriptRefreshQueued) {
+                                transcriptRefreshQueued = false;
+                                refreshTranscript();
+                            }
+                        });
+                }
+
                 function subscribe(socket, auth) {
                     socket.send(JSON.stringify({
                         event: 'pusher:subscribe',
@@ -1618,6 +1687,19 @@
                         .then(function (data) {
                             subscribe(socket, data.auth);
                             setStatus('Listening for live conversation updates.', 'listening');
+                            reconnectDelay = 1000;
+
+                            // On a reconnect (not the first connect), catch up on
+                            // anything broadcast while the socket was down.
+                            if (hasConnectedOnce) {
+                                refreshTranscript();
+
+                                if (hasCobrowseTargets) {
+                                    refreshCobrowsePreview();
+                                }
+                            }
+
+                            hasConnectedOnce = true;
                         })
                         .catch(function () {
                             setStatus('Live cobrowse updates could not connect.', 'warning');
@@ -1626,9 +1708,31 @@
 
                 var socketScheme = config.scheme === 'https' ? 'wss' : 'ws';
                 var socketUrl = socketScheme + '://' + config.host + ':' + config.port + '/app/' + encodeURIComponent(config.appKey) + '?protocol=7&client=wayfindr-agent&version=0.0.0&flash=false';
-                var socket = new WebSocket(socketUrl);
+                var socket = null;
+                var reconnectDelay = 1000;
+                var reconnectTimer = null;
+                var pageClosing = false;
+                var hasConnectedOnce = false;
 
-                socket.addEventListener('message', function (message) {
+                // A raw WebSocket does not reconnect on its own, so a Reverb
+                // restart (deploys) or a network blip would otherwise leave the
+                // agent page silently dead until a manual reload. Reconnect with
+                // capped exponential backoff; each successful (re)subscribe resets
+                // the delay and resyncs the transcript.
+                function scheduleReconnect() {
+                    if (pageClosing || reconnectTimer) {
+                        return;
+                    }
+
+                    reconnectTimer = window.setTimeout(function () {
+                        reconnectTimer = null;
+                        connect();
+                    }, reconnectDelay);
+
+                    reconnectDelay = Math.min(reconnectDelay * 2, 15000);
+                }
+
+                function handleSocketMessage(message) {
                     var event;
 
                     try {
@@ -1708,19 +1812,42 @@
                     if (event.event === config.readEventName) {
                         updateVisitorRead(parsePayload(event.data).visitor_read);
                     }
-                });
 
-                socket.addEventListener('close', function () {
-                    if (hasCobrowseTargets && panel.dataset.state !== 'available') {
-                        setStatus('Live cobrowse updates disconnected.', 'warning');
+                    if (event.event === config.messageEventName) {
+                        refreshTranscript();
+                    }
+                }
+
+                function connect() {
+                    socket = new WebSocket(socketUrl);
+                    socket.addEventListener('message', handleSocketMessage);
+
+                    socket.addEventListener('close', function () {
+                        if (hasCobrowseTargets && panel.dataset.state !== 'available') {
+                            setStatus('Live updates disconnected. Reconnecting…', 'warning');
+                        }
+
+                        scheduleReconnect();
+                    });
+
+                    socket.addEventListener('error', function () {
+                        // A close event follows and schedules the reconnect.
+                    });
+                }
+
+                window.addEventListener('beforeunload', function () {
+                    pageClosing = true;
+
+                    if (socket) {
+                        try {
+                            socket.close();
+                        } catch (error) {
+                            // Ignore teardown errors.
+                        }
                     }
                 });
 
-                socket.addEventListener('error', function () {
-                    if (hasCobrowseTargets && panel.dataset.state !== 'available') {
-                        setStatus('Live cobrowse updates could not connect.', 'warning');
-                    }
-                });
+                connect();
             })();
         </script>
     @endif

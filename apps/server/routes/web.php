@@ -137,6 +137,8 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.conversations.claim');
     Route::post('/dashboard/conversations/{supportCode}/release', [AgentConversationController::class, 'release'])
         ->name('dashboard.conversations.release');
+    Route::get('/dashboard/conversations/{supportCode}/messages', [AgentConversationController::class, 'messages'])
+        ->name('dashboard.conversations.messages.index');
     Route::post('/dashboard/conversations/{supportCode}/messages', [AgentConversationController::class, 'storeMessage'])
         ->name('dashboard.conversations.messages.store');
     Route::post('/dashboard/conversations/{supportCode}/typing', AgentConversationTypingController::class)

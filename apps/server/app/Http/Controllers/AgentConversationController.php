@@ -20,6 +20,7 @@ use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
@@ -71,6 +72,31 @@ class AgentConversationController extends Controller
             'ticketCategoryGuidance' => TicketCategory::options(),
             'ticketPriorityGuidance' => TicketPriority::guidanceOptions(),
             'visitorContext' => $this->visitorContext($conversation, $visitorContextSanitizer),
+        ]);
+    }
+
+    /**
+     * Render just the message transcript partial for live refresh. The agent
+     * page listens for conversation.message.created and refetches this so new
+     * visitor messages append without a reload, and a reconnecting socket
+     * catches up on anything missed while it was down. Kept a pure read (no
+     * read-receipt writes or audit events) so it is safe to call frequently.
+     */
+    public function messages(Request $request, string $supportCode): Response
+    {
+        $agent = $request->user();
+
+        $conversation = $this->conversationForAgent($agent, $supportCode, 'view');
+
+        $messages = $conversation->messages()
+            ->with('sender')
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->get();
+
+        return response()->view('agent.conversations.partials.message-list', [
+            'emptyMessage' => 'No messages yet.',
+            'transcriptMessages' => $messages,
         ]);
     }
 
@@ -706,6 +732,8 @@ class AgentConversationController extends Controller
             'channelName' => 'private-conversations.'.$conversation->support_code,
             'eventName' => 'conversation.cobrowse.updated',
             'host' => (string) $host,
+            'messageEventName' => 'conversation.message.created',
+            'messagesUrl' => route('dashboard.conversations.messages.index', $conversation->support_code),
             'port' => (int) $port,
             'previewUrl' => route('dashboard.conversations.cobrowse.preview', $conversation->support_code),
             'readEventName' => 'conversation.read.updated',
