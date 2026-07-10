@@ -1,0 +1,39 @@
+#!/usr/bin/env php
+<?php
+
+/*
+ * Monorepo console shim.
+ *
+ * The Laravel application lives in apps/server, but Forge's Commands panel, its
+ * managed scheduler cron, and its queue worker all invoke `php artisan ...`
+ * from the repository root (the deployed `current` directory) rather than from
+ * apps/server. Booting the real console from here lets those Forge-managed
+ * tools — and any operator who runs `php artisan` from the repo root — work
+ * without a path prefix, so Wayfindr behaves like a conventional single-app
+ * Laravel project for a Forge-first deployment.
+ *
+ * This mirrors apps/server/artisan with the base path redirected. We do not
+ * `require` the nested artisan directly because its shebang line would be
+ * emitted to stdout when included (PHP only strips the shebang from the
+ * script it is invoked with, not from included files). bootstrap/app.php
+ * derives its own base path from __DIR__, so the caller's working directory
+ * does not matter.
+ */
+
+use Illuminate\Foundation\Application;
+use Symfony\Component\Console\Input\ArgvInput;
+
+define('LARAVEL_START', microtime(true));
+
+$serverPath = __DIR__.'/apps/server';
+
+// Register the Composer autoloader...
+require $serverPath.'/vendor/autoload.php';
+
+// Bootstrap Laravel and handle the command...
+/** @var Application $app */
+$app = require_once $serverPath.'/bootstrap/app.php';
+
+$status = $app->handleCommand(new ArgvInput);
+
+exit($status);

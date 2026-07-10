@@ -146,7 +146,19 @@ php artisan key:generate --show
 ```
 
 Forge's zero-downtime `current` directory points to the monorepo root, not the
-Laravel application root. Run Artisan commands from `apps/server`:
+Laravel application root. Wayfindr ships a root-level `artisan` shim that
+forwards to the real console entrypoint under `apps/server`, so `php artisan`
+works from the monorepo root as well:
+
+```bash
+cd ~/wayfindr.on-forge.com/current
+php artisan about
+```
+
+That shim is what lets Forge's own root-level tooling — the **Commands** panel,
+the managed **scheduler** cron, and the **queue** worker — run `php artisan ...`
+from the site root without a path prefix or `Could not open input file:
+artisan` error. Running from `apps/server` directly works too:
 
 ```bash
 cd ~/wayfindr.on-forge.com/current/apps/server
@@ -276,10 +288,13 @@ php artisan queue:work redis --sleep=3 --tries=3 --timeout=90
 
 Use the Laravel Scheduler toggle in Forge's Application panel. Forge will
 configure it to run once per minute using the site's selected PHP version.
+Forge's scheduler cron and the queue worker both invoke `php artisan ...` from
+the site root; the root-level `artisan` shim (above) is what makes that resolve
+in the monorepo layout, so neither needs a custom path.
 
 Alert digest email is registered with Laravel's scheduler and runs hourly for
 agents who choose digest cadence. After enabling the scheduler, run this from
-`apps/server` to confirm Forge can see the task:
+the site root (or `apps/server`) to confirm Forge can see the task:
 
 ```bash
 php artisan schedule:list
