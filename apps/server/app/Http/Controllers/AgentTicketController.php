@@ -20,6 +20,8 @@ use App\Support\ExternalIssueProvider;
 use App\Support\ExternalIssues\ExternalIssueCommentFailed;
 use App\Support\ExternalIssues\ExternalIssueExportPreview;
 use App\Support\ExternalIssues\GitHubIssueCommenter;
+use App\Support\ExternalIssues\GitLabIssueCommenter;
+use App\Support\ExternalIssues\IssueCommenter;
 use App\Support\ExternalIssueSyncStatus;
 use App\Support\ReplyTemplateOptions;
 use App\Support\TicketCategory;
@@ -38,6 +40,9 @@ use Illuminate\Validation\ValidationException;
 
 class AgentTicketController extends Controller
 {
+    /** Providers with an IssueCommenter implementation for outbound note relay. */
+    private const COMMENT_PROVIDERS = ['github', 'gitlab'];
+
     public function show(Request $request, Ticket $ticket, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, ExternalIssueExportPreview $externalIssueExportPreview): View
     {
         $agent = $request->user();
@@ -117,7 +122,7 @@ class AgentTicketController extends Controller
         ]);
     }
 
-    public function storeNote(Request $request, Ticket $ticket, GitHubIssueCommenter $githubIssueCommenter): RedirectResponse
+    public function storeNote(Request $request, Ticket $ticket): RedirectResponse
     {
         $agent = $request->user();
 
@@ -158,7 +163,7 @@ class AgentTicketController extends Controller
         // this one to the linked external issue (conservative-by-default per the
         // external-integrations stance).
         if ($request->boolean('post_to_external')) {
-            $relay = $this->relayNoteToExternalIssues($ticket, $agent, $body, $githubIssueCommenter);
+            $relay = $this->relayNoteToExternalIssues($ticket, $agent, $body);
 
             if ($relay['failed'] > 0) {
                 $status = 'Ticket note added, but the external comment could not be posted. See ticket activity.';
@@ -209,8 +214,8 @@ class AgentTicketController extends Controller
                     return null;
                 }
 
-                // Only providers with a commenter (GitHub for now) can relay.
-                if ($link->provider !== 'github') {
+                // Only providers with a commenter implementation can relay.
+                if (! in_array($link->provider, self::COMMENT_PROVIDERS, true)) {
                     return null;
                 }
 
@@ -223,7 +228,7 @@ class AgentTicketController extends Controller
     /**
      * @return array{posted: int, failed: int}
      */
-    private function relayNoteToExternalIssues(Ticket $ticket, User $agent, string $body, GitHubIssueCommenter $githubIssueCommenter): array
+    private function relayNoteToExternalIssues(Ticket $ticket, User $agent, string $body): array
     {
         $posted = 0;
         $failed = 0;
@@ -234,15 +239,14 @@ class AgentTicketController extends Controller
             /** @var ExternalIssueProviderConnection $connection */
             $connection = $target['connection'];
 
-            try {
-                $result = match ($link->provider) {
-                    'github' => $githubIssueCommenter->comment($connection, $link, $body),
-                    default => null,
-                };
+            $commenter = $this->commenterFor($link->provider);
 
-                if ($result === null) {
-                    continue;
-                }
+            if ($commenter === null) {
+                continue;
+            }
+
+            try {
+                $result = $commenter->comment($connection, $link, $body);
 
                 $posted++;
 
@@ -267,6 +271,15 @@ class AgentTicketController extends Controller
         }
 
         return ['posted' => $posted, 'failed' => $failed];
+    }
+
+    private function commenterFor(string $provider): ?IssueCommenter
+    {
+        return match ($provider) {
+            'github' => app(GitHubIssueCommenter::class),
+            'gitlab' => app(GitLabIssueCommenter::class),
+            default => null,
+        };
     }
 
     public function storeLabel(Request $request, Ticket $ticket): RedirectResponse

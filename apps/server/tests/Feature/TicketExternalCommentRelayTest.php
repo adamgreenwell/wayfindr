@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
 
-function commentRelayFixture(array $connectionOverrides = []): array
+function commentRelayFixture(array $connectionOverrides = [], array $linkOverrides = []): array
 {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
@@ -45,7 +45,7 @@ function commentRelayFixture(array $connectionOverrides = []): array
             'capabilities' => ['create_issue' => true, 'add_comment' => true, 'sync_status' => false],
         ], $connectionOverrides));
 
-    $link = TicketExternalLink::factory()->create([
+    $link = TicketExternalLink::factory()->create(array_replace([
         'account_id' => $account->id,
         'site_id' => $site->id,
         'ticket_id' => $ticket->id,
@@ -55,7 +55,7 @@ function commentRelayFixture(array $connectionOverrides = []): array
         'external_key' => '#42',
         'url' => 'https://github.com/acme/widgets/issues/42',
         'metadata' => ['external_issue_provider_connection_id' => $connection->id],
-    ]);
+    ], $linkOverrides));
 
     return compact('account', 'agent', 'site', 'ticket', 'connection', 'link');
 }
@@ -89,6 +89,36 @@ test('an opted-in note posts to the linked GitHub issue and records the relay', 
 
     expect(AuditEvent::where('action', 'ticket.note_added')->count())->toBe(1)
         ->and(AuditEvent::where('action', 'ticket.external_comment_posted')->count())->toBe(1);
+});
+
+test('an opted-in note posts to the linked GitLab issue as a note', function (): void {
+    $f = commentRelayFixture(
+        ['provider' => 'gitlab', 'base_url' => 'https://gitlab.com', 'credentials' => ['token' => 'glpat-secret']],
+        ['provider' => 'gitlab', 'project_key' => 'acme/widgets', 'external_id' => '555', 'external_key' => '#7', 'url' => 'https://gitlab.com/acme/widgets/-/issues/7'],
+    );
+
+    Http::fake([
+        'https://gitlab.com/api/v4/projects/acme%2Fwidgets/issues/7/notes' => Http::response(['id' => 1], 201),
+    ]);
+
+    $this->actingAs($f['agent'])
+        ->from("/dashboard/tickets/{$f['ticket']->id}")
+        ->post(route('dashboard.tickets.notes.store', $f['ticket']), [
+            'body' => 'Relaying context to GitLab.',
+            'post_to_external' => '1',
+        ])
+        ->assertSessionHas('status', 'Ticket note added and posted to the linked issue.');
+
+    Http::assertSent(function (HttpClientRequest $request): bool {
+        expect($request->method())->toBe('POST')
+            ->and((string) $request->url())->toBe('https://gitlab.com/api/v4/projects/acme%2Fwidgets/issues/7/notes')
+            ->and($request->header('PRIVATE-TOKEN'))->toContain('glpat-secret')
+            ->and(data_get($request->data(), 'body'))->toBe('Relaying context to GitLab.');
+
+        return true;
+    });
+
+    expect(AuditEvent::where('action', 'ticket.external_comment_posted')->count())->toBe(1);
 });
 
 test('a note stays internal when the opt-in is not checked', function (): void {

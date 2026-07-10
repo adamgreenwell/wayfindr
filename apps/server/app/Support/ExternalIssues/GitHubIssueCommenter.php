@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Http;
  * Mirrors GitHubIssueCreator's auth/endpoint conventions, but targets the
  * existing issue anchored by the TicketExternalLink rather than a project.
  */
-class GitHubIssueCommenter
+class GitHubIssueCommenter implements IssueCommenter
 {
     /**
      * @return array{url: string|null}
