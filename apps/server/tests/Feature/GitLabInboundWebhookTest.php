@@ -6,6 +6,7 @@
 // webhook secret. State is reflected onto the linked ticket, never enforced.
 
 use App\Models\Account;
+use App\Models\AuditEvent;
 use App\Models\ExternalIssueProviderConnection;
 use App\Models\Site;
 use App\Models\Ticket;
@@ -154,4 +155,66 @@ test('a disabled or non-gitlab connection is not found', function (): void {
         'object_kind' => 'issue',
         'object_attributes' => ['id' => 456789, 'action' => 'close'],
     ], 'glhook_secret')->assertNotFound();
+});
+
+// --- Inbound comment relay (note hooks on issues) ---
+
+test('a note hook on an issue records an internal note', function (): void {
+    $fixture = gitlabWebhookFixture();
+
+    postGitlabWebhook($this, $fixture['connection'], [
+        'object_kind' => 'note',
+        'object_attributes' => ['id' => 5501, 'note' => 'Deployed the fix, please retest.', 'noteable_type' => 'Issue'],
+        'issue' => ['id' => 456789],
+        'user' => ['username' => 'gl-dev'],
+    ], 'glhook_secret')->assertOk();
+
+    $event = AuditEvent::where('action', 'ticket.external_comment_received')->first();
+
+    expect($event)->not->toBeNull()
+        ->and(data_get($event->metadata, 'body'))->toBe('Deployed the fix, please retest.')
+        ->and(data_get($event->metadata, 'author'))->toBe('gl-dev')
+        ->and(data_get($event->metadata, 'provider'))->toBe('gitlab')
+        ->and(data_get($event->metadata, 'external_comment_id'))->toBe('5501');
+});
+
+test('a note hook Wayfindr relayed is not echoed back', function (): void {
+    $fixture = gitlabWebhookFixture();
+    $link = $fixture['link'];
+    $link->forceFill(['metadata' => array_merge($link->metadata, ['synced_comment_ids' => ['5501']])])->save();
+
+    postGitlabWebhook($this, $fixture['connection'], [
+        'object_kind' => 'note',
+        'object_attributes' => ['id' => 5501, 'note' => 'our own relayed note', 'noteable_type' => 'Issue'],
+        'issue' => ['id' => 456789],
+        'user' => ['username' => 'wayfindr'],
+    ], 'glhook_secret')->assertStatus(202);
+
+    expect(AuditEvent::where('action', 'ticket.external_comment_received')->count())->toBe(0);
+});
+
+test('a note hook on a non-issue notable is ignored', function (): void {
+    $fixture = gitlabWebhookFixture();
+
+    postGitlabWebhook($this, $fixture['connection'], [
+        'object_kind' => 'note',
+        'object_attributes' => ['id' => 5502, 'note' => 'a merge request note', 'noteable_type' => 'MergeRequest'],
+        'issue' => ['id' => 456789],
+        'user' => ['username' => 'gl-dev'],
+    ], 'glhook_secret')->assertStatus(202);
+
+    expect(AuditEvent::where('action', 'ticket.external_comment_received')->count())->toBe(0);
+});
+
+test('a note hook with a bad token is rejected', function (): void {
+    $fixture = gitlabWebhookFixture();
+
+    postGitlabWebhook($this, $fixture['connection'], [
+        'object_kind' => 'note',
+        'object_attributes' => ['id' => 5503, 'note' => 'forged', 'noteable_type' => 'Issue'],
+        'issue' => ['id' => 456789],
+        'user' => ['username' => 'mallory'],
+    ], 'wrong-token')->assertStatus(401);
+
+    expect(AuditEvent::where('action', 'ticket.external_comment_received')->count())->toBe(0);
 });

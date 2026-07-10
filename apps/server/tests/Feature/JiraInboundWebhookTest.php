@@ -9,6 +9,7 @@
 // fields.status.statusCategory.key.
 
 use App\Models\Account;
+use App\Models\AuditEvent;
 use App\Models\ExternalIssueProviderConnection;
 use App\Models\Site;
 use App\Models\Ticket;
@@ -156,4 +157,70 @@ test('a disabled or non-jira connection is not found', function (): void {
     $fixture = jiraWebhookFixture(['is_enabled' => false]);
 
     postJiraWebhook($this, $fixture['connection'], jiraIssuePayload('done'), 'jira_hook_secret')->assertNotFound();
+});
+
+// --- Inbound comment relay (comment_created) ---
+
+test('a comment_created event records an internal note', function (): void {
+    $fixture = jiraWebhookFixture();
+
+    postJiraWebhook($this, $fixture['connection'], [
+        'webhookEvent' => 'comment_created',
+        'issue' => ['id' => 10042],
+        'comment' => ['id' => '90001', 'body' => 'Shipped in 2.4.', 'author' => ['displayName' => 'Ada Ops']],
+    ], 'jira_hook_secret')->assertOk();
+
+    $event = AuditEvent::where('action', 'ticket.external_comment_received')->first();
+
+    expect($event)->not->toBeNull()
+        ->and(data_get($event->metadata, 'body'))->toBe('Shipped in 2.4.')
+        ->and(data_get($event->metadata, 'author'))->toBe('Ada Ops')
+        ->and(data_get($event->metadata, 'provider'))->toBe('jira')
+        ->and(data_get($event->metadata, 'external_comment_id'))->toBe('90001');
+});
+
+test('a comment_created event flattens an ADF body', function (): void {
+    $fixture = jiraWebhookFixture();
+
+    postJiraWebhook($this, $fixture['connection'], [
+        'webhookEvent' => 'comment_created',
+        'issue' => ['id' => 10042],
+        'comment' => [
+            'id' => '90002',
+            'author' => ['displayName' => 'Ada'],
+            'body' => ['type' => 'doc', 'version' => 1, 'content' => [
+                ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'Line one.']]],
+                ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'Line two.']]],
+            ]],
+        ],
+    ], 'jira_hook_secret')->assertOk();
+
+    $event = AuditEvent::where('action', 'ticket.external_comment_received')->first();
+    expect(data_get($event->metadata, 'body'))->toBe("Line one.\nLine two.");
+});
+
+test('a comment_created event Wayfindr relayed is not echoed back', function (): void {
+    $fixture = jiraWebhookFixture();
+    $link = $fixture['link'];
+    $link->forceFill(['metadata' => array_merge($link->metadata, ['synced_comment_ids' => ['90003']])])->save();
+
+    postJiraWebhook($this, $fixture['connection'], [
+        'webhookEvent' => 'comment_created',
+        'issue' => ['id' => 10042],
+        'comment' => ['id' => '90003', 'body' => 'our own relayed note', 'author' => ['displayName' => 'Bot']],
+    ], 'jira_hook_secret')->assertStatus(202);
+
+    expect(AuditEvent::where('action', 'ticket.external_comment_received')->count())->toBe(0);
+});
+
+test('a comment_created event with a bad signature is rejected', function (): void {
+    $fixture = jiraWebhookFixture();
+
+    postJiraWebhook($this, $fixture['connection'], [
+        'webhookEvent' => 'comment_created',
+        'issue' => ['id' => 10042],
+        'comment' => ['id' => '90004', 'body' => 'forged', 'author' => ['displayName' => 'Mallory']],
+    ], 'wrong-secret')->assertStatus(401);
+
+    expect(AuditEvent::where('action', 'ticket.external_comment_received')->count())->toBe(0);
 });

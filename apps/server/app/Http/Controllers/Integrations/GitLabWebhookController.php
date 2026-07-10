@@ -4,20 +4,25 @@ namespace App\Http\Controllers\Integrations;
 
 use App\Http\Controllers\Controller;
 use App\Models\ExternalIssueProviderConnection;
+use App\Support\ExternalIssues\InboundCommentSync;
 use App\Support\ExternalIssues\InboundIssueStateSync;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class GitLabWebhookController extends Controller
 {
-    public function __construct(private readonly InboundIssueStateSync $sync) {}
+    public function __construct(
+        private readonly InboundIssueStateSync $sync,
+        private readonly InboundCommentSync $commentSync,
+    ) {}
 
     /**
-     * Receive GitLab issue webhooks and reflect the external issue's state
-     * onto the linked Wayfindr ticket. GitLab does not HMAC-sign; it echoes
-     * the configured secret in the X-Gitlab-Token header, so authenticity is
-     * a constant-time comparison against the per-connection webhook secret.
-     * State is reflected, never enforced.
+     * Receive GitLab issue and note webhooks for a linked ticket. GitLab does
+     * not HMAC-sign; it echoes the configured secret in the X-Gitlab-Token
+     * header, so authenticity is a constant-time comparison against the
+     * per-connection webhook secret. Issue state is reflected (never enforced);
+     * issue notes (comments) are mirrored as internal notes, skipping comments
+     * Wayfindr itself relayed.
      */
     public function __invoke(Request $request, ExternalIssueProviderConnection $connection): JsonResponse
     {
@@ -35,10 +40,15 @@ class GitLabWebhookController extends Controller
             return response()->json(['message' => 'Invalid token.'], 401);
         }
 
-        if ($request->input('object_kind') !== 'issue') {
-            return response()->json(['message' => 'Ignored.'], 202);
-        }
+        return match ($request->input('object_kind')) {
+            'issue' => $this->handleIssueState($request, $connection),
+            'note' => $this->handleNote($request, $connection),
+            default => response()->json(['message' => 'Ignored.'], 202),
+        };
+    }
 
+    private function handleIssueState(Request $request, ExternalIssueProviderConnection $connection): JsonResponse
+    {
         $attributes = $request->input('object_attributes');
         $state = match (data_get($attributes, 'action')) {
             'close' => 'closed',
@@ -65,5 +75,40 @@ class GitLabWebhookController extends Controller
         $this->sync->reflect($link, $state, 'gitlab_webhook');
 
         return response()->json(['message' => 'Synced.'], 200);
+    }
+
+    private function handleNote(Request $request, ExternalIssueProviderConnection $connection): JsonResponse
+    {
+        $attributes = $request->input('object_attributes');
+
+        // Note hooks also fire for merge requests, commits, and snippets; only
+        // issue notes become ticket notes.
+        if (data_get($attributes, 'noteable_type') !== 'Issue') {
+            return response()->json(['message' => 'Ignored.'], 202);
+        }
+
+        $externalId = data_get($request->input('issue'), 'id');
+        $commentId = data_get($attributes, 'id');
+        $body = data_get($attributes, 'note');
+
+        if (! is_scalar($externalId) || ! is_scalar($commentId) || ! is_string($body)) {
+            return response()->json(['message' => 'Ignored.'], 202);
+        }
+
+        $link = $this->sync->linkFor($connection, (string) $externalId);
+
+        if (! $link) {
+            return response()->json(['message' => 'No linked ticket.'], 202);
+        }
+
+        $recorded = $this->commentSync->record(
+            $link,
+            (string) $commentId,
+            $body,
+            (string) data_get($request->input('user'), 'username', ''),
+            'gitlab_webhook',
+        );
+
+        return response()->json(['message' => $recorded ? 'Comment recorded.' : 'Ignored.'], $recorded ? 200 : 202);
     }
 }
