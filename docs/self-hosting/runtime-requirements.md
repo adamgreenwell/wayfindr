@@ -152,7 +152,10 @@ MAIL_FROM_NAME="${APP_NAME}"
 
 For SMTP on STARTTLS ports such as `587` or `2587`, leave `MAIL_SCHEME` unset
 or `null`; Laravel's SMTP transport does not accept `tls` as a scheme. Use
-`MAIL_SCHEME=smtps` only for implicit TLS providers on port `465`.
+`MAIL_SCHEME=smtps` only for implicit TLS providers on port `465`. For a worked
+provider example — Google Workspace SMTP relay — plus SPF/DKIM/DMARC
+deliverability and troubleshooting, see
+[email-delivery.md](email-delivery.md).
 
 After configuring outbound mail, run a real smoke test from the Laravel
 application directory:

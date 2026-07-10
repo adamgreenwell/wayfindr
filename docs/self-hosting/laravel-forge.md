@@ -129,6 +129,9 @@ test email from the deployed environment. For SMTP, replace the local
 `MAIL_HOST=127.0.0.1` and `MAIL_PORT=2525` defaults with the provider's real
 host and port. Leave `MAIL_SCHEME` unset or `null` for port 587 STARTTLS SMTP
 providers; use `MAIL_SCHEME=smtps` only for implicit TLS providers on port 465.
+For a worked provider example — Google Workspace SMTP relay — plus SPF/DKIM/DMARC
+deliverability and a troubleshooting table, see
+[email-delivery.md](email-delivery.md).
 
 Keep `BROADCAST_CONNECTION=log` until a Reverb process and WebSocket routing are
 ready. Switch it to `reverb` when the site should publish live conversation

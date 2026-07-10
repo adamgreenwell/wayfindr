@@ -30,6 +30,12 @@ Wayfindr to a non-Forge host. It documents the generic Laravel runtime contract:
 web root, environment shape, queue worker, scheduler, Reverb process, mail,
 storage, backups, and the post-install smoke path.
 
+Use [email-delivery.md](email-delivery.md) when configuring outbound mail. It
+is the provider-specific recipe book — Google Workspace SMTP relay is the
+worked example — plus SPF/DKIM/DMARC deliverability and a troubleshooting
+table. Outbound mail is a dogfood-readiness gate, since alert digests and
+password resets go nowhere while the mailer is in `log` mode.
+
 Use [setup-templates.md](setup-templates.md) for the first Docker Compose and
 Coolify-style setup-template prototype. It is intentionally a process map and
 environment scaffold, not a production installer.
