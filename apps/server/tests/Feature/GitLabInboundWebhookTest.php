@@ -218,3 +218,16 @@ test('a note hook with a bad token is rejected', function (): void {
 
     expect(AuditEvent::where('action', 'ticket.external_comment_received')->count())->toBe(0);
 });
+
+test('an edited issue note (action update) is not recorded as a new note', function (): void {
+    $fixture = gitlabWebhookFixture();
+
+    postGitlabWebhook($this, $fixture['connection'], [
+        'object_kind' => 'note',
+        'object_attributes' => ['id' => 5599, 'note' => 'this comment was edited', 'noteable_type' => 'Issue', 'action' => 'update'],
+        'issue' => ['id' => 456789],
+        'user' => ['username' => 'gl-dev'],
+    ], 'glhook_secret')->assertStatus(202);
+
+    expect(AuditEvent::where('action', 'ticket.external_comment_received')->count())->toBe(0);
+});

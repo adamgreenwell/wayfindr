@@ -87,6 +87,16 @@ class GitLabWebhookController extends Controller
             return response()->json(['message' => 'Ignored.'], 202);
         }
 
+        // Note hooks also fire on edits (action=update/destroy). Only new
+        // comments become notes — otherwise editing a comment created before
+        // the link existed (its id not in the ledger) would mirror as new.
+        // A missing action means an older GitLab that only emits creations.
+        $action = data_get($attributes, 'action');
+
+        if ($action !== null && $action !== 'create') {
+            return response()->json(['message' => 'Ignored.'], 202);
+        }
+
         $externalId = data_get($request->input('issue'), 'id');
         $commentId = data_get($attributes, 'id');
         $body = data_get($attributes, 'note');
