@@ -1610,6 +1610,7 @@
 
                     transcriptRefreshInFlight = true;
                     var stickToBottom = agentNearBottom();
+                    var previousCount = transcript.querySelectorAll('[data-message-id]').length;
 
                     fetch(config.messagesUrl, {
                         credentials: 'same-origin',
@@ -1628,19 +1629,21 @@
                         .then(function (html) {
                             transcript.innerHTML = html;
 
+                            var items = transcript.querySelectorAll('[data-message-id]');
+                            var total = items.length;
+
                             if (transcriptCount) {
-                                var total = transcript.querySelectorAll('[data-message-id]').length;
                                 transcriptCount.textContent = total + ' total';
                             }
 
-                            // A newly arrived message means the visitor just sent,
-                            // so they are no longer typing.
-                            if (visitorTyping) {
+                            // Only a genuinely new message means the visitor stopped
+                            // typing. A plain catch-up refresh (e.g. on first subscribe)
+                            // must not clear the seeded/live typing indicator.
+                            if (visitorTyping && total > previousCount) {
                                 visitorTyping.hidden = true;
                             }
 
                             if (stickToBottom) {
-                                var items = transcript.querySelectorAll('[data-message-id]');
                                 var last = items[items.length - 1];
 
                                 if (last && typeof last.scrollIntoView === 'function') {
