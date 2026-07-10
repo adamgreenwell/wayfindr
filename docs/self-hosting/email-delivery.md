@@ -65,20 +65,33 @@ access):
 1. Sign in to [admin.google.com](https://admin.google.com).
 2. Go to **Apps → Google Workspace → Gmail → Routing**.
 3. Find **SMTP relay service** and click **Configure** (or **Add another
-   rule**).
+   rule**). If a relay rule already exists, **edit that one** rather than adding
+   a second — a fresh Workspace may already ship with a relay rule whose
+   defaults are not what you want (commonly *Require SMTP Authentication: ON*,
+   *Only accept mail from the specified IP addresses: OFF*).
 4. Give it a name, e.g. `Wayfindr`.
 5. **Allowed senders:** choose **Only addresses in my domains**. This lets the
-   app send as any `@wayfindr.cc` address while blocking spoofed external
-   senders.
+   app send as any address in a domain verified on this Workspace (e.g.
+   `support@wayfindr.cc`) while blocking spoofed external senders.
 6. **Authentication:** tick **Only accept mail from the specified IP
-   addresses** and add your Wayfindr server's **public IP** (on Forge, the
-   server's static IP). This is the clean, credential-free path for a headless
-   server. (You *can* instead tick **Require SMTP Authentication**, but that
-   means logging in as a Workspace user — which brings App Passwords back into
-   the picture — so IP allowlisting is preferred for a server.)
+   addresses**, add your Wayfindr server's **public IP** (on Forge, the server's
+   IP — `curl -s https://api.ipify.org` from the box if you are unsure), and
+   **leave *Require SMTP Authentication* unchecked**. This is the clean,
+   credential-free path for a headless server: the relay trusts the connection
+   by source IP, so the app needs no username or password. (Enabling *Require
+   SMTP Authentication* instead means signing in as a Workspace user, which
+   brings App Passwords back into the picture — so for a server, IP allowlisting
+   alone is preferred. Note the tradeoff: with auth off, anything that can send
+   from that IP can relay as one of your domain addresses, which is fine on a
+   dedicated box but worth knowing on a shared one.)
 7. **Encryption:** tick **Require TLS encryption**.
 8. **Save.** Changes usually apply within minutes but can take up to ~24 hours
    to propagate.
+
+> **Prerequisite:** "Only addresses in my domains" means the sending domain must
+> be **verified on this Workspace** (Admin console → *Account → Domains*). If
+> `MAIL_FROM_ADDRESS`'s domain is not listed there, the relay rejects the
+> sender.
 
 **2. Set the environment** on the Wayfindr host (Forge → Site → Environment, or
 your `.env`):
