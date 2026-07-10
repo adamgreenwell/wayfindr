@@ -165,9 +165,11 @@ inbox, not spam. For a Workspace domain sending through the relay:
 
 After configuring the environment (and running the Forge deploy / restarting
 the app so it picks up the new values), send a real smoke test from the box
-that runs Wayfindr:
+that runs Wayfindr. `artisan` lives under `apps/server` in the monorepo, so run
+it from there:
 
 ```bash
+cd apps/server
 php artisan wayfindr:mail-test --to="you@wayfindr.cc"
 ```
 
