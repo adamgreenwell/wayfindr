@@ -1761,7 +1761,7 @@ test('conversation context surfaces visitor read state before the reply composer
     }
 });
 
-test('dashboard keeps visitor typing out of queue and conversation detail context', function (): void {
+test('dashboard shows visitor typing on the conversation detail but keeps it out of the queue', function (): void {
     Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00', 'UTC'));
 
     try {
@@ -1804,15 +1804,22 @@ test('dashboard keeps visitor typing out of queue and conversation detail contex
             ->assertDontSee('Typing now')
             ->assertDontSee('Not typing');
 
+        // The detail page a signed-in agent is actively working now surfaces a
+        // live "Visitor is typing…" indicator (seeded visible when the visitor is
+        // mid-compose). This reverses the earlier decision to hide it there.
         $this->actingAs($agent)
             ->get('/dashboard/conversations/WF-TYPING')
             ->assertOk()
             ->assertSee('Visitor is composing')
-            ->assertDontSee('Visitor typing')
-            ->assertDontSee('Typing now')
-            ->assertDontSee('Updated 10 seconds ago')
-            ->assertDontSee('data-visitor-typing-label', false)
-            ->assertDontSee('data-visitor-typing-detail', false);
+            ->assertSee('Visitor is typing')
+            ->assertSee('data-visitor-typing', false);
+
+        // A quiet visitor's detail page still carries the indicator element, but
+        // seeded hidden rather than announced.
+        $this->actingAs($agent)
+            ->get('/dashboard/conversations/WF-NOTYPING')
+            ->assertOk()
+            ->assertSee('data-visitor-typing aria-live="polite" hidden', false);
     } finally {
         Carbon::setTestNow();
     }

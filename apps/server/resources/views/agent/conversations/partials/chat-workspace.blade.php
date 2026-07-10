@@ -10,6 +10,8 @@
             'transcriptMessages' => $messages,
         ])
     </div>
+
+    <p class="realtime-note" data-visitor-typing aria-live="polite" {{ $conversation->visitorTypingState() === 'typing' ? '' : 'hidden' }}>Visitor is typing…</p>
 </section>
 
 <section class="section" aria-labelledby="reply-heading">

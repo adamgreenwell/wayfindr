@@ -1012,6 +1012,7 @@
                 var csrf = document.querySelector('meta[name="csrf-token"]');
                 var transcript = document.querySelector('[data-transcript]');
                 var transcriptCount = document.querySelector('[data-transcript-count]');
+                var visitorTyping = document.querySelector('[data-visitor-typing]');
                 var hasTranscriptTarget = Boolean(transcript);
                 var hasCobrowseTargets = Boolean(panel && status);
                 var hasPresenceTargets = Boolean(visitorPresenceLabel && visitorPresenceDetail);
@@ -1632,6 +1633,12 @@
                                 transcriptCount.textContent = total + ' total';
                             }
 
+                            // A newly arrived message means the visitor just sent,
+                            // so they are no longer typing.
+                            if (visitorTyping) {
+                                visitorTyping.hidden = true;
+                            }
+
                             if (stickToBottom) {
                                 var items = transcript.querySelectorAll('[data-message-id]');
                                 var last = items[items.length - 1];
@@ -1652,6 +1659,34 @@
                                 refreshTranscript();
                             }
                         });
+                }
+
+                var visitorTypingTimer = null;
+
+                function updateVisitorTyping(typing) {
+                    if (!visitorTyping || !typing) {
+                        return;
+                    }
+
+                    if (visitorTypingTimer) {
+                        window.clearTimeout(visitorTypingTimer);
+                        visitorTypingTimer = null;
+                    }
+
+                    if (typing.state === 'typing') {
+                        visitorTyping.hidden = false;
+
+                        // Auto-clear if a stop-typing signal never arrives.
+                        var freshMs = typeof config.visitorTypingFreshMs === 'number' && config.visitorTypingFreshMs > 0
+                            ? config.visitorTypingFreshMs
+                            : 6000;
+
+                        visitorTypingTimer = window.setTimeout(function () {
+                            visitorTyping.hidden = true;
+                        }, freshMs);
+                    } else {
+                        visitorTyping.hidden = true;
+                    }
                 }
 
                 function subscribe(socket, auth) {
@@ -1821,6 +1856,10 @@
 
                     if (event.event === config.messageEventName) {
                         refreshTranscript();
+                    }
+
+                    if (event.event === config.typingEventName) {
+                        updateVisitorTyping(parsePayload(event.data).visitor_typing);
                     }
                 }
 
