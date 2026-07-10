@@ -22,6 +22,7 @@ use App\Support\ExternalIssues\ExternalIssueExportPreview;
 use App\Support\ExternalIssues\GitHubIssueCommenter;
 use App\Support\ExternalIssues\GitLabIssueCommenter;
 use App\Support\ExternalIssues\IssueCommenter;
+use App\Support\ExternalIssues\JiraIssueCommenter;
 use App\Support\ExternalIssueSyncStatus;
 use App\Support\ReplyTemplateOptions;
 use App\Support\TicketCategory;
@@ -41,7 +42,7 @@ use Illuminate\Validation\ValidationException;
 class AgentTicketController extends Controller
 {
     /** Providers with an IssueCommenter implementation for outbound note relay. */
-    private const COMMENT_PROVIDERS = ['github', 'gitlab'];
+    private const COMMENT_PROVIDERS = ['github', 'gitlab', 'jira'];
 
     public function show(Request $request, Ticket $ticket, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, ExternalIssueExportPreview $externalIssueExportPreview): View
     {
@@ -278,6 +279,7 @@ class AgentTicketController extends Controller
         return match ($provider) {
             'github' => app(GitHubIssueCommenter::class),
             'gitlab' => app(GitLabIssueCommenter::class),
+            'jira' => app(JiraIssueCommenter::class),
             default => null,
         };
     }
