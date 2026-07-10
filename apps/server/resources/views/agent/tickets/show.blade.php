@@ -392,6 +392,14 @@
                             @enderror
                         </div>
 
+                        @if ($canPostNoteToExternalIssue)
+                            <label class="check-row" for="post_to_external">
+                                <input id="post_to_external" name="post_to_external" type="checkbox" value="1" @checked(old('post_to_external'))>
+                                <span>Also post this note as a comment on the linked external issue</span>
+                            </label>
+                            <p class="lede">Notes stay internal by default. Only checked notes leave Wayfindr.</p>
+                        @endif
+
                         <button class="button" type="submit">Add note</button>
                     </form>
 

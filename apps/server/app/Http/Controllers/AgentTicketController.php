@@ -5,9 +5,11 @@ namespace App\Http\Controllers;
 use App\Events\ConversationMessageCreated;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
+use App\Models\ExternalIssueProviderConnection;
 use App\Models\Site;
 use App\Models\SiteExternalIssueProject;
 use App\Models\Ticket;
+use App\Models\TicketExternalLink;
 use App\Models\TicketLabel;
 use App\Models\User;
 use App\Models\Visitor;
@@ -15,7 +17,9 @@ use App\Notifications\ConversationNeedsReply;
 use App\Notifications\TicketAssigned;
 use App\Support\AgentNoteTemplate;
 use App\Support\ExternalIssueProvider;
+use App\Support\ExternalIssues\ExternalIssueCommentFailed;
 use App\Support\ExternalIssues\ExternalIssueExportPreview;
+use App\Support\ExternalIssues\GitHubIssueCommenter;
 use App\Support\ExternalIssueSyncStatus;
 use App\Support\ReplyTemplateOptions;
 use App\Support\TicketCategory;
@@ -69,6 +73,7 @@ class AgentTicketController extends Controller
             'account' => $agent->account()->firstOrFail(),
             'accountAgents' => $this->supportAgentsForSite($ticket->site),
             'agent' => $agent,
+            'canPostNoteToExternalIssue' => $this->commentableExternalLinks($ticket)->isNotEmpty(),
             'externalIssueProviders' => ExternalIssueProvider::options(),
             'externalIssueSyncStatuses' => ExternalIssueSyncStatus::options(),
             'externalIssueExportPreview' => $externalIssueExportPreview->forTicket($ticket),
@@ -112,7 +117,7 @@ class AgentTicketController extends Controller
         ]);
     }
 
-    public function storeNote(Request $request, Ticket $ticket): RedirectResponse
+    public function storeNote(Request $request, Ticket $ticket, GitHubIssueCommenter $githubIssueCommenter): RedirectResponse
     {
         $agent = $request->user();
 
@@ -121,6 +126,7 @@ class AgentTicketController extends Controller
         $validated = $request->validate([
             'body' => ['nullable', 'string', 'max:4000'],
             'note_template' => ['nullable', Rule::in(AgentNoteTemplate::values())],
+            'post_to_external' => ['nullable', 'boolean'],
         ]);
 
         $selectedTemplate = $validated['note_template'] ?? null;
@@ -146,7 +152,121 @@ class AgentTicketController extends Controller
 
         $this->recordActivity($ticket, $agent, 'ticket.note_added', $metadata);
 
-        return $this->redirectAfterUpdate($ticket, $request, 'Ticket note added.');
+        $status = 'Ticket note added.';
+
+        // Internal notes stay internal unless the agent explicitly opts to relay
+        // this one to the linked external issue (conservative-by-default per the
+        // external-integrations stance).
+        if ($request->boolean('post_to_external')) {
+            $relay = $this->relayNoteToExternalIssues($ticket, $agent, $body, $githubIssueCommenter);
+
+            if ($relay['failed'] > 0) {
+                $status = 'Ticket note added, but the external comment could not be posted. See ticket activity.';
+            } elseif ($relay['posted'] > 0) {
+                $status = 'Ticket note added and posted to the linked issue.';
+            }
+        }
+
+        return $this->redirectAfterUpdate($ticket, $request, $status);
+    }
+
+    /**
+     * External links whose provider connection is enabled, has the add_comment
+     * capability, and has a commenter implementation. Used both to decide
+     * whether to offer the opt-in and to relay a note.
+     *
+     * @return Collection<int, array{link: TicketExternalLink, connection: ExternalIssueProviderConnection}>
+     */
+    private function commentableExternalLinks(Ticket $ticket): Collection
+    {
+        $links = $ticket->relationLoaded('externalLinks')
+            ? $ticket->externalLinks
+            : $ticket->externalLinks()->get();
+
+        $connectionIds = $links
+            ->map(fn (TicketExternalLink $link): mixed => data_get($link->metadata, 'external_issue_provider_connection_id'))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($connectionIds->isEmpty()) {
+            return collect();
+        }
+
+        $connections = ExternalIssueProviderConnection::query()
+            ->where('account_id', $ticket->account_id)
+            ->whereKey($connectionIds->all())
+            ->where('is_enabled', true)
+            ->get()
+            ->keyBy('id');
+
+        return $links
+            ->map(function (TicketExternalLink $link) use ($connections): ?array {
+                $connectionId = data_get($link->metadata, 'external_issue_provider_connection_id');
+                $connection = $connectionId ? $connections->get($connectionId) : null;
+
+                if (! $connection instanceof ExternalIssueProviderConnection || ! $connection->hasCapability('add_comment')) {
+                    return null;
+                }
+
+                // Only providers with a commenter (GitHub for now) can relay.
+                if ($link->provider !== 'github') {
+                    return null;
+                }
+
+                return ['link' => $link, 'connection' => $connection];
+            })
+            ->filter()
+            ->values();
+    }
+
+    /**
+     * @return array{posted: int, failed: int}
+     */
+    private function relayNoteToExternalIssues(Ticket $ticket, User $agent, string $body, GitHubIssueCommenter $githubIssueCommenter): array
+    {
+        $posted = 0;
+        $failed = 0;
+
+        foreach ($this->commentableExternalLinks($ticket) as $target) {
+            /** @var TicketExternalLink $link */
+            $link = $target['link'];
+            /** @var ExternalIssueProviderConnection $connection */
+            $connection = $target['connection'];
+
+            try {
+                $result = match ($link->provider) {
+                    'github' => $githubIssueCommenter->comment($connection, $link, $body),
+                    default => null,
+                };
+
+                if ($result === null) {
+                    continue;
+                }
+
+                $posted++;
+
+                // The note body is already recorded on the note_added event; the
+                // relay event stays content-free provenance.
+                $this->recordActivity($ticket, $agent, 'ticket.external_comment_posted', [
+                    'external_link_id' => $link->id,
+                    'provider' => $link->provider,
+                    'external_key' => $link->external_key,
+                    'url' => $result['url'] ?? $link->url,
+                ]);
+            } catch (ExternalIssueCommentFailed $exception) {
+                $failed++;
+
+                $this->recordActivity($ticket, $agent, 'ticket.external_comment_failed', [
+                    'external_link_id' => $link->id,
+                    'provider' => $link->provider,
+                    'status' => $exception->status(),
+                    'message' => Str::limit($exception->getMessage(), 300),
+                ]);
+            }
+        }
+
+        return ['posted' => $posted, 'failed' => $failed];
     }
 
     public function storeLabel(Request $request, Ticket $ticket): RedirectResponse
@@ -1269,6 +1389,8 @@ class AgentTicketController extends Controller
             'ticket.external_issue_created',
             'ticket.external_link_removed',
             'ticket.external_sync_failed',
+            'ticket.external_comment_posted',
+            'ticket.external_comment_failed',
             'ticket.visitor_replied',
         ];
     }
@@ -1293,6 +1415,8 @@ class AgentTicketController extends Controller
             'ticket.external_issue_created',
             'ticket.external_link_removed',
             'ticket.external_sync_failed',
+            'ticket.external_comment_posted',
+            'ticket.external_comment_failed',
             'ticket.visitor_replied',
         ];
     }
@@ -1314,6 +1438,8 @@ class AgentTicketController extends Controller
             'ticket.external_issue_created' => ExternalIssueProvider::label(data_get($activity->metadata, 'provider')).' issue created: '.(data_get($activity->metadata, 'external_key') ?? data_get($activity->metadata, 'external_id') ?? ''),
             'ticket.external_link_removed' => 'External link removed: '.ExternalIssueProvider::label(data_get($activity->metadata, 'provider')).' '.(data_get($activity->metadata, 'external_key') ?? data_get($activity->metadata, 'external_id') ?? ''),
             'ticket.external_sync_failed' => 'External sync failed: '.ExternalIssueProvider::label(data_get($activity->metadata, 'provider')),
+            'ticket.external_comment_posted' => 'Note posted to '.ExternalIssueProvider::label(data_get($activity->metadata, 'provider')).' issue '.(data_get($activity->metadata, 'external_key') ?? ''),
+            'ticket.external_comment_failed' => 'External comment failed: '.ExternalIssueProvider::label(data_get($activity->metadata, 'provider')),
             'ticket.assignee_updated' => 'Assignee changed from '.(data_get($activity->metadata, 'old_assignee_name') ?? 'Unassigned').' to '.(data_get($activity->metadata, 'new_assignee_name') ?? 'Unassigned'),
             'ticket.escalated' => 'Ticket escalated from '.(data_get($activity->metadata, 'old_assignee_name') ?? 'Unassigned').' to '.(data_get($activity->metadata, 'target_agent_name') ?? data_get($activity->metadata, 'new_assignee_name') ?? 'Unassigned'),
             'ticket.updated' => $this->ticketUpdatedLabel(data_get($activity->metadata, 'changes', [])),
