@@ -1615,7 +1615,10 @@
                         headers: { Accept: 'text/html' }
                     })
                         .then(function (response) {
-                            if (!response.ok) {
+                            // A redirect means the session expired and the request
+                            // was sent to /login (which is itself 200 OK). Never swap
+                            // that HTML into the transcript.
+                            if (response.redirected || !response.ok) {
                                 throw new Error('Transcript refresh failed: ' + response.status);
                             }
 
@@ -1689,14 +1692,17 @@
                             setStatus('Listening for live conversation updates.', 'listening');
                             reconnectDelay = 1000;
 
-                            // On a reconnect (not the first connect), catch up on
-                            // anything broadcast while the socket was down.
-                            if (hasConnectedOnce) {
-                                refreshTranscript();
+                            // Catch up the transcript on every successful subscribe,
+                            // including the first: a visitor message posted between
+                            // the server render and this subscription is not replayed
+                            // by Reverb, so it would otherwise stay invisible.
+                            refreshTranscript();
 
-                                if (hasCobrowseTargets) {
-                                    refreshCobrowsePreview();
-                                }
+                            // The cobrowse preview is server-rendered fresh on load
+                            // and has its own recovery paths, so it only needs a
+                            // resync after an actual drop.
+                            if (hasConnectedOnce && hasCobrowseTargets) {
+                                refreshCobrowsePreview();
                             }
 
                             hasConnectedOnce = true;
