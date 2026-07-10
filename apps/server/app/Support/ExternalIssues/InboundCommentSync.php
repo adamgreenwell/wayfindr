@@ -3,6 +3,7 @@
 namespace App\Support\ExternalIssues;
 
 use App\Models\TicketExternalLink;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
@@ -12,6 +13,10 @@ use Illuminate\Support\Str;
  * of every comment it posts, so when the provider's webhook delivers that same
  * comment back, we skip it instead of mirroring our own note. The ledger also
  * makes inbound delivery idempotent under webhook retries.
+ *
+ * The check-and-write runs under a row lock on the link so concurrent
+ * deliveries of the same comment (parallel webhook retries or manual
+ * redeliveries) serialize rather than both recording a note.
  */
 class InboundCommentSync
 {
@@ -27,19 +32,17 @@ class InboundCommentSync
     {
         $commentId = trim($commentId);
 
-        if ($commentId === '' || $this->alreadySynced($link, $commentId)) {
+        if ($commentId === '') {
             return;
         }
 
-        $ids = $this->ledger($link);
-        $ids[] = $commentId;
+        DB::transaction(function () use ($link, $commentId): void {
+            $locked = $this->lockLink($link);
 
-        $this->writeLedger($link, $ids);
-    }
-
-    public function alreadySynced(TicketExternalLink $link, string $commentId): bool
-    {
-        return in_array(trim($commentId), $this->ledger($link), true);
+            if ($locked) {
+                $this->appendLedgerId($locked, $commentId);
+            }
+        });
     }
 
     /**
@@ -51,36 +54,54 @@ class InboundCommentSync
     {
         $commentId = trim($commentId);
         $body = trim($body);
-        $ticket = $link->ticket;
 
-        if ($commentId === '' || $body === '' || ! $ticket) {
+        if ($commentId === '' || $body === '') {
             return false;
         }
 
-        if ($this->alreadySynced($link, $commentId)) {
-            return false;
-        }
+        return DB::transaction(function () use ($link, $commentId, $body, $author, $source): bool {
+            $locked = $this->lockLink($link);
+            $ticket = $locked?->ticket;
 
-        $this->remember($link, $commentId);
+            if (! $locked || ! $ticket) {
+                return false;
+            }
 
-        $ticket->auditEvents()->create([
-            'account_id' => $link->account_id,
-            'site_id' => $link->site_id,
-            'actor_type' => null,
-            'actor_id' => null,
-            'action' => 'ticket.external_comment_received',
-            'metadata' => [
-                'provider' => $link->provider,
-                'external_key' => $link->external_key,
-                'external_comment_id' => $commentId,
-                'author' => filled($author) ? Str::limit(trim((string) $author), 120) : null,
-                'body' => Str::limit($body, self::BODY_LIMIT),
-                'source' => $source,
-            ],
-            'occurred_at' => now(),
-        ]);
+            // The dedup check and the ledger write happen under the same lock,
+            // so a concurrent delivery of this id cannot slip a second note in.
+            if (in_array($commentId, $this->ledger($locked), true)) {
+                return false;
+            }
 
-        return true;
+            $this->appendLedgerId($locked, $commentId);
+
+            $ticket->auditEvents()->create([
+                'account_id' => $locked->account_id,
+                'site_id' => $locked->site_id,
+                'actor_type' => null,
+                'actor_id' => null,
+                'action' => 'ticket.external_comment_received',
+                'metadata' => [
+                    'provider' => $locked->provider,
+                    'external_key' => $locked->external_key,
+                    'external_comment_id' => $commentId,
+                    'author' => filled($author) ? Str::limit(trim((string) $author), 120) : null,
+                    'body' => Str::limit($body, self::BODY_LIMIT),
+                    'source' => $source,
+                ],
+                'occurred_at' => now(),
+            ]);
+
+            return true;
+        });
+    }
+
+    private function lockLink(TicketExternalLink $link): ?TicketExternalLink
+    {
+        return TicketExternalLink::query()
+            ->whereKey($link->getKey())
+            ->lockForUpdate()
+            ->first();
     }
 
     /**
@@ -100,18 +121,23 @@ class InboundCommentSync
         )));
     }
 
-    /**
-     * @param  list<string>  $ids
-     */
-    private function writeLedger(TicketExternalLink $link, array $ids): void
+    private function appendLedgerId(TicketExternalLink $lockedLink, string $commentId): void
     {
+        $ids = $this->ledger($lockedLink);
+
+        if (in_array($commentId, $ids, true)) {
+            return;
+        }
+
+        $ids[] = $commentId;
+
         // Keep the ledger bounded; only recent ids matter for the loop/retry guard.
         if (count($ids) > self::LEDGER_CAP) {
             $ids = array_slice($ids, -self::LEDGER_CAP);
         }
 
-        $link->forceFill([
-            'metadata' => array_merge($link->metadata ?? [], ['synced_comment_ids' => $ids]),
+        $lockedLink->forceFill([
+            'metadata' => array_merge($lockedLink->metadata ?? [], ['synced_comment_ids' => $ids]),
         ])->save();
     }
 }
