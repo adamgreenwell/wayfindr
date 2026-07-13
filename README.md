@@ -49,7 +49,7 @@ examples/
 docs/
   architecture/        Technical architecture notes
   decisions/           Public product and engineering decisions
-  development/         Contributor setup and workflows
+  development/         Contributor setup, workflows, and the engineering handoff/roadmap
   governance/          Public project governance
   privacy/             Data responsibility, inventory, and cobrowse boundaries
   product/             Product principles, editions, roadmap
