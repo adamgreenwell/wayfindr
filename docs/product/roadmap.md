@@ -26,32 +26,29 @@ foundation now includes:
   emails, mail readiness warnings, and documented alert digest/escalation
   guardrails.
 - Provider-neutral external issue connections, site project mappings, external
-  ticket links, GitHub/GitLab outbound issue creation, and local sync-health
-  visibility.
+  ticket links, GitHub/GitLab/Jira outbound issue creation, reflected inbound
+  state, bidirectional comment relay, and local sync-health visibility.
 
 ## Next Alpha Focus
 
 These are the nearest product slices because they improve the daily support
 experience without opening broad integration or platform-service work too soon.
 
-- MVP dogfood hardening: use
-  [MVP Dogfood Readiness](mvp-dogfood-readiness.md) as the gate for controlled
-  installs inside trusted projects before broadening self-hosted expectations.
-- Chat UX polish: message grouping, composer states, delivery/read affordances,
-  timestamp-based visitor presence, typing/presence when the base interaction
-  feels calm, and preserved manual refresh fallbacks. See
-  [Chat UX Polish](chat-ux-polish.md).
+- MVP dogfood launch: refresh the deployed revision and
+  [MVP Dogfood Readiness](mvp-dogfood-readiness.md), then route real support
+  through Wayfindr before broadening self-hosted expectations.
+- External integration validation: exercise issue creation, inbound state, and
+  comment relay against a live provider; use that traffic to decide whether
+  labels, assignee, or priority mapping is worth its conflict-handling cost.
 - Ticket workflow comfort: smoother transitions between conversation, ticket,
   visitor, and support-code context; clearer “what needs attention” cues; and
   less page-hopping for common agent moves.
 - Alert calm: keep the implemented digest/manual-escalation foundation stable,
   observable, and metadata-safe before adding automatic urgency rules. See
   [Account Escalation Policies](account-escalation-policies.md).
-- Cobrowse transport discipline: payload budgets, throttling, batching,
-  reconnect/degraded-mode behavior, and explicit drop policies under pressure.
 - Operator hardening: clearer setup/recovery guidance, safer instance activity,
-  process-health affordances, and self-host templates that reduce setup
-  guesswork without hiding the underlying Laravel runtime contract.
+  process-health affordances, platform-action auditing, and a separately
+  designed break-glass access path that does not erode tenant boundaries.
 - Privacy and retention controls: transcript/message retention visibility,
   operator-owned defaults, deletion/export planning, and warnings that help
   self-hosters understand their responsibility.
@@ -61,11 +58,11 @@ experience without opening broad integration or platform-service work too soon.
 These remain valid but should wait until the support loop and operator loop feel
 stable.
 
-- Bitbucket Cloud, Bitbucket Data Center, or Jira outbound issue creation based
-  on operator demand. Jira is the first Atlassian-family candidate; native
-  Bitbucket Issues are deferred to legacy demand.
-- External issue retry state, inbound provider updates, and deeper audit
-  visibility.
+- Richer external field mapping only after real provider traffic establishes
+  which fields, directions, and conflict rules are useful. Native Bitbucket
+  Issues remain deferred to demonstrated operator demand.
+- Richer inbound-comment presentation and assigned-agent notifications after
+  the base comment relay is validated live.
 - Agent-assisted summaries, reply drafts, and ticket suggestions when they
   improve concrete workflows without becoming AI decoration.
 - SPA route tracking and richer host-app SDKs.

@@ -28,11 +28,13 @@ The **MVP support loop works end to end**: a visitor chats via the widget → th
 agent sees it live and replies → tickets capture durable work → cobrowse gives a
 consented, masked view of the visitor's page.
 
-**Stage is dogfood-ready and validated live.** All four runtime gates are green:
-outbound **mail** (Google Workspace SMTP relay), the **scheduler** (hourly
-digests + cobrowse pruning), **Reverb** (realtime), and the **queue worker**
-(digests + `ShouldQueue` notifications). See `/dashboard/readiness` and
-`/operator` in the app for the live checklist.
+**Stage has passed the core support-loop rehearsal.** As of July 10, outbound
+**mail** (Google Workspace SMTP relay), the **scheduler** (hourly digests +
+cobrowse pruning), **Reverb** (realtime), and the **queue worker** (digests +
+`ShouldQueue` notifications) had each been validated live. Before declaring
+dogfooding open after a deploy, refresh `/dashboard/readiness` and `/operator`,
+confirm the deployed revision, and recheck the full runtime contract in
+`docs/product/mvp-dogfood-readiness.md`, including backups and restore.
 
 **Epics closed this cycle**: #4 (Chat UX Polish), #5 (Cobrowse Transport
 Discipline), #490 (Cobrowse Observe-Mode Fidelity).
@@ -49,7 +51,7 @@ replay — see §6, recommended against as specced), #564 (declare dogfooding op
 
 | Area | What | Key files | PRs |
 |---|---|---|---|
-| **Ops / Forge-first** | Root `artisan` shim so Forge's Commands panel, scheduler cron, and queue worker resolve in the monorepo (`current/` is the repo root; the app is under `apps/server`). | `apps/server/artisan`, `docs/self-hosting/laravel-forge.md` | #573 |
+| **Ops / Forge-first** | Root `artisan` shim so Forge's Commands panel, scheduler cron, and queue worker resolve in the monorepo (`current/` is the repo root; the app is under `apps/server`). | `/artisan`, `docs/self-hosting/laravel-forge.md` | #573 |
 | **Ops docs** | Outbound email delivery wiki page (Workspace SMTP relay worked example + SPF/DKIM + troubleshooting). | `docs/self-hosting/email-delivery.md` | #572 |
 | **Cobrowse retention** | `wayfindr:expire-idle-cobrowse-sessions` (every 5 min) ends abandoned consented sessions so they stop reading "active" in readiness **and** become eligible for the 72h content pruner (was a real retention leak). | `app/Console/Commands/ExpireIdleCobrowseSessionsCommand.php`, `routes/console.php` | #574/#575 |
 | **Agent live transcript** | New visitor messages append to the agent transcript with no reload; the realtime socket now reconnects with backoff and resyncs. | `resources/views/agent/conversations/show.blade.php` (inline realtime script), `AgentConversationController@messages`, `partials/message-list.blade.php` | #576 |
@@ -82,8 +84,10 @@ replay — see §6, recommended against as specced), #564 (declare dogfooding op
     (`metadata.synced_comment_ids`), written under a `lockForUpdate` row lock so
     concurrent deliveries are atomic. Outbound records every posted comment id;
     inbound skips ids it already knows (own echoes + retries).
-  - *Capability flags*: connections carry `create_issue` / `add_comment` /
-    `sync_status`; features gate on them.
+  - *Capability flags*: `create_issue` gates outbound creation and `add_comment`
+    gates the outbound note relay. `sync_status` is present but is not currently
+    an inbound-webhook switch. Signed inbound deliveries instead require an
+    enabled connection and valid configured webhook secret.
 - **Cobrowse** is consent-gated; masking happens **in the browser before data
   leaves the page**, and the server re-sanitizes. The agent preview is an inert
   **sandboxed iframe** (opaque origin) — keep it inert. Transport budgets live in
@@ -125,12 +129,11 @@ replay — see §6, recommended against as specced), #564 (declare dogfooding op
 
 Ordered roughly by readiness-to-build. Each has a starting pointer.
 
-1. **#22 — richer field mapping** (the remaining External Ticket Integrations
-   scope). Sync labels / assignee / priority between a Wayfindr ticket and its
-   linked issue. *Fork to decide first*: which fields, which direction(s), and
-   conflict handling. Outbound: extend the creators or add a mapping layer;
-   inbound: extend the webhook receivers. Arguably better once real issues flow
-   through the dogfood loop, but buildable now behind capability flags.
+1. **#564 — refresh stage and declare dogfooding open.** Sync the deployment
+   fork through the owner's normal workflow, confirm the deployed revision,
+   refresh the full readiness checklist, and make the stage-versus-production
+   product call. Once open, use the clean support queues as the real-user
+   feedback loop.
 
 2. **Comment relay live-validation + polish**. The relay is thoroughly unit /
    HTTP-mocked but has **not** been exercised against a live provider (needs a
@@ -139,14 +142,16 @@ Ordered roughly by readiness-to-build. Each has a starting pointer.
    ideas: notify assigned agents on an inbound comment; render received comments
    more richly than a plain internal note.
 
-3. **#58 — Platform Operator Boundary, next slices**. The boundary exists
+3. **#22 — richer field mapping, after live demand.** Syncing labels, assignee,
+   or priority needs a product decision about fields, direction, and conflict
+   handling. Do not guess that contract before dogfood traffic shows which
+   provider metadata agents actually need.
+
+4. **#58 — Platform Operator Boundary, next slices**. The boundary exists
    (`/operator`, readiness, security-posture check, docs). Remaining, design-heavy
    work: **break-glass** customer-data access (explicit, scoped, time-bound,
    audited) and a comprehensive **platform-action audit** trail. Start from
    `docs/product/platform-operator-boundary.md`.
-
-4. **#564 — declare dogfooding open**. Ops gates are green and validated. This is
-   the owner's product call; once made, stand up the real-user feedback loop.
 
 5. **#492 — live in-place cobrowse replay (incremental DOM patching).**
    **Recommended against as currently specced**: it would require weakening the

@@ -16,6 +16,23 @@ The product stance is:
 - Sensitive visitor data is summarized and redacted before leaving Wayfindr
   unless an operator has explicitly configured otherwise.
 
+## Current Capability Baseline
+
+GitHub, GitLab, and Jira now share the same implemented baseline:
+
+- explicit, capability-gated outbound issue creation with a conservative
+  ticket summary;
+- authenticated inbound webhook receivers that reflect external issue state
+  without changing the Wayfindr ticket lifecycle;
+- opt-in outbound internal-note-to-comment relay;
+- inbound comment-to-internal-note relay with a bounded echo/retry ledger; and
+- local retry, audit, and sync-health visibility without exposing provider
+  credentials or raw failure details to agents.
+
+This baseline is locally verified with mocked provider HTTP boundaries. Live
+provider validation is the next gate. Richer field mapping remains deliberately
+demand-gated until dogfood traffic establishes which metadata is useful.
+
 ## Platform Shape
 
 ### GitHub
@@ -35,8 +52,10 @@ Planning notes:
 - Outbound issue creation is the first concrete adapter. It sends a conservative
   issue body with ticket metadata and a Wayfindr link, then stores the created
   GitHub URL as a `ticket_external_links` record.
-- Keep comments, inbound sync, labels, milestones, and assignee mapping behind
-  later capability-specific slices.
+- Inbound state reflection and comment relay arrive through authenticated
+  per-connection webhooks. An enabled connection and valid webhook secret—not
+  the outbound capability flags—authorize those deliveries. Labels, milestones,
+  and assignee mapping remain later product decisions.
 
 ### GitLab
 
@@ -52,6 +71,8 @@ Planning notes:
 - Outbound issue creation supports GitLab.com and self-managed GitLab base URLs.
   It sends the same conservative ticket summary as GitHub and records the
   resulting GitLab link locally.
+- Authenticated inbound state reflection and bidirectional comment relay use the
+  same provider-neutral sync paths as GitHub and Jira.
 - Model GitLab capabilities separately from GitHub because labels, milestones,
   epics, and work items may vary by installation and edition.
 - Keep private project access failures non-leaky; a provider `404` can mean
@@ -59,17 +80,16 @@ Planning notes:
 
 ### Atlassian, Jira, And Bitbucket
 
-Jira should be Wayfindr's first Atlassian-family outbound issue destination
-when real operator demand appears. Bitbucket Cloud, Bitbucket Data Center, and
-Jira are related, but they should be planned as separate provider decisions
-instead of one generic "Atlassian" adapter.
+Jira is Wayfindr's first Atlassian-family issue destination. Bitbucket Cloud,
+Bitbucket Data Center, and Jira are related, but they remain separate provider
+decisions instead of one generic "Atlassian" adapter.
 
 See [0006: Atlassian Issue Integration Direction](../decisions/0006-atlassian-issue-integration-direction.md).
 
 Planning notes:
 
-- Treat Jira outbound issue creation as the narrowest first Atlassian
-  implementation path.
+- Jira outbound issue creation supports Cloud and Server/Data Center auth and
+  payload differences while keeping one conservative Wayfindr export boundary.
 - Model Jira project keys, issue types, required fields, and cloud/data-center
   base URL differences explicitly instead of hiding them behind Bitbucket terms.
 - Treat native Bitbucket Cloud issue creation as legacy support only. Atlassian
@@ -78,8 +98,8 @@ Planning notes:
 - Do not assume every Bitbucket repository has issue tracking enabled.
 - Do not assume Bitbucket Cloud and Bitbucket Data Center share the same issue
   API shape.
-- Keep the first Jira integration narrow: create an external record and link
-  back to Wayfindr.
+- Jira also participates in authenticated inbound state reflection and
+  bidirectional comment relay; Wayfindr ticket state remains canonical.
 
 ## Integration Boundary
 
@@ -102,25 +122,24 @@ Expected pieces:
 - A GitLab issue creator adapter for explicit outbound issue creation. It calls
   GitLab's Issues API for GitLab.com or self-managed GitLab base URLs only when
   a mapped provider connection has the `create_issue` capability.
+- A Jira issue creator adapter for Cloud and Server/Data Center projects, gated
+  by the same `create_issue` capability.
 - A site-level external issue health readout that summarizes local link sync
   states and recent sanitized provider failures without calling external
   providers or exposing credentials.
 - A ticket-level external handoff readiness readout that shows whether the
   ticket's site has an issue-creation-capable project mapping before an agent
   tries to send work to another tracker.
-- Adapter interfaces for creating an external issue, adding comments, fetching
-  status, and handling webhooks when supported.
+- Provider-specific issue creators, a shared `IssueCommenter` contract, and
+  authenticated webhook controllers that feed provider-neutral inbound state
+  and comment synchronization services.
 - Audit events for external issue creation, sync attempts, sync failures, and
   manual unlinking.
 
-The first adapter contract should be intentionally small:
-
-- `createIssue(Ticket $ticket, ExternalProject $project): ExternalIssue`
-- `addComment(Ticket $ticket, ExternalIssue $externalIssue, string $body): void`
-- `capabilities(): ExternalIssueCapabilities`
-
-Inbound sync, status mirroring, assignee mapping, and label mapping can come
-later once local ticket lifecycle behavior is stable.
+The implemented seams should stay intentionally small: provider-specific issue
+creators, `IssueCommenter` implementations, `InboundIssueStateSync`, and
+`InboundCommentSync`. Assignee, priority, and label mapping can come later once
+live use establishes direction and conflict-handling requirements.
 
 ## Data Rules
 
@@ -141,26 +160,19 @@ Default behavior should be conservative:
 
 ## Suggested Roadmap
 
-1. Add local ticket categories and keep them provider-neutral. This is now the
-   local classification baseline; external label mapping should remain
-   opt-in.
-2. Add a provider-neutral external link data model and audit events. This is
-   now the local linking baseline for manual records and future provider
-   adapters.
-3. Add account-level provider connection placeholders, capability flags, and
-   site-to-project mappings. This is now the routing baseline before outbound
-   provider creation.
-4. Add GitHub outbound issue creation as the first concrete adapter. This is now
-   the outbound creation baseline.
-5. Add GitLab outbound issue creation after the adapter boundary proves itself.
-   This is now the second outbound creation adapter and the self-managed GitLab
-   URL baseline.
-6. Evaluate Bitbucket Cloud issues versus Jira based on real operator demand.
-   This is now resolved in favor of Jira as the first Atlassian-family adapter,
-   with Bitbucket native issues deferred to legacy demand.
-7. Add external issue sync health once outbound links are dependable. This now
-   starts with local, site-scoped health visibility; inbound webhooks and deeper
-   sync behavior remain later work.
+1. Add local provider-neutral ticket categories. **Shipped.**
+2. Add provider-neutral external links and audit events. **Shipped.**
+3. Add account connections, capability flags, and site mappings. **Shipped.**
+4. Add GitHub, GitLab, and Jira outbound issue creation. **Shipped.**
+5. Add retry handling and account/site/ticket sync-health visibility.
+   **Shipped.**
+6. Add authenticated inbound issue-state reflection for all three providers.
+   **Shipped.**
+7. Add opt-in outbound and authenticated inbound comment relay with echo-loop
+   protection. **Shipped.**
+8. Validate the full round trip against a live dogfood provider connection.
+9. Decide whether labels, assignee, or priority mapping is justified by real
+   traffic, including direction and conflict rules.
 
 ## Open Questions
 
