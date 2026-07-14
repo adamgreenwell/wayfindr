@@ -7,6 +7,7 @@ use App\Http\Controllers\AgentAccountAuditController;
 use App\Http\Controllers\AgentAccountController;
 use App\Http\Controllers\AgentAccountIntegrationsController;
 use App\Http\Controllers\AgentAlertController;
+use App\Http\Controllers\AgentConversationAttachmentController;
 use App\Http\Controllers\AgentConversationController;
 use App\Http\Controllers\AgentConversationQueueController;
 use App\Http\Controllers\AgentConversationTypingController;
@@ -139,6 +140,9 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.conversations.claim');
     Route::post('/dashboard/conversations/{supportCode}/release', [AgentConversationController::class, 'release'])
         ->name('dashboard.conversations.release');
+    Route::get('/dashboard/conversations/{supportCode}/attachments/{attachment}', [AgentConversationAttachmentController::class, 'show'])
+        ->whereNumber('attachment')
+        ->name('dashboard.conversations.attachments.show');
     Route::get('/dashboard/conversations/{supportCode}/messages', [AgentConversationController::class, 'messages'])
         ->name('dashboard.conversations.messages.index');
     Route::post('/dashboard/conversations/{supportCode}/messages', [AgentConversationController::class, 'storeMessage'])

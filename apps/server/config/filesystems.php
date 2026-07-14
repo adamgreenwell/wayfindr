@@ -47,6 +47,21 @@ return [
             'report' => false,
         ],
 
+        // Conversation message attachments (ADR 0007). A private, never-served
+        // local disk: no `url`, no `serve`, private visibility. Files are only
+        // ever reached by streaming through an authorized Wayfindr endpoint —
+        // there is no public path, guessable URL, or storage link. This is the
+        // local-first surface; a remote (S3-compatible) disk is added later and
+        // inherits the same authorization boundary.
+        'attachments' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private/attachments'),
+            'serve' => false,
+            'visibility' => 'private',
+            'throw' => false,
+            'report' => false,
+        ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

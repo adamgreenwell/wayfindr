@@ -11,6 +11,7 @@ use App\Http\Controllers\Widget\CobrowsePageStateController;
 use App\Http\Controllers\Widget\CobrowseSnapshotController;
 use App\Http\Controllers\Widget\CobrowseStatusController;
 use App\Http\Controllers\Widget\CobrowseTelemetryController;
+use App\Http\Controllers\Widget\ConversationAttachmentController;
 use App\Http\Controllers\Widget\ConversationController;
 use App\Http\Controllers\Widget\ConversationMessageController;
 use App\Http\Controllers\Widget\ConversationTypingController;
@@ -48,6 +49,12 @@ Route::middleware('throttle:widget-message')->group(function (): void {
         ->name('conversations.messages.store');
     Route::post('/conversations/{supportCode}/typing', ConversationTypingController::class)
         ->name('conversations.typing.store');
+});
+
+Route::middleware('throttle:widget-attachment')->group(function (): void {
+    Route::get('/conversations/{supportCode}/attachments/{attachment}', [ConversationAttachmentController::class, 'show'])
+        ->whereNumber('attachment')
+        ->name('conversations.attachments.show');
 });
 
 Route::post('/integrations/github/webhook/{connection}', GitHubWebhookController::class)
