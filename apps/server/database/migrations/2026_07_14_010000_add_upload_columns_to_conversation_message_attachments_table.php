@@ -55,6 +55,13 @@ return new class extends Migration
             $table->dropMorphs('uploaded_by');
         });
 
+        // Pending (not-yet-sent) uploads have a null message binding, which the
+        // pre-upload schema disallowed. Drop them before restoring the NOT NULL
+        // constraint so the rollback cannot fail on their null value.
+        DB::table('conversation_message_attachments')
+            ->whereNull('conversation_message_id')
+            ->delete();
+
         Schema::table('conversation_message_attachments', function (Blueprint $table): void {
             $table->unsignedBigInteger('conversation_message_id')->nullable(false)->change();
         });

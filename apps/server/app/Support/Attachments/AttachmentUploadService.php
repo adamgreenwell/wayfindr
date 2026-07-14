@@ -6,6 +6,7 @@ use App\Models\Conversation;
 use App\Models\ConversationMessageAttachment;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -51,65 +52,74 @@ class AttachmentUploadService
             throw ValidationException::withMessages(['file' => 'This file type is not allowed.']);
         }
 
-        // Enforce the per-conversation total across everything already stored.
-        $maxConversationBytes = (int) config('wayfindr.attachments.max_conversation_bytes');
-        $existingBytes = (int) ConversationMessageAttachment::query()
-            ->where('conversation_id', $conversation->id)
-            ->sum('size_bytes');
-
-        if ($existingBytes + $sizeBytes > $maxConversationBytes) {
-            throw ValidationException::withMessages([
-                'file' => 'This conversation has reached its attachment storage limit.',
-            ]);
-        }
-
         $checksum = hash_file('sha256', $file->getRealPath()) ?: null;
+        $maxConversationBytes = (int) config('wayfindr.attachments.max_conversation_bytes');
+        $filename = $this->sanitizeFilename($file->getClientOriginalName());
 
         // Opaque, non-guessable key: no client-derived segment, no extension, no
         // relation to the conversation id.
         $storageKey = Str::lower((string) Str::ulid()).'/'.Str::lower((string) Str::ulid());
 
-        // The disk is configured with throw => false, so a failed write returns
-        // false rather than throwing — surface it instead of recording a row
-        // that points at a missing file.
-        abort_if(
-            Storage::disk('attachments')->putFileAs(dirname($storageKey), $file, basename($storageKey)) === false,
-            500,
-            'The attachment could not be stored.',
-        );
+        return DB::transaction(function () use (
+            $conversation, $site, $file, $uploader, $sizeBytes, $mimeType, $checksum, $filename, $storageKey, $maxConversationBytes
+        ): ConversationMessageAttachment {
+            // Serialize concurrent uploads to this conversation so the cap check
+            // and the insert are atomic — without the lock, two uploads could
+            // both read the old total and both push it over the limit.
+            Conversation::query()->whereKey($conversation->getKey())->lockForUpdate()->first();
 
-        $attachment = ConversationMessageAttachment::query()->create([
-            'conversation_message_id' => null,
-            'conversation_id' => $conversation->id,
-            'account_id' => $site->account_id,
-            'site_id' => $site->id,
-            'uploaded_by_type' => $uploader->getMorphClass(),
-            'uploaded_by_id' => $uploader->getKey(),
-            'storage_disk' => 'attachments',
-            'storage_key' => $storageKey,
-            'original_filename' => $this->sanitizeFilename($file->getClientOriginalName()),
-            'mime_type' => $mimeType,
-            'size_bytes' => $sizeBytes,
-            'checksum' => $checksum,
-            'status' => ConversationMessageAttachment::STATUS_READY,
-        ]);
+            $existingBytes = (int) ConversationMessageAttachment::query()
+                ->where('conversation_id', $conversation->id)
+                ->sum('size_bytes');
 
-        $conversation->auditEvents()->create([
-            'account_id' => $site->account_id,
-            'site_id' => $site->id,
-            'actor_type' => $uploader->getMorphClass(),
-            'actor_id' => $uploader->getKey(),
-            'action' => 'attachment.uploaded',
-            'metadata' => [
-                'attachment_id' => $attachment->id,
+            if ($existingBytes + $sizeBytes > $maxConversationBytes) {
+                throw ValidationException::withMessages([
+                    'file' => 'This conversation has reached its attachment storage limit.',
+                ]);
+            }
+
+            // The disk is configured with throw => false, so a failed write
+            // returns false rather than throwing — surface it instead of
+            // recording a row that points at a missing file.
+            abort_if(
+                Storage::disk('attachments')->putFileAs(dirname($storageKey), $file, basename($storageKey)) === false,
+                500,
+                'The attachment could not be stored.',
+            );
+
+            $attachment = ConversationMessageAttachment::query()->create([
+                'conversation_message_id' => null,
+                'conversation_id' => $conversation->id,
+                'account_id' => $site->account_id,
+                'site_id' => $site->id,
+                'uploaded_by_type' => $uploader->getMorphClass(),
+                'uploaded_by_id' => $uploader->getKey(),
+                'storage_disk' => 'attachments',
+                'storage_key' => $storageKey,
+                'original_filename' => $filename,
                 'mime_type' => $mimeType,
                 'size_bytes' => $sizeBytes,
-                'filename' => $attachment->original_filename,
-            ],
-            'occurred_at' => now(),
-        ]);
+                'checksum' => $checksum,
+                'status' => ConversationMessageAttachment::STATUS_READY,
+            ]);
 
-        return $attachment;
+            $conversation->auditEvents()->create([
+                'account_id' => $site->account_id,
+                'site_id' => $site->id,
+                'actor_type' => $uploader->getMorphClass(),
+                'actor_id' => $uploader->getKey(),
+                'action' => 'attachment.uploaded',
+                'metadata' => [
+                    'attachment_id' => $attachment->id,
+                    'mime_type' => $mimeType,
+                    'size_bytes' => $sizeBytes,
+                    'filename' => $attachment->original_filename,
+                ],
+                'occurred_at' => now(),
+            ]);
+
+            return $attachment;
+        });
     }
 
     private function sanitizeFilename(?string $name): string
