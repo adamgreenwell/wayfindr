@@ -29,9 +29,13 @@ GitHub, GitLab, and Jira now share the same implemented baseline:
 - local retry, audit, and sync-health visibility without exposing provider
   credentials or raw failure details to agents.
 
-This baseline is locally verified with mocked provider HTTP boundaries. Live
-provider validation is the next gate. Richer field mapping remains deliberately
-demand-gated until dogfood traffic establishes which metadata is useful.
+This baseline is locally verified with mocked provider HTTP boundaries and has
+completed a full live GitHub dogfood round trip: issue creation, reflected state,
+two-way comment relay, and echo suppression. GitLab and Jira should receive the
+same live-provider proof when an operator actually configures them; that is not
+a blocker for the GitHub-backed dogfood install. Richer field mapping remains
+deliberately demand-gated until dogfood traffic establishes which metadata is
+useful.
 
 ## Platform Shape
 
@@ -171,6 +175,8 @@ Default behavior should be conservative:
 7. Add opt-in outbound and authenticated inbound comment relay with echo-loop
    protection. **Shipped.**
 8. Validate the full round trip against a live dogfood provider connection.
+   **Shipped for GitHub; GitLab and Jira remain provider-specific follow-up when
+   a real install configures them.**
 9. Decide whether labels, assignee, or priority mapping is justified by real
    traffic, including direction and conflict rules.
 

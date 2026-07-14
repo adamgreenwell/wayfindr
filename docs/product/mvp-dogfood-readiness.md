@@ -99,7 +99,8 @@ The first dogfood MVP can tolerate these limitations as long as they are visible
 - no general hosted account lifecycle tooling;
 - no automated retention, export, or deletion controls beyond documented
   responsibility guidance;
-- no full external issue status sync;
+- external issue sync is limited to reflected state and comment relay; richer
+  field mapping and attachment export are not part of the MVP contract;
 - no remote-control cobrowse;
 - no formal SLA, uptime, or support guarantees;
 - no AI-assisted support workflow in the critical path.

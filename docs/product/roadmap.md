@@ -34,12 +34,19 @@ foundation now includes:
 These are the nearest product slices because they improve the daily support
 experience without opening broad integration or platform-service work too soon.
 
-- MVP dogfood launch: refresh the deployed revision and
-  [MVP Dogfood Readiness](mvp-dogfood-readiness.md), then route real support
-  through Wayfindr before broadening self-hosted expectations.
-- External integration validation: exercise issue creation, inbound state, and
-  comment relay against a live provider; use that traffic to decide whether
-  labels, assignee, or priority mapping is worth its conflict-handling cost.
+- MVP dogfood operation: the current Forge stage is the owner-approved initial
+  dogfood instance. Keep routing real Wayfindr support through it, use
+  [MVP Dogfood Readiness](mvp-dogfood-readiness.md) after deploys, and let real
+  conversations select the next narrow slice.
+- Attachment contract and message-level delivery: define private storage,
+  authorization, file/size limits, retention, scanning expectations, and mobile
+  picker behavior before adding visitor and agent upload UI. Start with
+  conversation-message attachments; let linked tickets surface that context
+  without copying binaries or exporting them to external trackers by default.
+- External integration polish: live GitHub issue creation, inbound state,
+  comment relay, and echo suppression are proven. Use continued traffic to
+  decide whether labels, assignee, priority mapping, richer inbound-comment
+  presentation, or assigned-agent notifications justify their complexity.
 - Ticket workflow comfort: smoother transitions between conversation, ticket,
   visitor, and support-code context; clearer “what needs attention” cues; and
   less page-hopping for common agent moves.
@@ -61,8 +68,12 @@ stable.
 - Richer external field mapping only after real provider traffic establishes
   which fields, directions, and conflict rules are useful. Native Bitbucket
   Issues remain deferred to demonstrated operator demand.
-- Richer inbound-comment presentation and assigned-agent notifications after
-  the base comment relay is validated live.
+- Richer inbound-comment presentation and assigned-agent notifications only if
+  continued live use demonstrates that the base internal-note relay is too
+  quiet or too plain.
+- Direct ticket attachments, internal-note attachments, and broader attachment
+  workflows only after message attachments establish the required lifecycle,
+  retention, and operator controls.
 - Agent-assisted summaries, reply drafts, and ticket suggestions when they
   improve concrete workflows without becoming AI decoration.
 - SPA route tracking and richer host-app SDKs.
