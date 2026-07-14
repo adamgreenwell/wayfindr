@@ -40,6 +40,9 @@ class AttachmentBinder
             ]);
         }
 
+        // Lock the candidate rows for the duration of the send transaction so a
+        // concurrent bind of the same id cannot race between this check and the
+        // update below.
         $candidates = ConversationMessageAttachment::query()
             ->where('conversation_id', $conversation->id)
             ->whereNull('conversation_message_id')
@@ -47,6 +50,7 @@ class AttachmentBinder
             ->where('uploaded_by_type', $sender->getMorphClass())
             ->where('uploaded_by_id', $sender->getKey())
             ->whereIn('id', $attachmentIds)
+            ->lockForUpdate()
             ->get();
 
         // Every referenced id must resolve to a bindable attachment. A missing
@@ -59,10 +63,21 @@ class AttachmentBinder
             ]);
         }
 
-        ConversationMessageAttachment::query()
+        // The update re-asserts whereNull so it can only ever claim rows that
+        // are still unbound. If a concurrent send bound one first, fewer rows
+        // update than expected and the whole send rolls back — no silent
+        // re-binding across messages.
+        $bound = ConversationMessageAttachment::query()
             ->whereIn('id', $candidates->pluck('id')->all())
+            ->whereNull('conversation_message_id')
             ->update(['conversation_message_id' => $message->id]);
 
-        return $candidates->count();
+        if ($bound !== $candidates->count()) {
+            throw ValidationException::withMessages([
+                'attachment_ids' => 'One or more attachments are unavailable.',
+            ]);
+        }
+
+        return $bound;
     }
 }

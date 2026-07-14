@@ -9,6 +9,7 @@
 
 use App\Models\Account;
 use App\Models\Conversation;
+use App\Models\ConversationMessage;
 use App\Models\ConversationMessageAttachment;
 use App\Models\Site;
 use App\Models\User;
@@ -288,6 +289,44 @@ test('an idempotent retry binds the attachment exactly once', function (): void 
 
     expect($f['conversation']->messages()->count())->toBe(1)
         ->and(ConversationMessageAttachment::where('conversation_message_id', '!=', null)->count())->toBe(1);
+});
+
+test('an already-bound attachment cannot be re-bound to another message', function (): void {
+    $f = uploadFixture();
+    $attachment = ConversationMessageAttachment::factory()->pendingFor($f['conversation'], $f['visitor'])->create();
+
+    $base = [
+        'site_public_key' => $f['site']->public_key,
+        'anonymous_id' => $f['visitor']->anonymous_id,
+        'visitor_token' => tokenFor($f['site'], $f['visitor']),
+        'attachment_ids' => [$attachment->id],
+    ];
+
+    $this->postJson("/api/conversations/{$f['conversation']->support_code}/messages", $base + [
+        'body' => 'First.',
+        'client_message_id' => 'first',
+    ])->assertCreated();
+
+    $firstMessageId = $attachment->fresh()->conversation_message_id;
+
+    // A second, distinct send referencing the now-bound id is rejected...
+    $this->postJson("/api/conversations/{$f['conversation']->support_code}/messages", $base + [
+        'body' => 'Second.',
+        'client_message_id' => 'second',
+    ])->assertStatus(422);
+
+    // ...and the attachment stays on the first message.
+    expect($attachment->fresh()->conversation_message_id)->toBe($firstMessageId);
+});
+
+test('deleting a conversation cascades its attachments', function (): void {
+    $f = uploadFixture();
+    $message = ConversationMessage::factory()->for($f['conversation'])->create();
+    $attachment = ConversationMessageAttachment::factory()->forMessage($message)->create();
+
+    $f['conversation']->delete();
+
+    expect(ConversationMessageAttachment::whereKey($attachment->id)->exists())->toBeFalse();
 });
 
 // --- Not-yet-sent visibility ---------------------------------------------
