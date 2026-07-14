@@ -76,9 +76,9 @@ and workflow feature — not a file-input tweak — under the following contract
   chooses knowingly. Refusing all uploads without a scanner was rejected: it
   would break the common self-host case, so the risk is made **visible** rather
   than hidden.
-  - *This default is the one genuine product fork in this record. An operator (or
-    the owner) may prefer "refuse unscanned"; the adapter makes either policy a
-    configuration switch.*
+  - *Owner-confirmed (July 14, 2026): accept-with-defense-in-depth is the shipped
+    default. An operator who prefers "refuse unscanned" flips a configuration
+    switch; the adapter supports either policy.*
 
 ### External export
 
@@ -131,10 +131,17 @@ and workflow feature — not a file-input tweak — under the following contract
 - The conservative export rule is unchanged and now **explicitly** includes
   attachment binaries and storage URLs.
 
-## Open questions for the owner
+## Owner decisions (resolved 2026-07-14)
 
-- **Scanner default** (see above): accept-with-defense-in-depth vs refuse-unscanned.
-- **Default allowlist breadth**: whether office documents (`.docx`/`.xlsx`) are
-  in or out of the shipped default (they are common in support but larger and
-  carry macro risk).
-- **Default per-file size and per-conversation cap** values.
+The three defaults the owner signed off on, now part of the contract above:
+
+- **Scanner default**: **accept with defense-in-depth** (not refuse-unscanned).
+  A configured scanner still quarantines until pass; the accept default keeps the
+  common self-host case working with the allowlist/private-storage/forced-download
+  protections and a readiness signal.
+- **Office documents** (`.docx`/`.xlsx`): **excluded from the shipped default
+  allowlist**; an operator may opt them in knowingly.
+- **Default limits**: **10 MB per file, 5 files per message, 100 MB per
+  conversation** (all server-enforced and configurable per install).
+
+With these settled, delivery slice 2 (model + private storage) is ready to build.
