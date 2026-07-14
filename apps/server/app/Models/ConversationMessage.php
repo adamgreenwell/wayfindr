@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 #[Fillable(['conversation_id', 'sender_type', 'sender_id', 'type', 'body', 'metadata', 'seen_at'])]
@@ -31,5 +32,10 @@ class ConversationMessage extends Model
     public function sender(): MorphTo
     {
         return $this->morphTo();
+    }
+
+    public function attachments(): HasMany
+    {
+        return $this->hasMany(ConversationMessageAttachment::class);
     }
 }

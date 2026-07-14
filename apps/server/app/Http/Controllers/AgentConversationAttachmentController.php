@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Conversation;
 use App\Models\ConversationMessageAttachment;
 use App\Support\Attachments\AttachmentResponder;
+use App\Support\Attachments\AttachmentUploadService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -22,6 +24,38 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class AgentConversationAttachmentController extends Controller
 {
+    public function store(
+        Request $request,
+        string $supportCode,
+        AttachmentUploadService $uploads,
+    ): JsonResponse {
+        $agent = $request->user();
+
+        abort_unless($agent?->account_id, 403);
+
+        $conversation = Conversation::query()
+            ->where('support_code', $supportCode)
+            ->firstOrFail();
+
+        // Attaching a file is part of replying, so it takes the `reply` ability
+        // (which is the same site-support scope as `view`).
+        abort_unless(Gate::forUser($agent)->allows('reply', $conversation), 404);
+
+        $conversation->loadMissing('site');
+
+        $maxKilobytes = (int) ceil(((int) config('wayfindr.attachments.max_file_bytes')) / 1024);
+
+        $request->validate([
+            'file' => ['required', 'file', 'max:'.$maxKilobytes],
+        ]);
+
+        $attachment = $uploads->store($conversation, $request->file('file'), $agent);
+
+        return response()->json([
+            'data' => ['attachment' => $attachment->toPayload()],
+        ], 201);
+    }
+
     public function show(
         Request $request,
         string $supportCode,
@@ -48,7 +82,7 @@ class AgentConversationAttachmentController extends Controller
             ->whereKey($attachment)
             ->first();
 
-        abort_unless($record && $record->isDownloadable(), 404);
+        abort_unless($record && $record->isDownloadableBy($agent), 404);
 
         return $responder->stream($record);
     }

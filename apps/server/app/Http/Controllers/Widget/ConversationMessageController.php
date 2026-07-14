@@ -10,10 +10,12 @@ use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\Attachments\AttachmentBinder;
 use App\Support\VisitorConversationResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class ConversationMessageController extends Controller
 {
@@ -40,7 +42,7 @@ class ConversationMessageController extends Controller
         }
 
         $messages = $conversation->messages()
-            ->with('sender')
+            ->with(['sender', 'attachments'])
             ->orderBy('created_at')
             ->orderBy('id')
             ->get()
@@ -49,6 +51,7 @@ class ConversationMessageController extends Controller
                 'sender' => $this->senderPayload($message),
                 'type' => $message->type,
                 'body' => $message->body,
+                'attachments' => $message->attachments->map->toPayload()->all(),
                 'created_at' => $message->created_at?->toJSON(),
             ]);
 
@@ -66,14 +69,16 @@ class ConversationMessageController extends Controller
         ]);
     }
 
-    public function store(Request $request, string $supportCode, VisitorConversationResolver $conversations): JsonResponse
+    public function store(Request $request, string $supportCode, VisitorConversationResolver $conversations, AttachmentBinder $binder): JsonResponse
     {
         $validated = $request->validate([
             'site_public_key' => ['required', 'string', 'max:255'],
             'anonymous_id' => ['required', 'string', 'max:255'],
             'visitor_token' => ['nullable', 'string', 'max:4096'],
-            'body' => ['required', 'string', 'max:4000'],
+            'body' => ['nullable', 'string', 'max:4000'],
             'client_message_id' => ['nullable', 'string', 'max:128'],
+            'attachment_ids' => ['nullable', 'array'],
+            'attachment_ids.*' => ['integer', 'min:1'],
         ]);
 
         $conversation = $conversations->resolve(
@@ -84,9 +89,20 @@ class ConversationMessageController extends Controller
         );
         $this->recordVisitorPresence($conversation);
 
-        $clientMessageId = $this->normalizeClientMessageId($validated['client_message_id'] ?? null);
+        $body = trim((string) ($validated['body'] ?? ''));
+        $attachmentIds = $validated['attachment_ids'] ?? [];
 
-        [$message, $created] = DB::transaction(function () use ($conversation, $validated, $clientMessageId) {
+        // A message must carry something — text, a file, or both.
+        if ($body === '' && $attachmentIds === []) {
+            throw ValidationException::withMessages([
+                'body' => 'Enter a message or attach a file.',
+            ]);
+        }
+
+        $clientMessageId = $this->normalizeClientMessageId($validated['client_message_id'] ?? null);
+        $visitor = $conversation->visitor;
+
+        [$message, $created] = DB::transaction(function () use ($conversation, $body, $attachmentIds, $clientMessageId, $binder, $visitor) {
             // Lock the conversation row so the idempotency check and the insert
             // are atomic. Without this, two concurrent sends sharing a
             // client_message_id could both pass the lookup before either row is
@@ -100,8 +116,9 @@ class ConversationMessageController extends Controller
                     ->first();
 
                 if ($existing) {
-                    // Idempotent retry: the message was already accepted, so
-                    // return it without creating a second row or re-broadcasting.
+                    // Idempotent retry: the message (and any attachments bound to
+                    // it on the first accepted send) already exists, so return it
+                    // without creating a second row, re-binding, or re-broadcasting.
                     return [$existing, false];
                 }
             }
@@ -110,9 +127,13 @@ class ConversationMessageController extends Controller
                 'sender_type' => Visitor::class,
                 'sender_id' => $conversation->visitor_id,
                 'type' => 'text',
-                'body' => $validated['body'],
+                'body' => $body === '' ? null : $body,
                 'metadata' => $clientMessageId !== null ? ['client_message_id' => $clientMessageId] : [],
             ]);
+
+            // Bind the visitor's own pending uploads to this message. A bad
+            // reference throws and rolls the whole send back.
+            $binder->bind($conversation, $message, $attachmentIds, $visitor);
 
             $conversation->forceFill([
                 'status' => 'open',
@@ -127,7 +148,7 @@ class ConversationMessageController extends Controller
             event(new ConversationMessageCreated($message));
         }
 
-        return $this->storedMessageResponse($conversation, $message);
+        return $this->storedMessageResponse($conversation, $message->load('attachments'));
     }
 
     private function storedMessageResponse(Conversation $conversation, ConversationMessage $message): JsonResponse
@@ -146,6 +167,7 @@ class ConversationMessageController extends Controller
                     ],
                     'type' => $message->type,
                     'body' => $message->body,
+                    'attachments' => $message->attachments->map->toPayload()->all(),
                     'created_at' => $message->created_at?->toJSON(),
                 ],
                 'visitor_presence' => $conversation->visitorPresencePayload(),

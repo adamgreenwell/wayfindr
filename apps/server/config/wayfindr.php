@@ -60,6 +60,27 @@ return [
         'message_per_minute' => (int) env('WAYFINDR_WIDGET_MESSAGE_RATE_LIMIT', 240),
         'cobrowse_per_minute' => (int) env('WAYFINDR_WIDGET_COBROWSE_RATE_LIMIT', 1200),
         'attachment_per_minute' => (int) env('WAYFINDR_WIDGET_ATTACHMENT_RATE_LIMIT', 600),
+        'attachment_upload_per_minute' => (int) env('WAYFINDR_WIDGET_ATTACHMENT_UPLOAD_RATE_LIMIT', 60),
+    ],
+
+    // Conversation message attachments (ADR 0007). Limits are server-enforced
+    // and independent of the client; the allowlist is matched against the
+    // SERVER-detected MIME (never the client's Content-Type).
+    'attachments' => [
+        'max_file_bytes' => (int) env('WAYFINDR_ATTACHMENT_MAX_FILE_BYTES', 10 * 1024 * 1024),
+        'max_per_message' => (int) env('WAYFINDR_ATTACHMENT_MAX_PER_MESSAGE', 5),
+        'max_conversation_bytes' => (int) env('WAYFINDR_ATTACHMENT_MAX_CONVERSATION_BYTES', 100 * 1024 * 1024),
+
+        // Default allowlist: images, PDF, and plain text/log. SVG, HTML,
+        // archives, and executables are deliberately excluded (active-content
+        // and decompression-bomb vectors). Operators may extend this per install.
+        'allowed_mime_types' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env(
+                'WAYFINDR_ATTACHMENT_ALLOWED_MIME_TYPES',
+                'image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain'
+            ))
+        ))),
     ],
 
     'release' => [

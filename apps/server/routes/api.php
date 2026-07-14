@@ -51,6 +51,11 @@ Route::middleware('throttle:widget-message')->group(function (): void {
         ->name('conversations.typing.store');
 });
 
+Route::middleware('throttle:widget-attachment-upload')->group(function (): void {
+    Route::post('/conversations/{supportCode}/attachments', [ConversationAttachmentController::class, 'store'])
+        ->name('conversations.attachments.store');
+});
+
 Route::middleware('throttle:widget-attachment')->group(function (): void {
     Route::get('/conversations/{supportCode}/attachments/{attachment}', [ConversationAttachmentController::class, 'show'])
         ->whereNumber('attachment')

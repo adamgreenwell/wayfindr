@@ -9,6 +9,7 @@ use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\User;
 use App\Notifications\ConversationNeedsReply;
+use App\Support\Attachments\AttachmentBinder;
 use App\Support\CobrowseAuditTrail;
 use App\Support\CobrowseConsentState;
 use App\Support\CobrowseResyncRequestPolicy;
@@ -23,6 +24,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -161,7 +163,7 @@ class AgentConversationController extends Controller
         return ['supportCode' => $conversation->support_code] + $this->conversationQueueReturnQuery($request);
     }
 
-    public function storeMessage(Request $request, string $supportCode, ReplyTemplateOptions $replyTemplateOptions): RedirectResponse
+    public function storeMessage(Request $request, string $supportCode, ReplyTemplateOptions $replyTemplateOptions, AttachmentBinder $binder): RedirectResponse
     {
         $agent = $request->user();
         $conversation = $this->conversationForAgent($agent, $supportCode, 'reply');
@@ -169,11 +171,14 @@ class AgentConversationController extends Controller
         $validated = $request->validate([
             'body' => ['nullable', 'string', 'max:4000'],
             'reply_template' => ['nullable', 'string', 'max:120'],
+            'attachment_ids' => ['nullable', 'array'],
+            'attachment_ids.*' => ['integer', 'min:1'],
         ]);
 
         $selectedTemplate = $validated['reply_template'] ?? null;
         $resolvedTemplate = null;
         $body = trim((string) ($validated['body'] ?? ''));
+        $attachmentIds = $validated['attachment_ids'] ?? [];
 
         if ($selectedTemplate) {
             $resolvedTemplate = $replyTemplateOptions->resolve($agent, $selectedTemplate);
@@ -189,29 +194,37 @@ class AgentConversationController extends Controller
             $body = trim($resolvedTemplate['body']);
         }
 
-        if ($body === '') {
+        if ($body === '' && $attachmentIds === []) {
             throw ValidationException::withMessages([
-                'body' => 'Please enter a reply.',
+                'body' => 'Please enter a reply or attach a file.',
             ]);
         }
 
-        $message = $conversation->messages()->create([
-            'sender_type' => User::class,
-            'sender_id' => $agent->id,
-            'type' => 'text',
-            'body' => $body,
-            'metadata' => $resolvedTemplate
-                ? $this->replyTemplateMetadata($resolvedTemplate)
-                : [],
-        ]);
+        $message = DB::transaction(function () use ($conversation, $agent, $body, $resolvedTemplate, $attachmentIds, $binder) {
+            $message = $conversation->messages()->create([
+                'sender_type' => User::class,
+                'sender_id' => $agent->id,
+                'type' => 'text',
+                'body' => $body === '' ? null : $body,
+                'metadata' => $resolvedTemplate
+                    ? $this->replyTemplateMetadata($resolvedTemplate)
+                    : [],
+            ]);
 
-        $conversation->forceFill([
-            'assigned_agent_id' => $conversation->assigned_agent_id ?: $agent->id,
-            'status' => 'open',
-            'closed_at' => null,
-            'last_message_at' => $message->created_at,
-            'metadata' => $this->metadataWithoutAgentTypingSignal($conversation, $agent),
-        ])->save();
+            // Bind the agent's own pending uploads to this reply. A bad
+            // reference throws and rolls the whole send back.
+            $binder->bind($conversation, $message, $attachmentIds, $agent);
+
+            $conversation->forceFill([
+                'assigned_agent_id' => $conversation->assigned_agent_id ?: $agent->id,
+                'status' => 'open',
+                'closed_at' => null,
+                'last_message_at' => $message->created_at,
+                'metadata' => $this->metadataWithoutAgentTypingSignal($conversation, $agent),
+            ])->save();
+
+            return $message;
+        });
 
         $this->markConversationNotificationsRead($agent, $conversation);
         $conversation->markReadFor($agent);

@@ -140,6 +140,8 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.conversations.claim');
     Route::post('/dashboard/conversations/{supportCode}/release', [AgentConversationController::class, 'release'])
         ->name('dashboard.conversations.release');
+    Route::post('/dashboard/conversations/{supportCode}/attachments', [AgentConversationAttachmentController::class, 'store'])
+        ->name('dashboard.conversations.attachments.store');
     Route::get('/dashboard/conversations/{supportCode}/attachments/{attachment}', [AgentConversationAttachmentController::class, 'show'])
         ->whereNumber('attachment')
         ->name('dashboard.conversations.attachments.show');

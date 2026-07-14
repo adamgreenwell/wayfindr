@@ -63,6 +63,11 @@ class AppServiceProvider extends ServiceProvider
             fn (Request $request): Limit => $this->widgetLimit($request, 'attachment_per_minute', 'attachment')
         );
 
+        RateLimiter::for(
+            'widget-attachment-upload',
+            fn (Request $request): Limit => $this->widgetLimit($request, 'attachment_upload_per_minute', 'attachment-upload')
+        );
+
         // Inbound integration webhooks are per-connection (the route binds a
         // connection) and bursty; a generous per-connection ceiling keeps a
         // noisy or hostile source from flooding without blocking normal
