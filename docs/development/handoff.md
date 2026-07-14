@@ -192,6 +192,9 @@ Ordered by real dogfood value and dependency, not feature novelty.
    **Dependency-ordered delivery slices:**
 
    1. Add an attachment contract and issue/ADR covering the decisions above.
+      **Contract shipped as [ADR 0007](../decisions/0007-conversation-message-attachments.md);**
+      the three "open questions for the owner" there (scanner default, office-doc
+      allowlist, size/cap values) still need the owner's call before slice 2.
    2. Add a message-scoped attachment model, private storage keys, sanitized
       display names, detected MIME/size metadata, upload state, and audit events.
    3. Add authorized upload/download endpoints scoped through the signed visitor
