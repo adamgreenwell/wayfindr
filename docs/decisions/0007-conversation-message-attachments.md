@@ -18,22 +18,55 @@ and workflow feature — not a file-input tweak — under the following contract
   real use proves they need their own lifecycle. Message ownership is the
   smallest correct scope, and it is the only scope in this contract.
 
-### Storage and access
+### Storage surfaces (local first)
 
-- Binaries live on a **private filesystem disk** with **opaque, non-guessable
-  storage keys**. Never the public disk; never a directly reachable or guessable
-  URL.
-- The self-hosted default is the **local private disk**. An **S3-compatible
-  object-storage disk** is a configuration choice. Wayfindr verifies only what
-  it can honestly check (the disk is readable/writable, surfaced in readiness)
-  and does **not** guarantee object-storage durability or backup — that stays
-  operator-owned, consistent with the existing backup posture.
-- All access is through **authorized endpoints**. Upload and download are scoped
-  by the **signed visitor session** (a visitor may only touch its own
-  conversation) or **agent site access** (an agent must support the site).
-  Downloads stream with `Content-Disposition: attachment`, the **server-detected**
-  content type, and `X-Content-Type-Options: nosniff`. No storage URL is ever
-  handed to the client.
+Attachments have two possible storage surfaces, but they are **sequenced, not
+offered in parallel**:
+
+- **Local — built and hardened first.** A **private** filesystem disk on the app
+  server (`storage/app/private/attachments/…`), **never** the public disk and
+  **never** a web-served path, with **opaque, non-guessable storage keys**. This
+  is the default surface, and its access model must be proven robust before any
+  other surface ships.
+- **Remote — deferred.** An S3-compatible object store (AWS S3, MinIO, Cloudflare
+  R2, Backblaze B2, DigitalOcean Spaces, or GCS via its S3-interop endpoint),
+  added **only after** the local access model is proven. It inherits the exact
+  same authorization boundary; downloads still **stream through the app** by
+  default (no storage URL handed to the client), with pre-signed URLs left as a
+  later, explicit, short-TTL opt-in.
+
+Each attachment row records its `storage_disk`, so a file always knows its home
+and a future local→remote migration does not break existing references. Wayfindr
+checks only what it can honestly verify (readiness: the disk is
+readable/writable) and does **not** guarantee durability or backup — that stays
+operator-owned, consistent with the existing backup posture.
+
+### Access control and scoping (non-negotiable)
+
+Isolation is the primary requirement of this feature. An attachment is reachable
+**only** through an authorized Wayfindr endpoint, and **every** fetch re-derives
+its message → conversation → site and enforces:
+
+- **Visitor path** — the request's **signed visitor session/token must match the
+  visitor who owns the conversation** the attachment's message belongs to. A
+  visitor can reach only their own conversation's attachments — never another
+  session's, never another visitor's.
+- **Agent path** — the agent must be authenticated and pass the existing
+  conversation **`view` policy**: they must **support the site** that owns the
+  conversation (`Site::supportsAgent`, respecting explicit support-agent
+  assignments) and not be deactivated. An agent outside that site's support
+  scope, or in another account, gets a **404** — never the file.
+- **Public** — there is **no unauthenticated path** to any attachment. No public
+  disk, no public or guessable URL, no direct storage path. Ever.
+
+Enforcement is **defense-in-depth, not obscurity**: opaque identifiers **and** a
+lookup scoped by account/site (via the denormalized `account_id`/`site_id` on the
+row) **and** the visitor/agent authorization check above — all three, so a leaked
+or guessed identifier still fails authorization. Downloads stream with
+`Content-Disposition: attachment`, the **server-detected** content type, and
+`X-Content-Type-Options: nosniff`. These isolation rules are covered by explicit
+cross-session, cross-site-agent, cross-account, and unauthenticated-request tests
+before the surface is considered done.
 
 ### Validation
 
@@ -133,7 +166,7 @@ and workflow feature — not a file-input tweak — under the following contract
 
 ## Owner decisions (resolved 2026-07-14)
 
-The three defaults the owner signed off on, now part of the contract above:
+The defaults the owner signed off on, now part of the contract above:
 
 - **Scanner default**: **accept with defense-in-depth** (not refuse-unscanned).
   A configured scanner still quarantines until pass; the accept default keeps the
@@ -143,5 +176,11 @@ The three defaults the owner signed off on, now part of the contract above:
   allowlist**; an operator may opt them in knowingly.
 - **Default limits**: **10 MB per file, 5 files per message, 100 MB per
   conversation** (all server-enforced and configurable per install).
+- **Storage-surface sequencing**: **local first.** Build and *harden* the local
+  private-disk surface — with airtight access control and scoping — before adding
+  the remote (S3-compatible) surface. Robust isolation (no cross-session bleed, no
+  unauthorized-agent access, no public exposure) is the first-order requirement;
+  the remote surface is deferred until the local access model is proven.
 
-With these settled, delivery slice 2 (model + private storage) is ready to build.
+With these settled, delivery slice 2 (**local** private-storage model + its access
+scoping) is ready to build; the remote surface is out of scope until it lands.
