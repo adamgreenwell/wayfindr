@@ -71,6 +71,32 @@ class ExternalIssueProviderConnection extends Model
         return filled(data_get($this->credentials, 'webhook_secret'));
     }
 
+    public function hasVerifiedInboundWebhook(): bool
+    {
+        return data_get($this->settings, 'inbound_webhook.verified') === true
+            && $this->last_checked_at !== null;
+    }
+
+    /**
+     * Record only safe aggregate evidence that a provider delivery passed
+     * authentication. Payloads, signatures, tokens, and secrets never belong
+     * in connection health metadata.
+     */
+    public function recordInboundWebhookDelivery(string $event, int $statusCode): void
+    {
+        $settings = $this->settings ?? [];
+        $settings['inbound_webhook'] = [
+            'verified' => true,
+            'event' => trim($event) !== '' ? trim($event) : 'unknown',
+            'status_code' => $statusCode,
+        ];
+
+        $this->forceFill([
+            'settings' => $settings,
+            'last_checked_at' => now(),
+        ])->save();
+    }
+
     /**
      * The inbound webhook receiver URL for this connection's provider, to
      * configure on the provider side. Null for providers without a receiver.

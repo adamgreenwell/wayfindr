@@ -28,6 +28,19 @@
                     <p class="lede realtime-note">Provider connections are managed by an account admin. Ask an admin to add or change connections; every agent can use them from tickets once configured.</p>
                 @endunless
 
+                @if ($canManageIntegrations)
+                    <div class="notice-copy notice-copy-bordered" aria-labelledby="integration-setup-order-heading">
+                        <p><strong id="integration-setup-order-heading">Connection setup order</strong></p>
+                        <div class="notice-list">
+                            <p><strong>1. Save the provider connection first.</strong> Wayfindr creates its unique inbound webhook URL only after the connection exists.</p>
+                            <p><strong>2. Copy the generated webhook URL.</strong> It appears with the saved connection above this form.</p>
+                            <p><strong>3. Configure the provider webhook.</strong> Paste that URL into GitHub, GitLab, or Jira, reuse the same webhook secret, and select issue-state and issue-comment events.</p>
+                            <p><strong>4. Map a site to a project.</strong> Return here and open the site under Site project mappings so tickets know which repository or project should receive them.</p>
+                        </div>
+                        <p>Providers without an inbound webhook receiver can still be used for the outbound capabilities they support.</p>
+                    </div>
+                @endif
+
                 @if ($providerConnections->isEmpty())
                     <p class="empty">
                         No provider connections yet.
@@ -53,15 +66,59 @@
                                 </span>
                                 <span class="management-action">{{ $connection->is_enabled ? 'Enabled' : 'Disabled' }}</span>
                             </div>
+                            @if ($canManageIntegrations)
+                                <div class="notice-copy notice-copy-bordered">
+                                    <p><strong>Connection capabilities</strong></p>
+                                    <p class="lede">Choose what agents may send through this saved connection. Inbound signed webhooks are authenticated separately by the shared secret.</p>
+                                    <form class="section-form" method="POST" action="{{ route('dashboard.external-issue-provider-connections.capabilities.update', $connection) }}">
+                                        @csrf
+                                        @method('PUT')
+                                        <div class="notice-list" aria-label="{{ $connection->providerLabel() }} capabilities">
+                                            @foreach ($externalIssueCapabilities as $value => $label)
+                                                <label class="check-row" for="connection_{{ $connection->id }}_capability_{{ $value }}">
+                                                    <input
+                                                        id="connection_{{ $connection->id }}_capability_{{ $value }}"
+                                                        name="capabilities[]"
+                                                        type="checkbox"
+                                                        value="{{ $value }}"
+                                                        @checked($connection->hasCapability($value))
+                                                    >
+                                                    <span>Provider can {{ strtolower($label) }}</span>
+                                                </label>
+                                            @endforeach
+                                        </div>
+                                        <button class="button secondary" type="submit">Update capabilities</button>
+                                    </form>
+                                </div>
+                            @endif
                             @if ($connection->inboundWebhookUrl() && $connection->is_enabled)
                                 <div class="notice-copy notice-copy-bordered">
-                                    @if ($connection->hasWebhookSecret())
-                                        <p class="lede"><strong>Inbound sync active.</strong> Issue state changes sync back onto linked tickets.</p>
+                                    @if ($connection->hasWebhookSecret() && $connection->hasVerifiedInboundWebhook())
+                                        <p class="lede"><strong>Inbound sync verified.</strong> Wayfindr accepted a signed provider delivery {{ $connection->last_checked_at->diffForHumans() }}.</p>
+                                        <p class="lede">Latest verified event: <code>{{ data_get($connection->settings, 'inbound_webhook.event', 'unknown') }}</code> · HTTP {{ data_get($connection->settings, 'inbound_webhook.status_code', 'unknown') }}</p>
+                                    @elseif ($connection->hasWebhookSecret())
+                                        <p class="lede"><strong>Inbound sync configured, not verified.</strong> A secret is saved, but Wayfindr has not accepted a signed provider delivery yet.</p>
                                     @else
                                         <p class="lede"><strong>Inbound sync not configured.</strong> Set a webhook secret on this connection and point the provider at the URL below to sync issue state back.</p>
                                     @endif
                                     @if ($canManageIntegrations)
-                                        <p class="lede">Webhook URL: <code>{{ $connection->inboundWebhookUrl() }}</code></p>
+                                        <p class="lede"><strong>Generated webhook URL</strong></p>
+                                        <p class="lede"><code>{{ $connection->inboundWebhookUrl() }}</code></p>
+                                        <div class="notice-list" aria-label="{{ $connection->providerLabel() }} webhook settings">
+                                            <p><strong>Provider destination:</strong> Paste the generated URL into this connection's webhook settings.</p>
+                                            @switch($connection->provider)
+                                                @case('github')
+                                                    <p><strong>GitHub settings:</strong> Use <code>application/json</code>, keep SSL verification enabled, and select the individual <strong>Issues</strong> and <strong>Issue comments</strong> events.</p>
+                                                    @break
+                                                @case('gitlab')
+                                                    <p><strong>GitLab settings:</strong> Use the generated URL, place the same value in Secret token, and enable <strong>Issues events</strong> and <strong>Comments</strong>.</p>
+                                                    @break
+                                                @case('jira')
+                                                    <p><strong>Jira settings:</strong> Use the generated URL and the same secret, then subscribe to issue state changes and comment-created events.</p>
+                                                    @break
+                                            @endswitch
+                                            <p><strong>Shared secret:</strong> The secret must match in Wayfindr and the provider. If you replace it here, replace it there too.</p>
+                                        </div>
                                         <form class="section-form" method="POST" action="{{ route('dashboard.external-issue-provider-connections.webhook-secret.update', $connection) }}">
                                             @csrf
                                             @method('PUT')
@@ -132,7 +189,7 @@
                         <div class="field">
                             <label for="webhook_secret">Inbound webhook secret</label>
                             <input id="webhook_secret" name="webhook_secret" type="password" value="" autocomplete="new-password">
-                            <span class="lede">Optional. Set the same secret on the provider's webhook to sync issue state back onto linked tickets — GitHub signs it (X-Hub-Signature-256), Jira signs it (X-Hub-Signature), and GitLab sends it as an X-Gitlab-Token header.</span>
+                            <span class="lede">Optional now. Save this connection first to generate its webhook URL. You can enter a secret now and reuse it at the provider, or leave this blank and set both sides after the URL appears. GitHub signs it (X-Hub-Signature-256), Jira signs it (X-Hub-Signature), and GitLab sends it as an X-Gitlab-Token header.</span>
                             @error('webhook_secret')
                                 <p class="field-error">{{ $message }}</p>
                             @enderror

@@ -73,13 +73,41 @@ class AgentExternalIssueProviderConnectionController extends Controller
             $credentials['webhook_secret'] = $secret;
         }
 
+        $settings = $connection->settings ?? [];
+        unset($settings['inbound_webhook']);
+
         $connection->forceFill([
             'credentials' => $credentials === [] ? null : $credentials,
+            'settings' => $settings,
+            'last_checked_at' => null,
         ])->save();
 
         return redirect()
             ->route('dashboard.account.integrations')
             ->with('status', $secret === '' ? 'Inbound webhook secret cleared.' : 'Inbound webhook secret saved.');
+    }
+
+    public function updateCapabilities(Request $request, ExternalIssueProviderConnection $connection): RedirectResponse
+    {
+        $agent = $request->user();
+
+        abort_unless($agent?->isAdmin(), 403);
+
+        $account = $agent->account()->firstOrFail();
+        abort_unless($connection->account_id === $account->id, 404);
+
+        $validated = $request->validate([
+            'capabilities' => ['nullable', 'array'],
+            'capabilities.*' => ['string', Rule::in(ExternalIssueCapability::values())],
+        ]);
+
+        $connection->forceFill([
+            'capabilities' => ExternalIssueCapability::flags($validated['capabilities'] ?? []),
+        ])->save();
+
+        return redirect()
+            ->route('dashboard.account.integrations')
+            ->with('status', 'Provider capabilities updated.');
     }
 
     private function redirectAfterUpdate(Account $account, mixed $siteId, string $status, ?string $returnTo = null): RedirectResponse

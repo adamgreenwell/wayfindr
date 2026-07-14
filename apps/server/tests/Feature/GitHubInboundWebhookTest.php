@@ -81,6 +81,12 @@ test('a signed closed event reflects the state and audits the change', function 
     expect($link->metadata['external_state'])->toBe('closed')
         ->and($link->last_synced_at)->not->toBeNull();
 
+    $connection = $fixture['connection']->fresh();
+
+    expect($connection->hasVerifiedInboundWebhook())->toBeTrue()
+        ->and(data_get($connection->settings, 'inbound_webhook.event'))->toBe('issues')
+        ->and(data_get($connection->settings, 'inbound_webhook.status_code'))->toBe(200);
+
     expect(
         $fixture['ticket']->auditEvents()
             ->where('action', 'ticket.external_issue_state_changed')
@@ -104,6 +110,8 @@ test('an invalid signature is rejected and changes nothing', function (): void {
     ], $body)->assertStatus(401);
 
     expect($fixture['link']->fresh()->metadata)->not->toHaveKey('external_state');
+
+    expect($fixture['connection']->fresh()->hasVerifiedInboundWebhook())->toBeFalse();
 });
 
 test('a missing signature is rejected', function (): void {
@@ -160,6 +168,10 @@ test('a ping event is acknowledged without acting', function (): void {
 
     postGithubWebhook($this, $fixture['connection'], ['zen' => 'Design for failure.'], 'whsec_test', 'ping')
         ->assertStatus(202);
+
+    expect($fixture['connection']->fresh()->hasVerifiedInboundWebhook())->toBeTrue()
+        ->and(data_get($fixture['connection']->fresh()->settings, 'inbound_webhook.event'))->toBe('ping')
+        ->and(data_get($fixture['connection']->fresh()->settings, 'inbound_webhook.status_code'))->toBe(202);
 });
 
 test('a non-github or disabled connection is not found', function (): void {

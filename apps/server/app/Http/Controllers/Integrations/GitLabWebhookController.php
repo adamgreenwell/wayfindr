@@ -40,11 +40,16 @@ class GitLabWebhookController extends Controller
             return response()->json(['message' => 'Invalid token.'], 401);
         }
 
-        return match ($request->input('object_kind')) {
+        $event = (string) $request->input('object_kind', '');
+        $response = match ($event) {
             'issue' => $this->handleIssueState($request, $connection),
             'note' => $this->handleNote($request, $connection),
             default => response()->json(['message' => 'Ignored.'], 202),
         };
+
+        $connection->recordInboundWebhookDelivery($event, $response->getStatusCode());
+
+        return $response;
     }
 
     private function handleIssueState(Request $request, ExternalIssueProviderConnection $connection): JsonResponse

@@ -40,11 +40,16 @@ class GitHubWebhookController extends Controller
             return response()->json(['message' => 'Invalid signature.'], 401);
         }
 
-        return match ((string) $request->header('X-GitHub-Event', '')) {
+        $event = (string) $request->header('X-GitHub-Event', '');
+        $response = match ($event) {
             'issues' => $this->handleIssueState($request, $connection),
             'issue_comment' => $this->handleIssueComment($request, $connection),
             default => response()->json(['message' => 'Ignored.'], 202),
         };
+
+        $connection->recordInboundWebhookDelivery($event, $response->getStatusCode());
+
+        return $response;
     }
 
     private function handleIssueState(Request $request, ExternalIssueProviderConnection $connection): JsonResponse

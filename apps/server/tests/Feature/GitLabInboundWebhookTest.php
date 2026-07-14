@@ -77,6 +77,10 @@ test('a valid token close event reflects the state and audits the change', funct
     expect($link->metadata['external_state'])->toBe('closed')
         ->and($link->last_synced_at)->not->toBeNull();
 
+    expect($fixture['connection']->fresh()->hasVerifiedInboundWebhook())->toBeTrue()
+        ->and(data_get($fixture['connection']->fresh()->settings, 'inbound_webhook.event'))->toBe('issue')
+        ->and(data_get($fixture['connection']->fresh()->settings, 'inbound_webhook.status_code'))->toBe(200);
+
     expect(
         $fixture['ticket']->auditEvents()
             ->where('action', 'ticket.external_issue_state_changed')

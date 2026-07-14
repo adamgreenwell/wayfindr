@@ -41,15 +41,15 @@ class JiraWebhookController extends Controller
 
         $event = (string) $request->input('webhookEvent');
 
-        if ($event === 'comment_created') {
-            return $this->handleComment($request, $connection);
-        }
+        $response = match (true) {
+            $event === 'comment_created' => $this->handleComment($request, $connection),
+            str_starts_with($event, 'jira:issue_') => $this->handleIssueState($request, $connection),
+            default => response()->json(['message' => 'Ignored.'], 202),
+        };
 
-        if (str_starts_with($event, 'jira:issue_')) {
-            return $this->handleIssueState($request, $connection);
-        }
+        $connection->recordInboundWebhookDelivery($event, $response->getStatusCode());
 
-        return response()->json(['message' => 'Ignored.'], 202);
+        return $response;
     }
 
     private function handleIssueState(Request $request, ExternalIssueProviderConnection $connection): JsonResponse

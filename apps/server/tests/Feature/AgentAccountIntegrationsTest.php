@@ -69,7 +69,10 @@ test('the empty state guides admins toward the first connection', function (): v
         ->get(route('dashboard.account.integrations'))
         ->assertOk()
         ->assertSee('No provider connections yet.')
-        ->assertSee('Connect GitHub or GitLab');
+        ->assertSee('Connect GitHub or GitLab')
+        ->assertSee('Save the provider connection first.')
+        ->assertSee('creates its unique inbound webhook URL only after the connection exists')
+        ->assertSee('Map a site to a project.');
 });
 
 test('the account page links every agent to the integrations home', function (): void {
@@ -166,28 +169,66 @@ test('the integrations page surfaces inbound webhook setup per connection', func
         ->get(route('dashboard.account.integrations'))
         ->assertOk()
         ->assertSee('Inbound sync not configured.')
+        ->assertSee('Generated webhook URL')
+        ->assertSee('application/json')
+        ->assertSee('Issues')
+        ->assertSee('Issue comments')
         ->assertSee(route('integrations.github.webhook', $connection), false);
 
-    // With a secret set, the page reports inbound sync active.
+    // A saved secret is configured, but not verified until a signed provider
+    // delivery actually reaches Wayfindr.
     $connection->forceFill(['credentials' => ['token' => 'gh_token', 'webhook_secret' => 'whsec']])->save();
 
     $this->actingAs($fixture['admin'])
         ->get(route('dashboard.account.integrations'))
         ->assertOk()
-        ->assertSee('Inbound sync active.');
+        ->assertSee('Inbound sync configured, not verified.');
+
+    $connection->recordInboundWebhookDelivery('issues', 200);
+
+    $this->actingAs($fixture['admin'])
+        ->get(route('dashboard.account.integrations'))
+        ->assertOk()
+        ->assertSee('Inbound sync verified.')
+        ->assertSee('Latest verified event:')
+        ->assertSee('issues')
+        ->assertSee('HTTP 200');
 
     // Non-admins see the status but not the URL, and never the secret.
     $response = $this->actingAs($fixture['agent'])
         ->get(route('dashboard.account.integrations'))
         ->assertOk()
-        ->assertSee('Inbound sync active.');
+        ->assertSee('Inbound sync verified.');
 
     expect($response->getContent())
         ->not->toContain(route('integrations.github.webhook', $connection))
         ->not->toContain('whsec');
 });
 
-test('a disabled connection is not shown as inbound-sync active', function (): void {
+test('saved connections show provider-specific inbound webhook instructions', function (): void {
+    $fixture = integrationsAccount();
+
+    ExternalIssueProviderConnection::factory()->for($fixture['account'])->create([
+        'name' => 'Product GitLab',
+        'provider' => 'gitlab',
+    ]);
+    ExternalIssueProviderConnection::factory()->for($fixture['account'])->create([
+        'name' => 'Support Jira',
+        'provider' => 'jira',
+    ]);
+
+    $this->actingAs($fixture['admin'])
+        ->get(route('dashboard.account.integrations'))
+        ->assertOk()
+        ->assertSee('GitLab settings:')
+        ->assertSee('Issues events')
+        ->assertSee('Comments')
+        ->assertSee('Jira settings:')
+        ->assertSee('issue state changes and comment-created events')
+        ->assertSee('If you replace it here, replace it there too.');
+});
+
+test('a disabled connection is not shown as inbound-sync verified', function (): void {
     $fixture = integrationsAccount();
 
     ExternalIssueProviderConnection::factory()->for($fixture['account'])->create([
@@ -200,7 +241,7 @@ test('a disabled connection is not shown as inbound-sync active', function (): v
     $this->actingAs($fixture['admin'])
         ->get(route('dashboard.account.integrations'))
         ->assertOk()
-        ->assertDontSee('Inbound sync active.');
+        ->assertDontSee('Inbound sync verified.');
 });
 
 test('an admin can set and clear the inbound webhook secret on an existing connection', function (): void {
@@ -209,6 +250,8 @@ test('an admin can set and clear the inbound webhook secret on an existing conne
     $connection = ExternalIssueProviderConnection::factory()->for($fixture['account'])->create([
         'provider' => 'github',
         'credentials' => ['token' => 'gh_token'],
+        'settings' => ['inbound_webhook' => ['verified' => true, 'event' => 'issues', 'status_code' => 200]],
+        'last_checked_at' => now(),
     ]);
 
     expect($connection->fresh()->hasWebhookSecret())->toBeFalse();
@@ -223,7 +266,10 @@ test('an admin can set and clear the inbound webhook secret on an existing conne
     $connection->refresh();
     expect($connection->hasWebhookSecret())->toBeTrue()
         // The API token is preserved, not clobbered.
-        ->and(data_get($connection->credentials, 'token'))->toBe('gh_token');
+        ->and(data_get($connection->credentials, 'token'))->toBe('gh_token')
+        // Replacing a secret resets stale verification evidence.
+        ->and($connection->hasVerifiedInboundWebhook())->toBeFalse()
+        ->and($connection->last_checked_at)->toBeNull();
 
     // Clearing it removes only the secret.
     $this->actingAs($fixture['admin'])
@@ -235,6 +281,55 @@ test('an admin can set and clear the inbound webhook secret on an existing conne
     $connection->refresh();
     expect($connection->hasWebhookSecret())->toBeFalse()
         ->and(data_get($connection->credentials, 'token'))->toBe('gh_token');
+});
+
+test('an admin can update saved connection capabilities without replacing credentials', function (): void {
+    $fixture = integrationsAccount();
+    $connection = ExternalIssueProviderConnection::factory()->for($fixture['account'])->create([
+        'provider' => 'github',
+        'credentials' => ['token' => 'gh_token', 'webhook_secret' => 'whsec'],
+        'capabilities' => ['create_issue' => true, 'add_comment' => false, 'sync_status' => false],
+    ]);
+
+    $this->actingAs($fixture['admin'])
+        ->put(route('dashboard.external-issue-provider-connections.capabilities.update', $connection), [
+            'capabilities' => ['create_issue', 'add_comment', 'sync_status'],
+        ])
+        ->assertRedirect(route('dashboard.account.integrations'))
+        ->assertSessionHas('status', 'Provider capabilities updated.');
+
+    $connection->refresh();
+
+    expect($connection->capabilities)->toBe([
+        'create_issue' => true,
+        'add_comment' => true,
+        'sync_status' => true,
+    ])->and(data_get($connection->credentials, 'token'))->toBe('gh_token')
+        ->and(data_get($connection->credentials, 'webhook_secret'))->toBe('whsec');
+});
+
+test('a non-admin cannot update saved connection capabilities', function (): void {
+    $fixture = integrationsAccount();
+    $connection = ExternalIssueProviderConnection::factory()->for($fixture['account'])->create();
+
+    $this->actingAs($fixture['agent'])
+        ->put(route('dashboard.external-issue-provider-connections.capabilities.update', $connection), [
+            'capabilities' => ['create_issue', 'add_comment'],
+        ])
+        ->assertForbidden();
+});
+
+test('an admin cannot update another account connection capabilities', function (): void {
+    $fixture = integrationsAccount();
+    $otherConnection = ExternalIssueProviderConnection::factory()
+        ->for(Account::factory())
+        ->create();
+
+    $this->actingAs($fixture['admin'])
+        ->put(route('dashboard.external-issue-provider-connections.capabilities.update', $otherConnection), [
+            'capabilities' => ['create_issue'],
+        ])
+        ->assertNotFound();
 });
 
 test('a non-admin cannot set a webhook secret', function (): void {

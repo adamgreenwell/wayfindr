@@ -105,6 +105,8 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.external-issue-provider-connections.store');
     Route::put('/dashboard/external-issue-provider-connections/{connection}/webhook-secret', [AgentExternalIssueProviderConnectionController::class, 'updateWebhookSecret'])
         ->name('dashboard.external-issue-provider-connections.webhook-secret.update');
+    Route::put('/dashboard/external-issue-provider-connections/{connection}/capabilities', [AgentExternalIssueProviderConnectionController::class, 'updateCapabilities'])
+        ->name('dashboard.external-issue-provider-connections.capabilities.update');
     Route::get('/dashboard/sites', [AgentSiteController::class, 'index'])
         ->name('dashboard.sites.index');
     Route::get('/dashboard/sites/new', [AgentSiteController::class, 'create'])

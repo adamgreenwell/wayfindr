@@ -91,6 +91,10 @@ test('a done status category reflects closed and audits the change', function ()
     expect($link->metadata['external_state'])->toBe('closed')
         ->and($link->last_synced_at)->not->toBeNull();
 
+    expect($fixture['connection']->fresh()->hasVerifiedInboundWebhook())->toBeTrue()
+        ->and(data_get($fixture['connection']->fresh()->settings, 'inbound_webhook.event'))->toBe('jira:issue_updated')
+        ->and(data_get($fixture['connection']->fresh()->settings, 'inbound_webhook.status_code'))->toBe(200);
+
     expect(
         $fixture['ticket']->auditEvents()
             ->where('action', 'ticket.external_issue_state_changed')
