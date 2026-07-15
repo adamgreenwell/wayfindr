@@ -7,6 +7,7 @@ use App\Console\Commands\CreateAgentCommand;
 use App\Console\Commands\MailTestCommand;
 use App\Console\Commands\PruneCobrowseContentCommand;
 use App\Console\Commands\SendAlertDigestsCommand;
+use App\Console\Commands\SweepOrphanedAttachmentsCommand;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -27,6 +28,7 @@ return Application::configure(basePath: dirname(__DIR__))
         MailTestCommand::class,
         PruneCobrowseContentCommand::class,
         SendAlertDigestsCommand::class,
+        SweepOrphanedAttachmentsCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         //
