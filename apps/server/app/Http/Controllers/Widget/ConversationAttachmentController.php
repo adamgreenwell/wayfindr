@@ -10,6 +10,7 @@ use App\Support\VisitorConversationResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
@@ -116,18 +117,25 @@ class ConversationAttachmentController extends Controller
 
         $visitor = $conversation->visitor;
 
-        $record = ConversationMessageAttachment::query()
-            ->forConversation($conversation)
-            ->whereKey($attachment)
-            ->whereNull('conversation_message_id')
-            ->where('uploaded_by_type', $visitor->getMorphClass())
-            ->where('uploaded_by_id', $visitor->getKey())
-            ->first();
+        // Lock the row and re-assert unbound under the lock so a concurrent send
+        // that binds this attachment cannot race the delete — the binder locks
+        // the same row, so the delete either wins (still unbound) or 404s (a send
+        // bound it first) rather than deleting a just-sent attachment.
+        DB::transaction(function () use ($conversation, $attachment, $visitor): void {
+            $record = ConversationMessageAttachment::query()
+                ->forConversation($conversation)
+                ->whereKey($attachment)
+                ->whereNull('conversation_message_id')
+                ->where('uploaded_by_type', $visitor->getMorphClass())
+                ->where('uploaded_by_id', $visitor->getKey())
+                ->lockForUpdate()
+                ->first();
 
-        abort_unless($record, 404);
+            abort_unless($record, 404);
 
-        // The deleting hook removes the binary with the row.
-        $record->delete();
+            // The deleting hook removes the binary with the row.
+            $record->delete();
+        });
 
         return response()->noContent();
     }

@@ -10,6 +10,7 @@ use App\Support\Attachments\AttachmentUploadService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -116,18 +117,26 @@ class AgentConversationAttachmentController extends Controller
 
         $conversation->loadMissing('site');
 
-        $record = ConversationMessageAttachment::query()
-            ->forConversation($conversation)
-            ->whereKey($attachment)
-            ->whereNull('conversation_message_id')
-            ->where('uploaded_by_type', $agent->getMorphClass())
-            ->where('uploaded_by_id', $agent->getKey())
-            ->first();
+        // Lock the row and re-assert unbound under the lock: a concurrent send
+        // may bind it between the lookup and the delete, and the binder locks the
+        // same row, so this serializes with it — the delete either wins (row was
+        // still unbound) or 404s (a send bound it first) rather than deleting a
+        // just-sent attachment.
+        DB::transaction(function () use ($conversation, $attachment, $agent): void {
+            $record = ConversationMessageAttachment::query()
+                ->forConversation($conversation)
+                ->whereKey($attachment)
+                ->whereNull('conversation_message_id')
+                ->where('uploaded_by_type', $agent->getMorphClass())
+                ->where('uploaded_by_id', $agent->getKey())
+                ->lockForUpdate()
+                ->first();
 
-        abort_unless($record, 404);
+            abort_unless($record, 404);
 
-        // The deleting hook removes the binary with the row.
-        $record->delete();
+            // The deleting hook removes the binary with the row.
+            $record->delete();
+        });
 
         return response()->noContent();
     }
