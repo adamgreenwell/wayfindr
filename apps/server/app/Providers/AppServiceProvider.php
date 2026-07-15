@@ -21,11 +21,17 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        // Select the attachment malware scanner from config. Default (null
-        // driver) is accept-with-defense-in-depth; 'clamav' scans every upload
-        // against a local clamd.
+        // Select the attachment malware scanner from config. An unset/null
+        // driver is accept-with-defense-in-depth; 'clamav' scans every upload
+        // against a local clamd. An unknown value (e.g. a typo of clamav) throws
+        // rather than silently falling back to no scanning — a misconfigured
+        // security control should fail loudly, not disable itself.
         $this->app->singleton(AttachmentScanner::class, function (): AttachmentScanner {
-            $driver = strtolower((string) config('wayfindr.attachments.scanner.driver'));
+            $driver = strtolower(trim((string) config('wayfindr.attachments.scanner.driver')));
+
+            if ($driver === '' || $driver === 'null' || $driver === 'none') {
+                return new NullScanner;
+            }
 
             if ($driver === 'clamav') {
                 return new ClamAvScanner(
@@ -34,7 +40,10 @@ class AppServiceProvider extends ServiceProvider
                 );
             }
 
-            return new NullScanner;
+            throw new \InvalidArgumentException(sprintf(
+                "Unknown attachment scanner driver [%s]. Set WAYFINDR_ATTACHMENT_SCANNER to 'clamav' or leave it unset.",
+                $driver,
+            ));
         });
     }
 

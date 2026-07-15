@@ -140,6 +140,22 @@ test('config selects the scanner driver', function (): void {
     expect(app(AttachmentScanner::class))->toBeInstanceOf(ClamAvScanner::class);
 });
 
+test('an unknown driver throws rather than silently disabling scanning', function (): void {
+    config(['wayfindr.attachments.scanner.driver' => 'clamavv']);
+    app()->forgetInstance(AttachmentScanner::class);
+
+    expect(fn () => app(AttachmentScanner::class))->toThrow(InvalidArgumentException::class);
+});
+
+test('readiness flags an unknown driver as attention', function (): void {
+    config(['wayfindr.attachments.scanner.driver' => 'clamavv']);
+
+    $check = collect(app(OperatorReadiness::class)->summary()['checks'])->firstWhere('key', 'attachment_scanning');
+
+    expect($check['status'])->toBe('attention')
+        ->and($check['summary'])->toContain('Unknown malware scanner driver');
+});
+
 test('clamav interprets clamd verdicts', function (): void {
     $scanner = new ClamAvScanner('tcp://127.0.0.1:3310');
 

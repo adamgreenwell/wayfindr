@@ -25,7 +25,6 @@ class OperatorReadiness
     public function __construct(
         private readonly RealtimeHealth $realtimeHealth,
         private readonly CobrowseTransportReadiness $cobrowseTransportReadiness,
-        private readonly AttachmentScanner $attachmentScanner,
     ) {}
 
     /**
@@ -528,10 +527,9 @@ class OperatorReadiness
      */
     private function attachmentScanning(): array
     {
-        $driver = strtolower((string) config('wayfindr.attachments.scanner.driver'));
-        $configured = $driver !== '' && $driver !== 'null';
+        $driver = strtolower(trim((string) config('wayfindr.attachments.scanner.driver')));
 
-        if (! $configured) {
+        if ($driver === '' || $driver === 'null' || $driver === 'none') {
             // Accept-with-defense-in-depth is a valid, safe default — surfaced
             // here so the operator knows uploads are not virus-scanned, but not
             // flagged as attention or a pending manual action.
@@ -545,9 +543,22 @@ class OperatorReadiness
             );
         }
 
+        if ($driver !== 'clamav') {
+            // An unknown driver makes every upload throw (fail loud), so surface
+            // it here rather than silently disabling scanning.
+            return $this->check(
+                key: 'attachment_scanning',
+                label: 'Attachment scanning',
+                status: 'attention',
+                summary: sprintf('Unknown malware scanner driver "%s".', $driver),
+                detail: 'WAYFINDR_ATTACHMENT_SCANNER is set to an unsupported value, so uploads are being rejected until it is corrected.',
+                action: "Set WAYFINDR_ATTACHMENT_SCANNER to 'clamav' or leave it unset."
+            );
+        }
+
         $failClosed = (bool) config('wayfindr.attachments.scanner.fail_closed', true);
 
-        if (! $this->attachmentScanner->isAvailable()) {
+        if (! app(AttachmentScanner::class)->isAvailable()) {
             return $this->check(
                 key: 'attachment_scanning',
                 label: 'Attachment scanning',
