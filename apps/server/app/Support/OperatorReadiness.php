@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\OperatorReadinessConfirmation;
 use App\Models\User;
+use App\Support\Attachments\Scanning\AttachmentScanner;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -24,6 +25,7 @@ class OperatorReadiness
     public function __construct(
         private readonly RealtimeHealth $realtimeHealth,
         private readonly CobrowseTransportReadiness $cobrowseTransportReadiness,
+        private readonly AttachmentScanner $attachmentScanner,
     ) {}
 
     /**
@@ -64,6 +66,7 @@ class OperatorReadiness
             $this->realtimeBroadcasting(),
             $this->cobrowseTransportReadiness->check(),
             $this->storagePaths(),
+            $this->attachmentScanning(),
             $this->scheduler(),
             $this->alertDigestDelivery(),
             $this->backupsRestore(),
@@ -517,6 +520,53 @@ class OperatorReadiness
             summary: 'Laravel storage paths are writable.',
             detail: 'Cache, compiled views, sessions, and logs can be written by the application.',
             action: 'Keep storage shared between zero-downtime releases.'
+        );
+    }
+
+    /**
+     * @return array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
+     */
+    private function attachmentScanning(): array
+    {
+        $driver = strtolower((string) config('wayfindr.attachments.scanner.driver'));
+        $configured = $driver !== '' && $driver !== 'null';
+
+        if (! $configured) {
+            // Accept-with-defense-in-depth is a valid, safe default — surfaced
+            // here so the operator knows uploads are not virus-scanned, but not
+            // flagged as attention or a pending manual action.
+            return $this->check(
+                key: 'attachment_scanning',
+                label: 'Attachment scanning',
+                status: 'ready',
+                summary: 'No malware scanner configured (accepting with defense-in-depth).',
+                detail: 'Uploaded attachments are accepted with a byte-sniffed type allowlist, private storage, forced-download disposition, and nosniff, but they are not virus-scanned. Configure a scanner if your policy requires one.',
+                action: 'Set WAYFINDR_ATTACHMENT_SCANNER=clamav with WAYFINDR_CLAMAV_SOCKET pointing at a reachable clamd, or knowingly keep the defense-in-depth default.'
+            );
+        }
+
+        $failClosed = (bool) config('wayfindr.attachments.scanner.fail_closed', true);
+
+        if (! $this->attachmentScanner->isAvailable()) {
+            return $this->check(
+                key: 'attachment_scanning',
+                label: 'Attachment scanning',
+                status: 'attention',
+                summary: sprintf('The %s scanner is configured but unreachable.', $driver),
+                detail: $failClosed
+                    ? 'Scanning is fail-closed, so uploads are being rejected until the scanner recovers.'
+                    : 'Scanning is fail-open, so uploads are currently being accepted WITHOUT a malware scan.',
+                action: 'Confirm the ClamAV daemon (clamd) is running and reachable at WAYFINDR_CLAMAV_SOCKET.'
+            );
+        }
+
+        return $this->check(
+            key: 'attachment_scanning',
+            label: 'Attachment scanning',
+            status: 'ready',
+            summary: sprintf('The %s scanner is reachable.', $driver),
+            detail: 'Uploaded attachments are scanned before they are stored; infected uploads are rejected and audited.',
+            action: 'Keep clamd and its signature database (freshclam) running and up to date.'
         );
     }
 

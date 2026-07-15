@@ -3,6 +3,9 @@
 namespace App\Providers;
 
 use App\Policies\AlertPolicy;
+use App\Support\Attachments\Scanning\AttachmentScanner;
+use App\Support\Attachments\Scanning\ClamAvScanner;
+use App\Support\Attachments\Scanning\NullScanner;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -18,7 +21,21 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Select the attachment malware scanner from config. Default (null
+        // driver) is accept-with-defense-in-depth; 'clamav' scans every upload
+        // against a local clamd.
+        $this->app->singleton(AttachmentScanner::class, function (): AttachmentScanner {
+            $driver = strtolower((string) config('wayfindr.attachments.scanner.driver'));
+
+            if ($driver === 'clamav') {
+                return new ClamAvScanner(
+                    (string) config('wayfindr.attachments.scanner.clamav.socket', 'tcp://127.0.0.1:3310'),
+                    (int) config('wayfindr.attachments.scanner.timeout_seconds', 30),
+                );
+            }
+
+            return new NullScanner;
+        });
     }
 
     /**

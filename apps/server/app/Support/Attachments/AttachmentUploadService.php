@@ -4,9 +4,12 @@ namespace App\Support\Attachments;
 
 use App\Models\Conversation;
 use App\Models\ConversationMessageAttachment;
+use App\Models\Site;
+use App\Support\Attachments\Scanning\AttachmentScanner;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -22,6 +25,8 @@ use Illuminate\Validation\ValidationException;
  */
 class AttachmentUploadService
 {
+    public function __construct(private readonly AttachmentScanner $scanner) {}
+
     public function store(Conversation $conversation, UploadedFile $file, Model $uploader): ConversationMessageAttachment
     {
         $conversation->loadMissing('site');
@@ -52,9 +57,14 @@ class AttachmentUploadService
             throw ValidationException::withMessages(['file' => 'This file type is not allowed.']);
         }
 
+        $filename = $this->sanitizeFilename($file->getClientOriginalName());
+
+        // Scan the bytes before they are stored, so an infected file never
+        // reaches the disk.
+        $this->scan($file, $conversation, $site, $uploader, $filename, $mimeType);
+
         $checksum = hash_file('sha256', $file->getRealPath()) ?: null;
         $maxConversationBytes = (int) config('wayfindr.attachments.max_conversation_bytes');
-        $filename = $this->sanitizeFilename($file->getClientOriginalName());
 
         // Opaque, non-guessable key: no client-derived segment, no extension, no
         // relation to the conversation id.
@@ -120,6 +130,78 @@ class AttachmentUploadService
 
             return $attachment;
         });
+    }
+
+    /**
+     * Run the configured malware scanner (if any) synchronously. Clean files
+     * pass through; an infected file is rejected and audited; an unreachable
+     * scanner is rejected under the default fail-closed policy (logged and
+     * audited so the operator sees it) or, if fail-open, accepted with a warning.
+     */
+    private function scan(UploadedFile $file, Conversation $conversation, Site $site, Model $uploader, string $filename, string $mimeType): void
+    {
+        if (! $this->scanner->isConfigured()) {
+            // No scanner: accept with defense-in-depth (the standing allowlist,
+            // private storage, forced-download, and nosniff protections).
+            return;
+        }
+
+        $result = $this->scanner->scan($file->getRealPath());
+
+        if ($result->isClean()) {
+            return;
+        }
+
+        if ($result->isInfected()) {
+            $this->recordScanAudit($conversation, $site, $uploader, 'attachment.quarantined', [
+                'filename' => $filename,
+                'mime_type' => $mimeType,
+                'threat' => $result->threat,
+            ]);
+
+            throw ValidationException::withMessages([
+                'file' => 'This file was rejected by a security scan.',
+            ]);
+        }
+
+        // Unavailable: the scanner could not verify the file.
+        Log::error('Attachment malware scan could not be completed.', [
+            'conversation_id' => $conversation->id,
+            'error' => $result->error,
+        ]);
+
+        if ((bool) config('wayfindr.attachments.scanner.fail_closed', true)) {
+            $this->recordScanAudit($conversation, $site, $uploader, 'attachment.scan_unavailable', [
+                'filename' => $filename,
+                'error' => $result->error,
+            ]);
+
+            throw ValidationException::withMessages([
+                'file' => 'This file could not be scanned for malware and was not accepted. Please try again shortly.',
+            ]);
+        }
+
+        // Fail-open: accept the unscanned file, but leave a clear warning.
+        Log::warning('Attachment accepted without a malware scan (scanner configured fail-open).', [
+            'conversation_id' => $conversation->id,
+            'filename' => $filename,
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $metadata
+     */
+    private function recordScanAudit(Conversation $conversation, Site $site, Model $uploader, string $action, array $metadata): void
+    {
+        $conversation->auditEvents()->create([
+            'account_id' => $site->account_id,
+            'site_id' => $site->id,
+            'actor_type' => $uploader->getMorphClass(),
+            'actor_id' => $uploader->getKey(),
+            'action' => $action,
+            'metadata' => $metadata,
+            'occurred_at' => now(),
+        ]);
     }
 
     private function sanitizeFilename(?string $name): string

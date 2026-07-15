@@ -89,6 +89,28 @@ return [
         // row not yet committed) is never swept out from under itself.
         'pending_expiry_hours' => (int) env('WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS', 24),
         'orphan_grace_hours' => (int) env('WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS', 1),
+
+        // Pluggable malware scanner (ADR 0007). Default is null: accept with
+        // defense-in-depth (the allowlist/private-storage/forced-download/nosniff
+        // protections stand, and readiness surfaces that no scanner is
+        // configured). Set to 'clamav' to scan every upload synchronously against
+        // a local clamd before it is stored.
+        'scanner' => [
+            'driver' => env('WAYFINDR_ATTACHMENT_SCANNER'),
+
+            // When the scanner is unreachable: fail_closed (default) rejects the
+            // upload rather than store an unscanned file; false accepts it (still
+            // logged). A configured-but-unreachable scanner also shows on
+            // readiness.
+            'fail_closed' => filter_var(env('WAYFINDR_ATTACHMENT_SCANNER_FAIL_CLOSED', true), FILTER_VALIDATE_BOOL),
+
+            'timeout_seconds' => (int) env('WAYFINDR_ATTACHMENT_SCANNER_TIMEOUT', 30),
+
+            'clamav' => [
+                // clamd address: tcp://host:port or unix:///path/to/clamd.ctl
+                'socket' => env('WAYFINDR_CLAMAV_SOCKET', 'tcp://127.0.0.1:3310'),
+            ],
+        ],
     ],
 
     'release' => [
