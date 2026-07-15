@@ -16,6 +16,10 @@
   var MESSAGE_SEND_ERROR = 'Message could not be sent. Your text is still here so you can try again.';
   var MESSAGE_REFRESH_ERROR = 'Messages could not be refreshed. Your current chat is still visible.';
   var MESSAGE_CONNECTION_TROUBLE = 'Having trouble reaching support. Your chat is still here; refresh will try again.';
+  var ATTACHMENT_UPLOAD_ERROR = 'That file could not be attached.';
+  // The file picker's accept hint (mobile shows the camera for image/*). The
+  // server enforces the real allowlist by sniffing bytes regardless of this.
+  var ATTACHMENT_ACCEPT = 'image/*,application/pdf,text/plain,.txt,.log';
   var DEFAULT_COBROWSE_PAYLOAD_BUDGET = {
     mutationBatchMaxBytes: 60000,
     mutationQueueMaxRecords: 250,
@@ -219,14 +223,40 @@
           page_url: details.pageUrl || null,
         }, details.context, externalId));
       },
-      sendMessage: function (supportCode, body, clientMessageId) {
+      sendMessage: function (supportCode, body, clientMessageId, attachmentIds) {
         return postJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/messages', withoutNullValues({
           site_public_key: sitePublicKey,
           anonymous_id: anonymousId,
           visitor_token: requireVisitorToken(visitorToken),
-          body: body,
+          body: body || null,
           client_message_id: clientMessageId || null,
+          attachment_ids: (attachmentIds && attachmentIds.length) ? attachmentIds : null,
         }));
+      },
+      uploadAttachment: function (supportCode, file) {
+        var FormDataCtor = root && root.FormData ? root.FormData : (typeof FormData !== 'undefined' ? FormData : null);
+
+        if (!FormDataCtor) {
+          return Promise.reject(new Error('Wayfindr requires FormData support to upload attachments.'));
+        }
+
+        var form = new FormDataCtor();
+        form.append('site_public_key', sitePublicKey);
+        form.append('anonymous_id', anonymousId);
+        form.append('visitor_token', requireVisitorToken(visitorToken));
+        form.append('file', file);
+
+        return postForm(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/attachments', form);
+      },
+      // The download URL an <img> or link can point at. The visitor session
+      // params ride in the query string, exactly as they do for fetchMessages;
+      // the server streams the file with a forced attachment disposition.
+      attachmentDownloadUrl: function (supportCode, attachmentId) {
+        return apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/attachments/' + encodeURIComponent(attachmentId) + '?' + toQueryString({
+          site_public_key: sitePublicKey,
+          anonymous_id: anonymousId,
+          visitor_token: requireVisitorToken(visitorToken),
+        });
       },
       reportTyping: function (supportCode, isTyping) {
         return postJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/typing', {
@@ -443,8 +473,11 @@
       '  <p class="wayfindr-widget__connection" role="status" aria-live="polite" aria-atomic="true" hidden></p>',
       '  <form class="wayfindr-widget__form">',
       '    <label class="wayfindr-widget__label" for="wayfindr-message">How can we help?</label>',
-      '    <textarea id="wayfindr-message" class="wayfindr-widget__textarea" name="message" rows="4" required placeholder="' + escapeHtml(options.placeholder || 'Type your message...') + '"></textarea>',
+      '    <textarea id="wayfindr-message" class="wayfindr-widget__textarea" name="message" rows="4" placeholder="' + escapeHtml(options.placeholder || 'Type your message...') + '"></textarea>',
+      '    <ul class="wayfindr-widget__attachments" aria-label="Files to send" hidden></ul>',
+      '    <input class="wayfindr-widget__file-input" type="file" accept="' + escapeHtml(ATTACHMENT_ACCEPT) + '" multiple hidden aria-hidden="true" tabindex="-1">',
       '    <div class="wayfindr-widget__actions">',
+      '      <button class="wayfindr-widget__attach" type="button" aria-label="Attach a file" hidden><span aria-hidden="true">📎</span> Attach</button>',
       '      <button class="wayfindr-widget__send" type="submit">Send message</button>',
       '      <button class="wayfindr-widget__refresh" type="button" hidden>Refresh</button>',
       '    </div>',
@@ -474,6 +507,9 @@
     var typing = rootEl.querySelector('.wayfindr-widget__typing');
     var connection = rootEl.querySelector('.wayfindr-widget__connection');
     var textarea = rootEl.querySelector('.wayfindr-widget__textarea');
+    var attachmentsList = rootEl.querySelector('.wayfindr-widget__attachments');
+    var fileInput = rootEl.querySelector('.wayfindr-widget__file-input');
+    var attachButton = rootEl.querySelector('.wayfindr-widget__attach');
     var status = rootEl.querySelector('.wayfindr-widget__status');
     var send = rootEl.querySelector('.wayfindr-widget__send');
     var refresh = rootEl.querySelector('.wayfindr-widget__refresh');
@@ -536,6 +572,10 @@
     var visitorContext = options.visitorContext || null;
     var composerBusy = false;
     var refreshBusy = false;
+    // Two-step upload: files are uploaded as soon as they are picked and tracked
+    // here as chips until the next send binds the ready ones to the message.
+    var pendingAttachments = [];
+    var pendingAttachmentSeq = 0;
     var pendingClientMessageId = null;
     var pendingClientMessageBody = null;
     var noticeRetryAction = null;
@@ -650,7 +690,6 @@
         name.className = 'wayfindr-widget__message-name';
         name.textContent = sender.name || (senderKind === 'agent' ? 'Support' : 'Visitor');
         body.className = 'wayfindr-widget__message-body';
-        body.textContent = message.body || '';
 
         meta.appendChild(name);
 
@@ -659,7 +698,22 @@
         }
 
         item.appendChild(meta);
-        item.appendChild(body);
+
+        var attachments = Array.isArray(message.attachments) ? message.attachments : [];
+
+        // Skip the (empty) body paragraph for an attachment-only message so the
+        // preview sits directly under the meta line.
+        if (message.body) {
+          body.textContent = message.body;
+          item.appendChild(body);
+        } else if (attachments.length === 0) {
+          body.textContent = '';
+          item.appendChild(body);
+        }
+
+        if (attachments.length) {
+          item.appendChild(createMessageAttachments(attachments));
+        }
 
         if (delivery) {
           item.appendChild(delivery);
@@ -1157,6 +1211,9 @@
       connectRealtime();
       renderCobrowseConsent();
       refresh.hidden = false;
+      // Attachments are gated on an active conversation (the upload endpoint is
+      // scoped to a support code), so the attach control appears now.
+      attachButton.hidden = false;
       scheduleMessagePoll();
       scheduleCobrowseStatusPoll();
     }
@@ -1521,7 +1578,8 @@
       composerBusy = Boolean(nextBusy);
       form.setAttribute('aria-busy', composerBusy ? 'true' : 'false');
       textarea.disabled = composerBusy;
-      send.disabled = composerBusy;
+      attachButton.disabled = composerBusy;
+      refreshSendState();
       send.textContent = composerBusy ? 'Sending...' : sendLabel;
 
       if (noticeRetryAction) {
@@ -1535,6 +1593,216 @@
       refresh.disabled = refreshBusy;
       refresh.textContent = refreshBusy ? 'Refreshing...' : refreshLabel;
       noticeRetry.disabled = refreshBusy;
+    }
+
+    function hasUploadingAttachments() {
+      return pendingAttachments.some(function (attachment) {
+        return attachment.status === 'uploading';
+      });
+    }
+
+    function readyAttachmentIds() {
+      return pendingAttachments
+        .filter(function (attachment) {
+          return attachment.status === 'ready' && attachment.attachmentId;
+        })
+        .map(function (attachment) {
+          return attachment.attachmentId;
+        });
+    }
+
+    // Send stays blocked while any upload is still in flight, so a message can
+    // never be sent referencing a half-uploaded file.
+    function refreshSendState() {
+      send.disabled = composerBusy || hasUploadingAttachments();
+    }
+
+    function renderPendingAttachments() {
+      attachmentsList.textContent = '';
+      attachmentsList.hidden = pendingAttachments.length === 0;
+
+      pendingAttachments.forEach(function (attachment) {
+        var item = doc.createElement('li');
+        item.className = 'wayfindr-widget__attach-chip wayfindr-widget__attach-chip--' + attachment.status;
+
+        var nameEl = doc.createElement('span');
+        nameEl.className = 'wayfindr-widget__attach-chip-name';
+        nameEl.textContent = attachment.filename;
+        item.appendChild(nameEl);
+
+        var stateEl = doc.createElement('span');
+        stateEl.className = 'wayfindr-widget__attach-chip-state';
+
+        if (attachment.status === 'uploading') {
+          stateEl.textContent = 'Uploading…';
+        } else if (attachment.status === 'error') {
+          stateEl.textContent = attachment.error || ATTACHMENT_UPLOAD_ERROR;
+        } else {
+          stateEl.textContent = formatAttachmentSize(attachment.size);
+        }
+
+        item.appendChild(stateEl);
+
+        var removeEl = doc.createElement('button');
+        removeEl.type = 'button';
+        removeEl.className = 'wayfindr-widget__attach-chip-remove';
+        removeEl.setAttribute('aria-label', 'Remove ' + attachment.filename);
+        removeEl.textContent = '×';
+        removeEl.addEventListener('click', function () {
+          removePendingAttachment(attachment.localId);
+        });
+        item.appendChild(removeEl);
+
+        attachmentsList.appendChild(item);
+      });
+
+      refreshSendState();
+    }
+
+    function addPendingFiles(fileList) {
+      // Gated on an active conversation: the upload endpoint is scoped to a
+      // support code, so files can only be attached once the chat exists.
+      if (!supportCode) {
+        return;
+      }
+
+      Array.prototype.slice.call(fileList || []).forEach(function (file) {
+        var entry = {
+          localId: 'pa-' + (++pendingAttachmentSeq),
+          filename: file && file.name ? file.name : 'attachment',
+          size: file && typeof file.size === 'number' ? file.size : 0,
+          status: 'uploading',
+          attachmentId: null,
+          isImage: false,
+          error: null,
+        };
+
+        pendingAttachments.push(entry);
+        // The draft changed, so a retry of the previous send must not reuse its
+        // idempotency key.
+        pendingClientMessageId = null;
+        renderPendingAttachments();
+
+        client.uploadAttachment(supportCode, file).then(function (result) {
+          if (pendingAttachments.indexOf(entry) === -1) {
+            return;
+          }
+
+          var attachment = result && result.attachment ? result.attachment : null;
+
+          if (!attachment || !attachment.id) {
+            throw new Error(ATTACHMENT_UPLOAD_ERROR);
+          }
+
+          entry.status = 'ready';
+          entry.attachmentId = attachment.id;
+          entry.isImage = Boolean(attachment.is_image);
+          entry.filename = attachment.filename || entry.filename;
+          entry.size = attachment.size_bytes || entry.size;
+          renderPendingAttachments();
+        }).catch(function (error) {
+          if (pendingAttachments.indexOf(entry) === -1) {
+            return;
+          }
+
+          entry.status = 'error';
+          entry.error = (error && typeof error.status === 'number' && error.status >= 400 && error.status < 500 && error.message)
+            ? error.message
+            : ATTACHMENT_UPLOAD_ERROR;
+          renderPendingAttachments();
+        });
+      });
+    }
+
+    function removePendingAttachment(localId) {
+      pendingAttachments = pendingAttachments.filter(function (attachment) {
+        return attachment.localId !== localId;
+      });
+      pendingClientMessageId = null;
+      renderPendingAttachments();
+    }
+
+    function clearPendingAttachments() {
+      pendingAttachments = [];
+      renderPendingAttachments();
+    }
+
+    function createMessageAttachments(attachments) {
+      var wrap = doc.createElement('div');
+      wrap.className = 'wayfindr-widget__message-attachments';
+
+      attachments.forEach(function (attachment) {
+        var el = createAttachmentElement(attachment);
+
+        if (el) {
+          wrap.appendChild(el);
+        }
+      });
+
+      return wrap;
+    }
+
+    function createAttachmentElement(attachment) {
+      if (!attachment || !attachment.id || !supportCode) {
+        return null;
+      }
+
+      // The link/image target is the authorized download endpoint; the server
+      // streams it with a forced attachment disposition and nosniff.
+      var url = client.attachmentDownloadUrl(supportCode, attachment.id);
+      var link = doc.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('target', '_blank');
+      link.setAttribute('rel', 'noopener noreferrer');
+
+      if (attachment.is_image) {
+        link.className = 'wayfindr-widget__attachment wayfindr-widget__attachment--image';
+        var img = doc.createElement('img');
+        img.className = 'wayfindr-widget__attachment-image';
+        img.setAttribute('src', url);
+        img.setAttribute('alt', attachment.filename || 'Attachment');
+        img.setAttribute('loading', 'lazy');
+        link.appendChild(img);
+
+        return link;
+      }
+
+      link.className = 'wayfindr-widget__attachment wayfindr-widget__attachment--file';
+      link.setAttribute('download', '');
+
+      var icon = doc.createElement('span');
+      icon.className = 'wayfindr-widget__attachment-icon';
+      icon.setAttribute('aria-hidden', 'true');
+      icon.textContent = '📎';
+      link.appendChild(icon);
+
+      var label = doc.createElement('span');
+      label.className = 'wayfindr-widget__attachment-name';
+      label.textContent = attachment.filename || 'Attachment';
+      link.appendChild(label);
+
+      if (attachment.size_bytes) {
+        var size = doc.createElement('span');
+        size.className = 'wayfindr-widget__attachment-size';
+        size.textContent = formatAttachmentSize(attachment.size_bytes);
+        link.appendChild(size);
+      }
+
+      return link;
+    }
+
+    function formatAttachmentSize(bytes) {
+      bytes = Number(bytes) || 0;
+
+      if (bytes >= 1024 * 1024) {
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+      }
+
+      if (bytes >= 1024) {
+        return Math.round(bytes / 1024) + ' KB';
+      }
+
+      return bytes + ' B';
     }
 
     function open() {
@@ -1634,6 +1902,18 @@
         reportTyping(true);
       }
     });
+    attachButton.addEventListener('click', function () {
+      if (composerBusy) {
+        return;
+      }
+
+      fileInput.click();
+    });
+    fileInput.addEventListener('change', function () {
+      addPendingFiles(fileInput.files);
+      // Reset so re-picking the same file fires change again.
+      fileInput.value = '';
+    });
     textarea.addEventListener('keydown', function (event) {
       // Enter sends the message; Shift+Enter keeps the newline for multi-line
       // drafts. Ignore Enter while an IME composition is active (keyCode 229 /
@@ -1683,7 +1963,18 @@
 
       var body = textarea.value.trim();
 
-      if (!body) {
+      // An upload still in flight would leave its chip out of the send; wait for
+      // it to finish (or be removed) rather than send a partial set.
+      if (hasUploadingAttachments()) {
+        status.textContent = 'Waiting for uploads to finish…';
+
+        return;
+      }
+
+      var attachmentIds = readyAttachmentIds();
+
+      // A message needs text, a file, or both.
+      if (!body && attachmentIds.length === 0) {
         return;
       }
 
@@ -1692,7 +1983,8 @@
 
       // Reuse the same idempotency key while retrying the same draft, so a lost
       // response on the first attempt does not create a duplicate message when
-      // the visitor retries. A new draft gets a fresh key.
+      // the visitor retries. A new draft (changed text or attachments) gets a
+      // fresh key — pendingClientMessageId is reset whenever attachments change.
       if (pendingClientMessageId === null || pendingClientMessageBody !== body) {
         pendingClientMessageId = generateClientMessageId();
         pendingClientMessageBody = body;
@@ -1714,12 +2006,14 @@
         }
 
         if (supportCode) {
-          var sentMessage = await client.sendMessage(supportCode, body, pendingClientMessageId);
+          var sentMessage = await client.sendMessage(supportCode, body, pendingClientMessageId, attachmentIds);
           applyConversationStatus(sentMessage.conversation);
           appendMessage(sentMessage.message);
           renderConversationNotice();
           activateConversation();
         } else {
+          // Attachments are gated on an existing conversation, so the first
+          // message never carries any — it just creates the conversation.
           var conversation = await client.startConversation(body, {
             pageUrl: location ? location.href : null,
             context: visitorContext,
@@ -1736,6 +2030,7 @@
         }
 
         textarea.value = '';
+        clearPendingAttachments();
         pendingClientMessageId = null;
         pendingClientMessageBody = null;
         await refreshMessages({ silent: true });
@@ -3518,6 +3813,18 @@
     }).then(readJsonResponse);
   }
 
+  // Multipart POST for file uploads. Deliberately does NOT set Content-Type —
+  // the browser adds the multipart boundary itself.
+  function postForm(fetcher, url, formData) {
+    return fetcher(url, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+      },
+      body: formData,
+    }).then(readJsonResponse);
+  }
+
   function postJsonRaw(fetcher, url, payload) {
     return fetcher(url, {
       method: 'POST',
@@ -3725,6 +4032,26 @@
       '.wayfindr-widget__message-time{color:#7d8a85;font-size:11px;line-height:1.2;white-space:nowrap}',
       '.wayfindr-widget__message-body{margin:0;white-space:pre-wrap;color:#1d2523;font-size:14px;line-height:1.4}',
       '.wayfindr-widget__message-delivery{justify-self:end;color:#7d8a85;font-size:11px;line-height:1.2}',
+      '.wayfindr-widget__message-attachments{display:grid;gap:6px;margin-top:2px}',
+      '.wayfindr-widget__attachment{display:inline-flex;align-items:center;gap:6px;text-decoration:none;color:#0d6f68}',
+      '.wayfindr-widget__attachment--file{border:1px solid #d8dfdc;border-radius:6px;padding:6px 8px;background:#fbfbf8;color:#1d2523;font-size:13px;line-height:1.3}',
+      '.wayfindr-widget__attachment--file:hover{border-color:#0d6f68}',
+      '.wayfindr-widget__attachment-name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px}',
+      '.wayfindr-widget__attachment-size{color:#7d8a85;font-size:11px}',
+      '.wayfindr-widget__attachment--image{display:block}',
+      '.wayfindr-widget__attachment-image{display:block;max-width:100%;max-height:220px;border-radius:6px;border:1px solid #d8dfdc}',
+      '.wayfindr-widget__attachments{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}',
+      '.wayfindr-widget__attachments[hidden]{display:none}',
+      '.wayfindr-widget__attach-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid #d8dfdc;border-radius:999px;padding:4px 6px 4px 10px;background:#fbfbf8;font-size:12px;line-height:1.3;color:#1d2523;max-width:100%}',
+      '.wayfindr-widget__attach-chip--error{border-color:#e0b7b0;background:#fff6f4;color:#8a3b2e}',
+      '.wayfindr-widget__attach-chip-name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px}',
+      '.wayfindr-widget__attach-chip-state{color:#7d8a85;font-size:11px}',
+      '.wayfindr-widget__attach-chip--error .wayfindr-widget__attach-chip-state{color:#8a3b2e}',
+      '.wayfindr-widget__attach-chip-remove{border:0;background:transparent;color:#62706b;cursor:pointer;font:700 16px/1 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:0 2px}',
+      '.wayfindr-widget__attach-chip-remove:hover{color:#8a3b2e}',
+      '.wayfindr-widget__attach{min-height:40px;border:1px solid #d8dfdc;border-radius:6px;background:#fff;color:#1d2523;cursor:pointer;padding:0 12px;font:700 14px/1 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}',
+      '.wayfindr-widget__attach:hover{border-color:#0d6f68;color:#0d6f68}',
+      '.wayfindr-widget__attach:disabled{cursor:wait;opacity:.7}',
       '.wayfindr-widget__form{display:grid;gap:10px;padding:16px}',
       '.wayfindr-widget__label{font-size:13px;font-weight:700}',
       '.wayfindr-widget__textarea{width:100%;resize:vertical;border:1px solid #d8dfdc;border-radius:6px;padding:10px;color:#1d2523;font:16px/1.4 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}',
