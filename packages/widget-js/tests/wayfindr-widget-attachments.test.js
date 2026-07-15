@@ -374,7 +374,7 @@ function composerFetchMock(calls) {
   };
 }
 
-test('the attach control is gated until a conversation exists, then drives an upload and binds on send', async () => {
+test('attaching to an existing conversation uploads on pick and binds on send', async () => {
   if (typeof globalThis.File !== 'function') {
     return; // requires a File constructor (Node 20+)
   }
@@ -400,17 +400,15 @@ test('the attach control is gated until a conversation exists, then drives an up
   const attachButton = widget.root.querySelector('.wayfindr-widget__attach');
   const fileInput = widget.root.querySelector('.wayfindr-widget__file-input');
 
-  // Gated: no conversation yet, so the attach control is hidden.
-  assert.equal(attachButton.hidden, true);
+  // The attach control is available from the start.
+  assert.equal(attachButton.hidden, false);
 
   // Start the conversation with a first text message.
   widget.root.querySelector('.wayfindr-widget__textarea').value = 'My checkout is broken.';
   widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
   await settle();
 
-  assert.equal(attachButton.hidden, false, 'the attach control appears once the conversation is active');
-
-  // Pick a file → it uploads and shows a ready chip.
+  // Pick a file → with a conversation already active it uploads immediately.
   const file = new globalThis.File(['imagedata'], 'shot.png', { type: 'image/png' });
   Object.defineProperty(fileInput, 'files', { value: [file], configurable: true });
   fileInput.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
@@ -433,6 +431,56 @@ test('the attach control is gated until a conversation exists, then drives an up
 
   // Chips clear after a successful send.
   assert.equal(widget.root.querySelectorAll('.wayfindr-widget__attach-chip').length, 0);
+
+  widget.destroy();
+});
+
+test('a file can be attached to the first message (staged, created + uploaded on send)', async () => {
+  if (typeof globalThis.File !== 'function') {
+    return;
+  }
+
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', { url: 'https://docs.example.test/' });
+  const calls = [];
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-docs',
+    storage: memoryStorage(),
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    fetch: composerFetchMock(calls),
+  });
+
+  widget.open();
+
+  // Attach a file BEFORE any conversation or message exists.
+  const fileInput = widget.root.querySelector('.wayfindr-widget__file-input');
+  Object.defineProperty(fileInput, 'files', { value: [new globalThis.File(['x'], 'first.png', { type: 'image/png' })], configurable: true });
+  fileInput.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  await settle();
+
+  // Staged: the chip shows, but nothing is uploaded and no conversation is
+  // created just by picking a file.
+  assert.ok(widget.root.querySelector('.wayfindr-widget__attach-chip'), 'the staged file shows a chip');
+  assert.ok(!calls.some((c) => c.url.includes('/attachments')), 'no upload before send');
+  assert.ok(!calls.some((c) => c.url.endsWith('/api/conversations')), 'no conversation created by picking a file');
+
+  // Send (attachment-only, no text) — creates the conversation, uploads the
+  // staged file, and binds it.
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+  await settle();
+
+  assert.ok(calls.some((c) => c.url.endsWith('/api/conversations')), 'the conversation is created on send');
+  assert.ok(calls.some((c) => c.url.includes('/attachments') && c.options.method === 'POST'), 'the staged file uploads on send');
+  const sendCall = calls.find((c) => c.url.endsWith('/messages') && c.options.method === 'POST');
+  assert.ok(sendCall, 'the message is sent');
+  assert.deepEqual(JSON.parse(sendCall.options.body).attachment_ids, [900]);
+  assert.equal(widget.root.querySelectorAll('.wayfindr-widget__attach-chip').length, 0, 'chips clear after send');
 
   widget.destroy();
 });

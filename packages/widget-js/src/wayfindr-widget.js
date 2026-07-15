@@ -493,7 +493,7 @@
       '    <ul class="wayfindr-widget__attachments" aria-label="Files to send" hidden></ul>',
       '    <input class="wayfindr-widget__file-input" type="file" accept="' + escapeHtml(ATTACHMENT_ACCEPT) + '" multiple hidden aria-hidden="true" tabindex="-1">',
       '    <div class="wayfindr-widget__actions">',
-      '      <button class="wayfindr-widget__attach" type="button" aria-label="Attach a file" hidden><span aria-hidden="true">📎</span> Attach</button>',
+      '      <button class="wayfindr-widget__attach" type="button" aria-label="Attach a file"><span aria-hidden="true">📎</span> Attach</button>',
       '      <button class="wayfindr-widget__send" type="submit">Send message</button>',
       '      <button class="wayfindr-widget__refresh" type="button" hidden>Refresh</button>',
       '    </div>',
@@ -1269,9 +1269,6 @@
       connectRealtime();
       renderCobrowseConsent();
       refresh.hidden = false;
-      // Attachments are gated on an active conversation (the upload endpoint is
-      // scoped to a support code), so the attach control appears now.
-      attachButton.hidden = false;
       scheduleMessagePoll();
       scheduleCobrowseStatusPoll();
     }
@@ -1722,21 +1719,18 @@
     }
 
     function addPendingFiles(fileList) {
-      // Gated on an active conversation: the upload endpoint is scoped to a
-      // support code, so files can only be attached once the chat exists.
-      if (!supportCode) {
-        return;
-      }
-
       Array.prototype.slice.call(fileList || []).forEach(function (file) {
         var entry = {
           localId: 'pa-' + (++pendingAttachmentSeq),
           filename: file && file.name ? file.name : 'attachment',
           size: file && typeof file.size === 'number' ? file.size : 0,
-          status: 'uploading',
+          // Staged files hold the File locally until a conversation exists; once
+          // it does, the upload happens on pick.
+          status: supportCode ? 'uploading' : 'staged',
           attachmentId: null,
-          isImage: false,
+          isImage: !!(file && typeof file.type === 'string' && file.type.indexOf('image/') === 0),
           error: null,
+          file: file,
         };
 
         pendingAttachments.push(entry);
@@ -1745,40 +1739,62 @@
         pendingClientMessageId = null;
         renderPendingAttachments();
 
-        client.uploadAttachment(supportCode, file).then(function (result) {
-          var attachment = result && result.attachment ? result.attachment : null;
+        if (supportCode) {
+          uploadPendingEntry(entry).catch(function () {});
+        }
+      });
+    }
 
-          if (pendingAttachments.indexOf(entry) === -1) {
-            // Removed while uploading — if it still landed, delete the orphan so
-            // it does not hold conversation quota.
-            if (attachment && attachment.id && supportCode) {
-              client.deleteAttachment(supportCode, attachment.id).catch(function () {});
-            }
+    // Uploads a staged/pending entry to the (now-existing) conversation,
+    // updating its chip. Resolves the attachment id, or rejects on failure so a
+    // send can surface it. Reused by pick-time upload and send-time staged
+    // upload.
+    function uploadPendingEntry(entry) {
+      entry.status = 'uploading';
+      entry.error = null;
+      renderPendingAttachments();
 
-            return;
+      return client.uploadAttachment(supportCode, entry.file).then(function (result) {
+        var attachment = result && result.attachment ? result.attachment : null;
+
+        if (pendingAttachments.indexOf(entry) === -1) {
+          // Removed while uploading — if it still landed, delete the orphan so
+          // it does not hold conversation quota.
+          if (attachment && attachment.id && supportCode) {
+            client.deleteAttachment(supportCode, attachment.id).catch(function () {});
           }
 
-          if (!attachment || !attachment.id) {
-            throw new Error(ATTACHMENT_UPLOAD_ERROR);
-          }
+          return null;
+        }
 
-          entry.status = 'ready';
-          entry.attachmentId = attachment.id;
-          entry.isImage = Boolean(attachment.is_image);
-          entry.filename = attachment.filename || entry.filename;
-          entry.size = attachment.size_bytes || entry.size;
-          renderPendingAttachments();
-        }).catch(function (error) {
-          if (pendingAttachments.indexOf(entry) === -1) {
-            return;
-          }
+        if (!attachment || !attachment.id) {
+          throw new Error(ATTACHMENT_UPLOAD_ERROR);
+        }
 
+        entry.status = 'ready';
+        entry.attachmentId = attachment.id;
+        entry.isImage = Boolean(attachment.is_image);
+        entry.filename = attachment.filename || entry.filename;
+        entry.size = attachment.size_bytes || entry.size;
+        renderPendingAttachments();
+
+        return attachment.id;
+      }).catch(function (error) {
+        if (pendingAttachments.indexOf(entry) !== -1) {
           entry.status = 'error';
           entry.error = (error && typeof error.status === 'number' && error.status >= 400 && error.status < 500 && error.message)
             ? error.message
             : ATTACHMENT_UPLOAD_ERROR;
           renderPendingAttachments();
-        });
+        }
+
+        throw error;
+      });
+    }
+
+    function stagedPendingEntries() {
+      return pendingAttachments.filter(function (attachment) {
+        return attachment.status === 'staged';
       });
     }
 
@@ -2055,10 +2071,12 @@
         return;
       }
 
-      var attachmentIds = readyAttachmentIds();
+      var readyIds = readyAttachmentIds();
+      var stagedEntries = stagedPendingEntries();
 
-      // A message needs text, a file, or both.
-      if (!body && attachmentIds.length === 0) {
+      // A message needs text, an uploaded file, or a file staged before the
+      // conversation existed (uploaded at send below).
+      if (!body && readyIds.length === 0 && stagedEntries.length === 0) {
         return;
       }
 
@@ -2089,15 +2107,10 @@
           bootstrapped = true;
         }
 
-        if (supportCode) {
-          var sentMessage = await client.sendMessage(supportCode, body, pendingClientMessageId, attachmentIds);
-          applyConversationStatus(sentMessage.conversation);
-          appendMessage(sentMessage.message);
-          renderConversationNotice();
-          activateConversation();
-        } else {
-          // Attachments are gated on an existing conversation, so the first
-          // message never carries any — it just creates the conversation.
+        // The first message creates the conversation (with the body as its
+        // subject), so files staged before it existed have somewhere to go — no
+        // empty conversation is created just by picking a file.
+        if (!supportCode) {
           var conversation = await client.startConversation(body, {
             pageUrl: location ? location.href : null,
             context: visitorContext,
@@ -2106,12 +2119,28 @@
           applyConversationStatus(conversation);
           supportCode = conversation.support_code;
           storageSet(widgetStorage, supportCodeStorageKey(options.sitePublicKey), supportCode);
-          var firstMessage = await client.sendMessage(supportCode, body, pendingClientMessageId);
-          applyConversationStatus(firstMessage.conversation);
-          appendMessage(firstMessage.message);
-          renderConversationNotice();
-          activateConversation();
+          // Don't activate (polling/realtime/refresh) until the message actually
+          // sends — a failed first send leaves the conversation dormant, as
+          // before. The staged upload below only needs the support code.
         }
+
+        // Upload anything staged before the conversation existed, then send with
+        // every attachment id (already-uploaded plus the just-uploaded staged).
+        var stagedIds = [];
+
+        for (var i = 0; i < stagedEntries.length; i++) {
+          var stagedId = await uploadPendingEntry(stagedEntries[i]);
+
+          if (stagedId) {
+            stagedIds.push(stagedId);
+          }
+        }
+
+        var sentMessage = await client.sendMessage(supportCode, body, pendingClientMessageId, readyIds.concat(stagedIds));
+        applyConversationStatus(sentMessage.conversation);
+        appendMessage(sentMessage.message);
+        renderConversationNotice();
+        activateConversation();
 
         textarea.value = '';
         clearPendingAttachments();
