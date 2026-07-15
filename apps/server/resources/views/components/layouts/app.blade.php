@@ -1048,6 +1048,122 @@
             margin-top: 12px;
         }
 
+        .message-attachments {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .message-attachment {
+            text-decoration: none;
+        }
+
+        .message-attachment-image {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            display: block;
+            max-height: 240px;
+            max-width: 100%;
+        }
+
+        .message-attachment-file {
+            align-items: center;
+            background: var(--surface-muted);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            display: inline-flex;
+            font-size: 0.9rem;
+            gap: 8px;
+            padding: 8px 10px;
+        }
+
+        .message-attachment-file:hover {
+            border-color: var(--accent-strong);
+        }
+
+        .message-attachment-name {
+            font-weight: 600;
+            max-width: 220px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .reply-attachments-field {
+            display: grid;
+            gap: 10px;
+        }
+
+        .reply-attach-button {
+            justify-self: start;
+        }
+
+        .reply-attachments {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .reply-attachments[hidden] {
+            display: none;
+        }
+
+        .reply-attach-chip {
+            align-items: center;
+            background: var(--surface-muted);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            color: var(--text);
+            display: inline-flex;
+            font-size: 0.82rem;
+            gap: 8px;
+            max-width: 100%;
+            padding: 4px 6px 4px 12px;
+        }
+
+        .reply-attach-chip--error {
+            background: var(--surface);
+            border-color: #c0563f;
+            color: #8a3b2e;
+        }
+
+        .reply-attach-chip-name {
+            font-weight: 600;
+            max-width: 180px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .reply-attach-chip-state {
+            color: var(--muted);
+            font-size: 0.75rem;
+        }
+
+        .reply-attach-chip--error .reply-attach-chip-state {
+            color: #8a3b2e;
+        }
+
+        .reply-attach-chip-remove {
+            background: transparent;
+            border: 0;
+            color: var(--muted);
+            cursor: pointer;
+            font-size: 1.05rem;
+            font-weight: 700;
+            line-height: 1;
+            padding: 0 2px;
+        }
+
+        .reply-attach-chip-remove:hover {
+            color: #8a3b2e;
+        }
+
         .reply-workspace {
             display: grid;
             grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);

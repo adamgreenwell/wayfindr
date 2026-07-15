@@ -1,5 +1,6 @@
 @php
     $emptyMessage = $emptyMessage ?? 'No messages yet.';
+    $supportCode = $supportCode ?? null;
     $transcriptMessages = $transcriptMessages ?? collect();
     $latestAgentMessageId = $transcriptMessages
         ->filter(fn ($message) => $message->sender_type === \App\Models\User::class)
@@ -43,7 +44,39 @@
                         @endif
                     </span>
                 </div>
-                <p class="message-body">{{ $transcriptMessage->body }}</p>
+                @php
+                    $messageAttachments = $transcriptMessage->relationLoaded('attachments')
+                        ? $transcriptMessage->attachments
+                        : collect();
+                @endphp
+
+                @if (filled($transcriptMessage->body) || $messageAttachments->isEmpty())
+                    <p class="message-body">{{ $transcriptMessage->body }}</p>
+                @endif
+
+                @if ($supportCode && $messageAttachments->isNotEmpty())
+                    <div class="message-attachments">
+                        @foreach ($messageAttachments as $attachment)
+                            @php
+                                $attachmentUrl = route('dashboard.conversations.attachments.show', [
+                                    'supportCode' => $supportCode,
+                                    'attachment' => $attachment->id,
+                                ]);
+                            @endphp
+
+                            @if ($attachment->isImage())
+                                <a class="message-attachment message-attachment-image-link" href="{{ $attachmentUrl }}" target="_blank" rel="noopener noreferrer">
+                                    <img class="message-attachment-image" src="{{ $attachmentUrl }}" alt="{{ $attachment->original_filename }}" loading="lazy">
+                                </a>
+                            @else
+                                <a class="message-attachment message-attachment-file" href="{{ $attachmentUrl }}" target="_blank" rel="noopener noreferrer" download>
+                                    <span class="message-attachment-icon" aria-hidden="true">📎</span>
+                                    <span class="message-attachment-name">{{ $attachment->original_filename }}</span>
+                                </a>
+                            @endif
+                        @endforeach
+                    </div>
+                @endif
             </article>
 
             @php

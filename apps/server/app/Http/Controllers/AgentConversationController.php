@@ -46,7 +46,7 @@ class AgentConversationController extends Controller
         $this->recordCobrowsePreviewView($conversation, $agent, $cobrowseAuditTrail, $cobrowseConsent, 'page_view');
 
         $messages = $conversation->messages()
-            ->with('sender')
+            ->with(['sender', 'attachments'])
             ->orderBy('created_at')
             ->orderBy('id')
             ->get();
@@ -91,7 +91,7 @@ class AgentConversationController extends Controller
         $conversation = $this->conversationForAgent($agent, $supportCode, 'view');
 
         $messages = $conversation->messages()
-            ->with('sender')
+            ->with(['sender', 'attachments'])
             ->orderBy('created_at')
             ->orderBy('id')
             ->get();
@@ -99,6 +99,7 @@ class AgentConversationController extends Controller
         return response()->view('agent.conversations.partials.message-list', [
             'emptyMessage' => 'No messages yet.',
             'transcriptMessages' => $messages,
+            'supportCode' => $conversation->support_code,
         ]);
     }
 

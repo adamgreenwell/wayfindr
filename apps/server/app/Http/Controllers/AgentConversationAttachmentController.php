@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Conversation;
 use App\Models\ConversationMessageAttachment;
+use App\Models\User;
 use App\Support\Attachments\AttachmentResponder;
 use App\Support\Attachments\AttachmentUploadService;
 use Illuminate\Http\JsonResponse;
@@ -84,6 +85,41 @@ class AgentConversationAttachmentController extends Controller
 
         abort_unless($record && $record->isDownloadableBy($agent), 404);
 
+        $this->recordAgentAccess($conversation, $record, $agent);
+
         return $responder->stream($record);
+    }
+
+    /**
+     * Record an accountability trail of an agent retrieving a visitor's file,
+     * deduped per agent+attachment so an inline preview that re-loads on every
+     * page view (downloads are no-store) does not flood the audit log — the
+     * first access by an agent is what matters.
+     */
+    private function recordAgentAccess(Conversation $conversation, ConversationMessageAttachment $attachment, User $agent): void
+    {
+        $alreadyRecorded = $conversation->auditEvents()
+            ->where('action', 'attachment.downloaded')
+            ->where('actor_type', $agent->getMorphClass())
+            ->where('actor_id', $agent->getKey())
+            ->where('metadata->attachment_id', $attachment->id)
+            ->exists();
+
+        if ($alreadyRecorded) {
+            return;
+        }
+
+        $conversation->auditEvents()->create([
+            'account_id' => $conversation->site?->account_id,
+            'site_id' => $conversation->site_id,
+            'actor_type' => $agent->getMorphClass(),
+            'actor_id' => $agent->getKey(),
+            'action' => 'attachment.downloaded',
+            'metadata' => [
+                'attachment_id' => $attachment->id,
+                'filename' => $attachment->original_filename,
+            ],
+            'occurred_at' => now(),
+        ]);
     }
 }

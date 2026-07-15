@@ -8,6 +8,7 @@
         @include('agent.conversations.partials.message-list', [
             'emptyMessage' => 'No messages yet.',
             'transcriptMessages' => $messages,
+            'supportCode' => $conversation->support_code,
         ])
     </div>
 
@@ -40,6 +41,7 @@
             data-reply-composer
             data-submitting-label="Sending reply..."
             data-typing-url="{{ route('dashboard.conversations.typing.store', $conversation->support_code) }}"
+            data-attachments-url="{{ route('dashboard.conversations.attachments.store', $conversation->support_code) }}"
         >
             @csrf
             @include('agent.conversations.partials.return-query-fields')
@@ -96,6 +98,26 @@
                 >{{ old('body') }}</textarea>
                 <p id="reply-shortcut-help" class="sr-only">Command or Control plus Enter sends this reply.</p>
                 @error('body')
+                    <p class="field-error">{{ $message }}</p>
+                @enderror
+            </div>
+
+            <div class="field reply-attachments-field">
+                <input
+                    class="reply-file-input"
+                    type="file"
+                    accept="image/*,application/pdf,text/plain,.txt,.log"
+                    multiple
+                    hidden
+                    aria-hidden="true"
+                    tabindex="-1"
+                    data-reply-file-input
+                >
+                <button class="button secondary reply-attach-button" type="button" data-reply-attach>
+                    <span aria-hidden="true">📎</span> Attach file
+                </button>
+                <ul class="reply-attachments" data-reply-attachments aria-label="Files to send with this reply" hidden></ul>
+                @error('attachment_ids')
                     <p class="field-error">{{ $message }}</p>
                 @enderror
             </div>
