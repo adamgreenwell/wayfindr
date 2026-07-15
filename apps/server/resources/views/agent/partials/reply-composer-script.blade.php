@@ -176,6 +176,23 @@
                 stateEl.textContent = 'Uploading…';
                 chip.appendChild(stateEl);
 
+                // Release this upload's hold on the in-flight count exactly once,
+                // whether it is settled by completion or by the agent removing the
+                // chip mid-flight — so send is never left disabled by an orphaned
+                // upload.
+                var pending = true;
+                var removed = false;
+
+                function settleUpload() {
+                    if (! pending) {
+                        return;
+                    }
+
+                    pending = false;
+                    uploadingCount -= 1;
+                    refreshSubmitState();
+                }
+
                 var removeEl = document.createElement('button');
                 removeEl.type = 'button';
                 removeEl.className = 'reply-attach-chip-remove';
@@ -186,6 +203,8 @@
                         return;
                     }
 
+                    removed = true;
+                    settleUpload();
                     chip.remove();
 
                     if (attachmentsList.children.length === 0) {
@@ -218,7 +237,11 @@
                         return { ok: response.ok, data: data };
                     });
                 }).then(function (result) {
-                    uploadingCount -= 1;
+                    settleUpload();
+
+                    if (removed) {
+                        return;
+                    }
 
                     var attachment = result.ok && result.data && result.data.data
                         ? result.data.data.attachment
@@ -229,7 +252,6 @@
                         stateEl.textContent = (result.data && result.data.message)
                             ? result.data.message
                             : 'That file could not be attached.';
-                        refreshSubmitState();
 
                         return;
                     }
@@ -242,13 +264,15 @@
                     hidden.name = 'attachment_ids[]';
                     hidden.value = attachment.id;
                     chip.appendChild(hidden);
-
-                    refreshSubmitState();
                 }).catch(function () {
-                    uploadingCount -= 1;
+                    settleUpload();
+
+                    if (removed) {
+                        return;
+                    }
+
                     chip.className = 'reply-attach-chip reply-attach-chip--error';
                     stateEl.textContent = 'That file could not be attached.';
-                    refreshSubmitState();
                 });
             }
 
