@@ -18,7 +18,7 @@ class ConversationMessageCreated implements ShouldBroadcastNow
 
     public function __construct(public ConversationMessage $message)
     {
-        $this->message->loadMissing(['conversation', 'sender']);
+        $this->message->loadMissing(['conversation', 'sender', 'attachments']);
     }
 
     /**
@@ -37,7 +37,7 @@ class ConversationMessageCreated implements ShouldBroadcastNow
     }
 
     /**
-     * @return array{conversation: array{support_code: string, status: string}, message: array{id: int, sender: array{kind: string, name: string}, type: string, body: string, created_at: string|null}}
+     * @return array{conversation: array{support_code: string, status: string}, message: array{id: int, sender: array{kind: string, name: string}, type: string, body: string, attachments: array<int, array<string, mixed>>, created_at: string|null}}
      */
     public function broadcastWith(): array
     {
@@ -51,6 +51,9 @@ class ConversationMessageCreated implements ShouldBroadcastNow
                 'sender' => $this->senderPayload(),
                 'type' => $this->message->type,
                 'body' => $this->message->body,
+                // Live messages carry their attachments so a realtime delivery
+                // renders them immediately, without waiting for the next poll.
+                'attachments' => $this->message->attachments->map->toPayload()->all(),
                 'created_at' => $this->message->created_at?->toJSON(),
             ],
         ];

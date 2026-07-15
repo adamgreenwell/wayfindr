@@ -257,6 +257,61 @@ test('an unchanged refresh does not recreate image elements (so images are not r
   widget.destroy();
 });
 
+test('a live realtime message renders its attachments immediately', async () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', { url: 'https://docs.example.test/' });
+  const storage = memoryStorage({
+    'wayfindr:site_public_docs:anonymous-id': 'anon-docs',
+    'wayfindr:site_public_docs:visitor-token': 'visitor-token-docs',
+    'wayfindr:site_public_docs:support-code': 'WF-DOCS',
+  });
+  let liveMessage = null;
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_docs',
+    storage,
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    realtime: {
+      subscribe: ({ onMessage }) => {
+        liveMessage = onMessage;
+
+        return { unsubscribe: () => {} };
+      },
+    },
+    fetch: resumeFetchWithAttachments([]),
+  });
+
+  widget.open();
+  await settle();
+
+  assert.equal(typeof liveMessage, 'function', 'the widget subscribed to realtime for the active conversation');
+
+  // A live agent message arrives over the socket carrying an image attachment.
+  liveMessage({
+    conversation: { support_code: 'WF-DOCS', status: 'open' },
+    message: {
+      id: 20,
+      sender: { kind: 'agent', name: 'Ada' },
+      type: 'text',
+      body: 'Live diagram',
+      attachments: [{ id: 200, filename: 'live.png', mime_type: 'image/png', size_bytes: 1024, is_image: true, status: 'ready' }],
+      created_at: '2026-07-15T10:05:00.000000Z',
+    },
+  });
+  await settle();
+
+  const img = widget.root.querySelector('.wayfindr-widget__attachment-image');
+  assert.ok(img, 'the live message renders its image attachment without waiting for a poll');
+  assert.match(img.getAttribute('src'), /\/api\/conversations\/WF-DOCS\/attachments\/200\?/);
+
+  widget.destroy();
+});
+
 // --- Composer gating + upload flow ---------------------------------------
 
 function composerFetchMock(calls) {

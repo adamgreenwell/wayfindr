@@ -10,6 +10,7 @@ use App\Models\Account;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\ConversationMessageAttachment;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
@@ -61,8 +62,42 @@ test('conversation message broadcasts use a private conversation channel and saf
                 ],
                 'type' => 'text',
                 'body' => 'Can someone see this?',
+                'attachments' => [],
                 'created_at' => $message->created_at?->toJSON(),
             ],
+        ]);
+
+    // A message with no attachments broadcasts an empty attachments array.
+    expect($event->broadcastWith()['message']['attachments'])->toBe([]);
+});
+
+test('the broadcast payload carries attachments so live messages render them immediately', function (): void {
+    $account = Account::factory()->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-ATTACH-LIVE',
+        'status' => 'open',
+    ]);
+    $message = ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'type' => 'text',
+        'body' => 'See attached.',
+    ]);
+    $attachment = ConversationMessageAttachment::factory()->forMessage($message)->create([
+        'original_filename' => 'shot.png',
+        'mime_type' => 'image/png',
+    ]);
+
+    $payload = (new ConversationMessageCreated($message))->broadcastWith();
+
+    expect($payload['message']['attachments'])->toHaveCount(1)
+        ->and($payload['message']['attachments'][0])->toMatchArray([
+            'id' => $attachment->id,
+            'filename' => 'shot.png',
+            'mime_type' => 'image/png',
+            'is_image' => true,
         ]);
 });
 
