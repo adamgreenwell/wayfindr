@@ -17,6 +17,15 @@ async function settle() {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
+function deferred() {
+  let resolve;
+  const promise = new Promise((r) => {
+    resolve = r;
+  });
+
+  return { promise, resolve };
+}
+
 function memoryStorage(seed) {
   const store = Object.assign({}, seed);
 
@@ -296,6 +305,83 @@ test('the attach control is gated until a conversation exists, then drives an up
 
   // Chips clear after a successful send.
   assert.equal(widget.root.querySelectorAll('.wayfindr-widget__attach-chip').length, 0);
+
+  widget.destroy();
+});
+
+test('removing a chip is a no-op while a send is in flight', async () => {
+  if (typeof globalThis.File !== 'function') {
+    return;
+  }
+
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', { url: 'https://docs.example.test/' });
+  let messagePosts = 0;
+  const heldSend = deferred();
+
+  const fetchMock = async (url, options) => {
+    if (url.endsWith('/api/widget/bootstrap')) {
+      return jsonResponse(200, { data: { site: { public_key: 'site_public_docs', settings: {} }, visitor: { anonymous_id: 'anon-docs', token: 'visitor-token-docs' } } });
+    }
+    if (url.endsWith('/api/conversations')) {
+      return jsonResponse(201, { data: { support_code: 'WF-NEW', status: 'open' } });
+    }
+    if (url.includes('/attachments')) {
+      return jsonResponse(201, { data: { attachment: { id: 900, filename: 'shot.png', mime_type: 'image/png', size_bytes: 2048, is_image: true, status: 'ready' } } });
+    }
+    if (url.includes('/cobrowse')) {
+      return jsonResponse(200, { data: { cobrowse: { state: 'unavailable' } } });
+    }
+    if (url.endsWith('/messages') && options && options.method === 'POST') {
+      messagePosts += 1;
+      // Hold the second send (the attachment send) open so composerBusy stays true.
+      if (messagePosts === 2) {
+        await heldSend.promise;
+      }
+    }
+    return jsonResponse(201, { data: { conversation: { support_code: 'WF-NEW', status: 'open' }, message: { id: messagePosts, sender: { kind: 'visitor' }, type: 'text', body: '', attachments: [], created_at: '2026-07-15T10:00:00.000000Z' }, messages: [] } });
+  };
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-docs',
+    storage: memoryStorage(),
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    fetch: fetchMock,
+  });
+
+  widget.open();
+  widget.root.querySelector('.wayfindr-widget__textarea').value = 'First message.';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+  await settle();
+
+  const fileInput = widget.root.querySelector('.wayfindr-widget__file-input');
+  Object.defineProperty(fileInput, 'files', { value: [new globalThis.File(['x'], 'shot.png', { type: 'image/png' })], configurable: true });
+  fileInput.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  await settle();
+
+  // Kick off the attachment send; it hangs, so composerBusy stays true.
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+  await settle();
+
+  const remove = widget.root.querySelector('.wayfindr-widget__attach-chip-remove');
+  assert.ok(remove, 'the chip is still shown during the in-flight send');
+  assert.equal(remove.disabled, true, 'the remove button is disabled while sending');
+
+  // Even if a click sneaks through, it must not remove the chip.
+  remove.click();
+  await settle();
+  assert.equal(widget.root.querySelectorAll('.wayfindr-widget__attach-chip').length, 1, 'the chip survives a remove attempt during send');
+
+  heldSend.resolve();
+  await settle();
+
+  assert.equal(widget.root.querySelectorAll('.wayfindr-widget__attach-chip').length, 0, 'chips clear once the send completes');
 
   widget.destroy();
 });

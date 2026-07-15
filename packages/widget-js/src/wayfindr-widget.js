@@ -1579,7 +1579,8 @@
       form.setAttribute('aria-busy', composerBusy ? 'true' : 'false');
       textarea.disabled = composerBusy;
       attachButton.disabled = composerBusy;
-      refreshSendState();
+      // Re-render chips so their remove buttons reflect the busy state.
+      renderPendingAttachments();
       send.textContent = composerBusy ? 'Sending...' : sendLabel;
 
       if (noticeRetryAction) {
@@ -1648,6 +1649,9 @@
         removeEl.className = 'wayfindr-widget__attach-chip-remove';
         removeEl.setAttribute('aria-label', 'Remove ' + attachment.filename);
         removeEl.textContent = '×';
+        // A send in flight captured the current attachment ids already; removing
+        // one mid-send would desync the chips and reset the idempotency key.
+        removeEl.disabled = composerBusy;
         removeEl.addEventListener('click', function () {
           removePendingAttachment(attachment.localId);
         });
@@ -1715,6 +1719,12 @@
     }
 
     function removePendingAttachment(localId) {
+      // Ignore removals while a send is in flight — that send already captured
+      // the attachment ids, and mutating the set now would desync it.
+      if (composerBusy) {
+        return;
+      }
+
       pendingAttachments = pendingAttachments.filter(function (attachment) {
         return attachment.localId !== localId;
       });
