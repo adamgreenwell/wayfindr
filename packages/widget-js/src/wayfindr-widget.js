@@ -528,6 +528,11 @@
     var resumePromise = null;
     var conversationStatus = null;
     var messages = [];
+    // A fingerprint of the last rendered message list so a poll that brings no
+    // changes skips rebuilding the timeline — rebuilding recreates <img>
+    // elements, which (with no-store downloads) would refetch every image
+    // attachment on every poll.
+    var lastRenderedMessagesSignature = null;
     var realtimeSubscription = null;
     var stableConnectionState = null;
     var cobrowseGranted = false;
@@ -644,11 +649,48 @@
       }
     }
 
+    // Everything renderMessages reads out of each message, so an unchanged list
+    // produces an identical signature and the timeline is left as-is.
+    function messagesSignature(list) {
+      return JSON.stringify((Array.isArray(list) ? list : []).map(function (message) {
+        var sender = message.sender || {};
+
+        return [
+          message.id,
+          sender.kind,
+          sender.name,
+          message.type,
+          message.body,
+          message.created_at,
+          (Array.isArray(message.attachments) ? message.attachments : []).map(function (attachment) {
+            return [attachment.id, attachment.is_image, attachment.filename, attachment.size_bytes];
+          }),
+        ];
+      }));
+    }
+
     function renderMessages(nextMessages) {
+      var nextList = Array.isArray(nextMessages) ? nextMessages : messages;
+      var signature = messagesSignature(nextList);
+
+      if (signature === lastRenderedMessagesSignature) {
+        // Nothing rendered changed — keep the message list in sync but leave the
+        // existing DOM (and its already-loaded images) untouched. The status
+        // notice can still change (e.g. the conversation was closed) without the
+        // message list changing, so refresh it; and keep the read-receipt loop
+        // alive.
+        messages = nextList;
+        renderConversationNotice();
+        scheduleRenderedReadReceipt();
+
+        return;
+      }
+
       var previousCount = messages.length;
       var wasAtBottom = previousCount === 0 || timelineIsAtBottom();
 
-      messages = Array.isArray(nextMessages) ? nextMessages : messages;
+      messages = nextList;
+      lastRenderedMessagesSignature = signature;
       timeline.textContent = '';
 
       var previousDayKey = null;

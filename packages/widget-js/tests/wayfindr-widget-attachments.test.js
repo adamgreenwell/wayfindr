@@ -209,6 +209,54 @@ test('renders received image and file attachments in the transcript', async () =
   widget.destroy();
 });
 
+test('an unchanged refresh does not recreate image elements (so images are not refetched)', async () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', { url: 'https://docs.example.test/' });
+  const storage = memoryStorage({
+    'wayfindr:site_public_docs:anonymous-id': 'anon-docs',
+    'wayfindr:site_public_docs:visitor-token': 'visitor-token-docs',
+    'wayfindr:site_public_docs:support-code': 'WF-DOCS',
+  });
+
+  const messages = [
+    {
+      id: 10,
+      sender: { kind: 'agent', name: 'Ada' },
+      type: 'text',
+      body: 'Here is the diagram.',
+      attachments: [{ id: 100, filename: 'diagram.png', mime_type: 'image/png', size_bytes: 4096, is_image: true, status: 'ready' }],
+      created_at: '2026-07-15T10:00:00.000000Z',
+    },
+  ];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_docs',
+    storage,
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    fetch: resumeFetchWithAttachments(messages),
+  });
+
+  widget.open();
+  await settle();
+
+  const firstImg = widget.root.querySelector('.wayfindr-widget__attachment-image');
+  assert.ok(firstImg, 'the image renders on first load');
+
+  // A manual refresh brings the identical message list.
+  widget.root.querySelector('.wayfindr-widget__refresh').dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+  await settle();
+
+  const secondImg = widget.root.querySelector('.wayfindr-widget__attachment-image');
+  assert.equal(secondImg, firstImg, 'the same <img> node is preserved, so the browser does not refetch it');
+
+  widget.destroy();
+});
+
 // --- Composer gating + upload flow ---------------------------------------
 
 function composerFetchMock(calls) {
