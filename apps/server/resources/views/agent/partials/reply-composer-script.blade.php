@@ -193,6 +193,20 @@
                     refreshSubmitState();
                 }
 
+                // Free a stored upload so it stops counting against the
+                // conversation quota. Best-effort; the retention sweep is the
+                // backstop.
+                function deleteUploaded(attachmentId) {
+                    fetch(attachmentsUrl + '/' + encodeURIComponent(attachmentId), {
+                        method: 'DELETE',
+                        credentials: 'same-origin',
+                        headers: {
+                            Accept: 'application/json',
+                            'X-CSRF-TOKEN': csrf ? csrf.getAttribute('content') : '',
+                        },
+                    }).catch(function () {});
+                }
+
                 var removeEl = document.createElement('button');
                 removeEl.type = 'button';
                 removeEl.className = 'reply-attach-chip-remove';
@@ -205,6 +219,13 @@
 
                     removed = true;
                     settleUpload();
+
+                    var hidden = chip.querySelector('input[name="attachment_ids[]"]');
+
+                    if (hidden && hidden.value) {
+                        deleteUploaded(hidden.value);
+                    }
+
                     chip.remove();
 
                     if (attachmentsList.children.length === 0) {
@@ -239,13 +260,18 @@
                 }).then(function (result) {
                     settleUpload();
 
-                    if (removed) {
-                        return;
-                    }
-
                     var attachment = result.ok && result.data && result.data.data
                         ? result.data.data.attachment
                         : null;
+
+                    if (removed) {
+                        // Removed while uploading — delete the orphan if it landed.
+                        if (attachment && attachment.id) {
+                            deleteUploaded(attachment.id);
+                        }
+
+                        return;
+                    }
 
                     if (! attachment || ! attachment.id) {
                         chip.className = 'reply-attach-chip reply-attach-chip--error';

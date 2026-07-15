@@ -117,6 +117,27 @@ test('sendMessage may omit the body when attachments carry the message', async (
   assert.deepEqual(body.attachment_ids, [7]);
 });
 
+test('deleteAttachment issues a scoped DELETE to the attachment url', async () => {
+  const calls = [];
+  const client = Wayfindr.createClient({
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    visitorToken: 'visitor-token-123',
+    fetch: async (url, options) => {
+      calls.push({ url, options });
+
+      return jsonResponse(204, {});
+    },
+  });
+
+  await client.deleteAttachment('WF-TEST123', 42);
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].options.method, 'DELETE');
+  assert.match(calls[0].url, /\/api\/conversations\/WF-TEST123\/attachments\/42\?site_public_key=site_public_docs&anonymous_id=anon-browser-123&visitor_token=visitor-token-123/);
+});
+
 test('attachmentDownloadUrl carries the visitor session in the query string', () => {
   const client = Wayfindr.createClient({
     apiBaseUrl: 'http://127.0.0.1:8000',
@@ -318,6 +339,10 @@ function composerFetchMock(calls) {
   return async (url, options) => {
     calls.push({ url, options });
 
+    if (options && options.method === 'DELETE') {
+      return jsonResponse(204, {});
+    }
+
     if (url.endsWith('/api/widget/bootstrap')) {
       return jsonResponse(200, {
         data: { site: { public_key: 'site_public_docs', settings: {} }, visitor: { anonymous_id: 'anon-docs', token: 'visitor-token-docs' } },
@@ -407,6 +432,48 @@ test('the attach control is gated until a conversation exists, then drives an up
   assert.deepEqual(JSON.parse(sendCall.options.body).attachment_ids, [900]);
 
   // Chips clear after a successful send.
+  assert.equal(widget.root.querySelectorAll('.wayfindr-widget__attach-chip').length, 0);
+
+  widget.destroy();
+});
+
+test('removing a ready chip deletes the server-side upload', async () => {
+  if (typeof globalThis.File !== 'function') {
+    return;
+  }
+
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', { url: 'https://docs.example.test/' });
+  const calls = [];
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-docs',
+    storage: memoryStorage(),
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    fetch: composerFetchMock(calls),
+  });
+
+  widget.open();
+  widget.root.querySelector('.wayfindr-widget__textarea').value = 'Start.';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+  await settle();
+
+  const fileInput = widget.root.querySelector('.wayfindr-widget__file-input');
+  Object.defineProperty(fileInput, 'files', { value: [new globalThis.File(['x'], 'shot.png', { type: 'image/png' })], configurable: true });
+  fileInput.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  await settle();
+
+  // Remove the ready chip.
+  widget.root.querySelector('.wayfindr-widget__attach-chip-remove').click();
+  await settle();
+
+  const deleteCall = calls.find((call) => call.options && call.options.method === 'DELETE' && call.url.includes('/attachments/900'));
+  assert.ok(deleteCall, 'removing a ready chip issues a DELETE for its attachment');
   assert.equal(widget.root.querySelectorAll('.wayfindr-widget__attach-chip').length, 0);
 
   widget.destroy();

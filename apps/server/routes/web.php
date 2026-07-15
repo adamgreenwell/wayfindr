@@ -145,6 +145,9 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
     Route::get('/dashboard/conversations/{supportCode}/attachments/{attachment}', [AgentConversationAttachmentController::class, 'show'])
         ->whereNumber('attachment')
         ->name('dashboard.conversations.attachments.show');
+    Route::delete('/dashboard/conversations/{supportCode}/attachments/{attachment}', [AgentConversationAttachmentController::class, 'destroy'])
+        ->whereNumber('attachment')
+        ->name('dashboard.conversations.attachments.destroy');
     Route::get('/dashboard/conversations/{supportCode}/messages', [AgentConversationController::class, 'messages'])
         ->name('dashboard.conversations.messages.index');
     Route::post('/dashboard/conversations/{supportCode}/messages', [AgentConversationController::class, 'storeMessage'])

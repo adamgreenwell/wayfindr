@@ -54,6 +54,9 @@ Route::middleware('throttle:widget-message')->group(function (): void {
 Route::middleware('throttle:widget-attachment-upload')->group(function (): void {
     Route::post('/conversations/{supportCode}/attachments', [ConversationAttachmentController::class, 'store'])
         ->name('conversations.attachments.store');
+    Route::delete('/conversations/{supportCode}/attachments/{attachment}', [ConversationAttachmentController::class, 'destroy'])
+        ->whereNumber('attachment')
+        ->name('conversations.attachments.destroy');
 });
 
 Route::middleware('throttle:widget-attachment')->group(function (): void {

@@ -9,6 +9,7 @@ use App\Support\Attachments\AttachmentResponder;
 use App\Support\Attachments\AttachmentUploadService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Gate;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -92,6 +93,43 @@ class AgentConversationAttachmentController extends Controller
         $this->recordAgentAccess($conversation, $record, $agent);
 
         return $response;
+    }
+
+    /**
+     * Delete a not-yet-sent upload the agent made, e.g. when they remove its
+     * chip before sending. Only an unbound attachment uploaded by this agent can
+     * be deleted — a bound attachment is transcript content, and another agent's
+     * in-progress upload is not theirs to remove. Freeing it here reclaims the
+     * per-conversation quota immediately instead of waiting for the sweep.
+     */
+    public function destroy(Request $request, string $supportCode, int $attachment): Response
+    {
+        $agent = $request->user();
+
+        abort_unless($agent?->account_id, 403);
+
+        $conversation = Conversation::query()
+            ->where('support_code', $supportCode)
+            ->firstOrFail();
+
+        abort_unless(Gate::forUser($agent)->allows('view', $conversation), 404);
+
+        $conversation->loadMissing('site');
+
+        $record = ConversationMessageAttachment::query()
+            ->forConversation($conversation)
+            ->whereKey($attachment)
+            ->whereNull('conversation_message_id')
+            ->where('uploaded_by_type', $agent->getMorphClass())
+            ->where('uploaded_by_id', $agent->getKey())
+            ->first();
+
+        abort_unless($record, 404);
+
+        // The deleting hook removes the binary with the row.
+        $record->delete();
+
+        return response()->noContent();
     }
 
     /**

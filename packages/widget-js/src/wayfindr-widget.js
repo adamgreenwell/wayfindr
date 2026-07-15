@@ -258,6 +258,22 @@
           visitor_token: requireVisitorToken(visitorToken),
         });
       },
+      // Delete a not-yet-sent upload (server only removes an unbound attachment
+      // this visitor owns), freeing the conversation quota it held.
+      deleteAttachment: function (supportCode, attachmentId) {
+        return fetcher(this.attachmentDownloadUrl(supportCode, attachmentId), {
+          method: 'DELETE',
+          headers: {
+            Accept: 'application/json',
+          },
+        }).then(function (response) {
+          if (! response.ok) {
+            throw responseError(response, {});
+          }
+
+          return true;
+        });
+      },
       reportTyping: function (supportCode, isTyping) {
         return postJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/typing', {
           site_public_key: sitePublicKey,
@@ -1730,11 +1746,17 @@
         renderPendingAttachments();
 
         client.uploadAttachment(supportCode, file).then(function (result) {
+          var attachment = result && result.attachment ? result.attachment : null;
+
           if (pendingAttachments.indexOf(entry) === -1) {
+            // Removed while uploading — if it still landed, delete the orphan so
+            // it does not hold conversation quota.
+            if (attachment && attachment.id && supportCode) {
+              client.deleteAttachment(supportCode, attachment.id).catch(function () {});
+            }
+
             return;
           }
-
-          var attachment = result && result.attachment ? result.attachment : null;
 
           if (!attachment || !attachment.id) {
             throw new Error(ATTACHMENT_UPLOAD_ERROR);
@@ -1765,6 +1787,16 @@
       // the attachment ids, and mutating the set now would desync it.
       if (composerBusy) {
         return;
+      }
+
+      var entry = pendingAttachments.filter(function (attachment) {
+        return attachment.localId === localId;
+      })[0];
+
+      // Free the server-side upload so it stops counting against the
+      // conversation quota. Best-effort — the retention sweep is the backstop.
+      if (entry && entry.status === 'ready' && entry.attachmentId && supportCode) {
+        client.deleteAttachment(supportCode, entry.attachmentId).catch(function () {});
       }
 
       pendingAttachments = pendingAttachments.filter(function (attachment) {
