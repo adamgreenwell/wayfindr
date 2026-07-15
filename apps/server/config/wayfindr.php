@@ -81,6 +81,14 @@ return [
                 'image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain'
             ))
         ))),
+
+        // Retention sweep (wayfindr:sweep-orphaned-attachments). An unbound
+        // upload older than this was abandoned before its message was sent and
+        // is removed with its binary. A stored file with no row is only deleted
+        // once older than the grace window, so an in-flight upload (file written,
+        // row not yet committed) is never swept out from under itself.
+        'pending_expiry_hours' => (int) env('WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS', 24),
+        'orphan_grace_hours' => (int) env('WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS', 1),
     ],
 
     'release' => [

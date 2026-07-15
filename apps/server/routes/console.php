@@ -19,3 +19,7 @@ Schedule::command('wayfindr:expire-idle-cobrowse-sessions')
 Schedule::command('wayfindr:prune-cobrowse-content')
     ->hourly()
     ->description('Strip raw cobrowse page content from ended sessions past the retention window.');
+
+Schedule::command('wayfindr:sweep-orphaned-attachments')
+    ->hourly()
+    ->description('Remove abandoned/failed unbound attachment uploads and orphaned storage objects.');

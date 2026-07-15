@@ -61,6 +61,24 @@ class ConversationMessageAttachment extends Model
         ];
     }
 
+    protected static function booted(): void
+    {
+        // Deleting the row through Eloquent takes its binary with it. Note this
+        // does NOT fire for database-level FK cascades (deleting a conversation
+        // drops the rows without loading models) — those orphaned files are
+        // reaped by the scheduled sweep, per ADR 0007.
+        static::deleting(function (ConversationMessageAttachment $attachment): void {
+            $attachment->deleteStoredFile();
+        });
+    }
+
+    public function deleteStoredFile(): void
+    {
+        if ($this->storage_key && $this->disk()->exists($this->storage_key)) {
+            $this->disk()->delete($this->storage_key);
+        }
+    }
+
     public function message(): BelongsTo
     {
         return $this->belongsTo(ConversationMessage::class, 'conversation_message_id');
