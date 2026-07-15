@@ -454,6 +454,7 @@
                     @include('agent.conversations.partials.message-list', [
                         'emptyMessage' => 'No conversation messages yet.',
                         'transcriptMessages' => $linkedConversationMessages,
+                        'supportCode' => $linkedConversationSupportCode,
                     ])
 
                     @php

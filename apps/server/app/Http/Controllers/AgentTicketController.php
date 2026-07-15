@@ -114,6 +114,7 @@ class AgentTicketController extends Controller
             'priorVisitorConversations' => $this->priorVisitorConversations($ticket),
             'priorVisitorTickets' => $this->priorVisitorTickets($ticket),
             'linkedConversationMessages' => $this->linkedConversationMessages($ticket),
+            'linkedConversationSupportCode' => $ticket->conversation?->support_code,
             'ticketTimelineEmptyDescription' => $this->ticketTimelineEmptyDescription($ticketTimelineFilter),
             'ticketTimelineEmptyMessage' => $this->ticketTimelineEmptyMessage($ticketTimelineFilter),
             'ticketTimelineFilter' => $ticketTimelineFilter,
@@ -907,7 +908,7 @@ class AgentTicketController extends Controller
         }
 
         return $ticket->conversation->messages()
-            ->with('sender')
+            ->with(['sender', 'attachments'])
             ->latest('created_at')
             ->latest('id')
             ->limit(5)

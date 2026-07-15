@@ -11,6 +11,7 @@ use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\ConversationMessageAttachment;
 use App\Models\Site;
+use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -133,6 +134,29 @@ test('a different agent downloading the same file records its own audit', functi
     $this->actingAs($secondAgent)->get($url)->assertOk();
 
     expect(AuditEvent::where('action', 'attachment.downloaded')->where('metadata->attachment_id', $attachment->id)->count())->toBe(2);
+});
+
+test('a linked-ticket transcript renders the conversation attachments', function (): void {
+    $f = agentAttachmentFixture();
+    $attachment = ConversationMessageAttachment::factory()->forMessage($f['message'])->create([
+        'original_filename' => 'ticketed.png',
+        'mime_type' => 'image/png',
+    ]);
+    $ticket = Ticket::factory()->for($f['account'])->for($f['site'])->create([
+        'conversation_id' => $f['conversation']->id,
+    ]);
+
+    $url = route('dashboard.conversations.attachments.show', [
+        'supportCode' => $f['conversation']->support_code,
+        'attachment' => $attachment->id,
+    ]);
+
+    $this->actingAs($f['agent'])
+        ->get(route('dashboard.tickets.show', $ticket))
+        ->assertOk()
+        ->assertSee('message-attachment-image', false)
+        ->assertSee($url, false)
+        ->assertSee('ticketed.png');
 });
 
 test('the full conversation page renders attachments', function (): void {
