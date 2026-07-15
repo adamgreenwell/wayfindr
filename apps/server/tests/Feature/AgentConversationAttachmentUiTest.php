@@ -102,6 +102,22 @@ test('an agent downloading a file records a deduped accountability audit', funct
         ->and(data_get($events->first()->metadata, 'filename'))->toBe('proof.png');
 });
 
+test('a download that 404s on a missing binary records no audit', function (): void {
+    $f = agentAttachmentFixture();
+    $attachment = ConversationMessageAttachment::factory()->forMessage($f['message'])->create();
+    // The row is ready/bound but the stored object is gone (e.g. swept).
+    Storage::disk('attachments')->assertMissing($attachment->storage_key);
+
+    $url = route('dashboard.conversations.attachments.show', [
+        'supportCode' => $f['conversation']->support_code,
+        'attachment' => $attachment->id,
+    ]);
+
+    $this->actingAs($f['agent'])->get($url)->assertNotFound();
+
+    expect(AuditEvent::where('action', 'attachment.downloaded')->count())->toBe(0);
+});
+
 test('a different agent downloading the same file records its own audit', function (): void {
     $f = agentAttachmentFixture();
     $secondAgent = User::factory()->for($f['account'])->create();

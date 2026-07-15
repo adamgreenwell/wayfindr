@@ -85,9 +85,13 @@ class AgentConversationAttachmentController extends Controller
 
         abort_unless($record && $record->isDownloadableBy($agent), 404);
 
+        // Build the streamed response first: stream() aborts 404 if the stored
+        // object is gone, so we only audit an access that can actually be served.
+        $response = $responder->stream($record);
+
         $this->recordAgentAccess($conversation, $record, $agent);
 
-        return $responder->stream($record);
+        return $response;
     }
 
     /**
