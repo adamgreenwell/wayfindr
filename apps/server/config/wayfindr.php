@@ -100,10 +100,14 @@ return [
 
             // When the scanner is unreachable: fail_closed (default) rejects the
             // upload rather than store an unscanned file; false accepts it (still
-            // logged). Invalid/blank values fall back to the safe default (true)
-            // rather than silently opening the gate. A configured-but-unreachable
-            // scanner also shows on readiness.
-            'fail_closed' => filter_var(env('WAYFINDR_ATTACHMENT_SCANNER_FAIL_CLOSED', true), FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE) ?? true,
+            // logged). Only an explicit false-y value opens the gate — blank,
+            // unset, or invalid values stay fail-closed (the safe default). A
+            // configured-but-unreachable scanner also shows on readiness.
+            'fail_closed' => ! in_array(
+                strtolower(trim((string) env('WAYFINDR_ATTACHMENT_SCANNER_FAIL_CLOSED'))),
+                ['false', '0', 'no', 'off'],
+                true,
+            ),
 
             'timeout_seconds' => (int) env('WAYFINDR_ATTACHMENT_SCANNER_TIMEOUT', 30),
 
