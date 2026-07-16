@@ -1,15 +1,4 @@
 <x-layouts.app title="Conversation {{ $conversation->support_code }}" :agent="$agent" :account="$account">
-            @php
-                $conversationActivityPreview = $conversation->queueActivityPreview();
-                $conversationNextAction = $conversation->nextAction();
-                $conversationStatusActionReadiness = $conversation->statusActionReadiness();
-                $visitorReadTone = match ($conversation->visitorReadState()) {
-                    'seen' => 'ready',
-                    'unseen' => 'attention',
-                    default => 'manual',
-                };
-            @endphp
-
             <x-page-header :title="$conversation->subject ?? 'Untitled conversation'" :subtitle="'Support code '.$conversation->support_code" :back-href="$conversationBackUrl" back-label="Back to conversations" />
 
             @if (session('status'))
@@ -27,6 +16,9 @@
                 ]"
             >
                 <x-tab-panel id="conversation" active>
+            {{-- The conversation IS the task: transcript + reply lead the tab. --}}
+            @include('agent.conversations.partials.chat-workspace')
+
             <section class="section" aria-labelledby="conversation-context-heading">
                 <div class="section-header">
                     <h2 id="conversation-context-heading">Context</h2>
@@ -47,88 +39,39 @@
                         <span class="meta-value">{{ $conversation->assignedAgent?->name ?? 'Unassigned' }}</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Attention</span>
-                        <span class="meta-value">{{ $conversation->attentionLabel() }}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Next action</span>
-                        <span class="meta-value">{{ $conversationNextAction['title'] }}</span>
-                        <span class="lede">{{ $conversationNextAction['body'] }}</span>
-                        <a class="text-link health-action" href="{{ $conversationNextAction['href'] }}">{{ $conversationNextAction['cta'] }}</a>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Reply visibility</span>
-                        <span
-                            class="readiness-status"
-                            data-status="{{ $visitorReadTone }}"
-                            data-visitor-read-label
-                            data-visitor-read-context-label
-                            aria-live="polite"
-                        >
-                            {{ $conversation->visitorReadLabel() }}
-                        </span>
-                        <span class="lede" data-visitor-read-detail>{{ $conversation->visitorReadDetail() }}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Latest activity</span>
-                        <span class="meta-value">{{ $conversationActivityPreview['label'] }}</span>
-                        <span class="lede">{{ $conversationActivityPreview['body'] }}</span>
-                        @if ($conversationActivityPreview['occurred_at'])
-                            <span class="table-note">{{ $conversationActivityPreview['occurred_at']->diffForHumans() }}</span>
-                        @endif
-                    </div>
-                    <div class="meta-item">
                         <span class="meta-label">Opened</span>
                         <span class="meta-value">{{ $conversation->created_at->diffForHumans() }}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Last Activity</span>
-                        <span class="meta-value">{{ $conversation->last_message_at?->diffForHumans() ?? 'No messages yet' }}</span>
+                        <span class="lede">Last activity {{ $conversation->last_message_at?->diffForHumans() ?? 'none yet' }}</span>
                     </div>
                 </div>
 
-                @if (! $conversation->assigned_agent_id)
-                    <form class="section-form" method="POST" action="{{ route('dashboard.conversations.claim', $conversation->support_code) }}">
+                <div class="section-form-row">
+                    @if (! $conversation->assigned_agent_id)
+                        <form class="section-form" method="POST" action="{{ route('dashboard.conversations.claim', $conversation->support_code) }}">
+                            @csrf
+                            @include('agent.conversations.partials.return-query-fields')
+
+                            <button class="button" type="submit">Claim conversation</button>
+                        </form>
+                    @elseif ($conversation->assigned_agent_id === $agent->id)
+                        <form class="section-form" method="POST" action="{{ route('dashboard.conversations.release', $conversation->support_code) }}">
+                            @csrf
+                            @include('agent.conversations.partials.return-query-fields')
+
+                            <button class="button secondary" type="submit">Release conversation</button>
+                        </form>
+                    @endif
+
+                    <form class="section-form" method="POST" action="{{ route($conversation->status === 'closed' ? 'dashboard.conversations.reopen' : 'dashboard.conversations.close', $conversation->support_code) }}">
                         @csrf
                         @include('agent.conversations.partials.return-query-fields')
 
-                        <button class="button" type="submit">Claim conversation</button>
+                        <button class="button {{ $conversation->status === 'closed' ? '' : 'secondary' }}" type="submit">
+                            {{ $conversation->status === 'closed' ? 'Reopen conversation' : 'Close conversation' }}
+                        </button>
                     </form>
-                @elseif ($conversation->assigned_agent_id === $agent->id)
-                    <form class="section-form" method="POST" action="{{ route('dashboard.conversations.release', $conversation->support_code) }}">
-                        @csrf
-                        @include('agent.conversations.partials.return-query-fields')
-
-                        <button class="button secondary" type="submit">Release conversation</button>
-                    </form>
-                @endif
-
-                <div class="notice-copy notice-copy-bordered" id="conversation-status-action">
-                    <p>
-                        <strong>Status action readiness</strong>
-                        <span class="readiness-status" data-status="{{ $conversationStatusActionReadiness['tone'] }}">
-                            {{ $conversationStatusActionReadiness['title'] }}
-                        </span>
-                    </p>
-                    <p>{{ $conversationStatusActionReadiness['detail'] }}</p>
-                    <div class="notice-actions">
-                        <a class="button secondary" href="{{ $conversationStatusActionReadiness['href'] }}">
-                            {{ $conversationStatusActionReadiness['cta'] }}
-                        </a>
-                    </div>
                 </div>
-
-                <form class="section-form" method="POST" action="{{ route($conversation->status === 'closed' ? 'dashboard.conversations.reopen' : 'dashboard.conversations.close', $conversation->support_code) }}">
-                    @csrf
-                    @include('agent.conversations.partials.return-query-fields')
-
-                    <button class="button {{ $conversation->status === 'closed' ? '' : 'secondary' }}" type="submit">
-                        {{ $conversation->status === 'closed' ? 'Reopen conversation' : 'Close conversation' }}
-                    </button>
-                </form>
             </section>
-
-            @include('agent.conversations.partials.chat-workspace')
                 </x-tab-panel>
 
                 <x-tab-panel id="cobrowse">
@@ -139,37 +82,6 @@
                 </div>
 
                 <p class="empty">{{ $cobrowseConsent['message'] }}</p>
-
-                @if ($cobrowseConsent['lifecycle'])
-                    <div class="section-header">
-                        <strong>Session timeline</strong>
-                    </div>
-
-                    <div class="meta-grid realtime-grid">
-                        <div class="meta-item">
-                            <span class="meta-label">Requested by</span>
-                            <span class="meta-value">{{ $cobrowseConsent['lifecycle']['requested_by'] }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Requested</span>
-                            <span class="meta-value">{{ $cobrowseConsent['lifecycle']['requested_at'] }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Consent granted</span>
-                            <span class="meta-value">{{ $cobrowseConsent['lifecycle']['consented_at'] }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Stopped</span>
-                            <span class="meta-value">{{ $cobrowseConsent['lifecycle']['ended_at'] }}</span>
-                        </div>
-                        @if ($cobrowseConsent['lifecycle']['ended_at'] !== 'Still active')
-                            <div class="meta-item">
-                                <span class="meta-label">Stopped by</span>
-                                <span class="meta-value">{{ $cobrowseConsent['lifecycle']['ended_by'] }}</span>
-                            </div>
-                        @endif
-                    </div>
-                @endif
 
                 @if ($cobrowseConsent['snapshot_recovery'])
                     <div
@@ -262,27 +174,6 @@
                         </span>
                     </div>
 
-                    @if (! empty($cobrowseConsent['resync_request']['recovery_timeline'] ?? []))
-                        <div class="section-header">
-                            <strong>Recovery timeline</strong>
-                            <span class="lede">Fresh snapshot path</span>
-                        </div>
-
-                        <div class="timeline-list">
-                            @foreach ($cobrowseConsent['resync_request']['recovery_timeline'] as $timelineItem)
-                                <article class="timeline-item internal-note" data-recovery-state="{{ $timelineItem['state'] }}">
-                                    <div class="timeline-content">
-                                        <strong>{{ $timelineItem['label'] }}</strong>
-                                        <p class="message-body">{{ $timelineItem['detail'] }}</p>
-                                        <div class="timeline-meta">
-                                            <span>{{ $timelineItem['occurred_at'] }}</span>
-                                            <span>{{ $timelineItem['badge'] }}</span>
-                                        </div>
-                                    </div>
-                                </article>
-                            @endforeach
-                        </div>
-                    @endif
                 @endif
 
                 @if ($cobrowseConsent['replay_preview'])
@@ -450,37 +341,6 @@
                     </div>
 
                     <p class="empty realtime-note" data-cobrowse-transport-message>{{ $cobrowseConsent['transport']['message'] }}</p>
-
-                    <div class="meta-grid realtime-grid">
-                        <div class="meta-item">
-                            <span class="meta-label">State</span>
-                            <span class="meta-value" data-cobrowse-transport-state-label>{{ $cobrowseConsent['transport']['label'] }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Last report</span>
-                            <span class="meta-value" data-cobrowse-transport-last-report>{{ $cobrowseConsent['transport']['last_report'] }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Reconnects</span>
-                            <span class="meta-value" data-cobrowse-transport-reconnects>{{ $cobrowseConsent['transport']['reconnects'] }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Pressure</span>
-                            <span class="meta-value" data-cobrowse-transport-pressure>{{ $cobrowseConsent['transport']['pressure'] }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Agent guidance</span>
-                            <span class="meta-value" data-cobrowse-transport-guidance>{{ $cobrowseConsent['transport']['guidance'] }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Recovery action</span>
-                            <span
-                                class="meta-value"
-                                data-cobrowse-transport-recovery
-                                data-recovery-locked="{{ $transportRecoveryLocked ? 'true' : 'false' }}"
-                            >{{ $transportRecoveryAction }}</span>
-                        </div>
-                    </div>
                 @endif
 
                 @if ($realtime)
@@ -492,6 +352,100 @@
                         <button class="button secondary" type="button" data-cobrowse-refresh hidden>Refresh preview</button>
                     </div>
                 @endif
+
+                {{-- Everything below is session diagnostics: useful when debugging a
+                     specific cobrowse session, ambient noise otherwise. Collapsed by
+                     default; the realtime script's targets stay in the DOM. --}}
+                <x-details-disclosure summary="Session diagnostics" data-cobrowse-diagnostics>
+                    @if ($cobrowseConsent['lifecycle'])
+                        <div class="section-header">
+                            <strong>Session timeline</strong>
+                        </div>
+
+                        <div class="meta-grid realtime-grid">
+                            <div class="meta-item">
+                                <span class="meta-label">Requested by</span>
+                                <span class="meta-value">{{ $cobrowseConsent['lifecycle']['requested_by'] }}</span>
+                            </div>
+                            <div class="meta-item">
+                                <span class="meta-label">Requested</span>
+                                <span class="meta-value">{{ $cobrowseConsent['lifecycle']['requested_at'] }}</span>
+                            </div>
+                            <div class="meta-item">
+                                <span class="meta-label">Consent granted</span>
+                                <span class="meta-value">{{ $cobrowseConsent['lifecycle']['consented_at'] }}</span>
+                            </div>
+                            <div class="meta-item">
+                                <span class="meta-label">Stopped</span>
+                                <span class="meta-value">{{ $cobrowseConsent['lifecycle']['ended_at'] }}</span>
+                            </div>
+                            @if ($cobrowseConsent['lifecycle']['ended_at'] !== 'Still active')
+                                <div class="meta-item">
+                                    <span class="meta-label">Stopped by</span>
+                                    <span class="meta-value">{{ $cobrowseConsent['lifecycle']['ended_by'] }}</span>
+                                </div>
+                            @endif
+                        </div>
+                    @endif
+
+                    @if (! empty($cobrowseConsent['resync_request']['recovery_timeline'] ?? []))
+                        <div class="section-header">
+                            <strong>Recovery timeline</strong>
+                            <span class="lede">Fresh snapshot path</span>
+                        </div>
+
+                        <div class="timeline-list">
+                            @foreach ($cobrowseConsent['resync_request']['recovery_timeline'] as $timelineItem)
+                                <article class="timeline-item internal-note" data-recovery-state="{{ $timelineItem['state'] }}">
+                                    <div class="timeline-content">
+                                        <strong>{{ $timelineItem['label'] }}</strong>
+                                        <p class="message-body">{{ $timelineItem['detail'] }}</p>
+                                        <div class="timeline-meta">
+                                            <span>{{ $timelineItem['occurred_at'] }}</span>
+                                            <span>{{ $timelineItem['badge'] }}</span>
+                                        </div>
+                                    </div>
+                                </article>
+                            @endforeach
+                        </div>
+                    @endif
+
+                    @if ($cobrowseConsent['transport'])
+                        <div class="section-header">
+                            <strong>Transport detail</strong>
+                        </div>
+
+                        <div class="meta-grid realtime-grid">
+                            <div class="meta-item">
+                                <span class="meta-label">State</span>
+                                <span class="meta-value" data-cobrowse-transport-state-label>{{ $cobrowseConsent['transport']['label'] }}</span>
+                            </div>
+                            <div class="meta-item">
+                                <span class="meta-label">Last report</span>
+                                <span class="meta-value" data-cobrowse-transport-last-report>{{ $cobrowseConsent['transport']['last_report'] }}</span>
+                            </div>
+                            <div class="meta-item">
+                                <span class="meta-label">Reconnects</span>
+                                <span class="meta-value" data-cobrowse-transport-reconnects>{{ $cobrowseConsent['transport']['reconnects'] }}</span>
+                            </div>
+                            <div class="meta-item">
+                                <span class="meta-label">Pressure</span>
+                                <span class="meta-value" data-cobrowse-transport-pressure>{{ $cobrowseConsent['transport']['pressure'] }}</span>
+                            </div>
+                            <div class="meta-item">
+                                <span class="meta-label">Agent guidance</span>
+                                <span class="meta-value" data-cobrowse-transport-guidance>{{ $cobrowseConsent['transport']['guidance'] }}</span>
+                            </div>
+                            <div class="meta-item">
+                                <span class="meta-label">Recovery action</span>
+                                <span
+                                    class="meta-value"
+                                    data-cobrowse-transport-recovery
+                                    data-recovery-locked="{{ $transportRecoveryLocked ? 'true' : 'false' }}"
+                                >{{ $transportRecoveryAction }}</span>
+                            </div>
+                        </div>
+                    @endif
 
                 @if ($cobrowseConsent['page_state'])
                     <div class="section-header">
@@ -611,66 +565,8 @@
                 @endif
 
 
-                @if ($cobrowseConsent['payload_budget'])
-                    <div class="section-header">
-                        <strong>Payload budget</strong>
-                    </div>
-
-                    <div class="meta-grid realtime-grid">
-                        <div class="meta-item">
-                            <span class="meta-label">Snapshot HTML</span>
-                            <span class="meta-value">{{ $cobrowseConsent['payload_budget']['snapshot_html'] }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Snapshot text</span>
-                            <span class="meta-value">{{ $cobrowseConsent['payload_budget']['snapshot_text'] }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Mutation batch</span>
-                            <span class="meta-value">{{ $cobrowseConsent['payload_budget']['mutation_batch'] }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Mutation text</span>
-                            <span class="meta-value">{{ $cobrowseConsent['payload_budget']['mutation_text'] }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Mutation HTML</span>
-                            <span class="meta-value">{{ $cobrowseConsent['payload_budget']['mutation_html'] }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Recent batches</span>
-                            <span class="meta-value">{{ $cobrowseConsent['payload_budget']['recent_batches'] }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Telemetry payload</span>
-                            <span class="meta-value">{{ $cobrowseConsent['payload_budget']['telemetry_payload'] }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Stock widget batch payload</span>
-                            <span class="meta-value">{{ $cobrowseConsent['payload_budget']['widget_batch_payload'] }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Stock widget queue</span>
-                            <span class="meta-value">{{ $cobrowseConsent['payload_budget']['widget_queue'] }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Mutation flush</span>
-                            <span class="meta-value">{{ $cobrowseConsent['payload_budget']['widget_mutation_flush'] }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Pressure resync</span>
-                            <span class="meta-value">{{ $cobrowseConsent['payload_budget']['widget_pressure_resync'] }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Status poll</span>
-                            <span class="meta-value">{{ $cobrowseConsent['payload_budget']['widget_status_poll'] }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Resync attempts</span>
-                            <span class="meta-value">{{ $cobrowseConsent['payload_budget']['widget_resync_attempts'] }}</span>
-                        </div>
-                    </div>
-                @endif
+                {{-- Payload budgets are install-wide constants, not session state —
+                     they live on /dashboard/readiness. --}}
 
                 <div class="section-header" data-cobrowse-telemetry-heading @if (! $cobrowseConsent['telemetry']) hidden @endif>
                     <strong>Connection telemetry</strong>
@@ -708,6 +604,7 @@
                 </div>
 
                 <p class="empty realtime-note" data-cobrowse-telemetry-empty @if ($cobrowseConsent['telemetry']) hidden @endif>No cobrowse connection telemetry yet.</p>
+                </x-details-disclosure>
             </section>
                 </x-tab-panel>
 

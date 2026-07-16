@@ -24,13 +24,6 @@
     @php
         $oldReplyTemplate = old('reply_template', '');
         $selectedReplyTemplate = is_string($oldReplyTemplate) ? $oldReplyTemplate : '';
-        $replyAssigneeLabel = 'Unassigned';
-
-        if ((int) $conversation->assigned_agent_id === $agent->id) {
-            $replyAssigneeLabel = 'Assigned to you';
-        } elseif ($conversation->assignedAgent) {
-            $replyAssigneeLabel = 'Assigned to '.$conversation->assignedAgent->name;
-        }
     @endphp
 
     <div class="reply-workspace" data-reply-shell>
@@ -47,18 +40,6 @@
             @include('agent.conversations.partials.return-query-fields')
 
             <div class="reply-context-strip" aria-label="Reply context">
-                <div class="reply-context-item">
-                    <span class="meta-label">Reply context</span>
-                    <span class="meta-value">{{ $conversation->attentionLabel() }}</span>
-                </div>
-                <div class="reply-context-item">
-                    <span class="meta-label">Owner</span>
-                    <span class="meta-value">{{ $replyAssigneeLabel }}</span>
-                </div>
-                <div class="reply-context-item">
-                    <span class="meta-label">Support code</span>
-                    <span class="meta-value">{{ $conversation->support_code }}</span>
-                </div>
                 <div class="reply-context-item">
                     <span class="meta-label">Visitor read</span>
                     <span class="meta-value" data-visitor-read-label aria-live="polite">{{ $conversation->visitorReadLabel() }}</span>

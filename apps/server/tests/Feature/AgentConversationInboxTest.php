@@ -224,7 +224,7 @@ test('conversation queue shows timing context for active triage', function (): v
     }
 });
 
-test('conversation detail shows bounded latest activity previews', function (): void {
+test('conversation queue shows bounded latest activity previews', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Riley Agent']);
 
@@ -263,46 +263,19 @@ test('conversation detail shows bounded latest activity previews', function (): 
         'created_at' => now()->subMinute(),
     ]);
 
-    $visitorResponse = $this->actingAs($agent)
-        ->get(route('dashboard.conversations.show', $visitorConversation->support_code))
-        ->assertOk()
-        ->assertSeeInOrder([
-            'Context',
-            'Latest activity',
-            'Latest visitor message',
-            'The checkout button fails after billing details are saved',
-            'Visitor at a glance',
-        ]);
-
-    // Scope to the context section alone: in the tabbed workspace the
-    // messages list (which renders full bodies) follows it directly.
-    $conversationContext = str($visitorResponse->getContent())
-        ->after('id="conversation-context-heading"')
-        ->before('id="messages-heading"');
-
-    expect($conversationContext->toString())->not->toContain('private-tail-that-should-not-render');
-
+    // The bounded preview lives on the QUEUE, where full message bodies never
+    // render — the detail page shows the transcript itself instead of a
+    // duplicate preview.
     $this->actingAs($agent)
-        ->get(route('dashboard.conversations.show', $agentConversation->support_code))
+        ->get(route('dashboard.conversations.index'))
         ->assertOk()
-        ->assertSeeInOrder([
-            'Context',
-            'Latest activity',
-            'Latest agent reply',
-            'I can help from the support desk.',
-            'Visitor at a glance',
-        ]);
-
-    $this->actingAs($agent)
-        ->get(route('dashboard.conversations.show', $emptyConversation->support_code))
-        ->assertOk()
-        ->assertSeeInOrder([
-            'Context',
-            'Latest activity',
-            'No activity preview yet',
-            'No messages have been sent yet.',
-            'Visitor at a glance',
-        ]);
+        ->assertSee('Latest visitor message')
+        ->assertSee('The checkout button fails after billing details are saved')
+        ->assertDontSee('private-tail-that-should-not-render')
+        ->assertSee('Latest agent reply')
+        ->assertSee('I can help from the support desk.')
+        ->assertSee('No activity preview yet')
+        ->assertSee('No messages have been sent yet.');
 });
 
 test('conversation detail organizes the workspace into tabs', function (): void {
@@ -369,174 +342,6 @@ test('conversation detail organizes the workspace into tabs', function (): void 
     expect($html)->toContain('data-tab-panel="conversation"')
         ->and(preg_match('/data-tab-panel="conversation"[^>]*hidden/', $html))->toBe(0)
         ->and(preg_match('/hidden[^>]*data-tab-panel="cobrowse"|data-tab-panel="cobrowse"[^>]*hidden/', $html))->toBe(1);
-});
-
-test('conversation detail recommends the next action for the conversation state', function (): void {
-    $account = Account::factory()->create(['name' => 'Acme Support']);
-    $agent = User::factory()->for($account)->create(['name' => 'Riley Agent']);
-
-    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
-    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-next-action']);
-    $needsReplyConversation = Conversation::factory()->for($site)->for($visitor)->create([
-        'support_code' => 'WF-CONVNEXT1',
-        'subject' => 'Visitor needs a reply',
-        'status' => 'open',
-        'last_message_at' => now()->subMinutes(3),
-    ]);
-    $waitingConversation = Conversation::factory()->for($site)->for($visitor)->create([
-        'support_code' => 'WF-CONVNEXT2',
-        'subject' => 'Agent replied last',
-        'status' => 'open',
-        'last_message_at' => now()->subMinutes(2),
-    ]);
-    $emptyConversation = Conversation::factory()->for($site)->for($visitor)->create([
-        'support_code' => 'WF-CONVNEXT3',
-        'subject' => 'New empty conversation',
-        'status' => 'open',
-    ]);
-    $closedConversation = Conversation::factory()->for($site)->for($visitor)->create([
-        'support_code' => 'WF-CONVNEXT4',
-        'subject' => 'Closed conversation',
-        'status' => 'closed',
-        'closed_at' => now()->subMinute(),
-    ]);
-
-    ConversationMessage::factory()->for($needsReplyConversation)->create([
-        'sender_type' => Visitor::class,
-        'sender_id' => $visitor->id,
-        'body' => 'Can someone help me finish this setup?',
-        'created_at' => now()->subMinutes(3),
-    ]);
-    ConversationMessage::factory()->for($waitingConversation)->create([
-        'sender_type' => User::class,
-        'sender_id' => $agent->id,
-        'body' => 'I sent the next step.',
-        'created_at' => now()->subMinutes(2),
-    ]);
-
-    $this->actingAs($agent)
-        ->get(route('dashboard.conversations.show', $needsReplyConversation->support_code))
-        ->assertOk()
-        ->assertSeeInOrder([
-            'Next action',
-            'Reply to visitor',
-            'Visitor replied last. Send a clear response or create a ticket when the request needs durable follow-up.',
-            'Jump to reply',
-        ]);
-
-    $this->actingAs($agent)
-        ->get(route('dashboard.conversations.show', $waitingConversation->support_code))
-        ->assertOk()
-        ->assertSeeInOrder([
-            'Next action',
-            'Wait on visitor',
-            'Agent replied last. Keep the conversation visible and respond when the visitor comes back.',
-            'Review messages',
-        ]);
-
-    $this->actingAs($agent)
-        ->get(route('dashboard.conversations.show', $emptyConversation->support_code))
-        ->assertOk()
-        ->assertSeeInOrder([
-            'Next action',
-            'Start the conversation',
-            'No messages have landed yet. Use the current visitor context to decide whether to greet, wait, or create a ticket.',
-            'Review context',
-        ]);
-
-    $this->actingAs($agent)
-        ->get(route('dashboard.conversations.show', $closedConversation->support_code))
-        ->assertOk()
-        ->assertSeeInOrder([
-            'Next action',
-            'Review closed conversation',
-            'This conversation is closed. Reopen it only if the visitor returns or the outcome changes.',
-            'Review status actions',
-        ]);
-});
-
-test('conversation detail explains status action readiness before close or reopen', function (): void {
-    $account = Account::factory()->create(['name' => 'Acme Support']);
-    $agent = User::factory()->for($account)->create(['name' => 'Riley Agent']);
-
-    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
-    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-status-action']);
-    $needsReplyConversation = Conversation::factory()->for($site)->for($visitor)->create([
-        'support_code' => 'WF-CONVSTAT1',
-        'subject' => 'Visitor needs a reply',
-        'status' => 'open',
-        'last_message_at' => now()->subMinutes(3),
-    ]);
-    $waitingConversation = Conversation::factory()->for($site)->for($visitor)->create([
-        'support_code' => 'WF-CONVSTAT2',
-        'subject' => 'Agent replied last',
-        'status' => 'open',
-        'last_message_at' => now()->subMinutes(2),
-    ]);
-    $emptyConversation = Conversation::factory()->for($site)->for($visitor)->create([
-        'support_code' => 'WF-CONVSTAT3',
-        'subject' => 'Empty conversation',
-        'status' => 'open',
-    ]);
-    $closedConversation = Conversation::factory()->for($site)->for($visitor)->create([
-        'support_code' => 'WF-CONVSTAT4',
-        'subject' => 'Closed conversation',
-        'status' => 'closed',
-        'closed_at' => now()->subMinute(),
-    ]);
-
-    ConversationMessage::factory()->for($needsReplyConversation)->create([
-        'sender_type' => Visitor::class,
-        'sender_id' => $visitor->id,
-        'body' => 'Can someone help me finish this setup?',
-        'created_at' => now()->subMinutes(3),
-    ]);
-    ConversationMessage::factory()->for($waitingConversation)->create([
-        'sender_type' => User::class,
-        'sender_id' => $agent->id,
-        'body' => 'I sent the next step.',
-        'created_at' => now()->subMinutes(2),
-    ]);
-
-    $this->actingAs($agent)
-        ->get(route('dashboard.conversations.show', $needsReplyConversation->support_code))
-        ->assertOk()
-        ->assertSeeInOrder([
-            'Status action readiness',
-            'Reply before closing',
-            'Visitor replied last. Closing now may leave the visitor waiting. Send a reply or create a ticket before closing the live chat.',
-            'Jump to reply',
-        ]);
-
-    $this->actingAs($agent)
-        ->get(route('dashboard.conversations.show', $waitingConversation->support_code))
-        ->assertOk()
-        ->assertSeeInOrder([
-            'Status action readiness',
-            'Ready to close when settled',
-            'Agent replied last. Keep it open while waiting, or close once the outcome is settled.',
-            'Review close option',
-        ]);
-
-    $this->actingAs($agent)
-        ->get(route('dashboard.conversations.show', $emptyConversation->support_code))
-        ->assertOk()
-        ->assertSeeInOrder([
-            'Status action readiness',
-            'No messages yet',
-            'Wait for the visitor or use the context panel before closing an empty conversation.',
-            'Review context',
-        ]);
-
-    $this->actingAs($agent)
-        ->get(route('dashboard.conversations.show', $closedConversation->support_code))
-        ->assertOk()
-        ->assertSeeInOrder([
-            'Status action readiness',
-            'Closed conversation',
-            'Reopen only if the visitor returns or the outcome changes. The existing transcript stays attached to this support code.',
-            'Review reopen option',
-        ]);
 });
 
 test('dashboard shows an empty conversation state', function (): void {
@@ -1711,7 +1516,7 @@ test('dashboard keeps visitor read state in conversation detail instead of the q
     }
 });
 
-test('conversation context surfaces visitor read state before the reply composer', function (): void {
+test('reply composer surfaces visitor read state', function (): void {
     config()->set('broadcasting.default', 'reverb');
     config()->set('broadcasting.connections.reverb.key', 'reverb-key');
     config()->set('broadcasting.connections.reverb.secret', 'reverb-secret');
@@ -1745,16 +1550,11 @@ test('conversation context surfaces visitor read state before the reply composer
             ->get('/dashboard/conversations/WF-READTOP')
             ->assertOk()
             ->assertSeeInOrder([
-                'Context',
-                'Reply visibility',
-                'Not seen yet',
-                'Latest agent reply has not been seen.',
                 'Reply',
                 'Visitor read',
                 'Not seen yet',
+                'Latest agent reply has not been seen.',
             ])
-            ->assertSee('data-visitor-read-context-label', false)
-            ->assertSee('data-status="attention"', false)
             ->assertSee("document.querySelectorAll('[data-visitor-read-label]')", false);
     } finally {
         Carbon::setTestNow();
@@ -3505,7 +3305,7 @@ test('agent can view their account conversation timeline', function (): void {
         expect(substr_count($response->content(), 'message visitor grouped'))->toBe(1);
         expect(substr_count($response->content(), 'message agent grouped'))->toBe(0);
         expect(substr_count($response->content(), 'Seen by visitor 7 minutes ago'))->toBe(1);
-        expect(substr_count($response->content(), 'Not seen yet'))->toBe(3);
+        expect(substr_count($response->content(), 'Not seen yet'))->toBe(2);
     } finally {
         Carbon::setTestNow();
     }
@@ -4047,10 +3847,9 @@ test('message direction changes the conversation attention state', function (): 
     ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard/conversations/WF-ATTEND1')
+        ->get('/dashboard/conversations')
         ->assertOk()
-        ->assertSee('Attention')
-        ->assertSee('Needs reply');
+        ->assertSeeInOrder(['Checkout trouble', 'Needs reply']);
 
     $this->actingAs($agent)
         ->post('/dashboard/conversations/WF-ATTEND1/messages', [
@@ -4059,9 +3858,9 @@ test('message direction changes the conversation attention state', function (): 
         ->assertRedirect('/dashboard/conversations/WF-ATTEND1');
 
     $this->actingAs($agent)
-        ->get('/dashboard/conversations/WF-ATTEND1')
+        ->get('/dashboard/conversations')
         ->assertOk()
-        ->assertSee('Waiting on visitor');
+        ->assertSeeInOrder(['Checkout trouble', 'Waiting on visitor']);
 
     $token = $this->postJson('/api/widget/bootstrap', [
         'site_public_key' => 'site_public_docs',
@@ -4079,9 +3878,9 @@ test('message direction changes the conversation attention state', function (): 
     ])->assertCreated();
 
     $this->actingAs($agent)
-        ->get('/dashboard/conversations/WF-ATTEND1')
+        ->get('/dashboard/conversations')
         ->assertOk()
-        ->assertSee('Needs reply');
+        ->assertSeeInOrder(['Checkout trouble', 'Needs reply']);
 });
 
 test('visitor reply reopens a pending linked ticket for agent attention', function (): void {
@@ -5908,7 +5707,7 @@ test('conversation detail surfaces linked ticket work cues', function (): void {
             ->assertSee('Visitor replied last.')
             ->assertSee('Opened 10 minutes ago')
             ->assertSee('Waiting on reply for 4 minutes')
-            ->assertSee('Latest visitor message')
+            ->assertSee('Visitor message')
             ->assertSee('Checkout still fails after I enter billing.')
             ->assertSee('Not seen yet')
             ->assertSee('Reply to visitor')
@@ -7569,108 +7368,6 @@ test('agent cobrowse transport health recovers after a clean mutation report', f
         ->assertDontSee('Cobrowse reports are arriving, but the visitor page is changing faster than Wayfindr can fully replay.');
 
     Carbon::setTestNow();
-});
-
-test('agent can see cobrowse payload budget guardrails on a conversation', function (): void {
-    $account = Account::factory()->create(['name' => 'Acme Support']);
-    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
-    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
-    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
-    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
-        'support_code' => 'WF-BUDGET',
-        'subject' => 'Checkout trouble',
-        'status' => 'open',
-    ]);
-
-    CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
-        'status' => 'granted',
-        'consented_at' => now()->subMinute(),
-        'ended_at' => null,
-        'metadata' => [
-            'payload_budget' => [
-                'snapshot_html_max_characters' => 65535,
-                'snapshot_text_max_characters' => 10000,
-                'mutation_batch_max_items' => 50,
-                'mutation_text_max_characters' => 5000,
-                'mutation_html_max_characters' => 10000,
-                'mutation_recent_batches_retained' => 20,
-                'telemetry_payload_max_bytes' => 10485760,
-                'widget_mutation_batch_max_bytes' => 60000,
-                'widget_mutation_queue_max_records' => 250,
-                'widget_mutation_flush_ms' => 50,
-                'widget_pressure_resync_ms' => 30000,
-                'widget_status_poll_ms' => 5000,
-                'widget_resync_max_attempts' => 3,
-            ],
-        ],
-    ]);
-
-    $this->actingAs($agent)
-        ->get('/dashboard/conversations/WF-BUDGET')
-        ->assertOk()
-        ->assertSee('Payload budget')
-        ->assertSee('Snapshot HTML')
-        ->assertSee('65,535 characters')
-        ->assertSee('Snapshot text')
-        ->assertSee('10,000 characters')
-        ->assertSee('Mutation batch')
-        ->assertSee('50 items')
-        ->assertSee('Mutation text')
-        ->assertSee('5,000 characters')
-        ->assertSee('Mutation HTML')
-        ->assertSee('10,000 characters')
-        ->assertSee('Recent batches')
-        ->assertSee('20 retained')
-        ->assertSee('Telemetry payload')
-        ->assertSee('10,485,760 bytes')
-        ->assertSee('Stock widget batch payload')
-        ->assertSee('60,000 bytes')
-        ->assertSee('Stock widget queue')
-        ->assertSee('250 pending')
-        ->assertSee('Mutation flush')
-        ->assertSee('50 ms')
-        ->assertSee('Pressure resync')
-        ->assertSee('30,000 ms')
-        ->assertSee('Status poll')
-        ->assertSee('5,000 ms')
-        ->assertSee('Resync attempts')
-        ->assertSee('3 attempts');
-});
-
-test('agent can see cobrowse payload budget guardrails before intake metadata exists', function (): void {
-    $account = Account::factory()->create(['name' => 'Acme Support']);
-    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
-    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
-    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-acme']);
-    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
-        'support_code' => 'WF-BUDGET-FALLBACK',
-        'subject' => 'Oversized first payload',
-        'status' => 'open',
-    ]);
-
-    CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
-        'status' => 'granted',
-        'consented_at' => now()->subMinute(),
-        'ended_at' => null,
-        'metadata' => [],
-    ]);
-
-    $this->actingAs($agent)
-        ->get('/dashboard/conversations/WF-BUDGET-FALLBACK')
-        ->assertOk()
-        ->assertSee('Payload budget')
-        ->assertSee('Snapshot HTML')
-        ->assertSee('65,535 characters')
-        ->assertSee('Mutation batch')
-        ->assertSee('50 items')
-        ->assertSee('Telemetry payload')
-        ->assertSee('10,485,760 bytes')
-        ->assertSee('Stock widget batch payload')
-        ->assertSee('60,000 bytes')
-        ->assertSee('Stock widget queue')
-        ->assertSee('250 pending')
-        ->assertSee('Resync attempts')
-        ->assertSee('3 attempts');
 });
 
 test('agent can see cobrowse page state on a conversation', function (): void {
