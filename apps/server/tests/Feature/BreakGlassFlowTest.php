@@ -229,6 +229,32 @@ test('an account admin revokes an active grant', function (): void {
     expect($grant->fresh()->status)->toBe(BreakGlassGrant::STATUS_CLOSED);
 });
 
+test('an old pending request never scrolls out behind newer history rows', function (): void {
+    // Open grants are uncapped: the approval queue and revoke buttons must
+    // surface however much terminal history piles up on top of them.
+    $w = breakGlassFlowWorld();
+    $admin = User::factory()->for($w['account'])->create(['account_role' => AccountRole::Admin]);
+
+    $pending = BreakGlassGrant::factory()
+        ->scopedToConversation($w['conversation'])
+        ->create([
+            'requester_id' => $w['operator']->id,
+            'account_id' => $w['account']->id,
+            'reason' => 'The oldest still-open request.',
+        ]);
+
+    BreakGlassGrant::factory()->count(55)->create([
+        'account_id' => $w['account']->id,
+        'requester_id' => $w['operator']->id,
+        'status' => BreakGlassGrant::STATUS_DENIED,
+    ]);
+
+    $this->actingAs($admin)
+        ->get(route('dashboard.account.break-glass.index'))
+        ->assertOk()
+        ->assertSee('The oldest still-open request.');
+});
+
 test('a plain agent cannot open the operator-access page', function (): void {
     $w = breakGlassFlowWorld();
     $agent = User::factory()->for($w['account'])->create(['account_role' => AccountRole::Agent]);

@@ -21,20 +21,38 @@ class AgentAccountBreakGlassController extends Controller
         $agent = $this->accountAdmin($request);
         $account = $agent->account()->firstOrFail();
 
-        $grants = BreakGlassGrant::query()
+        // Open grants (pending + active) are never capped — an approval queue
+        // or revoke button must not scroll out of existence behind newer
+        // history rows. Only the terminal history takes a display limit.
+        $openGrants = BreakGlassGrant::query()
             ->where('account_id', $account->id)
+            ->whereIn('status', [BreakGlassGrant::STATUS_REQUESTED, BreakGlassGrant::STATUS_ACTIVE])
             ->with(['requester', 'approver', 'conversation', 'site'])
             ->latest('id')
-            ->limit(50)
             ->get();
+
+        $terminalGrants = BreakGlassGrant::query()
+            ->where('account_id', $account->id)
+            ->whereIn('status', [BreakGlassGrant::STATUS_DENIED, BreakGlassGrant::STATUS_CLOSED, BreakGlassGrant::STATUS_EXPIRED])
+            ->with(['requester', 'approver', 'conversation', 'site'])
+            ->latest('id')
+            ->limit(15)
+            ->get();
+
+        // A status-active row past its expiry (the sweep gap) is already
+        // history — it must not vanish between the buckets.
+        $overdueGrants = $openGrants->filter(
+            fn (BreakGlassGrant $grant): bool => $grant->status === BreakGlassGrant::STATUS_ACTIVE && ! $grant->isActive(),
+        );
 
         return view('agent.account.break-glass', [
             'account' => $account,
             'agent' => $agent,
-            'pendingGrants' => $grants->where('status', BreakGlassGrant::STATUS_REQUESTED)->values(),
-            'activeGrants' => $grants->filter(fn (BreakGlassGrant $grant): bool => $grant->isActive())->values(),
-            'pastGrants' => $grants
-                ->reject(fn (BreakGlassGrant $grant): bool => $grant->status === BreakGlassGrant::STATUS_REQUESTED || $grant->isActive())
+            'pendingGrants' => $openGrants->where('status', BreakGlassGrant::STATUS_REQUESTED)->values(),
+            'activeGrants' => $openGrants->filter(fn (BreakGlassGrant $grant): bool => $grant->isActive())->values(),
+            'pastGrants' => $overdueGrants
+                ->concat($terminalGrants)
+                ->sortByDesc('id')
                 ->take(15)
                 ->values(),
         ]);
