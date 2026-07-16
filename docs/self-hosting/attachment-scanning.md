@@ -35,6 +35,23 @@ on Debian/Ubuntu) or a container (e.g. the `clamav/clamav` image). Keep its
 signature database current with `freshclam` (the ClamAV packages run it for
 you). `clamd` listens on a TCP port (default `3310`) or a unix socket.
 
+> **Memory matters.** clamd loads its full signature database into RAM —
+> expect **~1 GB+ resident** just for the daemon. On a 1 GB host it will be
+> pushed into swap, scans will crawl, and the OOM killer may take it down.
+> Budget **2 GB+ of headroom** for the box (alongside PHP, the database, Redis,
+> and Reverb), or run clamd on a neighboring host over TCP. If the box is too
+> small, the honest choice is the no-scanner default, not a swapping scanner.
+
+> **systemd socket-activation gotchas (Debian/Ubuntu).** The package ships a
+> `clamav-daemon.socket` unit that accepts connections *even while the daemon
+> itself is down* (dead, still loading signatures, or waiting on its first
+> freshclam download). Wayfindr handles this — an unanswered scan times out and
+> fails closed — but two operational notes follow: `systemctl stop
+> clamav-daemon` alone does **not** stop scanning intake (the socket unit
+> re-triggers the daemon); stop both with `systemctl stop clamav-daemon.socket
+> clamav-daemon`. And right after install, the daemon will not start until
+> freshclam finishes its first signature download (a few minutes).
+
 ### 2. Point Wayfindr at it
 
 In `apps/server/.env`:
