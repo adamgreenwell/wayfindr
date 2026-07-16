@@ -25,12 +25,25 @@ class OperatorBreakGlassController extends Controller
     {
         $operator = $request->user();
 
-        $ownGrants = BreakGlassGrant::query()
+        // Open grants (pending + active) are never capped — a self-approve or
+        // close action must not scroll out of existence behind newer history
+        // rows. Only the terminal history takes a display limit.
+        $openGrants = BreakGlassGrant::query()
             ->where('requester_id', $operator->id)
+            ->whereIn('status', [BreakGlassGrant::STATUS_REQUESTED, BreakGlassGrant::STATUS_ACTIVE])
             ->with(['account', 'conversation', 'site', 'approver'])
             ->latest('id')
-            ->limit(20)
             ->get();
+
+        $terminalGrants = BreakGlassGrant::query()
+            ->where('requester_id', $operator->id)
+            ->whereIn('status', [BreakGlassGrant::STATUS_DENIED, BreakGlassGrant::STATUS_CLOSED, BreakGlassGrant::STATUS_EXPIRED])
+            ->with(['account', 'conversation', 'site', 'approver'])
+            ->latest('id')
+            ->limit(15)
+            ->get();
+
+        $ownGrants = $openGrants->concat($terminalGrants)->sortByDesc('id')->values();
 
         // A requested grant shows either a self-approve action or the names
         // of the people it is waiting on — never a button that will 403.

@@ -171,6 +171,31 @@ test('an operator closes their own active grant from the console', function (): 
     expect($grant->fresh()->status)->toBe(BreakGlassGrant::STATUS_CLOSED);
 });
 
+test('an operator\'s open grant never scrolls out behind their own history', function (): void {
+    // Mirror of the account-page rule: the self-approve and close actions
+    // must surface however much terminal history the operator accumulates.
+    $w = breakGlassFlowWorld();
+
+    $pending = BreakGlassGrant::factory()
+        ->scopedToConversation($w['conversation'])
+        ->create([
+            'requester_id' => $w['operator']->id,
+            'account_id' => $w['account']->id,
+            'reason' => 'The oldest still-open request.',
+        ]);
+
+    BreakGlassGrant::factory()->count(25)->create([
+        'account_id' => $w['account']->id,
+        'requester_id' => $w['operator']->id,
+        'status' => BreakGlassGrant::STATUS_DENIED,
+    ]);
+
+    $this->actingAs($w['operator'])
+        ->get(route('operator.break-glass.index'))
+        ->assertOk()
+        ->assertSee('The oldest still-open request.');
+});
+
 // --- Account approval page ------------------------------------------------------
 
 test('an account admin sees pending requests and approves one', function (): void {
