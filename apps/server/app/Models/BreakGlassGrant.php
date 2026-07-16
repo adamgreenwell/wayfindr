@@ -208,14 +208,45 @@ class BreakGlassGrant extends Model
 
     /**
      * A short human label for audit trails and the account-visible record.
+     * The referenced resource is only NAMED when it actually belongs to the
+     * grant's account — a mismatched row must not leak another account's
+     * support code or site name into pages or audit metadata.
      */
     public function scopeLabel(): string
     {
         return match ($this->scope_type) {
-            self::SCOPE_CONVERSATION => 'Conversation '.($this->conversation?->support_code ?? ($this->conversation_id ? '#'.$this->conversation_id : '(deleted)')),
-            self::SCOPE_SITE => 'Site '.($this->site?->name ?? ($this->site_id ? '#'.$this->site_id : '(deleted)')),
+            self::SCOPE_CONVERSATION => 'Conversation '.$this->conversationReference(),
+            self::SCOPE_SITE => 'Site '.$this->siteReference(),
             self::SCOPE_ACCOUNT => 'Entire account',
             default => $this->scope_type,
         };
+    }
+
+    private function conversationReference(): string
+    {
+        if ($this->conversation_id === null) {
+            return '(deleted)';
+        }
+
+        $conversation = $this->conversation?->loadMissing('site');
+
+        if (! $conversation || (int) $conversation->site?->account_id !== (int) $this->account_id) {
+            return '(out of scope)';
+        }
+
+        return (string) $conversation->support_code;
+    }
+
+    private function siteReference(): string
+    {
+        if ($this->site_id === null) {
+            return '(deleted)';
+        }
+
+        if (! $this->site || (int) $this->site->account_id !== (int) $this->account_id) {
+            return '(out of scope)';
+        }
+
+        return (string) $this->site->name;
     }
 }

@@ -62,7 +62,11 @@ class OperatorBreakGlassViewerController extends Controller
             'senderLabels' => $messages->mapWithKeys(fn ($message): array => [
                 $message->id => $this->senderLabel($message->sender),
             ]),
-            'tickets' => $conversation->tickets()->orderByDesc('id')->get(),
+            'tickets' => $conversation->tickets()
+                ->orderByDesc('id')
+                ->get()
+                ->filter(fn (Ticket $ticket): bool => $grant->coversTicket($ticket))
+                ->values(),
         ]);
     }
 
@@ -72,12 +76,15 @@ class OperatorBreakGlassViewerController extends Controller
 
         abort_unless($grant->coversTicket($ticket), 404);
 
+        // The audit label is a reference, never content: ticket subjects are
+        // customer-entered and must not be persisted into a trail designed to
+        // outlive the ticket.
         $grants->recordResourceViewed(
             $grant,
             $request->user(),
             'ticket',
             (int) $ticket->id,
-            sprintf('Ticket #%d — %s', $ticket->id, $ticket->subject),
+            sprintf('Ticket #%d', $ticket->id),
         );
 
         return view('operator.break-glass-ticket', [
@@ -98,13 +105,17 @@ class OperatorBreakGlassViewerController extends Controller
     }
 
     /**
+     * The scope columns only pre-filter the query; every listed row still
+     * passes the same covers* re-derivation the direct routes enforce, so a
+     * mismatched grant row cannot even NAME a foreign resource on the index.
+     *
      * @return Collection<int, Conversation>
      */
     private function coveredConversations(BreakGlassGrant $grant): Collection
     {
         $query = Conversation::query()->with('site')->latest('id')->limit(50);
 
-        return match ($grant->scope_type) {
+        $candidates = match ($grant->scope_type) {
             BreakGlassGrant::SCOPE_CONVERSATION => $grant->conversation_id
                 ? $query->whereKey($grant->conversation_id)->get()
                 : collect(),
@@ -116,6 +127,10 @@ class OperatorBreakGlassViewerController extends Controller
                 ->get(),
             default => collect(),
         };
+
+        return $candidates
+            ->filter(fn (Conversation $conversation): bool => $grant->coversConversation($conversation))
+            ->values();
     }
 
     /**
@@ -125,7 +140,7 @@ class OperatorBreakGlassViewerController extends Controller
     {
         $query = Ticket::query()->latest('id')->limit(50);
 
-        return match ($grant->scope_type) {
+        $candidates = match ($grant->scope_type) {
             BreakGlassGrant::SCOPE_CONVERSATION => $grant->conversation_id
                 ? $query->where('conversation_id', $grant->conversation_id)->get()
                 : collect(),
@@ -138,6 +153,10 @@ class OperatorBreakGlassViewerController extends Controller
                 ->get(),
             default => collect(),
         };
+
+        return $candidates
+            ->filter(fn (Ticket $ticket): bool => $grant->coversTicket($ticket))
+            ->values();
     }
 
     private function senderLabel(?object $sender): string

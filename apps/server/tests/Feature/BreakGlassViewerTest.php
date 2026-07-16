@@ -181,7 +181,51 @@ test('an account-scoped grant opens a covered ticket; a foreign ticket is refuse
         ->get(route('operator.break-glass.tickets.show', [$accountGrant, $foreignTicket]))
         ->assertNotFound();
 
-    expect(AuditEvent::where('action', 'break_glass.resource_viewed')->where('metadata->resource_type', 'ticket')->count())->toBe(1);
+    $viewed = AuditEvent::where('action', 'break_glass.resource_viewed')
+        ->where('metadata->resource_type', 'ticket')
+        ->get();
+
+    // The label is a reference, never content — the customer-entered subject
+    // must not be persisted into a trail designed to outlive the ticket.
+    expect($viewed)->toHaveCount(1)
+        ->and(data_get($viewed->first()->metadata, 'resource_label'))->toBe('Ticket #'.$ticket->id)
+        ->and(json_encode($viewed->first()->metadata))->not->toContain('Upload pipeline failure');
+});
+
+test('a mismatched grant row cannot even name a foreign resource on the index', function (): void {
+    // Defense in depth on the LISTING too: a corrupted grant whose
+    // conversation_id points into another account renders an empty index —
+    // not a foreign support code.
+    $w = breakGlassViewerWorld();
+    $foreignSite = Site::factory()->create();
+    $foreignVisitor = Visitor::factory()->for($foreignSite)->create();
+    $foreignConversation = Conversation::factory()->for($foreignSite)->create(['visitor_id' => $foreignVisitor->id]);
+
+    $corrupted = BreakGlassGrant::factory()
+        ->activeFor($w['account'], $w['operator'])
+        ->create([
+            'scope_type' => BreakGlassGrant::SCOPE_CONVERSATION,
+            'conversation_id' => $foreignConversation->id,
+            'site_id' => $foreignSite->id,
+        ]);
+
+    $this->actingAs($w['operator'])
+        ->get(route('operator.break-glass.show', $corrupted))
+        ->assertOk()
+        ->assertDontSee($foreignConversation->support_code);
+});
+
+test('a mismatched linked ticket never renders under a covered transcript', function (): void {
+    $w = breakGlassViewerWorld();
+    $foreignAccount = Account::factory()->create();
+    Ticket::factory()->for($foreignAccount)->for($w['site'])->for($w['conversation'])->create([
+        'subject' => 'Mismatched ticket row subject',
+    ]);
+
+    $this->actingAs($w['operator'])
+        ->get(route('operator.break-glass.conversations.show', [$w['grant'], $w['conversation']]))
+        ->assertOk()
+        ->assertDontSee('Mismatched ticket row subject');
 });
 
 test('a non-operator cannot reach any viewer route', function (): void {
