@@ -25,6 +25,18 @@ class AttachmentStorage
             return 'attachments';
         }
 
+        self::assertSafeDisk($disk);
+
+        return $disk;
+    }
+
+    /**
+     * The single place a disk is judged safe to hold attachments — used by
+     * upload routing AND by the retention sweep before it will orphan-sweep a
+     * disk, so the two can never drift apart.
+     */
+    public static function assertSafeDisk(string $disk): void
+    {
         // Attachments must live on a DEDICATED disk — never a shared one
         // (local, public, s3, ...). The public disk is web-served, and the
         // retention sweep treats every object on a swept disk without an
@@ -50,10 +62,10 @@ class AttachmentStorage
         }
 
         // The name convention is not enough: a custom attachments-* disk could
-        // still be configured for web exposure. ADR 0007's guarantee is "no
-        // public path, ever", so any exposure marker on the disk config is
-        // rejected — attachments are only reached by streaming through the
-        // app's authorized endpoints.
+        // still be configured for web exposure (or point somewhere shared).
+        // ADR 0007's guarantee is "no public path, ever", so any exposure
+        // marker on the disk config is rejected — attachments are only reached
+        // by streaming through the app's authorized endpoints.
         $diskConfig = is_array($diskConfig) ? $diskConfig : [];
         $exposure = match (true) {
             filled($diskConfig['url'] ?? null) => 'defines a public URL',
@@ -69,7 +81,5 @@ class AttachmentStorage
                 $exposure,
             ));
         }
-
-        return $disk;
     }
 }

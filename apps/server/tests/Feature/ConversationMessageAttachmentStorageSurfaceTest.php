@@ -129,10 +129,33 @@ test('the sweep refuses to orphan-sweep a shared disk even when a row claims it'
     touch(Storage::disk('local')->path($bystanderKey), now()->subHours(3)->getTimestamp());
 
     $this->artisan('wayfindr:sweep-orphaned-attachments')
-        ->expectsOutputToContain('refusing to orphan-sweep')
+        ->expectsOutputToContain('dedicated disk')
         ->assertSuccessful();
 
     Storage::disk('local')->assertExists($bystanderKey);
+});
+
+test('the sweep refuses to orphan-sweep an exposed attachments disk', function (): void {
+    // An attachments-* disk carrying a public-exposure marker is rejected by
+    // upload routing — the sweep must apply the same judgment, since it could
+    // point at a shared web root where orphan-deletes would eat other files.
+    $f = storageSurfaceFixture();
+    Storage::fake('attachments-exposed');
+    config(['filesystems.disks.attachments-exposed.url' => 'https://cdn.example.test/files']);
+
+    ConversationMessageAttachment::factory()
+        ->pendingFor($f['conversation'], $f['visitor'])
+        ->create(['storage_disk' => 'attachments-exposed']);
+
+    $bystanderKey = 'web/shared-file.txt';
+    Storage::disk('attachments-exposed')->put($bystanderKey, 'not an attachment');
+    touch(Storage::disk('attachments-exposed')->path($bystanderKey), now()->subHours(3)->getTimestamp());
+
+    $this->artisan('wayfindr:sweep-orphaned-attachments')
+        ->expectsOutputToContain('must stay private')
+        ->assertSuccessful();
+
+    Storage::disk('attachments-exposed')->assertExists($bystanderKey);
 });
 
 // --- Mixed homes serve through the same boundary ---------------------------
