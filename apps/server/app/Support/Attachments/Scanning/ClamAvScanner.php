@@ -46,7 +46,7 @@ class ClamAvScanner implements AttachmentScanner
 
         try {
             if (! $this->writeAll($stream, "zINSTREAM\0", $deadline)) {
-                return ScanResult::unavailable('Timed out sending the file to clamd.');
+                return $this->verdictAfterSendFailure($stream, $deadline);
             }
 
             while (! feof($handle)) {
@@ -57,41 +57,20 @@ class ClamAvScanner implements AttachmentScanner
                 }
 
                 if (! $this->writeAll($stream, pack('N', strlen($chunk)).$chunk, $deadline)) {
-                    return ScanResult::unavailable('Timed out sending the file to clamd.');
+                    return $this->verdictAfterSendFailure($stream, $deadline);
                 }
             }
 
             // Zero-length chunk signals end of stream.
             if (! $this->writeAll($stream, pack('N', 0), $deadline)) {
-                return ScanResult::unavailable('Timed out sending the file to clamd.');
+                return $this->verdictAfterSendFailure($stream, $deadline);
             }
 
-            $response = '';
+            $response = $this->readResponse($stream, $deadline);
 
-            while (! feof($stream)) {
-                $buffer = fread($stream, 4096);
-
-                // fread returns '' (not false) on a socket timeout with feof
-                // still false — treat both, and the stream's timed_out flag, as
-                // "clamd is not answering" rather than spinning forever.
-                if ($buffer === false || $buffer === '') {
-                    if ($buffer === false || stream_get_meta_data($stream)['timed_out'] || microtime(true) >= $deadline) {
-                        return $response === ''
-                            ? ScanResult::unavailable('Timed out waiting for a clamd verdict.')
-                            : $this->interpret($response);
-                    }
-
-                    continue;
-                }
-
-                $response .= $buffer;
-
-                if (microtime(true) >= $deadline) {
-                    break;
-                }
-            }
-
-            return $this->interpret($response);
+            return $response === ''
+                ? ScanResult::unavailable('Timed out waiting for a clamd verdict.')
+                : $this->interpret($response);
         } catch (Throwable $exception) {
             return ScanResult::unavailable($exception->getMessage());
         } finally {
@@ -154,6 +133,58 @@ class ClamAvScanner implements AttachmentScanner
         }
 
         return ScanResult::unavailable('clamd error: '.$response);
+    }
+
+    /**
+     * A send failure does not always mean clamd is gone: it writes its verdict
+     * EARLY and closes the connection when it can already decide (an infected
+     * stream, or a size-limit error) — which surfaces on our side as a failed
+     * write. Drain whatever verdict is already in the receive buffer and honor
+     * it; only report unavailable when there is genuinely no answer. Without
+     * this, a fail-open install could accept a file clamd had already flagged.
+     *
+     * @param  resource  $stream
+     */
+    private function verdictAfterSendFailure($stream, float $deadline): ScanResult
+    {
+        $response = $this->readResponse($stream, $deadline);
+
+        return $response === ''
+            ? ScanResult::unavailable('Timed out sending the file to clamd.')
+            : $this->interpret($response);
+    }
+
+    /**
+     * Read clamd's response until EOF, a timeout, or the deadline — returning
+     * whatever arrived ('' if nothing). fread returns '' (not false) on a
+     * socket timeout with feof still false, so both are treated as "clamd is
+     * not answering" rather than spinning forever.
+     *
+     * @param  resource  $stream
+     */
+    private function readResponse($stream, float $deadline): string
+    {
+        $response = '';
+
+        while (! feof($stream)) {
+            $buffer = fread($stream, 4096);
+
+            if ($buffer === false || $buffer === '') {
+                if ($buffer === false || stream_get_meta_data($stream)['timed_out'] || microtime(true) >= $deadline) {
+                    return $response;
+                }
+
+                continue;
+            }
+
+            $response .= $buffer;
+
+            if (microtime(true) >= $deadline) {
+                break;
+            }
+        }
+
+        return $response;
     }
 
     /**
