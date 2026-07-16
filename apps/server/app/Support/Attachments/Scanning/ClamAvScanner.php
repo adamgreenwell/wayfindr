@@ -167,10 +167,18 @@ class ClamAvScanner implements AttachmentScanner
         $response = '';
 
         while (! feof($stream)) {
+            // Check the budget BEFORE blocking, and cap each read by what
+            // remains — otherwise a scan whose writes consumed the budget would
+            // still block a full socket timeout here, overshooting the deadline
+            // to ~2x the configured limit.
+            if (! $this->applyRemainingTimeout($stream, $deadline)) {
+                return $response;
+            }
+
             $buffer = fread($stream, 4096);
 
             if ($buffer === false || $buffer === '') {
-                if ($buffer === false || stream_get_meta_data($stream)['timed_out'] || microtime(true) >= $deadline) {
+                if ($buffer === false || stream_get_meta_data($stream)['timed_out']) {
                     return $response;
                 }
 
@@ -178,13 +186,28 @@ class ClamAvScanner implements AttachmentScanner
             }
 
             $response .= $buffer;
-
-            if (microtime(true) >= $deadline) {
-                break;
-            }
         }
 
         return $response;
+    }
+
+    /**
+     * Bound the next blocking socket operation by the time left before the
+     * deadline. Returns false when the budget is already spent.
+     *
+     * @param  resource  $stream
+     */
+    private function applyRemainingTimeout($stream, float $deadline): bool
+    {
+        $remaining = $deadline - microtime(true);
+
+        if ($remaining <= 0) {
+            return false;
+        }
+
+        stream_set_timeout($stream, (int) $remaining, (int) (fmod($remaining, 1.0) * 1_000_000));
+
+        return true;
     }
 
     /**
@@ -201,7 +224,9 @@ class ClamAvScanner implements AttachmentScanner
         $length = strlen($bytes);
 
         while ($offset < $length) {
-            if (microtime(true) >= $deadline) {
+            // Cap each blocking write by the remaining budget, mirroring the
+            // read side, so no single fwrite can overshoot the deadline.
+            if (! $this->applyRemainingTimeout($stream, $deadline)) {
                 return false;
             }
 
