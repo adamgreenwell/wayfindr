@@ -1000,7 +1000,7 @@ test('conversation queue snapshot respects current site and search context', fun
         ->assertDontSee('Checkout from other site');
 });
 
-test('conversation queue shows focus context for the current filters', function (): void {
+test('conversation queue reflects the current filters without an explainer banner', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
     $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
@@ -1030,13 +1030,11 @@ test('conversation queue shows focus context for the current filters', function 
             'conversation_search' => 'Checkout',
         ]))
         ->assertOk()
-        ->assertSee('Queue focus')
-        ->assertSee('What this conversation queue is showing before you open a row.')
-        ->assertSee('Lane: Needs reply')
-        ->assertSee('Site: Acme Docs')
-        ->assertSee('Presence: Active recently')
-        ->assertSee('Search: Checkout')
-        ->assertSee('Showing 1 conversation matching the current queue filters.');
+        ->assertSee('Active conversation filters')
+        ->assertSee('Clear all conversation filters')
+        ->assertSee('Showing 1 conversation matching the current queue filters.')
+        // The explainer banner is gone by design; the snapshot carries the count.
+        ->assertDontSee('Queue focus');
 });
 
 test('conversation queue distinguishes shown conversations from broader matching filters', function (): void {
@@ -3032,7 +3030,6 @@ test('dashboard summarizes the ticket queue next steps before the active next st
         ->get('/dashboard/tickets?ticket_status=all&ticket_attention=needs_reply')
         ->assertOk()
         ->assertSee('Queue snapshot')
-        ->assertSee('Next-step counts respect the current queue filters before the next-step filter narrows the table.')
         ->assertSee('Needs reply: 1')
         ->assertSee('Needs owner: 1')
         ->assertSee('Needs agent: 1')

@@ -177,26 +177,11 @@
                     }
                 @endphp
 
-                <div class="filter-summary" aria-label="Ticket queue focus">
-                    <div>
-                        <strong>Queue focus</strong>
-                        <p class="lede">What this ticket queue is showing before you open a row.</p>
-                        <p class="lede">{{ $ticketQueueCountSummary['detail'] }}</p>
-                    </div>
-                    <div class="filter-chips">
-                        @foreach ($ticketQueueFocusItems as $ticketQueueFocusItem)
-                            <span class="filter-chip">
-                                {{ $ticketQueueFocusItem['label'] }}: {{ $ticketQueueFocusItem['value'] }}
-                            </span>
-                        @endforeach
-                    </div>
-                </div>
-
                 @if (collect($ticketQueueSummary)->sum('count') > 0)
                     <div class="filter-summary" aria-label="Ticket queue snapshot">
                         <div>
                             <strong>Queue snapshot</strong>
-                            <p class="lede">Next-step counts respect the current queue filters before the next-step filter narrows the table.</p>
+                            <p class="lede">{{ $ticketQueueCountSummary['detail'] }}</p>
                         </div>
                         <div class="filter-chips">
                             @foreach ($ticketQueueSummary as $ticketSummary)
@@ -216,7 +201,6 @@
                     <div class="filter-summary" aria-label="Active ticket filters">
                         <div>
                             <strong>Active ticket filters</strong>
-                            <p class="lede">Queue narrowed to what matches this view.</p>
                         </div>
                         <div class="filter-chips">
                             @foreach ($ticketActiveFilters as $activeFilter)

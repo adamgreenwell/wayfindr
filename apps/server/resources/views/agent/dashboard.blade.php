@@ -4,7 +4,6 @@
             <section class="section" aria-labelledby="support-queues-heading">
                 <div class="section-header">
                     <h2 id="support-queues-heading">Support queues</h2>
-                    <span class="lede">Live work has its own room now</span>
                 </div>
 
                 <div class="management-list">
@@ -97,8 +96,7 @@
             <section class="section" aria-labelledby="visitor-support-readiness-heading">
                 <div class="section-header">
                     <div>
-                        <h2 id="visitor-support-readiness-heading">Ready to support visitors?</h2>
-                        <p class="lede">A practical dogfood checklist before real visitor pressure shows up.</p>
+                        <h2 id="visitor-support-readiness-heading">Visitor support readiness</h2>
                     </div>
                     <div class="section-actions">
                         <span class="readiness-status" data-status="{{ $visitorSupportReadiness['attention_count'] > 0 ? 'attention' : 'ready' }}">
@@ -112,6 +110,7 @@
                     </div>
                 </div>
 
+                <x-details-disclosure :summary="'Support checks — '.$visitorSupportReadiness['label']">
                 <div class="readiness-list">
                     @foreach ($visitorSupportReadiness['checks'] as $check)
                         <article class="readiness-check" data-status="{{ $check['status'] }}">
@@ -136,5 +135,6 @@
                         </article>
                     @endforeach
                 </div>
+                </x-details-disclosure>
             </section>
 </x-layouts.app>

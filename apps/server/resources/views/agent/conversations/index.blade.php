@@ -97,26 +97,10 @@
                     }
                 @endphp
 
-                <div class="filter-summary" aria-label="Conversation queue focus">
-                    <div>
-                        <strong>Queue focus</strong>
-                        <p class="lede">What this conversation queue is showing before you open a row.</p>
-                        <p class="lede">{{ $conversationQueueCountSummary['detail'] }}</p>
-                    </div>
-                    <div class="filter-chips">
-                        @foreach ($conversationQueueFocusItems as $conversationQueueFocusItem)
-                            <span class="filter-chip">
-                                {{ $conversationQueueFocusItem['label'] }}: {{ $conversationQueueFocusItem['value'] }}
-                            </span>
-                        @endforeach
-                    </div>
-                </div>
-
                 @if ($activeConversationFilters !== [])
                     <div class="filter-summary" aria-label="Active conversation filters">
                         <div>
                             <strong>Active conversation filters</strong>
-                            <p class="lede">Queue narrowed to conversations matching this view.</p>
                         </div>
                         <div class="filter-chips">
                             @foreach ($activeConversationFilters as $activeFilter)
@@ -134,7 +118,6 @@
                     <div class="filter-summary" aria-label="Conversation queue snapshot">
                         <div>
                             <strong>Queue snapshot</strong>
-                            <p class="lede">Support-lane counts respect the current site, search, and presence context before the table narrows further.</p>
                             <p class="lede">{{ $conversationQueueCountSummary['detail'] }}</p>
                         </div>
                         <div class="filter-chips">

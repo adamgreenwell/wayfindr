@@ -86,7 +86,7 @@ test('ticket links preserve the current ticket queue filters for detail page ret
         ->assertSee('href="'.e($returnUrl).'"', false);
 });
 
-test('ticket queue summarizes the current workload focus', function (): void {
+test('ticket queue reflects the current filters without an explainer banner', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
     $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
@@ -143,10 +143,9 @@ test('ticket queue summarizes the current workload focus', function (): void {
             'ticket_search' => 'refund',
         ]))
         ->assertOk()
-        ->assertSee('Queue focus')
-        ->assertSee('What this ticket queue is showing before you open a row.')
-        ->assertSee('Status: All tickets')
-        ->assertSee('Assignee: Assigned to me')
+        ->assertSee('Active ticket filters')
+        // The explainer banner is gone by design; the snapshot carries the count.
+        ->assertDontSee('Queue focus')
         ->assertSee('Site: Acme Docs')
         ->assertSee('Priority: High')
         ->assertSee('Category: Billing')
