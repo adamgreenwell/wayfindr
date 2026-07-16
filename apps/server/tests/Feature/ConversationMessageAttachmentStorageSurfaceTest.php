@@ -269,6 +269,46 @@ test('a misconfigured active disk does not stop the sweep of the local default',
     Storage::disk('attachments')->assertMissing($orphanKey);
 });
 
+test('an abandoned row on a broken disk does not block the rest of the cleanup', function (): void {
+    $f = storageSurfaceFixture();
+
+    // Two expired unbound uploads: one homed on a disk with no configuration
+    // (its delete hook throws), one healthy on the local disk.
+    $broken = ConversationMessageAttachment::factory()
+        ->pendingFor($f['conversation'], $f['visitor'])
+        ->create(['storage_disk' => 'attachments-gone', 'created_at' => now()->subHours(48)]);
+
+    $healthy = ConversationMessageAttachment::factory()
+        ->pendingFor($f['conversation'], $f['visitor'])
+        ->create(['created_at' => now()->subHours(48)]);
+    Storage::disk('attachments')->put($healthy->storage_key, 'bytes');
+
+    $this->artisan('wayfindr:sweep-orphaned-attachments')
+        ->expectsOutputToContain('Could not remove abandoned upload')
+        ->assertSuccessful();
+
+    // The healthy row was cleaned despite the broken one; the broken row is
+    // kept (its binary may still exist somewhere unreachable).
+    expect(ConversationMessageAttachment::whereKey($healthy->id)->exists())->toBeFalse()
+        ->and(ConversationMessageAttachment::whereKey($broken->id)->exists())->toBeTrue();
+    Storage::disk('attachments')->assertMissing($healthy->storage_key);
+});
+
+test('the sweep reports orphans it cannot delete instead of counting them removed', function (): void {
+    config(['filesystems.disks.attachments-s3.bucket' => 'listable-bucket']);
+
+    $deleteless = Mockery::mock();
+    $deleteless->shouldReceive('allFiles')->andReturn(['xxx/stuck-orphan']);
+    $deleteless->shouldReceive('lastModified')->andReturn(now()->subHours(3)->getTimestamp());
+    $deleteless->shouldReceive('delete')->with('xxx/stuck-orphan')->andReturn(false);
+    Storage::partialMock()->shouldReceive('disk')->with('attachments-s3')->andReturn($deleteless);
+
+    $this->artisan('wayfindr:sweep-orphaned-attachments')
+        ->expectsOutputToContain('could not be deleted')
+        ->expectsOutputToContain('0 orphaned storage objects')
+        ->assertSuccessful();
+});
+
 // --- Readiness --------------------------------------------------------------
 
 test('readiness reports the active disk when its probe passes', function (): void {

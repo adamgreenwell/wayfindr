@@ -59,12 +59,28 @@ class SweepOrphanedAttachmentsCommand extends Command
             ->orderBy('id')
             ->chunkById(100, function ($attachments) use ($dryRun, &$removed): void {
                 foreach ($attachments as $attachment) {
-                    if (! $dryRun) {
-                        // delete() fires the deleting hook, which removes the binary.
-                        $attachment->delete();
+                    if ($dryRun) {
+                        $removed++;
+
+                        continue;
                     }
 
-                    $removed++;
+                    try {
+                        // delete() fires the deleting hook, which removes the binary.
+                        $attachment->delete();
+                        $removed++;
+                    } catch (\Throwable $exception) {
+                        // A row homed on a retired or misconfigured disk must not
+                        // block the rest of the cleanup. The row is kept (its
+                        // binary may still exist somewhere unreachable) and
+                        // surfaced for the operator.
+                        $this->warn(sprintf(
+                            'Could not remove abandoned upload #%d (disk [%s]): %s',
+                            $attachment->id,
+                            $attachment->storage_disk,
+                            $exception->getMessage(),
+                        ));
+                    }
                 }
             });
 
@@ -179,6 +195,7 @@ class SweepOrphanedAttachmentsCommand extends Command
             ->flip();
 
         $removed = 0;
+        $undeletable = 0;
 
         foreach ($disk->allFiles() as $path) {
             if (str_starts_with(basename($path), '.')) {
@@ -195,10 +212,26 @@ class SweepOrphanedAttachmentsCommand extends Command
             }
 
             if (! $dryRun) {
-                $disk->delete($path);
+                // The disks run with throw => false, so a delete refused by the
+                // credentials returns false silently — count it honestly instead
+                // of reporting an object as removed while it still exists.
+                if ($disk->delete($path) === false) {
+                    $undeletable++;
+
+                    continue;
+                }
             }
 
             $removed++;
+        }
+
+        if ($undeletable > 0) {
+            $this->warn(sprintf(
+                '%d orphaned object%s on disk [%s] could not be deleted — check the credentials\' delete permission.',
+                $undeletable,
+                $undeletable === 1 ? '' : 's',
+                $diskName,
+            ));
         }
 
         return $removed;
