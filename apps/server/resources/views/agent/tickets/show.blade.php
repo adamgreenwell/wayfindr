@@ -17,11 +17,8 @@
             @endif
 
             @php
-                $ticketActivityPreview = $ticket->queueActivityPreview();
                 $ticketTiming = $ticket->queueTimingContext();
-                $ticketNextAction = $ticket->nextAction();
                 $ticketReplyVisibility = $ticket->replyVisibility();
-                $ticketStatusActionReadiness = $ticket->statusActionReadiness();
                 $ticketLifecycleNote = $ticket->latestLifecycleNote();
                 $requesterReference = $ticket->requester?->email
                     ?? $ticket->requester?->name
@@ -71,41 +68,13 @@
                     </div>
                 </div>
 
-                <div class="notice-copy notice-copy-bordered">
-                    <p><strong>{{ $ticketActivityPreview['label'] }}</strong></p>
-                    <p>{{ $ticketActivityPreview['body'] }}</p>
-                    <p class="table-note">{{ $ticketTiming['wait_label'] }}</p>
-                </div>
-
-                <div class="filter-summary">
-                    <div>
-                        <strong>{{ $ticketNextAction['title'] }}</strong>
-                        <p class="lede">{{ $ticketNextAction['body'] }}</p>
-                    </div>
-                    <div class="filter-chips">
-                        <a class="button" href="{{ $ticketNextAction['href'] }}">
-                            {{ $ticketNextAction['cta'] }}
+                @if ($ticket->conversation)
+                    <div class="section-form-row">
+                        <a class="button secondary" href="{{ route('dashboard.conversations.show', $ticket->conversation->support_code) }}">
+                            Open conversation
                         </a>
-                        @if ($ticket->conversation)
-                            <a class="button secondary" href="{{ route('dashboard.conversations.show', $ticket->conversation->support_code) }}">
-                                Open conversation
-                            </a>
-                        @endif
                     </div>
-                </div>
-
-                <div class="meta-grid">
-                    <div class="meta-item">
-                        <span class="meta-label">Reply visibility</span>
-                        <span class="meta-value">{{ $ticketReplyVisibility['label'] }}</span>
-                        <span class="lede">{{ $ticketReplyVisibility['detail'] }}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Status safety</span>
-                        <span class="meta-value">{{ $ticketStatusActionReadiness['title'] }}</span>
-                        <span class="lede">{{ $ticketStatusActionReadiness['detail'] }}</span>
-                    </div>
-                </div>
+                @endif
             </section>
             <x-tabs
                 id="ticket-workspace"
@@ -129,7 +98,6 @@
                     <div class="meta-item">
                         <span class="meta-label">Status</span>
                         <span class="meta-value">{{ ucfirst($ticket->status) }}</span>
-                        <span class="lede">{{ $ticket->attentionDescription() }}</span>
                     </div>
                     @if ($ticketLifecycleNote)
                         <div class="meta-item">
@@ -142,35 +110,9 @@
                         </div>
                     @endif
                     <div class="meta-item">
-                        <span class="meta-label">Owner</span>
-                        <span class="meta-value">{{ $ticket->assignee?->name ?? 'Unassigned' }}</span>
-                    </div>
-                    <div class="meta-item">
                         <span class="meta-label">Timing</span>
                         <span class="meta-value">{{ $ticketTiming['opened_label'] }}</span>
                         <span class="lede">{{ $ticketTiming['wait_label'] }}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Latest activity</span>
-                        <span class="meta-value">{{ $ticketActivityPreview['label'] }}</span>
-                        <span class="lede">{{ $ticketActivityPreview['body'] }}</span>
-                        @if ($ticketActivityPreview['occurred_at'])
-                            <span class="table-note">{{ $ticketActivityPreview['occurred_at']->diffForHumans() }}</span>
-                        @endif
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Reply visibility</span>
-                        <span class="meta-value">{{ $ticketReplyVisibility['label'] }}</span>
-                        <span class="readiness-status" data-status="{{ $ticketReplyVisibility['tone'] }}">{{ ucfirst($ticketReplyVisibility['tone']) }}</span>
-                        <span class="lede">{{ $ticketReplyVisibility['detail'] }}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Next action</span>
-                        <span class="meta-value">{{ $ticketNextAction['title'] }}</span>
-                        <span class="lede">{{ $ticketNextAction['body'] }}</span>
-                        <a class="button secondary health-action" href="{{ $ticketNextAction['href'] }}">
-                            {{ $ticketNextAction['cta'] }}
-                        </a>
                     </div>
                 </div>
             </section>
@@ -205,21 +147,6 @@
                     <span class="lede">{{ $ticket->assignee?->name ?? 'Unassigned' }}</span>
                 </div>
 
-                <div class="notice-copy notice-copy-bordered">
-                    <p>
-                        <strong>Status action readiness</strong>
-                        <span class="readiness-status" data-status="{{ $ticketStatusActionReadiness['tone'] }}">
-                            {{ $ticketStatusActionReadiness['title'] }}
-                        </span>
-                    </p>
-                    <p>{{ $ticketStatusActionReadiness['detail'] }}</p>
-                    <div class="notice-actions">
-                        <a class="button secondary" href="{{ $ticketStatusActionReadiness['href'] }}">
-                            {{ $ticketStatusActionReadiness['cta'] }}
-                        </a>
-                    </div>
-                </div>
-
                 @php
                     $escalationAgents = $accountAgents->reject(fn ($accountAgent) => $accountAgent->is($agent))->values();
                 @endphp
@@ -249,7 +176,6 @@
 
                 <div class="section-form">
                     <strong>Escalate ticket</strong>
-                    <p class="lede">Send a deliberate handoff to another agent who can support this site.</p>
 
                     @if ($escalationAgents->isEmpty())
                         <p class="empty">No other site agents are available for escalation.</p>
@@ -549,7 +475,11 @@
                     <span class="lede">{{ $ticketExternalIssueHealth['total'] }} total</span>
                 </div>
 
-                <div id="ticket-external-handoff-readiness" aria-labelledby="ticket-external-handoff-readiness-heading">
+                <x-details-disclosure
+                    id="ticket-external-handoff-readiness"
+                    :summary="'Handoff readiness — '.$ticketExternalIssueHandoffReadiness['label']"
+                    aria-labelledby="ticket-external-handoff-readiness-heading"
+                >
                     <div class="section-header">
                         <h2 id="ticket-external-handoff-readiness-heading">External handoff readiness</h2>
                         <span class="readiness-status" data-status="{{ $ticketExternalIssueHandoffReadiness['tone'] }}">{{ $ticketExternalIssueHandoffReadiness['label'] }}</span>
@@ -587,9 +517,13 @@
                             @endforeach
                         </div>
                     @endif
-                </div>
+                </x-details-disclosure>
 
-                <div id="ticket-external-issue-health" aria-labelledby="ticket-external-issue-health-heading">
+                <x-details-disclosure
+                    id="ticket-external-issue-health"
+                    :summary="'Issue sync health — '.$ticketExternalIssueHealth['label']"
+                    aria-labelledby="ticket-external-issue-health-heading"
+                >
                     <div class="section-header">
                         <h2 id="ticket-external-issue-health-heading">External issue health</h2>
                         <span class="readiness-status" data-status="{{ $ticketExternalIssueHealth['tone'] }}">{{ $ticketExternalIssueHealth['label'] }}</span>
@@ -647,7 +581,7 @@
                             @endforeach
                         </div>
                     @endif
-                </div>
+                </x-details-disclosure>
 
                 @if ($githubIssueProjects->isNotEmpty() || $gitlabIssueProjects->isNotEmpty() || $jiraIssueProjects->isNotEmpty())
                     <div class="section-form">
