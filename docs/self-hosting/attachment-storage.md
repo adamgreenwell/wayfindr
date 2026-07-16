@@ -48,8 +48,12 @@ probes the active disk and reports which surface new uploads land on.
   (whatever their disk), and the orphaned-object pass reconciles the local disk
   plus the active disk.
 - **Misconfiguration fails loud.** An unknown disk name rejects uploads and
-  shows as *needs attention* on readiness; the web-served `public` disk is
-  refused outright. Files are never silently written somewhere unintended.
+  shows as *needs attention* on readiness. Only **dedicated** disks are
+  accepted — the name must start with `attachments` (define your own
+  `attachments-*` disk for custom setups). Shared disks such as `local`,
+  `public`, or `s3` are refused outright: the retention sweep deletes any
+  object on a swept disk that has no attachment row, which on a shared disk
+  would remove unrelated application files.
 
 ## Bucket posture
 

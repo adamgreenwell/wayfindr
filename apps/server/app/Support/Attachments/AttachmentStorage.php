@@ -25,12 +25,19 @@ class AttachmentStorage
             return 'attachments';
         }
 
-        // The public disk is web-served by design — visitor attachments must
-        // never land there, whatever the configuration says.
-        if ($disk === 'public') {
-            throw new InvalidArgumentException(
-                'Attachments may not use the public disk. Use attachments (local) or attachments-s3.'
-            );
+        // Attachments must live on a DEDICATED disk — never a shared one
+        // (local, public, s3, ...). The public disk is web-served, and the
+        // retention sweep treats every object on a swept disk without an
+        // attachment row as an orphan and deletes it: on a shared disk that
+        // would eat unrelated application files. Dedicated disk names start
+        // with "attachments" (operators may define their own attachments-*).
+        if (! str_starts_with($disk, 'attachments')) {
+            throw new InvalidArgumentException(sprintf(
+                'Attachment storage requires a dedicated disk whose name starts with "attachments" — got [%s]. '
+                .'A shared disk would let the retention sweep delete unrelated files. '
+                .'Use attachments (local), attachments-s3, or define your own attachments-* disk.',
+                $disk,
+            ));
         }
 
         if (config("filesystems.disks.{$disk}") === null) {

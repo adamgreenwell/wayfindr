@@ -100,6 +100,19 @@ class SweepOrphanedAttachmentsCommand extends Command
         $sweepable = [];
 
         foreach (array_unique(array_merge($diskNames, $rowHomedDisks)) as $diskName) {
+            // Never orphan-sweep a shared disk, whatever a row claims: Phase B
+            // deletes every object without an attachment row, which on a shared
+            // disk would eat unrelated application files. Dedicated attachment
+            // disk names start with "attachments".
+            if (! str_starts_with($diskName, 'attachments')) {
+                $this->warn(sprintf(
+                    'Skipping disk [%s]: not a dedicated attachments disk, refusing to orphan-sweep it.',
+                    $diskName,
+                ));
+
+                continue;
+            }
+
             if (config("filesystems.disks.{$diskName}") === null) {
                 $this->warn(sprintf(
                     'Skipping disk [%s]: rows reference it but it has no filesystems configuration.',

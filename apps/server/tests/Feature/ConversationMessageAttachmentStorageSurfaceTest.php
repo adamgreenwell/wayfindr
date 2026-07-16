@@ -78,6 +78,39 @@ test('the public disk is refused even though it exists', function (): void {
     expect(fn () => AttachmentStorage::diskName())->toThrow(InvalidArgumentException::class);
 });
 
+test('shared disks are refused even though they exist — only dedicated attachments disks are allowed', function (): void {
+    // The sweep orphan-deletes anything on a swept disk without a row; pointing
+    // storage at a shared disk (e.g. Laravel's built-in local) would let it eat
+    // unrelated application files, so it must be rejected outright.
+    foreach (['local', 's3'] as $sharedDisk) {
+        config(['wayfindr.attachments.storage_disk' => $sharedDisk]);
+
+        expect(fn () => AttachmentStorage::diskName())
+            ->toThrow(InvalidArgumentException::class, 'dedicated disk');
+    }
+});
+
+test('the sweep refuses to orphan-sweep a shared disk even when a row claims it', function (): void {
+    $f = storageSurfaceFixture();
+    Storage::fake('local');
+
+    // A (historical/manual) row claiming a shared disk must not drag that disk
+    // into the orphan sweep.
+    ConversationMessageAttachment::factory()
+        ->pendingFor($f['conversation'], $f['visitor'])
+        ->create(['storage_disk' => 'local']);
+
+    $bystanderKey = 'unrelated/app-file.txt';
+    Storage::disk('local')->put($bystanderKey, 'not an attachment');
+    touch(Storage::disk('local')->path($bystanderKey), now()->subHours(3)->getTimestamp());
+
+    $this->artisan('wayfindr:sweep-orphaned-attachments')
+        ->expectsOutputToContain('refusing to orphan-sweep')
+        ->assertSuccessful();
+
+    Storage::disk('local')->assertExists($bystanderKey);
+});
+
 // --- Mixed homes serve through the same boundary ---------------------------
 
 test('local and remote attachments serve side by side from their recorded homes', function (): void {
