@@ -283,6 +283,72 @@ test('a mismatched scope row can never cross accounts, whatever it claims', func
     expect($grant->coversConversation($foreignConversation))->toBeFalse();
 });
 
+test('a ticket whose claimed account disagrees with its site is covered by neither account', function (): void {
+    // Same defense-in-depth for tickets: coverage re-derives ownership through
+    // the ticket's site, so a row claiming account A while sitting on account
+    // B's site satisfies no grant on either side.
+    $w = breakGlassWorld();
+    $foreignSite = Site::factory()->create();
+    $mismatchedTicket = Ticket::factory()->for($w['account'])->for($foreignSite)->create();
+
+    $grantOnClaimedAccount = BreakGlassGrant::factory()
+        ->activeFor($w['account'], $w['operator'])
+        ->create(); // account scope
+
+    $foreignOperator = User::factory()->for($foreignSite->account)->create([
+        'platform_role' => 'operator',
+        'account_role' => AccountRole::Owner,
+    ]);
+    $grantOnSiteAccount = BreakGlassGrant::factory()
+        ->activeFor($foreignSite->account, $foreignOperator)
+        ->create();
+
+    expect($grantOnClaimedAccount->coversTicket($mismatchedTicket))->toBeFalse()
+        ->and($grantOnSiteAccount->coversTicket($mismatchedTicket))->toBeFalse();
+});
+
+// --- Retention ----------------------------------------------------------------
+
+test('the grant and its trail outlive the conversation it scoped', function (): void {
+    // The grant row is the accountability record (ADR 0008): pruning the
+    // conversation it exposed nulls the reference but keeps the grant, its
+    // audit events, and an honest label — and the nulled scope covers nothing.
+    $w = breakGlassWorld();
+    $grant = grants()->request($w['operator'], $w['conversation'], 'Visitor reports a corrupted transcript.');
+    $grant = grants()->approve($grant, $w['operator']); // single-admin world: self-approval
+    $trailBefore = $grant->auditEvents()->count();
+
+    $w['conversation']->delete();
+
+    $grant = $grant->fresh();
+    $survivor = Conversation::factory()->for($w['site'])->create(['visitor_id' => $w['visitor']->id]);
+
+    expect($grant)->not->toBeNull()
+        ->and($grant->conversation_id)->toBeNull()
+        ->and($grant->status)->toBe(BreakGlassGrant::STATUS_ACTIVE)
+        ->and($grant->auditEvents()->count())->toBe($trailBefore)
+        ->and($grant->scopeLabel())->toBe('Conversation (deleted)')
+        ->and($grant->coversConversation($survivor))->toBeFalse();
+});
+
+test('the grant outlives the site it scoped', function (): void {
+    $w = breakGlassWorld();
+    $grant = BreakGlassGrant::factory()
+        ->activeFor($w['account'], $w['operator'])
+        ->scopedToSite($w['site'])
+        ->create();
+
+    $w['site']->delete();
+
+    $grant = $grant->fresh();
+    $survivorSite = Site::factory()->for($w['account'])->create();
+
+    expect($grant)->not->toBeNull()
+        ->and($grant->site_id)->toBeNull()
+        ->and($grant->scopeLabel())->toBe('Site (deleted)')
+        ->and($grant->coversSite($survivorSite))->toBeFalse();
+});
+
 test('a closed grant covers nothing', function (): void {
     $w = breakGlassWorld();
     $grant = BreakGlassGrant::factory()

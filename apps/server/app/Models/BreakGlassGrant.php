@@ -152,7 +152,13 @@ class BreakGlassGrant extends Model
             return false;
         }
 
-        if ((int) $ticket->account_id !== (int) $this->account_id) {
+        // Re-derive ownership through the ticket's SITE as well as its
+        // denormalized account_id — a mismatched row (claiming one account
+        // while its site belongs to another) is covered by neither.
+        $ticket->loadMissing('site');
+
+        if ((int) $ticket->account_id !== (int) $this->account_id
+            || (int) $ticket->site?->account_id !== (int) $this->account_id) {
             return false;
         }
 
@@ -190,8 +196,8 @@ class BreakGlassGrant extends Model
     public function scopeLabel(): string
     {
         return match ($this->scope_type) {
-            self::SCOPE_CONVERSATION => 'Conversation '.($this->conversation?->support_code ?? '#'.$this->conversation_id),
-            self::SCOPE_SITE => 'Site '.($this->site?->name ?? '#'.$this->site_id),
+            self::SCOPE_CONVERSATION => 'Conversation '.($this->conversation?->support_code ?? ($this->conversation_id ? '#'.$this->conversation_id : '(deleted)')),
+            self::SCOPE_SITE => 'Site '.($this->site?->name ?? ($this->site_id ? '#'.$this->site_id : '(deleted)')),
             self::SCOPE_ACCOUNT => 'Entire account',
             default => $this->scope_type,
         };

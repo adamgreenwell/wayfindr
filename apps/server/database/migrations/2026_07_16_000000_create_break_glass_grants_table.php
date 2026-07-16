@@ -14,13 +14,16 @@ return new class extends Migration
             // Every grant targets exactly ONE account; conversation/site scopes
             // carry their reference alongside so coverage checks re-derive the
             // account per resource (ADR 0008, the ADR 0007 defense-in-depth
-            // posture).
+            // posture). Grant rows are the ACCOUNTABILITY RECORD: deleting the
+            // scoped conversation/site (or the requesting user) nulls the
+            // reference but retains the grant, per the ADR — only deleting the
+            // whole account removes its grants.
             $table->foreignId('account_id')->constrained()->cascadeOnDelete();
             $table->string('scope_type'); // conversation | site | account
-            $table->foreignId('conversation_id')->nullable()->constrained()->cascadeOnDelete();
-            $table->foreignId('site_id')->nullable()->constrained()->cascadeOnDelete();
+            $table->foreignId('conversation_id')->nullable()->constrained()->nullOnDelete();
+            $table->foreignId('site_id')->nullable()->constrained()->nullOnDelete();
 
-            $table->foreignId('requester_id')->constrained('users')->cascadeOnDelete();
+            $table->foreignId('requester_id')->nullable()->constrained('users')->nullOnDelete();
             $table->text('reason');
 
             // requested -> active (approved / self-approved) | denied;

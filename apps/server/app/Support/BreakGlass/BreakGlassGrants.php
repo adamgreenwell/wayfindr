@@ -202,7 +202,7 @@ class BreakGlassGrants
         return User::query()
             ->where('account_id', $grant->account_id)
             ->whereNull('deactivated_at')
-            ->whereKeyNot($grant->requester_id)
+            ->when($grant->requester_id !== null, fn ($query) => $query->whereKeyNot($grant->requester_id))
             ->get()
             ->filter(fn (User $user): bool => $user->isAdmin())
             ->values();
