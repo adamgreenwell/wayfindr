@@ -298,6 +298,23 @@ test('a mismatched attachment row renders nothing, not even its filename', funct
         ->assertDontSee('foreign-secrets.pdf');
 });
 
+test('the account audit page names exactly what an operator reached', function (): void {
+    // The audit UI hides raw metadata by design — the break-glass label
+    // fields are references by construction, so they surface as the subject.
+    $w = breakGlassViewerWorld();
+    $admin = User::factory()->for($w['account'])->create(['account_role' => AccountRole::Admin]);
+
+    $this->actingAs($w['operator'])
+        ->get(route('operator.break-glass.conversations.show', [$w['grant'], $w['conversation']]))
+        ->assertOk();
+
+    $this->actingAs($admin)
+        ->get(route('dashboard.account.audit.index'))
+        ->assertOk()
+        ->assertSee('Break Glass Resource Viewed')
+        ->assertSee('Break-glass: Conversation '.$w['conversation']->support_code);
+});
+
 test('a non-operator cannot reach any viewer route', function (): void {
     $w = breakGlassViewerWorld();
     $admin = User::factory()->for($w['account'])->create(['account_role' => AccountRole::Admin]);

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Account;
 use App\Models\AuditEvent;
+use App\Models\BreakGlassGrant;
 use App\Models\CobrowseSession;
 use App\Models\Site;
 use App\Models\User;
@@ -286,6 +287,18 @@ class AgentAccountAuditController extends Controller
 
     private function auditSubject(AuditEvent $event): string
     {
+        if ($event->subject instanceof BreakGlassGrant) {
+            // The break-glass label fields are references by construction
+            // (support code, site name, "Ticket #n" — never customer
+            // content), so surfacing them here keeps the export boundary
+            // while telling the account exactly what an operator reached.
+            $label = data_get($event->metadata, 'resource_label')
+                ?? data_get($event->metadata, 'scope_label')
+                ?? $event->subject->scopeLabel();
+
+            return 'Break-glass: '.$label;
+        }
+
         if ($event->subject instanceof User) {
             return $event->subject->name;
         }
