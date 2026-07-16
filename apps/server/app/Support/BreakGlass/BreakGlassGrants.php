@@ -160,6 +160,18 @@ class BreakGlassGrants
                 403,
             );
 
+            // In the gap between expires_at and the scheduled sweep the row
+            // still says active, but the grant already expired — record THAT
+            // terminal state; the trail must never say "closed early" about a
+            // grant that ran out.
+            if (! $locked->expires_at->isFuture()) {
+                $locked->forceFill(['status' => BreakGlassGrant::STATUS_EXPIRED])->save();
+
+                $this->audit($locked, null, 'break_glass.expired');
+
+                return $locked;
+            }
+
             $locked->forceFill([
                 'status' => BreakGlassGrant::STATUS_CLOSED,
                 'closed_at' => now(),

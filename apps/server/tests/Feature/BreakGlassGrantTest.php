@@ -208,6 +208,24 @@ test('the requester closes an active grant early', function (): void {
     expect(AuditEvent::where('action', 'break_glass.closed')->count())->toBe(1);
 });
 
+test('closing an overdue grant records expiry, never an early close', function (): void {
+    // In the gap between expires_at and the scheduled sweep the row still
+    // says active; a close attempt must stamp the honest terminal state — the
+    // trail can never claim a ran-out grant was closed early.
+    $w = breakGlassWorld();
+    $grant = BreakGlassGrant::factory()
+        ->activeFor($w['account'], $w['operator'])
+        ->create(['expires_at' => now()->subMinutes(5)]);
+
+    $grant = grants()->close($grant, $w['operator']);
+
+    expect($grant->status)->toBe(BreakGlassGrant::STATUS_EXPIRED)
+        ->and($grant->closed_at)->toBeNull();
+
+    expect(AuditEvent::where('action', 'break_glass.expired')->count())->toBe(1)
+        ->and(AuditEvent::where('action', 'break_glass.closed')->count())->toBe(0);
+});
+
 test('a grant past its expiry is inactive live, before the sweep stamps it', function (): void {
     $w = breakGlassWorld();
     $grant = BreakGlassGrant::factory()
