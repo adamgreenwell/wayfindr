@@ -147,6 +147,46 @@ test('the sweep reaps orphaned objects on the active remote disk too', function 
     Storage::disk('attachments-s3')->assertExists($freshKey);
 });
 
+test('a retired remote surface keeps being reconciled while rows still call it home', function (): void {
+    // The install used attachments-s3, then switched back to local. Rows still
+    // homed on the retired disk must keep its orphaned objects sweepable.
+    config(['wayfindr.attachments.storage_disk' => 'attachments']);
+    $f = storageSurfaceFixture();
+
+    // A row still living on the retired disk keeps it in the sweep set.
+    $resident = ConversationMessageAttachment::factory()
+        ->pendingFor($f['conversation'], $f['visitor'])
+        ->create(['storage_disk' => 'attachments-s3']);
+    Storage::disk('attachments-s3')->put($resident->storage_key, 'still-mine');
+
+    // A cascade-orphaned object on the retired disk, past the grace window.
+    $orphanKey = 'ddd/retired-orphan';
+    Storage::disk('attachments-s3')->put($orphanKey, 'orphan');
+    touch(Storage::disk('attachments-s3')->path($orphanKey), now()->subHours(3)->getTimestamp());
+
+    $this->artisan('wayfindr:sweep-orphaned-attachments')->assertSuccessful();
+
+    Storage::disk('attachments-s3')->assertMissing($orphanKey);
+    // The row-owned object survives.
+    Storage::disk('attachments-s3')->assertExists($resident->storage_key);
+});
+
+test('readiness flags a disk whose credentials cannot delete', function (): void {
+    config(['wayfindr.attachments.storage_disk' => 'attachments-s3']);
+
+    $deleteless = Mockery::mock();
+    $deleteless->shouldReceive('put')->andReturn(true);
+    $deleteless->shouldReceive('get')->andReturn('ok');
+    $deleteless->shouldReceive('delete')->andReturn(false);
+    $deleteless->shouldReceive('exists')->andReturn(true);
+    Storage::shouldReceive('disk')->with('attachments-s3')->andReturn($deleteless);
+
+    $check = collect(app(OperatorReadiness::class)->summary()['checks'])->firstWhere('key', 'attachment_storage');
+
+    expect($check['status'])->toBe('attention')
+        ->and($check['summary'])->toContain('cannot delete');
+});
+
 test('a misconfigured active disk does not stop the sweep of the local default', function (): void {
     config(['wayfindr.attachments.storage_disk' => 'attachments-s4']);
 

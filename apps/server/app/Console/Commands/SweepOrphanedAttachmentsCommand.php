@@ -18,8 +18,13 @@ class SweepOrphanedAttachmentsCommand extends Command
     {
         $dryRun = (bool) $this->option('dry-run');
 
+        // Gather the disks to reconcile BEFORE Phase A deletes rows: a retired
+        // surface (e.g. attachments-s3 after switching back to local) must keep
+        // being reconciled for as long as rows still call it home.
+        $diskNames = $this->sweepableDiskNames();
+
         $removedRows = $this->sweepAbandonedUploads($dryRun);
-        $removedFiles = $this->sweepOrphanedFiles($dryRun);
+        $removedFiles = $this->sweepOrphanedFiles($diskNames, $dryRun);
 
         $this->info(sprintf(
             '%s %d abandoned/failed upload%s and %d orphaned storage object%s.',
@@ -67,24 +72,59 @@ class SweepOrphanedAttachmentsCommand extends Command
     }
 
     /**
-     * Phase B: stored objects with no owning row — the residue of a database FK
-     * cascade (which deletes rows without loading models, so the model hook
-     * never runs). Reconciled per disk: the local default plus the active disk
-     * when it differs (rows always sweep by their own recorded disk in Phase A).
-     * Only objects older than the grace window are removed, so an in-flight
-     * upload (binary written, row not yet committed) is spared.
+     * The disks whose stored objects Phase B reconciles: the local default, the
+     * active disk, and any disk that still homes attachment rows (a retired
+     * remote surface keeps being reconciled until its files are gone). Disks
+     * with no filesystems config are skipped with a warning — downloads from
+     * them would be broken too, so the operator needs to hear about it.
+     *
+     * @return list<string>
      */
-    private function sweepOrphanedFiles(bool $dryRun): int
+    private function sweepableDiskNames(): array
     {
+        $diskNames = ['attachments'];
+
         try {
-            $diskNames = AttachmentStorage::sweepableDiskNames();
+            $diskNames[] = AttachmentStorage::diskName();
         } catch (InvalidArgumentException $exception) {
             // A misconfigured active disk must not stop the sweep from
-            // reconciling the local default; surface it and carry on.
+            // reconciling the rest; surface it and carry on.
             $this->error('Attachment storage is misconfigured: '.$exception->getMessage());
-            $diskNames = ['attachments'];
         }
 
+        $rowHomedDisks = ConversationMessageAttachment::query()
+            ->distinct()
+            ->pluck('storage_disk')
+            ->all();
+
+        $sweepable = [];
+
+        foreach (array_unique(array_merge($diskNames, $rowHomedDisks)) as $diskName) {
+            if (config("filesystems.disks.{$diskName}") === null) {
+                $this->warn(sprintf(
+                    'Skipping disk [%s]: rows reference it but it has no filesystems configuration.',
+                    $diskName,
+                ));
+
+                continue;
+            }
+
+            $sweepable[] = $diskName;
+        }
+
+        return $sweepable;
+    }
+
+    /**
+     * Phase B: stored objects with no owning row — the residue of a database FK
+     * cascade (which deletes rows without loading models, so the model hook
+     * never runs). Only objects older than the grace window are removed, so an
+     * in-flight upload (binary written, row not yet committed) is spared.
+     *
+     * @param  list<string>  $diskNames
+     */
+    private function sweepOrphanedFiles(array $diskNames, bool $dryRun): int
+    {
         $removed = 0;
 
         foreach ($diskNames as $diskName) {

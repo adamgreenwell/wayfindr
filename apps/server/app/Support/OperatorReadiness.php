@@ -555,10 +555,27 @@ class OperatorReadiness
             $disk = Storage::disk($diskName);
             $wrote = $disk->put($probeKey, 'ok') !== false;
             $read = $wrote && $disk->get($probeKey) === 'ok';
-            $disk->delete($probeKey);
+            $deleted = $disk->delete($probeKey);
 
             if (! $read) {
                 throw new \RuntimeException('The disk accepted a connection but a write/read round-trip failed.');
+            }
+
+            // The disks run with throw => false, so a delete refused by the
+            // credentials returns false silently. The retention sweep and
+            // chip-removal cleanup depend on delete working — surface it
+            // rather than reporting ready.
+            if ($deleted === false || $disk->exists($probeKey)) {
+                return $this->check(
+                    key: 'attachment_storage',
+                    label: 'Attachment storage',
+                    status: 'attention',
+                    summary: sprintf('The %s disk cannot delete objects.', $diskName),
+                    detail: 'Writes and reads work, but the delete probe failed — the retention sweep and upload cleanup cannot reclaim storage, so it will grow unbounded.',
+                    action: $driver === 's3'
+                        ? 'Grant the credentials DeleteObject permission on the bucket.'
+                        : 'Make the attachments storage directory writable and deletable by the PHP user.',
+                );
             }
         } catch (Throwable $exception) {
             return $this->check(

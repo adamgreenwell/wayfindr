@@ -42,16 +42,4 @@ class AttachmentStorage
 
         return $disk;
     }
-
-    /**
-     * The disks the retention sweep reconciles storage against: the local
-     * default plus the active disk when it differs. (Rows are swept by their
-     * own recorded disk regardless; this governs the orphaned-object pass.)
-     *
-     * @return list<string>
-     */
-    public static function sweepableDiskNames(): array
-    {
-        return array_values(array_unique(['attachments', self::diskName()]));
-    }
 }
