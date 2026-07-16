@@ -87,6 +87,18 @@ class BreakGlassGrants
             $selfApproval = (int) $approver->id === (int) $locked->requester_id;
 
             if ($selfApproval) {
+                // Self-approval exists for the single-human install where the
+                // operator IS the account's owner/admin. An operator with no
+                // admin standing on the account has no consent to give — even
+                // (especially) when the account has no active approver left.
+                abort_unless(
+                    (int) $approver->account_id === (int) $locked->account_id
+                        && ! $approver->isDeactivated()
+                        && $approver->isAdmin(),
+                    403,
+                    'Self-approval requires owner or admin standing on the target account.',
+                );
+
                 abort_if(
                     $this->eligibleApprovers($locked)->isNotEmpty(),
                     403,

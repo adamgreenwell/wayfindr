@@ -123,6 +123,33 @@ test('self-approval works on a single-human install and is marked as such', func
     expect(AuditEvent::where('action', 'break_glass.self_approved')->count())->toBe(1);
 });
 
+test('an operator without standing on the account cannot self-approve, even with no admin left', function (): void {
+    // Self-approval is the single-human-install fallback, never a hosted
+    // bypass: an operator who is not an owner/admin OF THE TARGET ACCOUNT has
+    // no consent to give, even when that account has no active approver at
+    // all. The request simply waits for one.
+    $w = breakGlassWorld();
+    $adminlessAccount = Account::factory()->create(); // no owner/admin users
+    $adminlessSite = Site::factory()->for($adminlessAccount)->create();
+
+    $grant = grants()->request($w['operator'], $adminlessSite, 'Storage audit.');
+
+    expect(fn () => grants()->approve($grant, $w['operator']))
+        ->toThrow(HttpException::class);
+    expect($grant->fresh()->status)->toBe(BreakGlassGrant::STATUS_REQUESTED);
+});
+
+test('a plain-agent operator cannot self-approve even when no admin exists', function (): void {
+    $w = breakGlassWorld();
+    $w['operator']->update(['account_role' => AccountRole::Agent]);
+
+    $grant = grants()->request($w['operator'], $w['conversation'], 'Transcript check.');
+
+    expect(fn () => grants()->approve($grant, $w['operator']))
+        ->toThrow(HttpException::class);
+    expect($grant->fresh()->status)->toBe(BreakGlassGrant::STATUS_REQUESTED);
+});
+
 test('a plain agent cannot approve', function (): void {
     $w = breakGlassWorld();
     $agent = User::factory()->for($w['account'])->create(['account_role' => AccountRole::Agent]);
