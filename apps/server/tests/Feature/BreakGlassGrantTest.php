@@ -341,6 +341,25 @@ test('a mismatched scope row can never cross accounts, whatever it claims', func
     expect($grant->coversConversation($foreignConversation))->toBeFalse();
 });
 
+test('a conversation-scoped grant refuses a same-account ticket from another site', function (): void {
+    // A ticket row on a sibling site claiming the covered conversation is
+    // inconsistent — conversation coverage requires the conversation's own
+    // site, not just the same account.
+    $w = breakGlassWorld();
+    $siblingSite = Site::factory()->for($w['account'])->create();
+    $grant = BreakGlassGrant::factory()
+        ->activeFor($w['account'], $w['operator'])
+        ->scopedToConversation($w['conversation'])
+        ->create();
+
+    $mismatchedTicket = Ticket::factory()
+        ->for($w['account'])
+        ->for($siblingSite)
+        ->create(['conversation_id' => $w['conversation']->id]);
+
+    expect($grant->coversTicket($mismatchedTicket))->toBeFalse();
+});
+
 test('a ticket whose claimed account disagrees with its site is covered by neither account', function (): void {
     // Same defense-in-depth for tickets: coverage re-derives ownership through
     // the ticket's site, so a row claiming account A while sitting on account

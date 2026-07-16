@@ -164,9 +164,12 @@ class BreakGlassGrant extends Model
 
         return match ($this->scope_type) {
             // A conversation-scoped grant covers the tickets that belong to
-            // that conversation — they are its support artifacts.
+            // that conversation — they are its support artifacts. The ticket
+            // must sit on the conversation's own site too: a row from another
+            // site claiming the covered conversation is not covered.
             self::SCOPE_CONVERSATION => $ticket->conversation_id !== null
-                && (int) $ticket->conversation_id === (int) $this->conversation_id,
+                && (int) $ticket->conversation_id === (int) $this->conversation_id
+                && (int) $ticket->site_id === (int) $this->site_id,
             self::SCOPE_SITE => (int) $ticket->site_id === (int) $this->site_id,
             self::SCOPE_ACCOUNT => true,
             default => false,
