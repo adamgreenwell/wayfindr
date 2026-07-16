@@ -27,6 +27,13 @@ WAYFINDR_ATTACHMENT_S3_BUCKET=my-wayfindr-attachments
 # WAYFINDR_ATTACHMENT_S3_ENDPOINT=https://minio.internal:9000
 # WAYFINDR_ATTACHMENT_S3_USE_PATH_STYLE=true
 
+# Object ACL sent with each write. The default (bucket-owner-full-control) is
+# the one canned ACL modern AWS buckets (Object Ownership: bucket owner
+# enforced — the AWS default) accept, and it keeps same-account objects
+# private on ACL-enabled buckets too. Override (e.g. to private) only if your
+# S3-compatible store rejects it. Public ACLs are refused.
+# WAYFINDR_ATTACHMENT_S3_ACL=bucket-owner-full-control
+
 # Optional key prefix inside the bucket (default "attachments"):
 # WAYFINDR_ATTACHMENT_S3_ROOT=attachments
 ```

@@ -97,6 +97,7 @@ test('a custom attachments disk with any public-exposure marker is refused', fun
         ['driver' => 'local', 'root' => '/tmp/x', 'url' => 'https://cdn.example.test/files'],
         ['driver' => 'local', 'root' => '/tmp/x', 'serve' => true],
         ['driver' => 'local', 'root' => '/tmp/x', 'visibility' => 'public'],
+        ['driver' => 's3', 'bucket' => 'b', 'options' => ['ACL' => 'public-read']],
     ];
 
     foreach ($exposedConfigs as $exposed) {

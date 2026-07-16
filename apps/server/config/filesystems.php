@@ -78,6 +78,15 @@ return [
             'endpoint' => env('WAYFINDR_ATTACHMENT_S3_ENDPOINT'),
             'use_path_style_endpoint' => filter_var(env('WAYFINDR_ATTACHMENT_S3_USE_PATH_STYLE', false), FILTER_VALIDATE_BOOL),
             'root' => env('WAYFINDR_ATTACHMENT_S3_ROOT', 'attachments'),
+            // Flysystem sends a canned ACL on every write; modern AWS buckets
+            // (Object Ownership: bucket owner enforced, the default) reject any
+            // ACL except bucket-owner-full-control — which is also accepted by
+            // ACL-enabled buckets and keeps same-account objects private, so it
+            // is the default that works everywhere on AWS. Stores that reject it
+            // (some S3-compatibles) can override with e.g. private.
+            'options' => array_filter([
+                'ACL' => env('WAYFINDR_ATTACHMENT_S3_ACL', 'bucket-owner-full-control'),
+            ]),
             'throw' => false,
             'report' => false,
         ],

@@ -71,6 +71,7 @@ class AttachmentStorage
             filled($diskConfig['url'] ?? null) => 'defines a public URL',
             ($diskConfig['serve'] ?? false) === true => 'has HTTP serving enabled',
             ($diskConfig['visibility'] ?? null) === 'public' => 'has public visibility',
+            str_contains(strtolower((string) ($diskConfig['options']['ACL'] ?? '')), 'public') => 'sets a public object ACL',
             default => null,
         };
 
