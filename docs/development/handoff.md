@@ -1,6 +1,6 @@
 # Engineering Handoff & Roadmap
 
-*Living document — last updated July 14, 2026. For an agent (or engineer) picking up
+*Living document — last updated July 16, 2026. For an agent (or engineer) picking up
 Wayfindr development. Read this, then `docs/product/roadmap.md` and
 `docs/self-hosting/` for depth.*
 
@@ -53,16 +53,28 @@ worked against real GitHub deliveries. PR #586 then made provider capabilities
 editable, made the save-before-webhook setup order explicit, and distinguished
 configured inbound sync from a connection verified by a signed delivery.
 
-**Epics closed this cycle**: #4 (Chat UX Polish), #5 (Cobrowse Transport
-Discipline), #490 (Cobrowse Observe-Mode Fidelity).
+**The attachments epic is 100% complete (July 16).** Every item in
+[ADR 0007](../decisions/0007-conversation-message-attachments.md) is built,
+Codex-reviewed, and shipped across PRs #589–#600: private local storage with an
+airtight access boundary, two-step uploads with bind-on-send, retention/orphan
+sweep, delete-on-remove quota reclaim, the visitor widget UI (including
+first-message and mobile-camera attach), the agent dashboard UI with a deduped
+per-download audit, a pluggable **malware scanner** (ClamAV over clamd INSTREAM,
+synchronous, fail-closed — **live on stage**, EICAR-validated end to end), and
+the **S3-compatible remote storage surface** (per-row `storage_disk`,
+migration-free coexistence, dedicated-disk + private-ACL validation). Both UIs
+were live-validated on stage, including the owner's own phone/desktop testing.
+The stage box was resized to 2 GB to host clamd comfortably.
 
-**Issue housekeeping is now behind runtime truth.** #564 can be reconciled with
-the completed launch and first-live-validation evidence, then closed. #22 should
-mark its live-provider validation complete but remain open only if it continues
-to own demand-gated field mapping and integration polish. #587 can close after
-the shipped mobile fix is acknowledged. The longer-lived open product areas are
-#58 (Platform Operator Boundary), #492 (live in-place cobrowse replay — see §6,
-recommended against as specced), and the attachment surface described below.
+**Epics closed this cycle**: #4 (Chat UX Polish), #5 (Cobrowse Transport
+Discipline), #490 (Cobrowse Observe-Mode Fidelity), attachments (ADR 0007).
+
+**Issue housekeeping is current.** #564 (launch proof) was reconciled and
+closed. #22's comment relay shipped and was live-validated; the issue remains
+open solely for demand-gated field mapping. The longer-lived open product areas
+are #58 (Platform Operator Boundary), #492 (live in-place cobrowse replay —
+recommended against as specced), and the **agent UI density reduction** now at
+the top of §6.
 
 ---
 
@@ -80,6 +92,20 @@ recommended against as specced), and the attachment surface described below.
 | **Integration setup + verification** | Ordered setup guidance, editable capability flags, provider-specific webhook instructions, and safe signed-delivery verification metadata. | `resources/views/agent/account/integrations.blade.php`, `ExternalIssueProviderConnection.php`, provider webhook controllers | #586 |
 | **Live GitHub dogfood** | Real issue creation, state reflection, two-way comment relay, and echo suppression proved against `adamgreenwell/wayfindr`; conservative exports omitted transcripts, cobrowse content, and internal notes. | Wayfindr ticket external workspace, GitHub webhook deliveries | #585/#587 |
 | **Mobile composer focus** | Raised the visitor chat textarea from 14px to 16px so iOS does not zoom the host page on focus; covered by the full widget suite and confirmed on a real phone. | `packages/widget-js/src/wayfindr-widget.js`, `packages/widget-js/tests/wayfindr-widget.test.js` | #587 / `abdbb7f` |
+
+### Attachments cycle (July 14–16)
+
+| Area | What | Key files | PRs |
+|---|---|---|---|
+| **Contract** | ADR 0007 + local-first/scoping amendment; all owner defaults resolved (accept-with-defense scanner default, office docs excluded, 10 MB / 5 / 100 MB limits, local-first sequencing). | `docs/decisions/0007-conversation-message-attachments.md` | #589/#590 |
+| **Storage + access boundary** | `conversation_message_attachments` model, private `attachments` disk, defense-in-depth authz (opaque id AND account/site-scoped lookup AND visitor-token / agent-`view`-policy), hardened streaming (forced attachment disposition, server-detected type, nosniff, no-store), 13-case isolation matrix. Shared `VisitorConversationResolver`. | `app/Models/ConversationMessageAttachment.php`, `app/Support/VisitorConversationResolver.php`, `app/Support/Attachments/AttachmentResponder.php` | #591 |
+| **Two-step uploads** | Upload lands a pending (unbound) row; message send binds atomically (`AttachmentBinder`, row locks). Byte-sniffed MIME allowlist (finfo — never extension/Content-Type), size/count/conversation caps under a conversation lock. | `app/Support/Attachments/AttachmentUploadService.php`, `AttachmentBinder.php` | #592 |
+| **Retention sweep** | Model delete removes the binary; hourly `wayfindr:sweep-orphaned-attachments` reaps abandoned/failed unbound uploads + FK-cascade-orphaned objects (grace-windowed, per-disk, failure-isolated, honest delete counting). | `app/Console/Commands/SweepOrphanedAttachmentsCommand.php` | #593 (+#600 hardening) |
+| **Visitor widget UI** | Attach button + file picker (mobile camera via `accept=image/*`), upload-on-pick chips, attachment-only sends, inline image/file-row transcript rendering, unchanged-poll render-skip (no image refetch), live broadcast payloads carry attachments, first-message attach via local staging (no empty conversations). | `packages/widget-js/src/wayfindr-widget.js`, `tests/wayfindr-widget-attachments.test.js` | #594/#597 |
+| **Agent dashboard UI** | Transcript + linked-ticket rendering (shared `message-list` partial covers page, live-refresh, and ticket views), composer attach via fetch-upload + hidden `attachment_ids[]`, deduped `attachment.downloaded` audit recorded only when the stream can serve. | `resources/views/agent/conversations/partials/*`, `agent/partials/reply-composer-script.blade.php`, `AgentConversationAttachmentController.php` | #595 |
+| **Delete / quota reclaim** | Scoped DELETE (unbound + requester-owned only, `lockForUpdate` serialized with the binder) wired into both chip-removal paths, incl. remove-mid-upload orphan handling. | Both attachment controllers, widget + composer scripts | #596 |
+| **Malware scanner** | Pluggable `AttachmentScanner` (Null default = accept-with-defense-in-depth, surfaced on readiness; ClamAV via clamd INSTREAM, dependency-free). Synchronous pre-store scan; infected → rejected + `attachment.quarantined`; unreachable → fail-closed reject + logged error + audit (fail-open opt-in). Hardened against silent clamd (socket-activation), early verdicts, and deadline overshoot. **Live on stage** (2 GB box), EICAR-proven. | `app/Support/Attachments/Scanning/*`, `docs/self-hosting/attachment-scanning.md` | #598/#599 |
+| **S3 storage surface** | `WAYFINDR_ATTACHMENT_STORAGE_DISK=attachments-s3` routes NEW uploads to any S3-compatible store; per-row `storage_disk` = migration-free coexistence; stream-through downloads on both surfaces. `AttachmentStorage::assertSafeDisk()` is the single safety judgment (dedicated `attachments*` name, no exposure markers, ACL allowlist) shared by uploads and the sweep. Write ACL defaults `bucket-owner-full-control` (modern AWS owner-enforced buckets). | `config/filesystems.php`, `app/Support/Attachments/AttachmentStorage.php`, `docs/self-hosting/attachment-storage.md` | #600 |
 
 ---
 
@@ -114,6 +140,15 @@ recommended against as specced), and the attachment surface described below.
   leaves the page**, and the server re-sanitizes. The agent preview is an inert
   **sandboxed iframe** (opaque origin) — keep it inert. Transport budgets live in
   `CobrowsePayloadBudget`; content is pruned 72h after a session ends.
+- **Attachments (ADR 0007)** in one breath: message-scoped rows with
+  denormalized `conversation_id`/`account_id`/`site_id` and a per-row
+  `storage_disk`; two-step upload (pending → bind-on-send, all races
+  row-locked); every fetch re-derives message → conversation → site and passes
+  the visitor-token or agent-`view` check; binaries only ever stream through
+  the app. `AttachmentStorage::assertSafeDisk()` is the single storage-safety
+  judgment (dedicated `attachments*` disks only, no exposure markers, ACL
+  allowlist) — used by upload routing AND the sweep; never bypass it. Scanning
+  runs synchronously pre-store via the `AttachmentScanner` binding.
 - **Operator readiness** (`/dashboard/readiness` admin, `/operator` platform
   operator) is the app's own ops checklist — trust it over guessing.
 
@@ -151,12 +186,20 @@ recommended against as specced), and the attachment surface described below.
 
 Ordered by real dogfood value and dependency, not feature novelty.
 
-1. **Reconcile and close the launch proof.** Update #564 with the deployed
-   revision, readiness/restore evidence, stage-as-dogfood decision, live mobile
-   support session, and GitHub handoff proof, then close it. Update #22's two
-   live-validation checkboxes; keep that epic open only for explicitly retained
-   integration work. Close #587 against `abdbb7f` after the phone retest is
-   recorded. These are tracking updates, not new product gates.
+1. **Agent UI density reduction — the active epic (owner-directed, July 16).**
+   Every agent route presents a lot of *good* information, but the day-to-day
+   agent doesn't need most of it to do their support task. Trim the agent UI to
+   what's relevant for the task at hand; keep the depth reachable, not ambient.
+   Guardrails already established by the prior UI epic (#511): unobtrusive UI,
+   the agent finds what they need NOW, never make the customer wait; tabs over
+   long scrolls; reuse the `x-tabs` component for new surfaces.
+
+   Suggested shape (survey first, then slice): inventory each agent route's
+   sections; classify each as *task-critical* (visible by default),
+   *situational* (collapsed/behind a tab or toggle), or *diagnostic/ops*
+   (move toward readiness/operator surfaces or a "details" drawer); then trim
+   route by route — conversation detail first (it carries the most ambient
+   diagnostics), then ticket detail, then the queues/home.
 
 2. **Operate the real dogfood loop.** Route Wayfindr support through Wayfindr,
    keep synthetic smoke records distinguishable from real work, and let actual
@@ -164,51 +207,11 @@ Ordered by real dogfood value and dependency, not feature novelty.
    `/operator`, failed queue jobs, mail, and realtime after deploys, but do not
    turn routine observation into a new ceremony layer.
 
-3. **Attachment capability — define the contract before adding upload UI.** The
-   first real mobile conversation raised a legitimate need for attachments on
-   desktop and mobile. Treat this as a security, storage, retention, and workflow
-   feature rather than a file-input tweak.
-
-   **Recommended initial boundary:** attachments belong to conversation
-   messages. Tickets linked to a conversation can surface those attachments as
-   supporting context without copying the binary. Direct ticket attachments and
-   internal-note attachments should wait until real use proves they need separate
-   lifecycles.
-
-   **Product decisions to write down first:**
-
-   - allowed file classes, detected MIME types, per-file size, message count,
-     account/site quotas, and whether images receive previews;
-   - mobile photo/camera/file-picker behavior versus desktop drag/drop and picker;
-   - retention and deletion semantics, including what happens when a message,
-     conversation, visitor, or account is removed;
-   - self-hosted local/private storage versus S3-compatible object storage, and
-     which operational guarantees Wayfindr can honestly check;
-   - malware scanning/quarantine expectations and the safe fallback when no
-     scanner is configured; and
-   - external export policy. Attachment binaries and storage URLs should **not**
-     leave Wayfindr for GitHub/GitLab/Jira by default.
-
-   **Dependency-ordered delivery slices:**
-
-   1. Add an attachment contract and issue/ADR covering the decisions above.
-      **Contract shipped as [ADR 0007](../decisions/0007-conversation-message-attachments.md),
-      with the owner's three defaults resolved** (accept-with-defense scanner
-      default, office docs excluded, 10 MB/5/100 MB limits). Slice 2 is ready to build.
-   2. Add a message-scoped attachment model, private storage keys, sanitized
-      display names, detected MIME/size metadata, upload state, and audit events.
-   3. Add authorized upload/download endpoints scoped through the signed visitor
-      session or agent site access. Enforce size, MIME allowlists, quotas, rate
-      limits, safe `Content-Disposition`, and orphan cleanup server-side.
-   4. Add visitor uploads to the widget with an accessible picker, mobile camera
-      compatibility, progress, remove/cancel, retry, and idempotent message send.
-   5. Render safe attachment rows/previews in the agent transcript and linked
-      ticket context, then add agent-to-visitor attachments to the reply composer.
-   6. Add retention/pruning behavior, private-storage readiness guidance,
-      backup/restore documentation, and optional object-storage/scanning adapters.
-   7. Harden with cross-account/site authorization, MIME spoofing, oversized and
-      decompression-bomb cases, interrupted uploads, duplicate submits, expired
-      visitor tokens, mobile Safari/Android, keyboard, and screen-reader tests.
+3. **Attachments: done.** The full contract shipped (see §2/§3). The only
+   remaining optional item is exercising the S3 surface against a real bucket
+   (stage runs local by design). Future attachment work is demand-gated:
+   direct-ticket/internal-note attachments, office-document opt-ins, pre-signed
+   URL opt-in — all deliberately excluded from ADR 0007's v1.
 
 4. **#22 — richer field mapping, only after live demand.** Syncing labels,
    assignee, or priority needs a product decision about fields, direction, and
@@ -249,21 +252,42 @@ Ordered by real dogfood value and dependency, not feature novelty.
 - **GitHub auto-close keywords in PR titles/bodies** (`closes #NN`) will close
   the referenced issue on merge. #22 was reopened after an accidental close this
   way — mind epic references in PR text.
+- **Codex review triggers occasionally drop silently** (no 👀 reaction on the
+  `@codex review` comment = it never started). Re-trigger once; when it *has*
+  reviewed the substance and only a tiny, test-covered delta is unreviewed,
+  merging on judgment is acceptable — say so explicitly. Codex also signals
+  "clean" as a 👍 reaction on the PR body with no comment.
+- **clamd on Ubuntu**: won't start until freshclam's first signature download
+  completes; uses the unix socket `/var/run/clamav/clamd.ctl` (not TCP); needs
+  ~1 GB RAM (stage was resized to 2 GB for it); and `systemctl stop
+  clamav-daemon` alone doesn't stop intake — the socket unit re-triggers it
+  (stop both). A socket-accepted-but-dead daemon is precisely the hang case
+  #599 fixed.
+- **`/operator` requires `platform_role = operator`** on the user — only the
+  `wayfindr:bootstrap` user gets it automatically; grant via a tinker one-liner.
+- **Faked `UploadedFile` guesses MIME from the extension** — byte-sniffing tests
+  need a real temp-file upload (see `realUpload()` in the upload test).
 
 ---
 
-## 8. End-of-session snapshot — July 14, 2026
+## 8. End-of-session snapshot — July 16, 2026
 
-- Local `main`, `origin/main`, `ncm/main`, and the active Forge release all point
-  to `abdbb7fab0c611d5e2375eaebe9d82df485c9436`.
-- Forge reports no failed queue jobs.
-- The last full server verification for the integration guidance change passed
-  919 tests / 7,622 assertions; its focused provider suite passed 60 tests / 253
-  assertions.
-- The mobile composer fix passed the full widget suite: 145 tests.
-- Installation readiness was 12 ready / 0 attention / 1 intentional manual
-  backup check. Dogfood gates had no blocked item.
-- The stage instance is the owner-approved initial dogfood instance.
-- Live GitHub handoff and the first real mobile support loop are proven.
-- No attachment implementation exists yet; §6 defines the prospective surface
-  and its recommended first boundary.
+- Upstream `main` is at `c9a4bd0` (S3 storage surface, #600). The stage fork was
+  last synced at #599 (ClamAV hang fix); #600 ships defaulting to local storage,
+  so stage needs no config change when it syncs.
+- Full server suite: **1,010 tests / 7,887 assertions**. Widget suite: **157
+  tests**. Pint clean.
+- The attachments epic (ADR 0007) is **fully closed**: contract, storage +
+  scoping, uploads, sweep, both UIs, first-message attach, ClamAV scanner, and
+  the S3 surface — all Codex-reviewed. Codex raised ~24 findings across the
+  epic's PRs (nine on #600 alone); every one was addressed with a regression
+  test. Standouts worth knowing: the sweep-eats-shared-disk hazard (hence
+  `assertSafeDisk`), the AWS ACL-disabled-bucket default (hence
+  `bucket-owner-full-control`), and the clamd socket-activation hang.
+- **ClamAV is live on stage** (2 GB box): readiness green, EICAR rejected
+  end-to-end through the real widget with the `attachment.quarantined` audit
+  naming `Eicar-Test-Signature`, clean uploads scanned and served.
+- Both attachment UIs are live-validated (automated passes + the owner's own
+  phone/desktop testing). Stage test conversations: WF-GZDZRBTE, WF-L6IVPTR1.
+- The next epic is the **agent UI density reduction** (§6.1), owner-directed:
+  survey → classify → trim, conversation detail first.
