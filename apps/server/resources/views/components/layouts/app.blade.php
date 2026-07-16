@@ -699,6 +699,15 @@
             color: var(--danger);
         }
 
+        .break-glass-banner {
+            background: color-mix(in srgb, var(--danger) 5%, var(--surface));
+            border-color: color-mix(in srgb, var(--danger) 32%, var(--border));
+        }
+
+        .break-glass-banner h2 {
+            color: var(--danger);
+        }
+
         .readiness-status[data-status="manual"] {
             background: #fff8e4;
             border-color: #ead18b;

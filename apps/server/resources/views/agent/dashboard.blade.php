@@ -1,6 +1,26 @@
 <x-layouts.app title="Agent Dashboard" :agent="$agent" :account="$account">
             <x-page-header :title="$account->name" :subtitle="'Signed in as '.$agent->email" />
 
+            @if ($activeBreakGlassGrants->isNotEmpty())
+                <section class="section break-glass-banner" aria-labelledby="operator-access-banner-heading">
+                    <div class="section-header">
+                        <h2 id="operator-access-banner-heading">Platform operator access is active</h2>
+                        @if ($agent->isAdmin())
+                            <a class="button secondary" href="{{ route('dashboard.account.break-glass.index') }}">Review or revoke</a>
+                        @endif
+                    </div>
+                    <div class="notice-copy">
+                        @foreach ($activeBreakGlassGrants as $grant)
+                            <p>
+                                {{ $grant->requester?->name ?? 'A former operator' }} has read-only access to
+                                {{ lcfirst($grant->scopeLabel()) }} until {{ $grant->expires_at->format('H:i T') }}
+                                ({{ $grant->expires_at->diffForHumans() }}){{ $grant->self_approved ? ' — self-approved' : '' }}.
+                            </p>
+                        @endforeach
+                    </div>
+                </section>
+            @endif
+
             <section class="section" aria-labelledby="support-queues-heading">
                 <div class="section-header">
                     <h2 id="support-queues-heading">Support queues</h2>
