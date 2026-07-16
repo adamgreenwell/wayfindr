@@ -28,10 +28,13 @@ ambient capability:
   **closed early** but never extended — continuing work means a fresh grant
   with a fresh audit trail.
 - **Read-only.** An active grant lets the operator *view* the scoped
-  conversations, tickets, and attachments through dedicated operator surfaces.
-  It never permits replying, editing, deleting, or any other mutation. If a
-  finding requires action, it routes to an account agent (or a future,
-  separately designed repair capability). There is **no agent impersonation**.
+  conversations, tickets, and **attachment metadata** (filename, type, size,
+  status — never the binary; break-glass attachment downloads are excluded
+  from v1, keeping file contents inside the existing agent/visitor
+  authorization boundary) through dedicated operator surfaces. It never
+  permits replying, editing, deleting, or any other mutation. If a finding
+  requires action, it routes to an account agent (or a future, separately
+  designed repair capability). There is **no agent impersonation**.
 
 ### Approval
 
