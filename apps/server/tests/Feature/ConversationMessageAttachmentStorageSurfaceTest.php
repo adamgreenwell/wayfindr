@@ -210,6 +210,7 @@ test('readiness flags a disk whose credentials cannot delete', function (): void
     $deleteless = Mockery::mock();
     $deleteless->shouldReceive('put')->andReturn(true);
     $deleteless->shouldReceive('get')->andReturn('ok');
+    $deleteless->shouldReceive('files')->andReturnUsing(fn (string $dir): array => [$dir.'/.probe']);
     $deleteless->shouldReceive('delete')->andReturn(false);
     $deleteless->shouldReceive('exists')->andReturn(true);
     Storage::shouldReceive('disk')->with('attachments-s3')->andReturn($deleteless);
@@ -218,6 +219,40 @@ test('readiness flags a disk whose credentials cannot delete', function (): void
 
     expect($check['status'])->toBe('attention')
         ->and($check['summary'])->toContain('cannot delete');
+});
+
+test('readiness flags a disk whose credentials cannot list', function (): void {
+    config(['wayfindr.attachments.storage_disk' => 'attachments-s3']);
+
+    $listless = Mockery::mock();
+    $listless->shouldReceive('put')->andReturn(true);
+    $listless->shouldReceive('get')->andReturn('ok');
+    $listless->shouldReceive('files')->andReturn([]);
+    $listless->shouldReceive('delete')->andReturn(true);
+    Storage::shouldReceive('disk')->with('attachments-s3')->andReturn($listless);
+
+    $check = collect(app(OperatorReadiness::class)->summary()['checks'])->firstWhere('key', 'attachment_storage');
+
+    expect($check['status'])->toBe('attention')
+        ->and($check['summary'])->toContain('cannot list');
+});
+
+test('a configured retired disk keeps being swept even after its last row is gone', function (): void {
+    // Active surface is local, no rows reference attachments-s3 anymore — but
+    // the disk is still materially configured (bucket set), so purely-orphaned
+    // objects on it must still be reconciled.
+    config([
+        'wayfindr.attachments.storage_disk' => 'attachments',
+        'filesystems.disks.attachments-s3.bucket' => 'retired-bucket',
+    ]);
+
+    $orphanKey = 'eee/rowless-orphan';
+    Storage::disk('attachments-s3')->put($orphanKey, 'orphan');
+    touch(Storage::disk('attachments-s3')->path($orphanKey), now()->subHours(3)->getTimestamp());
+
+    $this->artisan('wayfindr:sweep-orphaned-attachments')->assertSuccessful();
+
+    Storage::disk('attachments-s3')->assertMissing($orphanKey);
 });
 
 test('a misconfigured active disk does not stop the sweep of the local default', function (): void {

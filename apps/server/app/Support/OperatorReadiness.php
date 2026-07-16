@@ -551,14 +551,34 @@ class OperatorReadiness
         // operator-owned, per the documented posture. The probe key is a
         // dotfile so the orphan sweep never races it.
         try {
-            $probeKey = '.wayfindr-readiness-probe-'.Str::random(12);
+            // The probe lives under its own dotfile prefix: listing that prefix
+            // is a one-object ListObjects call (never a full-bucket list), and
+            // the dotfile names keep the orphan sweep from ever racing it.
+            $probeDir = '.wayfindr-readiness-probe-'.Str::random(12);
+            $probeKey = $probeDir.'/.probe';
             $disk = Storage::disk($diskName);
             $wrote = $disk->put($probeKey, 'ok') !== false;
             $read = $wrote && $disk->get($probeKey) === 'ok';
+            $listed = $read && in_array($probeKey, $disk->files($probeDir), true);
             $deleted = $disk->delete($probeKey);
 
             if (! $read) {
                 throw new \RuntimeException('The disk accepted a connection but a write/read round-trip failed.');
+            }
+
+            // The retention sweep reconciles by LISTING the disk; credentials
+            // that can write/read but not list would let it silently do nothing.
+            if (! $listed) {
+                return $this->check(
+                    key: 'attachment_storage',
+                    label: 'Attachment storage',
+                    status: 'attention',
+                    summary: sprintf('The %s disk cannot list objects.', $diskName),
+                    detail: 'Writes and reads work, but a listing probe did not return the probe object — the retention sweep cannot reconcile orphaned storage without listing.',
+                    action: $driver === 's3'
+                        ? 'Grant the credentials ListBucket permission on the bucket.'
+                        : 'Make the attachments storage directory readable and listable by the PHP user.',
+                );
             }
 
             // The disks run with throw => false, so a delete refused by the

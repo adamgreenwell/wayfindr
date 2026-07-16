@@ -72,17 +72,29 @@ class SweepOrphanedAttachmentsCommand extends Command
     }
 
     /**
-     * The disks whose stored objects Phase B reconciles: the local default, the
-     * active disk, and any disk that still homes attachment rows (a retired
-     * remote surface keeps being reconciled until its files are gone). Disks
-     * with no filesystems config are skipped with a warning — downloads from
-     * them would be broken too, so the operator needs to hear about it.
+     * The disks whose stored objects Phase B reconciles: every configured
+     * dedicated attachments disk (so a retired surface keeps being reconciled
+     * even after its last row is gone), the active disk, and any disk that
+     * still homes attachment rows. Disks with no filesystems config are skipped
+     * with a warning — downloads from them would be broken too, so the operator
+     * needs to hear about it.
      *
      * @return list<string>
      */
     private function sweepableDiskNames(): array
     {
-        $diskNames = ['attachments'];
+        // Every dedicated attachments disk that is materially configured — an
+        // s3-driver disk with no bucket has never stored anything and is
+        // unreachable anyway, so it is skipped without noise on default installs.
+        $diskNames = collect(config('filesystems.disks', []))
+            ->filter(fn ($disk, string $name): bool => str_starts_with($name, 'attachments'))
+            ->filter(function ($disk): bool {
+                $driver = is_array($disk) ? ($disk['driver'] ?? 'local') : 'local';
+
+                return $driver !== 's3' || filled(is_array($disk) ? ($disk['bucket'] ?? null) : null);
+            })
+            ->keys()
+            ->all();
 
         try {
             $diskNames[] = AttachmentStorage::diskName();
@@ -141,7 +153,13 @@ class SweepOrphanedAttachmentsCommand extends Command
         $removed = 0;
 
         foreach ($diskNames as $diskName) {
-            $removed += $this->sweepOrphanedFilesOn($diskName, $dryRun);
+            try {
+                $removed += $this->sweepOrphanedFilesOn($diskName, $dryRun);
+            } catch (\Throwable $exception) {
+                // An unreachable disk (e.g. a configured bucket with broken
+                // credentials) must not stop the other disks' reconciliation.
+                $this->warn(sprintf('Disk [%s] could not be swept: %s', $diskName, $exception->getMessage()));
+            }
         }
 
         return $removed;
