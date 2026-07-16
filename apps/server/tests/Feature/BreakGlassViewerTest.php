@@ -76,6 +76,24 @@ test('the requester opens the grant and its covered transcript, audited once eac
         ->and($viewed->site_id)->toBeNull();
 });
 
+test('a direct resource view still records the grant as opened', function (): void {
+    // Bookmarks and browser history skip the overview page — the trail must
+    // still read opened -> resource_viewed, exactly once each.
+    $w = breakGlassViewerWorld();
+
+    $this->actingAs($w['operator'])
+        ->get(route('operator.break-glass.conversations.show', [$w['grant'], $w['conversation']]))
+        ->assertOk();
+
+    expect(AuditEvent::where('action', 'break_glass.opened')->count())->toBe(1)
+        ->and(AuditEvent::where('action', 'break_glass.resource_viewed')->count())->toBe(1);
+
+    // Visiting the overview afterwards adds nothing.
+    $this->actingAs($w['operator'])->get(route('operator.break-glass.show', $w['grant']));
+
+    expect(AuditEvent::where('action', 'break_glass.opened')->count())->toBe(1);
+});
+
 test('attachments render as metadata with no path to the binary', function (): void {
     $w = breakGlassViewerWorld();
     $message = ConversationMessage::factory()->for($w['conversation'])->create([

@@ -42,6 +42,11 @@ class OperatorBreakGlassViewerController extends Controller
 
         abort_unless($grant->coversConversation($conversation), 404);
 
+        // A bookmark or direct URL still opens the grant: .opened is deduped
+        // per grant, so the trail always reads opened -> resource_viewed no
+        // matter which page the requester lands on first.
+        $grants->recordOpened($grant, $request->user());
+
         $grants->recordResourceViewed(
             $grant,
             $request->user(),
@@ -89,6 +94,8 @@ class OperatorBreakGlassViewerController extends Controller
         $this->usableGrant($request, $grant);
 
         abort_unless($grant->coversTicket($ticket), 404);
+
+        $grants->recordOpened($grant, $request->user());
 
         // The audit label is a reference, never content: ticket subjects are
         // customer-entered and must not be persisted into a trail designed to
