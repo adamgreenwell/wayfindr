@@ -43,10 +43,12 @@
             </div>
         @else
             <div class="management-list">
+                {{-- References only: subjects are customer content and render
+                     on the ticket page, where the view is audited per resource. --}}
                 @foreach ($coveredTickets as $ticket)
                     <a class="management-link" href="{{ route('operator.break-glass.tickets.show', [$grant, $ticket]) }}">
                         <span>
-                            <strong>Ticket #{{ $ticket->id }} — {{ $ticket->subject }}</strong>
+                            <strong>Ticket #{{ $ticket->id }}</strong>
                             <span class="lede">{{ $ticket->status }} · opened {{ $ticket->created_at->diffForHumans() }}</span>
                         </span>
                         <span class="management-action">View</span>

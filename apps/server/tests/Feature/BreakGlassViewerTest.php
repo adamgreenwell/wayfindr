@@ -190,6 +190,14 @@ test('an account-scoped grant opens a covered ticket; a foreign ticket is refuse
         ->activeFor($w['account'], $w['operator'])
         ->create();
 
+    // The overview lists tickets by reference only — the subject is content
+    // and renders solely on the per-resource-audited detail page.
+    $this->actingAs($w['operator'])
+        ->get(route('operator.break-glass.show', $accountGrant))
+        ->assertOk()
+        ->assertSee('Ticket #'.$ticket->id)
+        ->assertDontSee('Upload pipeline failure');
+
     $this->actingAs($w['operator'])
         ->get(route('operator.break-glass.tickets.show', [$accountGrant, $ticket]))
         ->assertOk()

@@ -45,10 +45,12 @@
                 <span class="lede">{{ $tickets->count() }} linked</span>
             </div>
             <div class="management-list">
+                {{-- References only: the subject renders on the ticket page,
+                     where the view is audited per resource. --}}
                 @foreach ($tickets as $ticket)
                     <a class="management-link" href="{{ route('operator.break-glass.tickets.show', [$grant, $ticket]) }}">
                         <span>
-                            <strong>Ticket #{{ $ticket->id }} — {{ $ticket->subject }}</strong>
+                            <strong>Ticket #{{ $ticket->id }}</strong>
                             <span class="lede">{{ $ticket->status }}</span>
                         </span>
                         <span class="management-action">View</span>
