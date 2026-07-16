@@ -146,7 +146,6 @@ test('ticket detail guides agents through empty workspaces', function (): void {
         ->get(route('dashboard.tickets.show', $ticket))
         ->assertOk()
         ->assertSee('No labels on this ticket yet.')
-        ->assertSee('Use labels when this ticket needs repeatable triage cues, escalation context, or queue filtering.')
         ->assertSee('No external issue links yet.')
         ->assertSee('Attach an external reference only when another tracker owns part of the follow-up. Wayfindr can stay the source of truth when it does not.')
         ->assertSee('No internal notes yet.')

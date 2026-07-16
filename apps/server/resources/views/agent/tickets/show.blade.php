@@ -764,29 +764,10 @@
                 </x-tab-panel>
 
                 <x-tab-panel id="details">
-            <section class="section" aria-labelledby="ticket-artifacts-heading">
-                <div class="section-header">
-                    <h2 id="ticket-artifacts-heading">Support artifacts</h2>
-                    <span class="lede">Ticket coverage</span>
-                </div>
-
-                <div class="meta-grid">
-                    @foreach ($ticketArtifactCoverage as $artifact)
-                        <div class="meta-item">
-                            <span class="meta-label">{{ $artifact['label'] }}</span>
-                            <span class="meta-value">{{ $artifact['value'] }}</span>
-                            <span class="readiness-status" data-status="{{ $artifact['tone'] }}">{{ $artifact['tone'] === 'ready' ? 'Present' : 'Optional' }}</span>
-                            <span class="lede">{{ $artifact['description'] }}</span>
-                        </div>
-                    @endforeach
-                </div>
-            </section>
-
             <section class="section" aria-labelledby="ticket-reference-heading">
                 <div class="section-header">
                     <h2 id="ticket-reference-heading">Support reference</h2>
                     <div class="section-actions">
-                        <span class="lede">Use these details when searching, handoffs, or follow-up need a stable anchor.</span>
                         @if ($ticket->requester)
                             <a class="button secondary" href="{{ route('dashboard.visitors.show', $ticket->requester) }}">Open visitor profile</a>
                         @endif
@@ -840,78 +821,10 @@
                             @endif
                         </span>
                     </div>
-                </div>
-            </section>
-
-            <section class="section" aria-labelledby="ticket-context-heading">
-                <div class="section-header">
-                    <h2 id="ticket-context-heading">Context</h2>
-                    <span class="lede">{{ ucfirst($ticket->status) }}</span>
-                </div>
-
-                <div class="meta-grid">
-                    <div class="meta-item">
-                        <span class="meta-label">Site</span>
-                        <span class="meta-value">{{ $ticket->site->name }}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Requester</span>
-                        <span class="meta-value">{{ $ticket->requester?->anonymous_id ?? 'Not linked' }}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Priority</span>
-                        <span class="meta-value">{{ ucfirst($ticket->priority) }}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Category</span>
-                        <span class="meta-value">{{ $ticket->categoryLabel() }}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Labels</span>
-                        <span class="meta-value">
-                            @if ($ticket->labels->isEmpty())
-                                None
-                            @else
-                                <span class="ticket-label-list">
-                                    @foreach ($ticket->labels as $label)
-                                        <x-ticket-label-chip :label="$label" :ticket-status="$ticket->status" />
-                                    @endforeach
-                                </span>
-                            @endif
-                        </span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Assignee</span>
-                        <span class="meta-value">{{ $ticket->assignee?->name ?? 'Unassigned' }}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Attention</span>
-                        <span class="meta-value">{{ $ticket->attentionLabel() }}</span>
-                        <span class="lede">{{ $ticket->attentionDescription() }}</span>
-                    </div>
                     <div class="meta-item">
                         <span class="meta-label">Created</span>
                         <span class="meta-value">{{ $ticket->created_at->diffForHumans() }}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Updated</span>
-                        <span class="meta-value">{{ $ticket->updated_at->diffForHumans() }}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Closed</span>
-                        <span class="meta-value">{{ $ticket->closed_at?->diffForHumans() ?? 'Not closed' }}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Conversation</span>
-                        <span class="meta-value">
-                            @if ($ticket->conversation)
-                                <a class="text-link" href="{{ route('dashboard.conversations.show', $ticket->conversation->support_code) }}">
-                                    {{ $ticket->conversation->support_code }}
-                                </a>
-                            @else
-                                Not linked
-                            @endif
-                        </span>
+                        <span class="lede">Updated {{ $ticket->updated_at->diffForHumans() }}@if ($ticket->closed_at) · Closed {{ $ticket->closed_at->diffForHumans() }}@endif</span>
                     </div>
                 </div>
             </section>
@@ -938,7 +851,6 @@
                     @empty
                         <div class="empty-state">
                             <strong>No labels on this ticket yet.</strong>
-                            <p class="lede">Use labels when this ticket needs repeatable triage cues, escalation context, or queue filtering.</p>
                         </div>
                     @endforelse
                 </div>

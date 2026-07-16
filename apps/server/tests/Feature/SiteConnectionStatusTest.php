@@ -289,7 +289,6 @@ test('site settings summarize support readiness from existing site signals', fun
         ->get("/dashboard/sites/{$site->id}")
         ->assertOk()
         ->assertSee('Support readiness')
-        ->assertSee('Site support loop')
         ->assertSee('Widget install')
         ->assertSee('Live')
         ->assertSee('The widget has checked in recently.')

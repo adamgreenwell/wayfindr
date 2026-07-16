@@ -890,7 +890,6 @@ test('site detail summarizes support load for the selected site only', function 
         ->get("/dashboard/sites/{$site->id}")
         ->assertOk()
         ->assertSee('Site map')
-        ->assertSee('What this site workspace can help with before you change settings.')
         ->assertSee('href="#site-support-readiness-heading"', false)
         ->assertSee('href="#site-support-load-heading"', false)
         ->assertSee('href="#site-external-issue-readiness-heading"', false)

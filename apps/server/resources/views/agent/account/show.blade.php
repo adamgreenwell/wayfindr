@@ -82,7 +82,6 @@
                 <div class="section-header">
                     <div>
                         <h2 id="account-map-heading">Account map</h2>
-                        <p class="lede">Jump to the account sections available to your role.</p>
                     </div>
                     <span class="lede">{{ count($accountMapItems) }} {{ \Illuminate\Support\Str::plural('section', count($accountMapItems)) }}</span>
                 </div>

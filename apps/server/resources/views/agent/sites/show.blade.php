@@ -75,7 +75,6 @@
                 <div class="section-header">
                     <div>
                         <h2 id="site-map-heading">Site map</h2>
-                        <p class="lede">What this site workspace can help with before you change settings.</p>
                     </div>
                     <span class="lede">{{ count($siteMapSections) }} sections</span>
                 </div>
@@ -83,7 +82,6 @@
                 <div class="filter-summary" aria-label="Site detail sections">
                     <div>
                         <strong>Jump to</strong>
-                        <p class="lede">Use the map when a site workspace gets long.</p>
                     </div>
                     <div class="filter-chips">
                         @foreach ($siteMapSections as $siteMapSection)
@@ -97,7 +95,6 @@
                 <div class="section-header">
                     <div>
                         <h2 id="site-support-readiness-heading">Support readiness</h2>
-                        <p class="lede">Site support loop</p>
                     </div>
                     <a class="button secondary" href="{{ route('dashboard.sites.tester', $site) }}">Open tester</a>
                 </div>
@@ -127,7 +124,6 @@
                 <div class="section-header">
                     <div>
                         <h2 id="site-support-load-heading">Support load</h2>
-                        <p class="lede">Current work for this site</p>
                     </div>
                 </div>
 
@@ -149,7 +145,6 @@
                 <div class="section-header">
                     <div>
                         <h2 id="site-external-issue-readiness-heading">External issue readiness</h2>
-                        <p class="lede">Ticket handoff for this site</p>
                     </div>
                     <span class="readiness-status" data-status="{{ $externalIssueHealth['tone'] }}">{{ $externalIssueHealth['label'] }}</span>
                 </div>

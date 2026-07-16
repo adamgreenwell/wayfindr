@@ -93,7 +93,6 @@ test('account overview gives admins a section map for management work', function
         ->get('/dashboard/account')
         ->assertOk()
         ->assertSee('Account map')
-        ->assertSee('Jump to the account sections available to your role.')
         ->assertSee('href="#account-context-heading"', false)
         ->assertSee('Account boundary')
         ->assertSee('href="#role-boundary-heading"', false)
