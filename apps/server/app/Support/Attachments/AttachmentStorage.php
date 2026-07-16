@@ -67,11 +67,19 @@ class AttachmentStorage
         // marker on the disk config is rejected — attachments are only reached
         // by streaming through the app's authorized endpoints.
         $diskConfig = is_array($diskConfig) ? $diskConfig : [];
+
+        // Object ACLs are judged by ALLOWLIST: only ACLs that keep objects
+        // readable solely by the bucket owner are safe. Everything else —
+        // public-read, and also authenticated-read (readable by ANY
+        // authenticated AWS account, not just yours) — is exposure.
+        $acl = strtolower(trim((string) ($diskConfig['options']['ACL'] ?? '')));
+        $privateAcls = ['', 'private', 'bucket-owner-full-control', 'bucket-owner-read'];
+
         $exposure = match (true) {
             filled($diskConfig['url'] ?? null) => 'defines a public URL',
             ($diskConfig['serve'] ?? false) === true => 'has HTTP serving enabled',
             ($diskConfig['visibility'] ?? null) === 'public' => 'has public visibility',
-            str_contains(strtolower((string) ($diskConfig['options']['ACL'] ?? '')), 'public') => 'sets a public object ACL',
+            ! in_array($acl, $privateAcls, true) => sprintf('sets object ACL [%s], which can expose objects beyond the bucket owner', $acl),
             default => null,
         };
 

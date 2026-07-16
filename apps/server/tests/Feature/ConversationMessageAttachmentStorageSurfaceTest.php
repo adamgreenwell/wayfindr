@@ -98,6 +98,8 @@ test('a custom attachments disk with any public-exposure marker is refused', fun
         ['driver' => 'local', 'root' => '/tmp/x', 'serve' => true],
         ['driver' => 'local', 'root' => '/tmp/x', 'visibility' => 'public'],
         ['driver' => 's3', 'bucket' => 'b', 'options' => ['ACL' => 'public-read']],
+        // Readable by ANY authenticated AWS account — exposure, not privacy.
+        ['driver' => 's3', 'bucket' => 'b', 'options' => ['ACL' => 'authenticated-read']],
     ];
 
     foreach ($exposedConfigs as $exposed) {
