@@ -51,13 +51,33 @@ return [
         // local disk: no `url`, no `serve`, private visibility. Files are only
         // ever reached by streaming through an authorized Wayfindr endpoint —
         // there is no public path, guessable URL, or storage link. This is the
-        // local-first surface; a remote (S3-compatible) disk is added later and
-        // inherits the same authorization boundary.
+        // local-first surface and the default.
         'attachments' => [
             'driver' => 'local',
             'root' => storage_path('app/private/attachments'),
             'serve' => false,
             'visibility' => 'private',
+            'throw' => false,
+            'report' => false,
+        ],
+
+        // The remote attachment surface (ADR 0007): any S3-compatible object
+        // store (AWS S3, MinIO, Cloudflare R2, Backblaze B2, DigitalOcean
+        // Spaces, or GCS via its S3-interop endpoint). It inherits the exact
+        // same authorization boundary as the local disk — downloads still
+        // stream through the app (no `url`, no storage URL ever handed to the
+        // client), and the bucket itself must stay private.
+        'attachments-s3' => [
+            'driver' => 's3',
+            'key' => env('WAYFINDR_ATTACHMENT_S3_KEY'),
+            'secret' => env('WAYFINDR_ATTACHMENT_S3_SECRET'),
+            'region' => env('WAYFINDR_ATTACHMENT_S3_REGION', 'us-east-1'),
+            'bucket' => env('WAYFINDR_ATTACHMENT_S3_BUCKET'),
+            // Non-AWS stores (MinIO, R2, B2, Spaces, GCS interop) set the
+            // endpoint; most of them also need path-style addressing.
+            'endpoint' => env('WAYFINDR_ATTACHMENT_S3_ENDPOINT'),
+            'use_path_style_endpoint' => filter_var(env('WAYFINDR_ATTACHMENT_S3_USE_PATH_STYLE', false), FILTER_VALIDATE_BOOL),
+            'root' => env('WAYFINDR_ATTACHMENT_S3_ROOT', 'attachments'),
             'throw' => false,
             'report' => false,
         ],

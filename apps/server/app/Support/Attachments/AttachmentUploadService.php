@@ -59,6 +59,10 @@ class AttachmentUploadService
 
         $filename = $this->sanitizeFilename($file->getClientOriginalName());
 
+        // Resolve the destination disk before any work: a misconfigured
+        // storage target must reject the upload loudly, not land it elsewhere.
+        $diskName = AttachmentStorage::diskName();
+
         // Scan the bytes before they are stored, so an infected file never
         // reaches the disk.
         $this->scan($file, $conversation, $site, $uploader, $filename, $mimeType);
@@ -71,7 +75,7 @@ class AttachmentUploadService
         $storageKey = Str::lower((string) Str::ulid()).'/'.Str::lower((string) Str::ulid());
 
         return DB::transaction(function () use (
-            $conversation, $site, $file, $uploader, $sizeBytes, $mimeType, $checksum, $filename, $storageKey, $maxConversationBytes
+            $conversation, $site, $file, $uploader, $sizeBytes, $mimeType, $checksum, $filename, $storageKey, $maxConversationBytes, $diskName
         ): ConversationMessageAttachment {
             // Serialize concurrent uploads to this conversation so the cap check
             // and the insert are atomic — without the lock, two uploads could
@@ -92,7 +96,7 @@ class AttachmentUploadService
             // returns false rather than throwing — surface it instead of
             // recording a row that points at a missing file.
             abort_if(
-                Storage::disk('attachments')->putFileAs(dirname($storageKey), $file, basename($storageKey)) === false,
+                Storage::disk($diskName)->putFileAs(dirname($storageKey), $file, basename($storageKey)) === false,
                 500,
                 'The attachment could not be stored.',
             );
@@ -104,7 +108,7 @@ class AttachmentUploadService
                 'site_id' => $site->id,
                 'uploaded_by_type' => $uploader->getMorphClass(),
                 'uploaded_by_id' => $uploader->getKey(),
-                'storage_disk' => 'attachments',
+                'storage_disk' => $diskName,
                 'storage_key' => $storageKey,
                 'original_filename' => $filename,
                 'mime_type' => $mimeType,

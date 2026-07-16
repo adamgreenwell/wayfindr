@@ -1,0 +1,182 @@
+<?php
+
+// The remote (S3-compatible) attachment storage surface (ADR 0007). The
+// configured disk steers NEW uploads only; every row records its own disk, so
+// local and remote files coexist and serve through the same authorized,
+// stream-through endpoints. Misconfiguration fails loud (rejected uploads +
+// readiness attention), never lands files somewhere unintended.
+
+use App\Models\Account;
+use App\Models\Conversation;
+use App\Models\ConversationMessage;
+use App\Models\ConversationMessageAttachment;
+use App\Models\Site;
+use App\Models\User;
+use App\Models\Visitor;
+use App\Support\Attachments\AttachmentStorage;
+use App\Support\Attachments\AttachmentUploadService;
+use App\Support\OperatorReadiness;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
+
+uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    Storage::fake('attachments');
+    Storage::fake('attachments-s3');
+});
+
+function storageSurfaceFixture(): array
+{
+    $account = Account::factory()->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->create(['visitor_id' => $visitor->id])->load('site');
+
+    return compact('account', 'site', 'visitor', 'conversation');
+}
+
+// --- Disk selection --------------------------------------------------------
+
+test('uploads land on the configured remote disk and the row records it', function (): void {
+    config(['wayfindr.attachments.storage_disk' => 'attachments-s3']);
+    $f = storageSurfaceFixture();
+
+    $attachment = app(AttachmentUploadService::class)
+        ->store($f['conversation'], UploadedFile::fake()->image('remote.png'), $f['visitor']);
+
+    expect($attachment->storage_disk)->toBe('attachments-s3');
+    Storage::disk('attachments-s3')->assertExists($attachment->storage_key);
+    Storage::disk('attachments')->assertMissing($attachment->storage_key);
+});
+
+test('the default remains the local attachments disk', function (): void {
+    $f = storageSurfaceFixture();
+
+    $attachment = app(AttachmentUploadService::class)
+        ->store($f['conversation'], UploadedFile::fake()->image('local.png'), $f['visitor']);
+
+    expect($attachment->storage_disk)->toBe('attachments');
+    Storage::disk('attachments')->assertExists($attachment->storage_key);
+});
+
+test('an unknown storage disk rejects uploads loudly', function (): void {
+    config(['wayfindr.attachments.storage_disk' => 'attachments-s4']);
+    $f = storageSurfaceFixture();
+
+    expect(fn () => app(AttachmentUploadService::class)
+        ->store($f['conversation'], UploadedFile::fake()->image('x.png'), $f['visitor']))
+        ->toThrow(InvalidArgumentException::class);
+
+    expect(ConversationMessageAttachment::count())->toBe(0);
+});
+
+test('the public disk is refused even though it exists', function (): void {
+    config(['wayfindr.attachments.storage_disk' => 'public']);
+
+    expect(fn () => AttachmentStorage::diskName())->toThrow(InvalidArgumentException::class);
+});
+
+// --- Mixed homes serve through the same boundary ---------------------------
+
+test('local and remote attachments serve side by side from their recorded homes', function (): void {
+    $f = storageSurfaceFixture();
+    $message = ConversationMessage::factory()->for($f['conversation'])->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $f['visitor']->id,
+    ]);
+
+    $local = ConversationMessageAttachment::factory()->forMessage($message)->create([
+        'storage_disk' => 'attachments',
+        'original_filename' => 'local.png',
+    ]);
+    Storage::disk('attachments')->put($local->storage_key, 'local-bytes');
+
+    $remote = ConversationMessageAttachment::factory()->forMessage($message)->create([
+        'storage_disk' => 'attachments-s3',
+        'original_filename' => 'remote.png',
+    ]);
+    Storage::disk('attachments-s3')->put($remote->storage_key, 'remote-bytes');
+
+    $agent = User::factory()->for($f['account'])->create();
+
+    $localResponse = $this->actingAs($agent)->get(route('dashboard.conversations.attachments.show', [
+        'supportCode' => $f['conversation']->support_code,
+        'attachment' => $local->id,
+    ]));
+    $localResponse->assertOk();
+    expect($localResponse->streamedContent())->toBe('local-bytes');
+
+    $remoteResponse = $this->actingAs($agent)->get(route('dashboard.conversations.attachments.show', [
+        'supportCode' => $f['conversation']->support_code,
+        'attachment' => $remote->id,
+    ]));
+    $remoteResponse->assertOk();
+    expect($remoteResponse->streamedContent())->toBe('remote-bytes')
+        ->and($remoteResponse->headers->get('X-Content-Type-Options'))->toContain('nosniff');
+});
+
+test('deleting a remote-homed attachment removes its remote binary', function (): void {
+    $f = storageSurfaceFixture();
+    $attachment = ConversationMessageAttachment::factory()
+        ->pendingFor($f['conversation'], $f['visitor'])
+        ->create(['storage_disk' => 'attachments-s3']);
+    Storage::disk('attachments-s3')->put($attachment->storage_key, 'bytes');
+
+    $attachment->delete();
+
+    Storage::disk('attachments-s3')->assertMissing($attachment->storage_key);
+});
+
+// --- Sweep covers the active remote disk ------------------------------------
+
+test('the sweep reaps orphaned objects on the active remote disk too', function (): void {
+    config(['wayfindr.attachments.storage_disk' => 'attachments-s3']);
+
+    $orphanKey = 'aaa/orphan-remote';
+    Storage::disk('attachments-s3')->put($orphanKey, 'orphan');
+    touch(Storage::disk('attachments-s3')->path($orphanKey), now()->subHours(3)->getTimestamp());
+
+    $freshKey = 'bbb/fresh-remote';
+    Storage::disk('attachments-s3')->put($freshKey, 'fresh');
+
+    $this->artisan('wayfindr:sweep-orphaned-attachments')->assertSuccessful();
+
+    Storage::disk('attachments-s3')->assertMissing($orphanKey);
+    Storage::disk('attachments-s3')->assertExists($freshKey);
+});
+
+test('a misconfigured active disk does not stop the sweep of the local default', function (): void {
+    config(['wayfindr.attachments.storage_disk' => 'attachments-s4']);
+
+    $orphanKey = 'ccc/orphan-local';
+    Storage::disk('attachments')->put($orphanKey, 'orphan');
+    touch(Storage::disk('attachments')->path($orphanKey), now()->subHours(3)->getTimestamp());
+
+    $this->artisan('wayfindr:sweep-orphaned-attachments')
+        ->expectsOutputToContain('misconfigured')
+        ->assertSuccessful();
+
+    Storage::disk('attachments')->assertMissing($orphanKey);
+});
+
+// --- Readiness --------------------------------------------------------------
+
+test('readiness reports the active disk when its probe passes', function (): void {
+    config(['wayfindr.attachments.storage_disk' => 'attachments-s3']);
+
+    $check = collect(app(OperatorReadiness::class)->summary()['checks'])->firstWhere('key', 'attachment_storage');
+
+    expect($check['status'])->toBe('ready')
+        ->and($check['summary'])->toContain('attachments-s3');
+});
+
+test('readiness flags a misconfigured storage disk as attention', function (): void {
+    config(['wayfindr.attachments.storage_disk' => 'attachments-s4']);
+
+    $check = collect(app(OperatorReadiness::class)->summary()['checks'])->firstWhere('key', 'attachment_storage');
+
+    expect($check['status'])->toBe('attention')
+        ->and($check['summary'])->toContain('misconfigured');
+});

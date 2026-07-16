@@ -67,6 +67,15 @@ return [
     // and independent of the client; the allowlist is matched against the
     // SERVER-detected MIME (never the client's Content-Type).
     'attachments' => [
+        // Which filesystem disk NEW uploads land on: 'attachments' (local
+        // private disk, the default) or 'attachments-s3' (S3-compatible).
+        // Every row records its own disk, so switching this affects only new
+        // uploads — existing files keep serving from their recorded home, and
+        // no migration is forced. Unknown or unsafe values fail loud at upload
+        // time and surface on readiness rather than landing files somewhere
+        // unintended.
+        'storage_disk' => env('WAYFINDR_ATTACHMENT_STORAGE_DISK', 'attachments'),
+
         'max_file_bytes' => (int) env('WAYFINDR_ATTACHMENT_MAX_FILE_BYTES', 10 * 1024 * 1024),
         'max_per_message' => (int) env('WAYFINDR_ATTACHMENT_MAX_PER_MESSAGE', 5),
         'max_conversation_bytes' => (int) env('WAYFINDR_ATTACHMENT_MAX_CONVERSATION_BYTES', 100 * 1024 * 1024),

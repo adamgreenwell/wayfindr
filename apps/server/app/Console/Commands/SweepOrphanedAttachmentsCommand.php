@@ -3,8 +3,10 @@
 namespace App\Console\Commands;
 
 use App\Models\ConversationMessageAttachment;
+use App\Support\Attachments\AttachmentStorage;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Storage;
+use InvalidArgumentException;
 
 class SweepOrphanedAttachmentsCommand extends Command
 {
@@ -65,21 +67,43 @@ class SweepOrphanedAttachmentsCommand extends Command
     }
 
     /**
-     * Phase B: files on the attachments disk with no owning row — the residue of
-     * a database FK cascade (which deletes rows without loading models, so the
-     * model hook never runs). Only files older than the grace window are removed,
-     * so an in-flight upload (binary written, row not yet committed) is spared.
+     * Phase B: stored objects with no owning row — the residue of a database FK
+     * cascade (which deletes rows without loading models, so the model hook
+     * never runs). Reconciled per disk: the local default plus the active disk
+     * when it differs (rows always sweep by their own recorded disk in Phase A).
+     * Only objects older than the grace window are removed, so an in-flight
+     * upload (binary written, row not yet committed) is spared.
      */
     private function sweepOrphanedFiles(bool $dryRun): int
     {
+        try {
+            $diskNames = AttachmentStorage::sweepableDiskNames();
+        } catch (InvalidArgumentException $exception) {
+            // A misconfigured active disk must not stop the sweep from
+            // reconciling the local default; surface it and carry on.
+            $this->error('Attachment storage is misconfigured: '.$exception->getMessage());
+            $diskNames = ['attachments'];
+        }
+
+        $removed = 0;
+
+        foreach ($diskNames as $diskName) {
+            $removed += $this->sweepOrphanedFilesOn($diskName, $dryRun);
+        }
+
+        return $removed;
+    }
+
+    private function sweepOrphanedFilesOn(string $diskName, bool $dryRun): int
+    {
         $graceHours = max(0, (int) config('wayfindr.attachments.orphan_grace_hours', 1));
         $graceCutoff = now()->subHours($graceHours)->getTimestamp();
-        $disk = Storage::disk('attachments');
+        $disk = Storage::disk($diskName);
 
         // Known keys are looked up after Phase A so rows/files it removed are
         // already gone. Flip to a hash set for O(1) membership tests.
         $knownKeys = ConversationMessageAttachment::query()
-            ->where('storage_disk', 'attachments')
+            ->where('storage_disk', $diskName)
             ->pluck('storage_key')
             ->flip();
 
@@ -87,7 +111,7 @@ class SweepOrphanedAttachmentsCommand extends Command
 
         foreach ($disk->allFiles() as $path) {
             if (str_starts_with(basename($path), '.')) {
-                // Never touch dotfiles (e.g. a .gitkeep an operator added).
+                // Never touch dotfiles (a .gitkeep, or the readiness probe).
                 continue;
             }
 
