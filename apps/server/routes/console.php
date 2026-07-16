@@ -20,6 +20,10 @@ Schedule::command('wayfindr:prune-cobrowse-content')
     ->hourly()
     ->description('Strip raw cobrowse page content from ended sessions past the retention window.');
 
+Schedule::command('wayfindr:expire-break-glass-grants')
+    ->everyFiveMinutes()
+    ->description('Stamp overdue break-glass grants as expired and audit the transition.');
+
 Schedule::command('wayfindr:sweep-orphaned-attachments')
     ->hourly()
     ->description('Remove abandoned/failed unbound attachment uploads and orphaned storage objects.');

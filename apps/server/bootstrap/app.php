@@ -4,6 +4,7 @@ use App\Console\Commands\AlertDigestPreviewCommand;
 use App\Console\Commands\BootstrapWayfindrCommand;
 use App\Console\Commands\CobrowseTransportSmokeCommand;
 use App\Console\Commands\CreateAgentCommand;
+use App\Console\Commands\ExpireBreakGlassGrantsCommand;
 use App\Console\Commands\MailTestCommand;
 use App\Console\Commands\PruneCobrowseContentCommand;
 use App\Console\Commands\SendAlertDigestsCommand;
@@ -25,6 +26,7 @@ return Application::configure(basePath: dirname(__DIR__))
         BootstrapWayfindrCommand::class,
         CobrowseTransportSmokeCommand::class,
         CreateAgentCommand::class,
+        ExpireBreakGlassGrantsCommand::class,
         MailTestCommand::class,
         PruneCobrowseContentCommand::class,
         SendAlertDigestsCommand::class,
