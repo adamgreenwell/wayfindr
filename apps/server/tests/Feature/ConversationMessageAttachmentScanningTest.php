@@ -156,6 +156,34 @@ test('readiness flags an unknown driver as attention', function (): void {
         ->and($check['summary'])->toContain('Unknown malware scanner driver');
 });
 
+test('a silent clamd (accepts but never answers) times out to unavailable instead of hanging', function (): void {
+    // Reproduces the socket-activation failure mode: systemd accepts the
+    // connection while the daemon behind it is dead, so nothing ever answers.
+    // The scan must fail closed within its timeout, not hang the upload request.
+    $socketPath = sys_get_temp_dir().'/wf-silent-clamd-'.uniqid().'.sock';
+    $server = stream_socket_server('unix://'.$socketPath, $errno, $errstr);
+    expect($server)->not->toBeFalse();
+
+    $file = tempnam(sys_get_temp_dir(), 'wf-scan');
+    file_put_contents($file, 'clean bytes');
+
+    try {
+        $scanner = new ClamAvScanner('unix://'.$socketPath, scanTimeoutSeconds: 2);
+
+        $startedAt = microtime(true);
+        $result = $scanner->scan($file);
+        $elapsed = microtime(true) - $startedAt;
+
+        expect($result->isUnavailable())->toBeTrue()
+            ->and($result->error)->toContain('Timed out')
+            ->and($elapsed)->toBeLessThan(6.0);
+    } finally {
+        fclose($server);
+        @unlink($socketPath);
+        @unlink($file);
+    }
+});
+
 test('clamav interprets clamd verdicts', function (): void {
     $scanner = new ClamAvScanner('tcp://127.0.0.1:3310');
 

@@ -38,8 +38,16 @@ class ClamAvScanner implements AttachmentScanner
             return ScanResult::unavailable(sprintf('Could not connect to clamd at %s.', $this->socket));
         }
 
+        // A hard wall-clock deadline for the whole scan. Socket-activated clamd
+        // can accept a connection while the daemon behind it is dead (systemd
+        // accepts, the service never answers); without a deadline the request
+        // would hang instead of failing closed.
+        $deadline = microtime(true) + max(1, $this->scanTimeoutSeconds);
+
         try {
-            fwrite($stream, "zINSTREAM\0");
+            if (! $this->writeAll($stream, "zINSTREAM\0", $deadline)) {
+                return ScanResult::unavailable('Timed out sending the file to clamd.');
+            }
 
             while (! feof($handle)) {
                 $chunk = fread($handle, $this->chunkSize);
@@ -48,22 +56,39 @@ class ClamAvScanner implements AttachmentScanner
                     break;
                 }
 
-                fwrite($stream, pack('N', strlen($chunk)).$chunk);
+                if (! $this->writeAll($stream, pack('N', strlen($chunk)).$chunk, $deadline)) {
+                    return ScanResult::unavailable('Timed out sending the file to clamd.');
+                }
             }
 
             // Zero-length chunk signals end of stream.
-            fwrite($stream, pack('N', 0));
+            if (! $this->writeAll($stream, pack('N', 0), $deadline)) {
+                return ScanResult::unavailable('Timed out sending the file to clamd.');
+            }
 
             $response = '';
 
             while (! feof($stream)) {
                 $buffer = fread($stream, 4096);
 
-                if ($buffer === false) {
-                    break;
+                // fread returns '' (not false) on a socket timeout with feof
+                // still false — treat both, and the stream's timed_out flag, as
+                // "clamd is not answering" rather than spinning forever.
+                if ($buffer === false || $buffer === '') {
+                    if ($buffer === false || stream_get_meta_data($stream)['timed_out'] || microtime(true) >= $deadline) {
+                        return $response === ''
+                            ? ScanResult::unavailable('Timed out waiting for a clamd verdict.')
+                            : $this->interpret($response);
+                    }
+
+                    continue;
                 }
 
                 $response .= $buffer;
+
+                if (microtime(true) >= $deadline) {
+                    break;
+                }
             }
 
             return $this->interpret($response);
@@ -129,6 +154,44 @@ class ClamAvScanner implements AttachmentScanner
         }
 
         return ScanResult::unavailable('clamd error: '.$response);
+    }
+
+    /**
+     * Write the full payload, honoring socket timeouts and the wall-clock
+     * deadline. fwrite can time out (false), stall (0 bytes), or write
+     * partially; anything that stops making progress before the deadline is a
+     * failure, never a hang.
+     *
+     * @param  resource  $stream
+     */
+    private function writeAll($stream, string $bytes, float $deadline): bool
+    {
+        $offset = 0;
+        $length = strlen($bytes);
+
+        while ($offset < $length) {
+            if (microtime(true) >= $deadline) {
+                return false;
+            }
+
+            $written = @fwrite($stream, substr($bytes, $offset));
+
+            if ($written === false || stream_get_meta_data($stream)['timed_out']) {
+                return false;
+            }
+
+            if ($written === 0) {
+                // No progress this pass; back off briefly instead of hot-spinning
+                // until the deadline decides.
+                usleep(50_000);
+
+                continue;
+            }
+
+            $offset += $written;
+        }
+
+        return true;
     }
 
     /**
