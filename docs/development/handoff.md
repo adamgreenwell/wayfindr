@@ -292,24 +292,32 @@ Ordered by real dogfood value and dependency, not feature novelty.
 
 ---
 
-## 8. End-of-session snapshot — July 16, 2026
+## 8. End-of-session snapshot — July 16, 2026 (evening)
 
-- Upstream `main` is at `c9a4bd0` (S3 storage surface, #600). The stage fork was
-  last synced at #599 (ClamAV hang fix); #600 ships defaulting to local storage,
-  so stage needs no config change when it syncs.
-- Full server suite: **1,010 tests / 7,887 assertions**. Widget suite: **157
-  tests**. Pint clean.
-- The attachments epic (ADR 0007) is **fully closed**: contract, storage +
-  scoping, uploads, sweep, both UIs, first-message attach, ClamAV scanner, and
-  the S3 surface — all Codex-reviewed. Codex raised ~24 findings across the
-  epic's PRs (nine on #600 alone); every one was addressed with a regression
-  test. Standouts worth knowing: the sweep-eats-shared-disk hazard (hence
-  `assertSafeDisk`), the AWS ACL-disabled-bucket default (hence
-  `bucket-owner-full-control`), and the clamd socket-activation hang.
-- **ClamAV is live on stage** (2 GB box): readiness green, EICAR rejected
-  end-to-end through the real widget with the `attachment.quarantined` audit
-  naming `Eicar-Test-Signature`, clean uploads scanned and served.
-- Both attachment UIs are live-validated (automated passes + the owner's own
-  phone/desktop testing). Stage test conversations: WF-GZDZRBTE, WF-L6IVPTR1.
-- The next epic is the **agent UI density reduction** (§6.1), owner-directed:
-  survey → classify → trim, conversation detail first.
+- Upstream `main` is at `0c2951c` (break-glass hardening, #611). The stage fork
+  was last synced at #599 (ClamAV hang fix), so stage is missing #600 (S3
+  surface, defaults to local storage — no config change needed), the UI density
+  trims (#602–#605), and the entire break-glass surface (#606–#611).
+- Full server suite: **1,058 tests / 7,963 assertions** (69 break-glass tests
+  across five `tests/Feature/BreakGlass*` files). Widget suite: **157 tests**.
+  Pint clean.
+- The attachments epic (ADR 0007) is **fully closed** — contract through S3
+  surface, all Codex-reviewed with every finding regression-tested. Standouts:
+  the sweep-eats-shared-disk hazard (hence `assertSafeDisk`), the AWS
+  ACL-disabled-bucket default (hence `bucket-owner-full-control`), and the
+  clamd socket-activation hang. **ClamAV is live on stage** (2 GB box),
+  EICAR-proven end to end; both attachment UIs are live-validated. Stage test
+  conversations: WF-GZDZRBTE, WF-L6IVPTR1.
+- The **agent UI density epic is complete and owner-validated** (#602–#605):
+  coaching copy cut, diagnostics behind state-bearing disclosures, the
+  `<x-details-disclosure>` pattern approved for reuse.
+- The **break-glass epic is code-complete** (ADR 0008, #606–#611; see §3's
+  cycle table). Codex raised ~17 findings across the epic; every one was fixed
+  with a regression test. The recurring themes: retention (the grant is the
+  accountability record — it and its account-homed trail outlive the content),
+  resource-side coverage everywhere (routes, listings, labels, attachments'
+  own scope columns), and references-vs-content (customer content renders only
+  where that resource's view is audited, and never enters audit metadata).
+- Next: **stage-validate both July 16 epics after the owner's fork sync**
+  (§6.1) — walk the trimmed routes, then run a live break-glass drill:
+  request → second-admin approve → viewer → banner → audit → revoke.
