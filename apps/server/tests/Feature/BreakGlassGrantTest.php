@@ -84,6 +84,19 @@ test('duration is bounded to the 24-hour maximum', function (): void {
         ->toThrow(ValidationException::class);
 });
 
+test('a request that cannot be audited leaves no grant behind', function (): void {
+    // Grant and trail commit atomically — a grant with no account-visible
+    // audit event must never exist, even transiently.
+    $w = breakGlassWorld();
+    AuditEvent::creating(function (): void {
+        throw new RuntimeException('audit store down');
+    });
+
+    expect(fn () => grants()->request($w['operator'], $w['conversation'], 'Debugging.'))
+        ->toThrow(RuntimeException::class);
+    expect(BreakGlassGrant::count())->toBe(0);
+});
+
 // --- Approval ----------------------------------------------------------------
 
 test('an account admin approves and the grant activates with a stamped expiry', function (): void {

@@ -54,20 +54,24 @@ class BreakGlassGrants
             throw new InvalidArgumentException('The requested scope does not resolve to an account.');
         }
 
-        $grant = BreakGlassGrant::query()->create([
-            'account_id' => $accountId,
-            'scope_type' => $scopeType,
-            'conversation_id' => $conversationId,
-            'site_id' => $siteId,
-            'requester_id' => $requester->id,
-            'reason' => $reason,
-            'status' => BreakGlassGrant::STATUS_REQUESTED,
-            'requested_minutes' => $minutes,
-        ]);
+        // Grant and audit event commit together — a request that fails to
+        // leave a trail must not leave a grant either.
+        return DB::transaction(function () use ($accountId, $scopeType, $conversationId, $siteId, $requester, $reason, $minutes): BreakGlassGrant {
+            $grant = BreakGlassGrant::query()->create([
+                'account_id' => $accountId,
+                'scope_type' => $scopeType,
+                'conversation_id' => $conversationId,
+                'site_id' => $siteId,
+                'requester_id' => $requester->id,
+                'reason' => $reason,
+                'status' => BreakGlassGrant::STATUS_REQUESTED,
+                'requested_minutes' => $minutes,
+            ]);
 
-        $this->audit($grant, $requester, 'break_glass.requested');
+            $this->audit($grant, $requester, 'break_glass.requested');
 
-        return $grant;
+            return $grant;
+        });
     }
 
     /**
