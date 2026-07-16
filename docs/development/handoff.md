@@ -66,15 +66,33 @@ migration-free coexistence, dedicated-disk + private-ACL validation). Both UIs
 were live-validated on stage, including the owner's own phone/desktop testing.
 The stage box was resized to 2 GB to host clamd comfortably.
 
+**The agent UI density epic is complete and owner-validated (July 16).**
+PRs #602–#605 trimmed every agent route to what the day-to-day support task
+needs: coaching copy cut outright, session/state diagnostics collapsed in place
+behind the native `<x-details-disclosure>` component with state-bearing
+summaries, install-wide constants moved to readiness pages, duplication killed.
+The disclosure pattern is approved for reuse on new surfaces.
+
+**The break-glass epic (#58) is code-complete (July 16).** The full
+[ADR 0008](../decisions/0008-platform-operator-break-glass.md) contract shipped
+across PRs #606–#611: the grant model and lifecycle service (scoped, reasoned,
+time-bound, read-only, row-locked, audited), the operator request/self-approve
+console and the account approve/deny/revoke page, the scoped read-only viewers
+(transcripts, tickets, attachment metadata only), the always-on dashboard
+transparency banner while a grant is live, and a hardening suite that pins the
+hosted shape end to end. 69 tests across five files. **Not yet live-validated
+on stage** — that needs the owner's fork sync.
+
 **Epics closed this cycle**: #4 (Chat UX Polish), #5 (Cobrowse Transport
-Discipline), #490 (Cobrowse Observe-Mode Fidelity), attachments (ADR 0007).
+Discipline), #490 (Cobrowse Observe-Mode Fidelity), attachments (ADR 0007),
+agent UI density (#602–#605), break-glass (ADR 0008, #606–#611).
 
 **Issue housekeeping is current.** #564 (launch proof) was reconciled and
 closed. #22's comment relay shipped and was live-validated; the issue remains
 open solely for demand-gated field mapping. The longer-lived open product areas
-are #58 (Platform Operator Boundary), #492 (live in-place cobrowse replay —
-recommended against as specced), and the **agent UI density reduction** now at
-the top of §6.
+are #58 (Platform Operator Boundary — break-glass done, platform-action audit
+inventory remains demand-gated) and #492 (live in-place cobrowse replay —
+recommended against as specced).
 
 ---
 
@@ -106,6 +124,16 @@ the top of §6.
 | **Delete / quota reclaim** | Scoped DELETE (unbound + requester-owned only, `lockForUpdate` serialized with the binder) wired into both chip-removal paths, incl. remove-mid-upload orphan handling. | Both attachment controllers, widget + composer scripts | #596 |
 | **Malware scanner** | Pluggable `AttachmentScanner` (Null default = accept-with-defense-in-depth, surfaced on readiness; ClamAV via clamd INSTREAM, dependency-free). Synchronous pre-store scan; infected → rejected + `attachment.quarantined`; unreachable → fail-closed reject + logged error + audit (fail-open opt-in). Hardened against silent clamd (socket-activation), early verdicts, and deadline overshoot. **Live on stage** (2 GB box), EICAR-proven. | `app/Support/Attachments/Scanning/*`, `docs/self-hosting/attachment-scanning.md` | #598/#599 |
 | **S3 storage surface** | `WAYFINDR_ATTACHMENT_STORAGE_DISK=attachments-s3` routes NEW uploads to any S3-compatible store; per-row `storage_disk` = migration-free coexistence; stream-through downloads on both surfaces. `AttachmentStorage::assertSafeDisk()` is the single safety judgment (dedicated `attachments*` name, no exposure markers, ACL allowlist) shared by uploads and the sweep. Write ACL defaults `bucket-owner-full-control` (modern AWS owner-enforced buckets). | `config/filesystems.php`, `app/Support/Attachments/AttachmentStorage.php`, `docs/self-hosting/attachment-storage.md` | #600 |
+
+### Break-glass cycle (July 16)
+
+| Piece | What it does | Where | PRs |
+| --- | --- | --- | --- |
+| **Contract** | ADR 0008: operator access to customer content only via a first-class grant — scoped (conversation/site/account, narrowest default), reasoned, time-bound (60 min default / 24 h max, close-early, never extend), read-only, two-party approval with standing-gated self-approve fallback, account-visible. | `docs/decisions/0008-platform-operator-break-glass.md` | #606 |
+| **Grant model + lifecycle** | `BreakGlassGrant` (live-expiry `isActive()`, resource-side `covers*` re-derivation, `scopeLabel()` names references only when account-owned) + `BreakGlassGrants` service (request/approve/deny/close/expire, row-locked, every transition audited atomically, account-homed events); grants outlive the content they exposed (`nullOnDelete`). Five-minute expiry sweep command. | `app/Models/BreakGlassGrant.php`, `app/Support/BreakGlass/BreakGlassGrants.php` | #607 |
+| **Request/approval surfaces** | `/operator/break-glass` (request form, self-approve only when it can succeed, close-early) and `/dashboard/account/operator-access` (approve/deny/revoke + history). Open grants are never capped behind history on either surface. | `OperatorBreakGlassController.php`, `AgentAccountBreakGlassController.php`, both blade views | #608 |
+| **Read-only viewers** | Requester-only, live-active-only, coverage re-derived per request AND per listed row; transcripts + ticket records as text; attachment metadata only (rows verify their own scope columns); content renders only where that resource's view is audited (`.opened`/`.resource_viewed`, deduped); account audit page surfaces and searches the labels. | `OperatorBreakGlassViewerController.php`, `operator/break-glass-*.blade.php`, `AgentAccountAuditController.php` | #609 |
+| **Transparency + hardening** | Dashboard banner for every agent of the account while any grant is live (admins get revoke); hardening suite: hosted shape end-to-end, no dashboard escalation, deactivated actors, stray scope columns. | `agent/dashboard.blade.php`, `tests/Feature/BreakGlass*` (69 tests, 5 files) | #610/#611 |
 
 ---
 
@@ -186,20 +214,12 @@ the top of §6.
 
 Ordered by real dogfood value and dependency, not feature novelty.
 
-1. **Agent UI density reduction — the active epic (owner-directed, July 16).**
-   Every agent route presents a lot of *good* information, but the day-to-day
-   agent doesn't need most of it to do their support task. Trim the agent UI to
-   what's relevant for the task at hand; keep the depth reachable, not ambient.
-   Guardrails already established by the prior UI epic (#511): unobtrusive UI,
-   the agent finds what they need NOW, never make the customer wait; tabs over
-   long scrolls; reuse the `x-tabs` component for new surfaces.
-
-   Suggested shape (survey first, then slice): inventory each agent route's
-   sections; classify each as *task-critical* (visible by default),
-   *situational* (collapsed/behind a tab or toggle), or *diagnostic/ops*
-   (move toward readiness/operator surfaces or a "details" drawer); then trim
-   route by route — conversation detail first (it carries the most ambient
-   diagnostics), then ticket detail, then the queues/home.
+1. **Stage-validate the two July 16 epics.** The agent UI density trims
+   (#602–#605) and the whole break-glass surface (#606–#611) are merged but not
+   yet deployed to stage — that needs the owner's fork sync. After the sync:
+   walk the trimmed agent routes, then run a real break-glass drill (request →
+   approve from a second admin → viewer → banner → audit trail → revoke) on
+   `wayfindr.on-forge.com`.
 
 2. **Operate the real dogfood loop.** Route Wayfindr support through Wayfindr,
    keep synthetic smoke records distinguishable from real work, and let actual
@@ -219,11 +239,13 @@ Ordered by real dogfood value and dependency, not feature novelty.
    which provider metadata agents actually need. Inbound-comment notifications
    and richer presentation belong to the same demand-gated polish lane.
 
-5. **#58 — Platform Operator Boundary, next slices.** The boundary exists
-   (`/operator`, readiness, security-posture check, docs). Remaining, design-heavy
-   work: **break-glass** customer-data access (explicit, scoped, time-bound,
-   audited) and a comprehensive **platform-action audit** trail. Start from
-   `docs/product/platform-operator-boundary.md`.
+5. **#58 — Platform Operator Boundary: break-glass is done.** The design-heavy
+   half shipped (ADR 0008, PRs #606–#611; see §3). What remains on the issue is
+   the comprehensive **platform-action audit inventory** — demand-gated, and
+   much of its foundation (account-homed `break_glass.*` events, the operator
+   dashboard's safe-activity feed) now exists. Possible later extensions the
+   ADR deliberately excluded from v1: repair verbs, attachment binary access.
+   Start from `docs/product/platform-operator-boundary.md`.
 
 6. **#492 — live in-place cobrowse replay (incremental DOM patching).**
    **Recommended against as currently specced**: it would require weakening the
