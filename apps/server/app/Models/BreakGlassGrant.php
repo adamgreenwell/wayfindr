@@ -191,6 +191,22 @@ class BreakGlassGrant extends Model
     }
 
     /**
+     * A short human status for the operator console and the account-visible
+     * record. An overdue-but-unswept active grant already reads as expired.
+     */
+    public function statusLabel(): string
+    {
+        return match ($this->status) {
+            self::STATUS_REQUESTED => 'Awaiting approval',
+            self::STATUS_ACTIVE => $this->isActive() ? 'Active' : 'Expired',
+            self::STATUS_DENIED => 'Denied',
+            self::STATUS_CLOSED => 'Closed early',
+            self::STATUS_EXPIRED => 'Expired',
+            default => $this->status,
+        };
+    }
+
+    /**
      * A short human label for audit trails and the account-visible record.
      */
     public function scopeLabel(): string

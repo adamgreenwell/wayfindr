@@ -4,6 +4,7 @@ use App\Http\Controllers\AgentAccountAgentAccessController;
 use App\Http\Controllers\AgentAccountAgentController;
 use App\Http\Controllers\AgentAccountAgentRoleController;
 use App\Http\Controllers\AgentAccountAuditController;
+use App\Http\Controllers\AgentAccountBreakGlassController;
 use App\Http\Controllers\AgentAccountController;
 use App\Http\Controllers\AgentAccountIntegrationsController;
 use App\Http\Controllers\AgentAlertController;
@@ -27,6 +28,7 @@ use App\Http\Controllers\AgentTicketQueueController;
 use App\Http\Controllers\AgentVisitorController;
 use App\Http\Controllers\Auth\SessionController;
 use App\Http\Controllers\FirstRunSetupController;
+use App\Http\Controllers\OperatorBreakGlassController;
 use App\Http\Controllers\OperatorDashboardController;
 use App\Http\Controllers\OperatorReadinessConfirmationController;
 use App\Http\Controllers\Widget\WidgetScriptController;
@@ -66,6 +68,14 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.account.show');
     Route::get('/dashboard/account/integrations', [AgentAccountIntegrationsController::class, 'show'])
         ->name('dashboard.account.integrations');
+    Route::get('/dashboard/account/operator-access', [AgentAccountBreakGlassController::class, 'index'])
+        ->name('dashboard.account.break-glass.index');
+    Route::post('/dashboard/account/operator-access/{grant}/approve', [AgentAccountBreakGlassController::class, 'approve'])
+        ->name('dashboard.account.break-glass.approve');
+    Route::post('/dashboard/account/operator-access/{grant}/deny', [AgentAccountBreakGlassController::class, 'deny'])
+        ->name('dashboard.account.break-glass.deny');
+    Route::post('/dashboard/account/operator-access/{grant}/close', [AgentAccountBreakGlassController::class, 'close'])
+        ->name('dashboard.account.break-glass.close');
     Route::get('/dashboard/account/audit', [AgentAccountAuditController::class, 'index'])
         ->name('dashboard.account.audit.index');
     Route::get('/dashboard/account/audit/export', [AgentAccountAuditController::class, 'export'])
@@ -208,4 +218,12 @@ Route::middleware(['auth', EnsureAgentIsActive::class, EnsurePlatformOperator::c
         Route::get('/', OperatorDashboardController::class)->name('dashboard');
         Route::post('/readiness/confirmations', [OperatorReadinessConfirmationController::class, 'storeFromOperator'])
             ->name('readiness.confirmations.store');
+        Route::get('/break-glass', [OperatorBreakGlassController::class, 'index'])
+            ->name('break-glass.index');
+        Route::post('/break-glass', [OperatorBreakGlassController::class, 'store'])
+            ->name('break-glass.store');
+        Route::post('/break-glass/{grant}/approve', [OperatorBreakGlassController::class, 'approve'])
+            ->name('break-glass.approve');
+        Route::post('/break-glass/{grant}/close', [OperatorBreakGlassController::class, 'close'])
+            ->name('break-glass.close');
     });

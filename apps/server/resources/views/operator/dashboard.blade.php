@@ -55,6 +55,16 @@
         </div>
     </section>
 
+    <section class="section" aria-labelledby="operator-break-glass-heading">
+        <div class="section-header">
+            <div>
+                <h2 id="operator-break-glass-heading">Break-glass access</h2>
+                <p class="lede">The only path to customer support content: scoped, reasoned, time-bound, read-only.</p>
+            </div>
+            <a class="button secondary" href="{{ route('operator.break-glass.index') }}">Open</a>
+        </div>
+    </section>
+
     <section class="section" aria-labelledby="system-identity-heading">
         <div class="section-header">
             <div>

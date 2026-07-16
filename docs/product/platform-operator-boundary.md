@@ -75,6 +75,8 @@ The first code scaffold should be small:
 - `/operator` includes a platform action inventory that labels current read-only actions, audited manual readiness proof, and future break-glass work without exposing support data;
 - browser and CLI bootstrap mark the first local user as both account owner and platform operator.
 
+The break-glass workflow itself now exists (ADR 0008): `/operator/break-glass` is where an operator requests scoped, reasoned, time-bound, read-only access, and `/dashboard/account/operator-access` is where the account's owners and admins approve, deny, or revoke it. Every transition is audited as `break_glass.*` events. Grants — not platform authority — are what the upcoming read-only viewers will check.
+
 Other account owners and admins remain account roles only. They do not become platform operators by implication.
 
 ## Sanity Checks

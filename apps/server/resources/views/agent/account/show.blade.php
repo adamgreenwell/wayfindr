@@ -356,6 +356,13 @@
                             </span>
                             <span class="management-action">Open</span>
                         </a>
+                        <a class="management-link" href="{{ route('dashboard.account.break-glass.index') }}">
+                            <span>
+                                <strong>Operator access</strong>
+                                <span class="lede">Break-glass requests and grants touching this account.</span>
+                            </span>
+                            <span class="management-action">Review</span>
+                        </a>
                     @endif
                 </div>
             </section>
