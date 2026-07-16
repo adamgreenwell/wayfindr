@@ -35,7 +35,8 @@
                         @if ($grant->coversConversation($ticket->conversation))
                             <a class="text-link" href="{{ route('operator.break-glass.conversations.show', [$grant, $ticket->conversation]) }}">{{ $ticket->conversation->support_code }}</a>
                         @else
-                            {{ $ticket->conversation->support_code }}
+                            {{-- An uncovered conversation is never NAMED, only acknowledged. --}}
+                            (out of scope)
                         @endif
                     </span>
                 </div>

@@ -24,7 +24,7 @@
                             @if (filled($message->body))
                                 <span class="lede">{{ $message->body }}</span>
                             @endif
-                            @foreach ($message->attachments as $attachment)
+                            @foreach ($attachmentsByMessage[$message->id] as $attachment)
                                 <span class="lede">
                                     Attachment: {{ $attachment->original_filename }}
                                     ({{ $attachment->mime_type }}, {{ number_format($attachment->size_bytes / 1024, 1) }} KB, scan: {{ $attachment->scan_status ?? 'n/a' }})

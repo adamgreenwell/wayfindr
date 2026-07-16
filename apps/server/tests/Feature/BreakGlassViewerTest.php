@@ -228,6 +228,58 @@ test('a mismatched linked ticket never renders under a covered transcript', func
         ->assertDontSee('Mismatched ticket row subject');
 });
 
+test('a covered ticket never names an out-of-scope conversation', function (): void {
+    // A site-scoped grant covers the ticket, but its conversation_id points
+    // at another account's conversation — the record acknowledges the link
+    // without naming the support code.
+    $w = breakGlassViewerWorld();
+    $foreignSite = Site::factory()->create();
+    $foreignVisitor = Visitor::factory()->for($foreignSite)->create();
+    $foreignConversation = Conversation::factory()->for($foreignSite)->create(['visitor_id' => $foreignVisitor->id]);
+
+    $ticket = Ticket::factory()->for($w['account'])->for($w['site'])->create([
+        'conversation_id' => $foreignConversation->id,
+        'subject' => 'Stale link ticket',
+    ]);
+
+    $siteGrant = BreakGlassGrant::factory()
+        ->activeFor($w['account'], $w['operator'])
+        ->scopedToSite($w['site'])
+        ->create();
+
+    $this->actingAs($w['operator'])
+        ->get(route('operator.break-glass.tickets.show', [$siteGrant, $ticket]))
+        ->assertOk()
+        ->assertSee('Stale link ticket')
+        ->assertSee('(out of scope)')
+        ->assertDontSee($foreignConversation->support_code);
+});
+
+test('a mismatched attachment row renders nothing, not even its filename', function (): void {
+    $w = breakGlassViewerWorld();
+    $foreignSite = Site::factory()->create();
+    $message = ConversationMessage::factory()->for($w['conversation'])->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $w['visitor']->id,
+        'body' => 'See attached.',
+    ]);
+    ConversationMessageAttachment::factory()->create([
+        'conversation_message_id' => $message->id,
+        'conversation_id' => Conversation::factory()->for($foreignSite)->create([
+            'visitor_id' => Visitor::factory()->for($foreignSite)->create()->id,
+        ])->id,
+        'account_id' => $foreignSite->account_id,
+        'site_id' => $foreignSite->id,
+        'original_filename' => 'foreign-secrets.pdf',
+    ]);
+
+    $this->actingAs($w['operator'])
+        ->get(route('operator.break-glass.conversations.show', [$w['grant'], $w['conversation']]))
+        ->assertOk()
+        ->assertSee('See attached.')
+        ->assertDontSee('foreign-secrets.pdf');
+});
+
 test('a non-operator cannot reach any viewer route', function (): void {
     $w = breakGlassViewerWorld();
     $admin = User::factory()->for($w['account'])->create(['account_role' => AccountRole::Admin]);

@@ -55,10 +55,24 @@ class OperatorBreakGlassViewerController extends Controller
             ->orderBy('id')
             ->get();
 
+        // The grant authorizes attachment METADATA inside the covered
+        // conversation only. Attachment rows carry denormalized
+        // conversation/account/site columns for exactly this check (ADR
+        // 0007) — a mismatched row bound to a covered message renders
+        // nothing, not even its filename.
+        $attachmentsByMessage = $messages->mapWithKeys(fn ($message): array => [
+            $message->id => $message->attachments
+                ->filter(fn ($attachment): bool => (int) $attachment->conversation_id === (int) $conversation->id
+                    && (int) $attachment->account_id === (int) $grant->account_id
+                    && (int) $attachment->site_id === (int) $conversation->site_id)
+                ->values(),
+        ]);
+
         return view('operator.break-glass-conversation', [
             'grant' => $grant,
             'conversation' => $conversation->loadMissing('site'),
             'messages' => $messages,
+            'attachmentsByMessage' => $attachmentsByMessage,
             'senderLabels' => $messages->mapWithKeys(fn ($message): array => [
                 $message->id => $this->senderLabel($message->sender),
             ]),
