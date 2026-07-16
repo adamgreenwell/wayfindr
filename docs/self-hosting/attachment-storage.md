@@ -53,7 +53,10 @@ probes the active disk and reports which surface new uploads land on.
   `attachments-*` disk for custom setups). Shared disks such as `local`,
   `public`, or `s3` are refused outright: the retention sweep deletes any
   object on a swept disk that has no attachment row, which on a shared disk
-  would remove unrelated application files.
+  would remove unrelated application files. A custom disk must also be
+  **private** — any exposure marker (`url`, `serve`, or
+  `visibility: public`) is refused, because attachments are only ever served
+  through authorized Wayfindr endpoints.
 
 ## Bucket posture
 

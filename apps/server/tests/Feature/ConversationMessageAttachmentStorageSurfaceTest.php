@@ -90,6 +90,30 @@ test('shared disks are refused even though they exist — only dedicated attachm
     }
 });
 
+test('a custom attachments disk with any public-exposure marker is refused', function (): void {
+    // Passing the name convention is not enough — a disk configured for web
+    // exposure violates ADR 0007's "no public path, ever".
+    $exposedConfigs = [
+        ['driver' => 'local', 'root' => '/tmp/x', 'url' => 'https://cdn.example.test/files'],
+        ['driver' => 'local', 'root' => '/tmp/x', 'serve' => true],
+        ['driver' => 'local', 'root' => '/tmp/x', 'visibility' => 'public'],
+    ];
+
+    foreach ($exposedConfigs as $exposed) {
+        config([
+            'filesystems.disks.attachments-custom' => $exposed,
+            'wayfindr.attachments.storage_disk' => 'attachments-custom',
+        ]);
+
+        expect(fn () => AttachmentStorage::diskName())
+            ->toThrow(InvalidArgumentException::class, 'must stay private');
+    }
+
+    // A genuinely private custom disk is accepted.
+    config(['filesystems.disks.attachments-custom' => ['driver' => 'local', 'root' => '/tmp/x']]);
+    expect(AttachmentStorage::diskName())->toBe('attachments-custom');
+});
+
 test('the sweep refuses to orphan-sweep a shared disk even when a row claims it', function (): void {
     $f = storageSurfaceFixture();
     Storage::fake('local');

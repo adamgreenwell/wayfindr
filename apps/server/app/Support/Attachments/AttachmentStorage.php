@@ -40,10 +40,33 @@ class AttachmentStorage
             ));
         }
 
-        if (config("filesystems.disks.{$disk}") === null) {
+        $diskConfig = config("filesystems.disks.{$disk}");
+
+        if ($diskConfig === null) {
             throw new InvalidArgumentException(sprintf(
                 'Unknown attachment storage disk [%s]. Configure it in filesystems.disks or use attachments / attachments-s3.',
                 $disk,
+            ));
+        }
+
+        // The name convention is not enough: a custom attachments-* disk could
+        // still be configured for web exposure. ADR 0007's guarantee is "no
+        // public path, ever", so any exposure marker on the disk config is
+        // rejected — attachments are only reached by streaming through the
+        // app's authorized endpoints.
+        $diskConfig = is_array($diskConfig) ? $diskConfig : [];
+        $exposure = match (true) {
+            filled($diskConfig['url'] ?? null) => 'defines a public URL',
+            ($diskConfig['serve'] ?? false) === true => 'has HTTP serving enabled',
+            ($diskConfig['visibility'] ?? null) === 'public' => 'has public visibility',
+            default => null,
+        };
+
+        if ($exposure !== null) {
+            throw new InvalidArgumentException(sprintf(
+                'Attachment storage disk [%s] %s — attachments must stay private (no url, no serve, no public visibility) and are only served through authorized Wayfindr endpoints.',
+                $disk,
+                $exposure,
             ));
         }
 
