@@ -120,6 +120,7 @@
                                 </form>
                             @endif
                             @if ($grant->isActive())
+                                <a class="button" href="{{ route('operator.break-glass.show', $grant) }}">Open access</a>
                                 <form class="compact-form" method="POST" action="{{ route('operator.break-glass.close', $grant) }}">
                                     @csrf
                                     <button class="button secondary" type="submit">Close now</button>

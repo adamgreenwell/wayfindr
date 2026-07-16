@@ -29,6 +29,7 @@ use App\Http\Controllers\AgentVisitorController;
 use App\Http\Controllers\Auth\SessionController;
 use App\Http\Controllers\FirstRunSetupController;
 use App\Http\Controllers\OperatorBreakGlassController;
+use App\Http\Controllers\OperatorBreakGlassViewerController;
 use App\Http\Controllers\OperatorDashboardController;
 use App\Http\Controllers\OperatorReadinessConfirmationController;
 use App\Http\Controllers\Widget\WidgetScriptController;
@@ -226,4 +227,10 @@ Route::middleware(['auth', EnsureAgentIsActive::class, EnsurePlatformOperator::c
             ->name('break-glass.approve');
         Route::post('/break-glass/{grant}/close', [OperatorBreakGlassController::class, 'close'])
             ->name('break-glass.close');
+        Route::get('/break-glass/{grant}', [OperatorBreakGlassViewerController::class, 'show'])
+            ->name('break-glass.show');
+        Route::get('/break-glass/{grant}/conversations/{conversation}', [OperatorBreakGlassViewerController::class, 'conversation'])
+            ->name('break-glass.conversations.show');
+        Route::get('/break-glass/{grant}/tickets/{ticket}', [OperatorBreakGlassViewerController::class, 'ticket'])
+            ->name('break-glass.tickets.show');
     });

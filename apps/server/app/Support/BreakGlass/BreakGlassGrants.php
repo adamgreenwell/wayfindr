@@ -220,6 +220,59 @@ class BreakGlassGrants
     }
 
     /**
+     * Record that the requester opened the grant's viewer surface — once per
+     * grant; re-loading the page is not a new event.
+     */
+    public function recordOpened(BreakGlassGrant $grant, User $actor): void
+    {
+        $alreadyRecorded = $grant->auditEvents()
+            ->where('action', 'break_glass.opened')
+            ->exists();
+
+        if ($alreadyRecorded) {
+            return;
+        }
+
+        $this->audit($grant, $actor, 'break_glass.opened');
+    }
+
+    /**
+     * Record that the requester viewed a specific covered resource — deduped
+     * per grant+resource (the attachment.downloaded pattern): the first view
+     * under a grant is what the account needs to see, not every page reload.
+     */
+    public function recordResourceViewed(BreakGlassGrant $grant, User $actor, string $resourceType, int $resourceId, string $resourceLabel): void
+    {
+        $alreadyRecorded = $grant->auditEvents()
+            ->where('action', 'break_glass.resource_viewed')
+            ->where('metadata->resource_type', $resourceType)
+            ->where('metadata->resource_id', $resourceId)
+            ->exists();
+
+        if ($alreadyRecorded) {
+            return;
+        }
+
+        $grant->auditEvents()->create([
+            'account_id' => $grant->account_id,
+            // Account-homed like every break_glass.* event: the trail must
+            // outlive the content it records.
+            'site_id' => null,
+            'actor_type' => $actor->getMorphClass(),
+            'actor_id' => $actor->getKey(),
+            'action' => 'break_glass.resource_viewed',
+            'metadata' => [
+                'scope_type' => $grant->scope_type,
+                'scope_label' => $grant->scopeLabel(),
+                'resource_type' => $resourceType,
+                'resource_id' => $resourceId,
+                'resource_label' => $resourceLabel,
+            ],
+            'occurred_at' => now(),
+        ]);
+    }
+
+    /**
      * Owners/admins of the grant's account, excluding the requester and the
      * deactivated — the people who can approve, deny, or close it.
      *
