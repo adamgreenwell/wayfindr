@@ -57,6 +57,7 @@ class OperatorBreakGlassViewerController extends Controller
 
         $messages = $conversation->messages()
             ->with(['sender', 'attachments'])
+            ->orderBy('created_at')
             ->orderBy('id')
             ->get();
 

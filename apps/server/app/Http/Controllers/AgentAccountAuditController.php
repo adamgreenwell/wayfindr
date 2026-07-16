@@ -242,7 +242,13 @@ class AgentAccountAuditController extends Controller
                             ->whereLike('name', $searchPattern)
                             ->orWhereLike('domain', $searchPattern))
                         ->orWhereHasMorph('subject', [CobrowseSession::class], fn (Builder $query) => $query
-                            ->whereHas('conversation', fn (Builder $query) => $query->whereLike('support_code', $searchPattern)));
+                            ->whereHas('conversation', fn (Builder $query) => $query->whereLike('support_code', $searchPattern)))
+                        // Break-glass subjects surface their reference-safe
+                        // labels (support code, site name, "Ticket #n") from
+                        // event metadata — the search must reach what the
+                        // subject column shows.
+                        ->orWhereLike('metadata->resource_label', $searchPattern)
+                        ->orWhereLike('metadata->scope_label', $searchPattern);
                 });
             });
     }

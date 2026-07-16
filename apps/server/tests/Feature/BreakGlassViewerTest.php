@@ -315,6 +315,40 @@ test('the account audit page names exactly what an operator reached', function (
         ->assertSee('Break-glass: Conversation '.$w['conversation']->support_code);
 });
 
+test('the transcript renders in chronological order, not insertion order', function (): void {
+    $w = breakGlassViewerWorld();
+    ConversationMessage::factory()->for($w['conversation'])->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $w['visitor']->id,
+        'body' => 'Backfilled earlier message.',
+        'created_at' => now()->subHour(),
+    ]);
+
+    $this->actingAs($w['operator'])
+        ->get(route('operator.break-glass.conversations.show', [$w['grant'], $w['conversation']]))
+        ->assertOk()
+        ->assertSeeInOrder(['Backfilled earlier message.', 'My uploads keep failing.']);
+});
+
+test('audit search finds break-glass events by their surfaced label', function (): void {
+    $w = breakGlassViewerWorld();
+    $admin = User::factory()->for($w['account'])->create(['account_role' => AccountRole::Admin]);
+
+    $this->actingAs($w['operator'])
+        ->get(route('operator.break-glass.conversations.show', [$w['grant'], $w['conversation']]))
+        ->assertOk();
+
+    $this->actingAs($admin)
+        ->get(route('dashboard.account.audit.index', ['audit_search' => $w['conversation']->support_code]))
+        ->assertOk()
+        ->assertSee('Break-glass: Conversation '.$w['conversation']->support_code);
+
+    $this->actingAs($admin)
+        ->get(route('dashboard.account.audit.index', ['audit_search' => 'WF-ZZZZZZZZ']))
+        ->assertOk()
+        ->assertDontSee('Break-glass: Conversation');
+});
+
 test('a non-operator cannot reach any viewer route', function (): void {
     $w = breakGlassViewerWorld();
     $admin = User::factory()->for($w['account'])->create(['account_role' => AccountRole::Admin]);
