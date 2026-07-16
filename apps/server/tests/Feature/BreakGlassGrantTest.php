@@ -358,12 +358,14 @@ test('the grant and its trail outlive the conversation it scoped', function (): 
         ->and($grant->coversConversation($survivor))->toBeFalse();
 });
 
-test('the grant outlives the site it scoped', function (): void {
+test('the grant and its trail outlive the site it scoped', function (): void {
+    // audit_events.site_id cascades on site deletion, so break-glass events
+    // are account-homed only — the trail survives the site along with the
+    // grant row.
     $w = breakGlassWorld();
-    $grant = BreakGlassGrant::factory()
-        ->activeFor($w['account'], $w['operator'])
-        ->scopedToSite($w['site'])
-        ->create();
+    $grant = grants()->request($w['operator'], $w['site'], 'Storage audit.');
+    $grant = grants()->approve($grant, $w['operator']); // single-admin world: self-approval
+    $trailBefore = $grant->auditEvents()->count();
 
     $w['site']->delete();
 
@@ -372,6 +374,7 @@ test('the grant outlives the site it scoped', function (): void {
 
     expect($grant)->not->toBeNull()
         ->and($grant->site_id)->toBeNull()
+        ->and($grant->auditEvents()->count())->toBe($trailBefore)
         ->and($grant->scopeLabel())->toBe('Site (deleted)')
         ->and($grant->coversSite($survivorSite))->toBeFalse();
 });

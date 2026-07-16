@@ -232,7 +232,10 @@ class BreakGlassGrants
     {
         $grant->auditEvents()->create([
             'account_id' => $grant->account_id,
-            'site_id' => $grant->site_id,
+            // Deliberately not site-homed: audit_events.site_id cascades on
+            // site deletion, and the break-glass trail must outlive the
+            // content it records. The scope is named in metadata instead.
+            'site_id' => null,
             'actor_type' => $actor?->getMorphClass(),
             'actor_id' => $actor?->getKey(),
             'action' => $action,
