@@ -5,6 +5,8 @@
 // notification that opening the conversation marks read. One email per waiting
 // episode, metadata only, and nothing while someone is actually answering.
 
+use App\Events\ConversationMessageCreated;
+use App\Listeners\NotifyAgentsOfVisitorMessage;
 use App\Mail\UnattendedConversationAlertMessage;
 use App\Models\Account;
 use App\Models\Conversation;
@@ -191,6 +193,37 @@ test('quiet-mode and deactivated agents are skipped', function (): void {
     Artisan::call('wayfindr:send-unattended-conversation-alerts');
 
     Mail::assertNothingQueued();
+});
+
+test('a follow-up message inside the same wait does not re-arm the email', function (): void {
+    // The listener refreshes the unread notification's data on every new
+    // visitor message; the unattended stamp must survive that refresh or a
+    // chatty waiting visitor would be re-emailed every sweep.
+    Mail::fake();
+
+    $account = Account::factory()->create();
+    $agent = unattendedAlertAgent($account);
+    $site = Site::factory()->for($account)->create();
+    $conversation = createUnattendedWait($agent, $site);
+
+    $this->travel(UnattendedConversationAlertCollector::THRESHOLD_MINUTES + 1)->minutes();
+    Artisan::call('wayfindr:send-unattended-conversation-alerts');
+    Mail::assertQueuedCount(1);
+
+    // The visitor keeps typing before anyone sees it — through the REAL
+    // listener path, which merges the notification data in place.
+    $followUp = ConversationMessage::factory()->for($conversation)->create([
+        'body' => 'Hello? Anyone there?',
+        'sender_id' => $conversation->visitor_id,
+        'sender_type' => Visitor::class,
+    ]);
+    app(NotifyAgentsOfVisitorMessage::class)
+        ->handle(new ConversationMessageCreated($followUp));
+
+    $this->travel(UnattendedConversationAlertCollector::THRESHOLD_MINUTES + 1)->minutes();
+    Artisan::call('wayfindr:send-unattended-conversation-alerts');
+
+    Mail::assertQueuedCount(1);
 });
 
 test('a new wait after the first was handled alerts again', function (): void {

@@ -6,6 +6,7 @@ use App\Events\ConversationMessageCreated;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
+use App\Support\UnattendedConversationAlertCollector;
 use Illuminate\Notifications\DatabaseNotification;
 
 class NotifyAgentsOfVisitorMessage
@@ -62,12 +63,20 @@ class NotifyAgentsOfVisitorMessage
         $existingData = $existingNotification->data;
         $messageCount = max(1, (int) data_get($existingData, 'message_count', 1)) + 1;
 
-        $existingNotification->forceFill([
-            'data' => [
-                ...$notification->toArray($agent),
-                'message_count' => $messageCount,
-            ],
-        ])->save();
+        $data = [
+            ...$notification->toArray($agent),
+            'message_count' => $messageCount,
+        ];
+
+        // A follow-up inside the same waiting episode must not re-arm the
+        // unattended email — the stamp survives the data refresh.
+        $unattendedEmailedAt = data_get($existingData, UnattendedConversationAlertCollector::UNATTENDED_EMAILED_AT_KEY);
+
+        if (is_string($unattendedEmailedAt) && $unattendedEmailedAt !== '') {
+            $data[UnattendedConversationAlertCollector::UNATTENDED_EMAILED_AT_KEY] = $unattendedEmailedAt;
+        }
+
+        $existingNotification->forceFill(['data' => $data])->save();
     }
 
     private function existingUnreadConversationNotification(User $agent, int $conversationId): ?DatabaseNotification
