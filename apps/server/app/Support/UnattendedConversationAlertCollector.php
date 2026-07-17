@@ -141,12 +141,16 @@ class UnattendedConversationAlertCollector
 
     public function anyAgentSawSince(int $conversationId, CarbonImmutable $episodeStart): bool
     {
+        // notifications.data is a TEXT column, so a JSON-path where clause
+        // breaks on PostgreSQL (SQLite happens to tolerate it). SQL narrows
+        // by the plain columns — type and the recency-bounded read_at — and
+        // PHP matches the conversation.
         return DatabaseNotification::query()
             ->where('type', ConversationNeedsReply::class)
-            ->where('data->conversation_id', $conversationId)
             ->whereNotNull('read_at')
             ->where('read_at', '>=', $episodeStart)
-            ->exists();
+            ->get()
+            ->contains(fn (DatabaseNotification $notification): bool => (int) data_get($notification->data, 'conversation_id') === $conversationId);
     }
 
     /**
