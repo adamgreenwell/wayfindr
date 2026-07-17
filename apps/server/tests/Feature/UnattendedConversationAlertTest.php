@@ -226,6 +226,46 @@ test('a follow-up message inside the same wait does not re-arm the email', funct
     Mail::assertQueuedCount(1);
 });
 
+test('a new visitor wait after an agent handled the last one re-arms the email', function (): void {
+    // The other side of stamp preservation: an agent reply ends the episode
+    // even if this recipient's notification stayed unread, so the next
+    // visitor message merges WITHOUT the old stamp and emails again.
+    Mail::fake();
+
+    $account = Account::factory()->create();
+    $agent = unattendedAlertAgent($account);
+    $colleague = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $conversation = createUnattendedWait($agent, $site);
+
+    $this->travel(UnattendedConversationAlertCollector::THRESHOLD_MINUTES + 1)->minutes();
+    Artisan::call('wayfindr:send-unattended-conversation-alerts');
+    Mail::assertQueuedCount(1);
+
+    // A colleague answers; the recipient's notification stays unread.
+    $this->travel(1)->minutes();
+    ConversationMessage::factory()->for($conversation)->create([
+        'body' => 'Taking this one.',
+        'sender_id' => $colleague->id,
+        'sender_type' => User::class,
+    ]);
+
+    // The visitor comes back — a genuinely new wait, through the real
+    // listener merge path.
+    $this->travel(1)->minutes();
+    $newWait = ConversationMessage::factory()->for($conversation)->create([
+        'body' => 'Still broken, unfortunately.',
+        'sender_id' => $conversation->visitor_id,
+        'sender_type' => Visitor::class,
+    ]);
+    app(NotifyAgentsOfVisitorMessage::class)->handle(new ConversationMessageCreated($newWait));
+
+    $this->travel(UnattendedConversationAlertCollector::THRESHOLD_MINUTES + 1)->minutes();
+    Artisan::call('wayfindr:send-unattended-conversation-alerts');
+
+    Mail::assertQueuedCount(2);
+});
+
 test('a new wait after the first was handled alerts again', function (): void {
     Mail::fake();
 

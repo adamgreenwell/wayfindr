@@ -3,10 +3,12 @@
 namespace App\Listeners;
 
 use App\Events\ConversationMessageCreated;
+use App\Models\Conversation;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
 use App\Support\UnattendedConversationAlertCollector;
+use Carbon\CarbonImmutable;
 use Illuminate\Notifications\DatabaseNotification;
 
 class NotifyAgentsOfVisitorMessage
@@ -33,7 +35,7 @@ class NotifyAgentsOfVisitorMessage
 
             if ($assignedAgent && $conversation->site->supportsAgent($assignedAgent)) {
                 if ($assignedAgent->shouldReceiveConversationAlert($conversation)) {
-                    $this->notifyAgent($assignedAgent, new ConversationNeedsReply($message), $conversation->id);
+                    $this->notifyAgent($assignedAgent, new ConversationNeedsReply($message), $conversation);
                 }
 
                 return;
@@ -47,12 +49,12 @@ class NotifyAgentsOfVisitorMessage
         $agentQuery
             ->get()
             ->filter(fn (User $agent): bool => $agent->shouldReceiveConversationAlert($conversation))
-            ->each(fn (User $agent) => $this->notifyAgent($agent, new ConversationNeedsReply($message), $conversation->id));
+            ->each(fn (User $agent) => $this->notifyAgent($agent, new ConversationNeedsReply($message), $conversation));
     }
 
-    private function notifyAgent(User $agent, ConversationNeedsReply $notification, int $conversationId): void
+    private function notifyAgent(User $agent, ConversationNeedsReply $notification, Conversation $conversation): void
     {
-        $existingNotification = $this->existingUnreadConversationNotification($agent, $conversationId);
+        $existingNotification = $this->existingUnreadConversationNotification($agent, $conversation->id);
 
         if (! $existingNotification) {
             $agent->notify($notification);
@@ -68,15 +70,29 @@ class NotifyAgentsOfVisitorMessage
             'message_count' => $messageCount,
         ];
 
-        // A follow-up inside the same waiting episode must not re-arm the
-        // unattended email — the stamp survives the data refresh.
+        // A follow-up inside the SAME waiting episode must not re-arm the
+        // unattended email, so the stamp survives the data refresh — but an
+        // agent reply since the stamp ends that episode, and a fresh visitor
+        // message after it is a genuinely new wait that must email again.
         $unattendedEmailedAt = data_get($existingData, UnattendedConversationAlertCollector::UNATTENDED_EMAILED_AT_KEY);
 
-        if (is_string($unattendedEmailedAt) && $unattendedEmailedAt !== '') {
+        if (
+            is_string($unattendedEmailedAt)
+            && $unattendedEmailedAt !== ''
+            && ! $this->agentRepliedSince($conversation, $unattendedEmailedAt)
+        ) {
             $data[UnattendedConversationAlertCollector::UNATTENDED_EMAILED_AT_KEY] = $unattendedEmailedAt;
         }
 
         $existingNotification->forceFill(['data' => $data])->save();
+    }
+
+    private function agentRepliedSince(Conversation $conversation, string $timestamp): bool
+    {
+        return $conversation->messages()
+            ->where('sender_type', User::class)
+            ->where('created_at', '>', CarbonImmutable::parse($timestamp))
+            ->exists();
     }
 
     private function existingUnreadConversationNotification(User $agent, int $conversationId): ?DatabaseNotification
