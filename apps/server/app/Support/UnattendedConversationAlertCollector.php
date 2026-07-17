@@ -142,9 +142,17 @@ class UnattendedConversationAlertCollector
 
     public function anyAgentSawSince(int $conversationId, CarbonImmutable $episodeStart): bool
     {
-        // The authoritative view record: every conversation open writes a
-        // ConversationReadState, including opens by agents who never had a
-        // notification (queue walk-ins, assigned-only agents).
+        // ACCEPTED EDGE: an agent watching the open conversation live leaves
+        // no trace here — the transcript refresh endpoint is a pure read BY
+        // DESIGN (its own test guards that), because a background tab writing
+        // read states would eat the queues' new-activity markers. If they
+        // watch for the full threshold without replying or clicking anything,
+        // one redundant metadata-only email goes out. Revisit with a
+        // focus-aware presence ping only if dogfood shows it matters.
+        //
+        // The authoritative view record otherwise: every conversation open
+        // writes a ConversationReadState, including opens by agents who never
+        // had a notification (queue walk-ins, assigned-only agents).
         $viewed = ConversationReadState::query()
             ->where('conversation_id', $conversationId)
             ->where('last_read_at', '>=', $episodeStart)
