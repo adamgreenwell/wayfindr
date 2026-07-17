@@ -70,18 +70,26 @@ class NotifyAgentsOfVisitorMessage
             'message_count' => $messageCount,
         ];
 
-        // A follow-up inside the SAME waiting episode must not re-arm the
-        // unattended email, so the stamp survives the data refresh — but an
-        // agent reply since the stamp ends that episode, and a fresh visitor
-        // message after it is a genuinely new wait that must email again.
-        $unattendedEmailedAt = data_get($existingData, UnattendedConversationAlertCollector::UNATTENDED_EMAILED_AT_KEY);
+        // The waiting episode is bounded by agent replies. A follow-up inside
+        // the SAME episode keeps the episode clock and the emailed stamp (no
+        // re-arm, no premature email); an agent reply since the episode began
+        // ends it, so a fresh visitor message starts a NEW episode — clock
+        // reset to now, stamp dropped, email re-armed with a full threshold.
+        $waitingSince = data_get($existingData, UnattendedConversationAlertCollector::WAITING_SINCE_KEY);
+        $waitingSince = is_string($waitingSince) && $waitingSince !== ''
+            ? $waitingSince
+            : $existingNotification->created_at->toISOString();
 
-        if (
-            is_string($unattendedEmailedAt)
-            && $unattendedEmailedAt !== ''
-            && ! $this->agentRepliedSince($conversation, $unattendedEmailedAt)
-        ) {
-            $data[UnattendedConversationAlertCollector::UNATTENDED_EMAILED_AT_KEY] = $unattendedEmailedAt;
+        if ($this->agentRepliedSince($conversation, $waitingSince)) {
+            $data[UnattendedConversationAlertCollector::WAITING_SINCE_KEY] = now()->toISOString();
+        } else {
+            $data[UnattendedConversationAlertCollector::WAITING_SINCE_KEY] = $waitingSince;
+
+            $unattendedEmailedAt = data_get($existingData, UnattendedConversationAlertCollector::UNATTENDED_EMAILED_AT_KEY);
+
+            if (is_string($unattendedEmailedAt) && $unattendedEmailedAt !== '') {
+                $data[UnattendedConversationAlertCollector::UNATTENDED_EMAILED_AT_KEY] = $unattendedEmailedAt;
+            }
         }
 
         $existingNotification->forceFill(['data' => $data])->save();

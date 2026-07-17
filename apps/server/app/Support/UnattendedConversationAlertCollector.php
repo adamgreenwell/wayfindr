@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Models\Conversation;
 use App\Models\User;
 use App\Notifications\ConversationNeedsReply;
+use Carbon\CarbonImmutable;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
@@ -19,6 +20,8 @@ use Illuminate\Support\Facades\Gate;
 class UnattendedConversationAlertCollector
 {
     public const UNATTENDED_EMAILED_AT_KEY = 'unattended_emailed_at';
+
+    public const WAITING_SINCE_KEY = 'unattended_waiting_since';
 
     public const THRESHOLD_MINUTES = 5;
 
@@ -41,12 +44,14 @@ class UnattendedConversationAlertCollector
         return $agent
             ->unreadNotifications()
             ->where('type', ConversationNeedsReply::class)
-            ->where('created_at', '<=', now()->subMinutes(self::THRESHOLD_MINUTES))
             ->latest()
             ->get()
+            // The episode clock, not the notification row's age: a re-armed
+            // notification restarts its wait when a new episode begins.
+            ->filter(fn (DatabaseNotification $notification): bool => $this->waitingSince($notification)->lessThanOrEqualTo(now()->subMinutes(self::THRESHOLD_MINUTES)))
             ->filter(fn (DatabaseNotification $notification): bool => Gate::forUser($agent)->allows('view', $notification))
             // One email per waiting episode: the stamp lives on the unread
-            // notification, and a new episode means a new notification.
+            // notification and is dropped when a new episode begins.
             ->reject(fn (DatabaseNotification $notification): bool => filled(data_get($notification->data, self::UNATTENDED_EMAILED_AT_KEY)))
             ->map(fn (DatabaseNotification $notification): ?array => $this->candidateFor($agent, $notification))
             ->filter()
@@ -91,8 +96,21 @@ class UnattendedConversationAlertCollector
             'reference' => $conversation->support_code,
             'site_name' => $conversation->site?->name ?? 'Unknown site',
             'subject' => $conversation->subject ?? 'Untitled conversation',
-            'waiting_since' => $notification->created_at?->toISOString(),
+            'waiting_since' => $this->waitingSince($notification)->toISOString(),
             'url' => route('dashboard.conversations.show', $conversation->support_code, false),
         ];
+    }
+
+    /**
+     * When the current waiting episode began: the explicit episode clock when
+     * the notification has been re-armed, the row's creation time otherwise.
+     */
+    public function waitingSince(DatabaseNotification $notification): CarbonImmutable
+    {
+        $stored = data_get($notification->data, self::WAITING_SINCE_KEY);
+
+        return is_string($stored) && trim($stored) !== ''
+            ? CarbonImmutable::parse($stored)
+            : CarbonImmutable::parse($notification->created_at);
     }
 }

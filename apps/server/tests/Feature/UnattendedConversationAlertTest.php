@@ -260,7 +260,13 @@ test('a new visitor wait after an agent handled the last one re-arms the email',
     ]);
     app(NotifyAgentsOfVisitorMessage::class)->handle(new ConversationMessageCreated($newWait));
 
-    $this->travel(UnattendedConversationAlertCollector::THRESHOLD_MINUTES + 1)->minutes();
+    // The new episode gets its own full threshold: a sweep right away sends
+    // nothing, even though the notification ROW is long past it.
+    $this->travel(2)->minutes();
+    Artisan::call('wayfindr:send-unattended-conversation-alerts');
+    Mail::assertQueuedCount(1);
+
+    $this->travel(UnattendedConversationAlertCollector::THRESHOLD_MINUTES)->minutes();
     Artisan::call('wayfindr:send-unattended-conversation-alerts');
 
     Mail::assertQueuedCount(2);
