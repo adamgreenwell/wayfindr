@@ -13,6 +13,7 @@ use App\Support\AccountAlertReadiness;
 use App\Support\ExternalIssueProvider;
 use App\Support\ExternalIssueSyncStatus;
 use App\Support\TicketExternalIssueState;
+use App\Support\UnattendedConversationAlertCollector;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -340,6 +341,17 @@ class AgentAccountController extends Controller
             return [
                 'primary' => 'Digest',
                 'lines' => $lines,
+            ];
+        }
+
+        if ($accountAgent->alertCadence() === User::ALERT_CADENCE_UNATTENDED) {
+            return [
+                'primary' => 'Unattended only',
+                'lines' => [
+                    ['text' => $scopeLabel, 'tone' => 'ready'],
+                    ['text' => sprintf('Email only when a visitor message waits unseen for %d minutes.', UnattendedConversationAlertCollector::THRESHOLD_MINUTES)],
+                    ['text' => $scopeDetail],
+                ],
             ];
         }
 

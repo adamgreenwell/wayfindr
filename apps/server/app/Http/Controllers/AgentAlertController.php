@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Support\UnattendedConversationAlertCollector;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -114,12 +115,16 @@ class AgentAlertController extends Controller
                 ],
                 [
                     'label' => 'Email delivery',
-                    'value' => $emailEnabled
-                        ? ($cadence === User::ALERT_CADENCE_DIGEST ? 'Digest preferred' : 'Immediate email')
-                        : 'Email off',
+                    'value' => match (true) {
+                        ! $emailEnabled => 'Email off',
+                        $cadence === User::ALERT_CADENCE_DIGEST => 'Digest preferred',
+                        $cadence === User::ALERT_CADENCE_UNATTENDED => 'Unattended only',
+                        default => 'Immediate email',
+                    },
                     'detail' => match (true) {
                         ! $emailEnabled => 'Email alerts are off for your profile. The alert center remains available here.',
                         $cadence === User::ALERT_CADENCE_DIGEST => 'Digest delivery is preferred when the scheduler runs. Dashboard alerts still appear here immediately.',
+                        $cadence === User::ALERT_CADENCE_UNATTENDED => sprintf('Email goes out only when a visitor message stays unseen for %d minutes. Dashboard alerts still appear here immediately.', UnattendedConversationAlertCollector::THRESHOLD_MINUTES),
                         default => 'Immediate email delivery is enabled when mail is configured. Dashboard alerts still appear here immediately.',
                     },
                 ],

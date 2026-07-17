@@ -5,6 +5,7 @@
 // notification that opening the conversation marks read. One email per waiting
 // episode, metadata only, and nothing while someone is actually answering.
 
+use App\Enums\AccountRole;
 use App\Events\ConversationMessageCreated;
 use App\Listeners\NotifyAgentsOfVisitorMessage;
 use App\Mail\UnattendedConversationAlertMessage;
@@ -326,5 +327,21 @@ test('the profile page offers the unattended cadence and reports it', function (
         ->get(route('dashboard.profile.show'))
         ->assertOk()
         ->assertSee('Email only when a visitor waits unseen')
+        ->assertSee('Unattended only');
+});
+
+test('the alert center and account roster name the unattended cadence, not Immediate', function (): void {
+    $account = Account::factory()->create();
+    $agent = unattendedAlertAgent($account, ['account_role' => AccountRole::Admin]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.alerts.index'))
+        ->assertOk()
+        ->assertSee('Unattended only')
+        ->assertDontSee('Immediate email');
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.account.show'))
+        ->assertOk()
         ->assertSee('Unattended only');
 });
