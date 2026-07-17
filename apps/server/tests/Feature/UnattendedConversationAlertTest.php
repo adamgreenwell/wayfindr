@@ -342,6 +342,27 @@ test('a colleague opening the conversation quiets everyone\'s email', function (
     Mail::assertNothingQueued();
 });
 
+test('a queue walk-in view with no notification of their own still counts as seen', function (): void {
+    // ConversationReadState is written on every conversation open — including
+    // by agents who were never notified. That view quiets the email too.
+    Mail::fake();
+
+    $account = Account::factory()->create();
+    $agent = unattendedAlertAgent($account);
+    $walkIn = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $conversation = createUnattendedWait($agent, $site);
+
+    $this->travel(1)->minutes();
+    $conversation->markReadFor($walkIn);
+
+    $this->travel(UnattendedConversationAlertCollector::THRESHOLD_MINUTES)->minutes();
+
+    Artisan::call('wayfindr:send-unattended-conversation-alerts');
+
+    Mail::assertNothingQueued();
+});
+
 test('a visitor follow-up after being seen but not answered starts a new wait', function (): void {
     // Without the seen boundary, "viewed but never answered" would suppress
     // alerts forever: the old episode start predates the colleague's read, so

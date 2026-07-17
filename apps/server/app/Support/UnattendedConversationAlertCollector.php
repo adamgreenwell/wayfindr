@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\Conversation;
+use App\Models\ConversationReadState;
 use App\Models\User;
 use App\Notifications\ConversationNeedsReply;
 use Carbon\CarbonImmutable;
@@ -141,6 +142,19 @@ class UnattendedConversationAlertCollector
 
     public function anyAgentSawSince(int $conversationId, CarbonImmutable $episodeStart): bool
     {
+        // The authoritative view record: every conversation open writes a
+        // ConversationReadState, including opens by agents who never had a
+        // notification (queue walk-ins, assigned-only agents).
+        $viewed = ConversationReadState::query()
+            ->where('conversation_id', $conversationId)
+            ->where('last_read_at', '>=', $episodeStart)
+            ->exists();
+
+        if ($viewed) {
+            return true;
+        }
+
+        // Dismissing the alert from the alert center counts as seen too.
         // notifications.data is a TEXT column, so a JSON-path where clause
         // breaks on PostgreSQL (SQLite happens to tolerate it). SQL narrows
         // by the plain columns — type and the recency-bounded read_at — and
