@@ -342,6 +342,42 @@ test('a colleague opening the conversation quiets everyone\'s email', function (
     Mail::assertNothingQueued();
 });
 
+test('a visitor follow-up after being seen but not answered starts a new wait', function (): void {
+    // Without the seen boundary, "viewed but never answered" would suppress
+    // alerts forever: the old episode start predates the colleague's read, so
+    // every future sweep stays quiet. The follow-up must re-arm.
+    Mail::fake();
+
+    $account = Account::factory()->create();
+    $agent = unattendedAlertAgent($account);
+    $colleague = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $conversation = createUnattendedWait($agent, $site);
+
+    $colleague->notify(new ConversationNeedsReply($conversation->messages()->firstOrFail()));
+    $this->travel(1)->minutes();
+    // Seen, never answered.
+    $colleague->unreadNotifications()->update(['read_at' => now()]);
+
+    $this->travel(UnattendedConversationAlertCollector::THRESHOLD_MINUTES)->minutes();
+    Artisan::call('wayfindr:send-unattended-conversation-alerts');
+    Mail::assertNothingQueued();
+
+    // The visitor asks again — a genuinely new wait.
+    $this->travel(1)->minutes();
+    $followUp = ConversationMessage::factory()->for($conversation)->create([
+        'body' => 'Is anyone looking at this?',
+        'sender_id' => $conversation->visitor_id,
+        'sender_type' => Visitor::class,
+    ]);
+    app(NotifyAgentsOfVisitorMessage::class)->handle(new ConversationMessageCreated($followUp));
+
+    $this->travel(UnattendedConversationAlertCollector::THRESHOLD_MINUTES + 1)->minutes();
+    Artisan::call('wayfindr:send-unattended-conversation-alerts');
+
+    Mail::assertQueuedCount(1);
+});
+
 test('the sweep never stamps an episode it did not email', function (): void {
     // The listener can re-arm a notification between candidate collection and
     // the stamp write; the guard must leave the NEW episode unstamped so its

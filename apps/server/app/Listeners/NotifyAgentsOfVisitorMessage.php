@@ -13,6 +13,8 @@ use Illuminate\Notifications\DatabaseNotification;
 
 class NotifyAgentsOfVisitorMessage
 {
+    public function __construct(private readonly UnattendedConversationAlertCollector $unattendedAlerts) {}
+
     /**
      * Handle the event.
      */
@@ -70,17 +72,22 @@ class NotifyAgentsOfVisitorMessage
             'message_count' => $messageCount,
         ];
 
-        // The waiting episode is bounded by agent replies. A follow-up inside
-        // the SAME episode keeps the episode clock and the emailed stamp (no
-        // re-arm, no premature email); an agent reply since the episode began
-        // ends it, so a fresh visitor message starts a NEW episode — clock
-        // reset to now, stamp dropped, email re-armed with a full threshold.
+        // The waiting episode ends when an agent REPLIES or anyone SEES the
+        // conversation. A follow-up inside the same episode keeps the episode
+        // clock and the emailed stamp (no re-arm, no premature email); a
+        // fresh visitor message after either boundary starts a NEW episode —
+        // clock reset to now, stamp dropped, email re-armed with a full
+        // threshold. Without the seen boundary, a viewed-but-never-answered
+        // conversation could wait forever in silence.
         $waitingSince = data_get($existingData, UnattendedConversationAlertCollector::WAITING_SINCE_KEY);
         $waitingSince = is_string($waitingSince) && $waitingSince !== ''
             ? $waitingSince
             : $existingNotification->created_at->toISOString();
 
-        if ($this->agentRepliedSince($conversation, $waitingSince)) {
+        if (
+            $this->agentRepliedSince($conversation, $waitingSince)
+            || $this->unattendedAlerts->anyAgentSawSince($conversation->id, CarbonImmutable::parse($waitingSince))
+        ) {
             $data[UnattendedConversationAlertCollector::WAITING_SINCE_KEY] = now()->toISOString();
         } else {
             $data[UnattendedConversationAlertCollector::WAITING_SINCE_KEY] = $waitingSince;

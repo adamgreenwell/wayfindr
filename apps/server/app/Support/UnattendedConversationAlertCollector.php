@@ -139,7 +139,7 @@ class UnattendedConversationAlertCollector
             });
     }
 
-    private function anyAgentSawSince(int $conversationId, CarbonImmutable $episodeStart): bool
+    public function anyAgentSawSince(int $conversationId, CarbonImmutable $episodeStart): bool
     {
         return DatabaseNotification::query()
             ->where('type', ConversationNeedsReply::class)
