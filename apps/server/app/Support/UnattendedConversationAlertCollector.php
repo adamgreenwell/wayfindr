@@ -6,6 +6,7 @@ use App\Models\Conversation;
 use App\Models\User;
 use App\Notifications\ConversationNeedsReply;
 use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
@@ -91,6 +92,13 @@ class UnattendedConversationAlertCollector
             return null;
         }
 
+        // "Unseen" is account-wide: another agent opening the conversation
+        // marks only THEIR notification read, but the wait has been seen —
+        // nobody needs the email.
+        if ($this->anyAgentSawSince($conversationId, $this->waitingSince($notification))) {
+            return null;
+        }
+
         return [
             'notification_id' => (string) $notification->id,
             'reference' => $conversation->support_code,
@@ -99,6 +107,46 @@ class UnattendedConversationAlertCollector
             'waiting_since' => $this->waitingSince($notification)->toISOString(),
             'url' => route('dashboard.conversations.show', $conversation->support_code, false),
         ];
+    }
+
+    /**
+     * Stamp the notifications behind the just-emailed candidates — but only
+     * while they still belong to the emailed episode. The listener may have
+     * re-armed a notification (new clock, stamp dropped) between collection
+     * and this write; stamping the NEW episode would silently swallow its
+     * email.
+     *
+     * @param  Collection<int, array{notification_id: string, waiting_since: string|null}>  $candidates
+     */
+    public function stampEmailed(Collection $candidates, CarbonInterface $emailedAt): void
+    {
+        $episodeByNotification = $candidates->pluck('waiting_since', 'notification_id');
+
+        DatabaseNotification::query()
+            ->whereIn('id', $candidates->pluck('notification_id')->all())
+            ->get()
+            ->each(function (DatabaseNotification $notification) use ($emailedAt, $episodeByNotification): void {
+                if ($this->waitingSince($notification)->toISOString() !== $episodeByNotification->get((string) $notification->id)) {
+                    return;
+                }
+
+                $notification->forceFill([
+                    'data' => [
+                        ...$notification->data,
+                        self::UNATTENDED_EMAILED_AT_KEY => $emailedAt->toISOString(),
+                    ],
+                ])->save();
+            });
+    }
+
+    private function anyAgentSawSince(int $conversationId, CarbonImmutable $episodeStart): bool
+    {
+        return DatabaseNotification::query()
+            ->where('type', ConversationNeedsReply::class)
+            ->where('data->conversation_id', $conversationId)
+            ->whereNotNull('read_at')
+            ->where('read_at', '>=', $episodeStart)
+            ->exists();
     }
 
     /**

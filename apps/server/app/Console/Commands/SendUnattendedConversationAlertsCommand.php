@@ -5,9 +5,7 @@ namespace App\Console\Commands;
 use App\Mail\UnattendedConversationAlertMessage;
 use App\Models\User;
 use App\Support\UnattendedConversationAlertCollector;
-use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
-use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -53,7 +51,7 @@ class SendUnattendedConversationAlertsCommand extends Command
 
                 $emailsQueued++;
 
-                $this->markCandidatesEmailed($candidates, $attemptedAt);
+                $collector->stampEmailed($candidates, $attemptedAt);
 
                 $this->line("Queued unattended alert for {$agent->name} <{$agent->email}> with {$candidates->count()} waiting conversation(s).");
             } catch (Throwable $exception) {
@@ -93,23 +91,5 @@ class SendUnattendedConversationAlertsCommand extends Command
                 && $agent->wantsUnattendedAlertEmail()
                 && $agent->alertMode() !== User::ALERT_MODE_QUIET)
             ->values();
-    }
-
-    /**
-     * @param  Collection<int, array{notification_id: string}>  $candidates
-     */
-    private function markCandidatesEmailed(Collection $candidates, CarbonInterface $emailedAt): void
-    {
-        DatabaseNotification::query()
-            ->whereIn('id', $candidates->pluck('notification_id')->all())
-            ->get()
-            ->each(function (DatabaseNotification $notification) use ($emailedAt): void {
-                $notification->forceFill([
-                    'data' => [
-                        ...$notification->data,
-                        UnattendedConversationAlertCollector::UNATTENDED_EMAILED_AT_KEY => $emailedAt->toISOString(),
-                    ],
-                ])->save();
-            });
     }
 }

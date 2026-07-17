@@ -319,6 +319,67 @@ test('two waiting visitors arrive in one email, not two', function (): void {
     });
 });
 
+test('a colleague opening the conversation quiets everyone\'s email', function (): void {
+    // "Unseen" is account-wide: another agent's view marks only their own
+    // notification read, but the wait HAS been seen — nobody needs the email.
+    Mail::fake();
+
+    $account = Account::factory()->create();
+    $agent = unattendedAlertAgent($account);
+    $colleague = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $conversation = createUnattendedWait($agent, $site);
+
+    $colleague->notify(new ConversationNeedsReply($conversation->messages()->firstOrFail()));
+    $this->travel(1)->minutes();
+    // The colleague opens the conversation — only THEIR notification reads.
+    $colleague->unreadNotifications()->update(['read_at' => now()]);
+
+    $this->travel(UnattendedConversationAlertCollector::THRESHOLD_MINUTES)->minutes();
+
+    Artisan::call('wayfindr:send-unattended-conversation-alerts');
+
+    Mail::assertNothingQueued();
+});
+
+test('the sweep never stamps an episode it did not email', function (): void {
+    // The listener can re-arm a notification between candidate collection and
+    // the stamp write; the guard must leave the NEW episode unstamped so its
+    // email still goes out.
+    $account = Account::factory()->create();
+    $agent = unattendedAlertAgent($account);
+    $colleague = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $conversation = createUnattendedWait($agent, $site);
+
+    $this->travel(UnattendedConversationAlertCollector::THRESHOLD_MINUTES + 1)->minutes();
+
+    $collector = app(UnattendedConversationAlertCollector::class);
+    $staleCandidates = $collector->forAgent($agent);
+    expect($staleCandidates)->toHaveCount(1);
+
+    // Interleave: colleague reply + fresh visitor message re-arm the same
+    // notification before the stamp lands.
+    ConversationMessage::factory()->for($conversation)->create([
+        'body' => 'Handled.',
+        'sender_id' => $colleague->id,
+        'sender_type' => User::class,
+    ]);
+    $this->travel(1)->minutes();
+    $newWait = ConversationMessage::factory()->for($conversation)->create([
+        'body' => 'Still stuck.',
+        'sender_id' => $conversation->visitor_id,
+        'sender_type' => Visitor::class,
+    ]);
+    app(NotifyAgentsOfVisitorMessage::class)->handle(new ConversationMessageCreated($newWait));
+
+    $collector->stampEmailed($staleCandidates, now());
+
+    $notification = $agent->unreadNotifications()->firstOrFail();
+
+    expect(data_get($notification->data, UnattendedConversationAlertCollector::UNATTENDED_EMAILED_AT_KEY))->toBeNull();
+});
+
 test('the profile page offers the unattended cadence and reports it', function (): void {
     $account = Account::factory()->create();
     $agent = unattendedAlertAgent($account);
