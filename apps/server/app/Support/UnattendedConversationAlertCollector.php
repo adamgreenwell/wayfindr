@@ -153,9 +153,13 @@ class UnattendedConversationAlertCollector
         // The authoritative view record otherwise: every conversation open
         // writes a ConversationReadState, including opens by agents who never
         // had a notification (queue walk-ins, assigned-only agents).
+        // Strictly after: with second-precision timestamps a read from the
+        // PREVIOUS episode can share the new episode's starting second, and
+        // wrongly suppressing the email starves the visitor — the worse error
+        // than one redundant mail.
         $viewed = ConversationReadState::query()
             ->where('conversation_id', $conversationId)
-            ->where('last_read_at', '>=', $episodeStart)
+            ->where('last_read_at', '>', $episodeStart)
             ->exists();
 
         if ($viewed) {
@@ -170,7 +174,7 @@ class UnattendedConversationAlertCollector
         return DatabaseNotification::query()
             ->where('type', ConversationNeedsReply::class)
             ->whereNotNull('read_at')
-            ->where('read_at', '>=', $episodeStart)
+            ->where('read_at', '>', $episodeStart)
             ->get()
             ->contains(fn (DatabaseNotification $notification): bool => (int) data_get($notification->data, 'conversation_id') === $conversationId);
     }

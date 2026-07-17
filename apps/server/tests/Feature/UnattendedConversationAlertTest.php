@@ -342,6 +342,28 @@ test('a colleague opening the conversation quiets everyone\'s email', function (
     Mail::assertNothingQueued();
 });
 
+test('a read sharing the episode\'s starting second does not suppress the email', function (): void {
+    // Second-precision boundary: a read from the PREVIOUS episode can land on
+    // the same second the new episode starts. Counting it as seen starves the
+    // visitor — the worse error — so the comparison is strictly-after.
+    Mail::fake();
+
+    $account = Account::factory()->create();
+    $agent = unattendedAlertAgent($account);
+    $colleague = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $conversation = createUnattendedWait($agent, $site);
+
+    $episodeStart = $agent->unreadNotifications()->firstOrFail()->created_at;
+    $conversation->markReadFor($colleague, $episodeStart);
+
+    $this->travel(UnattendedConversationAlertCollector::THRESHOLD_MINUTES + 1)->minutes();
+
+    Artisan::call('wayfindr:send-unattended-conversation-alerts');
+
+    Mail::assertQueuedCount(1);
+});
+
 test('a queue walk-in view with no notification of their own still counts as seen', function (): void {
     // ConversationReadState is written on every conversation open — including
     // by agents who were never notified. That view quiets the email too.
