@@ -134,7 +134,7 @@
             </div>
 
             <p class="field-help">
-                Digest delivery bundles eligible email alerts when the scheduler runs. Dashboard alerts stay immediate.
+                Digest delivery bundles eligible email alerts when the scheduler runs. Unattended only emails when a visitor message waits unseen. Dashboard alerts stay immediate.
             </p>
 
             @if ($alertCadence === $agent::ALERT_CADENCE_DIGEST)

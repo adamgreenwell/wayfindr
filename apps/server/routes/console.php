@@ -12,6 +12,10 @@ Schedule::command('wayfindr:send-alert-digests')
     ->hourly()
     ->description('Queue metadata-only Wayfindr alert digest email.');
 
+Schedule::command('wayfindr:send-unattended-conversation-alerts')
+    ->everyFiveMinutes()
+    ->description('Email agents when a visitor message waits unseen past the threshold.');
+
 Schedule::command('wayfindr:expire-idle-cobrowse-sessions')
     ->everyFiveMinutes()
     ->description('End idle cobrowse sessions so abandoned sessions stop reading active and become prunable.');

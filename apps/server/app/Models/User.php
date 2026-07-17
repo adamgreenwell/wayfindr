@@ -33,6 +33,8 @@ class User extends Authenticatable
 
     public const ALERT_CADENCE_IMMEDIATE = 'immediate';
 
+    public const ALERT_CADENCE_UNATTENDED = 'unattended';
+
     public const ALERT_CADENCE_DIGEST = 'digest';
 
     public const ALERT_DIGEST_DELIVERY_NOT_RUN = 'not_run';
@@ -79,6 +81,7 @@ class User extends Authenticatable
     {
         return [
             self::ALERT_CADENCE_IMMEDIATE => 'Send email alerts as they happen',
+            self::ALERT_CADENCE_UNATTENDED => 'Email only when a visitor waits unseen',
             self::ALERT_CADENCE_DIGEST => 'Prefer digest delivery when available',
         ];
     }
@@ -145,6 +148,12 @@ class User extends Authenticatable
     {
         return $this->alertEmailEnabled()
             && $this->alertCadence() === self::ALERT_CADENCE_IMMEDIATE;
+    }
+
+    public function wantsUnattendedAlertEmail(): bool
+    {
+        return $this->alertEmailEnabled()
+            && $this->alertCadence() === self::ALERT_CADENCE_UNATTENDED;
     }
 
     /**

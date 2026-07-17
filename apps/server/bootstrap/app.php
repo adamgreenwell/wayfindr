@@ -8,6 +8,7 @@ use App\Console\Commands\ExpireBreakGlassGrantsCommand;
 use App\Console\Commands\MailTestCommand;
 use App\Console\Commands\PruneCobrowseContentCommand;
 use App\Console\Commands\SendAlertDigestsCommand;
+use App\Console\Commands\SendUnattendedConversationAlertsCommand;
 use App\Console\Commands\SweepOrphanedAttachmentsCommand;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -30,6 +31,7 @@ return Application::configure(basePath: dirname(__DIR__))
         MailTestCommand::class,
         PruneCobrowseContentCommand::class,
         SendAlertDigestsCommand::class,
+        SendUnattendedConversationAlertsCommand::class,
         SweepOrphanedAttachmentsCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {

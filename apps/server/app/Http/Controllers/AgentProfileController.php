@@ -6,6 +6,7 @@ use App\Enums\AccountRole;
 use App\Models\AuditEvent;
 use App\Models\User;
 use App\Support\OperatorReadiness;
+use App\Support\UnattendedConversationAlertCollector;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -221,6 +222,17 @@ class AgentProfileController extends Controller
      */
     private function alertCadenceReadiness(string $alertCadence, bool $emailEnabled, array $digestDeliveryStatus): array
     {
+        if ($alertCadence === User::ALERT_CADENCE_UNATTENDED) {
+            return [
+                'label' => 'Cadence',
+                'status' => 'Unattended only',
+                'tone' => $emailEnabled ? 'ready' : 'manual',
+                'detail' => $emailEnabled
+                    ? sprintf('Email goes out only when a visitor message stays unseen for %d minutes.', UnattendedConversationAlertCollector::THRESHOLD_MINUTES)
+                    : 'Unattended preference is saved, but email alerts are off.',
+            ];
+        }
+
         if ($alertCadence !== User::ALERT_CADENCE_DIGEST) {
             return [
                 'label' => 'Cadence',
