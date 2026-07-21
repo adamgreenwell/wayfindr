@@ -162,7 +162,7 @@ if [ "$SCHEME" = "https" ]; then
     HTTPS_BIND="443"
 else
     SECURE_COOKIE="false"
-    SERVER_NAME=":8000"
+    SERVER_NAME=":80"
     HTTP_BIND="127.0.0.1:18080"
     HTTPS_BIND="127.0.0.1:18443"
 fi

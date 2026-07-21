@@ -3,8 +3,9 @@
 # Two TLS modes, one knob:
 #   SERVER_NAME=support.example.com  -> FrankenPHP binds 80/443 and obtains
 #                                       Let's Encrypt certificates itself.
-#   SERVER_NAME=:8000 (default)      -> plain HTTP on 8000 for smoke tests or
-#                                       an operator-managed reverse proxy.
+#   SERVER_NAME=:80 (default)        -> plain HTTP; the loopback ops site on
+#                                       :8000 serves health probes and
+#                                       operator-managed proxies in EVERY mode.
 #
 # Reverb websockets are proxied by the web service under the same hostname
 # (/app and /apps paths), so one domain and one certificate cover everything.
@@ -54,15 +55,13 @@ services:
       - "${WAYFINDR_HTTPS_BIND:-443}:443/udp"
       - "${WAYFINDR_LOCAL_BIND:-127.0.0.1:8000}:8000"
     healthcheck:
+      # The loopback ops site on :8000 exists in every TLS mode, so one
+      # plain probe is always valid — the public vhost never gates health.
       test:
         - CMD
         - php
         - -r
-        - >
-          exit((@file_get_contents('http://127.0.0.1:8000/up') !== false
-          || @file_get_contents('https://127.0.0.1/up', false,
-          stream_context_create(['ssl' => ['verify_peer' => false, 'verify_peer_name' => false]])) !== false)
-          ? 0 : 1);
+        - "exit(@file_get_contents('http://127.0.0.1:8000/up') !== false ? 0 : 1);"
       interval: 15s
       timeout: 5s
       retries: 20

@@ -32,7 +32,11 @@ Use it with the runtime contract in
 | `SERVER_NAME`         | Behavior                                                                                          |
 | --------------------- | ------------------------------------------------------------------------------------------------- |
 | `support.example.com` | FrankenPHP binds 80/443 and obtains + renews Let's Encrypt certificates automatically.             |
-| `:8000` (default)     | Plain HTTP on the loopback bind — for smoke tests or an operator-managed reverse proxy.            |
+| `:80` (default)       | Plain HTTP — for smoke tests or an operator-managed reverse proxy.                                 |
+
+A loopback ops site on `:8000` exists in **every** mode: health probes and
+behind-proxy upstreams use it, so the public site's TLS never gates
+container health.
 
 `generate-env.sh` picks the right mode from the `--app-url` scheme: an
 `https://` URL sets `SERVER_NAME` to the hostname and publishes 80/443; an

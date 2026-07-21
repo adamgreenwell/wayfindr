@@ -8,10 +8,24 @@
 
 {$CADDY_EXTRA_CONFIG}
 
+# Always-on loopback site: health probes and behind-proxy upstreams hit
+# :8000 in EVERY mode — the public site's TLS story never affects whether
+# the container can prove it is alive.
+:8000 {
+	root * /app/apps/server/public
+	encode zstd br gzip
+
+	@reverb path /app /app/* /apps/*
+	handle @reverb {
+		reverse_proxy {$WAYFINDR_REVERB_UPSTREAM:reverb:8080}
+	}
+
+	php_server
+}
+
 # SERVER_NAME is the TLS knob: a real hostname gets automatic HTTPS from
-# Let's Encrypt; the ":8000" default serves plain HTTP for smoke tests and
-# operator-managed proxies.
-{$SERVER_NAME::8000} {
+# Let's Encrypt; the ":80" default serves plain HTTP.
+{$SERVER_NAME::80} {
 	log {
 		format json
 	}

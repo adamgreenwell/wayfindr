@@ -103,7 +103,8 @@ fetch() {
 say "Fetching the Wayfindr stack files (${SOURCE_DIR:+local checkout}${SOURCE_DIR:-ref $REF})."
 fetch docker/self-hosting/compose.yml "$COMPOSE_FILE"
 fetch scripts/self-host/generate-env.sh "$TARGET_DIR/generate-env.sh"
-chmod +x "$TARGET_DIR/generate-env.sh"
+fetch scripts/self-host/install.sh "$TARGET_DIR/install.sh"
+chmod +x "$TARGET_DIR/generate-env.sh" "$TARGET_DIR/install.sh"
 
 if [ -f "$ENV_FILE" ]; then
     say "Keeping the existing $ENV_FILE (secrets preserved)."
@@ -141,7 +142,7 @@ cat <<DONE
   Create the first account:  $APP_URL/setup
   Environment file:          $ENV_FILE  (mail is set to 'log' — configure SMTP before real traffic)
   Logs:                      docker compose -f $COMPOSE_FILE --env-file $ENV_FILE logs -f
-  Upgrade later:             $0 --upgrade --dir $TARGET_DIR
+  Upgrade later:             $TARGET_DIR/install.sh --upgrade --dir $TARGET_DIR
 
   Readiness checks live at $APP_URL/dashboard/readiness after you sign in.
 

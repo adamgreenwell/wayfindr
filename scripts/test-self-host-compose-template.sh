@@ -22,7 +22,7 @@ fi
 cat > "$ENV_FILE" <<'ENV'
 WAYFINDR_IMAGE=wayfindr-server:local
 WAYFINDR_ENV_FILE=__ENV_FILE__
-SERVER_NAME=:8000
+SERVER_NAME=:80
 WAYFINDR_HTTP_BIND=127.0.0.1:18080
 WAYFINDR_HTTPS_BIND=127.0.0.1:18443
 WAYFINDR_LOCAL_BIND=127.0.0.1:18000
@@ -105,7 +105,7 @@ def assert_port(service, expected):
 
 
 # The three web binds: proxy-safe HTTP/HTTPS on loopback high ports and the
-# local plain-HTTP bind Caddy actually serves in SERVER_NAME=:8000 mode.
+# local plain-HTTP bind Caddy actually serves in SERVER_NAME=:80 mode.
 assert_port(
     "web",
     {
