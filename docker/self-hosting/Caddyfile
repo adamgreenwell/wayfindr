@@ -1,0 +1,33 @@
+{
+	{$CADDY_GLOBAL_OPTIONS}
+
+	frankenphp {
+		{$FRANKENPHP_CONFIG}
+	}
+}
+
+{$CADDY_EXTRA_CONFIG}
+
+# SERVER_NAME is the TLS knob: a real hostname gets automatic HTTPS from
+# Let's Encrypt; the ":8000" default serves plain HTTP for smoke tests and
+# operator-managed proxies.
+{$SERVER_NAME::8000} {
+	log {
+		format json
+	}
+
+	root * /app/apps/server/public
+	encode zstd br gzip
+
+	# Reverb websockets share the public hostname so a single domain (and a
+	# single certificate) covers the app AND realtime. The pusher protocol
+	# lives under /app (client websocket) and /apps (server API).
+	@reverb path /app /app/* /apps/*
+	handle @reverb {
+		reverse_proxy {$WAYFINDR_REVERB_UPSTREAM:reverb:8080}
+	}
+
+	{$CADDY_SERVER_EXTRA_DIRECTIVES}
+
+	php_server
+}

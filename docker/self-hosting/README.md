@@ -1,42 +1,76 @@
-# Wayfindr Self-Hosting Prototype
+# Wayfindr Self-Hosting Stack
 
-This directory contains the first Docker Compose / Coolify-style process map
-for Wayfindr. It is a prototype, not a production installer.
+The official Docker Compose stack for Wayfindr: FrankenPHP web server,
+queue worker, scheduler, Reverb websockets, Postgres, and Redis — one
+application image shared by every PHP process.
 
 Use it with the runtime contract in
-[`../../docs/self-hosting/runtime-requirements.md`](../../docs/self-hosting/runtime-requirements.md)
-and the setup-template notes in
-[`../../docs/self-hosting/setup-templates.md`](../../docs/self-hosting/setup-templates.md).
+[`../../docs/self-hosting/runtime-requirements.md`](../../docs/self-hosting/runtime-requirements.md).
 
 ## Files
 
-- `compose.prototype.yml` describes the web, queue, scheduler, Reverb,
-  Postgres, and Redis process shape.
-- `server.Dockerfile` builds a prototype Laravel server image for the Compose
-  process map.
-- `.env.example` lists the environment values the template expects.
-- `../../scripts/self-host/generate-env.sh` creates a local starter `.env`
+- `compose.yml` — the stack. Pulls `ghcr.io/adamgreenwell/wayfindr` by
+  default and can build the same image locally from source.
+- `server.Dockerfile` — the multi-stage application image build
+  (dashboard assets, composer vendor tree, FrankenPHP runtime). The image
+  keeps the monorepo shape because the widget script is served from
+  `packages/widget-js` at runtime.
+- `Caddyfile` — FrankenPHP/Caddy config. `SERVER_NAME` is the TLS knob
+  (see below). Reverb websockets are proxied under the same hostname, so
+  one domain and one certificate cover the app and realtime.
+- `docker-entrypoint.sh` — recreates the storage tree on (possibly empty)
+  volumes and, when `WAYFINDR_AUTO_MIGRATE=1`, waits for the database and
+  runs migrations. The compose web service opts in, so fresh installs and
+  upgrades converge without a manual `exec`.
+- `../../scripts/self-host/generate-env.sh` — creates a starter `.env`
   with fresh application, database, and Reverb secrets.
-- `../../scripts/smoke/self-host-compose.sh` runs a local end-to-end smoke
-  check against this template.
+- `../../scripts/smoke/self-host-compose.sh` — local end-to-end smoke
+  check.
 
-The Compose file can build a local application image through
-`server.Dockerfile` and tags it as `WAYFINDR_IMAGE`. Wayfindr does not publish
-an official server image yet.
-The example HTTP and Reverb ports bind to `127.0.0.1` so public traffic should
-still pass through a host-managed TLS proxy. The application image should make
-`apps/server/bootstrap/cache` writable, but that directory should not be a
-durable volume because cached Laravel artifacts can become stale across image
-or environment changes. The prototype web command uses Laravel's built-in
-server so operators can smoke-test the process map; official images may switch
-to a production web server once packaging and release workflows mature.
+## TLS: one knob
 
-Set `WAYFINDR_HTTP_BIND` or `WAYFINDR_REVERB_BIND` when the default local
-ports are already in use. Set `WAYFINDR_ENV_FILE` only for smoke tests or
-other controlled runs that need an env file outside this directory; normal
-operators should keep using `.env`.
+| `SERVER_NAME`         | Behavior                                                                                          |
+| --------------------- | ------------------------------------------------------------------------------------------------- |
+| `support.example.com` | FrankenPHP binds 80/443 and obtains + renews Let's Encrypt certificates automatically.             |
+| `:8000` (default)     | Plain HTTP on the loopback bind — for smoke tests or an operator-managed reverse proxy.            |
 
-## Smoke Test
+`generate-env.sh` picks the right mode from the `--app-url` scheme: an
+`https://` URL sets `SERVER_NAME` to the hostname and publishes 80/443; an
+`http://` URL keeps every bind on loopback so nothing collides with an
+existing proxy. In proxy mode, point the proxy at `127.0.0.1:8000` — the
+in-stack Caddy still routes `/app` and `/apps` to Reverb, so one upstream
+covers the app and websockets.
+
+## Quick start
+
+```bash
+scripts/self-host/generate-env.sh --app-url https://support.example.com
+$EDITOR docker/self-hosting/.env   # review mail settings at minimum
+docker compose -f docker/self-hosting/compose.yml --env-file docker/self-hosting/.env up -d
+```
+
+Migrations run automatically on the web service. When the stack is
+healthy, visit `/setup` on the configured `APP_URL` to create the first
+operator/account owner. To build from source instead of pulling the
+published image, add `--build` (or set `WAYFINDR_IMAGE` to a local tag).
+
+## Optional malware scanning
+
+Enable the bundled ClamAV service (needs ~1.5 GB of memory for
+signatures):
+
+```bash
+docker compose -f docker/self-hosting/compose.yml --profile clamav up -d
+```
+
+and set in the env file:
+
+```env
+WAYFINDR_ATTACHMENT_SCANNER=clamav
+WAYFINDR_CLAMAV_SOCKET=tcp://clamav:3310
+```
+
+## Smoke test
 
 From the repository root:
 
@@ -45,49 +79,9 @@ scripts/test-self-host-compose-template.sh
 scripts/smoke/self-host-compose.sh
 ```
 
-The smoke runner creates a temporary env file with throwaway secrets, builds
-the prototype image, starts Postgres, Redis, web, queue, scheduler, and Reverb
-under an isolated Compose project, runs migrations, confirms
-`wayfindr:send-alert-digests` appears in `php artisan schedule:list`, and
-checks `/up`.
+## Operator responsibilities
 
-By default it binds the web process to `127.0.0.1:18080` and Reverb to
-`127.0.0.1:18081`, then tears the stack down with volumes. Override those
-ports with `WAYFINDR_SMOKE_HTTP_PORT` and `WAYFINDR_SMOKE_REVERB_PORT`. Set
-`WAYFINDR_SMOKE_KEEP=1` only when you want to inspect the running containers
-after the smoke check.
-
-## Prototype Flow
-
-```bash
-scripts/self-host/generate-env.sh --app-url https://support.example.com
-$EDITOR docker/self-hosting/.env
-docker compose --env-file docker/self-hosting/.env -f docker/self-hosting/compose.prototype.yml config
-docker compose --env-file docker/self-hosting/.env -f docker/self-hosting/compose.prototype.yml build web
-docker compose --env-file docker/self-hosting/.env -f docker/self-hosting/compose.prototype.yml up -d
-```
-
-The generator refuses to overwrite an existing env file unless you pass
-`--force`. It uses `MAIL_MAILER=log` by default so the stack can boot before
-mail is configured; set real SMTP values and run the Wayfindr mail smoke test
-before sending production visitor traffic.
-
-After the containers start, run migrations and inspect scheduled tasks:
-
-```bash
-docker compose --env-file docker/self-hosting/.env -f docker/self-hosting/compose.prototype.yml exec web php artisan migrate --force
-docker compose --env-file docker/self-hosting/.env -f docker/self-hosting/compose.prototype.yml exec web php artisan schedule:list
-```
-
-Then visit `/setup` on the configured `APP_URL`.
-
-The prototype build uses `npm install` when no `package-lock.json` exists.
-Before Wayfindr publishes official images, the project should add a lockfile
-and a release workflow that builds the image from an immutable git ref.
-
-## Operator Responsibilities
-
-This template does not solve DNS, TLS, mail provider verification, WebSocket
-proxy routing, backups, restore drills, storage durability, log retention, or
-upgrades. The operator readiness screens should remain part of the launch
-path.
+The stack does not solve DNS, mail provider verification, backups,
+restore drills, storage durability, log retention, or upgrade timing.
+The operator readiness screens (`/dashboard/readiness`, `/operator`)
+remain part of the launch path.

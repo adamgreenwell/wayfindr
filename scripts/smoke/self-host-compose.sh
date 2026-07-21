@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-COMPOSE_FILE="$ROOT_DIR/docker/self-hosting/compose.prototype.yml"
+COMPOSE_FILE="$ROOT_DIR/docker/self-hosting/compose.yml"
 PROJECT_NAME="${WAYFINDR_SMOKE_PROJECT:-wayfindr-self-host-smoke}"
 HTTP_PORT="${WAYFINDR_SMOKE_HTTP_PORT:-18080}"
 REVERB_PORT="${WAYFINDR_SMOKE_REVERB_PORT:-18081}"
@@ -111,8 +111,10 @@ REVERB_APP_SECRET="$(openssl rand -hex 32)"
 cat > "$ENV_FILE" <<ENV
 WAYFINDR_IMAGE=wayfindr-server:local
 WAYFINDR_ENV_FILE=$ENV_FILE
-WAYFINDR_HTTP_BIND=127.0.0.1:$HTTP_PORT
-WAYFINDR_REVERB_BIND=127.0.0.1:$REVERB_PORT
+SERVER_NAME=:8000
+WAYFINDR_HTTP_BIND=127.0.0.1:$((HTTP_PORT + 1))
+WAYFINDR_HTTPS_BIND=127.0.0.1:$((HTTP_PORT + 2))
+WAYFINDR_LOCAL_BIND=127.0.0.1:$HTTP_PORT
 WAYFINDR_PHP_VERSION=8.4
 WAYFINDR_NODE_VERSION=24
 
@@ -143,12 +145,12 @@ REDIS_HOST=redis
 REDIS_PASSWORD=
 REDIS_PORT=6379
 
-BROADCAST_CONNECTION=log
+BROADCAST_CONNECTION=reverb
 REVERB_APP_ID=wayfindr-smoke
 REVERB_APP_KEY=$REVERB_APP_KEY
 REVERB_APP_SECRET=$REVERB_APP_SECRET
 REVERB_HOST=127.0.0.1
-REVERB_PORT=$REVERB_PORT
+REVERB_PORT=$HTTP_PORT
 REVERB_SCHEME=http
 REVERB_SERVER_HOST=0.0.0.0
 REVERB_SERVER_PORT=8080
@@ -180,6 +182,19 @@ grep -F "wayfindr:send-alert-digests" "$SCHEDULE_FILE" >/dev/null
 
 echo "Checking /up."
 wait_for_http "http://127.0.0.1:$HTTP_PORT/up"
+
+echo "Checking /widget.js (the image must keep the monorepo layout)."
+wait_for_http "http://127.0.0.1:$HTTP_PORT/widget.js"
+
+echo "Checking the Reverb proxy path."
+# Caddy routes /app/* to the reverb service; any answer except a proxy
+# failure or the PHP app's 404 proves the upstream is Reverb itself.
+reverb_status="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://127.0.0.1:$HTTP_PORT/app/$REVERB_APP_KEY")"
+if [ "$reverb_status" = "502" ] || [ "$reverb_status" = "404" ]; then
+    echo "Reverb proxy path returned $reverb_status; Caddy is not reaching Reverb." >&2
+    exit 1
+fi
+
 assert_services_running queue scheduler reverb
 
 echo "Self-host Compose smoke passed for $PROJECT_NAME."

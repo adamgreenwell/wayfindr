@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-COMPOSE_FILE="$ROOT_DIR/docker/self-hosting/compose.prototype.yml"
+COMPOSE_FILE="$ROOT_DIR/docker/self-hosting/compose.yml"
 TMP_DIR="$(mktemp -d)"
 ENV_FILE="$TMP_DIR/wayfindr-smoke.env"
 CONFIG_FILE="$TMP_DIR/compose-rendered.yml"
@@ -22,8 +22,10 @@ fi
 cat > "$ENV_FILE" <<'ENV'
 WAYFINDR_IMAGE=wayfindr-server:local
 WAYFINDR_ENV_FILE=__ENV_FILE__
+SERVER_NAME=:8000
 WAYFINDR_HTTP_BIND=127.0.0.1:18080
-WAYFINDR_REVERB_BIND=127.0.0.1:18081
+WAYFINDR_HTTPS_BIND=127.0.0.1:18443
+WAYFINDR_LOCAL_BIND=127.0.0.1:18000
 WAYFINDR_PHP_VERSION=8.4
 WAYFINDR_NODE_VERSION=24
 
@@ -31,7 +33,7 @@ APP_NAME=Wayfindr
 APP_ENV=production
 APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
 APP_DEBUG=false
-APP_URL=http://127.0.0.1:18080
+APP_URL=http://127.0.0.1:18000
 
 DB_DATABASE=wayfindr
 DB_USERNAME=wayfindr
@@ -52,12 +54,12 @@ REDIS_HOST=redis
 REDIS_PASSWORD=
 REDIS_PORT=6379
 
-BROADCAST_CONNECTION=log
+BROADCAST_CONNECTION=reverb
 REVERB_APP_ID=wayfindr-smoke
 REVERB_APP_KEY=wayfindr-smoke-public-key
 REVERB_APP_SECRET=wayfindr-smoke-private-secret
 REVERB_HOST=127.0.0.1
-REVERB_PORT=18081
+REVERB_PORT=18000
 REVERB_SCHEME=http
 REVERB_SERVER_HOST=0.0.0.0
 REVERB_SERVER_PORT=8080
@@ -102,22 +104,43 @@ def assert_port(service, expected):
     )
 
 
+# The three web binds: proxy-safe HTTP/HTTPS on loopback high ports and the
+# local plain-HTTP bind Caddy actually serves in SERVER_NAME=:8000 mode.
 assert_port(
     "web",
     {
         "host_ip": "127.0.0.1",
         "published": "18080",
-        "target": 8000,
+        "target": 80,
     },
 )
 assert_port(
-    "reverb",
+    "web",
     {
         "host_ip": "127.0.0.1",
-        "published": "18081",
-        "target": 8080,
+        "published": "18443",
+        "target": 443,
     },
 )
+assert_port(
+    "web",
+    {
+        "host_ip": "127.0.0.1",
+        "published": "18000",
+        "target": 8000,
+    },
+)
+
+# Reverb publishes no host port: websockets ride the web service's Caddy
+# under /app and /apps.
+if config["services"]["reverb"].get("ports"):
+    raise SystemExit("reverb should not publish host ports; Caddy proxies it")
+
+# Workers must not inherit the base image healthcheck (Caddy-admin probe).
+for service in ("queue", "scheduler"):
+    healthcheck = config["services"][service].get("healthcheck") or {}
+    if not healthcheck.get("disable"):
+        raise SystemExit(f"{service} should disable the image healthcheck")
 PY
 
 echo "Self-host Compose template renders with an isolated env file and smoke ports."

@@ -69,6 +69,26 @@ url_host() {
     printf '%s\n' "${authority%%:*}"
 }
 
+url_port() {
+    local without_scheme
+    local authority
+    local port
+
+    without_scheme="${APP_URL#*://}"
+    authority="${without_scheme%%/*}"
+    port="${authority##*:}"
+
+    if [ "$port" = "$authority" ]; then
+        if [ "$SCHEME" = "https" ]; then
+            printf '443\n'
+        else
+            printf '80\n'
+        fi
+    else
+        printf '%s\n' "$port"
+    fi
+}
+
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --app-url)
@@ -129,21 +149,33 @@ APP_KEY="base64:$(openssl rand -base64 32)"
 DB_PASSWORD="$(openssl rand -hex 24)"
 REVERB_APP_KEY="$(openssl rand -hex 16)"
 REVERB_APP_SECRET="$(openssl rand -hex 32)"
-SECURE_COOKIE="true"
-REVERB_PORT="443"
+PUBLIC_PORT="$(url_port)"
+REVERB_PORT="$PUBLIC_PORT"
 
-if [ "$SCHEME" = "http" ]; then
+# The TLS knob (see docker/self-hosting/Caddyfile): a real hostname makes
+# FrankenPHP bind 80/443 and obtain certificates itself; the http scheme
+# keeps everything on loopback for smoke tests or an operator-managed proxy.
+if [ "$SCHEME" = "https" ]; then
+    SECURE_COOKIE="true"
+    SERVER_NAME="$HOST"
+    HTTP_BIND="80"
+    HTTPS_BIND="443"
+else
     SECURE_COOKIE="false"
-    REVERB_PORT="8080"
+    SERVER_NAME=":8000"
+    HTTP_BIND="127.0.0.1:18080"
+    HTTPS_BIND="127.0.0.1:18443"
 fi
 
 umask 077
 
 cat > "$OUTPUT_FILE" <<ENV
-WAYFINDR_IMAGE=wayfindr-server:local
+WAYFINDR_IMAGE=ghcr.io/adamgreenwell/wayfindr:latest
 WAYFINDR_ENV_FILE=$OUTPUT_FILE
-WAYFINDR_HTTP_BIND=127.0.0.1:8000
-WAYFINDR_REVERB_BIND=127.0.0.1:8080
+SERVER_NAME=$SERVER_NAME
+WAYFINDR_HTTP_BIND=$HTTP_BIND
+WAYFINDR_HTTPS_BIND=$HTTPS_BIND
+WAYFINDR_LOCAL_BIND=127.0.0.1:8000
 WAYFINDR_PHP_VERSION=8.4
 WAYFINDR_NODE_VERSION=24
 
@@ -174,7 +206,7 @@ REDIS_HOST=redis
 REDIS_PASSWORD=
 REDIS_PORT=6379
 
-BROADCAST_CONNECTION=log
+BROADCAST_CONNECTION=reverb
 REVERB_APP_ID=wayfindr-production
 REVERB_APP_KEY=$REVERB_APP_KEY
 REVERB_APP_SECRET=$REVERB_APP_SECRET

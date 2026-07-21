@@ -33,7 +33,7 @@ those choices responsibly.
 
 The prototype files live in [`../../docker/self-hosting`](../../docker/self-hosting):
 
-- `compose.prototype.yml` models the required Wayfindr services.
+- `compose.yml` models the required Wayfindr services.
 - `server.Dockerfile` builds a prototype Laravel server image for the Compose
   process map.
 - `.env.example` lists the environment shape operators need to provide.
@@ -55,8 +55,8 @@ The aspirational flow should feel like this:
 ```bash
 scripts/self-host/generate-env.sh --app-url https://support.example.com
 $EDITOR docker/self-hosting/.env
-docker compose --env-file docker/self-hosting/.env -f docker/self-hosting/compose.prototype.yml build web
-docker compose --env-file docker/self-hosting/.env -f docker/self-hosting/compose.prototype.yml up -d
+docker compose --env-file docker/self-hosting/.env -f docker/self-hosting/compose.yml build web
+docker compose --env-file docker/self-hosting/.env -f docker/self-hosting/compose.yml up -d
 ```
 
 That is intentionally not a blind pipe-to-shell one-liner. Operators still need
@@ -82,8 +82,8 @@ finishes.
 After the stack starts:
 
 ```bash
-docker compose --env-file docker/self-hosting/.env -f docker/self-hosting/compose.prototype.yml exec web php artisan migrate --force
-docker compose --env-file docker/self-hosting/.env -f docker/self-hosting/compose.prototype.yml exec web php artisan schedule:list
+docker compose --env-file docker/self-hosting/.env -f docker/self-hosting/compose.yml exec web php artisan migrate --force
+docker compose --env-file docker/self-hosting/.env -f docker/self-hosting/compose.yml exec web php artisan schedule:list
 ```
 
 Then visit `/setup` on the public `APP_URL`, create the first operator/account

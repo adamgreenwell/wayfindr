@@ -1,88 +1,90 @@
 # Self-Hosting Install
 
-Wayfindr is pre-alpha. The current Docker Compose file is for local
-development only, but the first staging/demo deployment target is Laravel
-Forge.
+Wayfindr self-hosts as a Docker Compose stack: FrankenPHP web server (with
+automatic HTTPS), queue worker, scheduler, Reverb websockets, Postgres, and
+Redis. Two supported paths get you there, plus Laravel Forge for
+Laravel-native hosting.
 
-Forge is the first-class documented path because Wayfindr is Laravel-first and
-Forge handles the normal Laravel runtime pieces well: PHP, Nginx, Postgres,
-Redis, queues, scheduler, TLS, health checks, and deploy hooks. There is no
-hosting requirement or implied partnership here; Forge is simply the clearest
-path we are choosing to maintain first.
-
-Self-hosters control their own visitor data, logs, backups, retention windows,
-privacy notices, and deletion/export workflows. Review
+Self-hosters control their own visitor data, logs, backups, retention
+windows, privacy notices, and deletion/export workflows. Review
 [data-responsibility.md](../privacy/data-responsibility.md) before using
 Wayfindr with real visitors.
 
-For controlled project dogfooding, review
-[MVP Dogfood Readiness](../product/mvp-dogfood-readiness.md) before routing
-real visitor traffic to an install. It defines the minimum support loop,
-runtime gates, and safety boundaries that should be true before Wayfindr is
-used outside local testing.
+## Path 1: the one-line installer
 
-Use [laravel-forge.md](laravel-forge.md) for the current Forge deployment
-checklist, deploy script templates, environment values, queue worker, scheduler,
-and smoke test.
+On a machine with Docker installed, DNS for your support hostname pointed at
+it, and ports 80/443 free:
 
-Use [runtime-requirements.md](runtime-requirements.md) when translating
-Wayfindr to a non-Forge host. It documents the generic Laravel runtime contract:
-web root, environment shape, queue worker, scheduler, Reverb process, mail,
-storage, backups, and the post-install smoke path.
+```bash
+curl -fsSL https://raw.githubusercontent.com/adamgreenwell/wayfindr/main/scripts/self-host/install.sh \
+  | bash -s -- --app-url https://support.example.com
+```
 
-Use [email-delivery.md](email-delivery.md) when configuring outbound mail. It
-is the provider-specific recipe book — Google Workspace SMTP relay is the
-worked example — plus SPF/DKIM/DMARC deliverability and a troubleshooting
-table. Outbound mail is a dogfood-readiness gate, since alert digests and
-password resets go nowhere while the mailer is in `log` mode.
+The installer checks Docker, downloads the stack files into `./wayfindr`,
+mints application/database/Reverb secrets, starts the services, runs
+migrations, waits for health, and prints the `/setup` URL. FrankenPHP
+obtains and renews the TLS certificate automatically. Re-running converges;
+secrets are preserved.
 
-Use [setup-templates.md](setup-templates.md) for the first Docker Compose and
-Coolify-style setup-template prototype. It is intentionally a process map and
-environment scaffold, not a production installer.
+Upgrades later:
 
-For the Compose prototype, start with the local env generator instead of
-hand-copying secrets:
+```bash
+./wayfindr/install.sh --upgrade --dir ./wayfindr   # or re-run the curl line with --upgrade
+```
+
+Use an `http://` URL instead to run behind your own reverse proxy — every
+port then binds to loopback and your proxy points at `127.0.0.1:8000`
+(websockets are routed internally, so that single upstream is enough).
+
+## Path 2: Docker Compose by hand
+
+Clone or download the repo, then follow
+[docker/self-hosting/README.md](../../docker/self-hosting/README.md):
 
 ```bash
 scripts/self-host/generate-env.sh --app-url https://support.example.com
+$EDITOR docker/self-hosting/.env
+docker compose -f docker/self-hosting/compose.yml --env-file docker/self-hosting/.env up -d
 ```
 
-Review the generated `docker/self-hosting/.env` before booting the stack. The
-generator creates local application, database, and Reverb secrets, but it leaves
-mail in log mode so a real outbound mail provider still has to be configured
-and smoke-tested deliberately.
+The stack pulls `ghcr.io/adamgreenwell/wayfindr` by default; add `--build`
+to build the same image from source. Optional attachment malware scanning is
+one profile away (`--profile clamav`); see the stack README.
 
-After the application is deployed and the environment is configured, visit
-`/setup` on the Wayfindr host to create the first account owner and install
-site from the browser. The setup screen is available until the database has an
-account-scoped user. If an interrupted bootstrap already created account or site
-records but no owner, `/setup` reuses those first-run records so operators do
-not need to clean up SQL by hand.
+## Path 3: Laravel Forge
 
-The first owner is also marked as the initial platform operator so they can use
-`/operator` for instance readiness diagnostics. Platform operator access remains
-separate from account roles and does not grant support-data visibility by
-itself. The first site handoff links to this operator console alongside the
-account readiness page so setup gaps stay easy to find after the widget snippet
-is copied.
+Wayfindr is Laravel-first, and Forge maps cleanly to its runtime pieces.
+Use [laravel-forge.md](laravel-forge.md) for the deployment checklist,
+deploy script templates, environment values, queue worker, scheduler, and
+smoke test. Use [runtime-requirements.md](runtime-requirements.md) when
+translating Wayfindr to any other Laravel-capable host — it documents the
+generic runtime contract.
 
-Set `WAYFINDR_VERSION` and `WAYFINDR_COMMIT` when your deployment process can
-provide release identity values. They are optional, but they make `/operator`
-more useful when someone needs to confirm what code is running.
+## After the stack is up
 
-The intended self-hosting baseline is still Docker Compose with:
+Visit `/setup` on your `APP_URL` to create the first account owner and
+install site from the browser. The setup screen is available until the
+database has an account-scoped user, and it reuses interrupted first-run
+records so nobody cleans up SQL by hand.
 
-- Laravel web process,
-- queue worker,
-- scheduler for Laravel scheduled work such as alert digest delivery,
-- realtime process,
-- outbound mail transport,
-- Postgres,
-- Redis,
-- database and storage backups.
+The first owner is also marked as the initial platform operator for
+`/operator` instance diagnostics. Platform operator access remains separate
+from account roles and does not grant support-data visibility by itself.
 
-Production installs should use a public HTTPS `APP_URL`, secure WebSocket
-configuration, a real outbound mail provider, and restorable backups. Wayfindr's
-operator readiness screens flag the pieces the app can inspect directly and
-mark backups as a manual responsibility because backup coverage lives in the
-operator's infrastructure.
+Then work through the readiness screens:
+
+- **Mail is the first gate.** The generated env leaves `MAIL_MAILER=log` so
+  the stack boots before mail exists — but alert emails and password resets
+  go nowhere until you configure a real provider. Use
+  [email-delivery.md](email-delivery.md) (SPF/DKIM/DMARC included) and run
+  the mail smoke test.
+- `/dashboard/readiness` and `/operator` flag what the app can inspect
+  directly (queues, realtime, scheduler, storage, scanning) and mark
+  backups as a manual responsibility — backup coverage lives in your
+  infrastructure, and restore drills are yours to run.
+- Before routing real visitor traffic, review
+  [MVP Dogfood Readiness](../product/mvp-dogfood-readiness.md).
+
+Set `WAYFINDR_VERSION` and `WAYFINDR_COMMIT` when your deployment process
+can provide release identity values; they make `/operator` more useful when
+someone needs to confirm what code is running.

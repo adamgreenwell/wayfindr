@@ -42,7 +42,7 @@ fi
 grep -F 'SESSION_SECURE_COOKIE=false' "$ENV_FILE" >/dev/null
 grep -F 'REVERB_HOST=127.0.0.1' "$ENV_FILE" >/dev/null
 
-docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker/self-hosting/compose.prototype.yml" config --format json > "$CONFIG_JSON_FILE"
+docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker/self-hosting/compose.yml" config --format json > "$CONFIG_JSON_FILE"
 
 python3 - "$CONFIG_JSON_FILE" <<'PY'
 import json

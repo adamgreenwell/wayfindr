@@ -22,14 +22,21 @@ Forge is recommended, not required. Wayfindr should remain launchable anywhere
 that can run the required Laravel, Postgres, Redis, queue, scheduler, and
 realtime services.
 
-Start with [self-hosting/install.md](docs/self-hosting/install.md). Use the
-[Forge deployment guide](docs/self-hosting/laravel-forge.md) for the current
-first-class path, or the
+Start with [self-hosting/install.md](docs/self-hosting/install.md). The
+fastest path is the one-line installer, which sets up the official Docker
+Compose stack (FrankenPHP with automatic HTTPS, queue, scheduler, Reverb,
+Postgres, Redis):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/adamgreenwell/wayfindr/main/scripts/self-host/install.sh \
+  | bash -s -- --app-url https://support.example.com
+```
+
+Use the [Forge deployment guide](docs/self-hosting/laravel-forge.md) for
+Laravel-native hosting, or the
 [generic runtime requirements](docs/self-hosting/runtime-requirements.md) when
-mapping Wayfindr to another VPS, Docker, Coolify-style, or Laravel-capable host.
-The [setup-template prototype](docs/self-hosting/setup-templates.md) sketches
-the first Docker Compose / Coolify-style path without hiding operator
-responsibilities.
+mapping Wayfindr to another VPS, Docker, Coolify-style, or Laravel-capable
+host.
 
 ## Repository Layout
 

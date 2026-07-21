@@ -3,43 +3,15 @@
 ARG PHP_VERSION=8.4
 ARG NODE_VERSION=24
 
-FROM php:${PHP_VERSION}-cli-alpine AS php-base
-
-RUN apk add --no-cache \
-        bash \
-        curl \
-        libcurl \
-        libpq \
-        libxml2 \
-        oniguruma \
-        tzdata \
-        unzip \
-    && apk add --no-cache --virtual .build-deps \
-        $PHPIZE_DEPS \
-        curl-dev \
-        libxml2-dev \
-        linux-headers \
-        oniguruma-dev \
-        postgresql-dev \
-    && docker-php-ext-install -j"$(nproc)" \
-        curl \
-        dom \
-        mbstring \
-        opcache \
-        pcntl \
-        pdo_pgsql \
-        sockets \
-    && apk del .build-deps
-
-WORKDIR /app/apps/server
+# --- Dashboard assets ---------------------------------------------------------
 
 FROM node:${NODE_VERSION}-alpine AS assets
 
 WORKDIR /app/apps/server
 
-COPY apps/server/package*.json ./
+COPY apps/server/package.json apps/server/package-lock.json ./
 
-RUN if [ -f package-lock.json ]; then npm ci; else npm install --ignore-scripts; fi
+RUN npm ci --ignore-scripts
 
 COPY apps/server/public ./public
 COPY apps/server/resources ./resources
@@ -47,11 +19,31 @@ COPY apps/server/vite.config.js ./
 
 RUN npm run build
 
+# --- Shared PHP runtime (FrankenPHP) -----------------------------------------
+# FrankenPHP is the production web server (Caddy + embedded PHP): one binary,
+# HTTP/2/3, and automatic HTTPS when SERVER_NAME is a real hostname. The same
+# base runs the CLI processes (queue, scheduler, reverb) so extensions can
+# never drift between web and workers.
+
+FROM dunglas/frankenphp:1-php${PHP_VERSION} AS php-base
+
+RUN install-php-extensions \
+        intl \
+        opcache \
+        pcntl \
+        pdo_pgsql \
+        sockets \
+        zip
+
+# --- Composer vendor tree -----------------------------------------------------
+
 FROM php-base AS vendor
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 ENV COMPOSER_ALLOW_SUPERUSER=1
+
+WORKDIR /app/apps/server
 
 COPY apps/server/composer.json apps/server/composer.lock ./
 
@@ -70,6 +62,7 @@ RUN composer dump-autoload --no-dev --classmap-authoritative --no-scripts \
     && php artisan package:discover --ansi \
     && mkdir -p \
         storage/app/public \
+        storage/app/private/attachments \
         storage/framework/cache/data \
         storage/framework/sessions \
         storage/framework/testing \
@@ -78,20 +71,37 @@ RUN composer dump-autoload --no-dev --classmap-authoritative --no-scripts \
         bootstrap/cache \
     && chmod -R ug+rwX storage bootstrap/cache
 
+# --- Runtime ------------------------------------------------------------------
+# The image keeps the monorepo shape: the app serves the widget script from
+# ../../packages/widget-js relative to apps/server (WidgetScriptController),
+# so /app is the repo root — not the Laravel root.
+
 FROM php-base AS runtime
 
 ENV APP_ENV=production \
     APP_DEBUG=false \
-    LOG_CHANNEL=stderr
+    LOG_CHANNEL=stderr \
+    SERVER_NAME=:8000
+
+WORKDIR /app/apps/server
 
 COPY --from=vendor /app/apps/server /app/apps/server
+COPY packages/widget-js/src /app/packages/widget-js/src
+COPY docker/self-hosting/Caddyfile /etc/frankenphp/Caddyfile
+COPY docker/self-hosting/docker-entrypoint.sh /usr/local/bin/wayfindr-entrypoint
 
-RUN addgroup -g 1000 wayfindr \
-    && adduser -D -G wayfindr -u 1000 wayfindr \
-    && chown -R wayfindr:wayfindr storage bootstrap/cache
+# Non-root, but still able to bind 80/443 for automatic HTTPS: grant the
+# binary the bind capability and hand Caddy's state dirs to the app user.
+RUN chmod +x /usr/local/bin/wayfindr-entrypoint \
+    && useradd --uid 1000 --user-group --create-home wayfindr \
+    && setcap CAP_NET_BIND_SERVICE=+eip "$(command -v frankenphp)" \
+    && mkdir -p /data /config \
+    && chown -R wayfindr:wayfindr /data /config /app/apps/server/storage /app/apps/server/bootstrap/cache
 
 USER wayfindr
 
-EXPOSE 8000 8080
+EXPOSE 80 443 443/udp 8000
 
-CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000"]
+ENTRYPOINT ["wayfindr-entrypoint"]
+
+CMD ["frankenphp", "run", "--config", "/etc/frankenphp/Caddyfile"]
