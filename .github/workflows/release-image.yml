@@ -62,3 +62,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          # Dash-suffixed tags (v0.1.0-alpha.1) are marked prerelease, which
+          # keeps them out of releases/latest — so once a stable release
+          # exists, installs prefer it over newer alphas; before any stable,
+          # the installer's tags-API fallback still pins to the prerelease.
+          prerelease: ${{ contains(github.ref_name, '-') }}
