@@ -8,6 +8,7 @@ OUTPUT_FILE="$DEFAULT_OUTPUT"
 APP_URL=""
 APP_NAME="Wayfindr"
 MAIL_FROM_ADDRESS="support@example.com"
+BEHIND_PROXY=0
 FORCE=0
 
 usage() {
@@ -20,6 +21,9 @@ Options:
   --output <path>          Env file to write. Defaults to docker/self-hosting/.env.
   --app-name <name>        Application name. Defaults to Wayfindr.
   --mail-from <email>      Mail from address placeholder. Defaults to support@example.com.
+  --behind-proxy           Your own reverse proxy terminates TLS: keeps every
+                           bind on loopback while APP_URL, cookies, and the
+                           browser websocket values stay https.
   --force                  Overwrite the output file if it already exists.
   -h, --help               Show this help text.
 
@@ -107,6 +111,10 @@ while [ "$#" -gt 0 ]; do
             MAIL_FROM_ADDRESS="${2:-}"
             shift 2
             ;;
+        --behind-proxy)
+            BEHIND_PROXY=1
+            shift
+            ;;
         --force)
             FORCE=1
             shift
@@ -152,16 +160,30 @@ REVERB_APP_SECRET="$(openssl rand -hex 32)"
 PUBLIC_PORT="$(url_port)"
 REVERB_PORT="$PUBLIC_PORT"
 
-# The TLS knob (see docker/self-hosting/Caddyfile): a real hostname makes
-# FrankenPHP bind 80/443 and obtain certificates itself; the http scheme
-# keeps everything on loopback for smoke tests or an operator-managed proxy.
+# The TLS knob (see docker/self-hosting/Caddyfile). Who terminates TLS is
+# separate from the public scheme: --behind-proxy keeps every bind on
+# loopback while cookies and browser websocket values follow the https
+# APP_URL, and TRUSTED_PROXIES lets Laravel honor X-Forwarded-* from the
+# operator's proxy. Without the flag, an https URL means FrankenPHP binds
+# 80/443 and obtains certificates itself.
+TRUSTED_PROXIES=""
+
 if [ "$SCHEME" = "https" ]; then
     SECURE_COOKIE="true"
+else
+    SECURE_COOKIE="false"
+fi
+
+if [ "$BEHIND_PROXY" = "1" ]; then
+    SERVER_NAME=":80"
+    HTTP_BIND="127.0.0.1:18080"
+    HTTPS_BIND="127.0.0.1:18443"
+    TRUSTED_PROXIES="*"
+elif [ "$SCHEME" = "https" ]; then
     SERVER_NAME="$HOST"
     HTTP_BIND="80"
     HTTPS_BIND="443"
 else
-    SECURE_COOKIE="false"
     SERVER_NAME=":80"
     HTTP_BIND="127.0.0.1:18080"
     HTTPS_BIND="127.0.0.1:18443"
@@ -184,6 +206,7 @@ APP_ENV=production
 APP_KEY=$APP_KEY
 APP_DEBUG=false
 APP_URL=$APP_URL
+TRUSTED_PROXIES=$TRUSTED_PROXIES
 WAYFINDR_VERSION=
 WAYFINDR_COMMIT=
 

@@ -38,12 +38,14 @@ A loopback ops site on `:8000` exists in **every** mode: health probes and
 behind-proxy upstreams use it, so the public site's TLS never gates
 container health.
 
-`generate-env.sh` picks the right mode from the `--app-url` scheme: an
-`https://` URL sets `SERVER_NAME` to the hostname and publishes 80/443; an
-`http://` URL keeps every bind on loopback so nothing collides with an
-existing proxy. In proxy mode, point the proxy at `127.0.0.1:8000` — the
-in-stack Caddy still routes `/app` and `/apps` to Reverb, so one upstream
-covers the app and websockets.
+`generate-env.sh` picks the mode from the `--app-url` scheme and the
+`--behind-proxy` flag: an `https://` URL alone sets `SERVER_NAME` to the
+hostname and publishes 80/443; adding `--behind-proxy` keeps every bind on
+loopback while `APP_URL`, cookies, and the browser websocket values stay
+https, and sets `TRUSTED_PROXIES` so Laravel honors your proxy's
+`X-Forwarded-*` headers. Point the proxy at `127.0.0.1:8000` — the in-stack
+Caddy still routes `/app` and `/apps` to Reverb, so one upstream covers the
+app and websockets.
 
 ## Quick start
 

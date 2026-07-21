@@ -47,10 +47,16 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       # Server-side event posting goes to the reverb service directly;
-      # browsers use the REVERB_CLIENT_* values from the env file.
+      # browsers use the REVERB_CLIENT_* values. The interpolated defaults
+      # keep a pre-client-vars env working: its public REVERB_* values (from
+      # the SAME file via --env-file) become the browser values instead of
+      # being shadowed by the internal override above.
       REVERB_HOST: reverb
       REVERB_PORT: 8080
       REVERB_SCHEME: http
+      REVERB_CLIENT_HOST: ${REVERB_CLIENT_HOST:-${REVERB_HOST:-}}
+      REVERB_CLIENT_PORT: ${REVERB_CLIENT_PORT:-${REVERB_PORT:-}}
+      REVERB_CLIENT_SCHEME: ${REVERB_CLIENT_SCHEME:-${REVERB_SCHEME:-}}
       # Fresh installs and upgrades converge without a manual exec; the
       # entrypoint waits for the database, then runs migrations once.
       WAYFINDR_AUTO_MIGRATE: "1"

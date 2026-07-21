@@ -16,6 +16,7 @@ RAW_BASE_DEFAULT="https://raw.githubusercontent.com/adamgreenwell/wayfindr"
 REF="main"
 APP_URL=""
 MAIL_FROM="support@example.com"
+BEHIND_PROXY=0
 TARGET_DIR="$PWD/wayfindr"
 SOURCE_DIR=""
 UPGRADE=0
@@ -32,6 +33,8 @@ Options:
                     http://... for smoke tests or behind your own proxy).
   --dir <path>      Install directory. Defaults to ./wayfindr.
   --mail-from <a>   Mail from address placeholder. Defaults to support@example.com.
+  --behind-proxy    Your own reverse proxy terminates TLS; every bind stays on
+                    loopback and you point the proxy at 127.0.0.1:8000.
   --ref <git-ref>   Git ref to fetch stack files from. Defaults to main.
   --upgrade         Pull the newer image and restart an existing install.
   --no-start        Prepare files and env but do not start the stack.
@@ -49,6 +52,7 @@ while [ "$#" -gt 0 ]; do
         --app-url) APP_URL="${2:-}"; shift 2 ;;
         --dir) TARGET_DIR="${2:-}"; shift 2 ;;
         --mail-from) MAIL_FROM="${2:-}"; shift 2 ;;
+        --behind-proxy) BEHIND_PROXY=1; shift ;;
         --ref) REF="${2:-}"; shift 2 ;;
         --source-dir) SOURCE_DIR="${2:-}"; shift 2 ;;
         --upgrade) UPGRADE=1; shift ;;
@@ -110,7 +114,9 @@ if [ -f "$ENV_FILE" ]; then
     say "Keeping the existing $ENV_FILE (secrets preserved)."
 else
     say "Generating $ENV_FILE with fresh secrets."
-    "$TARGET_DIR/generate-env.sh" --app-url "$APP_URL" --mail-from "$MAIL_FROM" --output "$ENV_FILE" >/dev/null
+    generate_args=(--app-url "$APP_URL" --mail-from "$MAIL_FROM" --output "$ENV_FILE")
+    [ "$BEHIND_PROXY" = "1" ] && generate_args+=(--behind-proxy)
+    "$TARGET_DIR/generate-env.sh" "${generate_args[@]}" >/dev/null
 fi
 
 if [ "$NO_START" = "1" ]; then

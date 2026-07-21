@@ -141,6 +141,56 @@ for service in ("queue", "scheduler"):
     healthcheck = config["services"][service].get("healthcheck") or {}
     if not healthcheck.get("disable"):
         raise SystemExit(f"{service} should disable the image healthcheck")
+
+# Split horizon: the server posts events to the reverb service, browsers get
+# the public client values from the env file.
+web_env = config["services"]["web"]["environment"]
+if web_env.get("REVERB_HOST") != "reverb":
+    raise SystemExit("web should post events to the reverb service internally")
+if web_env.get("REVERB_CLIENT_HOST") != "127.0.0.1":
+    raise SystemExit(f"web browser host should come from the env file, got {web_env.get('REVERB_CLIENT_HOST')!r}")
+PY
+
+# A pre-client-vars env (public REVERB_* only) must still surface its public
+# values to browsers: the compose interpolation falls back to them instead of
+# leaking the internal reverb override.
+LEGACY_ENV_FILE="$TMP_DIR/wayfindr-legacy.env"
+LEGACY_JSON_FILE="$TMP_DIR/compose-legacy.json"
+
+cat > "$LEGACY_ENV_FILE" <<'ENV'
+WAYFINDR_IMAGE=wayfindr-server:local
+WAYFINDR_ENV_FILE=__ENV_FILE__
+POSTGRES_PASSWORD=legacy-password
+REVERB_HOST=support.example.com
+REVERB_PORT=443
+REVERB_SCHEME=https
+ENV
+
+sed -i.bak "s#__ENV_FILE__#$LEGACY_ENV_FILE#g" "$LEGACY_ENV_FILE"
+rm -f "$LEGACY_ENV_FILE.bak"
+
+docker compose --env-file "$LEGACY_ENV_FILE" -f "$COMPOSE_FILE" config --format json > "$LEGACY_JSON_FILE"
+
+python3 - "$LEGACY_JSON_FILE" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    config = json.load(handle)
+
+web_env = config["services"]["web"]["environment"]
+
+if web_env.get("REVERB_CLIENT_HOST") != "support.example.com":
+    raise SystemExit(
+        "legacy env should surface its public host to browsers, got "
+        f"{web_env.get('REVERB_CLIENT_HOST')!r}"
+    )
+
+ports = config["services"]["web"]["ports"]
+published = [str(port.get("published")) for port in ports]
+
+if published.count("8000") > 1:
+    raise SystemExit(f"legacy env double-maps port 8000: {ports}")
 PY
 
 echo "Self-host Compose template renders with an isolated env file and smoke ports."

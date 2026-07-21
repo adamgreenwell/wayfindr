@@ -35,7 +35,10 @@ return Application::configure(basePath: dirname(__DIR__))
         SweepOrphanedAttachmentsCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        // Only containerized behind-proxy installs set TRUSTED_PROXIES (the
+        // self-hosting env generator's --behind-proxy mode); everywhere else
+        // this is null and no proxy is trusted.
+        $middleware->trustProxies(at: env('TRUSTED_PROXIES'));
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //
