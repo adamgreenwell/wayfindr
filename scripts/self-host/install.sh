@@ -128,6 +128,18 @@ pin_image() {
     fi
 }
 
+migrate_env() {
+    # Installs generated before release identity was baked carry blank
+    # WAYFINDR_VERSION= / WAYFINDR_COMMIT= lines, and env_file entries
+    # override the image ENV — leaving them would keep /operator blank
+    # forever. Drop ONLY the empty ones; a value the operator set is theirs.
+    if grep -qE '^WAYFINDR_(VERSION|COMMIT)=$' "$ENV_FILE"; then
+        sed -i.bak -E '/^WAYFINDR_(VERSION|COMMIT)=$/d' "$ENV_FILE"
+        rm -f "$ENV_FILE.bak"
+        say "Removed blank release-identity overrides so /operator reports the image version."
+    fi
+}
+
 require_runnable_image() {
     # Before the first release no ghcr image exists: a fresh install would
     # fail on the pull with a confusing error, so fail early with the way
@@ -160,6 +172,7 @@ if [ "$UPGRADE" = "1" ]; then
     fetch docker/self-hosting/compose.yml "$COMPOSE_FILE"
     fetch scripts/self-host/install.sh "$TARGET_DIR/install.sh"
     chmod +x "$TARGET_DIR/install.sh"
+    migrate_env
     pin_image
     say "Pulling the release image."
     compose pull web || say "Pull failed; keeping the current image (pre-release or locally built installs)."
