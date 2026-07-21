@@ -121,7 +121,9 @@ fi
 say "Starting the stack (first run downloads the application image)."
 compose up -d
 
-LOCAL_BIND="$(grep '^WAYFINDR_LOCAL_BIND=' "$ENV_FILE" | cut -d= -f2)"
+# sed exits 0 whether or not the key exists, unlike grep under pipefail —
+# a hand-written env without WAYFINDR_LOCAL_BIND must fall back, not abort.
+LOCAL_BIND="$(sed -n 's/^WAYFINDR_LOCAL_BIND=//p' "$ENV_FILE")"
 LOCAL_URL="http://${LOCAL_BIND:-127.0.0.1:8000}"
 
 say "Waiting for the application to come up."

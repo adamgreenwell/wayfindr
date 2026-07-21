@@ -49,10 +49,14 @@ services:
       # Fresh installs and upgrades converge without a manual exec; the
       # entrypoint waits for the database, then runs migrations once.
       WAYFINDR_AUTO_MIGRATE: "1"
+    # The PUBLIC_* names are deliberately new: a prototype-era env carried
+    # WAYFINDR_HTTP_BIND=127.0.0.1:8000, which would double-map host port
+    # 8000 here. Stale prototype vars are ignored, and the preserved proxy
+    # upstream keeps working through the WAYFINDR_LOCAL_BIND default.
     ports:
-      - "${WAYFINDR_HTTP_BIND:-80}:80"
-      - "${WAYFINDR_HTTPS_BIND:-443}:443"
-      - "${WAYFINDR_HTTPS_BIND:-443}:443/udp"
+      - "${WAYFINDR_PUBLIC_HTTP_BIND:-80}:80"
+      - "${WAYFINDR_PUBLIC_HTTPS_BIND:-443}:443"
+      - "${WAYFINDR_PUBLIC_HTTPS_BIND:-443}:443/udp"
       - "${WAYFINDR_LOCAL_BIND:-127.0.0.1:8000}:8000"
     healthcheck:
       # The loopback ops site on :8000 exists in every TLS mode, so one
