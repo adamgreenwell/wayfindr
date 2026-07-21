@@ -1,6 +1,6 @@
 # Engineering Handoff & Roadmap
 
-*Living document — last updated July 16, 2026. For an agent (or engineer) picking up
+*Living document — last updated July 21, 2026. For an agent (or engineer) picking up
 Wayfindr development. Read this, then `docs/product/roadmap.md` and
 `docs/self-hosting/` for depth.*
 
@@ -177,7 +177,7 @@ recommended against as specced).
 | --- | --- | --- | --- |
 | **FrankenPHP image** | Production web server; `SERVER_NAME` is the TLS knob (hostname = automatic Let's Encrypt, `:80` default); **always-on loopback ops site `:8000`** so health probes and proxy upstreams work in every TLS mode; monorepo layout preserved (widget serves from `packages/widget-js`); non-root with bind capability; entrypoint storage prep + gated auto-migrate; `package-lock.json` committed. | `docker/self-hosting/server.Dockerfile`, `Caddyfile`, `docker-entrypoint.sh` | #614 |
 | **Official compose stack** | Pull-only `compose.yml` (source builds via `compose.build.yml` overlay): web/queue/scheduler/reverb/postgres/redis + optional clamav profile; Reverb proxied under the app hostname (no published reverb port); split-horizon reverb env (services post to `reverb:8080`, browsers get `REVERB_CLIENT_*` with read-time fallback); ACME state in volumes; legacy prototype envs upgrade without collisions. | `docker/self-hosting/compose.yml`, `compose.build.yml`, `config/broadcasting.php` | #614 |
-| **One-line installer** | `curl \| bash` → checks Docker, resolves and pins the latest release (stack files AND image; tags-API fallback; pre-release installs fail early with guidance), mints secrets, boots, waits on the ops site, prints `/setup`; `--behind-proxy` decouples TLS termination from scheme (loopback binds + `TRUSTED_PROXIES`); `--upgrade` re-resolves, refreshes, pulls, restarts. | `scripts/self-host/install.sh`, `scripts/self-host/generate-env.sh` | #614 |
+| **One-line installer** | `curl \| bash` → checks Docker, resolves and pins the latest release (stack files AND image; tags-API fallback; installs with **no published release at all** fail early with guidance — alpha releases resolve and pin normally), mints secrets, boots, waits on the ops site, prints `/setup`; `--behind-proxy` decouples TLS termination from scheme (loopback binds + `TRUSTED_PROXIES`); `--upgrade` re-resolves, refreshes, pulls, restarts. | `scripts/self-host/install.sh`, `scripts/self-host/generate-env.sh` | #614 |
 | **Release workflow + docs** | The repository's only CI: `v*` tags → multi-arch GHCR build (`{version}`, `{major.minor}` for stables, `latest`) + GitHub Release (dash-suffixed tags marked prerelease, so stables win `releases/latest` over newer alphas). Install doc rewritten as the front door (requirements, three paths, data/backup/`down -v` warnings). | `.github/workflows/release-image.yml`, `docs/self-hosting/install.md`, `docker/self-hosting/README.md` | #614/#615/#616 |
 | **`v0.1.0-alpha.1`** | First public release: multi-arch image on GHCR (publicly pullable), prerelease-marked GitHub Release, clean-room one-liner validated against the published artifacts. | `ghcr.io/adamgreenwell/wayfindr` | tag `v0.1.0-alpha.1` |
 
@@ -232,8 +232,10 @@ recommended against as specced).
 
 - **PR flow**: branch → open PR → wait ~5 min → check for **Codex bot** review
   comments → address / reply / resolve threads → **merge when green**. There is
-  **no GitHub Actions CI** in this repo; "green" means local tests pass **and**
-  Codex has cleared (it often stays silent = no findings). Codex catches real
+  **no test CI** in this repo — the only Actions workflow is the tag-triggered
+  release image build (`release-image.yml`, `v*` tags only); "green" means
+  local tests pass **and** Codex has cleared (it often stays silent = no
+  findings). Codex catches real
   bugs — take its P2s seriously.
 - **Commits under the owner's creds only** — **no** `Co-Authored-By` trailers,
   **no** "Generated with Claude Code" footers. (The repo's `attribution` config
