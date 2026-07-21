@@ -113,9 +113,13 @@ Then work through the readiness screens:
 - Before routing real visitor traffic, review
   [MVP Dogfood Readiness](../product/mvp-dogfood-readiness.md).
 
-Set `WAYFINDR_VERSION` and `WAYFINDR_COMMIT` when your deployment process
-can provide release identity values; they make `/operator` more useful when
-someone needs to confirm what code is running.
+`/operator` reports which release is running — the official image bakes its
+version and commit in, so an install from the one-liner or the published
+image answers "what code is this?" with no configuration. Source builds
+report `source` unless you pass `WAYFINDR_BUILD_VERSION`. Setting
+`WAYFINDR_VERSION` / `WAYFINDR_COMMIT` in your env file overrides the baked
+values (including blanking them), so leave them alone unless you are
+deploying a custom build. Quote the version when you file an issue.
 
 ## Where your data lives
 

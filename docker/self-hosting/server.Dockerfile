@@ -78,10 +78,18 @@ RUN composer dump-autoload --no-dev --classmap-authoritative --no-scripts \
 
 FROM php-base AS runtime
 
+# Release identity is baked at build time so the official image can answer
+# "what is running here?" on /operator without operator configuration. The
+# release workflow passes the tag and commit; local builds get "source".
+ARG WAYFINDR_VERSION=source
+ARG WAYFINDR_COMMIT=
+
 ENV APP_ENV=production \
     APP_DEBUG=false \
     LOG_CHANNEL=stderr \
-    SERVER_NAME=:80
+    SERVER_NAME=:80 \
+    WAYFINDR_VERSION=${WAYFINDR_VERSION} \
+    WAYFINDR_COMMIT=${WAYFINDR_COMMIT}
 
 WORKDIR /app/apps/server
 

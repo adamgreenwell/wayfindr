@@ -49,6 +49,9 @@ jobs:
           context: .
           file: docker/self-hosting/server.Dockerfile
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            WAYFINDR_VERSION=${{ github.ref_name }}
+            WAYFINDR_COMMIT=${{ github.sha }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

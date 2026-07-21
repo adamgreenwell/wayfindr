@@ -212,8 +212,9 @@ APP_KEY=$APP_KEY
 APP_DEBUG=false
 APP_URL=$APP_URL
 TRUSTED_PROXIES=$TRUSTED_PROXIES
-WAYFINDR_VERSION=
-WAYFINDR_COMMIT=
+# WAYFINDR_VERSION / WAYFINDR_COMMIT are baked into the official image and
+# shown on /operator. Setting them here would OVERRIDE the image values with
+# whatever you write (including blank) — only do that for custom builds.
 
 DB_DATABASE=wayfindr
 DB_USERNAME=wayfindr

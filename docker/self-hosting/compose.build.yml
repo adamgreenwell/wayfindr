@@ -14,3 +14,6 @@ services:
       args:
         PHP_VERSION: ${WAYFINDR_PHP_VERSION:-8.4}
         NODE_VERSION: ${WAYFINDR_NODE_VERSION:-24}
+        # Source builds identify as "source" unless you say otherwise.
+        WAYFINDR_VERSION: ${WAYFINDR_BUILD_VERSION:-source}
+        WAYFINDR_COMMIT: ${WAYFINDR_BUILD_COMMIT:-}
