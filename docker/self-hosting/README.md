@@ -58,7 +58,14 @@ docker compose -f docker/self-hosting/compose.yml --env-file docker/self-hosting
 Migrations run automatically on the web service. When the stack is
 healthy, visit `/setup` on the configured `APP_URL` to create the first
 operator/account owner. To build from source instead of pulling the
-published image, add `--build` (or set `WAYFINDR_IMAGE` to a local tag).
+published image, add the build overlay:
+
+```bash
+docker compose -f docker/self-hosting/compose.yml -f docker/self-hosting/compose.build.yml   --env-file docker/self-hosting/.env up -d --build
+```
+
+(`compose.yml` itself is pull-only because the installer places it in a
+directory with no source tree.)
 
 ## Optional malware scanning
 

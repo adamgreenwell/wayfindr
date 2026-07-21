@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPOSE_FILE="$ROOT_DIR/docker/self-hosting/compose.yml"
+COMPOSE_BUILD_FILE="$ROOT_DIR/docker/self-hosting/compose.build.yml"
 PROJECT_NAME="${WAYFINDR_SMOKE_PROJECT:-wayfindr-self-host-smoke}"
 HTTP_PORT="${WAYFINDR_SMOKE_HTTP_PORT:-18080}"
 REVERB_PORT="${WAYFINDR_SMOKE_REVERB_PORT:-18081}"
@@ -20,7 +21,7 @@ require_command() {
 
 cleanup() {
     if [ "$KEEP_STACK" != "1" ]; then
-        docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" down -v --remove-orphans >/dev/null 2>&1 || true
+        docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$COMPOSE_BUILD_FILE" down -v --remove-orphans >/dev/null 2>&1 || true
     else
         echo "Smoke stack left running because WAYFINDR_SMOKE_KEEP=1."
         echo "Stop it with: docker compose --project-name $PROJECT_NAME --env-file $ENV_FILE -f $COMPOSE_FILE down -v --remove-orphans"
@@ -50,7 +51,7 @@ wait_for_http() {
 
 retry_compose() {
     for _ in $(seq 1 30); do
-        if docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"; then
+        if docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$COMPOSE_BUILD_FILE" "$@"; then
             return 0
         fi
 
@@ -61,7 +62,7 @@ retry_compose() {
 }
 
 compose() {
-    docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+    docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$COMPOSE_BUILD_FILE" "$@"
 }
 
 assert_services_running() {
@@ -164,20 +165,20 @@ ENV
 trap cleanup EXIT
 
 echo "Rendering Compose config for $PROJECT_NAME."
-docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" config >/dev/null
+docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$COMPOSE_BUILD_FILE" config >/dev/null
 
 echo "Building the prototype Wayfindr image."
-docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build web
+docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$COMPOSE_BUILD_FILE" build web
 
 echo "Starting the self-host smoke stack."
-docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d postgres redis web queue scheduler reverb
+docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$COMPOSE_BUILD_FILE" up -d postgres redis web queue scheduler reverb
 assert_services_running queue scheduler reverb
 
 echo "Running migrations."
 retry_compose exec -T web php artisan migrate --force
 
 echo "Inspecting scheduled tasks."
-docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T web php artisan schedule:list | tee "$SCHEDULE_FILE"
+docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$COMPOSE_BUILD_FILE" exec -T web php artisan schedule:list | tee "$SCHEDULE_FILE"
 grep -F "wayfindr:send-alert-digests" "$SCHEDULE_FILE" >/dev/null
 
 echo "Checking /up."

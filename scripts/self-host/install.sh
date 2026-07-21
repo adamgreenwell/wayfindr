@@ -13,7 +13,9 @@
 set -euo pipefail
 
 RAW_BASE_DEFAULT="https://raw.githubusercontent.com/adamgreenwell/wayfindr"
-REF="main"
+RELEASES_API="https://api.github.com/repos/adamgreenwell/wayfindr/releases/latest"
+REF=""
+IMAGE_TAG=""
 APP_URL=""
 MAIL_FROM="support@example.com"
 BEHIND_PROXY=0
@@ -35,7 +37,9 @@ Options:
   --mail-from <a>   Mail from address placeholder. Defaults to support@example.com.
   --behind-proxy    Your own reverse proxy terminates TLS; every bind stays on
                     loopback and you point the proxy at 127.0.0.1:8000.
-  --ref <git-ref>   Git ref to fetch stack files from. Defaults to main.
+  --ref <git-ref>   Git ref to fetch stack files from. Defaults to the latest
+                    release tag (main before the first release), keeping the
+                    stack files aligned with the image the install pulls.
   --upgrade         Pull the newer image and restart an existing install.
   --no-start        Prepare files and env but do not start the stack.
   --source-dir <p>  Internal: copy stack files from a local checkout instead
@@ -69,16 +73,61 @@ docker info >/dev/null 2>&1 || die "The Docker daemon is not reachable. Is it ru
 COMPOSE_FILE="$TARGET_DIR/compose.yml"
 ENV_FILE="$TARGET_DIR/.env"
 
+# Stack files and image must describe the same release: without an explicit
+# --ref, pin both to the latest release tag. Before the first release the
+# API has none and everything follows main/latest.
+resolve_release() {
+    local latest
+
+    if [ -n "$REF" ]; then
+        return
+    fi
+
+    latest="$(curl -fsSL "$RELEASES_API" 2>/dev/null | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)" || true
+
+    if [ -n "$latest" ]; then
+        REF="$latest"
+        IMAGE_TAG="${latest#v}"
+        say "Pinned to release $latest."
+    else
+        REF="main"
+        say "No published release found; using main (pre-release mode)."
+    fi
+}
+
+pin_image() {
+    if [ -n "$IMAGE_TAG" ] && grep -q '^WAYFINDR_IMAGE=ghcr.io/adamgreenwell/wayfindr:' "$ENV_FILE"; then
+        sed -i.bak "s#^WAYFINDR_IMAGE=ghcr.io/adamgreenwell/wayfindr:.*#WAYFINDR_IMAGE=ghcr.io/adamgreenwell/wayfindr:$IMAGE_TAG#" "$ENV_FILE"
+        rm -f "$ENV_FILE.bak"
+    fi
+}
+
 compose() {
     # The compose file pins the project name (wayfindr-self-hosting), so
     # repeated runs and upgrades always converge on the same stack.
     docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
 }
 
+fetch() {
+    local path="$1" dest="$2"
+
+    if [ -n "$SOURCE_DIR" ]; then
+        cp "$SOURCE_DIR/$path" "$dest"
+    else
+        curl -fsSL "$RAW_BASE_DEFAULT/$REF/$path" -o "$dest"
+    fi
+}
+
 if [ "$UPGRADE" = "1" ]; then
     [ -f "$COMPOSE_FILE" ] && [ -f "$ENV_FILE" ] || die "No install found in $TARGET_DIR (use --dir to point at it)."
-    say "Pulling the newer Wayfindr image."
-    compose pull web
+    resolve_release
+    say "Refreshing stack files at $REF."
+    fetch docker/self-hosting/compose.yml "$COMPOSE_FILE"
+    fetch scripts/self-host/install.sh "$TARGET_DIR/install.sh"
+    chmod +x "$TARGET_DIR/install.sh"
+    pin_image
+    say "Pulling the release image."
+    compose pull web || say "Pull failed; keeping the current image (pre-release or locally built installs)."
     say "Restarting the stack (migrations run automatically)."
     compose up -d
     say "Upgrade complete."
@@ -94,16 +143,7 @@ esac
 
 mkdir -p "$TARGET_DIR"
 
-fetch() {
-    local path="$1" dest="$2"
-
-    if [ -n "$SOURCE_DIR" ]; then
-        cp "$SOURCE_DIR/$path" "$dest"
-    else
-        curl -fsSL "$RAW_BASE_DEFAULT/$REF/$path" -o "$dest"
-    fi
-}
-
+resolve_release
 say "Fetching the Wayfindr stack files (${SOURCE_DIR:+local checkout}${SOURCE_DIR:-ref $REF})."
 fetch docker/self-hosting/compose.yml "$COMPOSE_FILE"
 fetch scripts/self-host/generate-env.sh "$TARGET_DIR/generate-env.sh"
@@ -117,6 +157,7 @@ else
     generate_args=(--app-url "$APP_URL" --mail-from "$MAIL_FROM" --output "$ENV_FILE")
     [ "$BEHIND_PROXY" = "1" ] && generate_args+=(--behind-proxy)
     "$TARGET_DIR/generate-env.sh" "${generate_args[@]}" >/dev/null
+    pin_image
 fi
 
 if [ "$NO_START" = "1" ]; then

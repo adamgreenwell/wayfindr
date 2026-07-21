@@ -12,14 +12,11 @@
 
 name: wayfindr-self-hosting
 
+# This file is pull-only by design: the installer drops it into a directory
+# with no source tree, so a build context here would be meaningless. Building
+# from a repo checkout uses the compose.build.yml overlay.
 x-wayfindr-app: &wayfindr-app
   image: ${WAYFINDR_IMAGE:-ghcr.io/adamgreenwell/wayfindr:latest}
-  build:
-    context: ../..
-    dockerfile: docker/self-hosting/server.Dockerfile
-    args:
-      PHP_VERSION: ${WAYFINDR_PHP_VERSION:-8.4}
-      NODE_VERSION: ${WAYFINDR_NODE_VERSION:-24}
   restart: unless-stopped
   env_file:
     - ${WAYFINDR_ENV_FILE:-.env}

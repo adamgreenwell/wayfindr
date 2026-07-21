@@ -1,0 +1,16 @@
+# Source-build overlay for repo checkouts:
+#
+#   docker compose -f docker/self-hosting/compose.yml \
+#     -f docker/self-hosting/compose.build.yml \
+#     --env-file docker/self-hosting/.env up -d --build
+#
+# The published compose.yml is pull-only because the installer places it in a
+# directory with no source tree.
+services:
+  web:
+    build:
+      context: ../..
+      dockerfile: docker/self-hosting/server.Dockerfile
+      args:
+        PHP_VERSION: ${WAYFINDR_PHP_VERSION:-8.4}
+        NODE_VERSION: ${WAYFINDR_NODE_VERSION:-24}
