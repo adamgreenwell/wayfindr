@@ -2,18 +2,25 @@
 
 Wayfindr self-hosts as a Docker Compose stack: FrankenPHP web server (with
 automatic HTTPS), queue worker, scheduler, Reverb websockets, Postgres, and
-Redis. Two supported paths get you there, plus Laravel Forge for
-Laravel-native hosting.
+Redis. Three paths get you there: the one-line installer, Docker Compose by
+hand, or Laravel Forge.
 
 Self-hosters control their own visitor data, logs, backups, retention
 windows, privacy notices, and deletion/export workflows. Review
 [data-responsibility.md](../privacy/data-responsibility.md) before using
 Wayfindr with real visitors.
 
-## Path 1: the one-line installer
+## What you need
 
-On a machine with Docker installed, DNS for your support hostname pointed at
-it, and ports 80/443 free:
+- A Linux machine (or VM) with **Docker and the Compose plugin** installed.
+  Images are published for amd64 and arm64.
+- **1 GB of RAM** to try it; **2 GB** recommended for real traffic, and add
+  ~1.5 GB more if you enable ClamAV attachment scanning.
+- A few GB of disk for images, the database, and attachments.
+- For automatic HTTPS: a **DNS record** for your support hostname pointing
+  at the machine, with ports **80 and 443** free.
+
+## Path 1: the one-line installer
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/adamgreenwell/wayfindr/main/scripts/self-host/install.sh \
@@ -22,14 +29,17 @@ curl -fsSL https://raw.githubusercontent.com/adamgreenwell/wayfindr/main/scripts
 
 The installer checks Docker, downloads the stack files into `./wayfindr`,
 mints application/database/Reverb secrets, starts the services, runs
-migrations, waits for health, and prints the `/setup` URL. FrankenPHP
+migrations, waits for health, and prints the `/setup` URL. The first run
+downloads the application image, so expect a couple of minutes. FrankenPHP
 obtains and renews the TLS certificate automatically. Re-running converges;
 secrets are preserved.
 
-Upgrades later:
+Upgrading later is one command — it refreshes the stack files at the newest
+release, pulls its image, restarts, and runs any new migrations
+automatically:
 
 ```bash
-./wayfindr/install.sh --upgrade --dir ./wayfindr   # or re-run the curl line with --upgrade
+./wayfindr/install.sh --upgrade
 ```
 
 Running behind your own TLS-terminating reverse proxy? Keep the real
@@ -61,7 +71,9 @@ The stack pulls `ghcr.io/adamgreenwell/wayfindr` by default. To build the
 same image from source, add the build overlay:
 
 ```bash
-docker compose -f docker/self-hosting/compose.yml -f docker/self-hosting/compose.build.yml   --env-file docker/self-hosting/.env up -d --build
+docker compose -f docker/self-hosting/compose.yml \
+  -f docker/self-hosting/compose.build.yml \
+  --env-file docker/self-hosting/.env up -d --build
 ```
 
 Optional attachment malware scanning is one profile away
@@ -104,3 +116,14 @@ Then work through the readiness screens:
 Set `WAYFINDR_VERSION` and `WAYFINDR_COMMIT` when your deployment process
 can provide release identity values; they make `/operator` more useful when
 someone needs to confirm what code is running.
+
+## Where your data lives
+
+Everything durable sits in named Docker volumes under the
+`wayfindr-self-hosting` compose project. The two your backups must cover
+are `wayfindr-self-hosting_wayfindr-postgres` (the database) and
+`wayfindr-self-hosting_wayfindr-storage` (uploaded attachments and logs) —
+`docker volume ls` shows them; certificates live in the caddy-data volume
+and regenerate if lost. Stopping the stack
+(`docker compose ... down`) keeps all data. **Adding `-v` deletes every
+volume — database included.** There is no undo.

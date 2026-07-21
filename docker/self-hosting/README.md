@@ -61,7 +61,9 @@ operator/account owner. To build from source instead of pulling the
 published image, add the build overlay:
 
 ```bash
-docker compose -f docker/self-hosting/compose.yml -f docker/self-hosting/compose.build.yml   --env-file docker/self-hosting/.env up -d --build
+docker compose -f docker/self-hosting/compose.yml \
+  -f docker/self-hosting/compose.build.yml \
+  --env-file docker/self-hosting/.env up -d --build
 ```
 
 (`compose.yml` itself is pull-only because the installer places it in a
