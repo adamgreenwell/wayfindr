@@ -81,7 +81,7 @@ FROM php-base AS runtime
 ENV APP_ENV=production \
     APP_DEBUG=false \
     LOG_CHANNEL=stderr \
-    SERVER_NAME=:8000
+    SERVER_NAME=:80
 
 WORKDIR /app/apps/server
 

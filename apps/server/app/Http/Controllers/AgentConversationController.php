@@ -732,9 +732,15 @@ class AgentConversationController extends Controller
         }
 
         $key = config('broadcasting.connections.reverb.key');
-        $host = config('broadcasting.connections.reverb.options.host');
-        $port = config('broadcasting.connections.reverb.options.port');
-        $scheme = config('broadcasting.connections.reverb.options.scheme');
+        // Browser-facing values: in containerized installs the server-side
+        // host is an internal service address the browser cannot reach.
+        // Single-endpoint deployments set no client_* values and fall back.
+        $host = config('broadcasting.connections.reverb.options.client_host')
+            ?? config('broadcasting.connections.reverb.options.host');
+        $port = config('broadcasting.connections.reverb.options.client_port')
+            ?? config('broadcasting.connections.reverb.options.port');
+        $scheme = config('broadcasting.connections.reverb.options.client_scheme')
+            ?? config('broadcasting.connections.reverb.options.scheme');
 
         if (! $this->hasConfigValue($key) || ! $this->hasConfigValue($host) || ! $this->hasConfigValue($port) || ! $this->hasConfigValue($scheme)) {
             return null;

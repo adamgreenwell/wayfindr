@@ -46,6 +46,11 @@ services:
       DB_PORT: 5432
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      # Server-side event posting goes to the reverb service directly;
+      # browsers use the REVERB_CLIENT_* values from the env file.
+      REVERB_HOST: reverb
+      REVERB_PORT: 8080
+      REVERB_SCHEME: http
       # Fresh installs and upgrades converge without a manual exec; the
       # entrypoint waits for the database, then runs migrations once.
       WAYFINDR_AUTO_MIGRATE: "1"
@@ -58,6 +63,12 @@ services:
       - "${WAYFINDR_PUBLIC_HTTPS_BIND:-443}:443"
       - "${WAYFINDR_PUBLIC_HTTPS_BIND:-443}:443/udp"
       - "${WAYFINDR_LOCAL_BIND:-127.0.0.1:8000}:8000"
+    # Caddy's ACME account and certificates must outlive the container —
+    # re-issuing on every recreate runs into Let's Encrypt rate limits.
+    volumes:
+      - wayfindr-storage:/app/apps/server/storage
+      - wayfindr-caddy-data:/data
+      - wayfindr-caddy-config:/config
     healthcheck:
       # The loopback ops site on :8000 exists in every TLS mode, so one
       # plain probe is always valid — the public vhost never gates health.
@@ -77,6 +88,15 @@ services:
   queue:
     <<: *wayfindr-app
     command: ["php", "artisan", "queue:work", "redis", "--sleep=3", "--tries=3", "--timeout=90"]
+    environment:
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REVERB_HOST: reverb
+      REVERB_PORT: 8080
+      REVERB_SCHEME: http
     healthcheck:
       disable: true
     depends_on:
@@ -86,6 +106,15 @@ services:
   scheduler:
     <<: *wayfindr-app
     command: ["php", "artisan", "schedule:work"]
+    environment:
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REVERB_HOST: reverb
+      REVERB_PORT: 8080
+      REVERB_SCHEME: http
     healthcheck:
       disable: true
     depends_on:
@@ -146,6 +175,8 @@ services:
 
 volumes:
   wayfindr-storage:
+  wayfindr-caddy-data:
+  wayfindr-caddy-config:
   wayfindr-postgres:
   wayfindr-redis:
   wayfindr-clamav:

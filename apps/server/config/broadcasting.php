@@ -36,10 +36,19 @@ return [
             'secret' => env('REVERB_APP_SECRET'),
             'app_id' => env('REVERB_APP_ID'),
             'options' => [
+                // Where the SERVER posts events (and probes health). In
+                // containerized installs this is the internal service
+                // address, not the public hostname.
                 'host' => env('REVERB_HOST'),
                 'port' => env('REVERB_PORT', 443),
                 'scheme' => env('REVERB_SCHEME', 'https'),
                 'useTLS' => env('REVERB_SCHEME', 'https') === 'https',
+                // Where BROWSERS connect. Readers fall back to the
+                // server-side values when these are null, so single-endpoint
+                // deployments configure nothing extra.
+                'client_host' => env('REVERB_CLIENT_HOST'),
+                'client_port' => env('REVERB_CLIENT_PORT'),
+                'client_scheme' => env('REVERB_CLIENT_SCHEME'),
             ],
             'client_options' => [
                 // Guzzle client options: https://docs.guzzlephp.org/en/stable/request-options.html
