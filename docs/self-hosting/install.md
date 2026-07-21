@@ -57,9 +57,15 @@ $EDITOR docker/self-hosting/.env
 docker compose -f docker/self-hosting/compose.yml --env-file docker/self-hosting/.env up -d
 ```
 
-The stack pulls `ghcr.io/adamgreenwell/wayfindr` by default; add `--build`
-to build the same image from source. Optional attachment malware scanning is
-one profile away (`--profile clamav`); see the stack README.
+The stack pulls `ghcr.io/adamgreenwell/wayfindr` by default. To build the
+same image from source, add the build overlay:
+
+```bash
+docker compose -f docker/self-hosting/compose.yml -f docker/self-hosting/compose.build.yml   --env-file docker/self-hosting/.env up -d --build
+```
+
+Optional attachment malware scanning is one profile away
+(`--profile clamav`); see the stack README.
 
 ## Path 3: Laravel Forge
 

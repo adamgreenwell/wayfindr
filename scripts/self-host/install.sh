@@ -80,6 +80,18 @@ resolve_release() {
     local latest
 
     if [ -n "$REF" ]; then
+        # An explicit release tag pins the image too; branches and SHAs have
+        # no matching published image, so they run :latest deliberately.
+        case "$REF" in
+            v[0-9]*)
+                IMAGE_TAG="${REF#v}"
+                say "Pinned to $REF (stack files and image)."
+                ;;
+            *)
+                say "Using ref $REF with the :latest image (no matching published image for non-tag refs)."
+                ;;
+        esac
+
         return
     fi
 
