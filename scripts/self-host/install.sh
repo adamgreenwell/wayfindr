@@ -14,6 +14,7 @@ set -euo pipefail
 
 RAW_BASE_DEFAULT="https://raw.githubusercontent.com/adamgreenwell/wayfindr"
 RELEASES_API="https://api.github.com/repos/adamgreenwell/wayfindr/releases/latest"
+TAGS_API="https://api.github.com/repos/adamgreenwell/wayfindr/tags?per_page=100"
 REF=""
 IMAGE_TAG=""
 APP_URL=""
@@ -96,6 +97,12 @@ resolve_release() {
     fi
 
     latest="$(curl -fsSL "$RELEASES_API" 2>/dev/null | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)" || true
+
+    # A bare v* git tag publishes an image without creating a GitHub
+    # Release — resolve through the tags API before ever considering main.
+    if [ -z "$latest" ]; then
+        latest="$(curl -fsSL "$TAGS_API" 2>/dev/null | sed -n 's/.*"name": *"\(v[0-9][^"]*\)".*/\1/p' | sort -V | tail -n 1)" || true
+    fi
 
     if [ -n "$latest" ]; then
         REF="$latest"

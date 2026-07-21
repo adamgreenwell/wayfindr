@@ -55,7 +55,7 @@ The aspirational flow should feel like this:
 ```bash
 scripts/self-host/generate-env.sh --app-url https://support.example.com
 $EDITOR docker/self-hosting/.env
-docker compose --env-file docker/self-hosting/.env -f docker/self-hosting/compose.yml build web
+docker compose --env-file docker/self-hosting/.env -f docker/self-hosting/compose.yml -f docker/self-hosting/compose.build.yml build web
 docker compose --env-file docker/self-hosting/.env -f docker/self-hosting/compose.yml up -d
 ```
 
