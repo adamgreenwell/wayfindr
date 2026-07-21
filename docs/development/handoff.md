@@ -64,7 +64,11 @@ synchronous, fail-closed — **live on stage**, EICAR-validated end to end), and
 the **S3-compatible remote storage surface** (per-row `storage_disk`,
 migration-free coexistence, dedicated-disk + private-ACL validation). Both UIs
 were live-validated on stage, including the owner's own phone/desktop testing.
-The stage box was resized to 2 GB to host clamd comfortably.
+The stage box was resized to 2 GB to host clamd comfortably. **The S3 surface
+went live on Cloudflare R2 (July 18)**: stage now stores new attachments in
+the `wayfindr-attachments` bucket and streams them back through both the
+visitor and agent routes; older attachments keep serving from local disk
+per-row.
 
 **The agent UI density epic is complete and owner-validated (July 16).**
 PRs #602–#605 trimmed every agent route to what the day-to-day support task
@@ -80,12 +84,37 @@ time-bound, read-only, row-locked, audited), the operator request/self-approve
 console and the account approve/deny/revoke page, the scoped read-only viewers
 (transcripts, tickets, attachment metadata only), the always-on dashboard
 transparency banner while a grant is live, and a hardening suite that pins the
-hosted shape end to end. 69 tests across five files. **Not yet live-validated
-on stage** — that needs the owner's fork sync.
+hosted shape end to end. 69 tests across five files. **Live-validated on
+stage July 17**: a full drill — request by support code, self-approval on the
+sole-admin account, read-only transcript with metadata-only attachments, the
+dashboard banner, the account-homed searchable audit trail, revoke, and the
+stale viewer URL dying at 403.
+
+**Unattended alerts shipped (July 17).** A third email cadence — "Email only
+when a visitor waits unseen" (#613) — closes the gap between
+immediate-per-message email and the hourly digest without presence tracking:
+the unread `ConversationNeedsReply` notification is the seen-signal. The
+episode invariant that ten review rounds distilled: the stamp and clock
+belong to a waiting episode; an episode ends when an agent replies or anyone
+sees the conversation (read states first, strictly-after comparisons); each
+new episode gets its own full threshold and exactly one metadata-only email.
+
+**Wayfindr distributes itself: `v0.1.0-alpha.1` is released (July 21).** The
+self-hosting epic (#614–#616) replaced the compose prototype with the real
+thing — a FrankenPHP production image (automatic HTTPS via `SERVER_NAME`,
+always-on loopback ops site, Reverb proxied under the app's own hostname), a
+pull-only official compose stack, a curl-able one-line installer with a
+release-pinned upgrade path, and the repository's only CI: a tag-triggered
+workflow that builds multi-arch images to GHCR and publishes the (prerelease-
+marked) GitHub Release. The published pipeline was clean-room validated: the
+real one-liner on an empty directory resolved and pinned the alpha, pulled
+from the public registry, booted healthy, and served `/setup` and
+`/widget.js`.
 
 **Epics closed this cycle**: #4 (Chat UX Polish), #5 (Cobrowse Transport
 Discipline), #490 (Cobrowse Observe-Mode Fidelity), attachments (ADR 0007),
-agent UI density (#602–#605), break-glass (ADR 0008, #606–#611).
+agent UI density (#602–#605), break-glass (ADR 0008, #606–#611), unattended
+alerts (#613), self-hosting packaging + first release (#614–#616).
 
 **Issue housekeeping is current.** #564 (launch proof) was reconciled and
 closed. #22's comment relay shipped and was live-validated; the issue remains
@@ -134,6 +163,23 @@ recommended against as specced).
 | **Request/approval surfaces** | `/operator/break-glass` (request form, self-approve only when it can succeed, close-early) and `/dashboard/account/operator-access` (approve/deny/revoke + history). Open grants are never capped behind history on either surface. | `OperatorBreakGlassController.php`, `AgentAccountBreakGlassController.php`, both blade views | #608 |
 | **Read-only viewers** | Requester-only, live-active-only, coverage re-derived per request AND per listed row; transcripts + ticket records as text; attachment metadata only (rows verify their own scope columns); content renders only where that resource's view is audited (`.opened`/`.resource_viewed`, deduped); account audit page surfaces and searches the labels. | `OperatorBreakGlassViewerController.php`, `operator/break-glass-*.blade.php`, `AgentAccountAuditController.php` | #609 |
 | **Transparency + hardening** | Dashboard banner for every agent of the account while any grant is live (admins get revoke); hardening suite: hosted shape end-to-end, no dashboard escalation, deactivated actors, stray scope columns. | `agent/dashboard.blade.php`, `tests/Feature/BreakGlass*` (69 tests, 5 files) | #610/#611 |
+
+### Alerts + storage cycle (July 17–18)
+
+| Piece | What it does | Where | PRs |
+| --- | --- | --- | --- |
+| **Unattended alert cadence** | Third cadence: email only when a visitor message waits unseen past 5 minutes. Episode-bounded (reply-or-seen), one aggregated metadata-only email per episode, five-minute sweep, cadence surfaced on profile/alert-center/account roster. No JSON-path SQL against the TEXT `notifications.data` column (Postgres). | `app/Support/UnattendedConversationAlertCollector.php`, `SendUnattendedConversationAlertsCommand.php`, `NotifyAgentsOfVisitorMessage.php`, `UnattendedConversationAlertMessage.php` | #613 |
+| **S3 surface proven + R2 live** | Full MinIO drill of the real pipeline (safety gate accept/refuse, upload service, byte-identical round-trip, streaming, anonymous refusal, delete); then Cloudflare R2 wired on stage (`region=auto`, `ACL=private`, deploy needed for config:cache) and a real widget upload stored + served through the bucket. | `docs/self-hosting/attachment-storage.md`, stage env | validation only |
+
+### Self-hosting release cycle (July 18–21)
+
+| Piece | What it does | Where | PRs |
+| --- | --- | --- | --- |
+| **FrankenPHP image** | Production web server; `SERVER_NAME` is the TLS knob (hostname = automatic Let's Encrypt, `:80` default); **always-on loopback ops site `:8000`** so health probes and proxy upstreams work in every TLS mode; monorepo layout preserved (widget serves from `packages/widget-js`); non-root with bind capability; entrypoint storage prep + gated auto-migrate; `package-lock.json` committed. | `docker/self-hosting/server.Dockerfile`, `Caddyfile`, `docker-entrypoint.sh` | #614 |
+| **Official compose stack** | Pull-only `compose.yml` (source builds via `compose.build.yml` overlay): web/queue/scheduler/reverb/postgres/redis + optional clamav profile; Reverb proxied under the app hostname (no published reverb port); split-horizon reverb env (services post to `reverb:8080`, browsers get `REVERB_CLIENT_*` with read-time fallback); ACME state in volumes; legacy prototype envs upgrade without collisions. | `docker/self-hosting/compose.yml`, `compose.build.yml`, `config/broadcasting.php` | #614 |
+| **One-line installer** | `curl \| bash` → checks Docker, resolves and pins the latest release (stack files AND image; tags-API fallback; pre-release installs fail early with guidance), mints secrets, boots, waits on the ops site, prints `/setup`; `--behind-proxy` decouples TLS termination from scheme (loopback binds + `TRUSTED_PROXIES`); `--upgrade` re-resolves, refreshes, pulls, restarts. | `scripts/self-host/install.sh`, `scripts/self-host/generate-env.sh` | #614 |
+| **Release workflow + docs** | The repository's only CI: `v*` tags → multi-arch GHCR build (`{version}`, `{major.minor}` for stables, `latest`) + GitHub Release (dash-suffixed tags marked prerelease, so stables win `releases/latest` over newer alphas). Install doc rewritten as the front door (requirements, three paths, data/backup/`down -v` warnings). | `.github/workflows/release-image.yml`, `docs/self-hosting/install.md`, `docker/self-hosting/README.md` | #614/#615/#616 |
+| **`v0.1.0-alpha.1`** | First public release: multi-arch image on GHCR (publicly pullable), prerelease-marked GitHub Release, clean-room one-liner validated against the published artifacts. | `ghcr.io/adamgreenwell/wayfindr` | tag `v0.1.0-alpha.1` |
 
 ---
 
@@ -214,12 +260,13 @@ recommended against as specced).
 
 Ordered by real dogfood value and dependency, not feature novelty.
 
-1. **Stage-validate the two July 16 epics.** The agent UI density trims
-   (#602–#605) and the whole break-glass surface (#606–#611) are merged but not
-   yet deployed to stage — that needs the owner's fork sync. After the sync:
-   walk the trimmed agent routes, then run a real break-glass drill (request →
-   approve from a second admin → viewer → banner → audit trail → revoke) on
-   `wayfindr.on-forge.com`.
+1. **Operate the alpha.** Two feedback channels now exist: the dogfood
+   instance on stage and whoever runs the one-liner in the wild. Watch GitHub
+   issues from self-hosters, keep release notes honest, and cut `alpha.N`
+   tags freely — the upgrade path is one command and installs pin to
+   releases, so shipping small is cheap. The first stable `v0.1.0` should wait
+   until someone other than the owner has run an install and an upgrade
+   successfully.
 
 2. **Operate the real dogfood loop.** Route Wayfindr support through Wayfindr,
    keep synthetic smoke records distinguishable from real work, and let actual
@@ -227,9 +274,9 @@ Ordered by real dogfood value and dependency, not feature novelty.
    `/operator`, failed queue jobs, mail, and realtime after deploys, but do not
    turn routine observation into a new ceremony layer.
 
-3. **Attachments: done.** The full contract shipped (see §2/§3). The only
-   remaining optional item is exercising the S3 surface against a real bucket
-   (stage runs local by design). Future attachment work is demand-gated:
+3. **Attachments: done, including remote storage in production.** The full
+   contract shipped and the S3 surface runs live on Cloudflare R2 (see §2/§3).
+   Future attachment work is demand-gated:
    direct-ticket/internal-note attachments, office-document opt-ins, pre-signed
    URL opt-in — all deliberately excluded from ADR 0007's v1.
 
@@ -289,35 +336,47 @@ Ordered by real dogfood value and dependency, not feature novelty.
   `wayfindr:bootstrap` user gets it automatically; grant via a tinker one-liner.
 - **Faked `UploadedFile` guesses MIME from the extension** — byte-sniffing tests
   need a real temp-file upload (see `realUpload()` in the upload test).
+- **`notifications.data` is a TEXT column** — JSON-path where clauses
+  (`data->x`) pass on SQLite and crash on Postgres. Narrow by plain columns in
+  SQL and match JSON in PHP. (`audit_events.metadata` and friends are real
+  `json()` columns — safe.)
+- **Cloudflare R2 as the attachment store**: region must be `auto`, ACL must
+  be `private` (R2 rejects everything else); the S3 key/secret come from
+  R2 → Manage API Tokens (NOT My Profile → API Tokens), and the secret is the
+  SHA-256 of the token value if the confirmation screen is missed. Forge env
+  edits need a deploy to take effect (`config:cache`).
+- **The self-hosting stack's health story**: the loopback ops site on `:8000`
+  exists in every TLS mode — probe that, never the public vhost. `compose.yml`
+  is pull-only; source builds need the `compose.build.yml` overlay.
 
 ---
 
-## 8. End-of-session snapshot — July 16, 2026 (evening)
+## 8. End-of-session snapshot — July 21, 2026 (release day)
 
-- Upstream `main` is at `0c2951c` (break-glass hardening, #611). The stage fork
-  was last synced at #599 (ClamAV hang fix), so stage is missing #600 (S3
-  surface, defaults to local storage — no config change needed), the UI density
-  trims (#602–#605), and the entire break-glass surface (#606–#611).
-- Full server suite: **1,058 tests / 7,963 assertions** (69 break-glass tests
-  across five `tests/Feature/BreakGlass*` files). Widget suite: **157 tests**.
-  Pint clean.
-- The attachments epic (ADR 0007) is **fully closed** — contract through S3
-  surface, all Codex-reviewed with every finding regression-tested. Standouts:
-  the sweep-eats-shared-disk hazard (hence `assertSafeDisk`), the AWS
-  ACL-disabled-bucket default (hence `bucket-owner-full-control`), and the
-  clamd socket-activation hang. **ClamAV is live on stage** (2 GB box),
-  EICAR-proven end to end; both attachment UIs are live-validated. Stage test
-  conversations: WF-GZDZRBTE, WF-L6IVPTR1.
-- The **agent UI density epic is complete and owner-validated** (#602–#605):
-  coaching copy cut, diagnostics behind state-bearing disclosures, the
-  `<x-details-disclosure>` pattern approved for reuse.
-- The **break-glass epic is code-complete** (ADR 0008, #606–#611; see §3's
-  cycle table). Codex raised ~17 findings across the epic; every one was fixed
-  with a regression test. The recurring themes: retention (the grant is the
-  accountability record — it and its account-homed trail outlive the content),
-  resource-side coverage everywhere (routes, listings, labels, attachments'
-  own scope columns), and references-vs-content (customer content renders only
-  where that resource's view is audited, and never enters audit metadata).
-- Next: **stage-validate both July 16 epics after the owner's fork sync**
-  (§6.1) — walk the trimmed routes, then run a live break-glass drill:
-  request → second-admin approve → viewer → banner → audit → revoke.
+- **`v0.1.0-alpha.1` is published**: multi-arch image at
+  `ghcr.io/adamgreenwell/wayfindr` (publicly pullable), prerelease-marked
+  GitHub Release with generated notes, and the clean-room one-liner validated
+  against the published artifacts (resolve → pin → pull → boot → healthy →
+  `/setup` + `/widget.js`). Upstream `main` is at the #616 merge; the stage
+  fork is synced through the alerts slice (#613) and runs attachments on R2.
+- Full server suite: **1,076 tests / 7,997 assertions**. Widget suite: **157
+  tests**. Pint clean.
+- Live on stage: the full break-glass drill (July 17), the unattended alert
+  cadence (flip Profile → Email cadence to use it), and R2 attachment storage
+  (July 18). Stage test conversations: WF-GZDZRBTE, WF-L6IVPTR1, WF-GYJ34VPJ.
+- The self-hosting review (10 Codex rounds on #614) distilled rules worth
+  keeping: health never depends on the public vhost (the `:8000` ops site
+  exists in every TLS mode); stack files and image must describe the same
+  release (pin both, fall back through the tags API, fail early pre-release);
+  who terminates TLS is separate from the public scheme (`--behind-proxy`);
+  split-horizon service addressing (servers post internally, browsers get
+  client values with read-time fallback); and scripted edits must be verified
+  by reading the result — one silent no-op nearly shipped a crash-loop.
+- The unattended-alerts review (10 rounds on #613) produced the episode
+  invariant (§2) and the TEXT-column landmine (§7). One deliberate
+  won't-fix: a live viewer with the conversation open gets no read-state
+  update (the transcript refresh is a pure read by design), so they may
+  receive one redundant email — revisit only if dogfood shows it matters.
+- Next: **operate the alpha** (§6.1) — dogfood on stage, watch for the first
+  external self-hoster, cut `alpha.N` tags freely, and hold `v0.1.0` stable
+  until an install + upgrade has succeeded in hands other than the owner's.
