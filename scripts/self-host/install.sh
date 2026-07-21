@@ -17,6 +17,7 @@ RELEASES_API="https://api.github.com/repos/adamgreenwell/wayfindr/releases/lates
 TAGS_API="https://api.github.com/repos/adamgreenwell/wayfindr/tags?per_page=100"
 REF=""
 IMAGE_TAG=""
+PRERELEASE=0
 APP_URL=""
 MAIL_FROM="support@example.com"
 BEHIND_PROXY=0
@@ -110,14 +111,29 @@ resolve_release() {
         say "Pinned to release $latest."
     else
         REF="main"
+        PRERELEASE=1
         say "No published release found; using main (pre-release mode)."
     fi
 }
 
 pin_image() {
-    if [ -n "$IMAGE_TAG" ] && grep -q '^WAYFINDR_IMAGE=ghcr.io/adamgreenwell/wayfindr:' "$ENV_FILE"; then
+    # An operator-supplied WAYFINDR_IMAGE wins; otherwise a resolved release
+    # tag pins the published image.
+    if [ -n "${WAYFINDR_IMAGE:-}" ]; then
+        sed -i.bak "s#^WAYFINDR_IMAGE=.*#WAYFINDR_IMAGE=$WAYFINDR_IMAGE#" "$ENV_FILE"
+        rm -f "$ENV_FILE.bak"
+    elif [ -n "$IMAGE_TAG" ] && grep -q '^WAYFINDR_IMAGE=ghcr.io/adamgreenwell/wayfindr:' "$ENV_FILE"; then
         sed -i.bak "s#^WAYFINDR_IMAGE=ghcr.io/adamgreenwell/wayfindr:.*#WAYFINDR_IMAGE=ghcr.io/adamgreenwell/wayfindr:$IMAGE_TAG#" "$ENV_FILE"
         rm -f "$ENV_FILE.bak"
+    fi
+}
+
+require_runnable_image() {
+    # Before the first release no ghcr image exists: a fresh install would
+    # fail on the pull with a confusing error, so fail early with the way
+    # forward instead.
+    if [ "$PRERELEASE" = "1" ] && [ -z "${WAYFINDR_IMAGE:-}" ]; then
+        die "No published Wayfindr release exists yet, so there is no image to pull. Either set WAYFINDR_IMAGE to an image you have built, or clone the repo and use the compose.build.yml overlay (see docker/self-hosting/README.md)."
     fi
 }
 
@@ -183,6 +199,8 @@ if [ "$NO_START" = "1" ]; then
     say "Stack prepared in $TARGET_DIR (not started, per --no-start)."
     exit 0
 fi
+
+require_runnable_image
 
 say "Starting the stack (first run downloads the application image)."
 compose up -d

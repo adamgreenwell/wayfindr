@@ -174,6 +174,11 @@ else
     SECURE_COOKIE="false"
 fi
 
+if [ "$SCHEME" = "https" ] && [ "$BEHIND_PROXY" != "1" ] && [ "$PUBLIC_PORT" != "443" ]; then
+    echo "Automatic HTTPS serves port 443 only; an https URL with port $PUBLIC_PORT needs --behind-proxy (your proxy owns that port) or a portless URL." >&2
+    exit 1
+fi
+
 if [ "$BEHIND_PROXY" = "1" ]; then
     SERVER_NAME=":80"
     HTTP_BIND="127.0.0.1:18080"
