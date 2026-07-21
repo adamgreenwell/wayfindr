@@ -32,9 +32,19 @@ Upgrades later:
 ./wayfindr/install.sh --upgrade --dir ./wayfindr   # or re-run the curl line with --upgrade
 ```
 
-Use an `http://` URL instead to run behind your own reverse proxy — every
-port then binds to loopback and your proxy points at `127.0.0.1:8000`
-(websockets are routed internally, so that single upstream is enough).
+Running behind your own TLS-terminating reverse proxy? Keep the real
+`https://` URL and add `--behind-proxy`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/adamgreenwell/wayfindr/main/scripts/self-host/install.sh \
+  | bash -s -- --app-url https://support.example.com --behind-proxy
+```
+
+Every port then binds to loopback and your proxy points at
+`127.0.0.1:8000` (websockets are routed internally, so that single
+upstream is enough), while URLs, secure cookies, and browser websockets
+stay https and the stack honors your proxy's `X-Forwarded-*` headers.
+Plain `http://` URLs are for local smoke tests only.
 
 ## Path 2: Docker Compose by hand
 
