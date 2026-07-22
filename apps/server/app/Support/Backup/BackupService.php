@@ -34,6 +34,11 @@ class BackupService
         $work = $this->makeWorkDir();
 
         try {
+            // Dump the database FIRST, then copy binaries: on a live install
+            // the only skew this ordering leaves is an attachment deleted
+            // between the two steps (rarer than an upload, which the reverse
+            // order would strand). A fully consistent snapshot means quiescing
+            // writes — the documented maintenance posture (ADR 0009).
             $dumpLabel = $this->dumper->dump($work.'/database.sql');
 
             $archivable = $this->archivableLocalDiskNames();
@@ -47,6 +52,11 @@ class BackupService
 
             $archive = rtrim($destinationDir, '/').'/wayfindr-backup-'.$timestamp->format('Ymd-His').'.tar.gz';
             $this->tarWorkDir($work, $archive);
+
+            // The archive holds the full database dump and private attachment
+            // bytes — owner-only, so a shared backup directory does not leak it
+            // to other local users.
+            @chmod($archive, 0600);
 
             return [
                 'path' => $archive,
@@ -117,12 +127,19 @@ class BackupService
                     throw new RuntimeException("Could not create attachment dir: {$parent}");
                 }
 
-                // A listed file that cannot be read is a real gap: the dump
-                // still carries its metadata, so a silent skip would ship an
-                // archive that restores a dangling row. Fail the whole backup.
                 $stream = $storage->readStream($file);
 
                 if ($stream === null) {
+                    // A file listed a moment ago but gone now was concurrently
+                    // deleted during a live backup — its row is being removed
+                    // too, so skip it rather than abort the whole run. A file
+                    // that STILL exists but will not read is a real failure
+                    // (permission/corruption): fail loudly, since the dump
+                    // carries its metadata and a silent skip would strand it.
+                    if (! $storage->exists($file)) {
+                        continue;
+                    }
+
                     throw new RuntimeException("Could not read attachment binary [{$diskName}:{$file}]; backup aborted so it is not silently incomplete.");
                 }
 

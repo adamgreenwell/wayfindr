@@ -193,6 +193,42 @@ test('rows homed on a remote disk are named as external dependencies in the mani
     exec('rm -rf '.escapeshellarg($extracted).' '.escapeshellarg($dest));
 });
 
+test('the archive is created owner-only', function (): void {
+    app()->instance(DatabaseDumper::class, fakeDumper());
+    config()->set('wayfindr.attachments.storage_disk', 'attachments');
+    Storage::fake('attachments');
+
+    $dest = sys_get_temp_dir().'/wayfindr-backup-perm-'.bin2hex(random_bytes(6));
+
+    $result = app(BackupService::class)->create($dest);
+
+    // The archive holds the DB dump and private attachment bytes.
+    expect(substr(sprintf('%o', fileperms($result['path'])), -4))->toBe('0600');
+
+    exec('rm -rf '.escapeshellarg($dest));
+});
+
+test('a concurrently deleted attachment is skipped, not fatal', function (): void {
+    // On a LIVE backup a file listed a moment ago can vanish before it is
+    // read (its row is being deleted too). That must not abort the whole run.
+    app()->instance(DatabaseDumper::class, fakeDumper());
+    config()->set('wayfindr.attachments.storage_disk', 'attachments');
+
+    $disk = Mockery::mock(Filesystem::class);
+    $disk->shouldReceive('allFiles')->andReturn(['gone/deleted.bin']);
+    $disk->shouldReceive('readStream')->with('gone/deleted.bin')->andReturn(null);
+    $disk->shouldReceive('exists')->with('gone/deleted.bin')->andReturn(false); // vanished
+    Storage::shouldReceive('disk')->with('attachments')->andReturn($disk);
+
+    $dest = sys_get_temp_dir().'/wayfindr-backup-race-'.bin2hex(random_bytes(6));
+
+    $result = app(BackupService::class)->create($dest);
+
+    expect(is_file($result['path']))->toBeTrue();
+
+    exec('rm -rf '.escapeshellarg($dest));
+});
+
 test('an unreadable attachment fails the backup rather than shipping a gap', function (): void {
     app()->instance(DatabaseDumper::class, fakeDumper());
     config()->set('wayfindr.attachments.storage_disk', 'attachments');
@@ -201,6 +237,7 @@ test('an unreadable attachment fails the backup rather than shipping a gap', fun
     $disk = Mockery::mock(Filesystem::class);
     $disk->shouldReceive('allFiles')->andReturn(['ab/cd/unreadable.bin']);
     $disk->shouldReceive('readStream')->with('ab/cd/unreadable.bin')->andReturn(null);
+    $disk->shouldReceive('exists')->with('ab/cd/unreadable.bin')->andReturn(true); // present but unreadable
     Storage::shouldReceive('disk')->with('attachments')->andReturn($disk);
 
     $dest = sys_get_temp_dir().'/wayfindr-backup-dest-'.bin2hex(random_bytes(6));
