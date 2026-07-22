@@ -20,6 +20,25 @@ class RestoreCommand extends Command
 
         $this->info('Restoring Wayfindr from '.$archive);
 
+        // Preflight: surface a version mismatch BEFORE anything destructive, so
+        // the operator sees it while they can still abort.
+        try {
+            $preflight = $restores->preflight($archive);
+        } catch (Throwable $exception) {
+            $this->error('Restore failed: '.$exception->getMessage());
+
+            return self::FAILURE;
+        }
+
+        if ($preflight['version_skew']) {
+            $this->warn(sprintf(
+                'Version skew: the archive was taken on %s but this install runs %s. '
+                .'Run migrations after restoring if the schema has moved on.',
+                $preflight['archive_version'],
+                $preflight['running_version'],
+            ));
+        }
+
         try {
             $result = $restores->restore($archive, (bool) $this->option('force'));
         } catch (Throwable $exception) {
@@ -30,14 +49,7 @@ class RestoreCommand extends Command
 
         $this->line('Database restored.');
 
-        if ($result['version_skew']) {
-            $this->warn(sprintf(
-                '  Version skew: the archive was taken on %s but this install runs %s. '
-                .'Run migrations if the schema has moved on.',
-                $result['archive_version'],
-                $result['running_version'],
-            ));
-        } else {
+        if (! $result['version_skew']) {
             $this->line('  Wayfindr version: '.$result['archive_version']);
         }
 

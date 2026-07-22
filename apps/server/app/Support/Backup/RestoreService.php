@@ -6,6 +6,7 @@ use App\Models\ConversationMessageAttachment;
 use App\Support\Attachments\AttachmentStorage;
 use FilesystemIterator;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use InvalidArgumentException;
 use RecursiveDirectoryIterator;
@@ -111,24 +112,96 @@ class RestoreService
     }
 
     /**
-     * Is there any application data in the current database? Checks a handful
-     * of top-level content tables; a missing table (a fresh, un-migrated
-     * database) is simply not populated by that table. This is the signal the
-     * --force guard trips on.
+     * Read-only inspection before the destructive restore: extract only the
+     * manifest (cheap — no attachment payload) so the caller can surface a
+     * version skew while the operator can still abort, rather than discovering
+     * it after the database has already been replaced (ADR 0009).
+     *
+     * @return array{archive_version: string, running_version: string, version_skew: bool}
+     */
+    public function preflight(string $archivePath): array
+    {
+        if (! is_file($archivePath)) {
+            throw new RuntimeException("Backup archive not found: {$archivePath}");
+        }
+
+        $work = $this->makeWorkDir($archivePath);
+
+        try {
+            // Only the manifest member; tolerate its absence here — readManifest
+            // gives the clean "not a Wayfindr backup" error.
+            (new Process(['tar', '-xzf', $archivePath, '-C', $work, './manifest.json'], timeout: null))->run();
+
+            $manifest = $this->readManifest($work);
+            $archiveVersion = (string) ($manifest['wayfindr_version'] ?? 'unknown');
+            $runningVersion = (string) (config('wayfindr.release.version') ?? 'unknown');
+
+            return [
+                'archive_version' => $archiveVersion,
+                'running_version' => $runningVersion,
+                'version_skew' => $archiveVersion !== $runningVersion,
+            ];
+        } finally {
+            $this->removeDir($work);
+        }
+    }
+
+    /**
+     * Is there any real data in the current database? Checks EVERY table except
+     * framework bookkeeping (the migration ledger and the ephemeral tables the
+     * backup itself excludes), because the footgun this guard exists to catch is
+     * a misconfigured DB_DATABASE/DB_HOST aimed at another populated Postgres,
+     * or a partial install whose data is only in "other" tables — a five-table
+     * check would wave those through and DROP SCHEMA them as if empty. A
+     * freshly-migrated Wayfindr install has rows only in the ignored tables, so
+     * it still restores without --force.
      */
     private function databaseIsPopulated(): bool
     {
-        foreach (['accounts', 'users', 'sites', 'conversations', 'tickets'] as $table) {
+        $ignore = $this->bookkeepingTables();
+
+        // Bare table names (schemaQualified: false) so the comparison and
+        // DB::table() work the same on Postgres and the SQLite test driver.
+        foreach (Schema::getTableListing(schemaQualified: false) as $table) {
+            if (str_starts_with($table, 'sqlite_') || in_array($table, $ignore, true)) {
+                continue;
+            }
+
             try {
                 if (DB::table($table)->exists()) {
                     return true;
                 }
             } catch (Throwable) {
-                // Table does not exist yet (nothing to overwrite for it).
+                // Unreadable table — treat as not populated by it.
             }
         }
 
         return false;
+    }
+
+    /**
+     * Tables whose rows a fresh, unused install legitimately has: the migration
+     * ledger, plus the ephemeral tables the backup already excludes from its
+     * dump (sessions, cache, queue, password-reset). Their presence must not
+     * read as "populated". Names come from config (with ?: defaults) so a
+     * renamed table is still ignored.
+     *
+     * @return list<string>
+     */
+    private function bookkeepingTables(): array
+    {
+        $passwordBroker = config('auth.defaults.passwords') ?: 'users';
+
+        return [
+            config('database.migrations.table') ?: 'migrations',
+            config('session.table') ?: 'sessions',
+            config("auth.passwords.{$passwordBroker}.table") ?: 'password_reset_tokens',
+            config('cache.stores.database.table') ?: 'cache',
+            config('cache.stores.database.lock_table') ?: 'cache_locks',
+            config('queue.connections.database.table') ?: 'jobs',
+            config('queue.batching.table') ?: 'job_batches',
+            config('queue.failed.table') ?: 'failed_jobs',
+        ];
     }
 
     /**

@@ -12,7 +12,9 @@ use App\Models\ConversationMessageAttachment;
 use App\Support\Backup\DatabaseRestorer;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -113,6 +115,28 @@ test('restore refuses to overwrite a populated database without --force', functi
 
     // The guard trips BEFORE anything destructive: the DB was never touched.
     expect($restorer->restored)->toBeEmpty();
+});
+
+test('any populated table blocks an unforced restore, not just the core content tables', function (): void {
+    // The footgun: DB_DATABASE/DB_HOST aimed at another populated Postgres. A
+    // stray row in a table outside the core content set must still count as
+    // populated, or DROP SCHEMA would wipe that database as if it were empty.
+    fakeRestorer();
+    DB::table('notifications')->insert([
+        'id' => (string) Str::uuid(),
+        'type' => 'App\\Notifications\\Test',
+        'notifiable_type' => 'App\\Models\\User',
+        'notifiable_id' => 1,
+        'data' => '{}',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $archive = makeBackupArchive(['wayfindr_version' => 'v1', 'local_attachment_disks' => []]);
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive])
+        ->assertFailed()
+        ->expectsOutputToContain('--force');
 });
 
 test('--force overwrites a populated database', function (): void {
@@ -381,6 +405,20 @@ test('a version skew between archive and install is warned', function (): void {
     $archive = makeBackupArchive(['wayfindr_version' => 'v1.0.0', 'local_attachment_disks' => []]);
 
     $this->artisan('wayfindr:restore', ['archive' => $archive])
+        ->assertSuccessful()
+        ->expectsOutputToContain('Version skew');
+});
+
+test('a cross-version restore surfaces the skew in preflight, even with --force', function (): void {
+    // The warning must reach the operator BEFORE the destructive restore, not
+    // after the database has already been replaced.
+    fakeRestorer();
+    Account::factory()->create(); // populated → --force path
+    config()->set('wayfindr.release.version', 'v2.0.0');
+
+    $archive = makeBackupArchive(['wayfindr_version' => 'v1.0.0', 'local_attachment_disks' => []]);
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive, '--force' => true])
         ->assertSuccessful()
         ->expectsOutputToContain('Version skew');
 });
