@@ -347,10 +347,20 @@ class RestoreService
      *
      * @param  list<string>  $restoredDisks
      * @param  list<string>  $unconfiguredDisks
-     * @return array{verified: int, dangling: list<array{id: int, disk: string, key: string}>, external: array<string, int>}
+     * @return array{skipped: bool, verified: int, dangling: list<array{id: int, disk: string, key: string}>, external: array<string, int>}
      */
     private function verifyAttachmentIntegrity(string $work, array $restoredDisks, array $unconfiguredDisks): array
     {
+        // A dump from an older schema may not have the attachments table or its
+        // columns yet — the version-skew case the operator fixes with a
+        // post-restore migrate. Querying rows here would crash AFTER the
+        // database is already replaced, so defer the check gracefully instead.
+        if (! Schema::hasTable('conversation_message_attachments')
+            || ! Schema::hasColumn('conversation_message_attachments', 'storage_disk')
+            || ! Schema::hasColumn('conversation_message_attachments', 'storage_key')) {
+            return ['skipped' => true, 'verified' => 0, 'dangling' => [], 'external' => []];
+        }
+
         $restoredSet = array_flip($restoredDisks);
         $unconfiguredSet = array_flip($unconfiguredDisks);
         $verified = 0;
@@ -387,7 +397,7 @@ class RestoreService
                 }
             });
 
-        return ['verified' => $verified, 'dangling' => $dangling, 'external' => $external];
+        return ['skipped' => false, 'verified' => $verified, 'dangling' => $dangling, 'external' => $external];
     }
 
     /**

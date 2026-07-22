@@ -13,6 +13,7 @@ use App\Support\Backup\DatabaseRestorer;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -455,6 +456,21 @@ test('a version skew between archive and install is warned', function (): void {
     $this->artisan('wayfindr:restore', ['archive' => $archive])
         ->assertSuccessful()
         ->expectsOutputToContain('Version skew');
+});
+
+test('the attachment integrity check is skipped when the restored schema lacks the attachments table', function (): void {
+    // A dump from before the attachments table existed: the row query would
+    // crash after the DB is already replaced. Restore must defer the check and
+    // still succeed (the operator migrates afterward).
+    fakeRestorer();
+    Storage::fake('attachments');
+    Schema::dropIfExists('conversation_message_attachments');
+
+    $archive = makeBackupArchive(['wayfindr_version' => 'v1', 'local_attachment_disks' => []]);
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive])
+        ->assertSuccessful()
+        ->expectsOutputToContain('integrity check skipped');
 });
 
 test('a cross-version restore surfaces the skew in preflight, even with --force', function (): void {

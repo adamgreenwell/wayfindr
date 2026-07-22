@@ -66,6 +66,15 @@ class RestoreCommand extends Command
         }
 
         $integrity = $result['integrity'];
+
+        if ($integrity['skipped']) {
+            $this->warn('  Attachment integrity check skipped: the restored schema predates the current attachments table. Run migrations, then re-check attachments.');
+
+            $this->info('Restore complete.');
+
+            return self::SUCCESS;
+        }
+
         $this->line('  Attachments verified present: '.$integrity['verified']);
 
         if ($integrity['external'] !== []) {
