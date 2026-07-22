@@ -68,3 +68,17 @@ test('a renamed session table (SESSION_TABLE) is still excluded', function (): v
     expect($command)->toContain('--exclude-table-data=public.wf_sessions')
         ->and($command)->not->toContain('--exclude-table-data=public.sessions');
 });
+
+test('the null-valued cache lock_table key still excludes cache_locks', function (): void {
+    // Default config sets cache.stores.database.lock_table to null (env unset);
+    // config(key, default) would return null, dropping cache_locks — the ?:
+    // coalesce catches it.
+    config()->set('cache.stores.database.lock_table', null);
+
+    $command = (new PostgresDatabaseDumper)->dumpCommand(
+        ['host' => 'db', 'database' => 'wayfindr'],
+        '/tmp/out.sql',
+    );
+
+    expect($command)->toContain('--exclude-table-data=public.cache_locks');
+});

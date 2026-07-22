@@ -86,17 +86,24 @@ class PostgresDatabaseDumper implements DatabaseDumper
      */
     public function excludedTableData(): array
     {
+        // `?:` not config()'s default arg: several of these keys EXIST set to
+        // null (their env is unset, e.g. cache lock_table), and config() only
+        // applies its default when a key is ABSENT — so a null value must
+        // coalesce to the framework default, or the table would be dumped.
+        $passwordBroker = config('auth.defaults.passwords') ?: 'users';
+
         $tables = [
-            (string) config('session.table', 'sessions'),
-            (string) config('auth.passwords.'.config('auth.defaults.passwords', 'users').'.table', 'password_reset_tokens'),
-            (string) config('cache.stores.database.table', 'cache'),
-            (string) config('cache.stores.database.lock_table', 'cache_locks'),
-            (string) config('queue.connections.database.table', 'jobs'),
-            (string) config('queue.batching.table', 'job_batches'),
-            (string) config('queue.failed.table', 'failed_jobs'),
+            config('session.table') ?: 'sessions',
+            config("auth.passwords.{$passwordBroker}.table") ?: 'password_reset_tokens',
+            config('cache.stores.database.table') ?: 'cache',
+            config('cache.stores.database.lock_table') ?: 'cache_locks',
+            config('queue.connections.database.table') ?: 'jobs',
+            config('queue.batching.table') ?: 'job_batches',
+            config('queue.failed.table') ?: 'failed_jobs',
         ];
 
         return collect($tables)
+            ->map(fn ($table): string => (string) $table)
             ->filter(fn (string $table): bool => $table !== '')
             ->unique()
             ->map(fn (string $table): string => 'public.'.$table)
