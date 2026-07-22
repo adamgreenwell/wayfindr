@@ -40,12 +40,6 @@ class BackupCommand extends Command
             ? 'included in archive'
             : 'none on the local disk'));
 
-        $missing = (int) ($manifest['local_binaries_missing_during_backup'] ?? 0);
-
-        if ($missing > 0) {
-            $this->warn("  {$missing} attachment(s) were deleted while the backup ran; the snapshot has their rows but not their files. Restore reconciles these, and a maintenance-mode backup avoids the window entirely.");
-        }
-
         $external = $manifest['external_attachment_disks'] ?? [];
 
         if ($external !== []) {
@@ -53,6 +47,11 @@ class BackupCommand extends Command
         } elseif (! $newUploadsAreLocal) {
             $this->warn('  New uploads go to the object store; those binaries stay in the bucket, not this archive.');
         }
+
+        // A live backup can capture a row moments after its binary was deleted;
+        // restore verifies attachment integrity against the archive, and a
+        // maintenance-posture backup avoids the window entirely (ADR 0009).
+        $this->line('  For a guaranteed-consistent snapshot, back up with writes quiesced; restore verifies attachment integrity either way.');
 
         return self::SUCCESS;
     }

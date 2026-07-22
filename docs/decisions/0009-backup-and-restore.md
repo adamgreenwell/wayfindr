@@ -63,6 +63,14 @@ guarded hard:
   posture), and it is **drilled end to end** as part of shipping — a real
   backup taken, the data wiped, the archive restored, and the data verified —
   the same standard we held the upgrade path to.
+- It is the **authoritative attachment-integrity check.** A live backup can
+  capture a row moments after its binary was deleted, and the backup command
+  cannot know the dump's exact row set without sharing pg_dump's snapshot
+  (disproportionate for v1). Restore *does* have the dump's rows once loaded,
+  so it verifies each local-attachment row's binary is present in the archive
+  and reports any that are missing (dangling) — that verification belongs here,
+  where the ground truth is, not in the best-effort backup. A
+  maintenance-posture backup has no such window.
 
 ### Where backups go, and how often
 

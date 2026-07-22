@@ -60,15 +60,9 @@ class BackupService
             $dumpLabel = $this->dumper->dump($work.'/database.sql');
 
             $archivable = $this->archivableLocalDiskNames();
-            $copied = $this->copyLocalAttachments($work.'/attachments', $archivable);
+            $localDisks = $this->copyLocalAttachments($work.'/attachments', $archivable);
 
-            $manifest = $this->manifest(
-                $timestamp,
-                $copied['disks'],
-                $this->externalRowDisks($archivable),
-                $copied['missing'],
-                $dumpLabel,
-            );
+            $manifest = $this->manifest($timestamp, $localDisks, $this->externalRowDisks($archivable), $dumpLabel);
             file_put_contents(
                 $work.'/manifest.json',
                 json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL,
@@ -98,10 +92,9 @@ class BackupService
      *
      * @param  list<string>  $localDisks  the local attachment disks captured in the archive
      * @param  list<string>  $remoteDisks  disks that rows depend on but are NOT in the archive (their binaries are in a bucket, or the disk is retired/unknown)
-     * @param  int  $missingBinaries  local binaries the dump has a row for but that vanished mid-backup (a live-backup race; zero under the maintenance posture)
      * @return array<string, mixed>
      */
-    public function manifest(Carbon $createdAt, array $localDisks, array $remoteDisks, int $missingBinaries, string $dumpLabel): array
+    public function manifest(Carbon $createdAt, array $localDisks, array $remoteDisks, string $dumpLabel): array
     {
         return [
             'wayfindr_version' => config('wayfindr.release.version') ?? 'unknown',
@@ -114,10 +107,6 @@ class BackupService
             // carry — a restore must keep those buckets reachable (or accept
             // that a retired/unknown disk's binaries are gone).
             'external_attachment_disks' => $remoteDisks,
-            // Rows whose local binary was deleted between the dump and the file
-            // copy on a LIVE backup: the restore has metadata with no file.
-            // Zero when the backup runs with writes quiesced (ADR 0009).
-            'local_binaries_missing_during_backup' => $missingBinaries,
             'database_dump' => $dumpLabel,
         ];
     }
@@ -133,12 +122,11 @@ class BackupService
      * Remote (s3) disks are skipped; their binaries live in the bucket.
      *
      * @param  list<string>  $diskNames  the vetted local disks to capture
-     * @return array{disks: list<string>, missing: int} captured disks, and the count of files that vanished mid-copy
+     * @return list<string> the local disks that had binaries captured
      */
     private function copyLocalAttachments(string $targetDir, array $diskNames): array
     {
         $captured = [];
-        $missing = 0;
 
         foreach ($diskNames as $diskName) {
             $storage = Storage::disk($diskName);
@@ -161,15 +149,14 @@ class BackupService
                 if ($stream === null) {
                     // A file listed a moment ago but gone now was concurrently
                     // deleted during a live backup — its row is (being) removed
-                    // too, so do not abort the whole run. But the dump was taken
-                    // BEFORE the delete and may still carry the row, so the skip
-                    // is COUNTED and surfaced (manifest + command warning),
-                    // never silent. A maintenance-posture backup has no such
-                    // window. A file that STILL exists but will not read is a
-                    // real failure (permission/corruption): fail loudly.
+                    // too, so do not abort the whole run. Whether the pre-delete
+                    // dump still carries the row (a dangling row) is verified at
+                    // RESTORE, which has the dump's actual rows as ground truth;
+                    // backup cannot know the dump's exact row set without
+                    // sharing pg_dump's snapshot, and a maintenance-posture
+                    // backup has no window at all. A file that STILL exists but
+                    // will not read is a real failure: fail loudly.
                     if (! $storage->exists($file)) {
-                        $missing++;
-
                         continue;
                     }
 
@@ -189,7 +176,7 @@ class BackupService
             $captured[] = $diskName;
         }
 
-        return ['disks' => $captured, 'missing' => $missing];
+        return $captured;
     }
 
     /**
