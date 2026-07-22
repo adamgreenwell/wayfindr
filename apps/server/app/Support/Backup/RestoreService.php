@@ -62,6 +62,12 @@ class RestoreService
                 throw new RuntimeException('Archive has no database.sql — not a Wayfindr backup.');
             }
 
+            // The archive path is operator-supplied, so a tampered tarball is in
+            // the threat model: reject any symlink or out-of-tree member before
+            // reading or copying, so a crafted link cannot pull container files
+            // onto an attachment disk. Fail fast, before anything destructive.
+            $this->assertSafeArchiveTree($work);
+
             // GUARD (before anything destructive): refuse to overwrite a
             // database that already holds data unless explicitly forced.
             if (! $force && $this->databaseIsPopulated()) {
@@ -152,6 +158,18 @@ class RestoreService
             }
 
             $storage = Storage::disk($diskName);
+
+            // Replace the disk wholesale, mirroring the database (which the
+            // restore drops and reloads): drop existing files first so stale
+            // binaries from the database being REPLACED do not linger as
+            // orphans — otherwise they survive until the hourly sweep and would
+            // be carried into a subsequent backup. Safe because this only ever
+            // runs on a dedicated, vetted attachment disk (isRestorableLocalDisk).
+            $existing = $storage->allFiles();
+
+            if ($existing !== []) {
+                $storage->delete($existing);
+            }
 
             foreach ($this->filesUnder($sourceRoot) as $absolute) {
                 $key = ltrim(substr($absolute, strlen($sourceRoot)), '/');
@@ -296,6 +314,51 @@ class RestoreService
         }
 
         return $decoded;
+    }
+
+    /**
+     * Reject a tampered archive before we read from it: no symlink anywhere in
+     * the extracted attachment tree, and every member's real path stays inside
+     * that tree. This is what stops a crafted link (e.g. leak.bin -> /etc/passwd
+     * or a symlinked directory) from making the copy read outside the archive.
+     */
+    private function assertSafeArchiveTree(string $work): void
+    {
+        $root = $work.'/attachments';
+
+        if (is_link($root)) {
+            throw new RuntimeException('Refusing to restore: the archive attachments path is a symlink.');
+        }
+
+        if (! is_dir($root)) {
+            return;
+        }
+
+        $rootReal = realpath($root);
+
+        if ($rootReal === false) {
+            throw new RuntimeException('Could not resolve the archive attachments path.');
+        }
+
+        // SELF_FIRST yields each directory entry BEFORE its children, so a
+        // symlinked directory is rejected here before the iterator would descend
+        // into it.
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::SELF_FIRST,
+        );
+
+        foreach ($iterator as $item) {
+            if ($item->isLink()) {
+                throw new RuntimeException('Refusing to restore: the archive contains a symlink ['.$item->getPathname().'].');
+            }
+
+            $real = realpath($item->getPathname());
+
+            if ($real === false || ! str_starts_with($real, $rootReal.DIRECTORY_SEPARATOR)) {
+                throw new RuntimeException('Refusing to restore: an archive member escapes the archive tree.');
+            }
+        }
     }
 
     private function assertSafeKey(string $key): void

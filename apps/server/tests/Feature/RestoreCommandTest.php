@@ -261,6 +261,57 @@ test('a row with an unsafe storage key is reported dangling, never read outside 
         ->expectsOutputToContain('dangling');
 });
 
+test('--force restore replaces the disk wholesale, purging stale local files', function (): void {
+    // The database is replaced by DROP SCHEMA; the attachment disk must follow,
+    // or a stale binary from the replaced database lingers as an orphan (and
+    // rides into the next backup, which archives every file on the disk).
+    fakeRestorer();
+    Account::factory()->create(); // populate → --force path
+    Storage::fake('attachments');
+    Storage::disk('attachments')->put('stale/orphan.bin', 'FROM-THE-REPLACED-DB');
+
+    $archive = makeBackupArchive(
+        ['wayfindr_version' => 'v1', 'local_attachment_disks' => ['attachments']],
+        files: ['attachments/fresh/keep.bin' => 'FRESH'],
+    );
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive, '--force' => true])
+        ->assertSuccessful();
+
+    expect(Storage::disk('attachments')->exists('stale/orphan.bin'))->toBeFalse()
+        ->and(Storage::disk('attachments')->get('fresh/keep.bin'))->toBe('FRESH');
+});
+
+test('a tampered archive containing a symlink is rejected before any file is copied', function (): void {
+    fakeRestorer();
+    Storage::fake('attachments');
+
+    // Hand-build an archive whose attachments tree holds a symlink escaping it.
+    $secret = sys_get_temp_dir().'/wf-secret-'.bin2hex(random_bytes(4)).'.txt';
+    file_put_contents($secret, 'TOP-SECRET');
+
+    $src = sys_get_temp_dir().'/wf-evil-'.bin2hex(random_bytes(6));
+    mkdir($src.'/attachments/attachments', 0700, true);
+    file_put_contents($src.'/database.sql', "-- dump\n");
+    file_put_contents($src.'/manifest.json', json_encode(['wayfindr_version' => 'v1', 'local_attachment_disks' => ['attachments']]));
+    symlink($secret, $src.'/attachments/attachments/leak.bin');
+
+    $dir = sys_get_temp_dir().'/wf-evil-arc-'.bin2hex(random_bytes(6));
+    mkdir($dir, 0700, true);
+    $archive = $dir.'/evil.tar.gz';
+    exec('tar -czf '.escapeshellarg($archive).' -C '.escapeshellarg($src).' .');
+    exec('rm -rf '.escapeshellarg($src));
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive])
+        ->assertFailed()
+        ->expectsOutputToContain('symlink');
+
+    // The secret was never copied onto the attachment disk.
+    expect(Storage::disk('attachments')->exists('leak.bin'))->toBeFalse();
+
+    @unlink($secret);
+});
+
 test('a version skew between archive and install is warned', function (): void {
     fakeRestorer();
     config()->set('wayfindr.release.version', 'v2.0.0');
