@@ -226,6 +226,63 @@ if compose_exec sh -c "tar -xzOf '$backup2' ./database.sql | grep -q 'COPY publi
     exit 1
 fi
 
+# --- Restore round-trip drill (ADR 0009) ------------------------------------
+# The bar for shipping restore: take a real backup, simulate data loss, restore
+# it against a real Postgres, and prove a database row AND a local attachment
+# binary both come back. Markers are seeded WITHOUT factories (the production
+# image is built --no-dev, so database/factories is not autoloaded): a bare
+# users row (top-level, no FK deps) and a bare file on the attachments disk.
+echo "Restore drill: seeding a DB marker row and a local attachment binary."
+MARKER="drill-$(openssl rand -hex 4)"
+compose_exec php artisan tinker --execute="
+\Illuminate\Support\Facades\DB::table('users')->insert(['name' => 'Restore Drill', 'email' => '${MARKER}@drill.test', 'password' => 'x', 'created_at' => now(), 'updated_at' => now()]);
+\Illuminate\Support\Facades\Storage::disk('attachments')->put('drill/${MARKER}.bin', 'DRILL-BYTES-${MARKER}');
+" >/dev/null
+
+echo "Restore drill: taking the backup that carries the markers."
+compose_exec php artisan wayfindr:backup --path=/tmp/wayfindr-drill >/dev/null
+drill_archive="$(compose_exec sh -c 'ls /tmp/wayfindr-drill/wayfindr-backup-*.tar.gz 2>/dev/null | head -n1')"
+if [ -z "$drill_archive" ]; then
+    echo "Drill backup produced no archive." >&2
+    exit 1
+fi
+
+echo "Restore drill: quiescing workers (the documented maintenance posture) and simulating loss."
+compose stop queue scheduler >/dev/null
+compose_exec php artisan tinker --execute="
+\Illuminate\Support\Facades\DB::table('users')->where('email', '${MARKER}@drill.test')->delete();
+\Illuminate\Support\Facades\Storage::disk('attachments')->delete('drill/${MARKER}.bin');
+" >/dev/null
+if compose_exec php artisan tinker --execute="echo \Illuminate\Support\Facades\DB::table('users')->where('email', '${MARKER}@drill.test')->exists() ? 'present' : 'gone';" | grep -q present; then
+    echo "Drill setup failed: the marker row was not deleted before restore." >&2
+    exit 1
+fi
+
+echo "Restore drill: restoring."
+restore_out="$(compose_exec php artisan wayfindr:restore "$drill_archive" --force)"
+echo "$restore_out"
+compose start queue scheduler >/dev/null
+if ! grep -q 'Restore complete.' <<< "$restore_out"; then
+    echo "Restore did not complete." >&2
+    exit 1
+fi
+# The integrity check must have run against the restored database.
+if ! grep -q 'Attachments verified present:' <<< "$restore_out"; then
+    echo "Restore did not run the attachment-integrity check." >&2
+    exit 1
+fi
+
+echo "Restore drill: verifying the DB marker and the attachment binary came back."
+if ! compose_exec php artisan tinker --execute="echo \Illuminate\Support\Facades\DB::table('users')->where('email', '${MARKER}@drill.test')->exists() ? 'present' : 'gone';" | grep -q present; then
+    echo "Restore did not bring back the marker row (real psql restore failed)." >&2
+    exit 1
+fi
+if ! compose_exec php artisan tinker --execute="echo \Illuminate\Support\Facades\Storage::disk('attachments')->get('drill/${MARKER}.bin');" | grep -q "DRILL-BYTES-${MARKER}"; then
+    echo "Restore did not bring back the attachment binary with its exact bytes." >&2
+    exit 1
+fi
+echo "Restore round-trip drill passed (DB marker + attachment binary recovered)."
+
 assert_services_running queue scheduler reverb
 
 echo "Self-host Compose smoke passed for $PROJECT_NAME."

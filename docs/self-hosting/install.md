@@ -108,8 +108,10 @@ Then work through the readiness screens:
   the mail smoke test.
 - `/dashboard/readiness` and `/operator` flag what the app can inspect
   directly (queues, realtime, scheduler, storage, scanning) and mark
-  backups as a manual responsibility — backup coverage lives in your
-  infrastructure, and restore drills are yours to run.
+  backups as a manual responsibility. Wayfindr ships `wayfindr:backup` and
+  a guarded `wayfindr:restore` for the round trip —
+  [backup-restore.md](backup-restore.md) — but scheduling them and copying
+  archives offsite is yours to own.
 - Before routing real visitor traffic, review
   [MVP Dogfood Readiness](../product/mvp-dogfood-readiness.md).
 
@@ -131,3 +133,8 @@ are `wayfindr-self-hosting_wayfindr-postgres` (the database) and
 and regenerate if lost. Stopping the stack
 (`docker compose ... down`) keeps all data. **Adding `-v` deletes every
 volume — database included.** There is no undo.
+
+For a portable, restorable snapshot of the database and local attachments
+(rather than a raw volume copy), use `wayfindr:backup` /
+`wayfindr:restore` — see [backup-restore.md](backup-restore.md), which also
+covers the R2/S3 attachment split and getting archives offsite.

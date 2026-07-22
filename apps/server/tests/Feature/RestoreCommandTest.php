@@ -1,0 +1,270 @@
+<?php
+
+// wayfindr:restore (ADR 0009, slice 2): unpacks a backup archive, replaces the
+// database with its dump, and puts local attachment binaries back on the disks
+// their rows expect. The psql restore is faked (tests run on SQLite); the
+// guard, the per-disk binary restore, and the authoritative attachment-
+// integrity check are the point. Attachment ROWS are seeded directly to stand
+// in for what the dump would restore, since the fake restorer is a no-op.
+
+use App\Models\Account;
+use App\Models\ConversationMessageAttachment;
+use App\Support\Backup\DatabaseRestorer;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
+
+uses(RefreshDatabase::class);
+
+/**
+ * A restorer that records the dump it was handed instead of running psql.
+ */
+class RecordingRestorer implements DatabaseRestorer
+{
+    /** @var list<string> */
+    public array $restored = [];
+
+    public function restore(string $sqlFile): void
+    {
+        $this->restored[] = $sqlFile;
+    }
+}
+
+function fakeRestorer(): RecordingRestorer
+{
+    $restorer = new RecordingRestorer;
+    app()->instance(DatabaseRestorer::class, $restorer);
+
+    return $restorer;
+}
+
+/**
+ * Build a .tar.gz shaped like a real wayfindr:backup archive.
+ *
+ * @param  array<string, mixed>  $manifest
+ * @param  array<string, string>  $files  keyed "{disk}/{key}" => bytes, placed under attachments/
+ */
+function makeBackupArchive(array $manifest, string $dumpSql = "-- dump\n", array $files = [], bool $withManifest = true): string
+{
+    $src = sys_get_temp_dir().'/wf-restore-src-'.bin2hex(random_bytes(6));
+    mkdir($src, 0700, true);
+
+    file_put_contents($src.'/database.sql', $dumpSql);
+
+    if ($withManifest) {
+        file_put_contents($src.'/manifest.json', json_encode($manifest));
+    }
+
+    foreach ($files as $relative => $bytes) {
+        $dest = $src.'/attachments/'.$relative;
+        @mkdir(dirname($dest), 0700, true);
+        file_put_contents($dest, $bytes);
+    }
+
+    $dir = sys_get_temp_dir().'/wf-restore-arc-'.bin2hex(random_bytes(6));
+    mkdir($dir, 0700, true);
+    $archive = $dir.'/wayfindr-backup-test.tar.gz';
+
+    exec('tar -czf '.escapeshellarg($archive).' -C '.escapeshellarg($src).' .');
+    exec('rm -rf '.escapeshellarg($src));
+
+    return $archive;
+}
+
+test('a missing archive fails with a clear message', function (): void {
+    fakeRestorer();
+
+    $this->artisan('wayfindr:restore', ['archive' => '/no/such/backup.tar.gz'])
+        ->assertFailed()
+        ->expectsOutputToContain('not found');
+});
+
+test('an archive without a manifest is rejected as not-a-Wayfindr-backup', function (): void {
+    fakeRestorer();
+
+    $archive = makeBackupArchive([], withManifest: false);
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive])
+        ->assertFailed()
+        ->expectsOutputToContain('manifest.json');
+});
+
+test('restore into an empty database needs no --force and runs the dump', function (): void {
+    $restorer = fakeRestorer();
+
+    $archive = makeBackupArchive(['wayfindr_version' => 'v1', 'local_attachment_disks' => []]);
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive])
+        ->assertSuccessful()
+        ->expectsOutputToContain('Database restored.');
+
+    expect($restorer->restored)->toHaveCount(1);
+});
+
+test('restore refuses to overwrite a populated database without --force', function (): void {
+    $restorer = fakeRestorer();
+    Account::factory()->create();
+
+    $archive = makeBackupArchive(['wayfindr_version' => 'v1', 'local_attachment_disks' => []]);
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive])
+        ->assertFailed()
+        ->expectsOutputToContain('--force');
+
+    // The guard trips BEFORE anything destructive: the DB was never touched.
+    expect($restorer->restored)->toBeEmpty();
+});
+
+test('--force overwrites a populated database', function (): void {
+    $restorer = fakeRestorer();
+    Account::factory()->create();
+
+    $archive = makeBackupArchive(['wayfindr_version' => 'v1', 'local_attachment_disks' => []]);
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive, '--force' => true])
+        ->assertSuccessful();
+
+    expect($restorer->restored)->toHaveCount(1);
+});
+
+test('local attachment binaries are restored to each disk the manifest names', function (): void {
+    fakeRestorer();
+    Storage::fake('attachments');
+    // Storage::fake does not register a filesystems.disks config entry, and the
+    // restore's local-driver/safety check reads config — so a custom disk needs
+    // an explicit config entry (a real install has one).
+    config()->set('filesystems.disks.attachments-custom', ['driver' => 'local', 'root' => sys_get_temp_dir().'/wf-custom-'.bin2hex(random_bytes(4))]);
+    Storage::fake('attachments-custom');
+
+    $archive = makeBackupArchive(
+        ['wayfindr_version' => 'v1', 'local_attachment_disks' => ['attachments', 'attachments-custom']],
+        files: [
+            'attachments/ab/cd/one.bin' => 'ONE',
+            'attachments-custom/xy/two.bin' => 'TWO',
+        ],
+    );
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive])
+        ->assertSuccessful()
+        ->expectsOutputToContain('Local attachment binaries restored to: attachments, attachments-custom');
+
+    expect(Storage::disk('attachments')->get('ab/cd/one.bin'))->toBe('ONE')
+        ->and(Storage::disk('attachments-custom')->get('xy/two.bin'))->toBe('TWO');
+});
+
+test('a locally-homed row whose binary is in the archive is verified present', function (): void {
+    fakeRestorer();
+    Storage::fake('attachments');
+
+    ConversationMessageAttachment::factory()->create([
+        'storage_disk' => 'attachments',
+        'storage_key' => 'good/here.bin',
+    ]);
+
+    $archive = makeBackupArchive(
+        ['wayfindr_version' => 'v1', 'local_attachment_disks' => ['attachments']],
+        files: ['attachments/good/here.bin' => 'BYTES'],
+    );
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive, '--force' => true])
+        ->assertSuccessful()
+        ->expectsOutputToContain('Attachments verified present: 1');
+
+    expect(Storage::disk('attachments')->get('good/here.bin'))->toBe('BYTES');
+});
+
+test('a row whose binary is missing from the archive is reported dangling', function (): void {
+    fakeRestorer();
+    Storage::fake('attachments');
+
+    ConversationMessageAttachment::factory()->create([
+        'storage_disk' => 'attachments',
+        'storage_key' => 'missing/gone.bin',
+    ]);
+
+    // The archive declares the disk local but carries a DIFFERENT file.
+    $archive = makeBackupArchive(
+        ['wayfindr_version' => 'v1', 'local_attachment_disks' => ['attachments']],
+        files: ['attachments/other/present.bin' => 'X'],
+    );
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive, '--force' => true])
+        ->assertSuccessful()
+        ->expectsOutputToContain('dangling')
+        ->expectsOutputToContain('missing/gone.bin');
+});
+
+test('rows homed on a remote disk are reported external, not dangling', function (): void {
+    fakeRestorer();
+    Storage::fake('attachments');
+    config()->set('filesystems.disks.attachments-s3', ['driver' => 's3']);
+
+    ConversationMessageAttachment::factory()->create([
+        'storage_disk' => 'attachments-s3',
+        'storage_key' => 'k/in/bucket.bin',
+    ]);
+
+    $archive = makeBackupArchive(
+        [
+            'wayfindr_version' => 'v1',
+            'local_attachment_disks' => ['attachments'],
+            'external_attachment_disks' => ['attachments-s3'],
+        ],
+        files: ['attachments/x/y.bin' => 'X'],
+    );
+
+    // Both facts are on one output line — assert them as a single substring:
+    // chained expectsOutputToContain each consume a distinct write.
+    $this->artisan('wayfindr:restore', ['archive' => $archive, '--force' => true])
+        ->assertSuccessful()
+        ->expectsOutputToContain('external object stores, not this archive: attachments-s3 (1)');
+});
+
+test('a row with an unsafe storage key is reported dangling, never read outside the archive', function (): void {
+    fakeRestorer();
+    Storage::fake('attachments');
+
+    ConversationMessageAttachment::factory()->create([
+        'storage_disk' => 'attachments',
+        'storage_key' => '../../../../etc/passwd',
+    ]);
+
+    $archive = makeBackupArchive(
+        ['wayfindr_version' => 'v1', 'local_attachment_disks' => ['attachments']],
+        files: ['attachments/ok/file.bin' => 'X'],
+    );
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive, '--force' => true])
+        ->assertSuccessful()
+        ->expectsOutputToContain('dangling');
+});
+
+test('a version skew between archive and install is warned', function (): void {
+    fakeRestorer();
+    config()->set('wayfindr.release.version', 'v2.0.0');
+
+    $archive = makeBackupArchive(['wayfindr_version' => 'v1.0.0', 'local_attachment_disks' => []]);
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive])
+        ->assertSuccessful()
+        ->expectsOutputToContain('Version skew');
+});
+
+test('an archive naming a disk this install has not configured warns instead of writing blindly', function (): void {
+    fakeRestorer();
+    Storage::fake('attachments');
+    // Note: no 'attachments-orphan' disk configured on this install.
+
+    $archive = makeBackupArchive(
+        ['wayfindr_version' => 'v1', 'local_attachment_disks' => ['attachments', 'attachments-orphan']],
+        files: [
+            'attachments/a/b.bin' => 'OK',
+            'attachments-orphan/c/d.bin' => 'NOWHERE-TO-PUT',
+        ],
+    );
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive])
+        ->assertSuccessful()
+        ->expectsOutputToContain('not configured here ([attachments-orphan])');
+
+    expect(Storage::disk('attachments')->get('a/b.bin'))->toBe('OK');
+});

@@ -2,7 +2,6 @@
 
 namespace App\Support\Backup;
 
-use Illuminate\Support\Facades\DB;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 
@@ -16,18 +15,7 @@ class PostgresDatabaseDumper implements DatabaseDumper
 {
     public function dump(string $destination): string
     {
-        $connection = (string) config('database.default');
-
-        // The connection's own config, not the raw config array: this reflects
-        // DB_URL parsing, so pg_dump targets the same database Laravel uses
-        // rather than the config-file defaults.
-        $config = DB::connection($connection)->getConfig();
-
-        if (($config['driver'] ?? null) !== 'pgsql') {
-            throw new RuntimeException(
-                "Wayfindr backups require the pgsql driver; the '{$connection}' connection is '".($config['driver'] ?? 'unknown')."'."
-            );
-        }
+        $config = PostgresConnection::resolve();
 
         $process = new Process(
             command: $this->dumpCommand($config, $destination),
@@ -53,15 +41,11 @@ class PostgresDatabaseDumper implements DatabaseDumper
      */
     public function dumpCommand(array $config, string $destination): array
     {
-        $command = [
-            'pg_dump',
-            '--host='.($config['host'] ?? '127.0.0.1'),
-            '--port='.(string) ($config['port'] ?? 5432),
-            '--username='.($config['username'] ?? ''),
-            '--dbname='.($config['database'] ?? ''),
-            '--no-owner',
-            '--no-privileges',
-        ];
+        $command = array_merge(
+            ['pg_dump'],
+            PostgresConnection::baseArguments($config),
+            ['--no-owner', '--no-privileges'],
+        );
 
         foreach ($this->excludedTableData() as $table) {
             $command[] = '--exclude-table-data='.$table;
@@ -112,33 +96,15 @@ class PostgresDatabaseDumper implements DatabaseDumper
     }
 
     /**
-     * pg_dump's libpq environment. The password, plus the app connection's SSL
-     * policy mapped to PGSSL* — otherwise pg_dump falls back to libpq defaults
-     * and would ignore a verify-ca/verify-full requirement the app enforces,
-     * silently downgrading TLS to a remote Postgres.
+     * pg_dump's libpq environment (password + SSL policy). Shared with the
+     * restorer so a dump and a restore treat TLS to a remote Postgres
+     * identically.
      *
      * @param  array<string, mixed>  $config
      * @return array<string, string>
      */
     public function environmentFor(array $config): array
     {
-        $env = ['PGPASSWORD' => (string) ($config['password'] ?? '')];
-
-        $sslKeys = [
-            'sslmode' => 'PGSSLMODE',
-            'sslrootcert' => 'PGSSLROOTCERT',
-            'sslcert' => 'PGSSLCERT',
-            'sslkey' => 'PGSSLKEY',
-        ];
-
-        foreach ($sslKeys as $configKey => $envKey) {
-            $value = $config[$configKey] ?? null;
-
-            if (is_string($value) && $value !== '') {
-                $env[$envKey] = $value;
-            }
-        }
-
-        return $env;
+        return PostgresConnection::libpqEnvironment($config);
     }
 }

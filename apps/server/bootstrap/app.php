@@ -8,6 +8,7 @@ use App\Console\Commands\CreateAgentCommand;
 use App\Console\Commands\ExpireBreakGlassGrantsCommand;
 use App\Console\Commands\MailTestCommand;
 use App\Console\Commands\PruneCobrowseContentCommand;
+use App\Console\Commands\RestoreCommand;
 use App\Console\Commands\SendAlertDigestsCommand;
 use App\Console\Commands\SendUnattendedConversationAlertsCommand;
 use App\Console\Commands\SweepOrphanedAttachmentsCommand;
@@ -32,6 +33,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ExpireBreakGlassGrantsCommand::class,
         MailTestCommand::class,
         PruneCobrowseContentCommand::class,
+        RestoreCommand::class,
         SendAlertDigestsCommand::class,
         SendUnattendedConversationAlertsCommand::class,
         SweepOrphanedAttachmentsCommand::class,

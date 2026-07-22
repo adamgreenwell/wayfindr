@@ -7,7 +7,9 @@ use App\Support\Attachments\Scanning\AttachmentScanner;
 use App\Support\Attachments\Scanning\ClamAvScanner;
 use App\Support\Attachments\Scanning\NullScanner;
 use App\Support\Backup\DatabaseDumper;
+use App\Support\Backup\DatabaseRestorer;
 use App\Support\Backup\PostgresDatabaseDumper;
+use App\Support\Backup\PostgresDatabaseRestorer;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -23,8 +25,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        // Backups dump Postgres with pg_dump; tests bind a fake dumper.
+        // Backups dump Postgres with pg_dump and restore with psql; tests bind
+        // fakes so archive assembly and restore logic run without a live server.
         $this->app->bind(DatabaseDumper::class, PostgresDatabaseDumper::class);
+        $this->app->bind(DatabaseRestorer::class, PostgresDatabaseRestorer::class);
 
         // Select the attachment malware scanner from config. An unset/null
         // driver is accept-with-defense-in-depth; 'clamav' scans every upload
