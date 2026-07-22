@@ -47,8 +47,10 @@ test('the dump command excludes ephemeral table DATA but keeps the schema', func
 
     // Data excluded (schema kept — the table still exists after restore).
     expect($command)->toContain('--exclude-table-data=public.sessions')
+        ->and($command)->toContain('--exclude-table-data=public.password_reset_tokens')
         ->and($command)->toContain('--exclude-table-data=public.cache')
         ->and($command)->toContain('--exclude-table-data=public.jobs')
+        ->and($command)->toContain('--exclude-table-data=public.failed_jobs')
         // Source-of-truth tables are NOT excluded.
         ->and(implode(' ', $command))->not->toContain('conversations')
         ->and($command)->toContain('--no-owner')

@@ -15,18 +15,22 @@ use Symfony\Component\Process\Process;
 class PostgresDatabaseDumper implements DatabaseDumper
 {
     /**
-     * Tables whose DATA is ephemeral or operator-owned (ADR 0009): the schema
-     * is kept (the table exists after restore) but the rows are not dumped.
-     * Sessions especially must not ride into a restore — stale tokens. Patterns
-     * that match no table are silently ignored, so this is safe on installs
-     * using redis for cache/queue.
+     * Tables whose DATA is ephemeral, operator-owned, or credential-bearing
+     * (ADR 0009): the schema is kept (the table exists after restore) but the
+     * rows are not dumped. Sessions and password-reset tokens especially must
+     * not ride into a restore — reviving them is a security hole — and
+     * failed-job payloads can carry serialized secrets. Patterns that match no
+     * table are silently ignored, so this is safe on installs using redis for
+     * cache/queue.
      */
     private const EXCLUDED_TABLE_DATA = [
         'public.sessions',
+        'public.password_reset_tokens',
         'public.cache',
         'public.cache_locks',
         'public.jobs',
         'public.job_batches',
+        'public.failed_jobs',
     ];
 
     public function dump(string $destination): string
