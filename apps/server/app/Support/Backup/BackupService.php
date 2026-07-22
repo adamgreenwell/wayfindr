@@ -36,7 +36,7 @@ class BackupService
 
             $localDisks = $this->copyLocalAttachments($work.'/attachments');
 
-            $manifest = $this->manifest($timestamp, $localDisks, $dumpLabel);
+            $manifest = $this->manifest($timestamp, $localDisks, $this->remoteRowHomedDisks(), $dumpLabel);
             file_put_contents(
                 $work.'/manifest.json',
                 json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL,
@@ -60,10 +60,11 @@ class BackupService
      * put each binary back on the disk it came from, and name what the
      * metadata still expects for remote binaries.
      *
-     * @param  list<string>  $localDisks  the local attachment disks captured
+     * @param  list<string>  $localDisks  the local attachment disks captured in the archive
+     * @param  list<string>  $remoteDisks  disks that rows depend on but are NOT in the archive (their binaries are in a bucket, or the disk is retired/unknown)
      * @return array<string, mixed>
      */
-    public function manifest(Carbon $createdAt, array $localDisks, string $dumpLabel): array
+    public function manifest(Carbon $createdAt, array $localDisks, array $remoteDisks, string $dumpLabel): array
     {
         return [
             'wayfindr_version' => config('wayfindr.release.version') ?? 'unknown',
@@ -72,6 +73,10 @@ class BackupService
             'attachment_storage_disk' => (string) config('wayfindr.attachments.storage_disk', 'attachments'),
             'includes_local_attachment_binaries' => $localDisks !== [],
             'local_attachment_disks' => $localDisks,
+            // Rows homed on these disks have binaries the archive does NOT
+            // carry — a restore must keep those buckets reachable (or accept
+            // that a retired/unknown disk's binaries are gone).
+            'external_attachment_disks' => $remoteDisks,
             'database_dump' => $dumpLabel,
         ];
     }
@@ -156,6 +161,25 @@ class BackupService
             ->unique()
             ->filter(fn (?string $name): bool => $name !== null
                 && config("filesystems.disks.{$name}.driver") === 'local')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Disks that attachment ROWS point at but the archive does not carry: the
+     * binaries live in a bucket (remote driver) or the disk is retired/unknown.
+     * The restore needs those named so an operator can confirm the buckets are
+     * still reachable — the symmetric other half of the local capture.
+     *
+     * @return list<string>
+     */
+    private function remoteRowHomedDisks(): array
+    {
+        return ConversationMessageAttachment::query()
+            ->distinct()
+            ->pluck('storage_disk')
+            ->filter()
+            ->reject(fn (string $name): bool => config("filesystems.disks.{$name}.driver") === 'local')
             ->values()
             ->all();
     }

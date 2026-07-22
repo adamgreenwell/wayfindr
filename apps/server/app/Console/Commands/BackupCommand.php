@@ -40,7 +40,11 @@ class BackupCommand extends Command
             ? 'included in archive'
             : 'none on the local disk'));
 
-        if (! $newUploadsAreLocal) {
+        $external = $manifest['external_attachment_disks'] ?? [];
+
+        if ($external !== []) {
+            $this->warn('  Some rows depend on binaries NOT in this archive (['.implode(', ', $external).']); keep those object stores reachable to restore fully.');
+        } elseif (! $newUploadsAreLocal) {
             $this->warn('  New uploads go to the object store; those binaries stay in the bucket, not this archive.');
         }
 

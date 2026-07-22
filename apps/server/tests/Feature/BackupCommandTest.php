@@ -5,6 +5,7 @@
 // manifest. The pg_dump shell-out is faked (tests run on SQLite); the archive
 // assembly, manifest, and the local/remote attachment split are the point.
 
+use App\Models\ConversationMessageAttachment;
 use App\Support\Backup\BackupService;
 use App\Support\Backup\DatabaseDumper;
 use Illuminate\Contracts\Filesystem\Filesystem;
@@ -143,6 +144,31 @@ test('a custom local attachments disk is captured, not just the built-in one', f
     exec('rm -rf '.escapeshellarg($extracted).' '.escapeshellarg($dest));
 });
 
+test('rows homed on a remote disk are named as external dependencies in the manifest', function (): void {
+    // An install that stored on S3 then switched new uploads back to local:
+    // the dump has rows pointing at the bucket, which the archive does not
+    // carry — the manifest must name that dependency so a restore keeps the
+    // bucket reachable.
+    app()->instance(DatabaseDumper::class, fakeDumper());
+    config()->set('wayfindr.attachments.storage_disk', 'attachments'); // new uploads local now
+    config()->set('filesystems.disks.attachments-s3', ['driver' => 's3', 'bucket' => 'b']);
+    Storage::fake('attachments');
+
+    ConversationMessageAttachment::factory()->create(['storage_disk' => 'attachments-s3']);
+
+    $dest = sys_get_temp_dir().'/wayfindr-backup-dest-'.bin2hex(random_bytes(6));
+
+    $result = app(BackupService::class)->create($dest);
+    $extracted = extractArchive($result['path']);
+
+    $manifest = json_decode(file_get_contents($extracted.'/manifest.json'), true);
+
+    expect($manifest['external_attachment_disks'])->toContain('attachments-s3')
+        ->and($manifest['local_attachment_disks'])->not->toContain('attachments-s3');
+
+    exec('rm -rf '.escapeshellarg($extracted).' '.escapeshellarg($dest));
+});
+
 test('an unreadable attachment fails the backup rather than shipping a gap', function (): void {
     app()->instance(DatabaseDumper::class, fakeDumper());
     config()->set('wayfindr.attachments.storage_disk', 'attachments');
@@ -170,6 +196,7 @@ test('the manifest is self-describing (version, storage disk, dump label)', func
     $manifest = app(BackupService::class)->manifest(
         Carbon::parse('2026-07-22T12:00:00Z'),
         localDisks: ['attachments'],
+        remoteDisks: ['attachments-s3'],
         dumpLabel: 'pg_dump 17.0',
     );
 
@@ -178,6 +205,7 @@ test('the manifest is self-describing (version, storage disk, dump label)', func
         ->and($manifest['attachment_storage_disk'])->toBe('attachments')
         ->and($manifest['includes_local_attachment_binaries'])->toBeTrue()
         ->and($manifest['local_attachment_disks'])->toBe(['attachments'])
+        ->and($manifest['external_attachment_disks'])->toBe(['attachments-s3'])
         ->and($manifest['database_dump'])->toBe('pg_dump 17.0');
 });
 
