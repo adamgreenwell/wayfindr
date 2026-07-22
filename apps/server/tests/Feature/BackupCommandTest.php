@@ -240,7 +240,9 @@ test('a concurrently deleted attachment is skipped, not fatal', function (): voi
 
     $result = app(BackupService::class)->create($dest);
 
-    expect(is_file($result['path']))->toBeTrue();
+    // The archive is produced, but the vanished file is COUNTED, not silent.
+    expect(is_file($result['path']))->toBeTrue()
+        ->and($result['manifest']['local_binaries_missing_during_backup'])->toBe(1);
 
     exec('rm -rf '.escapeshellarg($dest));
 });
@@ -274,6 +276,7 @@ test('the manifest is self-describing (version, storage disk, dump label)', func
         Carbon::parse('2026-07-22T12:00:00Z'),
         localDisks: ['attachments'],
         remoteDisks: ['attachments-s3'],
+        missingBinaries: 0,
         dumpLabel: 'pg_dump 17.0',
     );
 

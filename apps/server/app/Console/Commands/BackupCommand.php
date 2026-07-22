@@ -40,6 +40,12 @@ class BackupCommand extends Command
             ? 'included in archive'
             : 'none on the local disk'));
 
+        $missing = (int) ($manifest['local_binaries_missing_during_backup'] ?? 0);
+
+        if ($missing > 0) {
+            $this->warn("  {$missing} attachment(s) were deleted while the backup ran; the snapshot has their rows but not their files. Restore reconciles these, and a maintenance-mode backup avoids the window entirely.");
+        }
+
         $external = $manifest['external_attachment_disks'] ?? [];
 
         if ($external !== []) {
