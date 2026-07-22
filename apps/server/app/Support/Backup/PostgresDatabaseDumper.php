@@ -40,7 +40,7 @@ class PostgresDatabaseDumper implements DatabaseDumper
                 '--no-privileges',
                 '--file='.$destination,
             ],
-            env: ['PGPASSWORD' => (string) ($config['password'] ?? '')],
+            env: $this->environmentFor($config),
             timeout: null,
         );
 
@@ -54,5 +54,36 @@ class PostgresDatabaseDumper implements DatabaseDumper
         $version->run();
 
         return trim($version->getOutput()) ?: 'pg_dump';
+    }
+
+    /**
+     * pg_dump's libpq environment. The password, plus the app connection's SSL
+     * policy mapped to PGSSL* — otherwise pg_dump falls back to libpq defaults
+     * and would ignore a verify-ca/verify-full requirement the app enforces,
+     * silently downgrading TLS to a remote Postgres.
+     *
+     * @param  array<string, mixed>  $config
+     * @return array<string, string>
+     */
+    public function environmentFor(array $config): array
+    {
+        $env = ['PGPASSWORD' => (string) ($config['password'] ?? '')];
+
+        $sslKeys = [
+            'sslmode' => 'PGSSLMODE',
+            'sslrootcert' => 'PGSSLROOTCERT',
+            'sslcert' => 'PGSSLCERT',
+            'sslkey' => 'PGSSLKEY',
+        ];
+
+        foreach ($sslKeys as $configKey => $envKey) {
+            $value = $config[$configKey] ?? null;
+
+            if (is_string($value) && $value !== '') {
+                $env[$envKey] = $value;
+            }
+        }
+
+        return $env;
     }
 }
