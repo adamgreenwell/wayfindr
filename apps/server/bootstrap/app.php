@@ -1,6 +1,7 @@
 <?php
 
 use App\Console\Commands\AlertDigestPreviewCommand;
+use App\Console\Commands\BackupCommand;
 use App\Console\Commands\BootstrapWayfindrCommand;
 use App\Console\Commands\CobrowseTransportSmokeCommand;
 use App\Console\Commands\CreateAgentCommand;
@@ -24,6 +25,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withCommands([
         AlertDigestPreviewCommand::class,
+        BackupCommand::class,
         BootstrapWayfindrCommand::class,
         CobrowseTransportSmokeCommand::class,
         CreateAgentCommand::class,

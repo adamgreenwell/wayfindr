@@ -6,6 +6,8 @@ use App\Policies\AlertPolicy;
 use App\Support\Attachments\Scanning\AttachmentScanner;
 use App\Support\Attachments\Scanning\ClamAvScanner;
 use App\Support\Attachments\Scanning\NullScanner;
+use App\Support\Backup\DatabaseDumper;
+use App\Support\Backup\PostgresDatabaseDumper;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -21,6 +23,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // Backups dump Postgres with pg_dump; tests bind a fake dumper.
+        $this->app->bind(DatabaseDumper::class, PostgresDatabaseDumper::class);
+
         // Select the attachment malware scanner from config. An unset/null
         // driver is accept-with-defense-in-depth; 'clamav' scans every upload
         // against a local clamd. An unknown value (e.g. a typo of clamav) throws

@@ -1,0 +1,146 @@
+<?php
+
+// wayfindr:backup (ADR 0009, slice 1): assembles a restorable archive — a
+// Postgres dump plus the LOCAL attachment binaries — with a self-describing
+// manifest. The pg_dump shell-out is faked (tests run on SQLite); the archive
+// assembly, manifest, and the local/remote attachment split are the point.
+
+use App\Support\Backup\BackupService;
+use App\Support\Backup\DatabaseDumper;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
+
+/**
+ * A dumper that writes a sentinel file instead of shelling out to pg_dump.
+ */
+function fakeDumper(string $contents = "-- fake dump\n"): DatabaseDumper
+{
+    return new class($contents) implements DatabaseDumper
+    {
+        public function __construct(private string $contents) {}
+
+        public function dump(string $destination): string
+        {
+            file_put_contents($destination, $this->contents);
+
+            return 'pg_dump (fake) 17.0';
+        }
+    };
+}
+
+/**
+ * Extract a tar.gz into a temp dir and return that dir.
+ */
+function extractArchive(string $archive): string
+{
+    $dir = sys_get_temp_dir().'/wayfindr-backup-test-'.bin2hex(random_bytes(6));
+    mkdir($dir, 0700, true);
+    exec('tar -xzf '.escapeshellarg($archive).' -C '.escapeshellarg($dir));
+
+    return $dir;
+}
+
+test('the backup archive contains the dump, manifest, and local attachment binaries', function (): void {
+    app()->instance(DatabaseDumper::class, fakeDumper("-- WAYFINDR DUMP MARKER\n"));
+    config()->set('wayfindr.attachments.storage_disk', 'attachments');
+
+    // A real file on the local attachments disk must land in the archive.
+    Storage::fake('attachments');
+    Storage::disk('attachments')->put('ab/cd/secret-binary', 'the-visitor-file-bytes');
+
+    $dest = sys_get_temp_dir().'/wayfindr-backup-dest-'.bin2hex(random_bytes(6));
+
+    $result = app(BackupService::class)->create($dest);
+
+    expect($result['path'])->toEndWith('.tar.gz')
+        ->and(is_file($result['path']))->toBeTrue()
+        ->and($result['size'])->toBeGreaterThan(0);
+
+    $extracted = extractArchive($result['path']);
+
+    expect(file_get_contents($extracted.'/database.sql'))->toContain('WAYFINDR DUMP MARKER')
+        ->and(file_get_contents($extracted.'/attachments/ab/cd/secret-binary'))->toBe('the-visitor-file-bytes');
+
+    $manifest = json_decode(file_get_contents($extracted.'/manifest.json'), true);
+
+    expect($manifest['attachment_storage_disk'])->toBe('attachments')
+        ->and($manifest['includes_local_attachment_binaries'])->toBeTrue()
+        ->and($manifest['database_dump'])->toContain('pg_dump');
+
+    exec('rm -rf '.escapeshellarg($extracted).' '.escapeshellarg($dest));
+});
+
+test('a remote storage install omits attachment binaries and says so', function (): void {
+    app()->instance(DatabaseDumper::class, fakeDumper());
+    // An S3-shaped disk: the manifest must record that binaries stay remote.
+    config()->set('wayfindr.attachments.storage_disk', 'attachments-s3');
+    config()->set('filesystems.disks.attachments-s3', ['driver' => 's3']);
+
+    $dest = sys_get_temp_dir().'/wayfindr-backup-dest-'.bin2hex(random_bytes(6));
+
+    $result = app(BackupService::class)->create($dest);
+    $extracted = extractArchive($result['path']);
+
+    expect(is_dir($extracted.'/attachments'))->toBeFalse();
+
+    $manifest = json_decode(file_get_contents($extracted.'/manifest.json'), true);
+
+    expect($manifest['attachment_storage_disk'])->toBe('attachments-s3')
+        ->and($manifest['includes_local_attachment_binaries'])->toBeFalse();
+
+    exec('rm -rf '.escapeshellarg($extracted).' '.escapeshellarg($dest));
+});
+
+test('the manifest is self-describing (version, storage disk, dump label)', function (): void {
+    config()->set('wayfindr.release.version', 'v0.1.0-alpha.9');
+    config()->set('wayfindr.attachments.storage_disk', 'attachments');
+
+    $manifest = app(BackupService::class)->manifest(
+        Carbon::parse('2026-07-22T12:00:00Z'),
+        includesLocalBinaries: true,
+        dumpLabel: 'pg_dump 17.0',
+    );
+
+    expect($manifest['wayfindr_version'])->toBe('v0.1.0-alpha.9')
+        ->and($manifest['created_at'])->toBe('2026-07-22T12:00:00.000000Z')
+        ->and($manifest['attachment_storage_disk'])->toBe('attachments')
+        ->and($manifest['includes_local_attachment_binaries'])->toBeTrue()
+        ->and($manifest['database_dump'])->toBe('pg_dump 17.0');
+});
+
+test('the command writes an archive and reports the storage posture', function (): void {
+    app()->instance(DatabaseDumper::class, fakeDumper());
+    config()->set('wayfindr.attachments.storage_disk', 'attachments');
+    Storage::fake('attachments');
+
+    $dest = sys_get_temp_dir().'/wayfindr-backup-cmd-'.bin2hex(random_bytes(6));
+
+    $this->artisan('wayfindr:backup', ['--path' => $dest])
+        ->assertSuccessful()
+        ->expectsOutputToContain('Backup complete')
+        ->expectsOutputToContain('local binaries included');
+
+    expect(glob($dest.'/wayfindr-backup-*.tar.gz'))->toHaveCount(1);
+
+    exec('rm -rf '.escapeshellarg($dest));
+});
+
+test('a dump failure surfaces as a command failure, not a half-written archive', function (): void {
+    app()->instance(DatabaseDumper::class, new class implements DatabaseDumper
+    {
+        public function dump(string $destination): string
+        {
+            throw new RuntimeException('pg_dump failed: connection refused');
+        }
+    });
+
+    $dest = sys_get_temp_dir().'/wayfindr-backup-fail-'.bin2hex(random_bytes(6));
+
+    $this->artisan('wayfindr:backup', ['--path' => $dest])
+        ->assertFailed()
+        ->expectsOutputToContain('Backup failed');
+
+    expect(glob($dest.'/wayfindr-backup-*.tar.gz') ?: [])->toBeEmpty();
+
+    exec('rm -rf '.escapeshellarg($dest));
+});

@@ -129,6 +129,13 @@ return [
         ],
     ],
 
+    'backup' => [
+        // Where wayfindr:backup writes archives. Map a host path here to keep
+        // backups off the container's ephemeral layer; the default lives in
+        // the durable storage volume (ADR 0009).
+        'path' => env('WAYFINDR_BACKUP_PATH', storage_path('app/backups')),
+    ],
+
     // Resolved through ReleaseIdentity so a blank env_file override falls
     // back to the identity baked into the official image (see the class).
     'release' => [
