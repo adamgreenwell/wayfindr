@@ -8,8 +8,11 @@
 use App\Support\Backup\BackupService;
 use App\Support\Backup\DatabaseDumper;
 use Illuminate\Contracts\Filesystem\Filesystem;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
+
+uses(RefreshDatabase::class);
 
 /**
  * A dumper that writes a sentinel file instead of shelling out to pg_dump.
@@ -60,7 +63,7 @@ test('the backup archive contains the dump, manifest, and local attachment binar
     $extracted = extractArchive($result['path']);
 
     expect(file_get_contents($extracted.'/database.sql'))->toContain('WAYFINDR DUMP MARKER')
-        ->and(file_get_contents($extracted.'/attachments/ab/cd/secret-binary'))->toBe('the-visitor-file-bytes');
+        ->and(file_get_contents($extracted.'/attachments/attachments/ab/cd/secret-binary'))->toBe('the-visitor-file-bytes');
 
     $manifest = json_decode(file_get_contents($extracted.'/manifest.json'), true);
 
@@ -108,10 +111,34 @@ test('local binaries are backed up even after switching new uploads to S3', func
     $result = app(BackupService::class)->create($dest);
     $extracted = extractArchive($result['path']);
 
-    expect(file_get_contents($extracted.'/attachments/legacy/local-file.bin'))->toBe('PRE-SWITCH-LOCAL-BYTES');
+    expect(file_get_contents($extracted.'/attachments/attachments/legacy/local-file.bin'))->toBe('PRE-SWITCH-LOCAL-BYTES');
 
     $manifest = json_decode(file_get_contents($extracted.'/manifest.json'), true);
     expect($manifest['includes_local_attachment_binaries'])->toBeTrue();
+
+    exec('rm -rf '.escapeshellarg($extracted).' '.escapeshellarg($dest));
+});
+
+test('a custom local attachments disk is captured, not just the built-in one', function (): void {
+    // assertSafeDisk allows custom local disks named attachments-*. Binaries
+    // on the operator's custom disk must be backed up, namespaced by disk.
+    app()->instance(DatabaseDumper::class, fakeDumper());
+    config()->set('filesystems.disks.attachments-custom', ['driver' => 'local', 'root' => sys_get_temp_dir().'/wf-custom-'.bin2hex(random_bytes(4))]);
+    config()->set('wayfindr.attachments.storage_disk', 'attachments-custom');
+
+    Storage::fake('attachments');          // built-in, empty
+    Storage::fake('attachments-custom');   // operator's active local disk
+    Storage::disk('attachments-custom')->put('deep/key.bin', 'CUSTOM-DISK-BYTES');
+
+    $dest = sys_get_temp_dir().'/wayfindr-backup-dest-'.bin2hex(random_bytes(6));
+
+    $result = app(BackupService::class)->create($dest);
+    $extracted = extractArchive($result['path']);
+
+    expect(file_get_contents($extracted.'/attachments/attachments-custom/deep/key.bin'))->toBe('CUSTOM-DISK-BYTES');
+
+    $manifest = json_decode(file_get_contents($extracted.'/manifest.json'), true);
+    expect($manifest['local_attachment_disks'])->toContain('attachments-custom');
 
     exec('rm -rf '.escapeshellarg($extracted).' '.escapeshellarg($dest));
 });
@@ -142,7 +169,7 @@ test('the manifest is self-describing (version, storage disk, dump label)', func
 
     $manifest = app(BackupService::class)->manifest(
         Carbon::parse('2026-07-22T12:00:00Z'),
-        includesLocalBinaries: true,
+        localDisks: ['attachments'],
         dumpLabel: 'pg_dump 17.0',
     );
 
@@ -150,6 +177,7 @@ test('the manifest is self-describing (version, storage disk, dump label)', func
         ->and($manifest['created_at'])->toBe('2026-07-22T12:00:00.000000Z')
         ->and($manifest['attachment_storage_disk'])->toBe('attachments')
         ->and($manifest['includes_local_attachment_binaries'])->toBeTrue()
+        ->and($manifest['local_attachment_disks'])->toBe(['attachments'])
         ->and($manifest['database_dump'])->toBe('pg_dump 17.0');
 });
 

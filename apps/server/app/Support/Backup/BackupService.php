@@ -2,6 +2,7 @@
 
 namespace App\Support\Backup;
 
+use App\Models\ConversationMessageAttachment;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
@@ -16,8 +17,6 @@ use Symfony\Component\Process\Process;
  */
 class BackupService
 {
-    public const ATTACHMENTS_DISK = 'attachments';
-
     public function __construct(private readonly DatabaseDumper $dumper) {}
 
     /**
@@ -35,9 +34,9 @@ class BackupService
         try {
             $dumpLabel = $this->dumper->dump($work.'/database.sql');
 
-            $includesLocalBinaries = $this->copyLocalAttachments($work.'/attachments');
+            $localDisks = $this->copyLocalAttachments($work.'/attachments');
 
-            $manifest = $this->manifest($timestamp, $includesLocalBinaries, $dumpLabel);
+            $manifest = $this->manifest($timestamp, $localDisks, $dumpLabel);
             file_put_contents(
                 $work.'/manifest.json',
                 json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL,
@@ -57,77 +56,108 @@ class BackupService
     }
 
     /**
-     * The archive is self-describing so a restore can warn on version skew and
-     * name what the metadata still expects for its attachment binaries.
+     * The archive is self-describing so a restore can warn on version skew,
+     * put each binary back on the disk it came from, and name what the
+     * metadata still expects for remote binaries.
      *
+     * @param  list<string>  $localDisks  the local attachment disks captured
      * @return array<string, mixed>
      */
-    public function manifest(Carbon $createdAt, bool $includesLocalBinaries, string $dumpLabel): array
+    public function manifest(Carbon $createdAt, array $localDisks, string $dumpLabel): array
     {
         return [
             'wayfindr_version' => config('wayfindr.release.version') ?? 'unknown',
             'wayfindr_commit' => config('wayfindr.release.commit'),
             'created_at' => $createdAt->toISOString(),
             'attachment_storage_disk' => (string) config('wayfindr.attachments.storage_disk', 'attachments'),
-            'includes_local_attachment_binaries' => $includesLocalBinaries,
+            'includes_local_attachment_binaries' => $localDisks !== [],
+            'local_attachment_disks' => $localDisks,
             'database_dump' => $dumpLabel,
         ];
     }
 
     /**
-     * Copies EVERY binary on the local `attachments` disk into the archive,
-     * regardless of which disk new uploads currently target. Per-row
-     * `storage_disk` (ADR 0007) means an install that started local and later
-     * switched to S3 still has local binaries its rows point at — gating on
-     * the active disk would silently drop them. The local disk is empty on an
-     * always-remote install, so this is a no-op there. Returns whether any
-     * local binaries were captured.
+     * Copies EVERY binary on EVERY local attachment disk into the archive,
+     * namespaced by disk name (`attachments/{disk}/{key}`) so a restore puts
+     * each file back where its row's `storage_disk` expects it. This spans the
+     * built-in `attachments` disk, any custom `attachments-*` local disk an
+     * operator configured, and any local disk a row is homed on — because
+     * per-row `storage_disk` (ADR 0007) means one install can hold binaries on
+     * several disks. Gating on the *active* disk would silently drop the rest.
+     * Remote (s3) disks are skipped; their binaries live in the bucket.
+     *
+     * @return list<string> the local disks that had binaries captured
      */
-    private function copyLocalAttachments(string $targetDir): bool
+    private function copyLocalAttachments(string $targetDir): array
     {
-        if (config('filesystems.disks.'.self::ATTACHMENTS_DISK.'.driver') !== 'local') {
-            return false;
-        }
+        $captured = [];
 
-        $storage = Storage::disk(self::ATTACHMENTS_DISK);
-        $files = $storage->allFiles();
+        foreach ($this->localAttachmentDisks() as $diskName) {
+            $storage = Storage::disk($diskName);
+            $files = $storage->allFiles();
 
-        if ($files === []) {
-            return false;
-        }
-
-        if (! is_dir($targetDir) && ! mkdir($targetDir, 0700, true) && ! is_dir($targetDir)) {
-            throw new RuntimeException("Could not create attachment staging dir: {$targetDir}");
-        }
-
-        foreach ($files as $file) {
-            $destination = $targetDir.'/'.$file;
-            $parent = dirname($destination);
-
-            if (! is_dir($parent) && ! mkdir($parent, 0700, true) && ! is_dir($parent)) {
-                throw new RuntimeException("Could not create attachment dir: {$parent}");
+            if ($files === []) {
+                continue;
             }
 
-            // A listed file that cannot be read is a real gap: the dump still
-            // carries its metadata, so a silent skip would ship an archive
-            // that restores a dangling row. Fail the whole backup instead.
-            $stream = $storage->readStream($file);
+            foreach ($files as $file) {
+                $destination = $targetDir.'/'.$diskName.'/'.$file;
+                $parent = dirname($destination);
 
-            if ($stream === null) {
-                throw new RuntimeException("Could not read attachment binary [{$file}]; backup aborted so it is not silently incomplete.");
+                if (! is_dir($parent) && ! mkdir($parent, 0700, true) && ! is_dir($parent)) {
+                    throw new RuntimeException("Could not create attachment dir: {$parent}");
+                }
+
+                // A listed file that cannot be read is a real gap: the dump
+                // still carries its metadata, so a silent skip would ship an
+                // archive that restores a dangling row. Fail the whole backup.
+                $stream = $storage->readStream($file);
+
+                if ($stream === null) {
+                    throw new RuntimeException("Could not read attachment binary [{$diskName}:{$file}]; backup aborted so it is not silently incomplete.");
+                }
+
+                $bytes = stream_get_contents($stream);
+                fclose($stream);
+
+                if ($bytes === false) {
+                    throw new RuntimeException("Could not read attachment binary [{$diskName}:{$file}]; backup aborted so it is not silently incomplete.");
+                }
+
+                file_put_contents($destination, $bytes);
             }
 
-            $bytes = stream_get_contents($stream);
-            fclose($stream);
-
-            if ($bytes === false) {
-                throw new RuntimeException("Could not read attachment binary [{$file}]; backup aborted so it is not silently incomplete.");
-            }
-
-            file_put_contents($destination, $bytes);
+            $captured[] = $diskName;
         }
 
-        return true;
+        return $captured;
+    }
+
+    /**
+     * Every configured `attachments*` disk with a local driver, plus any local
+     * disk a row is homed on — the same disk universe the retention sweep
+     * reconciles, filtered to the local ones a backup can read from.
+     *
+     * @return list<string>
+     */
+    private function localAttachmentDisks(): array
+    {
+        $configured = collect(config('filesystems.disks', []))
+            ->filter(fn ($disk, string $name): bool => str_starts_with($name, 'attachments'))
+            ->keys();
+
+        $rowHomed = ConversationMessageAttachment::query()
+            ->distinct()
+            ->pluck('storage_disk')
+            ->filter();
+
+        return $configured
+            ->merge($rowHomed)
+            ->unique()
+            ->filter(fn (?string $name): bool => $name !== null
+                && config("filesystems.disks.{$name}.driver") === 'local')
+            ->values()
+            ->all();
     }
 
     private function tarWorkDir(string $work, string $archive): void
