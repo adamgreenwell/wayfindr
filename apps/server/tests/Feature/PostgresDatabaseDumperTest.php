@@ -56,3 +56,15 @@ test('the dump command excludes ephemeral table DATA but keeps the schema', func
         ->and($command)->toContain('--no-owner')
         ->and($command)->toContain('--file=/tmp/out.sql');
 });
+
+test('a renamed session table (SESSION_TABLE) is still excluded', function (): void {
+    config()->set('session.table', 'wf_sessions');
+
+    $command = (new PostgresDatabaseDumper)->dumpCommand(
+        ['host' => 'db', 'database' => 'wayfindr'],
+        '/tmp/out.sql',
+    );
+
+    expect($command)->toContain('--exclude-table-data=public.wf_sessions')
+        ->and($command)->not->toContain('--exclude-table-data=public.sessions');
+});

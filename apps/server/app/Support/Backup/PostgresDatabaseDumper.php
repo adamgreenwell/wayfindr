@@ -14,25 +14,6 @@ use Symfony\Component\Process\Process;
  */
 class PostgresDatabaseDumper implements DatabaseDumper
 {
-    /**
-     * Tables whose DATA is ephemeral, operator-owned, or credential-bearing
-     * (ADR 0009): the schema is kept (the table exists after restore) but the
-     * rows are not dumped. Sessions and password-reset tokens especially must
-     * not ride into a restore — reviving them is a security hole — and
-     * failed-job payloads can carry serialized secrets. Patterns that match no
-     * table are silently ignored, so this is safe on installs using redis for
-     * cache/queue.
-     */
-    private const EXCLUDED_TABLE_DATA = [
-        'public.sessions',
-        'public.password_reset_tokens',
-        'public.cache',
-        'public.cache_locks',
-        'public.jobs',
-        'public.job_batches',
-        'public.failed_jobs',
-    ];
-
     public function dump(string $destination): string
     {
         $connection = (string) config('database.default');
@@ -82,13 +63,45 @@ class PostgresDatabaseDumper implements DatabaseDumper
             '--no-privileges',
         ];
 
-        foreach (self::EXCLUDED_TABLE_DATA as $table) {
+        foreach ($this->excludedTableData() as $table) {
             $command[] = '--exclude-table-data='.$table;
         }
 
         $command[] = '--file='.$destination;
 
         return $command;
+    }
+
+    /**
+     * Tables whose DATA is ephemeral, operator-owned, or credential-bearing
+     * (ADR 0009): the schema is kept (the table exists after restore) but the
+     * rows are not dumped. Sessions and password-reset tokens especially must
+     * not ride into a restore — reviving them is a security hole — and
+     * failed-job payloads can carry serialized secrets. The NAMES come from
+     * config so a renamed table (SESSION_TABLE, AUTH_PASSWORD_RESET_TOKEN_TABLE,
+     * custom cache/queue tables) is still excluded; patterns matching no table
+     * are silently ignored, so this is safe on redis-cache/queue installs.
+     *
+     * @return list<string>
+     */
+    public function excludedTableData(): array
+    {
+        $tables = [
+            (string) config('session.table', 'sessions'),
+            (string) config('auth.passwords.'.config('auth.defaults.passwords', 'users').'.table', 'password_reset_tokens'),
+            (string) config('cache.stores.database.table', 'cache'),
+            (string) config('cache.stores.database.lock_table', 'cache_locks'),
+            (string) config('queue.connections.database.table', 'jobs'),
+            (string) config('queue.batching.table', 'job_batches'),
+            (string) config('queue.failed.table', 'failed_jobs'),
+        ];
+
+        return collect($tables)
+            ->filter(fn (string $table): bool => $table !== '')
+            ->unique()
+            ->map(fn (string $table): string => 'public.'.$table)
+            ->values()
+            ->all();
     }
 
     /**

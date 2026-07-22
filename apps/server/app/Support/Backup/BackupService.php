@@ -185,7 +185,14 @@ class BackupService
                     throw new RuntimeException("Could not read attachment binary [{$diskName}:{$file}]; backup aborted so it is not silently incomplete.");
                 }
 
-                file_put_contents($destination, $bytes);
+                // A short or failed write (quota, I/O, path length on the backup
+                // volume) must abort, not ship a truncated binary in a
+                // "successful" archive.
+                $written = file_put_contents($destination, $bytes);
+
+                if ($written === false || $written !== strlen($bytes)) {
+                    throw new RuntimeException("Could not fully stage attachment binary [{$diskName}:{$file}] into the backup ({$written} of ".strlen($bytes).' bytes); backup aborted.');
+                }
             }
 
             $captured[] = $diskName;
