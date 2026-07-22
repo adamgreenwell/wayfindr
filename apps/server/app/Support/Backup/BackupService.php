@@ -284,7 +284,10 @@ class BackupService
             return;
         }
 
-        $process = new Process(['rm', '-rf', $dir]);
+        // No timeout: this runs in the finally AFTER the archive is finalized,
+        // and a large working tree could exceed Process's default 60s — a slow
+        // cleanup must not turn a successful backup into a reported failure.
+        $process = new Process(['rm', '-rf', $dir], timeout: null);
         $process->run();
     }
 }
