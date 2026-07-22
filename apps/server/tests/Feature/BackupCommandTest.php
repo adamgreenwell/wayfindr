@@ -208,6 +208,22 @@ test('the archive is created owner-only', function (): void {
     exec('rm -rf '.escapeshellarg($dest));
 });
 
+test('two backups in the same run do not overwrite each other', function (): void {
+    app()->instance(DatabaseDumper::class, fakeDumper());
+    config()->set('wayfindr.attachments.storage_disk', 'attachments');
+    Storage::fake('attachments');
+
+    $dest = sys_get_temp_dir().'/wayfindr-backup-uniq-'.bin2hex(random_bytes(6));
+
+    $a = app(BackupService::class)->create($dest);
+    $b = app(BackupService::class)->create($dest);
+
+    expect($a['path'])->not->toBe($b['path'])
+        ->and(glob($dest.'/wayfindr-backup-*.tar.gz'))->toHaveCount(2);
+
+    exec('rm -rf '.escapeshellarg($dest));
+});
+
 test('a concurrently deleted attachment is skipped, not fatal', function (): void {
     // On a LIVE backup a file listed a moment ago can vanish before it is
     // read (its row is being deleted too). That must not abort the whole run.

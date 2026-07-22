@@ -26,6 +26,24 @@ class BackupService
      */
     public function create(string $destinationDir): array
     {
+        // Owner-only for everything this produces — the working dump and the
+        // final archive both hold the database and private attachment bytes.
+        // Setting the umask (rather than a post-hoc chmod) means the archive
+        // is never briefly world-readable while tar is still writing it.
+        $previousUmask = umask(0077);
+
+        try {
+            return $this->assemble($destinationDir);
+        } finally {
+            umask($previousUmask);
+        }
+    }
+
+    /**
+     * @return array{path: string, size: int, manifest: array<string, mixed>}
+     */
+    private function assemble(string $destinationDir): array
+    {
         if (! is_dir($destinationDir) && ! mkdir($destinationDir, 0700, true) && ! is_dir($destinationDir)) {
             throw new RuntimeException("Backup destination is not writable: {$destinationDir}");
         }
@@ -50,13 +68,12 @@ class BackupService
                 json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL,
             );
 
-            $archive = rtrim($destinationDir, '/').'/wayfindr-backup-'.$timestamp->format('Ymd-His').'.tar.gz';
+            // A random suffix keeps two runs in the same second (retries,
+            // overlapping schedules) from choosing the same name and silently
+            // overwriting each other.
+            $archive = rtrim($destinationDir, '/')
+                .'/wayfindr-backup-'.$timestamp->format('Ymd-His').'-'.bin2hex(random_bytes(3)).'.tar.gz';
             $this->tarWorkDir($work, $archive);
-
-            // The archive holds the full database dump and private attachment
-            // bytes — owner-only, so a shared backup directory does not leak it
-            // to other local users.
-            @chmod($archive, 0600);
 
             return [
                 'path' => $archive,
