@@ -48,6 +48,12 @@ class RestoreService
             throw new RuntimeException("Backup archive not found: {$archivePath}");
         }
 
+        // The work dir is created next to the archive, and the restore purges
+        // every local attachment disk — so an archive stored INSIDE an
+        // attachment disk (a mistaken WAYFINDR_BACKUP_PATH) would have itself
+        // and its extracted payload deleted mid-restore. Refuse it.
+        $this->assertArchiveOutsideAttachmentDisks($archivePath);
+
         // Unpack on the archive's own volume (not /tmp): a large archive could
         // overflow the container's small /tmp, and the mounted backup path that
         // holds the archive has room.
@@ -129,6 +135,8 @@ class RestoreService
         if (! is_file($archivePath)) {
             throw new RuntimeException("Backup archive not found: {$archivePath}");
         }
+
+        $this->assertArchiveOutsideAttachmentDisks($archivePath);
 
         $work = $this->makeWorkDir($archivePath);
 
@@ -399,6 +407,39 @@ class RestoreService
             ->filter(fn (string $disk): bool => $disk !== '')
             ->values()
             ->all();
+    }
+
+    /**
+     * Refuse an archive that lives inside a local attachment disk root. The
+     * restore purges those disks wholesale, and the work dir is created next to
+     * the archive, so an archive stored there (a mistaken WAYFINDR_BACKUP_PATH
+     * pointing into storage/app/private/attachments) would delete itself and its
+     * extracted payload during the restore. Actionable: move the archive out.
+     */
+    private function assertArchiveOutsideAttachmentDisks(string $archivePath): void
+    {
+        $archiveReal = realpath($archivePath);
+
+        if ($archiveReal === false) {
+            return;
+        }
+
+        foreach ($this->configuredLocalAttachmentDisks() as $diskName) {
+            $root = config("filesystems.disks.{$diskName}.root");
+
+            if (! is_string($root) || $root === '') {
+                continue;
+            }
+
+            $rootReal = realpath($root);
+
+            if ($rootReal !== false && str_starts_with($archiveReal, rtrim($rootReal, '/').DIRECTORY_SEPARATOR)) {
+                throw new RuntimeException(
+                    "The backup archive is inside the attachment disk [{$diskName}], which restore purges. "
+                    .'Move the archive outside attachment storage (for example set WAYFINDR_BACKUP_PATH elsewhere) and retry.'
+                );
+            }
+        }
     }
 
     private function isRestorableLocalDisk(string $name): bool

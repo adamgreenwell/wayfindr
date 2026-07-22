@@ -388,6 +388,33 @@ test('a failed stale-file purge fails the restore rather than leaving stale bina
         ->expectsOutputToContain('purge');
 });
 
+test('an archive stored inside a purged attachment disk is refused', function (): void {
+    // A mistaken WAYFINDR_BACKUP_PATH inside the attachment disk: the restore
+    // would purge the disk and delete the archive + payload mid-restore.
+    fakeRestorer();
+
+    $root = sys_get_temp_dir().'/wf-attach-root-'.bin2hex(random_bytes(6));
+    mkdir($root.'/backups', 0700, true);
+    config()->set('filesystems.disks.attachments', ['driver' => 'local', 'root' => $root]);
+
+    $src = sys_get_temp_dir().'/wf-src-'.bin2hex(random_bytes(6));
+    mkdir($src, 0700, true);
+    file_put_contents($src.'/database.sql', "-- dump\n");
+    file_put_contents($src.'/manifest.json', json_encode(['wayfindr_version' => 'v1', 'local_attachment_disks' => []]));
+    $archive = $root.'/backups/inside.tar.gz';
+    exec('tar -czf '.escapeshellarg($archive).' -C '.escapeshellarg($src).' .');
+    exec('rm -rf '.escapeshellarg($src));
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive])
+        ->assertFailed()
+        ->expectsOutputToContain('inside the attachment disk');
+
+    // The archive was not touched.
+    expect(is_file($archive))->toBeTrue();
+
+    exec('rm -rf '.escapeshellarg($root));
+});
+
 test('a tampered archive containing a symlink is rejected before any file is copied', function (): void {
     fakeRestorer();
     Storage::fake('attachments');
