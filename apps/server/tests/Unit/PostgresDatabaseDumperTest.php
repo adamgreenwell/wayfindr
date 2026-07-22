@@ -38,3 +38,19 @@ test('absent or blank SSL settings are omitted, not passed empty', function (): 
         ->and($env)->not->toHaveKey('PGSSLCERT')
         ->and($env)->not->toHaveKey('PGSSLROOTCERT');
 });
+
+test('the dump command excludes ephemeral table DATA but keeps the schema', function (): void {
+    $command = (new PostgresDatabaseDumper)->dumpCommand(
+        ['host' => 'db', 'port' => 5432, 'username' => 'u', 'database' => 'wayfindr'],
+        '/tmp/out.sql',
+    );
+
+    // Data excluded (schema kept — the table still exists after restore).
+    expect($command)->toContain('--exclude-table-data=public.sessions')
+        ->and($command)->toContain('--exclude-table-data=public.cache')
+        ->and($command)->toContain('--exclude-table-data=public.jobs')
+        // Source-of-truth tables are NOT excluded.
+        ->and(implode(' ', $command))->not->toContain('conversations')
+        ->and($command)->toContain('--no-owner')
+        ->and($command)->toContain('--file=/tmp/out.sql');
+});

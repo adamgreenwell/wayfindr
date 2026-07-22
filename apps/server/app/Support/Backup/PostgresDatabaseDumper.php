@@ -14,6 +14,21 @@ use Symfony\Component\Process\Process;
  */
 class PostgresDatabaseDumper implements DatabaseDumper
 {
+    /**
+     * Tables whose DATA is ephemeral or operator-owned (ADR 0009): the schema
+     * is kept (the table exists after restore) but the rows are not dumped.
+     * Sessions especially must not ride into a restore — stale tokens. Patterns
+     * that match no table are silently ignored, so this is safe on installs
+     * using redis for cache/queue.
+     */
+    private const EXCLUDED_TABLE_DATA = [
+        'public.sessions',
+        'public.cache',
+        'public.cache_locks',
+        'public.jobs',
+        'public.job_batches',
+    ];
+
     public function dump(string $destination): string
     {
         $connection = (string) config('database.default');
@@ -30,16 +45,7 @@ class PostgresDatabaseDumper implements DatabaseDumper
         }
 
         $process = new Process(
-            command: [
-                'pg_dump',
-                '--host='.($config['host'] ?? '127.0.0.1'),
-                '--port='.(string) ($config['port'] ?? 5432),
-                '--username='.($config['username'] ?? ''),
-                '--dbname='.($config['database'] ?? ''),
-                '--no-owner',
-                '--no-privileges',
-                '--file='.$destination,
-            ],
+            command: $this->dumpCommand($config, $destination),
             env: $this->environmentFor($config),
             timeout: null,
         );
@@ -54,6 +60,31 @@ class PostgresDatabaseDumper implements DatabaseDumper
         $version->run();
 
         return trim($version->getOutput()) ?: 'pg_dump';
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return list<string>
+     */
+    public function dumpCommand(array $config, string $destination): array
+    {
+        $command = [
+            'pg_dump',
+            '--host='.($config['host'] ?? '127.0.0.1'),
+            '--port='.(string) ($config['port'] ?? 5432),
+            '--username='.($config['username'] ?? ''),
+            '--dbname='.($config['database'] ?? ''),
+            '--no-owner',
+            '--no-privileges',
+        ];
+
+        foreach (self::EXCLUDED_TABLE_DATA as $table) {
+            $command[] = '--exclude-table-data='.$table;
+        }
+
+        $command[] = '--file='.$destination;
+
+        return $command;
     }
 
     /**

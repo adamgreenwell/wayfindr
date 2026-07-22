@@ -212,6 +212,20 @@ if ! compose_exec sh -c "tar -xzOf '$backup_archive' ./database.sql | grep -q 'P
     exit 1
 fi
 
+# Ephemeral table DATA is excluded but the SCHEMA is kept: the sessions table
+# is created (CREATE TABLE) but never populated (no COPY public.sessions).
+compose_exec php artisan tinker --execute="Illuminate\Support\Facades\DB::table('sessions')->insert(['id'=>'smoke-session','payload'=>'x','last_activity'=>time()]);" >/dev/null 2>&1 || true
+compose_exec php artisan wayfindr:backup --path=/tmp/wayfindr-smoke-backup2 >/dev/null
+backup2="$(compose_exec sh -c 'ls /tmp/wayfindr-smoke-backup2/wayfindr-backup-*.tar.gz 2>/dev/null | head -n1')"
+if ! compose_exec sh -c "tar -xzOf '$backup2' ./database.sql | grep -q 'CREATE TABLE public.sessions'"; then
+    echo "Dump is missing the sessions schema." >&2
+    exit 1
+fi
+if compose_exec sh -c "tar -xzOf '$backup2' ./database.sql | grep -q 'COPY public.sessions'"; then
+    echo "Dump wrongly included ephemeral sessions data." >&2
+    exit 1
+fi
+
 assert_services_running queue scheduler reverb
 
 echo "Self-host Compose smoke passed for $PROJECT_NAME."

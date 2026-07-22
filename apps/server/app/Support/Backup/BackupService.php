@@ -49,7 +49,11 @@ class BackupService
         }
 
         $timestamp = Carbon::now();
-        $work = $this->makeWorkDir();
+        // Assemble on the DESTINATION volume, not /tmp: a large dump plus
+        // attachment copies could overflow the container's small /tmp while the
+        // mounted backup path has room, and same-filesystem makes the final
+        // .partial -> archive rename atomic.
+        $work = $this->makeWorkDir($destinationDir);
 
         try {
             // Dump the database FIRST, then copy binaries: on a live install
@@ -267,9 +271,11 @@ class BackupService
         }
     }
 
-    private function makeWorkDir(): string
+    private function makeWorkDir(string $base): string
     {
-        $work = sys_get_temp_dir().'/wayfindr-backup-'.bin2hex(random_bytes(6));
+        // A hidden dir under the destination so tar -C excludes it from the
+        // archive it writes into the same parent, and it shares the volume.
+        $work = rtrim($base, '/').'/.wayfindr-backup-work-'.bin2hex(random_bytes(6));
 
         if (! mkdir($work, 0700, true) && ! is_dir($work)) {
             throw new RuntimeException("Could not create working directory: {$work}");
