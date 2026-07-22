@@ -178,11 +178,17 @@ class RestoreService
 
     /**
      * The authoritative attachment check: for every attachment row the dump
-     * restored, confirm the archive carried its binary. A row homed on a disk
-     * the archive carried but whose file is absent is DANGLING (its binary is
-     * gone). A row homed on a disk NOT in the archive is served from an
-     * external object store (or a disk this install lacks) — counted separately
-     * so a bucket-backed install is not misreported as broken.
+     * restored, decide whether its binary should be here and whether it is.
+     *
+     *  1. The archive carried this disk's binaries — the archive is ground
+     *     truth: file present => verified, absent => DANGLING.
+     *  2. The disk is a LOCAL attachment disk here but the archive carried
+     *     nothing for it — its files were already gone at backup time (backup
+     *     only lists disks that HAD files), so the binary is missing: DANGLING,
+     *     not external. Reporting local data loss as "in a bucket" would hide
+     *     exactly what this check exists to surface.
+     *  3. Otherwise it is served from an external object store (or a disk this
+     *     install lacks) — restore cannot verify it from the box.
      *
      * @param  list<string>  $localDisks
      * @return array{verified: int, dangling: list<array{id: int, disk: string, key: string}>, external: array<string, int>}
@@ -201,21 +207,25 @@ class RestoreService
                     $disk = (string) $row->storage_disk;
                     $key = (string) $row->storage_key;
 
-                    if (! isset($localSet[$disk])) {
-                        // Binary lives in a bucket (or on a disk not in this
-                        // archive) — not something restore can verify locally.
-                        $external[$disk] = ($external[$disk] ?? 0) + 1;
+                    if (isset($localSet[$disk])) {
+                        if ($key !== '' && $this->keyIsSafe($key) && is_file($work.'/attachments/'.$disk.'/'.$key)) {
+                            $verified++;
+                        } else {
+                            $dangling[] = ['id' => (int) $row->id, 'disk' => $disk, 'key' => $key];
+                        }
 
                         continue;
                     }
 
-                    if ($key !== '' && $this->keyIsSafe($key) && is_file($work.'/attachments/'.$disk.'/'.$key)) {
-                        $verified++;
+                    // A local disk the archive did not carry means the binary is
+                    // gone, not bucket-resident — surface it as data loss.
+                    if ($this->isRestorableLocalDisk($disk)) {
+                        $dangling[] = ['id' => (int) $row->id, 'disk' => $disk, 'key' => $key];
 
                         continue;
                     }
 
-                    $dangling[] = ['id' => (int) $row->id, 'disk' => $disk, 'key' => $key];
+                    $external[$disk] = ($external[$disk] ?? 0) + 1;
                 }
             });
 

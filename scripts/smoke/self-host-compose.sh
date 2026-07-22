@@ -247,7 +247,8 @@ if [ -z "$drill_archive" ]; then
     exit 1
 fi
 
-echo "Restore drill: quiescing workers (the documented maintenance posture) and simulating loss."
+echo "Restore drill: quiescing (maintenance mode + workers, the documented posture) and simulating loss."
+compose_exec php artisan down >/dev/null
 compose stop queue scheduler >/dev/null
 compose_exec php artisan tinker --execute="
 \Illuminate\Support\Facades\DB::table('users')->where('email', '${MARKER}@drill.test')->delete();
@@ -262,6 +263,7 @@ echo "Restore drill: restoring."
 restore_out="$(compose_exec php artisan wayfindr:restore "$drill_archive" --force)"
 echo "$restore_out"
 compose start queue scheduler >/dev/null
+compose_exec php artisan up >/dev/null
 if ! grep -q 'Restore complete.' <<< "$restore_out"; then
     echo "Restore did not complete." >&2
     exit 1

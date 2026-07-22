@@ -193,6 +193,29 @@ test('a row whose binary is missing from the archive is reported dangling', func
         ->expectsOutputToContain('missing/gone.bin');
 });
 
+test('a local-disk row the archive never captured is dangling, not hidden as external', function (): void {
+    // A LOCAL disk with rows but no captured binaries (its files were already
+    // gone at backup) is absent from local_attachment_disks — backup only lists
+    // disks that HAD files. Restore must still call this local data loss, not
+    // report it as bucket-resident (external).
+    fakeRestorer();
+    Storage::fake('attachments');
+
+    ConversationMessageAttachment::factory()->create([
+        'storage_disk' => 'attachments',
+        'storage_key' => 'lost/binary.bin',
+    ]);
+
+    $archive = makeBackupArchive(
+        ['wayfindr_version' => 'v1', 'local_attachment_disks' => [], 'external_attachment_disks' => []],
+    );
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive, '--force' => true])
+        ->assertSuccessful()
+        ->expectsOutputToContain('dangling')
+        ->expectsOutputToContain('lost/binary.bin');
+});
+
 test('rows homed on a remote disk are reported external, not dangling', function (): void {
     fakeRestorer();
     Storage::fake('attachments');

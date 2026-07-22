@@ -119,12 +119,16 @@ event, so it is guarded:
 ### Maintenance-posture procedure
 
 Restore while the app is quiesced so nothing writes into a database that is
-being replaced:
+being replaced. The `web` container keeps its public ports, so stopping the
+workers is not enough — put the app in maintenance mode too, which 503s every
+HTTP request while leaving the `artisan` CLI fully working:
 
 ```bash
 cd wayfindr    # where compose.yml and .env live
 
-# 1. Stop the writers (the web container stays up so you can exec artisan).
+# 1. Maintenance mode (503 to the world) + stop the background writers. The web
+#    container stays up so you can still exec artisan.
+docker compose --env-file .env exec web php artisan down
 docker compose --env-file .env stop queue scheduler
 
 # 2. Restore. Into a fresh install, omit --force; over existing data, it is
@@ -136,9 +140,14 @@ docker compose --env-file .env exec web \
 #    bring the schema forward.
 docker compose --env-file .env exec web php artisan migrate --force
 
-# 4. Restart the workers.
+# 4. Restart the workers and lift maintenance mode.
 docker compose --env-file .env start queue scheduler
+docker compose --env-file .env exec web php artisan up
 ```
+
+Behind your own reverse proxy, you can instead stop routing to Wayfindr at the
+proxy for the restore window; the point is that no HTTP request reaches a
+database mid-swap.
 
 Read the restore summary: **Attachments verified present** is how many local
 binaries checked out, **dangling** are rows whose binary is gone, and any
