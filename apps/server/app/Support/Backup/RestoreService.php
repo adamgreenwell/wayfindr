@@ -154,8 +154,12 @@ class RestoreService
             $storage = Storage::disk($diskName);
             $existing = $storage->allFiles();
 
-            if ($existing !== []) {
-                $storage->delete($existing);
+            // The local disk is configured throw => false, so a failed delete
+            // (permissions, transient I/O) returns false rather than raising.
+            // Ignoring it would let restore "succeed" with stale binaries still
+            // on disk — the opposite of the wholesale replace — so fail loud.
+            if ($existing !== [] && $storage->delete($existing) !== true) {
+                throw new RuntimeException("Could not purge stale files on attachment disk [{$diskName}] during restore.");
             }
         }
 

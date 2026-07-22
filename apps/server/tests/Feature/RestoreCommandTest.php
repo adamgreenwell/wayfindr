@@ -10,6 +10,7 @@
 use App\Models\Account;
 use App\Models\ConversationMessageAttachment;
 use App\Support\Backup\DatabaseRestorer;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 
@@ -324,6 +325,23 @@ test('a row on an archived disk this install cannot host is not counted verified
         ->assertSuccessful()
         ->expectsOutputToContain('Attachments verified present: 0')
         ->expectsOutputToContain('not configured here ([attachments-orphan])');
+});
+
+test('a failed stale-file purge fails the restore rather than leaving stale binaries', function (): void {
+    // The local disk is throw => false, so a failed delete returns false without
+    // raising. Restore must not report success with stale binaries surviving.
+    fakeRestorer();
+
+    $disk = Mockery::mock(Filesystem::class);
+    $disk->shouldReceive('allFiles')->andReturn(['stale/old.bin']);
+    $disk->shouldReceive('delete')->with(['stale/old.bin'])->andReturn(false); // purge fails silently
+    Storage::shouldReceive('disk')->with('attachments')->andReturn($disk);
+
+    $archive = makeBackupArchive(['wayfindr_version' => 'v1', 'local_attachment_disks' => []]);
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive])
+        ->assertFailed()
+        ->expectsOutputToContain('purge');
 });
 
 test('a tampered archive containing a symlink is rejected before any file is copied', function (): void {
