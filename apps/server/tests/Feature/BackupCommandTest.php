@@ -208,6 +208,22 @@ test('the archive is created owner-only', function (): void {
     exec('rm -rf '.escapeshellarg($dest));
 });
 
+test('a completed backup leaves no .partial residue', function (): void {
+    app()->instance(DatabaseDumper::class, fakeDumper());
+    config()->set('wayfindr.attachments.storage_disk', 'attachments');
+    Storage::fake('attachments');
+
+    $dest = sys_get_temp_dir().'/wayfindr-backup-partial-'.bin2hex(random_bytes(6));
+
+    $result = app(BackupService::class)->create($dest);
+
+    // The final archive exists; no .partial build file is left behind.
+    expect(is_file($result['path']))->toBeTrue()
+        ->and(glob($dest.'/*.partial') ?: [])->toBeEmpty();
+
+    exec('rm -rf '.escapeshellarg($dest));
+});
+
 test('two backups in the same run do not overwrite each other', function (): void {
     app()->instance(DatabaseDumper::class, fakeDumper());
     config()->set('wayfindr.attachments.storage_disk', 'attachments');

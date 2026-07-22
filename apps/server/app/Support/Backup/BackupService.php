@@ -73,7 +73,18 @@ class BackupService
             // overwriting each other.
             $archive = rtrim($destinationDir, '/')
                 .'/wayfindr-backup-'.$timestamp->format('Ymd-His').'-'.bin2hex(random_bytes(3)).'.tar.gz';
-            $this->tarWorkDir($work, $archive);
+
+            // Build under a .partial name and rename only on success: a tar
+            // that fails mid-stream (e.g. the backup filesystem fills up) must
+            // never leave a truncated file under the final name, where it would
+            // be indistinguishable from a good backup.
+            $partial = $archive.'.partial';
+            $this->tarWorkDir($work, $partial);
+
+            if (! rename($partial, $archive)) {
+                @unlink($partial);
+                throw new RuntimeException("Could not finalize backup archive: {$archive}");
+            }
 
             return [
                 'path' => $archive,
@@ -248,6 +259,10 @@ class BackupService
         $process->run();
 
         if (! $process->isSuccessful()) {
+            // A failed tar may have written a truncated file; remove it so no
+            // partial (even under the .partial name) is left behind.
+            @unlink($archive);
+
             throw new RuntimeException('Archiving failed: '.trim($process->getErrorOutput()));
         }
     }
