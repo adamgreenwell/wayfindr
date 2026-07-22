@@ -3,8 +3,10 @@
 namespace App\Support\Backup;
 
 use App\Models\ConversationMessageAttachment;
+use App\Support\Attachments\AttachmentStorage;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
+use InvalidArgumentException;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 
@@ -34,9 +36,10 @@ class BackupService
         try {
             $dumpLabel = $this->dumper->dump($work.'/database.sql');
 
-            $localDisks = $this->copyLocalAttachments($work.'/attachments');
+            $archivable = $this->archivableLocalDiskNames();
+            $localDisks = $this->copyLocalAttachments($work.'/attachments', $archivable);
 
-            $manifest = $this->manifest($timestamp, $localDisks, $this->remoteRowHomedDisks(), $dumpLabel);
+            $manifest = $this->manifest($timestamp, $localDisks, $this->externalRowDisks($archivable), $dumpLabel);
             file_put_contents(
                 $work.'/manifest.json',
                 json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL,
@@ -91,13 +94,14 @@ class BackupService
      * several disks. Gating on the *active* disk would silently drop the rest.
      * Remote (s3) disks are skipped; their binaries live in the bucket.
      *
+     * @param  list<string>  $diskNames  the vetted local disks to capture
      * @return list<string> the local disks that had binaries captured
      */
-    private function copyLocalAttachments(string $targetDir): array
+    private function copyLocalAttachments(string $targetDir, array $diskNames): array
     {
         $captured = [];
 
-        foreach ($this->localAttachmentDisks() as $diskName) {
+        foreach ($diskNames as $diskName) {
             $storage = Storage::disk($diskName);
             $files = $storage->allFiles();
 
@@ -139,13 +143,16 @@ class BackupService
     }
 
     /**
-     * Every configured `attachments*` disk with a local driver, plus any local
-     * disk a row is homed on — the same disk universe the retention sweep
-     * reconciles, filtered to the local ones a backup can read from.
+     * The local disks a backup may read from and archive: every configured
+     * `attachments*` disk plus any disk a row is homed on, filtered to local
+     * drivers AND passed through the SAME safety judgment as uploads and the
+     * retention sweep (dedicated `attachments*` name, configured, no exposure
+     * markers). Without that gate, a row manually homed on a shared disk like
+     * `local` would make the backup package that disk's unrelated files.
      *
      * @return list<string>
      */
-    private function localAttachmentDisks(): array
+    private function archivableLocalDiskNames(): array
     {
         $configured = collect(config('filesystems.disks', []))
             ->filter(fn ($disk, string $name): bool => str_starts_with($name, 'attachments'))
@@ -160,28 +167,42 @@ class BackupService
             ->merge($rowHomed)
             ->unique()
             ->filter(fn (?string $name): bool => $name !== null
-                && config("filesystems.disks.{$name}.driver") === 'local')
+                && config("filesystems.disks.{$name}.driver") === 'local'
+                && $this->isSafeAttachmentDisk($name))
             ->values()
             ->all();
     }
 
     /**
-     * Disks that attachment ROWS point at but the archive does not carry: the
-     * binaries live in a bucket (remote driver) or the disk is retired/unknown.
-     * The restore needs those named so an operator can confirm the buckets are
-     * still reachable — the symmetric other half of the local capture.
+     * Disks that attachment ROWS point at but the archive does not carry —
+     * everything row-homed except the vetted local disks we packaged. Covers
+     * remote buckets, the retired/unknown, AND a shared disk the safety gate
+     * refused: the restore needs all of them named so nothing is silently
+     * assumed present.
      *
+     * @param  list<string>  $archivable
      * @return list<string>
      */
-    private function remoteRowHomedDisks(): array
+    private function externalRowDisks(array $archivable): array
     {
         return ConversationMessageAttachment::query()
             ->distinct()
             ->pluck('storage_disk')
             ->filter()
-            ->reject(fn (string $name): bool => config("filesystems.disks.{$name}.driver") === 'local')
+            ->reject(fn (string $name): bool => in_array($name, $archivable, true))
             ->values()
             ->all();
+    }
+
+    private function isSafeAttachmentDisk(string $name): bool
+    {
+        try {
+            AttachmentStorage::assertSafeDisk($name);
+
+            return true;
+        } catch (InvalidArgumentException) {
+            return false;
+        }
     }
 
     private function tarWorkDir(string $work, string $archive): void

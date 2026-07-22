@@ -144,6 +144,30 @@ test('a custom local attachments disk is captured, not just the built-in one', f
     exec('rm -rf '.escapeshellarg($extracted).' '.escapeshellarg($dest));
 });
 
+test('a row on a shared disk is never packaged and is flagged external', function (): void {
+    // A manually/historically homed row with storage_disk='local' must not
+    // make the backup archive that shared disk's unrelated app files — the
+    // same safety judgment uploads and the sweep use. It is flagged external.
+    app()->instance(DatabaseDumper::class, fakeDumper());
+    config()->set('wayfindr.attachments.storage_disk', 'attachments');
+    Storage::fake('attachments');
+    Storage::fake('local');
+    Storage::disk('local')->put('unrelated/app-file.txt', 'DO-NOT-BACK-ME-UP');
+
+    ConversationMessageAttachment::factory()->create(['storage_disk' => 'local']);
+
+    $dest = sys_get_temp_dir().'/wayfindr-backup-dest-'.bin2hex(random_bytes(6));
+
+    $result = app(BackupService::class)->create($dest);
+    $extracted = extractArchive($result['path']);
+
+    expect(is_dir($extracted.'/attachments/local'))->toBeFalse()
+        ->and($result['manifest']['local_attachment_disks'])->not->toContain('local')
+        ->and($result['manifest']['external_attachment_disks'])->toContain('local');
+
+    exec('rm -rf '.escapeshellarg($extracted).' '.escapeshellarg($dest));
+});
+
 test('rows homed on a remote disk are named as external dependencies in the manifest', function (): void {
     // An install that stored on S3 then switched new uploads back to local:
     // the dump has rows pointing at the bucket, which the archive does not
