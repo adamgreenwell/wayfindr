@@ -69,12 +69,17 @@ class RestoreService
             // onto an attachment disk. Fail fast, before anything destructive.
             $this->assertSafeArchiveTree($work);
 
-            // GUARD (before anything destructive): refuse to overwrite a
-            // database that already holds data unless explicitly forced.
-            if (! $force && $this->databaseIsPopulated()) {
+            // GUARD (before anything destructive): refuse to overwrite an
+            // install that already holds data unless explicitly forced. This
+            // covers BOTH the database and the local attachment disks — the
+            // restore wipes both (DROP SCHEMA, and the wholesale attachment
+            // purge), so a reused/mis-mounted storage volume with files but an
+            // empty database must still require the --force confirmation.
+            if (! $force && $this->targetHasExistingData()) {
                 throw new RuntimeException(
-                    'The target database already contains data; restoring would REPLACE it. '
-                    .'Re-run with --force to confirm you intend to overwrite this database.'
+                    'The target database or a local attachment disk already contains data; '
+                    .'restoring would REPLACE it. Re-run with --force to confirm you intend to '
+                    .'overwrite this install.'
                 );
             }
 
@@ -144,6 +149,26 @@ class RestoreService
         } finally {
             $this->removeDir($work);
         }
+    }
+
+    /**
+     * Does the restore target already hold data the restore would destroy —
+     * either in the database or on a local attachment disk it would purge? Both
+     * are wiped by a restore, so both gate the --force confirmation.
+     */
+    private function targetHasExistingData(): bool
+    {
+        if ($this->databaseIsPopulated()) {
+            return true;
+        }
+
+        foreach ($this->configuredLocalAttachmentDisks() as $diskName) {
+            if (Storage::disk($diskName)->allFiles() !== []) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

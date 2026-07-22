@@ -93,6 +93,7 @@ test('an archive without a manifest is rejected as not-a-Wayfindr-backup', funct
 
 test('restore into an empty database needs no --force and runs the dump', function (): void {
     $restorer = fakeRestorer();
+    Storage::fake('attachments'); // empty local disk → not "existing data"
 
     $archive = makeBackupArchive(['wayfindr_version' => 'v1', 'local_attachment_disks' => []]);
 
@@ -137,6 +138,24 @@ test('any populated table blocks an unforced restore, not just the core content 
     $this->artisan('wayfindr:restore', ['archive' => $archive])
         ->assertFailed()
         ->expectsOutputToContain('--force');
+});
+
+test('a non-empty local attachment disk blocks an unforced restore even with an empty database', function (): void {
+    // A reused/mis-mounted storage volume: the database is empty but attachment
+    // files are present. The wholesale purge would destroy them, so the guard
+    // must require --force here too.
+    fakeRestorer();
+    Storage::fake('attachments');
+    Storage::disk('attachments')->put('existing/file.bin', 'PRECIOUS');
+
+    $archive = makeBackupArchive(['wayfindr_version' => 'v1', 'local_attachment_disks' => []]);
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive])
+        ->assertFailed()
+        ->expectsOutputToContain('--force');
+
+    // The guard tripped before restoreAttachments, so nothing was purged.
+    expect(Storage::disk('attachments')->get('existing/file.bin'))->toBe('PRECIOUS');
 });
 
 test('--force overwrites a populated database', function (): void {
@@ -363,7 +382,8 @@ test('a failed stale-file purge fails the restore rather than leaving stale bina
 
     $archive = makeBackupArchive(['wayfindr_version' => 'v1', 'local_attachment_disks' => []]);
 
-    $this->artisan('wayfindr:restore', ['archive' => $archive])
+    // --force: the disk is non-empty, so skip the guard and exercise the purge.
+    $this->artisan('wayfindr:restore', ['archive' => $archive, '--force' => true])
         ->assertFailed()
         ->expectsOutputToContain('purge');
 });
@@ -400,6 +420,7 @@ test('a tampered archive containing a symlink is rejected before any file is cop
 
 test('a version skew between archive and install is warned', function (): void {
     fakeRestorer();
+    Storage::fake('attachments'); // empty local disk → no --force needed
     config()->set('wayfindr.release.version', 'v2.0.0');
 
     $archive = makeBackupArchive(['wayfindr_version' => 'v1.0.0', 'local_attachment_disks' => []]);
