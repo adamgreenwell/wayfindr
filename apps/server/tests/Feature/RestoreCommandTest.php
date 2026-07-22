@@ -282,6 +282,50 @@ test('--force restore replaces the disk wholesale, purging stale local files', f
         ->and(Storage::disk('attachments')->get('fresh/keep.bin'))->toBe('FRESH');
 });
 
+test('a remote-only backup still purges stale local files on --force', function (): void {
+    // The archive carried NO local disks (remote-only), but the install has
+    // local files whose rows the restore drops. Those must be purged too, or
+    // they linger as orphans and ride into a later backup.
+    fakeRestorer();
+    Account::factory()->create(); // populate → --force path
+    Storage::fake('attachments');
+    Storage::disk('attachments')->put('stale/old.bin', 'FROM-THE-REPLACED-DB');
+
+    $archive = makeBackupArchive([
+        'wayfindr_version' => 'v1',
+        'local_attachment_disks' => [],
+        'external_attachment_disks' => ['attachments-s3'],
+    ]);
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive, '--force' => true])
+        ->assertSuccessful();
+
+    expect(Storage::disk('attachments')->exists('stale/old.bin'))->toBeFalse();
+});
+
+test('a row on an archived disk this install cannot host is not counted verified', function (): void {
+    // The archive carries the binary, but the disk is not configured here, so it
+    // is not placed on any usable Storage disk. The summary must NOT call it
+    // verified while downloads stay broken.
+    fakeRestorer();
+    Storage::fake('attachments');
+
+    ConversationMessageAttachment::factory()->create([
+        'storage_disk' => 'attachments-orphan',
+        'storage_key' => 'x/y.bin',
+    ]);
+
+    $archive = makeBackupArchive(
+        ['wayfindr_version' => 'v1', 'local_attachment_disks' => ['attachments-orphan']],
+        files: ['attachments-orphan/x/y.bin' => 'BYTES'],
+    );
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive, '--force' => true])
+        ->assertSuccessful()
+        ->expectsOutputToContain('Attachments verified present: 0')
+        ->expectsOutputToContain('not configured here ([attachments-orphan])');
+});
+
 test('a tampered archive containing a symlink is rejected before any file is copied', function (): void {
     fakeRestorer();
     Storage::fake('attachments');

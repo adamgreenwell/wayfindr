@@ -88,9 +88,13 @@ class RestoreService
             // Put local attachment binaries back where their rows expect them.
             $attachments = $this->restoreAttachments($work, $localDisks);
 
-            // The dump's rows are now ground truth: verify the archive carried
-            // each locally-homed row's binary, and report the dangling ones.
-            $integrity = $this->verifyAttachmentIntegrity($work, $localDisks);
+            // The dump's rows are now ground truth: verify each locally-homed
+            // row's binary actually landed on a usable disk, and report the rest.
+            $integrity = $this->verifyAttachmentIntegrity(
+                $work,
+                $attachments['restored'],
+                $attachments['unconfigured'],
+            );
 
             return [
                 'manifest' => $manifest,
@@ -128,21 +132,37 @@ class RestoreService
     }
 
     /**
-     * Restores the archived binaries for each local disk the manifest names,
-     * onto the disk the row's storage_disk expects. A disk the archive carried
-     * but this install has not configured as a safe local disk cannot receive
-     * its files — it is reported (unconfigured) rather than written blindly to
-     * a shared disk, and the integrity check will flag the affected rows.
+     * Reconcile the local attachment disks to the archive's point in time,
+     * mirroring the database (which the restore drops and reloads):
      *
-     * @param  list<string>  $diskNames
+     *  - PURGE every safe local attachment disk configured HERE first — not
+     *    just the ones the archive carried. A remote-only backup, or one that
+     *    used a different disk, restored over an install with local files must
+     *    still clear those stale binaries, or they linger as orphans and ride
+     *    into a later backup (backup packages every file on a local disk).
+     *  - COPY the archive's binaries back onto the disks it carried. A disk the
+     *    archive named but this install cannot host safely is reported
+     *    (unconfigured) rather than written blindly to a shared disk; the
+     *    integrity check then flags its rows as unavailable.
+     *
+     * @param  list<string>  $manifestLocalDisks
      * @return array{restored: list<string>, unconfigured: list<string>}
      */
-    private function restoreAttachments(string $work, array $diskNames): array
+    private function restoreAttachments(string $work, array $manifestLocalDisks): array
     {
+        foreach ($this->configuredLocalAttachmentDisks() as $diskName) {
+            $storage = Storage::disk($diskName);
+            $existing = $storage->allFiles();
+
+            if ($existing !== []) {
+                $storage->delete($existing);
+            }
+        }
+
         $restored = [];
         $unconfigured = [];
 
-        foreach ($diskNames as $diskName) {
+        foreach ($manifestLocalDisks as $diskName) {
             $sourceRoot = $work.'/attachments/'.$diskName;
 
             if (! is_dir($sourceRoot)) {
@@ -158,18 +178,6 @@ class RestoreService
             }
 
             $storage = Storage::disk($diskName);
-
-            // Replace the disk wholesale, mirroring the database (which the
-            // restore drops and reloads): drop existing files first so stale
-            // binaries from the database being REPLACED do not linger as
-            // orphans — otherwise they survive until the hourly sweep and would
-            // be carried into a subsequent backup. Safe because this only ever
-            // runs on a dedicated, vetted attachment disk (isRestorableLocalDisk).
-            $existing = $storage->allFiles();
-
-            if ($existing !== []) {
-                $storage->delete($existing);
-            }
 
             foreach ($this->filesUnder($sourceRoot) as $absolute) {
                 $key = ltrim(substr($absolute, strlen($sourceRoot)), '/');
@@ -195,37 +203,58 @@ class RestoreService
     }
 
     /**
-     * The authoritative attachment check: for every attachment row the dump
-     * restored, decide whether its binary should be here and whether it is.
+     * Every safe local attachment disk configured on THIS install — the disks
+     * a restore may clear and write. Mirrors the backup's configured-disk
+     * enumeration: `attachments*` names, local driver, passed through the same
+     * safety gate, so a shared disk is never in scope.
      *
-     *  1. The archive carried this disk's binaries — the archive is ground
-     *     truth: file present => verified, absent => DANGLING.
-     *  2. The disk is a LOCAL attachment disk here but the archive carried
-     *     nothing for it — its files were already gone at backup time (backup
-     *     only lists disks that HAD files), so the binary is missing: DANGLING,
-     *     not external. Reporting local data loss as "in a bucket" would hide
-     *     exactly what this check exists to surface.
+     * @return list<string>
+     */
+    private function configuredLocalAttachmentDisks(): array
+    {
+        return collect(config('filesystems.disks', []))
+            ->keys()
+            ->filter(fn (string $name): bool => str_starts_with($name, 'attachments')
+                && $this->isRestorableLocalDisk($name))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * The authoritative attachment check: for every attachment row the dump
+     * restored, decide whether its binary is actually usable now.
+     *
+     *  1. The disk was RESTORED (cleared and rewritten from the archive) — the
+     *     archive is ground truth: file present => verified, absent => DANGLING.
+     *  2. The disk was in the archive but this install could not host it
+     *     (unconfigured), OR it is a local attachment disk the archive did not
+     *     carry at all: either way the binary is not on a usable disk —
+     *     DANGLING, not verified and not "in a bucket". Reporting an unplaceable
+     *     or missing local binary as verified/external would hide exactly the
+     *     broken downloads this check exists to surface.
      *  3. Otherwise it is served from an external object store (or a disk this
      *     install lacks) — restore cannot verify it from the box.
      *
-     * @param  list<string>  $localDisks
+     * @param  list<string>  $restoredDisks
+     * @param  list<string>  $unconfiguredDisks
      * @return array{verified: int, dangling: list<array{id: int, disk: string, key: string}>, external: array<string, int>}
      */
-    private function verifyAttachmentIntegrity(string $work, array $localDisks): array
+    private function verifyAttachmentIntegrity(string $work, array $restoredDisks, array $unconfiguredDisks): array
     {
-        $localSet = array_flip($localDisks);
+        $restoredSet = array_flip($restoredDisks);
+        $unconfiguredSet = array_flip($unconfiguredDisks);
         $verified = 0;
         $dangling = [];
         $external = [];
 
         ConversationMessageAttachment::query()
             ->select(['id', 'storage_disk', 'storage_key'])
-            ->chunkById(500, function ($rows) use (&$verified, &$dangling, &$external, $work, $localSet): void {
+            ->chunkById(500, function ($rows) use (&$verified, &$dangling, &$external, $work, $restoredSet, $unconfiguredSet): void {
                 foreach ($rows as $row) {
                     $disk = (string) $row->storage_disk;
                     $key = (string) $row->storage_key;
 
-                    if (isset($localSet[$disk])) {
+                    if (isset($restoredSet[$disk])) {
                         if ($key !== '' && $this->keyIsSafe($key) && is_file($work.'/attachments/'.$disk.'/'.$key)) {
                             $verified++;
                         } else {
@@ -235,9 +264,10 @@ class RestoreService
                         continue;
                     }
 
-                    // A local disk the archive did not carry means the binary is
-                    // gone, not bucket-resident — surface it as data loss.
-                    if ($this->isRestorableLocalDisk($disk)) {
+                    // Unplaceable (disk not configured here) or a local disk the
+                    // archive never carried: the binary is not usable — data loss,
+                    // not bucket-resident.
+                    if (isset($unconfiguredSet[$disk]) || $this->isRestorableLocalDisk($disk)) {
                         $dangling[] = ['id' => (int) $row->id, 'disk' => $disk, 'key' => $key];
 
                         continue;
