@@ -1,5 +1,7 @@
 <?php
 
+use App\Support\ReleaseIdentity;
+
 return [
     'documentation' => [
         'forge_url' => env('WAYFINDR_FORGE_DOCS_URL', 'https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/laravel-forge.md'),
@@ -127,8 +129,10 @@ return [
         ],
     ],
 
+    // Resolved through ReleaseIdentity so a blank env_file override falls
+    // back to the identity baked into the official image (see the class).
     'release' => [
-        'commit' => env('WAYFINDR_COMMIT'),
-        'version' => env('WAYFINDR_VERSION'),
+        'commit' => ReleaseIdentity::commit(),
+        'version' => ReleaseIdentity::version(),
     ],
 ];

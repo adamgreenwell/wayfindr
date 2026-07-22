@@ -80,9 +80,15 @@ FROM php-base AS runtime
 
 # Release identity is baked at build time so the official image can answer
 # "what is running here?" on /operator without operator configuration. The
-# release workflow passes the tag and commit; local builds get "source".
+# release workflow passes the tag and commit; local builds get "source". It
+# goes into BOTH env (visibility) and files (the un-shadowable source config
+# falls back to when a blank env_file line would otherwise override the env).
 ARG WAYFINDR_VERSION=source
 ARG WAYFINDR_COMMIT=
+
+RUN mkdir -p /etc/wayfindr \
+    && printf '%s' "${WAYFINDR_VERSION}" > /etc/wayfindr/version \
+    && printf '%s' "${WAYFINDR_COMMIT}" > /etc/wayfindr/commit
 
 ENV APP_ENV=production \
     APP_DEBUG=false \
