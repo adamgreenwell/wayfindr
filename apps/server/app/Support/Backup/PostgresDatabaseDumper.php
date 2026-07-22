@@ -2,6 +2,7 @@
 
 namespace App\Support\Backup;
 
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 
@@ -16,7 +17,11 @@ class PostgresDatabaseDumper implements DatabaseDumper
     public function dump(string $destination): string
     {
         $connection = (string) config('database.default');
-        $config = config("database.connections.{$connection}");
+
+        // The connection's own config, not the raw config array: this reflects
+        // DB_URL parsing, so pg_dump targets the same database Laravel uses
+        // rather than the config-file defaults.
+        $config = DB::connection($connection)->getConfig();
 
         if (($config['driver'] ?? null) !== 'pgsql') {
             throw new RuntimeException(

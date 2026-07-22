@@ -29,16 +29,19 @@ class BackupCommand extends Command
 
         $manifest = $result['manifest'];
 
+        $disk = $manifest['attachment_storage_disk'];
+        $newUploadsAreLocal = config("filesystems.disks.{$disk}.driver") === 'local';
+
         $this->line('Backup complete: '.$result['path']);
         $this->line('  Size: '.$this->humanBytes($result['size']));
         $this->line('  Wayfindr version: '.$manifest['wayfindr_version']);
-        $this->line('  Attachment storage: '.$manifest['attachment_storage_disk']
-            .($manifest['includes_local_attachment_binaries']
-                ? ' (local binaries included)'
-                : ' (remote — binaries stay in the bucket)'));
+        $this->line('  New uploads → '.$disk.($newUploadsAreLocal ? ' (local)' : ' (remote object store)'));
+        $this->line('  Local attachment binaries: '.($manifest['includes_local_attachment_binaries']
+            ? 'included in archive'
+            : 'none on the local disk'));
 
-        if (! $manifest['includes_local_attachment_binaries']) {
-            $this->warn('  Attachment binaries are in your object store; this archive restores metadata that relies on that bucket.');
+        if (! $newUploadsAreLocal) {
+            $this->warn('  New uploads go to the object store; those binaries stay in the bucket, not this archive.');
         }
 
         return self::SUCCESS;

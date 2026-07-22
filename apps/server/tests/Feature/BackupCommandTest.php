@@ -7,6 +7,7 @@
 
 use App\Support\Backup\BackupService;
 use App\Support\Backup\DatabaseDumper;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 
@@ -70,11 +71,11 @@ test('the backup archive contains the dump, manifest, and local attachment binar
     exec('rm -rf '.escapeshellarg($extracted).' '.escapeshellarg($dest));
 });
 
-test('a remote storage install omits attachment binaries and says so', function (): void {
+test('an always-remote install with no local binaries omits the attachments tree', function (): void {
     app()->instance(DatabaseDumper::class, fakeDumper());
-    // An S3-shaped disk: the manifest must record that binaries stay remote.
     config()->set('wayfindr.attachments.storage_disk', 'attachments-s3');
     config()->set('filesystems.disks.attachments-s3', ['driver' => 's3']);
+    Storage::fake('attachments'); // empty local disk
 
     $dest = sys_get_temp_dir().'/wayfindr-backup-dest-'.bin2hex(random_bytes(6));
 
@@ -89,6 +90,50 @@ test('a remote storage install omits attachment binaries and says so', function 
         ->and($manifest['includes_local_attachment_binaries'])->toBeFalse();
 
     exec('rm -rf '.escapeshellarg($extracted).' '.escapeshellarg($dest));
+});
+
+test('local binaries are backed up even after switching new uploads to S3', function (): void {
+    // Per-row storage_disk: an install that started local and switched to S3
+    // still has local binaries its rows point at. The active disk must not
+    // gate whether they are captured, or the archive restores dangling rows.
+    app()->instance(DatabaseDumper::class, fakeDumper());
+    config()->set('wayfindr.attachments.storage_disk', 'attachments-s3'); // new uploads go remote
+    config()->set('filesystems.disks.attachments-s3', ['driver' => 's3']);
+
+    Storage::fake('attachments');
+    Storage::disk('attachments')->put('legacy/local-file.bin', 'PRE-SWITCH-LOCAL-BYTES');
+
+    $dest = sys_get_temp_dir().'/wayfindr-backup-dest-'.bin2hex(random_bytes(6));
+
+    $result = app(BackupService::class)->create($dest);
+    $extracted = extractArchive($result['path']);
+
+    expect(file_get_contents($extracted.'/attachments/legacy/local-file.bin'))->toBe('PRE-SWITCH-LOCAL-BYTES');
+
+    $manifest = json_decode(file_get_contents($extracted.'/manifest.json'), true);
+    expect($manifest['includes_local_attachment_binaries'])->toBeTrue();
+
+    exec('rm -rf '.escapeshellarg($extracted).' '.escapeshellarg($dest));
+});
+
+test('an unreadable attachment fails the backup rather than shipping a gap', function (): void {
+    app()->instance(DatabaseDumper::class, fakeDumper());
+    config()->set('wayfindr.attachments.storage_disk', 'attachments');
+
+    // A disk that lists a file but cannot stream it (transient/permission).
+    $disk = Mockery::mock(Filesystem::class);
+    $disk->shouldReceive('allFiles')->andReturn(['ab/cd/unreadable.bin']);
+    $disk->shouldReceive('readStream')->with('ab/cd/unreadable.bin')->andReturn(null);
+    Storage::shouldReceive('disk')->with('attachments')->andReturn($disk);
+
+    $dest = sys_get_temp_dir().'/wayfindr-backup-dest-'.bin2hex(random_bytes(6));
+
+    expect(fn () => app(BackupService::class)->create($dest))
+        ->toThrow(RuntimeException::class);
+
+    expect(glob($dest.'/wayfindr-backup-*.tar.gz') ?: [])->toBeEmpty();
+
+    exec('rm -rf '.escapeshellarg($dest));
 });
 
 test('the manifest is self-describing (version, storage disk, dump label)', function (): void {
@@ -112,13 +157,15 @@ test('the command writes an archive and reports the storage posture', function (
     app()->instance(DatabaseDumper::class, fakeDumper());
     config()->set('wayfindr.attachments.storage_disk', 'attachments');
     Storage::fake('attachments');
+    Storage::disk('attachments')->put('x/y/z.bin', 'bytes');
 
     $dest = sys_get_temp_dir().'/wayfindr-backup-cmd-'.bin2hex(random_bytes(6));
 
     $this->artisan('wayfindr:backup', ['--path' => $dest])
         ->assertSuccessful()
         ->expectsOutputToContain('Backup complete')
-        ->expectsOutputToContain('local binaries included');
+        ->expectsOutputToContain('New uploads → attachments (local)')
+        ->expectsOutputToContain('Local attachment binaries: included in archive');
 
     expect(glob($dest.'/wayfindr-backup-*.tar.gz'))->toHaveCount(1);
 

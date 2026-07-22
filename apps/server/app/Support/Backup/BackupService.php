@@ -75,15 +75,17 @@ class BackupService
     }
 
     /**
-     * Copies the local attachment binaries into the archive tree. Returns
-     * false (and copies nothing) when the active attachment disk is not a
-     * local one — those binaries live in the object store, not here.
+     * Copies EVERY binary on the local `attachments` disk into the archive,
+     * regardless of which disk new uploads currently target. Per-row
+     * `storage_disk` (ADR 0007) means an install that started local and later
+     * switched to S3 still has local binaries its rows point at — gating on
+     * the active disk would silently drop them. The local disk is empty on an
+     * always-remote install, so this is a no-op there. Returns whether any
+     * local binaries were captured.
      */
     private function copyLocalAttachments(string $targetDir): bool
     {
-        $disk = (string) config('wayfindr.attachments.storage_disk', 'attachments');
-
-        if (config("filesystems.disks.{$disk}.driver") !== 'local') {
+        if (config('filesystems.disks.'.self::ATTACHMENTS_DISK.'.driver') !== 'local') {
             return false;
         }
 
@@ -91,9 +93,7 @@ class BackupService
         $files = $storage->allFiles();
 
         if ($files === []) {
-            // Nothing to copy yet, but the install IS local-storage — the flag
-            // reflects intent so a restore into a remote install can warn.
-            return true;
+            return false;
         }
 
         if (! is_dir($targetDir) && ! mkdir($targetDir, 0700, true) && ! is_dir($targetDir)) {
@@ -108,14 +108,23 @@ class BackupService
                 throw new RuntimeException("Could not create attachment dir: {$parent}");
             }
 
+            // A listed file that cannot be read is a real gap: the dump still
+            // carries its metadata, so a silent skip would ship an archive
+            // that restores a dangling row. Fail the whole backup instead.
             $stream = $storage->readStream($file);
 
             if ($stream === null) {
-                continue;
+                throw new RuntimeException("Could not read attachment binary [{$file}]; backup aborted so it is not silently incomplete.");
             }
 
-            file_put_contents($destination, stream_get_contents($stream));
+            $bytes = stream_get_contents($stream);
             fclose($stream);
+
+            if ($bytes === false) {
+                throw new RuntimeException("Could not read attachment binary [{$file}]; backup aborted so it is not silently incomplete.");
+            }
+
+            file_put_contents($destination, $bytes);
         }
 
         return true;
