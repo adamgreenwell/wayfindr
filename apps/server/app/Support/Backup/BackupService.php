@@ -73,10 +73,20 @@ class BackupService
                 json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL,
             );
 
+            // Archives land under a per-install prefix on the local path too —
+            // not just the remote disk — so two installs that share one host
+            // backup directory keep separate namespaces and retention in one
+            // never prunes the other's archives (ADR 0010).
+            $archiveDir = rtrim($destinationDir, '/').'/'.$this->backupPrefix();
+
+            if (! is_dir($archiveDir) && ! mkdir($archiveDir, 0700, true) && ! is_dir($archiveDir)) {
+                throw new RuntimeException("Could not create backup archive directory: {$archiveDir}");
+            }
+
             // A random suffix keeps two runs in the same second (retries,
             // overlapping schedules) from choosing the same name and silently
             // overwriting each other.
-            $archive = rtrim($destinationDir, '/')
+            $archive = $archiveDir
                 .'/wayfindr-backup-'.$timestamp->format('Ymd-His').'-'.bin2hex(random_bytes(3)).'.tar.gz';
 
             // Build under a .partial name and rename only on success: a tar
@@ -141,7 +151,11 @@ class BackupService
     {
         $removed = 0;
 
-        foreach (glob(rtrim($dir, '/').'/wayfindr-backup-*.tar.gz') ?: [] as $path) {
+        // Only this install's prefix subdirectory — never the shared parent —
+        // so a shorter window here cannot delete another install's archives.
+        $scoped = rtrim($dir, '/').'/'.$this->backupPrefix();
+
+        foreach (glob($scoped.'/wayfindr-backup-*.tar.gz') ?: [] as $path) {
             if ($keep !== null && basename($path) === $keep) {
                 continue;
             }

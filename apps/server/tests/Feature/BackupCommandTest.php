@@ -34,6 +34,33 @@ function fakeDumper(string $contents = "-- fake dump\n"): DatabaseDumper
 }
 
 /**
+ * Find backup archives (or .partial residue) anywhere under a destination —
+ * archives live under a per-install prefix subdirectory, so a top-level glob
+ * would miss them.
+ *
+ * @return list<string>
+ */
+function backupArchivesUnder(string $dir, string $pattern = '/^wayfindr-backup-.*\.tar\.gz$/'): array
+{
+    if (! is_dir($dir)) {
+        return [];
+    }
+
+    $found = [];
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+    );
+
+    foreach ($iterator as $item) {
+        if ($item->isFile() && preg_match($pattern, $item->getFilename())) {
+            $found[] = $item->getPathname();
+        }
+    }
+
+    return $found;
+}
+
+/**
  * Extract a tar.gz into a temp dir and return that dir.
  */
 function extractArchive(string $archive): string
@@ -219,7 +246,7 @@ test('a completed backup leaves no .partial residue', function (): void {
 
     // The final archive exists; no .partial build file is left behind.
     expect(is_file($result['path']))->toBeTrue()
-        ->and(glob($dest.'/*.partial') ?: [])->toBeEmpty();
+        ->and(backupArchivesUnder($dest, '/\.partial$/'))->toBeEmpty();
 
     exec('rm -rf '.escapeshellarg($dest));
 });
@@ -235,7 +262,7 @@ test('two backups in the same run do not overwrite each other', function (): voi
     $b = app(BackupService::class)->create($dest);
 
     expect($a['path'])->not->toBe($b['path'])
-        ->and(glob($dest.'/wayfindr-backup-*.tar.gz'))->toHaveCount(2);
+        ->and(backupArchivesUnder($dest))->toHaveCount(2);
 
     exec('rm -rf '.escapeshellarg($dest));
 });
@@ -279,7 +306,7 @@ test('an unreadable attachment fails the backup rather than shipping a gap', fun
     expect(fn () => app(BackupService::class)->create($dest))
         ->toThrow(RuntimeException::class);
 
-    expect(glob($dest.'/wayfindr-backup-*.tar.gz') ?: [])->toBeEmpty();
+    expect(backupArchivesUnder($dest))->toBeEmpty();
 
     exec('rm -rf '.escapeshellarg($dest));
 });
@@ -318,7 +345,7 @@ test('the command writes an archive and reports the storage posture', function (
         ->expectsOutputToContain('New uploads → attachments (local)')
         ->expectsOutputToContain('Local attachment binaries: included in archive');
 
-    expect(glob($dest.'/wayfindr-backup-*.tar.gz'))->toHaveCount(1);
+    expect(backupArchivesUnder($dest))->toHaveCount(1);
 
     exec('rm -rf '.escapeshellarg($dest));
 });
@@ -378,7 +405,7 @@ test('an unconfigured backup disk fails the command but keeps the local archive'
         ->expectsOutputToContain('Offsite upload to [ghost-disk] FAILED');
 
     // The local archive is intact — an offsite failure never discards it.
-    expect(glob($dest.'/wayfindr-backup-*.tar.gz'))->toHaveCount(1);
+    expect(backupArchivesUnder($dest))->toHaveCount(1);
 
     exec('rm -rf '.escapeshellarg($dest));
 });
@@ -399,7 +426,7 @@ test('an attachment disk is refused as a backup mirror', function (): void {
         ->expectsOutputToContain('attachment disk');
 
     // The local archive is intact.
-    expect(glob($dest.'/wayfindr-backup-*.tar.gz'))->toHaveCount(1);
+    expect(backupArchivesUnder($dest))->toHaveCount(1);
 
     exec('rm -rf '.escapeshellarg($dest));
 });
@@ -426,7 +453,7 @@ test('an incomplete offsite upload fails the backup', function (): void {
         ->assertFailed()
         ->expectsOutputToContain('Offsite upload to [backups] FAILED');
 
-    expect(glob($dest.'/wayfindr-backup-*.tar.gz'))->toHaveCount(1);
+    expect(backupArchivesUnder($dest))->toHaveCount(1);
 
     exec('rm -rf '.escapeshellarg($dest));
 });
@@ -454,29 +481,33 @@ test('retention prunes local archives older than the window, by name not mtime',
     Storage::fake('attachments');
     config()->set('wayfindr.backup.disk', null);
     config()->set('wayfindr.backup.retention_days', 7);
+    config()->set('wayfindr.backup.prefix', 'inst-a');
 
     $dest = sys_get_temp_dir().'/wayfindr-backup-retention-'.bin2hex(random_bytes(6));
-    mkdir($dest, 0700, true);
+    // Seeds go in this install's prefix subdir — where archives land and prune
+    // looks (a sibling install's prefix is deliberately out of scope).
+    $home = $dest.'/inst-a';
+    mkdir($home, 0700, true);
 
     // These files are written NOW (fresh mtime) but carry old names — so pruning
     // them proves the age comes from the name, not the filesystem mtime.
     $old = 'wayfindr-backup-'.now()->subDays(30)->format('Ymd-His').'-aaaaaa.tar.gz';
     $recent = 'wayfindr-backup-'.now()->subDays(2)->format('Ymd-His').'-bbbbbb.tar.gz';
-    file_put_contents($dest.'/'.$old, 'x');
-    file_put_contents($dest.'/'.$recent, 'x');
-    file_put_contents($dest.'/keep-me.txt', 'x');                       // not an archive
-    file_put_contents($dest.'/wayfindr-backup-notdated.tar.gz', 'x');   // archive-ish but no valid timestamp
+    file_put_contents($home.'/'.$old, 'x');
+    file_put_contents($home.'/'.$recent, 'x');
+    file_put_contents($home.'/keep-me.txt', 'x');                       // not an archive
+    file_put_contents($home.'/wayfindr-backup-notdated.tar.gz', 'x');   // archive-ish but no valid timestamp
     // Regex-shaped but an IMPOSSIBLE date (Feb 31): must not be dated/pruned.
-    file_put_contents($dest.'/wayfindr-backup-20250231-120000-ffffff.tar.gz', 'x');
+    file_put_contents($home.'/wayfindr-backup-20250231-120000-ffffff.tar.gz', 'x');
 
     $this->artisan('wayfindr:backup', ['--path' => $dest])->assertSuccessful();
 
-    expect(is_file($dest.'/'.$old))->toBeFalse()                              // pruned (old name)
-        ->and(is_file($dest.'/'.$recent))->toBeTrue()                        // within window
-        ->and(is_file($dest.'/keep-me.txt'))->toBeTrue()                     // never touched
-        ->and(is_file($dest.'/wayfindr-backup-notdated.tar.gz'))->toBeTrue() // unparseable name → left alone
-        ->and(is_file($dest.'/wayfindr-backup-20250231-120000-ffffff.tar.gz'))->toBeTrue() // impossible date → left alone
-        ->and(glob($dest.'/wayfindr-backup-2*.tar.gz'))->toHaveCount(3);     // recent + new + the impossible-date file
+    expect(is_file($home.'/'.$old))->toBeFalse()                              // pruned (old name)
+        ->and(is_file($home.'/'.$recent))->toBeTrue()                        // within window
+        ->and(is_file($home.'/keep-me.txt'))->toBeTrue()                     // never touched
+        ->and(is_file($home.'/wayfindr-backup-notdated.tar.gz'))->toBeTrue() // unparseable name → left alone
+        ->and(is_file($home.'/wayfindr-backup-20250231-120000-ffffff.tar.gz'))->toBeTrue() // impossible date → left alone
+        ->and(glob($home.'/wayfindr-backup-2*.tar.gz'))->toHaveCount(3);     // recent + new + the impossible-date file
 
     exec('rm -rf '.escapeshellarg($dest));
 });
@@ -534,22 +565,47 @@ test('retention never prunes the just-written archive, even with an old stamp', 
     // the current archive must survive regardless of its parsed age.
     config()->set('wayfindr.backup.disk', null);
     config()->set('wayfindr.backup.retention_days', 7);
+    config()->set('wayfindr.backup.prefix', 'inst-a');
 
     $dir = sys_get_temp_dir().'/wayfindr-keep-'.bin2hex(random_bytes(6));
-    mkdir($dir, 0700, true);
+    $home = $dir.'/inst-a'; // the prefix subdir prune scopes to
+    mkdir($home, 0700, true);
 
     $current = 'wayfindr-backup-'.now()->subDays(30)->format('Ymd-His').'-abcdef.tar.gz';
     $otherOld = 'wayfindr-backup-'.now()->subDays(31)->format('Ymd-His').'-bbbbbb.tar.gz';
-    file_put_contents($dir.'/'.$current, 'x');
-    file_put_contents($dir.'/'.$otherOld, 'x');
+    file_put_contents($home.'/'.$current, 'x');
+    file_put_contents($home.'/'.$otherOld, 'x');
 
     $pruned = app(BackupService::class)->pruneExpired($dir, $current);
 
-    expect(is_file($dir.'/'.$current))->toBeTrue()        // kept — it is this run's archive
-        ->and(is_file($dir.'/'.$otherOld))->toBeFalse()   // pruned — old, not the current one
+    expect(is_file($home.'/'.$current))->toBeTrue()        // kept — it is this run's archive
+        ->and(is_file($home.'/'.$otherOld))->toBeFalse()   // pruned — old, not the current one
         ->and($pruned['local'])->toBe(1);
 
     exec('rm -rf '.escapeshellarg($dir));
+});
+
+test('local retention never prunes another install prefix in a shared backup directory', function (): void {
+    // Two installs sharing one host backup dir: install-a's short window must
+    // not reach install-b's archives, which live under a different prefix.
+    app()->instance(DatabaseDumper::class, fakeDumper());
+    config()->set('wayfindr.attachments.storage_disk', 'attachments');
+    Storage::fake('attachments');
+    config()->set('wayfindr.backup.disk', null);
+    config()->set('wayfindr.backup.retention_days', 7);
+    config()->set('wayfindr.backup.prefix', 'install-a');
+
+    $dest = sys_get_temp_dir().'/wayfindr-backup-localiso-'.bin2hex(random_bytes(6));
+    mkdir($dest.'/install-b', 0700, true);
+    $othersOld = 'wayfindr-backup-'.now()->subDays(60)->format('Ymd-His').'-cccccc.tar.gz';
+    file_put_contents($dest.'/install-b/'.$othersOld, 'x'); // the neighbour's old archive
+
+    $this->artisan('wayfindr:backup', ['--path' => $dest])->assertSuccessful();
+
+    // install-a's retention scoped to its own prefix — install-b's archive stays.
+    expect(is_file($dest.'/install-b/'.$othersOld))->toBeTrue();
+
+    exec('rm -rf '.escapeshellarg($dest));
 });
 
 test('with retention unset, old archives are kept', function (): void {
@@ -586,7 +642,7 @@ test('a dump failure surfaces as a command failure, not a half-written archive',
         ->assertFailed()
         ->expectsOutputToContain('Backup failed');
 
-    expect(glob($dest.'/wayfindr-backup-*.tar.gz') ?: [])->toBeEmpty();
+    expect(backupArchivesUnder($dest))->toBeEmpty();
 
     exec('rm -rf '.escapeshellarg($dest));
 });

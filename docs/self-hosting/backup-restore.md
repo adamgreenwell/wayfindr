@@ -105,11 +105,12 @@ retry.
 > would delete your backups as stray files; `wayfindr:backup` refuses such a
 > disk.
 
-**Sharing one bucket across installs is safe.** Each install stores its archives
-under a per-install key prefix (derived from `APP_KEY`, or set a readable one
-with `WAYFINDR_BACKUP_PREFIX`), and retention only ever prunes within that
-install's own prefix — one install's short retention window never erases
-another's archives.
+**Sharing one destination across installs is safe.** Each install stores its
+archives under a per-install prefix — both in the bucket and on the local path
+(`{backup path}/{prefix}/`) — derived from `APP_KEY`, or set a readable one with
+`WAYFINDR_BACKUP_PREFIX`. Retention only ever prunes within that install's own
+prefix, so one install's short retention window never erases another's archives,
+whether they share a bucket or a host backup directory.
 
 Prefer to keep the archive on the host instead of (or as well as) a bucket? Map
 a host path into the `web` service and point `WAYFINDR_BACKUP_PATH` at it, or

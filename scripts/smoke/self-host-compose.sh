@@ -201,7 +201,7 @@ compose_exec() {
     docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$COMPOSE_BUILD_FILE" exec -T web "$@"
 }
 compose_exec php artisan wayfindr:backup --path=/tmp/wayfindr-smoke-backup
-backup_archive="$(compose_exec sh -c 'ls /tmp/wayfindr-smoke-backup/wayfindr-backup-*.tar.gz 2>/dev/null | head -n1')"
+backup_archive="$(compose_exec sh -c 'find /tmp/wayfindr-smoke-backup -name "wayfindr-backup-*.tar.gz" 2>/dev/null | head -n1')"
 if [ -z "$backup_archive" ]; then
     echo "Backup produced no archive." >&2
     exit 1
@@ -216,7 +216,7 @@ fi
 # is created (CREATE TABLE) but never populated (no COPY public.sessions).
 compose_exec php artisan tinker --execute="Illuminate\Support\Facades\DB::table('sessions')->insert(['id'=>'smoke-session','payload'=>'x','last_activity'=>time()]);" >/dev/null 2>&1 || true
 compose_exec php artisan wayfindr:backup --path=/tmp/wayfindr-smoke-backup2 >/dev/null
-backup2="$(compose_exec sh -c 'ls /tmp/wayfindr-smoke-backup2/wayfindr-backup-*.tar.gz 2>/dev/null | head -n1')"
+backup2="$(compose_exec sh -c 'find /tmp/wayfindr-smoke-backup2 -name "wayfindr-backup-*.tar.gz" 2>/dev/null | head -n1')"
 if ! compose_exec sh -c "tar -xzOf '$backup2' ./database.sql | grep -q 'CREATE TABLE public.sessions'"; then
     echo "Dump is missing the sessions schema." >&2
     exit 1
@@ -241,7 +241,7 @@ compose_exec php artisan tinker --execute="
 
 echo "Restore drill: taking the backup that carries the markers."
 compose_exec php artisan wayfindr:backup --path=/tmp/wayfindr-drill >/dev/null
-drill_archive="$(compose_exec sh -c 'ls /tmp/wayfindr-drill/wayfindr-backup-*.tar.gz 2>/dev/null | head -n1')"
+drill_archive="$(compose_exec sh -c 'find /tmp/wayfindr-drill -name "wayfindr-backup-*.tar.gz" 2>/dev/null | head -n1')"
 if [ -z "$drill_archive" ]; then
     echo "Drill backup produced no archive." >&2
     exit 1
