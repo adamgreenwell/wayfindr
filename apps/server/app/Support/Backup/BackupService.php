@@ -110,6 +110,104 @@ class BackupService
     }
 
     /**
+     * Age-based retention (ADR 0010): after a successful backup, prune archives
+     * older than WAYFINDR_BACKUP_RETENTION_DAYS on both the local path and the
+     * remote disk. Best-effort — a prune failure never fails the backup that
+     * already succeeded. Only ever removes files that match the exact archive
+     * naming, dated by the timestamp IN THE NAME (not mtime, which an upload or
+     * copy resets), and only when the age is confidently known.
+     *
+     * @return array{days: int, local: int, remote: int}
+     */
+    public function pruneExpired(string $localDir): array
+    {
+        $days = (int) config('wayfindr.backup.retention_days', 0);
+
+        if ($days <= 0) {
+            return ['days' => 0, 'local' => 0, 'remote' => 0];
+        }
+
+        $cutoff = Carbon::now()->subDays($days);
+
+        return [
+            'days' => $days,
+            'local' => $this->pruneLocalArchives($localDir, $cutoff),
+            'remote' => $this->pruneRemoteArchives($cutoff),
+        ];
+    }
+
+    private function pruneLocalArchives(string $dir, Carbon $cutoff): int
+    {
+        $removed = 0;
+
+        foreach (glob(rtrim($dir, '/').'/wayfindr-backup-*.tar.gz') ?: [] as $path) {
+            $when = $this->archiveTimestamp(basename($path));
+
+            if ($when !== null && $when->lt($cutoff) && @unlink($path)) {
+                $removed++;
+            }
+        }
+
+        return $removed;
+    }
+
+    private function pruneRemoteArchives(Carbon $cutoff): int
+    {
+        $diskName = trim((string) config('wayfindr.backup.disk'));
+
+        // No remote, an unknown disk, or an attachment disk (never a backup
+        // target): nothing to prune. Attachment disks are guarded so retention
+        // can never reach into attachment storage.
+        if ($diskName === ''
+            || config("filesystems.disks.{$diskName}") === null
+            || str_starts_with($diskName, 'attachments')) {
+            return 0;
+        }
+
+        try {
+            $disk = Storage::disk($diskName);
+            $removed = 0;
+
+            foreach ($disk->files() as $path) {
+                $when = $this->archiveTimestamp(basename($path));
+
+                if ($when !== null && $when->lt($cutoff) && $disk->delete($path)) {
+                    $removed++;
+                }
+            }
+
+            return $removed;
+        } catch (Throwable) {
+            // A list/delete error on the remote must not fail a backup that
+            // already succeeded; the next run reconciles.
+            return 0;
+        }
+    }
+
+    /**
+     * The instant an archive was taken, parsed from its filename — the only
+     * files retention will ever act on. Returns null for anything that is not
+     * an exact wayfindr-backup-YYYYMMDD-HHMMSS-xxxxxx.tar.gz, so a foreign file
+     * on a shared destination is never dated and never pruned.
+     */
+    private function archiveTimestamp(string $filename): ?Carbon
+    {
+        if (! preg_match('/^wayfindr-backup-(\d{8})-(\d{6})-[0-9a-f]{6}\.tar\.gz$/', $filename, $matches)) {
+            return null;
+        }
+
+        try {
+            // Matches the format the archive is written with (Carbon::now() in
+            // the app timezone), so ages compare correctly.
+            $when = Carbon::createFromFormat('Ymd His', $matches[1].' '.$matches[2], config('app.timezone') ?: 'UTC');
+
+            return $when ?: null;
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
      * Upload the finished archive to the configured backup disk, verifying the
      * object exists and its size matches. Returns null when no disk is
      * configured, {disk, key} on success, or {disk, error} on failure — a

@@ -139,6 +139,11 @@ return [
         // (S3/R2/MinIO/any) the finished archive is uploaded to after the local
         // write. Unset = local-only. The local copy is always retained.
         'disk' => env('WAYFINDR_BACKUP_DISK'),
+
+        // Age-based retention (ADR 0010): after a successful backup, prune
+        // archives older than this many days on BOTH the local path and the
+        // remote disk. 0/unset = keep everything (the operator prunes).
+        'retention_days' => (int) env('WAYFINDR_BACKUP_RETENTION_DAYS', 0),
     ],
 
     // Resolved through ReleaseIdentity so a blank env_file override falls

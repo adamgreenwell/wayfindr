@@ -447,6 +447,78 @@ test('the command reports a successful offsite copy', function (): void {
     exec('rm -rf '.escapeshellarg($dest));
 });
 
+test('retention prunes local archives older than the window, by name not mtime', function (): void {
+    app()->instance(DatabaseDumper::class, fakeDumper());
+    config()->set('wayfindr.attachments.storage_disk', 'attachments');
+    Storage::fake('attachments');
+    config()->set('wayfindr.backup.disk', null);
+    config()->set('wayfindr.backup.retention_days', 7);
+
+    $dest = sys_get_temp_dir().'/wayfindr-backup-retention-'.bin2hex(random_bytes(6));
+    mkdir($dest, 0700, true);
+
+    // These files are written NOW (fresh mtime) but carry old names — so pruning
+    // them proves the age comes from the name, not the filesystem mtime.
+    $old = 'wayfindr-backup-'.now()->subDays(30)->format('Ymd-His').'-aaaaaa.tar.gz';
+    $recent = 'wayfindr-backup-'.now()->subDays(2)->format('Ymd-His').'-bbbbbb.tar.gz';
+    file_put_contents($dest.'/'.$old, 'x');
+    file_put_contents($dest.'/'.$recent, 'x');
+    file_put_contents($dest.'/keep-me.txt', 'x');                       // not an archive
+    file_put_contents($dest.'/wayfindr-backup-notdated.tar.gz', 'x');   // archive-ish but no valid timestamp
+
+    $this->artisan('wayfindr:backup', ['--path' => $dest])->assertSuccessful();
+
+    expect(is_file($dest.'/'.$old))->toBeFalse()                              // pruned (old name)
+        ->and(is_file($dest.'/'.$recent))->toBeTrue()                        // within window
+        ->and(is_file($dest.'/keep-me.txt'))->toBeTrue()                     // never touched
+        ->and(is_file($dest.'/wayfindr-backup-notdated.tar.gz'))->toBeTrue() // unparseable name → left alone
+        ->and(glob($dest.'/wayfindr-backup-2*.tar.gz'))->toHaveCount(2);     // recent + the new one
+
+    exec('rm -rf '.escapeshellarg($dest));
+});
+
+test('retention prunes offsite archives older than the window and leaves other files', function (): void {
+    app()->instance(DatabaseDumper::class, fakeDumper());
+    config()->set('wayfindr.attachments.storage_disk', 'attachments');
+    Storage::fake('attachments');
+    config()->set('filesystems.disks.backups', ['driver' => 'local', 'root' => sys_get_temp_dir().'/wf-backups-'.bin2hex(random_bytes(4))]);
+    Storage::fake('backups');
+    config()->set('wayfindr.backup.disk', 'backups');
+    config()->set('wayfindr.backup.retention_days', 7);
+
+    $old = 'wayfindr-backup-'.now()->subDays(30)->format('Ymd-His').'-aaaaaa.tar.gz';
+    Storage::disk('backups')->put($old, 'x');
+    Storage::disk('backups')->put('unrelated.txt', 'x');
+
+    $dest = sys_get_temp_dir().'/wayfindr-backup-remret-'.bin2hex(random_bytes(6));
+
+    $this->artisan('wayfindr:backup', ['--path' => $dest])->assertSuccessful();
+
+    expect(Storage::disk('backups')->exists($old))->toBeFalse()               // pruned offsite
+        ->and(Storage::disk('backups')->exists('unrelated.txt'))->toBeTrue(); // foreign file untouched
+
+    exec('rm -rf '.escapeshellarg($dest));
+});
+
+test('with retention unset, old archives are kept', function (): void {
+    app()->instance(DatabaseDumper::class, fakeDumper());
+    config()->set('wayfindr.attachments.storage_disk', 'attachments');
+    Storage::fake('attachments');
+    config()->set('wayfindr.backup.disk', null);
+    config()->set('wayfindr.backup.retention_days', 0);
+
+    $dest = sys_get_temp_dir().'/wayfindr-backup-noret-'.bin2hex(random_bytes(6));
+    mkdir($dest, 0700, true);
+    $old = 'wayfindr-backup-'.now()->subDays(90)->format('Ymd-His').'-aaaaaa.tar.gz';
+    file_put_contents($dest.'/'.$old, 'x');
+
+    $this->artisan('wayfindr:backup', ['--path' => $dest])->assertSuccessful();
+
+    expect(is_file($dest.'/'.$old))->toBeTrue();
+
+    exec('rm -rf '.escapeshellarg($dest));
+});
+
 test('a dump failure surfaces as a command failure, not a half-written archive', function (): void {
     app()->instance(DatabaseDumper::class, new class implements DatabaseDumper
     {

@@ -69,6 +69,20 @@ class BackupCommand extends Command
             $this->line('  Offsite copy uploaded to ['.$remote['disk'].']: '.$remote['key']);
         }
 
+        // Retention runs only after a fully successful backup (reached only past
+        // the offsite-failure return above), so a bad run can never prune the
+        // last good history (ADR 0010).
+        $pruned = $backups->pruneExpired($destination);
+
+        if ($pruned['days'] > 0 && ($pruned['local'] + $pruned['remote']) > 0) {
+            $this->line(sprintf(
+                '  Retention: pruned %d local and %d offsite archive(s) older than %d day(s).',
+                $pruned['local'],
+                $pruned['remote'],
+                $pruned['days'],
+            ));
+        }
+
         return self::SUCCESS;
     }
 
