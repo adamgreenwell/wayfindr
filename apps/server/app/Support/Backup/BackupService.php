@@ -215,15 +215,25 @@ class BackupService
             return null;
         }
 
+        $stamp = $matches[1].' '.$matches[2];
+
         try {
             // Matches the format the archive is written with (Carbon::now() in
             // the app timezone), so ages compare correctly.
-            $when = Carbon::createFromFormat('Ymd His', $matches[1].' '.$matches[2], config('app.timezone') ?: 'UTC');
-
-            return $when ?: null;
+            $when = Carbon::createFromFormat('Ymd His', $stamp, config('app.timezone') ?: 'UTC');
         } catch (Throwable) {
             return null;
         }
+
+        // createFromFormat NORMALIZES an impossible date (e.g. 20250231 -> early
+        // March) instead of failing, so a foreign file whose name only looks
+        // like a timestamp could be assigned an old date and pruned. Require an
+        // exact round-trip: only a genuine timestamp is ever dated.
+        if (! $when instanceof Carbon || $when->format('Ymd His') !== $stamp) {
+            return null;
+        }
+
+        return $when;
     }
 
     /**

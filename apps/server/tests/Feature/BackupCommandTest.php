@@ -466,6 +466,8 @@ test('retention prunes local archives older than the window, by name not mtime',
     file_put_contents($dest.'/'.$recent, 'x');
     file_put_contents($dest.'/keep-me.txt', 'x');                       // not an archive
     file_put_contents($dest.'/wayfindr-backup-notdated.tar.gz', 'x');   // archive-ish but no valid timestamp
+    // Regex-shaped but an IMPOSSIBLE date (Feb 31): must not be dated/pruned.
+    file_put_contents($dest.'/wayfindr-backup-20250231-120000-ffffff.tar.gz', 'x');
 
     $this->artisan('wayfindr:backup', ['--path' => $dest])->assertSuccessful();
 
@@ -473,7 +475,8 @@ test('retention prunes local archives older than the window, by name not mtime',
         ->and(is_file($dest.'/'.$recent))->toBeTrue()                        // within window
         ->and(is_file($dest.'/keep-me.txt'))->toBeTrue()                     // never touched
         ->and(is_file($dest.'/wayfindr-backup-notdated.tar.gz'))->toBeTrue() // unparseable name → left alone
-        ->and(glob($dest.'/wayfindr-backup-2*.tar.gz'))->toHaveCount(2);     // recent + the new one
+        ->and(is_file($dest.'/wayfindr-backup-20250231-120000-ffffff.tar.gz'))->toBeTrue() // impossible date → left alone
+        ->and(glob($dest.'/wayfindr-backup-2*.tar.gz'))->toHaveCount(3);     // recent + new + the impossible-date file
 
     exec('rm -rf '.escapeshellarg($dest));
 });
