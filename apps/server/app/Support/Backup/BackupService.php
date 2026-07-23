@@ -131,6 +131,14 @@ class BackupService
                 throw new RuntimeException("[{$diskName}] is not a configured filesystem disk");
             }
 
+            // Never mirror onto an attachment disk: wayfindr:sweep-orphaned-
+            // attachments reconciles every `attachments*` disk and deletes any
+            // object with no matching attachment row, so it would treat these
+            // archives as orphans and delete the operator's offsite backups.
+            if (str_starts_with($diskName, 'attachments')) {
+                throw new RuntimeException("[{$diskName}] is an attachment disk; the orphaned-attachment sweep would delete backups written there — use a separate disk for WAYFINDR_BACKUP_DISK");
+            }
+
             $disk = Storage::disk($diskName);
             $key = basename($archivePath);
 

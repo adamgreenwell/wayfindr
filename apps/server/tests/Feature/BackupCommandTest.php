@@ -382,6 +382,27 @@ test('an unconfigured backup disk fails the command but keeps the local archive'
     exec('rm -rf '.escapeshellarg($dest));
 });
 
+test('an attachment disk is refused as a backup mirror', function (): void {
+    // wayfindr:sweep-orphaned-attachments reconciles every attachments* disk and
+    // would delete backup archives written there as orphans. Refuse it.
+    app()->instance(DatabaseDumper::class, fakeDumper());
+    config()->set('wayfindr.attachments.storage_disk', 'attachments');
+    Storage::fake('attachments');
+    config()->set('filesystems.disks.attachments-s3', ['driver' => 's3', 'bucket' => 'b']);
+    config()->set('wayfindr.backup.disk', 'attachments-s3');
+
+    $dest = sys_get_temp_dir().'/wayfindr-backup-attachdisk-'.bin2hex(random_bytes(6));
+
+    $this->artisan('wayfindr:backup', ['--path' => $dest])
+        ->assertFailed()
+        ->expectsOutputToContain('attachment disk');
+
+    // The local archive is intact.
+    expect(glob($dest.'/wayfindr-backup-*.tar.gz'))->toHaveCount(1);
+
+    exec('rm -rf '.escapeshellarg($dest));
+});
+
 test('an incomplete offsite upload fails the backup', function (): void {
     // A short/partial upload must not be reported as a durable offsite copy.
     app()->instance(DatabaseDumper::class, fakeDumper());

@@ -34,11 +34,14 @@ local-only, unchanged.
   not land — that is the exact false confidence backups exist to avoid. The
   message says the local archive is intact and the remote push failed.
 
-Unlike the attachment disk, the backup disk carries **no orphan-sweep hazard**,
-so it does not require the dedicated-name convention attachments enforce: the
-only thing that ever deletes on it is retention, and retention only ever removes
-files it can positively identify as Wayfindr archives (below). It may therefore
-be a shared bucket, though a dedicated one is cleaner.
+The backup disk **must not be an attachment disk** (a disk named `attachments*`,
+which `wayfindr:sweep-orphaned-attachments` reconciles): the sweep deletes any
+object on those disks with no matching attachment row, so it would treat backup
+archives as orphans and delete them. `wayfindr:backup` refuses such a disk with
+an actionable error. Any other disk is fine — it need not follow a dedicated
+naming convention, because the only thing that ever deletes on it is retention,
+and retention only removes files it can positively identify as Wayfindr archives
+(below). It may therefore be a shared bucket, though a dedicated one is cleaner.
 
 ### Retention — age-based, opt-in
 
