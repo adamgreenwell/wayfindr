@@ -144,6 +144,12 @@ return [
         // archives older than this many days on BOTH the local path and the
         // remote disk. 0/unset = keep everything (the operator prunes).
         'retention_days' => (int) env('WAYFINDR_BACKUP_RETENTION_DAYS', 0),
+
+        // Per-install namespace for offsite archives (ADR 0010). Uploads land
+        // under this key prefix and retention only ever prunes within it, so
+        // two installs can share one backup disk/bucket without pruning each
+        // other's archives. Unset = a stable prefix derived from APP_KEY.
+        'prefix' => env('WAYFINDR_BACKUP_PREFIX'),
     ],
 
     // Resolved through ReleaseIdentity so a blank env_file override falls

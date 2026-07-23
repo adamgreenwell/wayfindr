@@ -104,6 +104,27 @@ return [
             'report' => false,
         ],
 
+        // Optional offsite backup destination (ADR 0010): any S3-compatible
+        // object store, with its OWN credentials (separate from attachments).
+        // A deliberately non-`attachments*` name so wayfindr:backup accepts it
+        // and the orphaned-attachment sweep never touches it. Point
+        // WAYFINDR_BACKUP_DISK=backups and set these to enable offsite backup.
+        'backups' => [
+            'driver' => 's3',
+            'key' => env('WAYFINDR_BACKUP_S3_KEY'),
+            'secret' => env('WAYFINDR_BACKUP_S3_SECRET'),
+            'region' => env('WAYFINDR_BACKUP_S3_REGION', 'us-east-1'),
+            'bucket' => env('WAYFINDR_BACKUP_S3_BUCKET'),
+            'endpoint' => env('WAYFINDR_BACKUP_S3_ENDPOINT'),
+            'use_path_style_endpoint' => filter_var(env('WAYFINDR_BACKUP_S3_USE_PATH_STYLE', false), FILTER_VALIDATE_BOOL),
+            'root' => env('WAYFINDR_BACKUP_S3_ROOT', ''),
+            'options' => array_filter([
+                'ACL' => env('WAYFINDR_BACKUP_S3_ACL', 'bucket-owner-full-control'),
+            ]),
+            'throw' => false,
+            'report' => false,
+        ],
+
     ],
 
     /*

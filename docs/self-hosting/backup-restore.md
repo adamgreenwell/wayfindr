@@ -69,16 +69,24 @@ backup at all.
 
 ### Offsite mirror to a bucket
 
-Set `WAYFINDR_BACKUP_DISK` to a configured filesystem disk (S3, Cloudflare R2,
-MinIO — any Laravel/Flysystem disk) and `wayfindr:backup` uploads the finished
-archive to it after the local write. The local copy is always kept; the bucket
-is a mirror.
+Set `WAYFINDR_BACKUP_DISK` to a configured filesystem disk and `wayfindr:backup`
+uploads the finished archive to it after the local write. The local copy is
+always kept; the bucket is a mirror. The stack ships a ready `backups` disk for
+any S3-compatible store (AWS S3, Cloudflare R2, MinIO, B2, Spaces) with its own
+credentials — just fill these in:
 
 ```dotenv
-# A dedicated S3/R2 disk for backups (define it in config/filesystems.php or via
-# the same S3_* / R2 credentials attachments use, under a NON-attachments name).
 WAYFINDR_BACKUP_DISK=backups
+WAYFINDR_BACKUP_S3_BUCKET=my-wayfindr-backups
+WAYFINDR_BACKUP_S3_KEY=...
+WAYFINDR_BACKUP_S3_SECRET=...
+WAYFINDR_BACKUP_S3_REGION=auto            # R2/MinIO: as required by your store
+WAYFINDR_BACKUP_S3_ENDPOINT=https://<accountid>.r2.cloudflarestorage.com
+WAYFINDR_BACKUP_S3_USE_PATH_STYLE=true    # most non-AWS stores need this
 ```
+
+(Or point `WAYFINDR_BACKUP_DISK` at any other disk you define — anything except
+an `attachments*` disk.)
 
 The upload is verified (the object exists and its size matches the local
 archive). If a disk is configured but the upload fails, **the command fails**
@@ -89,7 +97,13 @@ retry.
 > The backup disk **must not be an attachment disk** (a disk named
 > `attachments*`). The orphaned-attachment sweep reconciles those disks and
 > would delete your backups as stray files; `wayfindr:backup` refuses such a
-> disk. Use a separate disk or bucket.
+> disk.
+
+**Sharing one bucket across installs is safe.** Each install stores its archives
+under a per-install key prefix (derived from `APP_KEY`, or set a readable one
+with `WAYFINDR_BACKUP_PREFIX`), and retention only ever prunes within that
+install's own prefix — one install's short retention window never erases
+another's archives.
 
 Prefer to keep the archive on the host instead of (or as well as) a bucket? Map
 a host path into the `web` service and point `WAYFINDR_BACKUP_PATH` at it, or

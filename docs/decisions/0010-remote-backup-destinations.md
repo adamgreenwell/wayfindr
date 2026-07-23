@@ -34,6 +34,15 @@ local-only, unchanged.
   not land — that is the exact false confidence backups exist to avoid. The
   message says the local archive is intact and the remote push failed.
 
+Offsite archives are stored under a **per-install key prefix** (set with
+`WAYFINDR_BACKUP_PREFIX`, or derived from `APP_KEY` by default), and retention
+prunes only within that prefix. Two installs may therefore share one backup
+bucket without one install's retention window erasing another's archives — the
+uploaded keys are otherwise indistinguishable, so an unscoped prune would be a
+cross-install data-loss footgun. The stack ships a ready `backups` disk (an
+S3-compatible disk with its own `WAYFINDR_BACKUP_S3_*` credentials) so offsite
+backup is turn-key.
+
 The backup disk **must not be an attachment disk** (a disk named `attachments*`,
 which `wayfindr:sweep-orphaned-attachments` reconciles): the sweep deletes any
 object on those disks with no matching attachment row, so it would treat backup

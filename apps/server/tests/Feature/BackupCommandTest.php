@@ -334,12 +334,13 @@ test('the finished archive is mirrored to the configured backup disk', function 
     config()->set('filesystems.disks.backups', ['driver' => 'local', 'root' => sys_get_temp_dir().'/wf-backups-'.bin2hex(random_bytes(4))]);
     Storage::fake('backups');
     config()->set('wayfindr.backup.disk', 'backups');
+    config()->set('wayfindr.backup.prefix', 'test-inst');
 
     $dest = sys_get_temp_dir().'/wayfindr-backup-remote-'.bin2hex(random_bytes(6));
 
     $result = app(BackupService::class)->create($dest);
 
-    $key = basename($result['path']);
+    $key = 'test-inst/'.basename($result['path']); // namespaced per install
 
     expect($result['remote'])->toBe(['disk' => 'backups', 'key' => $key])
         ->and(is_file($result['path']))->toBeTrue()               // local retained
@@ -485,17 +486,42 @@ test('retention prunes offsite archives older than the window and leaves other f
     Storage::fake('backups');
     config()->set('wayfindr.backup.disk', 'backups');
     config()->set('wayfindr.backup.retention_days', 7);
+    config()->set('wayfindr.backup.prefix', 'inst-a');
 
     $old = 'wayfindr-backup-'.now()->subDays(30)->format('Ymd-His').'-aaaaaa.tar.gz';
-    Storage::disk('backups')->put($old, 'x');
-    Storage::disk('backups')->put('unrelated.txt', 'x');
+    Storage::disk('backups')->put('inst-a/'.$old, 'x'); // this install's prefix
+    Storage::disk('backups')->put('unrelated.txt', 'x'); // outside the prefix
 
     $dest = sys_get_temp_dir().'/wayfindr-backup-remret-'.bin2hex(random_bytes(6));
 
     $this->artisan('wayfindr:backup', ['--path' => $dest])->assertSuccessful();
 
-    expect(Storage::disk('backups')->exists($old))->toBeFalse()               // pruned offsite
+    expect(Storage::disk('backups')->exists('inst-a/'.$old))->toBeFalse()     // pruned offsite
         ->and(Storage::disk('backups')->exists('unrelated.txt'))->toBeTrue(); // foreign file untouched
+
+    exec('rm -rf '.escapeshellarg($dest));
+});
+
+test('offsite retention never prunes another install prefix on a shared disk', function (): void {
+    app()->instance(DatabaseDumper::class, fakeDumper());
+    config()->set('wayfindr.attachments.storage_disk', 'attachments');
+    Storage::fake('attachments');
+    config()->set('filesystems.disks.backups', ['driver' => 'local', 'root' => sys_get_temp_dir().'/wf-backups-'.bin2hex(random_bytes(4))]);
+    Storage::fake('backups');
+    config()->set('wayfindr.backup.disk', 'backups');
+    config()->set('wayfindr.backup.retention_days', 7);
+    config()->set('wayfindr.backup.prefix', 'install-a');
+
+    // Another install's OLD archive, under ITS prefix, sharing the same disk.
+    $othersOld = 'install-b/wayfindr-backup-'.now()->subDays(60)->format('Ymd-His').'-cccccc.tar.gz';
+    Storage::disk('backups')->put($othersOld, 'x');
+
+    $dest = sys_get_temp_dir().'/wayfindr-backup-iso-'.bin2hex(random_bytes(6));
+
+    $this->artisan('wayfindr:backup', ['--path' => $dest])->assertSuccessful();
+
+    // install-a's retention scoped to its own prefix — install-b is untouched.
+    expect(Storage::disk('backups')->exists($othersOld))->toBeTrue();
 
     exec('rm -rf '.escapeshellarg($dest));
 });

@@ -168,7 +168,10 @@ class BackupService
             $disk = Storage::disk($diskName);
             $removed = 0;
 
-            foreach ($disk->files() as $path) {
+            // List ONLY this install's prefix — never the whole bucket — so a
+            // shorter window here cannot erase another install's archives that
+            // happen to share the disk.
+            foreach ($disk->files($this->backupPrefix()) as $path) {
                 $when = $this->archiveTimestamp(basename($path));
 
                 if ($when !== null && $when->lt($cutoff) && $disk->delete($path)) {
@@ -182,6 +185,22 @@ class BackupService
             // already succeeded; the next run reconciles.
             return 0;
         }
+    }
+
+    /**
+     * The per-install key prefix offsite archives are stored under and the ONLY
+     * prefix retention prunes within. Explicit WAYFINDR_BACKUP_PREFIX wins;
+     * otherwise a stable prefix derived from APP_KEY (unique per install,
+     * hashed so nothing secret leaks into the path) keeps two installs that
+     * share a backup disk from pruning each other's archives (ADR 0010).
+     */
+    private function backupPrefix(): string
+    {
+        $prefix = trim((string) config('wayfindr.backup.prefix'), '/');
+
+        return $prefix !== ''
+            ? $prefix
+            : 'wayfindr-backups/'.substr(hash('sha256', (string) config('app.key')), 0, 16);
     }
 
     /**
@@ -238,7 +257,9 @@ class BackupService
             }
 
             $disk = Storage::disk($diskName);
-            $key = basename($archivePath);
+            // Namespace the object per-install so a shared bucket is safe: the
+            // retention prune only ever reaches within this same prefix.
+            $key = $this->backupPrefix().'/'.basename($archivePath);
 
             $stream = fopen($archivePath, 'rb');
 
