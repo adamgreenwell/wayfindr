@@ -402,7 +402,8 @@ test('an unconfigured backup disk fails the command but keeps the local archive'
 
     $this->artisan('wayfindr:backup', ['--path' => $dest])
         ->assertFailed()
-        ->expectsOutputToContain('Offsite upload to [ghost-disk] FAILED');
+        ->expectsOutputToContain('Offsite upload to [ghost-disk] FAILED')
+        ->doesntExpectOutputToContain('Backup complete'); // never the success marker on a failed upload
 
     // The local archive is intact — an offsite failure never discards it.
     expect(backupArchivesUnder($dest))->toHaveCount(1);
@@ -473,6 +474,28 @@ test('the command reports a successful offsite copy', function (): void {
         ->expectsOutputToContain('Offsite copy uploaded to [backups]');
 
     exec('rm -rf '.escapeshellarg($dest));
+});
+
+test('local retention works even when the path/prefix contains glob metacharacters', function (): void {
+    // A backup PATH or PREFIX with [ ] ? * would make a glob-based scan look in
+    // the wrong place and silently skip retention. The directory is scanned
+    // literally, so the archive is still pruned.
+    config()->set('wayfindr.backup.disk', null);
+    config()->set('wayfindr.backup.retention_days', 7);
+    config()->set('wayfindr.backup.prefix', 'inst[a]');
+
+    $dir = sys_get_temp_dir().'/wayfindr-glob-'.bin2hex(random_bytes(6));
+    $home = $dir.'/inst[a]';
+    mkdir($home, 0700, true);
+    $old = 'wayfindr-backup-'.now()->subDays(30)->format('Ymd-His').'-aaaaaa.tar.gz';
+    file_put_contents($home.'/'.$old, 'x');
+
+    $pruned = app(BackupService::class)->pruneExpired($dir, null);
+
+    expect(is_file($home.'/'.$old))->toBeFalse() // pruned despite metachars in the path
+        ->and($pruned['local'])->toBe(1);
+
+    exec('rm -rf '.escapeshellarg($dir));
 });
 
 test('retention prunes local archives older than the window, by name not mtime', function (): void {

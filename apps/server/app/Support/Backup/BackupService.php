@@ -149,20 +149,30 @@ class BackupService
 
     private function pruneLocalArchives(string $dir, Carbon $cutoff, ?string $keep): int
     {
-        $removed = 0;
-
         // Only this install's prefix subdirectory — never the shared parent —
         // so a shorter window here cannot delete another install's archives.
         $scoped = rtrim($dir, '/').'/'.$this->backupPrefix();
 
-        foreach (glob($scoped.'/wayfindr-backup-*.tar.gz') ?: [] as $path) {
-            if ($keep !== null && basename($path) === $keep) {
+        if (! is_dir($scoped)) {
+            return 0;
+        }
+
+        $removed = 0;
+
+        // Scan the directory literally (not via glob): a backup PATH or PREFIX
+        // containing glob metacharacters ([ ] ? *) would make glob treat the
+        // real directory as a pattern and scan the wrong place, silently
+        // skipping retention. The filename is matched by archiveTimestamp's
+        // strict regex instead.
+        foreach (scandir($scoped) ?: [] as $name) {
+            if ($name === $keep) {
                 continue;
             }
 
-            $when = $this->archiveTimestamp(basename($path));
+            $when = $this->archiveTimestamp($name);
+            $path = $scoped.'/'.$name;
 
-            if ($when !== null && $when->lt($cutoff) && @unlink($path)) {
+            if ($when !== null && $when->lt($cutoff) && is_file($path) && @unlink($path)) {
                 $removed++;
             }
         }
