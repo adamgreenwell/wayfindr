@@ -94,6 +94,13 @@ fails. MinIO and other S3-compatibles vary; `private` is the safe fallback.
 (Or point `WAYFINDR_BACKUP_DISK` at any other disk you define — anything except
 an `attachments*` disk.)
 
+> **Reload config after setting these.** Wayfindr caches config, so env added
+> after the last `config:cache` (or after a deploy) is invisible until you
+> reload it. If the first backup reports `Offsite upload … FAILED: the upload
+> did not complete` right after configuring the disk, run `php artisan
+> config:clear` (or redeploy) and retry — the command was reading a stale,
+> empty disk config.
+
 The upload is verified (the object exists and its size matches the local
 archive). If a disk is configured but the upload fails, **the command fails**
 (non-zero exit) and says so — you are never told "backup complete" when the
