@@ -117,9 +117,10 @@ class BackupService
      * naming, dated by the timestamp IN THE NAME (not mtime, which an upload or
      * copy resets), and only when the age is confidently known.
      *
+     * @param  string|null  $keep  basename of the just-written archive, never pruned
      * @return array{days: int, local: int, remote: int}
      */
-    public function pruneExpired(string $localDir): array
+    public function pruneExpired(string $localDir, ?string $keep = null): array
     {
         $days = (int) config('wayfindr.backup.retention_days', 0);
 
@@ -131,16 +132,20 @@ class BackupService
 
         return [
             'days' => $days,
-            'local' => $this->pruneLocalArchives($localDir, $cutoff),
-            'remote' => $this->pruneRemoteArchives($cutoff),
+            'local' => $this->pruneLocalArchives($localDir, $cutoff, $keep),
+            'remote' => $this->pruneRemoteArchives($cutoff, $keep),
         ];
     }
 
-    private function pruneLocalArchives(string $dir, Carbon $cutoff): int
+    private function pruneLocalArchives(string $dir, Carbon $cutoff, ?string $keep): int
     {
         $removed = 0;
 
         foreach (glob(rtrim($dir, '/').'/wayfindr-backup-*.tar.gz') ?: [] as $path) {
+            if ($keep !== null && basename($path) === $keep) {
+                continue;
+            }
+
             $when = $this->archiveTimestamp(basename($path));
 
             if ($when !== null && $when->lt($cutoff) && @unlink($path)) {
@@ -151,7 +156,7 @@ class BackupService
         return $removed;
     }
 
-    private function pruneRemoteArchives(Carbon $cutoff): int
+    private function pruneRemoteArchives(Carbon $cutoff, ?string $keep): int
     {
         $diskName = trim((string) config('wayfindr.backup.disk'));
 
@@ -172,6 +177,10 @@ class BackupService
             // shorter window here cannot erase another install's archives that
             // happen to share the disk.
             foreach ($disk->files($this->backupPrefix()) as $path) {
+                if ($keep !== null && basename($path) === $keep) {
+                    continue;
+                }
+
                 $when = $this->archiveTimestamp(basename($path));
 
                 if ($when !== null && $when->lt($cutoff) && $disk->delete($path)) {

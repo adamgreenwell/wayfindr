@@ -72,7 +72,9 @@ class BackupCommand extends Command
         // Retention runs only after a fully successful backup (reached only past
         // the offsite-failure return above), so a bad run can never prune the
         // last good history (ADR 0010).
-        $pruned = $backups->pruneExpired($destination);
+        // Pass the just-written archive so retention can never delete it, even
+        // if a slow backup ran past a small window (ADR 0010).
+        $pruned = $backups->pruneExpired($destination, basename($result['path']));
 
         if ($pruned['days'] > 0 && ($pruned['local'] + $pruned['remote']) > 0) {
             $this->line(sprintf(

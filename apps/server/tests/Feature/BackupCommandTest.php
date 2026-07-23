@@ -529,6 +529,29 @@ test('offsite retention never prunes another install prefix on a shared disk', f
     exec('rm -rf '.escapeshellarg($dest));
 });
 
+test('retention never prunes the just-written archive, even with an old stamp', function (): void {
+    // A slow backup can finish more than the window after its name was stamped;
+    // the current archive must survive regardless of its parsed age.
+    config()->set('wayfindr.backup.disk', null);
+    config()->set('wayfindr.backup.retention_days', 7);
+
+    $dir = sys_get_temp_dir().'/wayfindr-keep-'.bin2hex(random_bytes(6));
+    mkdir($dir, 0700, true);
+
+    $current = 'wayfindr-backup-'.now()->subDays(30)->format('Ymd-His').'-abcdef.tar.gz';
+    $otherOld = 'wayfindr-backup-'.now()->subDays(31)->format('Ymd-His').'-bbbbbb.tar.gz';
+    file_put_contents($dir.'/'.$current, 'x');
+    file_put_contents($dir.'/'.$otherOld, 'x');
+
+    $pruned = app(BackupService::class)->pruneExpired($dir, $current);
+
+    expect(is_file($dir.'/'.$current))->toBeTrue()        // kept — it is this run's archive
+        ->and(is_file($dir.'/'.$otherOld))->toBeFalse()   // pruned — old, not the current one
+        ->and($pruned['local'])->toBe(1);
+
+    exec('rm -rf '.escapeshellarg($dir));
+});
+
 test('with retention unset, old archives are kept', function (): void {
     app()->instance(DatabaseDumper::class, fakeDumper());
     config()->set('wayfindr.attachments.storage_disk', 'attachments');
