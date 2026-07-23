@@ -83,7 +83,13 @@ WAYFINDR_BACKUP_S3_SECRET=...
 WAYFINDR_BACKUP_S3_REGION=auto            # R2/MinIO: as required by your store
 WAYFINDR_BACKUP_S3_ENDPOINT=https://<accountid>.r2.cloudflarestorage.com
 WAYFINDR_BACKUP_S3_USE_PATH_STYLE=true    # most non-AWS stores need this
+WAYFINDR_BACKUP_S3_ACL=private            # R2 requires this; the default suits AWS
 ```
+
+The disk defaults its object ACL to `bucket-owner-full-control`, which AWS
+buckets accept. Cloudflare R2 rejects any ACL but `private`, so set
+`WAYFINDR_BACKUP_S3_ACL=private` for R2 (as above) — otherwise every upload
+fails. MinIO and other S3-compatibles vary; `private` is the safe fallback.
 
 (Or point `WAYFINDR_BACKUP_DISK` at any other disk you define — anything except
 an `attachments*` disk.)
