@@ -134,6 +134,11 @@ return [
         // backups off the container's ephemeral layer; the default lives in
         // the durable storage volume (ADR 0009).
         'path' => env('WAYFINDR_BACKUP_PATH', storage_path('app/backups')),
+
+        // Optional offsite mirror (ADR 0010): a configured filesystem disk
+        // (S3/R2/MinIO/any) the finished archive is uploaded to after the local
+        // write. Unset = local-only. The local copy is always retained.
+        'disk' => env('WAYFINDR_BACKUP_DISK'),
     ],
 
     // Resolved through ReleaseIdentity so a blank env_file override falls

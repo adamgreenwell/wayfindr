@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Storage;
 use InvalidArgumentException;
 use RuntimeException;
 use Symfony\Component\Process\Process;
+use Throwable;
 
 /**
  * Assembles a Wayfindr backup archive (ADR 0009): a Postgres dump plus the
@@ -22,7 +23,7 @@ class BackupService
     public function __construct(private readonly DatabaseDumper $dumper) {}
 
     /**
-     * @return array{path: string, size: int, manifest: array<string, mixed>}
+     * @return array{path: string, size: int, manifest: array<string, mixed>, remote: array<string, string>|null}
      */
     public function create(string $destinationDir): array
     {
@@ -40,7 +41,7 @@ class BackupService
     }
 
     /**
-     * @return array{path: string, size: int, manifest: array<string, mixed>}
+     * @return array{path: string, size: int, manifest: array<string, mixed>, remote: array<string, string>|null}
      */
     private function assemble(string $destinationDir): array
     {
@@ -90,13 +91,78 @@ class BackupService
                 throw new RuntimeException("Could not finalize backup archive: {$archive}");
             }
 
+            $size = (int) (@filesize($archive) ?: 0);
+
             return [
                 'path' => $archive,
-                'size' => (int) (@filesize($archive) ?: 0),
+                'size' => $size,
                 'manifest' => $manifest,
+                // Mirror the finished archive offsite if a backup disk is
+                // configured. Reports its own failure (rather than throwing) so
+                // the command can say the local archive is intact AND that the
+                // offsite push failed — never "success" when offsite did not
+                // land (ADR 0010).
+                'remote' => $this->uploadToRemote($archive, $size),
             ];
         } finally {
             $this->removeDir($work);
+        }
+    }
+
+    /**
+     * Upload the finished archive to the configured backup disk, verifying the
+     * object exists and its size matches. Returns null when no disk is
+     * configured, {disk, key} on success, or {disk, error} on failure — a
+     * configured-but-failed upload is a backup failure the command must surface,
+     * but it never deletes the intact local archive (ADR 0010).
+     *
+     * @return array<string, string>|null
+     */
+    private function uploadToRemote(string $archivePath, int $localSize): ?array
+    {
+        $diskName = trim((string) config('wayfindr.backup.disk'));
+
+        if ($diskName === '') {
+            return null;
+        }
+
+        try {
+            if (config("filesystems.disks.{$diskName}") === null) {
+                throw new RuntimeException("[{$diskName}] is not a configured filesystem disk");
+            }
+
+            $disk = Storage::disk($diskName);
+            $key = basename($archivePath);
+
+            $stream = fopen($archivePath, 'rb');
+
+            if ($stream === false) {
+                throw new RuntimeException('could not open the local archive to upload');
+            }
+
+            try {
+                $written = $disk->writeStream($key, $stream);
+            } finally {
+                if (is_resource($stream)) {
+                    fclose($stream);
+                }
+            }
+
+            if ($written === false || ! $disk->exists($key)) {
+                throw new RuntimeException('the upload did not complete');
+            }
+
+            // Verify the whole archive landed — a short/partial upload must not
+            // be reported as a durable offsite copy.
+            $remoteSize = $disk->size($key);
+
+            if ($remoteSize !== $localSize) {
+                throw new RuntimeException("uploaded {$remoteSize} of {$localSize} bytes");
+            }
+
+            return ['disk' => $diskName, 'key' => $key];
+        } catch (Throwable $exception) {
+            return ['disk' => $diskName, 'error' => $exception->getMessage()];
         }
     }
 

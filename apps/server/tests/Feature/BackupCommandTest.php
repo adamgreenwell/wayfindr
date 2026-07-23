@@ -323,6 +323,109 @@ test('the command writes an archive and reports the storage posture', function (
     exec('rm -rf '.escapeshellarg($dest));
 });
 
+test('the finished archive is mirrored to the configured backup disk', function (): void {
+    // ADR 0010: with WAYFINDR_BACKUP_DISK set, the archive is uploaded offsite
+    // after the local write, and the local copy is retained.
+    app()->instance(DatabaseDumper::class, fakeDumper("-- DUMP\n"));
+    config()->set('wayfindr.attachments.storage_disk', 'attachments');
+    Storage::fake('attachments');
+    // Storage::fake does not register a filesystems.disks config entry; a real
+    // backup disk has one, and the command validates against it.
+    config()->set('filesystems.disks.backups', ['driver' => 'local', 'root' => sys_get_temp_dir().'/wf-backups-'.bin2hex(random_bytes(4))]);
+    Storage::fake('backups');
+    config()->set('wayfindr.backup.disk', 'backups');
+
+    $dest = sys_get_temp_dir().'/wayfindr-backup-remote-'.bin2hex(random_bytes(6));
+
+    $result = app(BackupService::class)->create($dest);
+
+    $key = basename($result['path']);
+
+    expect($result['remote'])->toBe(['disk' => 'backups', 'key' => $key])
+        ->and(is_file($result['path']))->toBeTrue()               // local retained
+        ->and(Storage::disk('backups')->exists($key))->toBeTrue() // offsite present
+        ->and(Storage::disk('backups')->size($key))->toBe($result['size']);
+
+    exec('rm -rf '.escapeshellarg($dest));
+});
+
+test('with no backup disk configured, the result has no remote copy', function (): void {
+    app()->instance(DatabaseDumper::class, fakeDumper());
+    config()->set('wayfindr.attachments.storage_disk', 'attachments');
+    config()->set('wayfindr.backup.disk', null);
+    Storage::fake('attachments');
+
+    $dest = sys_get_temp_dir().'/wayfindr-backup-local-'.bin2hex(random_bytes(6));
+
+    $result = app(BackupService::class)->create($dest);
+
+    expect($result['remote'])->toBeNull();
+
+    exec('rm -rf '.escapeshellarg($dest));
+});
+
+test('an unconfigured backup disk fails the command but keeps the local archive', function (): void {
+    app()->instance(DatabaseDumper::class, fakeDumper());
+    config()->set('wayfindr.attachments.storage_disk', 'attachments');
+    Storage::fake('attachments');
+    config()->set('wayfindr.backup.disk', 'ghost-disk'); // not in filesystems.disks
+
+    $dest = sys_get_temp_dir().'/wayfindr-backup-ghost-'.bin2hex(random_bytes(6));
+
+    $this->artisan('wayfindr:backup', ['--path' => $dest])
+        ->assertFailed()
+        ->expectsOutputToContain('Offsite upload to [ghost-disk] FAILED');
+
+    // The local archive is intact — an offsite failure never discards it.
+    expect(glob($dest.'/wayfindr-backup-*.tar.gz'))->toHaveCount(1);
+
+    exec('rm -rf '.escapeshellarg($dest));
+});
+
+test('an incomplete offsite upload fails the backup', function (): void {
+    // A short/partial upload must not be reported as a durable offsite copy.
+    app()->instance(DatabaseDumper::class, fakeDumper());
+    config()->set('wayfindr.attachments.storage_disk', 'attachments');
+    Storage::fake('attachments');
+    config()->set('filesystems.disks.backups', ['driver' => 'local']);
+    config()->set('wayfindr.backup.disk', 'backups');
+
+    // Swap only the backups disk for one that accepts the write but reports a
+    // truncated size (attachments keeps its real fake disk).
+    $backups = Mockery::mock(Filesystem::class);
+    $backups->shouldReceive('writeStream')->once()->andReturn(true);
+    $backups->shouldReceive('exists')->andReturn(true);
+    $backups->shouldReceive('size')->andReturn(1); // wrong size
+    Storage::set('backups', $backups);
+
+    $dest = sys_get_temp_dir().'/wayfindr-backup-short-'.bin2hex(random_bytes(6));
+
+    $this->artisan('wayfindr:backup', ['--path' => $dest])
+        ->assertFailed()
+        ->expectsOutputToContain('Offsite upload to [backups] FAILED');
+
+    expect(glob($dest.'/wayfindr-backup-*.tar.gz'))->toHaveCount(1);
+
+    exec('rm -rf '.escapeshellarg($dest));
+});
+
+test('the command reports a successful offsite copy', function (): void {
+    app()->instance(DatabaseDumper::class, fakeDumper());
+    config()->set('wayfindr.attachments.storage_disk', 'attachments');
+    Storage::fake('attachments');
+    config()->set('filesystems.disks.backups', ['driver' => 'local', 'root' => sys_get_temp_dir().'/wf-backups-'.bin2hex(random_bytes(4))]);
+    Storage::fake('backups');
+    config()->set('wayfindr.backup.disk', 'backups');
+
+    $dest = sys_get_temp_dir().'/wayfindr-backup-offsite-'.bin2hex(random_bytes(6));
+
+    $this->artisan('wayfindr:backup', ['--path' => $dest])
+        ->assertSuccessful()
+        ->expectsOutputToContain('Offsite copy uploaded to [backups]');
+
+    exec('rm -rf '.escapeshellarg($dest));
+});
+
 test('a dump failure surfaces as a command failure, not a half-written archive', function (): void {
     app()->instance(DatabaseDumper::class, new class implements DatabaseDumper
     {

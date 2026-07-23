@@ -53,6 +53,22 @@ class BackupCommand extends Command
         // maintenance-posture backup avoids the window entirely (ADR 0009).
         $this->line('  For a guaranteed-consistent snapshot, back up with writes quiesced; restore verifies attachment integrity either way.');
 
+        // Offsite mirror (ADR 0010). A configured-but-failed upload is a backup
+        // failure — the operator asked for offsite, so do not report success —
+        // but the local archive is intact.
+        $remote = $result['remote'] ?? null;
+
+        if (is_array($remote) && isset($remote['error'])) {
+            $this->error('  Offsite upload to ['.$remote['disk'].'] FAILED: '.$remote['error'].'.');
+            $this->line('  The local archive is intact at '.$result['path'].'; fix the disk config and retry.');
+
+            return self::FAILURE;
+        }
+
+        if (is_array($remote) && isset($remote['key'])) {
+            $this->line('  Offsite copy uploaded to ['.$remote['disk'].']: '.$remote['key']);
+        }
+
         return self::SUCCESS;
     }
 
