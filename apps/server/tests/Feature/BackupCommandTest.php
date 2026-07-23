@@ -476,6 +476,47 @@ test('the command reports a successful offsite copy', function (): void {
     exec('rm -rf '.escapeshellarg($dest));
 });
 
+test('a backup prefix with traversal segments is rejected before writing', function (): void {
+    app()->instance(DatabaseDumper::class, fakeDumper());
+    config()->set('wayfindr.attachments.storage_disk', 'attachments');
+    Storage::fake('attachments');
+    config()->set('wayfindr.backup.disk', null);
+    config()->set('wayfindr.backup.prefix', '../install-b'); // escapes the destination
+
+    $parent = sys_get_temp_dir().'/wayfindr-trav-'.bin2hex(random_bytes(6));
+    $dest = $parent.'/dest';
+    mkdir($dest, 0700, true);
+
+    $this->artisan('wayfindr:backup', ['--path' => $dest])
+        ->assertFailed()
+        ->expectsOutputToContain("must not contain '..'");
+
+    // The traversal target ($dest/../install-b) was never created.
+    expect(is_dir($parent.'/install-b'))->toBeFalse();
+
+    exec('rm -rf '.escapeshellarg($parent));
+});
+
+test('local retention is best-effort when the prefix directory cannot be listed', function (): void {
+    config()->set('wayfindr.backup.disk', null);
+    config()->set('wayfindr.backup.retention_days', 7);
+    config()->set('wayfindr.backup.prefix', 'inst');
+
+    $dir = sys_get_temp_dir().'/wayfindr-unreadable-'.bin2hex(random_bytes(6));
+    $home = $dir.'/inst';
+    mkdir($home, 0700, true);
+    file_put_contents($home.'/wayfindr-backup-'.now()->subDays(30)->format('Ymd-His').'-aaaaaa.tar.gz', 'x');
+    chmod($home, 0000); // unreadable
+
+    // Must not throw — retention is best-effort after a successful backup.
+    $pruned = app(BackupService::class)->pruneExpired($dir, null);
+
+    expect($pruned['local'])->toBe(0);
+
+    chmod($home, 0700); // restore so cleanup can remove it
+    exec('rm -rf '.escapeshellarg($dir));
+})->skip(fn (): bool => function_exists('posix_getuid') && posix_getuid() === 0, 'root bypasses directory permissions');
+
 test('local retention works even when the path/prefix contains glob metacharacters', function (): void {
     // A backup PATH or PREFIX with [ ] ? * would make a glob-based scan look in
     // the wrong place and silently skip retention. The directory is scanned

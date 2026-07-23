@@ -49,6 +49,10 @@ class BackupService
             throw new RuntimeException("Backup destination is not writable: {$destinationDir}");
         }
 
+        // Validate the backup prefix up front so a misconfigured one fails
+        // before the (potentially long) dump, not after.
+        $this->backupPrefix();
+
         $timestamp = Carbon::now();
         // Assemble on the DESTINATION volume, not /tmp: a large dump plus
         // attachment copies could overflow the container's small /tmp while the
@@ -149,32 +153,39 @@ class BackupService
 
     private function pruneLocalArchives(string $dir, Carbon $cutoff, ?string $keep): int
     {
-        // Only this install's prefix subdirectory — never the shared parent —
-        // so a shorter window here cannot delete another install's archives.
-        $scoped = rtrim($dir, '/').'/'.$this->backupPrefix();
-
-        if (! is_dir($scoped)) {
-            return 0;
-        }
-
         $removed = 0;
 
-        // Scan the directory literally (not via glob): a backup PATH or PREFIX
-        // containing glob metacharacters ([ ] ? *) would make glob treat the
-        // real directory as a pattern and scan the wrong place, silently
-        // skipping retention. The filename is matched by archiveTimestamp's
-        // strict regex instead.
-        foreach (scandir($scoped) ?: [] as $name) {
-            if ($name === $keep) {
-                continue;
+        try {
+            // Only this install's prefix subdirectory — never the shared parent
+            // — so a shorter window here cannot delete another install's
+            // archives.
+            $scoped = rtrim($dir, '/').'/'.$this->backupPrefix();
+
+            if (! is_dir($scoped)) {
+                return 0;
             }
 
-            $when = $this->archiveTimestamp($name);
-            $path = $scoped.'/'.$name;
+            // Scan the directory literally (not via glob): a backup PATH or
+            // PREFIX containing glob metacharacters ([ ] ? *) would make glob
+            // treat the real directory as a pattern and scan the wrong place,
+            // silently skipping retention. The filename is matched by
+            // archiveTimestamp's strict regex instead.
+            foreach (scandir($scoped) ?: [] as $name) {
+                if ($name === $keep) {
+                    continue;
+                }
 
-            if ($when !== null && $when->lt($cutoff) && is_file($path) && @unlink($path)) {
-                $removed++;
+                $when = $this->archiveTimestamp($name);
+                $path = $scoped.'/'.$name;
+
+                if ($when !== null && $when->lt($cutoff) && is_file($path) && @unlink($path)) {
+                    $removed++;
+                }
             }
+        } catch (Throwable) {
+            // Best-effort, like the remote prune: a list/delete failure (e.g. an
+            // unreadable mounted directory) must not fail a backup whose archive
+            // and offsite upload already succeeded.
         }
 
         return $removed;
@@ -231,9 +242,19 @@ class BackupService
     {
         $prefix = trim((string) config('wayfindr.backup.prefix'), '/');
 
-        return $prefix !== ''
-            ? $prefix
-            : 'wayfindr-backups/'.substr(hash('sha256', (string) config('app.key')), 0, 16);
+        if ($prefix === '') {
+            return 'wayfindr-backups/'.substr(hash('sha256', (string) config('app.key')), 0, 16);
+        }
+
+        // A prefix is a relative namespace UNDER the backup path/bucket, never
+        // an escape from it. Reject traversal so a stray `..` cannot write
+        // archives outside the destination or point retention at a sibling
+        // install's directory (which would break the isolation guarantee).
+        if (preg_match('#(^|/)\.\.(/|$)#', $prefix) === 1) {
+            throw new RuntimeException("WAYFINDR_BACKUP_PREFIX must not contain '..' path segments; got [{$prefix}].");
+        }
+
+        return $prefix;
     }
 
     /**
