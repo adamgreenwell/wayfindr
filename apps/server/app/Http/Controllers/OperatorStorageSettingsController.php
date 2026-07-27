@@ -137,13 +137,19 @@ class OperatorStorageSettingsController extends Controller
             // whatever config it currently holds (ConversationMessageAttachment::
             // disk()), so changing the bucket, endpoint, or region would silently
             // point them at a different location and strand them. Block a location
-            // change while the disk holds files — credential rotation, ACL, and
-            // path-style stay allowed because they keep the same location.
-            if ($this->s3LocationChanged($settings, $validated)
-                && ConversationMessageAttachment::query()->where('storage_disk', self::S3_DISK)->exists()) {
+            // change while the disk holds files OR is the active upload target
+            // (an in-flight upload has already resolved the old location and would
+            // land a row against the new one). The operator must switch storage to
+            // the local disk first — draining new S3 uploads — before the S3
+            // location can change. Credential, ACL, and path-style changes keep the
+            // same location and stay allowed.
+            $s3IsActive = $currentDisk === self::S3_DISK;
+            $s3HasRows = ConversationMessageAttachment::query()->where('storage_disk', self::S3_DISK)->exists();
+
+            if ($this->s3LocationChanged($settings, $validated) && ($s3IsActive || $s3HasRows)) {
                 return redirect()
                     ->route('operator.settings.storage.edit', $this->returnParams($request))
-                    ->withErrors(['bucket' => 'The '.self::S3_DISK.' disk already stores uploaded attachments. Changing the bucket, endpoint, or region would make them unreachable, since existing files are recorded against this disk name. Keep the current bucket, endpoint, and region (credential, ACL, and path-style changes are fine); to move buckets, migrate the objects and update the environment directly.'])
+                    ->withErrors(['bucket' => 'Changing the S3 bucket, endpoint, or region is not allowed while S3 is the active storage disk or already holds attachments — existing or in-flight uploads would be stranded. Switch storage to the local disk first, then change the S3 connection. If attachments already live on S3, migrate the objects and update the environment directly.'])
                     ->withInput($request->except(['s3_access_key', 's3_secret_key']));
             }
         }

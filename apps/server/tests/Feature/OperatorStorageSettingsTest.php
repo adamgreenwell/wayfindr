@@ -261,6 +261,27 @@ test('changing the S3 location is blocked while attachments already exist there'
     expect($settings->get('storage.s3_bucket'))->toBe('current-bucket'); // unchanged
 });
 
+test('changing the S3 location is blocked while S3 is the active disk, even with no attachments yet', function (): void {
+    $settings = storageSettings();
+    $settings->set('storage.disk', 'attachments-s3'); // S3 is the live upload target
+    $settings->set('storage.s3_bucket', 'current-bucket');
+    $settings->set('storage.s3_region', 'us-east-1');
+    $settings->set('storage.s3_key', 'k');
+    $settings->set('storage.s3_secret', 's');
+    // No attachments recorded on the disk yet — but an upload could be in flight.
+
+    $this->actingAs(storageOperator())
+        ->post(route('operator.settings.storage.update'), [
+            'disk' => 'attachments-s3',
+            'bucket' => 'a-different-bucket',
+            'region' => 'us-east-1',
+            'acl' => 'private',
+        ])
+        ->assertSessionHasErrors('bucket');
+
+    expect($settings->get('storage.s3_bucket'))->toBe('current-bucket');
+});
+
 test('rotating S3 credentials is allowed while attachments exist (same location)', function (): void {
     $settings = storageSettings();
     $settings->set('storage.disk', 'attachments-s3');
