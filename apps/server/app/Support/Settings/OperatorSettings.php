@@ -287,6 +287,29 @@ class OperatorSettings
     }
 
     /**
+     * Like secretStatus(), but reflects the EFFECTIVE credential: with no stored
+     * override, a non-empty env/baseline value still counts as 'set'. Use this
+     * for a write-only status display so an existing environment credential
+     * (MAIL_PASSWORD, or a credential-bearing MAIL_URL folded into config by
+     * applyOverrides) is not shown as "none" — which could tempt an operator
+     * into blanking a working password.
+     *
+     * An explicit override always wins: a stored value ('set'), a deliberate
+     * empty no-password ('none'), or an unreadable ciphertext ('unreadable')
+     * is never masked by the env fallback.
+     */
+    public function effectiveSecretStatus(string $key): string
+    {
+        $override = $this->secretStatus($key);
+
+        if ($override !== 'none' || $this->isSet($key)) {
+            return $override;
+        }
+
+        return trim((string) config(self::MANAGED[$key]['config'])) !== '' ? 'set' : 'none';
+    }
+
+    /**
      * Store (or clear, on null) a managed setting. Secrets are encrypted at
      * rest. Bumps the cache version so the change is live on the next
      * request/job. Auditing is the caller's job — the controller has the actor

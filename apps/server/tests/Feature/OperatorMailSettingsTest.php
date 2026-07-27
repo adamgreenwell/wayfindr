@@ -77,6 +77,20 @@ test('the stored password is never echoed back to the browser', function (): voi
         ->assertDontSee('top-secret-pw');
 });
 
+test('an environment-supplied password shows as configured, not "no password saved"', function (): void {
+    // An existing install: MAIL_PASSWORD supplies the effective credential and
+    // there is no operator override. The form must not imply it is empty, or an
+    // operator could blank a working env password.
+    config()->set('mail.mailers.smtp.password', 'env-secret');
+
+    $this->actingAs(operatorUser())
+        ->get(route('operator.settings.mail.edit'))
+        ->assertOk()
+        ->assertDontSee('No password saved')
+        ->assertSee('a password is configured')
+        ->assertDontSee('env-secret'); // never echoed
+});
+
 test('an undecryptable stored password renders the form with a warning instead of a 500', function (): void {
     // Ciphertext that no longer decrypts (e.g. the APP_KEY was rotated). Written
     // directly so it bypasses set()'s encryption and lands as a bad value.

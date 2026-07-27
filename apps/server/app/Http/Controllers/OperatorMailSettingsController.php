@@ -26,8 +26,10 @@ class OperatorMailSettingsController extends Controller
         $mailer = (string) $settings->effective('mail.mailer');
         // Determine the password's status without decrypting it into the view:
         // a bad ciphertext (e.g. after an APP_KEY change) must not 500 the form,
-        // or the operator can't reach the UI to re-enter or clear it.
-        $passwordStatus = $settings->secretStatus('mail.password');
+        // or the operator can't reach the UI to re-enter or clear it. The
+        // *effective* status also counts an env/MAIL_URL credential as set, so
+        // the form never implies "no password" when one is working from env.
+        $passwordStatus = $settings->effectiveSecretStatus('mail.password');
 
         return view('operator.settings.mail', [
             'operator' => $request->user(),
