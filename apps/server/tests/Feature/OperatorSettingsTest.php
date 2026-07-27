@@ -8,6 +8,7 @@ use App\Models\OperatorSetting;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Mail;
 
 uses(RefreshDatabase::class);
 
@@ -19,6 +20,7 @@ function settings(): OperatorSettings
 test('applyOverrides overrides config from stored settings', function (): void {
     config()->set('mail.default', 'log');
     config()->set('mail.mailers.smtp.host', '127.0.0.1');
+    settings()->captureBaseline();
 
     settings()->set('mail.mailer', 'smtp');
     settings()->set('mail.host', 'smtp.example.com');
@@ -31,10 +33,41 @@ test('applyOverrides overrides config from stored settings', function (): void {
 
 test('with no override stored, the env/config default stands', function (): void {
     config()->set('mail.mailers.smtp.host', '127.0.0.1');
+    settings()->captureBaseline();
 
     settings()->applyOverrides();
 
     expect(config('mail.mailers.smtp.host'))->toBe('127.0.0.1');
+});
+
+test('a cleared override reverts config to the env baseline (not left stale on a worker)', function (): void {
+    config()->set('mail.mailers.smtp.host', 'env-host');
+    settings()->captureBaseline();
+
+    settings()->set('mail.host', 'operator-host');
+    settings()->applyOverrides();
+    expect(config('mail.mailers.smtp.host'))->toBe('operator-host');
+
+    // Operator clears the setting; a later request/job must restore env, not
+    // keep the old override the way a plain skip would on a persistent worker.
+    settings()->set('mail.host', null);
+    settings()->applyOverrides();
+    expect(config('mail.mailers.smtp.host'))->toBe('env-host');
+});
+
+test('applying settings forgets cached mailers so a mail config change takes effect', function (): void {
+    config()->set('mail.default', 'smtp');
+    config()->set('mail.mailers.smtp.host', 'old-host');
+    settings()->captureBaseline();
+
+    $first = Mail::mailer('smtp'); // built + cached with old-host
+
+    settings()->set('mail.host', 'new-host');
+    settings()->applyOverrides();
+
+    // A freshly-built mailer (the manager was purged), so the next send uses the
+    // new config rather than the stale cached transport.
+    expect(Mail::mailer('smtp'))->not->toBe($first);
 });
 
 test('secret settings are encrypted at rest and decrypted on apply', function (): void {
@@ -71,17 +104,13 @@ test('effective returns the stored value when set, else the config default', fun
     expect(settings()->effective('mail.from_address'))->toBe('operator@example.com');
 });
 
-test('setting null clears the override and reverts to the env default', function (): void {
-    config()->set('mail.mailers.smtp.host', 'env-host');
+test('setting null clears the stored override', function (): void {
     settings()->set('mail.host', 'operator-host');
     expect(settings()->isSet('mail.host'))->toBeTrue();
 
     settings()->set('mail.host', null);
 
     expect(settings()->isSet('mail.host'))->toBeFalse();
-
-    settings()->applyOverrides();
-    expect(config('mail.mailers.smtp.host'))->toBe('env-host'); // unchanged by a cleared setting
 });
 
 test('an unregistered key cannot be read or written', function (): void {

@@ -5,6 +5,7 @@ namespace App\Support\Settings;
 use App\Models\OperatorSetting;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Mail;
 use InvalidArgumentException;
 
 /**
@@ -43,20 +44,52 @@ class OperatorSettings
     ];
 
     /**
-     * Apply the stored overrides onto config for every managed key that has a
-     * value. Called at boot (per web request) and before each queued job, so a
-     * change made in the browser is live without a restart.
+     * The env/config defaults for the managed paths, snapshotted once before any
+     * override is applied, so a CLEARED override can be restored rather than
+     * left stale on a long-running worker.
+     *
+     * @var array<string, mixed>|null
+     */
+    private ?array $baseline = null;
+
+    /**
+     * Apply the stored settings onto config for every managed key. Called at
+     * boot (per web request) and before each queued job, so a change made in the
+     * browser is live without a restart. Every managed path is set to the
+     * operator's value if present, else the env baseline — a key whose override
+     * was just cleared reverts to env on the next request/job rather than
+     * keeping the old value on a persistent worker.
      */
     public function applyOverrides(): void
     {
+        if ($this->baseline === null) {
+            $this->captureBaseline();
+        }
+
         $stored = $this->storedValues();
 
         foreach (self::MANAGED as $key => $meta) {
-            if (! array_key_exists($key, $stored) || $stored[$key] === null) {
-                continue;
-            }
+            $value = (array_key_exists($key, $stored) && $stored[$key] !== null)
+                ? $this->decode($key, $stored[$key])
+                : $this->baseline[$meta['config']];
 
-            config()->set($meta['config'], $this->decode($key, $stored[$key]));
+            config()->set($meta['config'], $value);
+        }
+
+        $this->refreshManagers();
+    }
+
+    /**
+     * Snapshot the current config as the env baseline for the managed paths.
+     * Called automatically before the first override is applied (when config is
+     * still env-derived). Exposed so a test can establish a known baseline.
+     */
+    public function captureBaseline(): void
+    {
+        $this->baseline = [];
+
+        foreach (self::MANAGED as $meta) {
+            $this->baseline[$meta['config']] = config($meta['config']);
         }
     }
 
@@ -150,6 +183,19 @@ class OperatorSettings
             self::CACHE_KEY,
             fn (): array => OperatorSetting::query()->pluck('value', 'key')->all(),
         );
+    }
+
+    /**
+     * Framework managers cache the instances they build from config (the
+     * MailManager caches the SMTP transport with its host, credentials, and
+     * global sender). Forget them after applying overrides so refreshed config —
+     * including a cleared override — takes effect on a long-running worker
+     * without a restart. Future managed groups (storage, backup) add their own
+     * invalidation here.
+     */
+    private function refreshManagers(): void
+    {
+        Mail::forgetMailers();
     }
 
     private function decode(string $key, ?string $raw): ?string
