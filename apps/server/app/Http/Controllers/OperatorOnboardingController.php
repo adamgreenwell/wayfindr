@@ -18,42 +18,58 @@ use Illuminate\Http\Request;
 class OperatorOnboardingController extends Controller
 {
     /**
-     * The essential steps, in guided order — mail first. Each maps a readiness
-     * check key to an optional operator-config GUI route so the diagnostic
-     * becomes actionable instead of copy-a-command.
+     * The essential steps, in guided order — mail first. Each names a readiness
+     * item by source ('check' for a runtime probe, 'smoke' for a manual-proof
+     * step) and key, plus an optional operator-config GUI route so the
+     * diagnostic becomes actionable instead of copy-a-command.
      *
-     * @var list<array{key: string, configure?: string, configure_label?: string, configured_label?: string}>
+     * Background workers use the confirmable 'background_processes' smoke step
+     * rather than the raw 'queue_worker' check: a queue driver being async only
+     * proves config, not that a queue:work process is actually running, so
+     * completion requires the operator's manual attestation (which also covers
+     * the scheduler) instead of a driver-only "ready".
+     *
+     * @var list<array{source: string, key: string, configure?: string, configure_label?: string, configured_label?: string}>
      */
     private const ESSENTIAL_STEPS = [
         [
+            'source' => 'check',
             'key' => 'mail_transport',
             'configure' => 'operator.settings.mail.edit',
             'configure_label' => 'Configure mail',
             'configured_label' => 'Manage mail settings',
         ],
-        ['key' => 'public_url'],
-        ['key' => 'queue_worker'],
-        ['key' => 'scheduler'],
-        ['key' => 'backups_restore'],
+        ['source' => 'check', 'key' => 'public_url'],
+        ['source' => 'smoke', 'key' => 'background_processes'],
+        ['source' => 'check', 'key' => 'backups_restore'],
     ];
 
     public function __invoke(Request $request, OperatorReadiness $readiness): View
     {
         $summary = $readiness->summary();
         $checksByKey = collect($summary['checks'])->keyBy('key');
+        $smokeByKey = collect($summary['smoke_path'])->keyBy('key');
 
         $steps = collect(self::ESSENTIAL_STEPS)
-            ->map(function (array $meta) use ($checksByKey): ?array {
-                $check = $checksByKey->get($meta['key']);
+            ->map(function (array $meta) use ($checksByKey, $smokeByKey): ?array {
+                $item = $meta['source'] === 'smoke'
+                    ? $smokeByKey->get($meta['key'])
+                    : $checksByKey->get($meta['key']);
 
-                if ($check === null) {
+                if ($item === null) {
                     return null;
                 }
 
-                $isReady = $check['status'] === 'ready';
+                $isReady = $item['status'] === 'ready';
 
                 return [
-                    'check' => $check,
+                    // Smoke steps carry no 'detail'; fall back to the summary so
+                    // the shared card template renders uniformly.
+                    'check' => [
+                        ...$item,
+                        'detail' => $item['detail'] ?? $item['summary'],
+                        'commands' => $item['commands'] ?? [],
+                    ],
                     // Carry the onboarding origin so the config page's back link
                     // and its save/test actions return here, not to the dashboard.
                     'configure_url' => isset($meta['configure']) ? route($meta['configure'], ['from' => 'onboarding']) : null,

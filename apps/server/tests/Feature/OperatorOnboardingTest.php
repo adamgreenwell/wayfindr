@@ -33,11 +33,26 @@ test('the onboarding checklist is mail-first with an inline configure action', f
         ->assertOk()
         ->assertSee('Essential steps')
         ->assertSee('Configure the essentials')
-        ->assertSee('of 5 ready')
+        ->assertSee('of 4 ready')
         // The mail step offers a GUI Configure action, not just a CLI command.
         ->assertSee(route('operator.settings.mail.edit'), false)
-        // Mail leads the guided order.
-        ->assertSeeInOrder(['Mail transport', 'Public URL', 'Queue worker', 'Scheduler', 'Backups and restore']);
+        // Mail leads the guided order; background workers are a single confirmable
+        // step (not a driver-only "Queue worker" that overclaims readiness).
+        ->assertSeeInOrder(['Mail transport', 'Public URL', 'Confirm background workers', 'Backups and restore'])
+        ->assertDontSee('Queue worker');
+});
+
+test('an async queue driver alone does not mark background workers ready', function (): void {
+    // A configured async driver only proves config, not that a worker runs — so
+    // the step stays a manual attestation rather than auto-completing.
+    config()->set('queue.default', 'database');
+
+    $this->actingAs(onboardingOperator())
+        ->get(route('operator.onboarding'))
+        ->assertOk()
+        ->assertSee('Confirm background workers')
+        // The confirmable smoke step exposes a mark-confirmed control.
+        ->assertSee('Mark confirmed');
 });
 
 test('the onboarding checklist shows the connect-your-first-site card', function (): void {
