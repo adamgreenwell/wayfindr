@@ -137,6 +137,49 @@ class OperatorSettings
             return $this->baseline;
         }
 
+        return $this->resolveTargetsFrom($stored);
+    }
+
+    /**
+     * Re-apply overrides onto config from a FRESH, uncached database read. For
+     * callers that must see the latest committed settings even within the tiny
+     * window between a write's commit and its deferred cache-version bump — the
+     * attachment upload path re-resolving its disk under a shared lock. Falls
+     * back to the env baseline if the direct read fails.
+     *
+     * This updates config only; it deliberately does NOT forget built managers
+     * (disks/mailers). The caller resolves and builds its disk AFTER this call,
+     * so it picks up the refreshed config without a forget — which also keeps a
+     * Storage::fake() disk intact in tests.
+     */
+    public function refreshFromDatabase(): void
+    {
+        if ($this->baseline === null) {
+            $this->captureBaseline();
+        }
+
+        try {
+            $stored = OperatorSetting::query()->pluck('value', 'key')->all();
+            $targets = $this->resolveTargetsFrom($stored);
+        } catch (Throwable) {
+            $targets = $this->baseline;
+        }
+
+        foreach ($targets as $configPath => $value) {
+            config()->set($configPath, $value);
+        }
+    }
+
+    /**
+     * The config value to apply for every managed path from a given stored map —
+     * the operator's value when readable, else the env baseline. Never throws and
+     * never returns a partial map.
+     *
+     * @param  array<string, string|null>  $stored
+     * @return array<string, mixed>
+     */
+    private function resolveTargetsFrom(array $stored): array
+    {
         $targets = [];
 
         foreach (self::MANAGED as $key => $meta) {

@@ -156,10 +156,17 @@ class OperatorDashboardController extends Controller
                 ],
                 [
                     'label' => 'Credentials',
-                    'value' => in_array('updated', [
-                        data_get($event->metadata, 'key_changed'),
-                        data_get($event->metadata, 'secret_changed'),
-                    ], true) ? 'Updated' : 'Unchanged',
+                    'value' => match (true) {
+                        in_array('updated', [
+                            data_get($event->metadata, 'key_changed'),
+                            data_get($event->metadata, 'secret_changed'),
+                        ], true) => 'Updated',
+                        in_array('cleared', [
+                            data_get($event->metadata, 'key_changed'),
+                            data_get($event->metadata, 'secret_changed'),
+                        ], true) => 'Cleared',
+                        default => 'Unchanged',
+                    },
                 ],
                 [
                     'label' => 'Event type',

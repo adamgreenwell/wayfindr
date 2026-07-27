@@ -7,6 +7,7 @@ use App\Models\ConversationMessageAttachment;
 use App\Models\OperatorSetting;
 use App\Models\Site;
 use App\Support\Attachments\Scanning\AttachmentScanner;
+use App\Support\Settings\OperatorSettings;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -95,6 +96,11 @@ class AttachmentUploadService
             // uploads still run concurrently with each other.
             OperatorSetting::query()->firstOrCreate(['key' => 'storage.disk']);
             OperatorSetting::query()->where('key', 'storage.disk')->sharedLock()->first();
+            // Re-apply the committed storage settings from the DB under the lock:
+            // this request's config was bootstrapped at boot and the shared lock
+            // alone does not refresh it, so without this the disk could still
+            // resolve a stale bucket after a concurrent location change.
+            app(OperatorSettings::class)->refreshFromDatabase();
             $diskName = AttachmentStorage::diskName();
 
             $existingBytes = (int) ConversationMessageAttachment::query()

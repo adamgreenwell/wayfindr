@@ -8,6 +8,7 @@ use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\ConversationMessageAttachment;
+use App\Models\OperatorSetting;
 use App\Models\User;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -266,6 +267,45 @@ test('the role option clears both stored S3 credentials together', function (): 
     // Both cleared to an explicit empty override → the SDK provider chain is used.
     expect($settings->get('storage.s3_key'))->toBe('')
         ->and($settings->get('storage.s3_secret'))->toBe('');
+});
+
+test('refreshFromDatabase applies committed settings even when the cache is stale', function (): void {
+    $settings = storageSettings();
+    $settings->set('storage.disk', 'attachments-s3');
+    $settings->set('storage.s3_bucket', 'bucket-a');
+    $settings->applyOverrides(); // config now holds bucket-a (cached under the current version)
+
+    // Write a newer value straight to the DB, bypassing set()'s version bump — so
+    // the versioned cache still returns bucket-a (as a stale request would).
+    OperatorSetting::query()->where('key', 'storage.s3_bucket')->update(['value' => 'bucket-b']);
+
+    // The upload path calls this under the shared lock to see the latest commit.
+    $settings->refreshFromDatabase();
+
+    expect(config('filesystems.disks.attachments-s3.bucket'))->toBe('bucket-b');
+});
+
+test('a cleared-credentials change reads as "Cleared" in the operator feed', function (): void {
+    $settings = storageSettings();
+    $settings->set('storage.disk', 'attachments-s3');
+    $settings->set('storage.s3_bucket', 'role-bucket');
+    $settings->set('storage.s3_region', 'us-east-1');
+    $settings->set('storage.s3_key', 'static-key');
+    $settings->set('storage.s3_secret', 'static-secret');
+
+    $operator = storageOperator();
+    $this->actingAs($operator)->post(route('operator.settings.storage.update'), [
+        'disk' => 'attachments-s3',
+        'bucket' => 'role-bucket',
+        'region' => 'us-east-1',
+        'acl' => 'private',
+        's3_no_keys' => '1',
+    ]);
+
+    $this->actingAs($operator)
+        ->get(route('operator.dashboard'))
+        ->assertOk()
+        ->assertSee('Cleared');
 });
 
 test('clearing keys and entering new keys at once is rejected', function (): void {
