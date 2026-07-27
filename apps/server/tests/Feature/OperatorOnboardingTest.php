@@ -60,3 +60,43 @@ test('the onboarding checklist links back to the full operator diagnostic', func
         ->assertSee(route('operator.dashboard'), false)
         ->assertSee('full instance diagnostic');
 });
+
+test('the connect-site card is hidden for a site this operator cannot view', function (): void {
+    $account = Account::factory()->create();
+    $operator = onboardingOperator($account);
+    // The site has explicit support agents that exclude this operator, so it is
+    // outside their visibility (SitePolicy::view would 404 the link).
+    $otherAgent = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+    $site = Site::factory()->for($account)->create(['name' => 'Restricted Docs']);
+    $site->supportAgents()->attach($otherAgent->id);
+
+    $this->actingAs($operator)
+        ->get(route('operator.onboarding'))
+        ->assertOk()
+        ->assertDontSee('Connect your first site')
+        ->assertDontSee('Restricted Docs');
+});
+
+test('the onboarding confirmation form carries a return path back to onboarding', function (): void {
+    $this->actingAs(onboardingOperator())
+        ->get(route('operator.onboarding'))
+        ->assertOk()
+        ->assertSee('name="redirect_to" value="onboarding"', false);
+});
+
+test('confirming a step from onboarding returns to the checklist, not the dashboard', function (): void {
+    $this->actingAs(onboardingOperator())
+        ->post(route('operator.readiness.confirmations.store'), [
+            'key' => 'scheduler',
+            'redirect_to' => 'onboarding',
+        ])
+        ->assertRedirect(route('operator.onboarding'));
+});
+
+test('confirming a step without a return path still lands on the operator dashboard', function (): void {
+    $this->actingAs(onboardingOperator())
+        ->post(route('operator.readiness.confirmations.store'), [
+            'key' => 'scheduler',
+        ])
+        ->assertRedirect(route('operator.dashboard'));
+});

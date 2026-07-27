@@ -25,7 +25,16 @@ class OperatorReadinessConfirmationController extends Controller
     {
         abort_unless($request->user()?->isPlatformOperator(), 403);
 
-        return $this->store($request, route('operator.dashboard'));
+        // Return the operator to wherever they confirmed from — the guided
+        // onboarding checklist keeps its place instead of ejecting to the
+        // dashboard. Only known operator destinations are honored (no open
+        // redirect from user input).
+        $redirectTo = match ((string) $request->input('redirect_to')) {
+            'onboarding' => route('operator.onboarding'),
+            default => route('operator.dashboard'),
+        };
+
+        return $this->store($request, $redirectTo);
     }
 
     private function store(Request $request, string $redirectTo): RedirectResponse

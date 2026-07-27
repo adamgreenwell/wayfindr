@@ -69,7 +69,7 @@
                     @endif
 
                     <x-operator-readiness-commands :commands="$check['commands'] ?? []" />
-                    <x-operator-readiness-confirmation-form :action="$confirmationRoute" :item="$check" />
+                    <x-operator-readiness-confirmation-form :action="$confirmationRoute" :item="$check" return-to="onboarding" />
                 </article>
             @endforeach
         </div>

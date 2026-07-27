@@ -79,12 +79,15 @@ class OperatorOnboardingController extends Controller
 
     private function firstSite(Request $request): ?Site
     {
-        $accountId = $request->user()?->account_id;
+        $agent = $request->user();
 
-        if ($accountId === null) {
+        if ($agent === null) {
             return null;
         }
 
-        return Site::query()->where('account_id', $accountId)->oldest('id')->first();
+        // Platform-operator status does not bypass site visibility. Surface only a
+        // site this operator can actually open (same scope as SitePolicy::view),
+        // so the card never leaks a restricted site or links to a 404.
+        return Site::query()->visibleToAgent($agent)->oldest('id')->first();
     }
 }
