@@ -4,6 +4,7 @@ namespace App\Support\Attachments;
 
 use App\Models\Conversation;
 use App\Models\ConversationMessageAttachment;
+use App\Models\OperatorSetting;
 use App\Models\Site;
 use App\Support\Attachments\Scanning\AttachmentScanner;
 use Illuminate\Database\Eloquent\Model;
@@ -59,8 +60,11 @@ class AttachmentUploadService
 
         $filename = $this->sanitizeFilename($file->getClientOriginalName());
 
-        // Resolve the destination disk before any work: a misconfigured
-        // storage target must reject the upload loudly, not land it elsewhere.
+        // Pre-flight the destination disk before scanning: a misconfigured
+        // storage target must reject the upload loudly, not waste a scan. The
+        // authoritative disk is re-resolved under a shared lock inside the
+        // transaction (below) so a concurrent location change cannot strand the
+        // object.
         $diskName = AttachmentStorage::diskName();
 
         // Scan the bytes before they are stored, so an infected file never
@@ -81,6 +85,17 @@ class AttachmentUploadService
             // and the insert are atomic — without the lock, two uploads could
             // both read the old total and both push it over the limit.
             Conversation::query()->whereKey($conversation->getKey())->lockForUpdate()->first();
+
+            // Take a SHARED lock on the storage-disk setting and resolve the disk
+            // under it. An operator changing the S3 location takes the EXCLUSIVE
+            // lock (OperatorStorageSettingsController), so it cannot run between
+            // this upload resolving its disk and committing its row — which would
+            // otherwise strand the object in the old bucket. The setting row is
+            // created first so both paths lock the same target; shared locks let
+            // uploads still run concurrently with each other.
+            OperatorSetting::query()->firstOrCreate(['key' => 'storage.disk']);
+            OperatorSetting::query()->where('key', 'storage.disk')->sharedLock()->first();
+            $diskName = AttachmentStorage::diskName();
 
             $existingBytes = (int) ConversationMessageAttachment::query()
                 ->where('conversation_id', $conversation->id)

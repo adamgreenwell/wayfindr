@@ -245,6 +245,43 @@ test('saving other settings preserves a custom disk configured in env', function
     expect($settings->get('storage.disk'))->toBe('attachments-custom');
 });
 
+test('the role option clears both stored S3 credentials together', function (): void {
+    $settings = storageSettings();
+    $settings->set('storage.disk', 'attachments-s3');
+    $settings->set('storage.s3_bucket', 'role-bucket');
+    $settings->set('storage.s3_region', 'us-east-1');
+    $settings->set('storage.s3_key', 'static-key');
+    $settings->set('storage.s3_secret', 'static-secret');
+
+    $this->actingAs(storageOperator())
+        ->post(route('operator.settings.storage.update'), [
+            'disk' => 'attachments-s3',
+            'bucket' => 'role-bucket',
+            'region' => 'us-east-1',
+            'acl' => 'private',
+            's3_no_keys' => '1', // migrate to an instance role
+        ])
+        ->assertSessionHasNoErrors();
+
+    // Both cleared to an explicit empty override → the SDK provider chain is used.
+    expect($settings->get('storage.s3_key'))->toBe('')
+        ->and($settings->get('storage.s3_secret'))->toBe('');
+});
+
+test('clearing keys and entering new keys at once is rejected', function (): void {
+    $this->actingAs(storageOperator())
+        ->post(route('operator.settings.storage.update'), [
+            'disk' => 'attachments-s3',
+            'bucket' => 'b',
+            'region' => 'r',
+            'acl' => 'private',
+            's3_no_keys' => '1',
+            's3_access_key' => 'new-key',
+            's3_secret_key' => 'new-secret',
+        ])
+        ->assertSessionHasErrors('s3_access_key');
+});
+
 test('changing the S3 location is blocked while attachments already exist there', function (): void {
     $settings = storageSettings();
     $settings->set('storage.disk', 'attachments-s3');

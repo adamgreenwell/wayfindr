@@ -103,29 +103,43 @@ class OperatorStorageSettingsController extends Controller
             // these credentials into the session as plaintext old input.
             's3_access_key' => [$s3Only, 'nullable', 'string', 'max:255'],
             's3_secret_key' => [$s3Only, 'nullable', 'string', 'max:1024'],
+            's3_no_keys' => [$s3Only, 'nullable', 'boolean'],
             'use_path_style' => [$s3Only, 'nullable', 'boolean'],
         ]);
 
         $disk = $validated['disk'];
         $keyProvided = ($validated['s3_access_key'] ?? '') !== '';
         $secretProvided = ($validated['s3_secret_key'] ?? '') !== '';
+        // "Use a role / clear stored keys" — drops both static credentials so the
+        // AWS SDK default provider chain (EC2/ECS/IRSA role, environment, shared
+        // config) is used. Both are cleared together to keep the pair matched.
+        $clearCreds = $disk === self::S3_DISK && (bool) ($validated['s3_no_keys'] ?? false);
 
-        // The access key ID and secret are a matched pair. Replacing only one half
-        // against a stored pair leaves mismatched credentials that fail every
-        // upload, so require both together or neither. Both blank is valid — the
-        // AWS SDK default provider chain (an EC2/ECS/IRSA role, environment, or
-        // shared config) authenticates with no static keys, and the connection
-        // test surfaces a real authentication failure.
-        if ($disk === self::S3_DISK && $keyProvided !== $secretProvided) {
-            return redirect()
-                ->route('operator.settings.storage.edit', $this->returnParams($request))
-                ->withErrors(['s3_access_key' => 'Enter both the access key and secret together, or leave both blank to keep the saved pair (or to use an instance role / default credential provider).'])
-                ->withInput($request->except(['s3_access_key', 's3_secret_key']));
+        if ($disk === self::S3_DISK) {
+            if ($clearCreds && ($keyProvided || $secretProvided)) {
+                return redirect()
+                    ->route('operator.settings.storage.edit', $this->returnParams($request))
+                    ->withErrors(['s3_access_key' => 'Either clear the stored keys to use a role, or enter new static keys — not both. Uncheck the role option to set static keys.'])
+                    ->withInput($request->except(['s3_access_key', 's3_secret_key']));
+            }
+
+            // The access key ID and secret are a matched pair. Replacing only one
+            // half against a stored pair leaves mismatched credentials that fail
+            // every upload, so require both together or neither. Both blank is
+            // valid — it keeps the saved pair, or (with the role option) uses the
+            // default provider chain; the connection test surfaces a real auth
+            // failure.
+            if (! $clearCreds && $keyProvided !== $secretProvided) {
+                return redirect()
+                    ->route('operator.settings.storage.edit', $this->returnParams($request))
+                    ->withErrors(['s3_access_key' => 'Enter both the access key and secret together, or leave both blank to keep the saved pair.'])
+                    ->withInput($request->except(['s3_access_key', 's3_secret_key']));
+            }
         }
 
         $agent = $request->user();
 
-        DB::transaction(function () use ($settings, $validated, $disk, $keyProvided, $secretProvided, $request, $agent): void {
+        DB::transaction(function () use ($settings, $validated, $disk, $keyProvided, $secretProvided, $clearCreds, $request, $agent): void {
             // Serialize concurrent storage-config writes: lock the storage.disk
             // setting row (created first so the lock has a target) and re-read the
             // active disk under it, so the location guard's read of the active
@@ -169,13 +183,18 @@ class OperatorStorageSettingsController extends Controller
                 $settings->set('storage.s3_acl', $validated['acl']);
                 $settings->set('storage.s3_use_path_style', $request->boolean('use_path_style') ? '1' : '0');
 
-                // Keys are write-only: set when supplied, otherwise leave the
-                // stored value untouched.
-                if ($keyProvided) {
-                    $settings->set('storage.s3_key', $validated['s3_access_key']);
-                }
-                if ($secretProvided) {
-                    $settings->set('storage.s3_secret', $validated['s3_secret_key']);
+                // Keys are write-only. Clear both together (role / provider chain),
+                // set both when supplied, otherwise leave the stored pair alone.
+                if ($clearCreds) {
+                    $settings->set('storage.s3_key', '');
+                    $settings->set('storage.s3_secret', '');
+                } else {
+                    if ($keyProvided) {
+                        $settings->set('storage.s3_key', $validated['s3_access_key']);
+                    }
+                    if ($secretProvided) {
+                        $settings->set('storage.s3_secret', $validated['s3_secret_key']);
+                    }
                 }
             }
 
@@ -190,8 +209,8 @@ class OperatorStorageSettingsController extends Controller
                     'bucket' => $disk === self::S3_DISK ? ($validated['bucket'] ?? null) : null,
                     'region' => $disk === self::S3_DISK ? ($validated['region'] ?? null) : null,
                     'acl' => $disk === self::S3_DISK ? ($validated['acl'] ?? null) : null,
-                    'key_changed' => $keyProvided ? 'updated' : 'unchanged',
-                    'secret_changed' => $secretProvided ? 'updated' : 'unchanged',
+                    'key_changed' => $clearCreds ? 'cleared' : ($keyProvided ? 'updated' : 'unchanged'),
+                    'secret_changed' => $clearCreds ? 'cleared' : ($secretProvided ? 'updated' : 'unchanged'),
                 ],
                 'occurred_at' => now(),
             ]);

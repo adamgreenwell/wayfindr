@@ -80,6 +80,10 @@
                     <p class="field-error">The saved secret access key could not be decrypted (this can happen after an APP_KEY change). Re-enter it below.</p>
                 @endif
                 <p class="field-help">Access keys are stored encrypted and never shown. Leave blank to keep the saved values.</p>
+                <label class="check-row" for="s3_no_keys">
+                    <input id="s3_no_keys" type="checkbox" name="s3_no_keys" value="1" @checked(old('s3_no_keys'))>
+                    <span>This bucket authenticates with an instance role or default credential provider — clear any stored access keys</span>
+                </label>
             </div>
 
             <div class="field">
