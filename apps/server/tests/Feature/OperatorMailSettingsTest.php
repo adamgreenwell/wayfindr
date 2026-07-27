@@ -76,11 +76,11 @@ test('the stored password is never echoed back to the browser', function (): voi
         ->assertDontSee('top-secret-pw');
 });
 
-test('an empty password field keeps the saved password; the clear box removes it', function (): void {
+test('an empty password keeps the saved one; the no-password box stores an explicit empty', function (): void {
     $operator = operatorUser();
     mailSettings()->set('mail.password', 'keep-me');
 
-    // Save without a new password and without clearing — the password stays.
+    // Blank password, no "no password" box — the saved password stays.
     $this->actingAs($operator)->post(route('operator.settings.mail.update'), [
         'mailer' => 'smtp',
         'host' => 'smtp.example.com',
@@ -89,15 +89,44 @@ test('an empty password field keeps the saved password; the clear box removes it
     ]);
     expect(mailSettings()->get('mail.password'))->toBe('keep-me');
 
-    // Explicit clear removes it.
+    // "No password" stores an explicit empty override (no auth), not a revert to env.
     $this->actingAs($operator)->post(route('operator.settings.mail.update'), [
         'mailer' => 'smtp',
         'host' => 'smtp.example.com',
         'port' => 587,
         'from_address' => 'support@acme.test',
-        'clear_password' => '1',
+        'no_password' => '1',
     ]);
-    expect(mailSettings()->isSet('mail.password'))->toBeFalse();
+    expect(mailSettings()->isSet('mail.password'))->toBeTrue()
+        ->and(mailSettings()->get('mail.password'))->toBe('');
+});
+
+test('blanking a connection field stores an explicit empty, not a revert to env', function (): void {
+    // Env supplies a username; the operator blanks it for an unauthenticated relay.
+    config()->set('mail.mailers.smtp.username', 'env-user');
+
+    $this->actingAs(operatorUser())->post(route('operator.settings.mail.update'), [
+        'mailer' => 'smtp',
+        'host' => 'relay.example.com',
+        'port' => 25,
+        'username' => '', // deliberately blank
+        'from_address' => 'support@acme.test',
+    ]);
+
+    expect(mailSettings()->isSet('mail.username'))->toBeTrue()
+        ->and(mailSettings()->get('mail.username'))->toBe(''); // explicit empty, not env-user
+});
+
+test('saving other settings preserves a transport configured outside the form', function (): void {
+    mailSettings()->set('mail.mailer', 'ses'); // an env-configured external transport
+
+    $this->actingAs(operatorUser())->post(route('operator.settings.mail.update'), [
+        'mailer' => 'ses', // the form offers and keeps it, rather than defaulting to log
+        'from_address' => 'support@acme.test',
+        'from_name' => 'Acme',
+    ])->assertSessionHasNoErrors();
+
+    expect(mailSettings()->get('mail.mailer'))->toBe('ses');
 });
 
 test('saving mail settings records an audit event without the password value', function (): void {
@@ -125,8 +154,9 @@ test('SMTP requires a host and port', function (): void {
         ->assertSessionHasErrors(['host', 'port']);
 });
 
-test('the send-test action sends a test email via the configured mailer', function (): void {
+test('the send-test action sends a test email via a real mailer', function (): void {
     Mail::fake();
+    config()->set('mail.default', 'smtp'); // a real transport, not log
 
     $this->actingAs(operatorUser())
         ->post(route('operator.settings.mail.test'), ['to' => 'me@acme.test'])
@@ -136,8 +166,20 @@ test('the send-test action sends a test email via the configured mailer', functi
     Mail::assertSent(WayfindrMailTestMessage::class);
 });
 
+test('the send-test refuses in log mode instead of reporting a false delivery', function (): void {
+    Mail::fake();
+    config()->set('mail.default', 'log');
+
+    $this->actingAs(operatorUser())
+        ->post(route('operator.settings.mail.test'), ['to' => 'me@acme.test'])
+        ->assertSessionHas('error');
+
+    Mail::assertNothingSent();
+});
+
 test('the send-test action validates the recipient', function (): void {
     Mail::fake();
+    config()->set('mail.default', 'smtp');
 
     $this->actingAs(operatorUser())
         ->post(route('operator.settings.mail.test'), ['to' => 'not-an-email'])

@@ -25,6 +25,9 @@
             <div class="field">
                 <label for="mailer">Transport</label>
                 <select id="mailer" name="mailer">
+                    @if ($externalMailer)
+                        <option value="{{ $externalMailer }}" @selected(old('mailer', $mailer) === $externalMailer)>{{ $externalMailer }} (current, configured in env)</option>
+                    @endif
                     <option value="log" @selected(old('mailer', $mailer) === 'log')>Log only (no delivery)</option>
                     <option value="smtp" @selected(old('mailer', $mailer) === 'smtp')>SMTP</option>
                 </select>
@@ -66,12 +69,10 @@
                     placeholder="{{ $passwordIsSet ? '•••••••• (a password is saved)' : 'No password saved' }}">
                 @error('password')<p class="field-error">{{ $message }}</p>@enderror
                 <p class="field-help">Leave blank to keep the saved password. It is stored encrypted and never shown.</p>
-                @if ($passwordIsSet)
-                    <label class="check-row" for="clear_password">
-                        <input id="clear_password" type="checkbox" name="clear_password" value="1" @checked(old('clear_password'))>
-                        <span>Remove the saved password</span>
-                    </label>
-                @endif
+                <label class="check-row" for="no_password">
+                    <input id="no_password" type="checkbox" name="no_password" value="1" @checked(old('no_password'))>
+                    <span>This server requires no password (unauthenticated relay)</span>
+                </label>
             </div>
 
             <div class="field">
