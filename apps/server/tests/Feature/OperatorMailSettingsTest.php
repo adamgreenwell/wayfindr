@@ -215,6 +215,30 @@ test('the send-test refuses a failover chain of only non-delivering transports',
     Mail::assertNothingSent();
 });
 
+test('the send-test refuses a nested failover chain that bottoms out in only sinks', function (): void {
+    Mail::fake();
+    config()->set('mail.default', 'failover');
+    config()->set('mail.mailers.failover', ['transport' => 'failover', 'mailers' => ['inner']]);
+    config()->set('mail.mailers.inner', ['transport' => 'failover', 'mailers' => ['log', 'array']]);
+
+    $this->actingAs(operatorUser())
+        ->post(route('operator.settings.mail.test'), ['to' => 'me@acme.test'])
+        ->assertSessionHas('error');
+
+    Mail::assertNothingSent();
+});
+
+test('the send-test tolerates a self-referential failover chain without looping forever', function (): void {
+    Mail::fake();
+    config()->set('mail.default', 'failover');
+    config()->set('mail.mailers.failover', ['transport' => 'failover', 'mailers' => ['failover', 'log']]);
+
+    // The cycle guard must let this resolve and return a response, not hang.
+    $this->actingAs(operatorUser())
+        ->post(route('operator.settings.mail.test'), ['to' => 'me@acme.test'])
+        ->assertRedirect(route('operator.settings.mail.edit'));
+});
+
 test('the send-test warns that a failover chain with a local sink may not have delivered', function (): void {
     Mail::fake();
     config()->set('mail.default', 'failover');

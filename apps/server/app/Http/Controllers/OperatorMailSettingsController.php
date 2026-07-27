@@ -181,31 +181,45 @@ class OperatorMailSettingsController extends Controller
     }
 
     /**
-     * The leaf transport types a mailer resolves to, expanding one level of a
-     * failover/roundrobin chain — which is where an ordinary transport can
-     * silently fall back to a local sink (log/array) and report success.
+     * The leaf transport types a mailer resolves to, expanding failover/
+     * roundrobin chains recursively — which is where an ordinary transport can
+     * silently fall back to a local sink (log/array) and report success. A
+     * nested composite (a failover whose member is itself a failover) is
+     * followed to its leaves; a self-referential chain is guarded by the
+     * visited set, so a cycle terminates instead of recursing forever.
      *
+     * @param  list<string>  $visited  composite mailer names already expanded on this path
      * @return list<string>
      */
-    private function resolveLeafTransports(string $mailer): array
+    private function resolveLeafTransports(string $mailer, array $visited = []): array
     {
         $transport = strtolower((string) config("mail.mailers.{$mailer}.transport", $mailer));
 
-        if (in_array($transport, ['failover', 'roundrobin'], true)) {
-            $chain = array_values(array_filter(
-                (array) config("mail.mailers.{$mailer}.mailers", []),
-                'is_string',
-            ));
-
-            $leaves = array_map(
-                fn (string $member): string => strtolower((string) config("mail.mailers.{$member}.transport", $member)),
-                $chain,
-            );
-
-            return $leaves === [] ? [$transport] : $leaves;
+        if (! in_array($transport, ['failover', 'roundrobin'], true)) {
+            return [$transport];
         }
 
-        return [$transport];
+        // A composite that references itself (directly or via a cycle) can't be
+        // expanded further — treat it as an opaque leaf rather than looping.
+        if (in_array($mailer, $visited, true)) {
+            return [$transport];
+        }
+
+        $visited[] = $mailer;
+
+        $chain = array_values(array_filter(
+            (array) config("mail.mailers.{$mailer}.mailers", []),
+            'is_string',
+        ));
+
+        $leaves = [];
+        foreach ($chain as $member) {
+            foreach ($this->resolveLeafTransports(strtolower($member), $visited) as $leaf) {
+                $leaves[] = $leaf;
+            }
+        }
+
+        return $leaves === [] ? [$transport] : $leaves;
     }
 
     /** The trimmed submitted value as an explicit override — '' for a blank field, never null. */
