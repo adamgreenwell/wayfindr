@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 use InvalidArgumentException;
 use Throwable;
 
@@ -31,9 +32,11 @@ class OperatorSettings
     private const VERSION_KEY = 'wayfindr.operator_settings.version';
 
     /**
-     * The operator-managed settings.
+     * The operator-managed settings. Each entry maps a setting key to the config
+     * path it overrides, whether it is an encrypted secret, its group, and an
+     * optional cast ('bool') for config values that are not plain strings.
      *
-     * @var array<string, array{config: string, secret: bool, group: string}>
+     * @var array<string, array{config: string, secret: bool, group: string, cast?: string}>
      */
     private const MANAGED = [
         // Mail (ADR 0011 slice 1). Setting mail.mailer to 'smtp' activates the
@@ -46,6 +49,17 @@ class OperatorSettings
         'mail.password' => ['config' => 'mail.mailers.smtp.password', 'secret' => true, 'group' => 'mail'],
         'mail.from_address' => ['config' => 'mail.from.address', 'secret' => false, 'group' => 'mail'],
         'mail.from_name' => ['config' => 'mail.from.name', 'secret' => false, 'group' => 'mail'],
+
+        // Attachment storage (ADR 0011 slice 2a). Which disk NEW uploads land on
+        // ('attachments' local, or 'attachments-s3'), and the S3-compatible
+        // connection used when the S3 disk is chosen. Keys/secret are encrypted.
+        'storage.disk' => ['config' => 'wayfindr.attachments.storage_disk', 'secret' => false, 'group' => 'storage'],
+        'storage.s3_bucket' => ['config' => 'filesystems.disks.attachments-s3.bucket', 'secret' => false, 'group' => 'storage'],
+        'storage.s3_region' => ['config' => 'filesystems.disks.attachments-s3.region', 'secret' => false, 'group' => 'storage'],
+        'storage.s3_endpoint' => ['config' => 'filesystems.disks.attachments-s3.endpoint', 'secret' => false, 'group' => 'storage'],
+        'storage.s3_key' => ['config' => 'filesystems.disks.attachments-s3.key', 'secret' => true, 'group' => 'storage'],
+        'storage.s3_secret' => ['config' => 'filesystems.disks.attachments-s3.secret', 'secret' => true, 'group' => 'storage'],
+        'storage.s3_use_path_style' => ['config' => 'filesystems.disks.attachments-s3.use_path_style_endpoint', 'secret' => false, 'group' => 'storage', 'cast' => 'bool'],
     ];
 
     /**
@@ -127,7 +141,7 @@ class OperatorSettings
             }
 
             try {
-                $targets[$meta['config']] = $this->decode($key, $stored[$key]);
+                $targets[$meta['config']] = $this->castValue($key, $this->decode($key, $stored[$key]));
             } catch (Throwable) {
                 // A single corrupt/undecryptable secret reverts only its own key
                 // to env; the rest of the override set still applies.
@@ -395,6 +409,11 @@ class OperatorSettings
     private function refreshManagers(): void
     {
         Mail::forgetMailers();
+
+        // Storage caches each built disk with its config (endpoint, credentials).
+        // Forget the attachment disks so a changed disk choice or S3 connection
+        // takes effect on a long-running worker without a restart.
+        Storage::forgetDisk(['attachments', 'attachments-s3']);
     }
 
     private function decode(string $key, ?string $raw): ?string
@@ -404,6 +423,24 @@ class OperatorSettings
         }
 
         return self::MANAGED[$key]['secret'] ? Crypt::decryptString($raw) : $raw;
+    }
+
+    /**
+     * Cast a decoded (string) override to the config value's real type. Config
+     * values are stored as strings but some paths need a native type — a boolean
+     * disk flag applied as the string "false" would read truthy. Applied only to
+     * override values; the env baseline is already its native type.
+     */
+    private function castValue(string $key, ?string $value): mixed
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        return match (self::MANAGED[$key]['cast'] ?? 'string') {
+            'bool' => in_array(strtolower(trim($value)), ['1', 'true', 'yes', 'on'], true),
+            default => $value,
+        };
     }
 
     private function assertManaged(string $key): void
