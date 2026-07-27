@@ -253,6 +253,20 @@ test('the send-test refuses a nested failover chain that bottoms out in only sin
     Mail::assertNothingSent();
 });
 
+test('the send-test refuses a failover chain whose first transport is a local sink', function (string $first): void {
+    Mail::fake();
+    config()->set('mail.default', 'failover');
+    config()->set('mail.mailers.failover', ['transport' => 'failover', 'mailers' => [$first, 'smtp']]);
+
+    // Failover stops at the first success and array/log always succeed, so smtp
+    // is never reached — refuse rather than flash a (backwards) fallback warning.
+    $this->actingAs(operatorUser())
+        ->post(route('operator.settings.mail.test'), ['to' => 'me@acme.test'])
+        ->assertSessionHas('error');
+
+    Mail::assertNothingSent();
+})->with(['array', 'log']);
+
 test('the send-test tolerates a self-referential failover chain without looping forever', function (): void {
     Mail::fake();
     config()->set('mail.default', 'failover');

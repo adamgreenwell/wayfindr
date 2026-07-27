@@ -164,67 +164,81 @@ class OperatorMailSettingsController extends Controller
             ->with('status', $message);
     }
 
-    /**
-     * How honestly a send-test can claim delivery for the active mailer:
-     *  - 'non_delivering': log/array/null (or a failover/roundrobin chain of only
-     *    those) — the message never leaves the server, so the test is refused.
-     *  - 'may_fall_back': a failover/roundrobin chain that includes a local sink —
-     *    a real send is attempted, but a silent fallback to the sink is possible.
-     *  - 'deliverable': an ordinary outbound transport.
-     */
     private function assessDelivery(string $mailer): string
     {
-        $nonDelivering = ['', 'log', 'array', 'null'];
-        $leaves = $this->resolveLeafTransports(strtolower($mailer));
-        $sinks = array_filter($leaves, fn (string $transport): bool => in_array($transport, $nonDelivering, true));
-
-        if (count($sinks) === count($leaves)) {
-            return 'non_delivering';
-        }
-
-        return $sinks === [] ? 'deliverable' : 'may_fall_back';
+        return $this->assessMailer(strtolower($mailer), []);
     }
 
     /**
-     * The leaf transport types a mailer resolves to, expanding failover/
-     * roundrobin chains recursively — which is where an ordinary transport can
-     * silently fall back to a local sink (log/array) and report success. A
-     * nested composite (a failover whose member is itself a failover) is
-     * followed to its leaves; a self-referential chain is guarded by the
-     * visited set, so a cycle terminates instead of recursing forever.
+     * Recursively assess how honestly a send-test can claim delivery for a
+     * mailer, accounting for composite ORDER (a flat leaf list can't):
+     *  - 'non_delivering': the message can't leave the server — a leaf log/array/
+     *    null, a composite of only sinks, OR a failover whose first reliably-
+     *    succeeding transport is a local sink. Laravel's failover tries members
+     *    in order and stops at the first success; array/log always succeed, so a
+     *    chain like [array, smtp] never reaches smtp.
+     *  - 'may_fall_back': a real transport is attempted but a silent fallback to
+     *    a sink is possible — a failover with a real transport BEFORE a sink, or
+     *    a roundrobin (random per-send pick) that might land on a sink.
+     *  - 'deliverable': an ordinary transport with no sink fallback.
      *
-     * @param  list<string>  $visited  composite mailer names already expanded on this path
-     * @return list<string>
+     * @param  list<string>  $visited  composite mailer names already on this path
      */
-    private function resolveLeafTransports(string $mailer, array $visited = []): array
+    private function assessMailer(string $mailer, array $visited): string
     {
         $transport = strtolower((string) config("mail.mailers.{$mailer}.transport", $mailer));
 
         if (! in_array($transport, ['failover', 'roundrobin'], true)) {
-            return [$transport];
+            return in_array($transport, ['', 'log', 'array', 'null'], true) ? 'non_delivering' : 'deliverable';
         }
 
-        // A composite that references itself (directly or via a cycle) can't be
-        // expanded further — treat it as an opaque leaf rather than looping.
+        // A self-referential composite can't be resolved further; treat it as an
+        // opaque real transport rather than looping (a genuine send would error
+        // and be caught).
         if (in_array($mailer, $visited, true)) {
-            return [$transport];
+            return 'deliverable';
         }
 
         $visited[] = $mailer;
 
-        $chain = array_values(array_filter(
+        $members = array_values(array_filter(
             (array) config("mail.mailers.{$mailer}.mailers", []),
             'is_string',
         ));
 
-        $leaves = [];
-        foreach ($chain as $member) {
-            foreach ($this->resolveLeafTransports(strtolower($member), $visited) as $leaf) {
-                $leaves[] = $leaf;
-            }
+        if ($members === []) {
+            return 'deliverable';
         }
 
-        return $leaves === [] ? [$transport] : $leaves;
+        $assessments = array_map(fn (string $member): string => $this->assessMailer(strtolower($member), $visited), $members);
+
+        if ($transport === 'roundrobin') {
+            // Random pick per send: a sink anywhere means it might not deliver.
+            if (! in_array('deliverable', $assessments, true) && ! in_array('may_fall_back', $assessments, true)) {
+                return 'non_delivering'; // every member is a guaranteed sink
+            }
+
+            return in_array('non_delivering', $assessments, true) || in_array('may_fall_back', $assessments, true)
+                ? 'may_fall_back'
+                : 'deliverable';
+        }
+
+        // failover: tried in order, stops at the first success. A sink always
+        // succeeds, so the first sink is terminal — everything after it is dead.
+        $realChanceSeen = false;
+        $anyMayFallBack = false;
+
+        foreach ($assessments as $assessment) {
+            if ($assessment === 'non_delivering') {
+                // First reliably-succeeding transport is a sink; nothing later runs.
+                return $realChanceSeen ? 'may_fall_back' : 'non_delivering';
+            }
+
+            $realChanceSeen = true;
+            $anyMayFallBack = $anyMayFallBack || $assessment === 'may_fall_back';
+        }
+
+        return $anyMayFallBack ? 'may_fall_back' : 'deliverable';
     }
 
     /** The trimmed submitted value as an explicit override — '' for a blank field, never null. */
