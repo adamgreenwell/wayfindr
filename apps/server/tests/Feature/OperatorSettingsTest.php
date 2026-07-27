@@ -7,8 +7,10 @@
 use App\Models\OperatorSetting;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
@@ -111,6 +113,40 @@ test('setting null clears the stored override', function (): void {
     settings()->set('mail.host', null);
 
     expect(settings()->isSet('mail.host'))->toBeFalse();
+});
+
+test('a corrupt secret reverts only its own key to env, not half-applying the set', function (): void {
+    config()->set('mail.mailers.smtp.host', 'env-host');
+    config()->set('mail.mailers.smtp.password', 'env-pw');
+    settings()->captureBaseline();
+
+    settings()->set('mail.host', 'operator-host'); // a good override
+
+    // An undecryptable secret written directly, bypassing set()'s encryption.
+    OperatorSetting::query()->create(['key' => 'mail.password', 'value' => 'not-real-ciphertext']);
+
+    settings()->applyOverrides();
+
+    expect(config('mail.mailers.smtp.host'))->toBe('operator-host')  // good override still applies
+        ->and(config('mail.mailers.smtp.password'))->toBe('env-pw'); // corrupt secret → its env baseline
+});
+
+test('when the settings store is unreadable, config falls back to the env baseline', function (): void {
+    config()->set('mail.mailers.smtp.host', 'env-host');
+    settings()->captureBaseline();
+
+    settings()->set('mail.host', 'operator-host');
+    settings()->applyOverrides();
+    expect(config('mail.mailers.smtp.host'))->toBe('operator-host');
+
+    // The store goes unreachable (DB down / table gone) with a cold cache: a
+    // persistent worker must land the env baseline, not keep the stale override.
+    Schema::drop('operator_settings');
+    Cache::flush();
+
+    settings()->applyOverrides();
+
+    expect(config('mail.mailers.smtp.host'))->toBe('env-host');
 });
 
 test('an unregistered key cannot be read or written', function (): void {

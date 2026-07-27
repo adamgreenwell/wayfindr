@@ -14,9 +14,9 @@ use Throwable;
  * The web tier runs per request (FrankenPHP classic, no Octane), so boot()
  * applies fresh overrides on every request. Long-running queue workers re-apply
  * before each job, so a setting changed in the browser is live across all
- * containers without a restart. Fails safe: if the database or cache is not
- * reachable yet (fresh boot / mid-migration), nothing is applied and the env
- * defaults stand.
+ * containers without a restart. applyOverrides() itself is fail-safe — an
+ * unreadable store or a corrupt secret lands the env baseline, never a stale or
+ * half-applied config — and this catch is a final guard around resolution.
  */
 class OperatorSettingsServiceProvider extends ServiceProvider
 {

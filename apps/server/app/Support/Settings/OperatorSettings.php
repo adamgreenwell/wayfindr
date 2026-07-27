@@ -25,6 +25,8 @@ class OperatorSettings
 {
     private const CACHE_KEY = 'wayfindr.operator_settings';
 
+    private const VERSION_KEY = 'wayfindr.operator_settings.version';
+
     /**
      * The operator-managed settings.
      *
@@ -66,17 +68,54 @@ class OperatorSettings
             $this->captureBaseline();
         }
 
-        $stored = $this->storedValues();
-
-        foreach (self::MANAGED as $key => $meta) {
-            $value = (array_key_exists($key, $stored) && $stored[$key] !== null)
-                ? $this->decode($key, $stored[$key])
-                : $this->baseline[$meta['config']];
-
-            config()->set($meta['config'], $value);
+        // Resolve the FULL target map before mutating config: a read failure or a
+        // corrupt secret falls back to the env baseline (per key, or wholesale if
+        // the store is unreadable) rather than leaving config half-applied or
+        // holding a stale override on a persistent worker.
+        foreach ($this->resolveTargets() as $configPath => $value) {
+            config()->set($configPath, $value);
         }
 
         $this->refreshManagers();
+    }
+
+    /**
+     * The config value to apply for every managed path — the operator's value
+     * when readable, else the env baseline. Never throws and never returns a
+     * partial map, so applyOverrides always lands a consistent state.
+     *
+     * @return array<string, mixed>
+     */
+    private function resolveTargets(): array
+    {
+        try {
+            $stored = $this->storedValues();
+        } catch (\Throwable) {
+            // Store unreachable (DB/cache down, table not migrated): env baseline.
+            return $this->baseline;
+        }
+
+        $targets = [];
+
+        foreach (self::MANAGED as $key => $meta) {
+            $baseline = $this->baseline[$meta['config']];
+
+            if (! array_key_exists($key, $stored) || $stored[$key] === null) {
+                $targets[$meta['config']] = $baseline;
+
+                continue;
+            }
+
+            try {
+                $targets[$meta['config']] = $this->decode($key, $stored[$key]);
+            } catch (\Throwable) {
+                // A single corrupt/undecryptable secret reverts only its own key
+                // to env; the rest of the override set still applies.
+                $targets[$meta['config']] = $baseline;
+            }
+        }
+
+        return $targets;
     }
 
     /**
@@ -136,8 +175,9 @@ class OperatorSettings
 
     /**
      * Store (or clear, on null) a managed setting. Secrets are encrypted at
-     * rest. Busts the cache so the change is live on the next request/job.
-     * Auditing is the caller's job — the controller has the actor context.
+     * rest. Bumps the cache version so the change is live on the next
+     * request/job. Auditing is the caller's job — the controller has the actor
+     * context.
      */
     public function set(string $key, ?string $value): void
     {
@@ -152,7 +192,12 @@ class OperatorSettings
             );
         }
 
-        Cache::forget(self::CACHE_KEY);
+        // Bump the version AFTER the row is committed. Readers key their cache
+        // entry by the version they observed, so a slow reader that fetched the
+        // old rows before this write can only ever store under the previous
+        // version — it can never poison the new one (which would otherwise stick
+        // forever in a permanent cache).
+        Cache::increment(self::VERSION_KEY);
     }
 
     /**
@@ -175,12 +220,20 @@ class OperatorSettings
      * read on every request. The cache holds ciphertext for secrets — secrets
      * are only decrypted per read, never cached in the clear.
      *
+     * Keyed by the version observed at read time: a write bumps the version, so
+     * the next read misses and refetches (instant propagation), and a slow
+     * reader can only store under the version it saw — never poison the current
+     * one. A modest TTL lets orphaned version entries fall out.
+     *
      * @return array<string, string|null>
      */
     private function storedValues(): array
     {
-        return Cache::rememberForever(
-            self::CACHE_KEY,
+        $version = (int) Cache::get(self::VERSION_KEY, 0);
+
+        return Cache::remember(
+            self::CACHE_KEY.':'.$version,
+            now()->addDay(),
             fn (): array => OperatorSetting::query()->pluck('value', 'key')->all(),
         );
     }
