@@ -32,13 +32,15 @@ class OperatorStorageSettingsController extends Controller
     private const S3_DISK = 'attachments-s3';
 
     /**
-     * The private object ACLs the form offers and accepts — the same allowlist
-     * AttachmentStorage::assertSafeDisk enforces. A public ACL is never an
-     * option: attachments are only served by streaming through Wayfindr.
+     * The private object ACLs the form offers and accepts — a subset of the
+     * allowlist AttachmentStorage::assertSafeDisk enforces, all non-empty. A
+     * public ACL is never an option (attachments only stream through Wayfindr);
+     * the "send no ACL header" case (env's array_filter of a blank value) stays
+     * env-only, since the override mechanism can't unset a config key.
      *
      * @var list<string>
      */
-    private const SAFE_ACLS = ['bucket-owner-full-control', 'private', 'bucket-owner-read', ''];
+    private const SAFE_ACLS = ['bucket-owner-full-control', 'private', 'bucket-owner-read'];
 
     public function edit(Request $request, OperatorSettings $settings): View
     {
@@ -84,8 +86,9 @@ class OperatorStorageSettingsController extends Controller
             'bucket' => ['nullable', 'required_if:disk,'.self::S3_DISK, 'string', 'max:255'],
             'region' => ['nullable', 'required_if:disk,'.self::S3_DISK, 'string', 'max:255'],
             'endpoint' => ['nullable', 'string', 'max:255', 'url'],
-            // Only private ACLs are accepted — a public ACL can never be set here.
-            'acl' => ['nullable', Rule::in(self::SAFE_ACLS)],
+            // A private ACL is required for S3 (a public one can never be set); a
+            // blank value is rejected so it can never be stored as an empty ACL.
+            'acl' => ['required_if:disk,'.self::S3_DISK, Rule::in(self::SAFE_ACLS)],
             // s3_access_key / s3_secret_key are registered in the exception
             // handler's dontFlash list, so a validation failure never flashes
             // these credentials into the session as plaintext old input.
@@ -98,10 +101,20 @@ class OperatorStorageSettingsController extends Controller
         $keyProvided = ($validated['s3_access_key'] ?? '') !== '';
         $secretProvided = ($validated['s3_secret_key'] ?? '') !== '';
 
-        // Choosing S3 needs credentials — supplied now or already stored — or
-        // uploads will fail. Enforce beyond required_if, which cannot see the
-        // write-only stored secret.
         if ($disk === self::S3_DISK) {
+            // The access key ID and secret are a matched pair. Replacing only one
+            // half against a stored pair leaves mismatched credentials that fail
+            // every upload, so require both together or neither.
+            if ($keyProvided !== $secretProvided) {
+                return redirect()
+                    ->route('operator.settings.storage.edit', $this->returnParams($request))
+                    ->withErrors(['s3_access_key' => 'Enter both the access key and secret together, or leave both blank to keep the saved pair.'])
+                    ->withInput($request->except(['s3_access_key', 's3_secret_key']));
+            }
+
+            // Choosing S3 needs credentials — supplied now or already stored — or
+            // uploads will fail. Enforce beyond required_if, which cannot see the
+            // write-only stored secret.
             $keyReady = $keyProvided || $settings->effectiveSecretStatus('storage.s3_key') === 'set';
             $secretReady = $secretProvided || $settings->effectiveSecretStatus('storage.s3_secret') === 'set';
 
@@ -125,7 +138,8 @@ class OperatorStorageSettingsController extends Controller
                 $settings->set('storage.s3_bucket', $this->explicit($validated['bucket'] ?? null));
                 $settings->set('storage.s3_region', $this->explicit($validated['region'] ?? null));
                 $settings->set('storage.s3_endpoint', $this->explicit($validated['endpoint'] ?? null));
-                $settings->set('storage.s3_acl', $this->explicit($validated['acl'] ?? null));
+                // Validated to a non-empty private ACL for S3.
+                $settings->set('storage.s3_acl', $validated['acl']);
                 $settings->set('storage.s3_use_path_style', $request->boolean('use_path_style') ? '1' : '0');
 
                 // Keys are write-only: set when supplied, otherwise leave the

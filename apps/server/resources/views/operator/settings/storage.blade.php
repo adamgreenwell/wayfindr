@@ -85,10 +85,9 @@
             <div class="field">
                 <label for="acl">Object ACL</label>
                 <select id="acl" name="acl">
-                    <option value="bucket-owner-full-control" @selected(old('acl', $acl) === 'bucket-owner-full-control')>Bucket owner full control (AWS default)</option>
+                    <option value="bucket-owner-full-control" @selected(old('acl', $acl ?: 'bucket-owner-full-control') === 'bucket-owner-full-control')>Bucket owner full control (AWS default)</option>
                     <option value="private" @selected(old('acl', $acl) === 'private')>Private (Cloudflare R2 and compatible stores)</option>
                     <option value="bucket-owner-read" @selected(old('acl', $acl) === 'bucket-owner-read')>Bucket owner read</option>
-                    <option value="" @selected(old('acl', $acl) === '')>None (send no ACL header)</option>
                 </select>
                 @error('acl')<p class="field-error">{{ $message }}</p>@enderror
                 <p class="field-help">Keep the AWS default unless your store rejects it. Cloudflare R2 needs <code>Private</code>. Only private ACLs are allowed — attachments are never public.</p>

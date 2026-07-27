@@ -121,11 +121,33 @@ test('choosing S3 without credentials is rejected and saves nothing', function (
             'disk' => 'attachments-s3',
             'bucket' => 'b',
             'region' => 'r',
+            'acl' => 'private',
             // no key/secret provided and none stored
         ])
         ->assertSessionHasErrors('s3_access_key');
 
     expect(storageSettings()->isSet('storage.disk'))->toBeFalse();
+});
+
+test('replacing only one S3 credential is rejected', function (): void {
+    $settings = storageSettings();
+    // A full pair is already stored.
+    $settings->set('storage.s3_key', 'old-key');
+    $settings->set('storage.s3_secret', 'old-secret');
+
+    $this->actingAs(storageOperator())
+        ->post(route('operator.settings.storage.update'), [
+            'disk' => 'attachments-s3',
+            'bucket' => 'b',
+            'region' => 'r',
+            'acl' => 'private',
+            's3_access_key' => 'new-key-only', // secret omitted — a mismatched pair
+        ])
+        ->assertSessionHasErrors('s3_access_key');
+
+    // The stored pair is left intact, not half-replaced.
+    expect($settings->get('storage.s3_key'))->toBe('old-key')
+        ->and($settings->get('storage.s3_secret'))->toBe('old-secret');
 });
 
 test('S3 requires a bucket and region', function (): void {
@@ -169,6 +191,7 @@ test('saving storage settings records an instance-scoped audit without the secre
         'disk' => 'attachments-s3',
         'bucket' => 'audit-bucket',
         'region' => 'auto',
+        'acl' => 'private',
         's3_access_key' => 'key-not-logged',
         's3_secret_key' => 'secret-not-logged',
     ]);
