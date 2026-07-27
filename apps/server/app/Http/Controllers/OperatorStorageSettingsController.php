@@ -81,20 +81,26 @@ class OperatorStorageSettingsController extends Controller
             $currentDisk !== '' ? $currentDisk : self::LOCAL_DISK,
         ]));
 
+        // The single form always submits the (possibly prefilled) S3 fields even
+        // when the local disk is chosen. Exclude them from validation unless S3
+        // is selected, so a malformed prefilled endpoint can't block the recovery
+        // path of switching back to local.
+        $s3Only = 'exclude_unless:disk,'.self::S3_DISK;
+
         $validated = $request->validate([
             'disk' => ['required', Rule::in($allowedDisks)],
-            'bucket' => ['nullable', 'required_if:disk,'.self::S3_DISK, 'string', 'max:255'],
-            'region' => ['nullable', 'required_if:disk,'.self::S3_DISK, 'string', 'max:255'],
-            'endpoint' => ['nullable', 'string', 'max:255', 'url'],
+            'bucket' => [$s3Only, 'required', 'string', 'max:255'],
+            'region' => [$s3Only, 'required', 'string', 'max:255'],
+            'endpoint' => [$s3Only, 'nullable', 'string', 'max:255', 'url'],
             // A private ACL is required for S3 (a public one can never be set); a
             // blank value is rejected so it can never be stored as an empty ACL.
-            'acl' => ['required_if:disk,'.self::S3_DISK, Rule::in(self::SAFE_ACLS)],
+            'acl' => [$s3Only, 'required', Rule::in(self::SAFE_ACLS)],
             // s3_access_key / s3_secret_key are registered in the exception
             // handler's dontFlash list, so a validation failure never flashes
             // these credentials into the session as plaintext old input.
-            's3_access_key' => ['nullable', 'string', 'max:255'],
-            's3_secret_key' => ['nullable', 'string', 'max:1024'],
-            'use_path_style' => ['nullable', 'boolean'],
+            's3_access_key' => [$s3Only, 'nullable', 'string', 'max:255'],
+            's3_secret_key' => [$s3Only, 'nullable', 'string', 'max:1024'],
+            'use_path_style' => [$s3Only, 'nullable', 'boolean'],
         ]);
 
         $disk = $validated['disk'];
@@ -211,10 +217,14 @@ class OperatorStorageSettingsController extends Controller
     {
         $dir = '.wayfindr-storage-test-'.Str::random(12);
         $probeKey = $dir.'/.probe';
-        $disk = Storage::disk($diskName);
+        $disk = null;
         $needsCleanup = false;
 
         try {
+            // Building the disk can throw before any I/O — an unsupported custom
+            // driver, or an S3 client that rejects its configuration. Keep it in
+            // the guarded block so the test reports an actionable error, not 500.
+            $disk = Storage::disk($diskName);
             $wrote = $disk->put($probeKey, 'ok') !== false;
             $needsCleanup = $wrote;
 
@@ -239,7 +249,7 @@ class OperatorStorageSettingsController extends Controller
             // If an intermediate step (read/list) threw or returned early after a
             // successful write, best-effort remove the probe object — it is
             // dotfile-prefixed, so the orphan sweep would never reclaim it.
-            if ($needsCleanup) {
+            if ($needsCleanup && $disk !== null) {
                 try {
                     $disk->delete($probeKey);
                 } catch (Throwable) {

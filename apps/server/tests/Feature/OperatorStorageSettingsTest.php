@@ -139,6 +139,34 @@ test('switching to the local disk does not blank env S3 credentials', function (
         ->and($settings->isSet('storage.s3_key'))->toBeFalse();
 });
 
+test('switching to local succeeds even with a malformed S3 endpoint prefilled', function (): void {
+    $settings = storageSettings();
+    $settings->set('storage.s3_endpoint', 'not-a-valid-url'); // a broken S3 config
+
+    // The operator switches to local; the single form still submits the bad
+    // (now inactive) endpoint — it must not block the recovery path.
+    $this->actingAs(storageOperator())
+        ->post(route('operator.settings.storage.update'), [
+            'disk' => 'attachments',
+            'endpoint' => 'not-a-valid-url',
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($settings->get('storage.disk'))->toBe('attachments');
+});
+
+test('the storage test reports a disk-construction failure instead of 500ing', function (): void {
+    // A custom attachments-* disk with an unsupported driver: it passes the
+    // safe-disk check but Storage::disk() throws when building it.
+    config()->set('wayfindr.attachments.storage_disk', 'attachments-broken');
+    config()->set('filesystems.disks.attachments-broken', ['driver' => 'not-a-real-driver', 'root' => 'x']);
+
+    $this->actingAs(storageOperator())
+        ->post(route('operator.settings.storage.test'))
+        ->assertRedirect(route('operator.settings.storage.edit'))
+        ->assertSessionHas('error');
+});
+
 test('choosing S3 without credentials is rejected and saves nothing', function (): void {
     $this->actingAs(storageOperator())
         ->post(route('operator.settings.storage.update'), [
