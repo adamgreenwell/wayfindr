@@ -56,7 +56,10 @@ class OperatorSettings
         'storage.disk' => ['config' => 'wayfindr.attachments.storage_disk', 'secret' => false, 'group' => 'storage'],
         'storage.s3_bucket' => ['config' => 'filesystems.disks.attachments-s3.bucket', 'secret' => false, 'group' => 'storage'],
         'storage.s3_region' => ['config' => 'filesystems.disks.attachments-s3.region', 'secret' => false, 'group' => 'storage'],
-        'storage.s3_endpoint' => ['config' => 'filesystems.disks.attachments-s3.endpoint', 'secret' => false, 'group' => 'storage'],
+        // A blank endpoint must apply as null (AWS regional resolution), not '',
+        // which the AWS SDK treats as a custom endpoint — but the stored blank
+        // override still wins over any stale env endpoint.
+        'storage.s3_endpoint' => ['config' => 'filesystems.disks.attachments-s3.endpoint', 'secret' => false, 'group' => 'storage', 'cast' => 'null_if_blank'],
         'storage.s3_key' => ['config' => 'filesystems.disks.attachments-s3.key', 'secret' => true, 'group' => 'storage'],
         'storage.s3_secret' => ['config' => 'filesystems.disks.attachments-s3.secret', 'secret' => true, 'group' => 'storage'],
         'storage.s3_use_path_style' => ['config' => 'filesystems.disks.attachments-s3.use_path_style_endpoint', 'secret' => false, 'group' => 'storage', 'cast' => 'bool'],
@@ -444,6 +447,11 @@ class OperatorSettings
 
         return match (self::MANAGED[$key]['cast'] ?? 'string') {
             'bool' => in_array(strtolower(trim($value)), ['1', 'true', 'yes', 'on'], true),
+            // A blank override applies as null, not '' — some config consumers
+            // (the AWS SDK's endpoint) treat an empty string as a real value.
+            // The stored override stays '' so it still wins over a stale env
+            // value; only the applied config is nulled.
+            'null_if_blank' => trim($value) === '' ? null : $value,
             default => $value,
         };
     }

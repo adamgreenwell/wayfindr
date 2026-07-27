@@ -69,12 +69,36 @@ test('saving S3 storage settings stores them as live overrides, with a real bool
         ->and($settings->isSet('storage.s3_key'))->toBeTrue()
         ->and($settings->isSet('storage.s3_secret'))->toBeTrue();
 
-    // Applying overrides lands a real boolean and the private ACL R2 needs.
+    // Applying overrides lands a real boolean, the private ACL R2 needs, and the
+    // custom endpoint for a compatible store.
     $settings->applyOverrides();
     expect(config('wayfindr.attachments.storage_disk'))->toBe('attachments-s3')
         ->and(config('filesystems.disks.attachments-s3.bucket'))->toBe('my-bucket')
+        ->and(config('filesystems.disks.attachments-s3.endpoint'))->toBe('https://acct.r2.cloudflarestorage.com')
         ->and(config('filesystems.disks.attachments-s3.options.ACL'))->toBe('private')
         ->and(config('filesystems.disks.attachments-s3.use_path_style_endpoint'))->toBeTrue();
+});
+
+test('a blank endpoint applies as null so AWS regional resolution works', function (): void {
+    $settings = storageSettings();
+    // Pretend a stale R2 endpoint is in env; the operator switches to AWS and
+    // clears the endpoint field.
+    config()->set('filesystems.disks.attachments-s3.endpoint', 'https://stale.example.test');
+
+    $this->actingAs(storageOperator())->post(route('operator.settings.storage.update'), [
+        'disk' => 'attachments-s3',
+        'bucket' => 'aws-bucket',
+        'region' => 'us-east-1',
+        'acl' => 'bucket-owner-full-control',
+        'endpoint' => '', // AWS: leave blank
+        's3_access_key' => 'k',
+        's3_secret_key' => 's',
+    ])->assertRedirect();
+
+    $settings->applyOverrides();
+    // Applied as null (not '' and not the stale env value) — the AWS SDK resolves
+    // the regional endpoint itself.
+    expect(config('filesystems.disks.attachments-s3.endpoint'))->toBeNull();
 });
 
 test('a public ACL is rejected', function (): void {
