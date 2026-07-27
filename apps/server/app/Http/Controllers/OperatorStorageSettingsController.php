@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\AuditEvent;
 use App\Models\ConversationMessageAttachment;
+use App\Models\OperatorSetting;
 use App\Support\Attachments\AttachmentStorage;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Contracts\View\View;
@@ -13,6 +14,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Throwable;
 
 /**
@@ -108,55 +110,53 @@ class OperatorStorageSettingsController extends Controller
         $keyProvided = ($validated['s3_access_key'] ?? '') !== '';
         $secretProvided = ($validated['s3_secret_key'] ?? '') !== '';
 
-        if ($disk === self::S3_DISK) {
-            // The access key ID and secret are a matched pair. Replacing only one
-            // half against a stored pair leaves mismatched credentials that fail
-            // every upload, so require both together or neither.
-            if ($keyProvided !== $secretProvided) {
-                return redirect()
-                    ->route('operator.settings.storage.edit', $this->returnParams($request))
-                    ->withErrors(['s3_access_key' => 'Enter both the access key and secret together, or leave both blank to keep the saved pair.'])
-                    ->withInput($request->except(['s3_access_key', 's3_secret_key']));
-            }
-
-            // Choosing S3 needs credentials — supplied now or already stored — or
-            // uploads will fail. Enforce beyond required_if, which cannot see the
-            // write-only stored secret.
-            $keyReady = $keyProvided || $settings->effectiveSecretStatus('storage.s3_key') === 'set';
-            $secretReady = $secretProvided || $settings->effectiveSecretStatus('storage.s3_secret') === 'set';
-
-            if (! $keyReady || ! $secretReady) {
-                return redirect()
-                    ->route('operator.settings.storage.edit', $this->returnParams($request))
-                    ->withErrors(['s3_access_key' => 'An access key and secret are required to store attachments on S3.'])
-                    // Never flash the credentials themselves back into the session.
-                    ->withInput($request->except(['s3_access_key', 's3_secret_key']));
-            }
-
-            // Existing attachments recorded against this disk name resolve through
-            // whatever config it currently holds (ConversationMessageAttachment::
-            // disk()), so changing the bucket, endpoint, or region would silently
-            // point them at a different location and strand them. Block a location
-            // change while the disk holds files OR is the active upload target
-            // (an in-flight upload has already resolved the old location and would
-            // land a row against the new one). The operator must switch storage to
-            // the local disk first — draining new S3 uploads — before the S3
-            // location can change. Credential, ACL, and path-style changes keep the
-            // same location and stay allowed.
-            $s3IsActive = $currentDisk === self::S3_DISK;
-            $s3HasRows = ConversationMessageAttachment::query()->where('storage_disk', self::S3_DISK)->exists();
-
-            if ($this->s3LocationChanged($settings, $validated) && ($s3IsActive || $s3HasRows)) {
-                return redirect()
-                    ->route('operator.settings.storage.edit', $this->returnParams($request))
-                    ->withErrors(['bucket' => 'Changing the S3 bucket, endpoint, or region is not allowed while S3 is the active storage disk or already holds attachments — existing or in-flight uploads would be stranded. Switch storage to the local disk first, then change the S3 connection. If attachments already live on S3, migrate the objects and update the environment directly.'])
-                    ->withInput($request->except(['s3_access_key', 's3_secret_key']));
-            }
+        // The access key ID and secret are a matched pair. Replacing only one half
+        // against a stored pair leaves mismatched credentials that fail every
+        // upload, so require both together or neither. Both blank is valid — the
+        // AWS SDK default provider chain (an EC2/ECS/IRSA role, environment, or
+        // shared config) authenticates with no static keys, and the connection
+        // test surfaces a real authentication failure.
+        if ($disk === self::S3_DISK && $keyProvided !== $secretProvided) {
+            return redirect()
+                ->route('operator.settings.storage.edit', $this->returnParams($request))
+                ->withErrors(['s3_access_key' => 'Enter both the access key and secret together, or leave both blank to keep the saved pair (or to use an instance role / default credential provider).'])
+                ->withInput($request->except(['s3_access_key', 's3_secret_key']));
         }
 
         $agent = $request->user();
 
         DB::transaction(function () use ($settings, $validated, $disk, $keyProvided, $secretProvided, $request, $agent): void {
+            // Serialize concurrent storage-config writes: lock the storage.disk
+            // setting row (created first so the lock has a target) and re-read the
+            // active disk under it, so the location guard's read of the active
+            // disk + row state is atomic with the write. Without this, two
+            // operators could both pass the guard and activate different S3
+            // locations, stranding an upload written to the first.
+            OperatorSetting::query()->firstOrCreate(['key' => 'storage.disk']);
+            $lockedDisk = (string) (OperatorSetting::query()->where('key', 'storage.disk')->lockForUpdate()->value('value') ?? '');
+            $liveCurrentDisk = $lockedDisk !== '' ? $lockedDisk : (string) config('wayfindr.attachments.storage_disk', self::LOCAL_DISK);
+
+            if ($disk === self::S3_DISK) {
+                // Existing attachments recorded against this disk name resolve
+                // through whatever config it currently holds
+                // (ConversationMessageAttachment::disk()), so changing the bucket,
+                // endpoint, or region would strand them. Block a location change
+                // while the disk holds files OR is the active upload target (an
+                // in-flight upload has already resolved the old location and would
+                // land a row against the new one). The operator must switch storage
+                // to the local disk first — draining new S3 uploads. Credential,
+                // ACL, and path-style changes keep the same location and stay
+                // allowed. Re-checked here under the lock for atomicity.
+                $s3IsActive = $liveCurrentDisk === self::S3_DISK;
+                $s3HasRows = ConversationMessageAttachment::query()->where('storage_disk', self::S3_DISK)->exists();
+
+                if ($this->s3LocationChanged($settings, $validated) && ($s3IsActive || $s3HasRows)) {
+                    throw ValidationException::withMessages([
+                        'bucket' => 'Changing the S3 bucket, endpoint, or region is not allowed while S3 is the active storage disk or already holds attachments — existing or in-flight uploads would be stranded. Switch storage to the local disk first, then change the S3 connection. If attachments already live on S3, migrate the objects and update the environment directly.',
+                    ]);
+                }
+            }
+
             $settings->set('storage.disk', $disk);
 
             // Only touch the S3 connection when S3 is the chosen disk, so

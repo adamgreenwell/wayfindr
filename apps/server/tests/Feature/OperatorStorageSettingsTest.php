@@ -168,18 +168,24 @@ test('the storage test reports a disk-construction failure instead of 500ing', f
         ->assertSessionHas('error');
 });
 
-test('choosing S3 without credentials is rejected and saves nothing', function (): void {
+test('S3 can be configured without static credentials (default provider chain)', function (): void {
+    $settings = storageSettings();
+
+    // An EC2/ECS/IRSA role (or the environment/shared-config provider) needs no
+    // static keys — the connection test surfaces a real auth failure if any.
     $this->actingAs(storageOperator())
         ->post(route('operator.settings.storage.update'), [
             'disk' => 'attachments-s3',
-            'bucket' => 'b',
-            'region' => 'r',
+            'bucket' => 'role-bucket',
+            'region' => 'us-east-1',
             'acl' => 'private',
-            // no key/secret provided and none stored
+            // no key/secret
         ])
-        ->assertSessionHasErrors('s3_access_key');
+        ->assertSessionHasNoErrors();
 
-    expect(storageSettings()->isSet('storage.disk'))->toBeFalse();
+    expect($settings->get('storage.disk'))->toBe('attachments-s3')
+        ->and($settings->get('storage.s3_bucket'))->toBe('role-bucket')
+        ->and($settings->isSet('storage.s3_key'))->toBeFalse();
 });
 
 test('replacing only one S3 credential is rejected', function (): void {
