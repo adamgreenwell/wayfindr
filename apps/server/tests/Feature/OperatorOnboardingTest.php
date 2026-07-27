@@ -6,6 +6,7 @@
 
 use App\Enums\AccountRole;
 use App\Models\Account;
+use App\Models\OperatorReadinessConfirmation;
 use App\Models\Site;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -17,6 +18,27 @@ function onboardingOperator(?Account $account = null): User
     return User::factory()->for($account ?? Account::factory())->create([
         'platform_role' => 'operator',
         'account_role' => AccountRole::Owner,
+    ]);
+}
+
+/** Make every essential green EXCEPT the background-workers attestation. */
+function greenExceptWorkers(): void
+{
+    config()->set('app.url', 'https://support.example.test');
+    config()->set('queue.default', 'database');
+    config()->set('mail.default', 'smtp');
+    config()->set('mail.mailers.smtp.host', 'smtp.example.com');
+    config()->set('mail.mailers.smtp.port', 587);
+    config()->set('mail.mailers.smtp.scheme', null);
+    config()->set('mail.from.address', 'support@acme.test');
+}
+
+function confirmReadiness(string $key, User $operator): void
+{
+    OperatorReadinessConfirmation::query()->create([
+        'key' => $key,
+        'confirmed_by_id' => $operator->id,
+        'confirmed_at' => now(),
     ]);
 }
 
@@ -42,17 +64,34 @@ test('the onboarding checklist is mail-first with an inline configure action', f
         ->assertDontSee('Queue worker');
 });
 
-test('an async queue driver alone does not mark background workers ready', function (): void {
-    // A configured async driver only proves config, not that a worker runs — so
-    // the step stays a manual attestation rather than auto-completing.
-    config()->set('queue.default', 'database');
+test('a scheduler-only confirmation does not complete the background-workers essential', function (): void {
+    greenExceptWorkers();
+    $operator = onboardingOperator();
 
-    $this->actingAs(onboardingOperator())
+    // Fresh scheduler + backups proofs exist, but no dedicated background-workers
+    // proof — scheduler-only evidence must not satisfy worker readiness.
+    confirmReadiness('scheduler', $operator);
+    confirmReadiness('backups_restore', $operator);
+
+    $this->actingAs($operator)
         ->get(route('operator.onboarding'))
         ->assertOk()
-        ->assertSee('Confirm background workers')
-        // The confirmable smoke step exposes a mark-confirmed control.
-        ->assertSee('Mark confirmed');
+        ->assertSee('3 of 4 ready')
+        ->assertDontSee('All essentials ready');
+});
+
+test('confirming background workers completes the checklist', function (): void {
+    greenExceptWorkers();
+    $operator = onboardingOperator();
+
+    confirmReadiness('backups_restore', $operator);
+    confirmReadiness('background_workers', $operator);
+
+    $this->actingAs($operator)
+        ->get(route('operator.onboarding'))
+        ->assertOk()
+        ->assertSee('4 of 4 ready')
+        ->assertSee('All essentials ready');
 });
 
 test('the onboarding checklist shows the connect-your-first-site card', function (): void {

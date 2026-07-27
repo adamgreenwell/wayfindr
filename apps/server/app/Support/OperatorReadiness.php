@@ -19,6 +19,10 @@ class OperatorReadiness
     private const CONFIRMATION_STALE_AFTER_DAYS = [
         'scheduler' => 7,
         'backups_restore' => 30,
+        // A dedicated attestation for the guided onboarding checklist that a
+        // queue worker AND the scheduler are running — kept distinct from the
+        // 'scheduler' key so scheduler-only proof can't satisfy worker readiness.
+        'background_workers' => 7,
     ];
 
     /** @var array<string, OperatorReadinessConfirmation> */
@@ -810,6 +814,51 @@ class OperatorReadiness
             summary: 'Confirm database and storage backups outside Wayfindr.',
             detail: 'Wayfindr cannot prove host snapshots, database dumps, object storage retention, or restore drills from inside a request.',
             action: 'Confirm database and storage backups are scheduled, retained, monitored, and restorable before real support traffic arrives.'
+        );
+    }
+
+    /**
+     * A dedicated background-workers step for the guided onboarding checklist. A
+     * configured async queue only proves config, not that a queue:work process is
+     * actually running — which a request cannot verify — so completion requires
+     * the operator's manual attestation that BOTH the worker and the scheduler
+     * run. It uses its own 'background_workers' confirmation key, kept distinct
+     * from the 'scheduler' check so scheduler-only proof cannot mark it ready.
+     *
+     * @return array{action: string, commands: array<int, string>, confirmation: array{age_label: string|null, confirmed_at: string|null, confirmed_by: string, freshness_status: string, key: string, note_present: bool, stale_after_days: int|null}|null, confirmation_key: string, confirmable: bool, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
+     */
+    public function backgroundWorkersStep(): array
+    {
+        $this->loadConfirmations();
+
+        $connection = (string) config('queue.default', 'sync');
+
+        // A synchronous/null queue does not run background jobs at all — fix the
+        // driver before there is anything to attest to.
+        if (in_array($connection, ['null', 'sync'], true)) {
+            return $this->check(
+                key: 'background_workers',
+                label: 'Confirm background workers',
+                status: 'attention',
+                summary: sprintf('QUEUE_CONNECTION is %s.', $connection),
+                detail: 'Synchronous queues run inline and never process queued jobs like alert digests, so there is no background worker to confirm yet.',
+                action: 'Set QUEUE_CONNECTION to database or redis and run php artisan queue:work under Forge, Supervisor, systemd, or your process manager, then confirm here.',
+                commands: ['php artisan queue:work', 'php artisan schedule:list'],
+            );
+        }
+
+        return $this->manualCheck(
+            key: 'background_workers',
+            label: 'Confirm background workers',
+            summary: 'Confirm a queue worker and the scheduler are both running.',
+            detail: 'A configured async queue only proves config, not that a queue:work process is running. Queued alerts and the once-a-minute scheduler both need process-manager coverage outside the request lifecycle.',
+            action: 'Confirm php artisan queue:work is managed by Forge, Supervisor, systemd, or your host; run php artisan queue:failed to inspect failures; and verify * * * * * php artisan schedule:run is configured once per minute.',
+            commands: [
+                'php artisan queue:work',
+                'php artisan queue:failed',
+                '* * * * * cd /path/to/apps/server && php artisan schedule:run',
+                'php artisan schedule:list',
+            ],
         );
     }
 

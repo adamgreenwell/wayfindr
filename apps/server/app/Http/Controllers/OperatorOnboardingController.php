@@ -17,69 +17,26 @@ use Illuminate\Http\Request;
  */
 class OperatorOnboardingController extends Controller
 {
-    /**
-     * The essential steps, in guided order — mail first. Each names a readiness
-     * item by source ('check' for a runtime probe, 'smoke' for a manual-proof
-     * step) and key, plus an optional operator-config GUI route so the
-     * diagnostic becomes actionable instead of copy-a-command.
-     *
-     * Background workers use the confirmable 'background_processes' smoke step
-     * rather than the raw 'queue_worker' check: a queue driver being async only
-     * proves config, not that a queue:work process is actually running, so
-     * completion requires the operator's manual attestation (which also covers
-     * the scheduler) instead of a driver-only "ready".
-     *
-     * @var list<array{source: string, key: string, configure?: string, configure_label?: string, configured_label?: string}>
-     */
-    private const ESSENTIAL_STEPS = [
-        [
-            'source' => 'check',
-            'key' => 'mail_transport',
-            'configure' => 'operator.settings.mail.edit',
-            'configure_label' => 'Configure mail',
-            'configured_label' => 'Manage mail settings',
-        ],
-        ['source' => 'check', 'key' => 'public_url'],
-        ['source' => 'smoke', 'key' => 'background_processes'],
-        ['source' => 'check', 'key' => 'backups_restore'],
-    ];
-
     public function __invoke(Request $request, OperatorReadiness $readiness): View
     {
         $summary = $readiness->summary();
         $checksByKey = collect($summary['checks'])->keyBy('key');
-        $smokeByKey = collect($summary['smoke_path'])->keyBy('key');
 
-        $steps = collect(self::ESSENTIAL_STEPS)
-            ->map(function (array $meta) use ($checksByKey, $smokeByKey): ?array {
-                $item = $meta['source'] === 'smoke'
-                    ? $smokeByKey->get($meta['key'])
-                    : $checksByKey->get($meta['key']);
-
-                if ($item === null) {
-                    return null;
-                }
-
-                $isReady = $item['status'] === 'ready';
-
-                return [
-                    // Smoke steps carry no 'detail'; fall back to the summary so
-                    // the shared card template renders uniformly.
-                    'check' => [
-                        ...$item,
-                        'detail' => $item['detail'] ?? $item['summary'],
-                        'commands' => $item['commands'] ?? [],
-                    ],
-                    // Carry the onboarding origin so the config page's back link
-                    // and its save/test actions return here, not to the dashboard.
-                    'configure_url' => isset($meta['configure']) ? route($meta['configure'], ['from' => 'onboarding']) : null,
-                    // Frame the same button as "Configure" while a step needs
-                    // attention and "Manage" once it is green.
-                    'configure_label' => $isReady
-                        ? ($meta['configured_label'] ?? null)
-                        : ($meta['configure_label'] ?? null),
-                ];
-            })
+        // Essential steps in guided order — mail first. Background workers use a
+        // dedicated attestation step (its own confirmation key) rather than the
+        // driver-only queue_worker check, so an async queue alone — or a
+        // scheduler-only proof — cannot report worker readiness as complete.
+        $steps = collect([
+            $this->step(
+                $checksByKey->get('mail_transport'),
+                configureRoute: 'operator.settings.mail.edit',
+                configureLabel: 'Configure mail',
+                configuredLabel: 'Manage mail settings',
+            ),
+            $this->step($checksByKey->get('public_url')),
+            $this->step($readiness->backgroundWorkersStep()),
+            $this->step($checksByKey->get('backups_restore')),
+        ])
             ->filter()
             ->values();
 
@@ -93,6 +50,43 @@ class OperatorOnboardingController extends Controller
             'site' => $this->firstSite($request),
             'confirmationRoute' => route('operator.readiness.confirmations.store'),
         ]);
+    }
+
+    /**
+     * Normalize a readiness item (check or dedicated step) into a checklist
+     * entry, attaching any operator-config GUI action. A blank item (a missing
+     * check key) collapses to null and is filtered out.
+     *
+     * @param  array<string, mixed>|null  $item
+     * @return array{check: array<string, mixed>, configure_url: string|null, configure_label: string|null}|null
+     */
+    private function step(
+        ?array $item,
+        ?string $configureRoute = null,
+        ?string $configureLabel = null,
+        ?string $configuredLabel = null,
+    ): ?array {
+        if ($item === null) {
+            return null;
+        }
+
+        $isReady = ($item['status'] ?? null) === 'ready';
+
+        return [
+            'check' => [
+                ...$item,
+                // A step without its own detail (or commands) falls back cleanly
+                // so the shared card template renders uniformly.
+                'detail' => $item['detail'] ?? $item['summary'],
+                'commands' => $item['commands'] ?? [],
+            ],
+            // Carry the onboarding origin so the config page's back link and its
+            // save/test actions return here, not to the dashboard.
+            'configure_url' => $configureRoute !== null ? route($configureRoute, ['from' => 'onboarding']) : null,
+            // Frame the same button as "Configure" while a step needs attention
+            // and "Manage" once it is green.
+            'configure_label' => $isReady ? $configuredLabel : $configureLabel,
+        ];
     }
 
     private function firstSite(Request $request): ?Site
