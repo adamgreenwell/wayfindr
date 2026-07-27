@@ -31,6 +31,15 @@ class OperatorStorageSettingsController extends Controller
 
     private const S3_DISK = 'attachments-s3';
 
+    /**
+     * The private object ACLs the form offers and accepts — the same allowlist
+     * AttachmentStorage::assertSafeDisk enforces. A public ACL is never an
+     * option: attachments are only served by streaming through Wayfindr.
+     *
+     * @var list<string>
+     */
+    private const SAFE_ACLS = ['bucket-owner-full-control', 'private', 'bucket-owner-read', ''];
+
     public function edit(Request $request, OperatorSettings $settings): View
     {
         $disk = (string) $settings->effective('storage.disk');
@@ -45,6 +54,7 @@ class OperatorStorageSettingsController extends Controller
             'bucket' => (string) $settings->effective('storage.s3_bucket'),
             'region' => (string) $settings->effective('storage.s3_region'),
             'endpoint' => (string) $settings->effective('storage.s3_endpoint'),
+            'acl' => (string) $settings->effective('storage.s3_acl'),
             'usePathStyle' => filter_var($settings->effective('storage.s3_use_path_style'), FILTER_VALIDATE_BOOL),
             // Secrets show only whether one is effectively set (env or override),
             // never their value — and never 500 on an undecryptable override.
@@ -74,6 +84,8 @@ class OperatorStorageSettingsController extends Controller
             'bucket' => ['nullable', 'required_if:disk,'.self::S3_DISK, 'string', 'max:255'],
             'region' => ['nullable', 'required_if:disk,'.self::S3_DISK, 'string', 'max:255'],
             'endpoint' => ['nullable', 'string', 'max:255', 'url'],
+            // Only private ACLs are accepted — a public ACL can never be set here.
+            'acl' => ['nullable', Rule::in(self::SAFE_ACLS)],
             // s3_access_key / s3_secret_key are registered in the exception
             // handler's dontFlash list, so a validation failure never flashes
             // these credentials into the session as plaintext old input.
@@ -113,6 +125,7 @@ class OperatorStorageSettingsController extends Controller
                 $settings->set('storage.s3_bucket', $this->explicit($validated['bucket'] ?? null));
                 $settings->set('storage.s3_region', $this->explicit($validated['region'] ?? null));
                 $settings->set('storage.s3_endpoint', $this->explicit($validated['endpoint'] ?? null));
+                $settings->set('storage.s3_acl', $this->explicit($validated['acl'] ?? null));
                 $settings->set('storage.s3_use_path_style', $request->boolean('use_path_style') ? '1' : '0');
 
                 // Keys are write-only: set when supplied, otherwise leave the
@@ -135,6 +148,7 @@ class OperatorStorageSettingsController extends Controller
                     'disk' => $disk,
                     'bucket' => $disk === self::S3_DISK ? ($validated['bucket'] ?? null) : null,
                     'region' => $disk === self::S3_DISK ? ($validated['region'] ?? null) : null,
+                    'acl' => $disk === self::S3_DISK ? ($validated['acl'] ?? null) : null,
                     'key_changed' => $keyProvided ? 'updated' : 'unchanged',
                     'secret_changed' => $secretProvided ? 'updated' : 'unchanged',
                 ],

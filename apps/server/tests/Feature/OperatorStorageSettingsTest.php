@@ -53,6 +53,7 @@ test('saving S3 storage settings stores them as live overrides, with a real bool
             'bucket' => 'my-bucket',
             'region' => 'auto',
             'endpoint' => 'https://acct.r2.cloudflarestorage.com',
+            'acl' => 'private', // R2 rejects the default; the GUI must be able to set this
             's3_access_key' => 'AKIA-test',
             's3_secret_key' => 's3cr3t',
             'use_path_style' => '1',
@@ -64,14 +65,29 @@ test('saving S3 storage settings stores them as live overrides, with a real bool
         ->and($settings->get('storage.s3_bucket'))->toBe('my-bucket')
         ->and($settings->get('storage.s3_region'))->toBe('auto')
         ->and($settings->get('storage.s3_endpoint'))->toBe('https://acct.r2.cloudflarestorage.com')
+        ->and($settings->get('storage.s3_acl'))->toBe('private')
         ->and($settings->isSet('storage.s3_key'))->toBeTrue()
         ->and($settings->isSet('storage.s3_secret'))->toBeTrue();
 
-    // Applying overrides lands a real boolean, not the truthy string "1".
+    // Applying overrides lands a real boolean and the private ACL R2 needs.
     $settings->applyOverrides();
     expect(config('wayfindr.attachments.storage_disk'))->toBe('attachments-s3')
         ->and(config('filesystems.disks.attachments-s3.bucket'))->toBe('my-bucket')
+        ->and(config('filesystems.disks.attachments-s3.options.ACL'))->toBe('private')
         ->and(config('filesystems.disks.attachments-s3.use_path_style_endpoint'))->toBeTrue();
+});
+
+test('a public ACL is rejected', function (): void {
+    $this->actingAs(storageOperator())
+        ->post(route('operator.settings.storage.update'), [
+            'disk' => 'attachments-s3',
+            'bucket' => 'b',
+            'region' => 'r',
+            's3_access_key' => 'k',
+            's3_secret_key' => 's',
+            'acl' => 'public-read', // attachments must never be public
+        ])
+        ->assertSessionHasErrors('acl');
 });
 
 test('the stored access keys are never echoed to the browser', function (): void {

@@ -60,6 +60,11 @@ class OperatorSettings
         'storage.s3_key' => ['config' => 'filesystems.disks.attachments-s3.key', 'secret' => true, 'group' => 'storage'],
         'storage.s3_secret' => ['config' => 'filesystems.disks.attachments-s3.secret', 'secret' => true, 'group' => 'storage'],
         'storage.s3_use_path_style' => ['config' => 'filesystems.disks.attachments-s3.use_path_style_endpoint', 'secret' => false, 'group' => 'storage', 'cast' => 'bool'],
+        // The canned ACL sent on every write. AWS wants bucket-owner-full-control
+        // (the default); Cloudflare R2 and some compatible stores reject it and
+        // need 'private'. Only private ACLs are offered/accepted (see the
+        // controller) — attachments must never be publicly readable.
+        'storage.s3_acl' => ['config' => 'filesystems.disks.attachments-s3.options.ACL', 'secret' => false, 'group' => 'storage'],
     ];
 
     /**
