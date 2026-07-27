@@ -5,6 +5,7 @@ namespace App\Support\Settings;
 use App\Models\OperatorSetting;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use InvalidArgumentException;
 
@@ -47,18 +48,19 @@ class OperatorSettings
 
     /**
      * Config paths the operator never sets directly, but which must be kept
-     * coherent with a group's overrides — nulled when that group is configured,
-     * restored to the env baseline when it is not.
+     * coherent with specific overrides — nulled when any of the listed keys is
+     * operator-set, restored to the env baseline when none are.
      *
      * mail.smtp.url: when env has MAIL_URL set, Laravel derives the SMTP host,
      * port, and credentials FROM the url and ignores the individual fields. So
-     * once an operator configures mail, the url must be dropped or their
-     * host/port/credentials would be silently superseded.
+     * the url must be dropped only when a CONNECTION field is overridden — not
+     * when the operator merely sets an unrelated field like the sender name,
+     * which would otherwise strand the url and fall back to empty host/port.
      *
-     * @var array<string, string> config path => group that, when configured, nulls it
+     * @var array<string, list<string>> config path => trigger keys that, when set, null it
      */
     private const DERIVED = [
-        'mail.mailers.smtp.url' => 'mail',
+        'mail.mailers.smtp.url' => ['mail.host', 'mail.port', 'mail.username', 'mail.password', 'mail.scheme'],
     ];
 
     /**
@@ -131,22 +133,24 @@ class OperatorSettings
             }
         }
 
-        // Derived paths: null when their group is operator-configured (so a stray
-        // env value can't supersede the operator's fields), else the env baseline.
-        foreach (self::DERIVED as $path => $group) {
-            $targets[$path] = $this->groupIsConfigured($group, $stored) ? null : $this->baseline[$path];
+        // Derived paths: null when any of their trigger keys is operator-set (so
+        // a stray env value can't supersede the operator's fields), else the env
+        // baseline.
+        foreach (self::DERIVED as $path => $triggerKeys) {
+            $targets[$path] = $this->anyKeySet($triggerKeys, $stored) ? null : $this->baseline[$path];
         }
 
         return $targets;
     }
 
     /**
+     * @param  list<string>  $keys
      * @param  array<string, string|null>  $stored
      */
-    private function groupIsConfigured(string $group, array $stored): bool
+    private function anyKeySet(array $keys, array $stored): bool
     {
-        foreach (self::MANAGED as $key => $meta) {
-            if ($meta['group'] === $group && array_key_exists($key, $stored) && $stored[$key] !== null) {
+        foreach ($keys as $key) {
+            if (array_key_exists($key, $stored) && $stored[$key] !== null) {
                 return true;
             }
         }
@@ -232,18 +236,22 @@ class OperatorSettings
             );
         }
 
-        // Bump the version AFTER the row is committed. Readers key their cache
-        // entry by the version they observed, so a slow reader that fetched the
-        // old rows before this write can only ever store under the previous
-        // version — it can never poison the new one (which would otherwise stick
-        // forever in a permanent cache).
+        // Bump the version so the next read misses and refetches. Readers key
+        // their cache entry by the version they observed, so a slow reader that
+        // fetched the old rows can only ever store under the previous version —
+        // never poisoning the new one (which would otherwise stick forever).
         //
-        // add() first: on the database and memcached stores, increment() on a
-        // MISSING key returns false without creating it, which would leave the
-        // version pinned at 0 and the cache never invalidated. add() seeds the
-        // key so increment() always advances it.
-        Cache::add(self::VERSION_KEY, 0);
-        Cache::increment(self::VERSION_KEY);
+        // Deferred to AFTER commit (runs immediately when there is no
+        // transaction): if set() is wrapped in a transaction — e.g. to commit
+        // the setting and its audit event atomically — bumping before commit
+        // would let a concurrent reader cache the pre-commit rows under the new
+        // version. add() first because increment() on a missing key returns
+        // false without creating it on the database/memcached stores, which
+        // would pin the version at 0.
+        DB::afterCommit(function (): void {
+            Cache::add(self::VERSION_KEY, 0);
+            Cache::increment(self::VERSION_KEY);
+        });
     }
 
     /**

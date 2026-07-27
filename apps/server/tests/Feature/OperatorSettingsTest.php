@@ -10,6 +10,7 @@ use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 use Symfony\Component\Console\Input\ArrayInput;
@@ -173,6 +174,33 @@ test('with no mail override, an env MAIL_URL is left intact', function (): void 
     settings()->applyOverrides();
 
     expect(config('mail.mailers.smtp.url'))->toBe('smtp://env-host');
+});
+
+test('setting only a non-connection mail field leaves an env MAIL_URL intact', function (): void {
+    // Only the sender name — not a connection field — so the url must stay, or
+    // the SMTP transport would fall back to empty host/port and break.
+    config()->set('mail.mailers.smtp.url', 'smtp://env-host');
+    settings()->captureBaseline();
+
+    settings()->set('mail.from_name', 'Acme Support');
+    settings()->applyOverrides();
+
+    expect(config('mail.mailers.smtp.url'))->toBe('smtp://env-host');
+});
+
+test('a write inside a transaction defers the cache version bump until commit', function (): void {
+    settings()->get('mail.host'); // prime the version-0 (empty) cache
+
+    DB::transaction(function (): void {
+        settings()->set('mail.host', 'txn-host');
+        // The bump is deferred to commit, so mid-transaction the version still
+        // points at the primed empty read — a concurrent reader can't cache the
+        // uncommitted row under a bumped version.
+        expect(settings()->get('mail.host'))->toBeNull();
+    });
+
+    // The deferred bump ran on commit: the value is now visible.
+    expect(settings()->get('mail.host'))->toBe('txn-host');
 });
 
 test('a console command start applies operator overrides (so mail-test and scheduled mail see them)', function (): void {
