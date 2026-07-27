@@ -166,6 +166,27 @@ test('saving storage settings records an instance-scoped audit without the secre
         ->and(json_encode($event->metadata))->not->toContain('key-not-logged');
 });
 
+test('a storage settings change shows in the operator activity feed', function (): void {
+    $operator = storageOperator();
+
+    $this->actingAs($operator)->post(route('operator.settings.storage.update'), ['disk' => 'attachments']);
+
+    // Instance-scoped (account_id null), so it must surface where operators look.
+    $this->actingAs($operator)
+        ->get(route('operator.dashboard'))
+        ->assertOk()
+        ->assertSee('Storage settings updated');
+});
+
+test('the path-style checkbox always submits a value so unchecking survives errors', function (): void {
+    // A hidden companion field means an unchecked box still submits "0", so a
+    // validation error elsewhere cannot silently re-check the saved true value.
+    $this->actingAs(storageOperator())
+        ->get(route('operator.settings.storage.edit'))
+        ->assertOk()
+        ->assertSee('name="use_path_style" value="0"', false);
+});
+
 test('the storage test passes on a working disk', function (): void {
     Storage::fake('attachments'); // default disk; probe write/read/list/delete on it
 

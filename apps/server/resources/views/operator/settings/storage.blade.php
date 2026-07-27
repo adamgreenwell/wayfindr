@@ -83,6 +83,10 @@
             </div>
 
             <div class="field">
+                {{-- Always submit a value so unchecking the box survives a
+                     validation error — otherwise an absent key falls back to the
+                     saved value and silently re-checks it. --}}
+                <input type="hidden" name="use_path_style" value="0">
                 <label class="check-row" for="use_path_style">
                     <input id="use_path_style" type="checkbox" name="use_path_style" value="1" @checked(old('use_path_style', $usePathStyle))>
                     <span>Use path-style addressing (required for MinIO and most non-AWS stores)</span>

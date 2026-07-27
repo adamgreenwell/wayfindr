@@ -63,6 +63,7 @@ class OperatorDashboardController extends Controller
         return [
             'operator_readiness.confirmed',
             'operator_settings.mail.updated',
+            'operator_settings.storage.updated',
         ];
     }
 
@@ -80,6 +81,7 @@ class OperatorDashboardController extends Controller
         return match ($event->action) {
             'operator_readiness.confirmed' => $this->readinessConfirmationLabel($event),
             'operator_settings.mail.updated' => 'Mail settings updated',
+            'operator_settings.storage.updated' => 'Storage settings updated',
             default => 'Operator activity',
         };
     }
@@ -90,6 +92,13 @@ class OperatorDashboardController extends Controller
             return sprintf(
                 'Outbound mail settings were updated (transport: %s).',
                 (string) data_get($event->metadata, 'mailer', 'unknown'),
+            );
+        }
+
+        if ($event->action === 'operator_settings.storage.updated') {
+            return sprintf(
+                'Attachment storage was updated (disk: %s).',
+                (string) data_get($event->metadata, 'disk', 'unknown'),
             );
         }
 
@@ -134,6 +143,23 @@ class OperatorDashboardController extends Controller
                         'removed' => 'Removed',
                         default => 'Unchanged',
                     },
+                ],
+                [
+                    'label' => 'Event type',
+                    'value' => 'Instance settings change',
+                ],
+            ],
+            'operator_settings.storage.updated' => [
+                [
+                    'label' => 'Disk',
+                    'value' => (string) data_get($event->metadata, 'disk', 'unknown'),
+                ],
+                [
+                    'label' => 'Credentials',
+                    'value' => in_array('updated', [
+                        data_get($event->metadata, 'key_changed'),
+                        data_get($event->metadata, 'secret_changed'),
+                    ], true) ? 'Updated' : 'Unchanged',
                 ],
                 [
                     'label' => 'Event type',
