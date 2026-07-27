@@ -168,7 +168,32 @@ test('saving mail settings records an audit event without the password value', f
 
     expect($event->metadata['mailer'])->toBe('smtp')
         ->and($event->metadata['password_changed'])->toBe('updated')
+        ->and($event->account_id)->toBeNull() // instance-wide, not a tenant event
         ->and(json_encode($event->metadata))->not->toContain('do-not-log-me');
+});
+
+test('the mail settings audit is instance-scoped, not attributed to the operator tenant', function (): void {
+    $operator = operatorUser();
+
+    $this->actingAs($operator)->post(route('operator.settings.mail.update'), [
+        'mailer' => 'smtp',
+        'host' => 'smtp.example.com',
+        'port' => 587,
+        'from_address' => 'support@acme.test',
+    ]);
+
+    // Never stamped with a tenant account — so it stays out of that account's
+    // /dashboard/account/audit trail and off its cascade-on-delete.
+    expect(AuditEvent::query()
+        ->where('action', 'operator_settings.mail.updated')
+        ->whereNotNull('account_id')
+        ->exists())->toBeFalse();
+
+    // But still visible where operators look — the operator console activity feed.
+    $this->actingAs($operator)
+        ->get(route('operator.dashboard'))
+        ->assertOk()
+        ->assertSee('Mail settings updated');
 });
 
 test('SMTP requires a host and port', function (): void {

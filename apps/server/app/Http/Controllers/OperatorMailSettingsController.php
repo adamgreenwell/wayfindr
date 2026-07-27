@@ -99,7 +99,12 @@ class OperatorMailSettingsController extends Controller
             }
 
             AuditEvent::query()->create([
-                'account_id' => $agent->account_id,
+                // Instance-wide config is NOT a tenant event: leaving account_id
+                // null keeps it out of the operator's own account audit trail
+                // (where other account admins would see it) and off the account's
+                // cascade-on-delete, so the record survives account deletion. It
+                // surfaces through the operator activity feed instead.
+                'account_id' => null,
                 'actor_type' => $agent->getMorphClass(),
                 'actor_id' => $agent->id,
                 'action' => 'operator_settings.mail.updated',
