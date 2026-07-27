@@ -98,6 +98,13 @@
             </div>
 
             <div class="field">
+                <label class="check-row" for="s3_confirm_migrated">
+                    <input id="s3_confirm_migrated" type="checkbox" name="s3_confirm_migrated" value="1" @checked(old('s3_confirm_migrated'))>
+                    <span>I have migrated existing attachments to the new location (only needed to change the bucket, endpoint, or region once files are already stored — check this after moving the objects, or they become unreachable).</span>
+                </label>
+            </div>
+
+            <div class="field">
                 {{-- Always submit a value so unchecking the box survives a
                      validation error — otherwise an absent key falls back to the
                      saved value and silently re-checks it. --}}

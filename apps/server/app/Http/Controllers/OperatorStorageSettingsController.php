@@ -104,6 +104,7 @@ class OperatorStorageSettingsController extends Controller
             's3_access_key' => [$s3Only, 'nullable', 'string', 'max:255'],
             's3_secret_key' => [$s3Only, 'nullable', 'string', 'max:1024'],
             's3_no_keys' => [$s3Only, 'nullable', 'boolean'],
+            's3_confirm_migrated' => [$s3Only, 'nullable', 'boolean'],
             'use_path_style' => [$s3Only, 'nullable', 'boolean'],
         ]);
 
@@ -114,6 +115,12 @@ class OperatorStorageSettingsController extends Controller
         // AWS SDK default provider chain (EC2/ECS/IRSA role, environment, shared
         // config) is used. Both are cleared together to keep the pair matched.
         $clearCreds = $disk === self::S3_DISK && (bool) ($validated['s3_no_keys'] ?? false);
+        // The operator attests they have moved the existing objects to the new
+        // location, so changing the bucket/endpoint/region is safe even though the
+        // disk already holds rows (they will resolve to the new, populated
+        // location). Does NOT bypass the "S3 is active" block — uploads must still
+        // be drained by switching to local first.
+        $migrated = $disk === self::S3_DISK && (bool) ($validated['s3_confirm_migrated'] ?? false);
 
         if ($disk === self::S3_DISK) {
             if ($clearCreds && ($keyProvided || $secretProvided)) {
@@ -139,7 +146,7 @@ class OperatorStorageSettingsController extends Controller
 
         $agent = $request->user();
 
-        DB::transaction(function () use ($settings, $validated, $disk, $keyProvided, $secretProvided, $clearCreds, $request, $agent): void {
+        DB::transaction(function () use ($settings, $validated, $disk, $keyProvided, $secretProvided, $clearCreds, $migrated, $request, $agent): void {
             // Serialize concurrent storage-config writes: lock the storage.disk
             // setting row (created first so the lock has a target), then refresh
             // config from the committed database state under the lock. The guard
@@ -166,9 +173,11 @@ class OperatorStorageSettingsController extends Controller
                 $s3IsActive = $liveCurrentDisk === self::S3_DISK;
                 $s3HasRows = ConversationMessageAttachment::query()->where('storage_disk', self::S3_DISK)->exists();
 
-                if ($this->s3LocationChanged($validated) && ($s3IsActive || $s3HasRows)) {
+                if ($this->s3LocationChanged($validated) && ($s3IsActive || ($s3HasRows && ! $migrated))) {
                     throw ValidationException::withMessages([
-                        'bucket' => 'Changing the S3 bucket, endpoint, or region is not allowed while S3 is the active storage disk or already holds attachments — existing or in-flight uploads would be stranded. Switch storage to the local disk first, then change the S3 connection. If attachments already live on S3, migrate the objects and update the environment directly.',
+                        'bucket' => $s3IsActive
+                            ? 'Changing the S3 bucket, endpoint, or region is not allowed while S3 is the active storage disk — an in-flight upload would be stranded. Switch storage to the local disk first, then change the S3 connection.'
+                            : 'This disk already holds attachments, so changing the bucket, endpoint, or region would strand them at the old location. Move the existing objects to the new location, then re-submit with "I have migrated existing attachments" checked.',
                     ]);
                 }
             }

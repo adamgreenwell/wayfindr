@@ -393,6 +393,55 @@ test('the location guard compares against fresh DB state, not a stale cache', fu
     expect(OperatorSetting::query()->where('key', 'storage.s3_bucket')->value('value'))->toBe('bucket-y');
 });
 
+test('a confirmed migration allows changing the S3 location once S3 is not active', function (): void {
+    $settings = storageSettings();
+    $settings->set('storage.disk', 'attachments'); // switched to local first (S3 drained)
+    $settings->set('storage.s3_bucket', 'old-bucket');
+    $settings->set('storage.s3_region', 'us-east-1');
+    $settings->set('storage.s3_key', 'k');
+    $settings->set('storage.s3_secret', 's');
+    ConversationMessageAttachment::factory()->create(['storage_disk' => 'attachments-s3']);
+
+    // Without confirming the migration → blocked (would strand the existing files).
+    $this->actingAs(storageOperator())->post(route('operator.settings.storage.update'), [
+        'disk' => 'attachments-s3',
+        'bucket' => 'new-bucket',
+        'region' => 'us-east-1',
+        'acl' => 'private',
+    ])->assertSessionHasErrors('bucket');
+    expect($settings->get('storage.s3_bucket'))->toBe('old-bucket');
+
+    // After moving the objects and confirming, the location change is allowed.
+    $this->actingAs(storageOperator())->post(route('operator.settings.storage.update'), [
+        'disk' => 'attachments-s3',
+        'bucket' => 'new-bucket',
+        'region' => 'us-east-1',
+        'acl' => 'private',
+        's3_confirm_migrated' => '1',
+    ])->assertSessionHasNoErrors();
+    expect($settings->get('storage.s3_bucket'))->toBe('new-bucket');
+});
+
+test('a confirmed migration still cannot change the location while S3 is active', function (): void {
+    $settings = storageSettings();
+    $settings->set('storage.disk', 'attachments-s3'); // S3 is the live target
+    $settings->set('storage.s3_bucket', 'old-bucket');
+    $settings->set('storage.s3_region', 'us-east-1');
+    $settings->set('storage.s3_key', 'k');
+    $settings->set('storage.s3_secret', 's');
+    ConversationMessageAttachment::factory()->create(['storage_disk' => 'attachments-s3']);
+
+    // Migration confirmed, but S3 is active — must switch to local first (drains uploads).
+    $this->actingAs(storageOperator())->post(route('operator.settings.storage.update'), [
+        'disk' => 'attachments-s3',
+        'bucket' => 'new-bucket',
+        'region' => 'us-east-1',
+        'acl' => 'private',
+        's3_confirm_migrated' => '1',
+    ])->assertSessionHasErrors('bucket');
+    expect($settings->get('storage.s3_bucket'))->toBe('old-bucket');
+});
+
 test('rotating S3 credentials is allowed while attachments exist (same location)', function (): void {
     $settings = storageSettings();
     $settings->set('storage.disk', 'attachments-s3');
