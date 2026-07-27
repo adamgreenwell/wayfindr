@@ -24,6 +24,10 @@ class OperatorMailSettingsController extends Controller
     public function edit(Request $request, OperatorSettings $settings): View
     {
         $mailer = (string) $settings->effective('mail.mailer');
+        // Determine the password's status without decrypting it into the view:
+        // a bad ciphertext (e.g. after an APP_KEY change) must not 500 the form,
+        // or the operator can't reach the UI to re-enter or clear it.
+        $passwordStatus = $settings->secretStatus('mail.password');
 
         return view('operator.settings.mail', [
             'operator' => $request->user(),
@@ -38,9 +42,10 @@ class OperatorMailSettingsController extends Controller
             'encryption' => (string) $settings->effective('mail.scheme'),
             'fromAddress' => (string) $settings->effective('mail.from_address'),
             'fromName' => (string) $settings->effective('mail.from_name'),
-            // Only a non-empty stored password counts as "saved" (an explicit
-            // empty override means the server takes no password).
-            'passwordIsSet' => $settings->isSet('mail.password') && (string) $settings->get('mail.password') !== '',
+            // Only a non-empty, readable stored password counts as "saved" (an
+            // explicit empty override means the server takes no password).
+            'passwordIsSet' => $passwordStatus === 'set',
+            'passwordUnreadable' => $passwordStatus === 'unreadable',
         ]);
     }
 
@@ -118,13 +123,13 @@ class OperatorMailSettingsController extends Controller
             'to' => ['required', 'email'],
         ]);
 
-        $mailer = strtolower((string) config('mail.default'));
+        $mailer = (string) config('mail.default');
+        $assessment = $this->assessDelivery($mailer);
 
-        // log, array, and unset are non-delivering transports — log writes to a
-        // file, array only holds the message in memory. A send would "succeed"
-        // without leaving the server, so don't report a false delivery; guide the
-        // operator to configure SMTP. (Mirrors the mail readiness check.)
-        if (in_array($mailer, ['', 'log', 'array'], true)) {
+        // log/array/null — or a failover/roundrobin chain of only those — never
+        // leave the server. A send would "succeed" without delivering, so don't
+        // report a false delivery; guide the operator to configure SMTP.
+        if ($assessment === 'non_delivering') {
             return redirect()
                 ->route('operator.settings.mail.edit')
                 ->with('error', 'Mail transport is still "'.($mailer === '' ? 'not set' : $mailer).'" — a test message would not be delivered. Choose SMTP above and save, then test.');
@@ -140,9 +145,65 @@ class OperatorMailSettingsController extends Controller
                 ->with('error', 'Test email failed via ['.$mailer.']: '.$exception->getMessage());
         }
 
+        // A failover/roundrobin chain that includes a local sink may have silently
+        // fallen back to it if the real transport was down — say so rather than
+        // promising delivery.
+        $message = $assessment === 'may_fall_back'
+            ? 'Test message sent via the ['.$mailer.'] chain. If the primary transport was unavailable it may have fallen back to a local log instead of delivering — confirm it actually arrived in the inbox.'
+            : 'Test email sent to '.$validated['to'].' via ['.$mailer.']. Check the inbox.';
+
         return redirect()
             ->route('operator.settings.mail.edit')
-            ->with('status', 'Test email sent to '.$validated['to'].' via ['.$mailer.']. Check the inbox.');
+            ->with('status', $message);
+    }
+
+    /**
+     * How honestly a send-test can claim delivery for the active mailer:
+     *  - 'non_delivering': log/array/null (or a failover/roundrobin chain of only
+     *    those) — the message never leaves the server, so the test is refused.
+     *  - 'may_fall_back': a failover/roundrobin chain that includes a local sink —
+     *    a real send is attempted, but a silent fallback to the sink is possible.
+     *  - 'deliverable': an ordinary outbound transport.
+     */
+    private function assessDelivery(string $mailer): string
+    {
+        $nonDelivering = ['', 'log', 'array', 'null'];
+        $leaves = $this->resolveLeafTransports(strtolower($mailer));
+        $sinks = array_filter($leaves, fn (string $transport): bool => in_array($transport, $nonDelivering, true));
+
+        if (count($sinks) === count($leaves)) {
+            return 'non_delivering';
+        }
+
+        return $sinks === [] ? 'deliverable' : 'may_fall_back';
+    }
+
+    /**
+     * The leaf transport types a mailer resolves to, expanding one level of a
+     * failover/roundrobin chain — which is where an ordinary transport can
+     * silently fall back to a local sink (log/array) and report success.
+     *
+     * @return list<string>
+     */
+    private function resolveLeafTransports(string $mailer): array
+    {
+        $transport = strtolower((string) config("mail.mailers.{$mailer}.transport", $mailer));
+
+        if (in_array($transport, ['failover', 'roundrobin'], true)) {
+            $chain = array_values(array_filter(
+                (array) config("mail.mailers.{$mailer}.mailers", []),
+                'is_string',
+            ));
+
+            $leaves = array_map(
+                fn (string $member): string => strtolower((string) config("mail.mailers.{$member}.transport", $member)),
+                $chain,
+            );
+
+            return $leaves === [] ? [$transport] : $leaves;
+        }
+
+        return [$transport];
     }
 
     /** The trimmed submitted value as an explicit override — '' for a blank field, never null. */

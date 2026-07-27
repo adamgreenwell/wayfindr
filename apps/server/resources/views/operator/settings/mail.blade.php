@@ -66,8 +66,11 @@
             <div class="field">
                 <label for="password">SMTP password</label>
                 <input id="password" name="password" type="password" autocomplete="new-password"
-                    placeholder="{{ $passwordIsSet ? '•••••••• (a password is saved)' : 'No password saved' }}">
+                    placeholder="{{ $passwordUnreadable ? 'Could not read the saved password — re-enter it' : ($passwordIsSet ? '•••••••• (a password is saved)' : 'No password saved') }}">
                 @error('password')<p class="field-error">{{ $message }}</p>@enderror
+                @if ($passwordUnreadable)
+                    <p class="field-error">The saved password could not be decrypted (this can happen after an APP_KEY change). Re-enter it below, or check &ldquo;no password&rdquo; if the server needs none.</p>
+                @endif
                 <p class="field-help">Leave blank to keep the saved password. It is stored encrypted and never shown.</p>
                 <label class="check-row" for="no_password">
                     <input id="no_password" type="checkbox" name="no_password" value="1" @checked(old('no_password'))>

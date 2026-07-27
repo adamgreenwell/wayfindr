@@ -259,6 +259,34 @@ class OperatorSettings
     }
 
     /**
+     * The display status of a stored value WITHOUT exposing a secret's plaintext
+     * or letting a decryption failure escape:
+     *  - 'none': nothing stored, or stored empty;
+     *  - 'set': a non-empty value is stored (and, for a secret, decrypts);
+     *  - 'unreadable': a secret is stored but its ciphertext cannot be decrypted
+     *    (e.g. after an APP_KEY rotation or row corruption).
+     *
+     * A status-rendering caller must use this rather than get(): opening the
+     * settings form must never 500 on a bad stored secret, or the operator loses
+     * the very UI they need to re-enter or clear it. At runtime applyOverrides()
+     * already falls back to the env value for an undecryptable secret.
+     */
+    public function secretStatus(string $key): string
+    {
+        $this->assertManaged($key);
+
+        if (! $this->isSet($key)) {
+            return 'none';
+        }
+
+        try {
+            return (string) $this->get($key) !== '' ? 'set' : 'none';
+        } catch (Throwable) {
+            return 'unreadable';
+        }
+    }
+
+    /**
      * Store (or clear, on null) a managed setting. Secrets are encrypted at
      * rest. Bumps the cache version so the change is live on the next
      * request/job. Auditing is the caller's job — the controller has the actor

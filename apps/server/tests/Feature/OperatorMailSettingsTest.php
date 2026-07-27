@@ -8,6 +8,7 @@ use App\Enums\AccountRole;
 use App\Mail\WayfindrMailTestMessage;
 use App\Models\Account;
 use App\Models\AuditEvent;
+use App\Models\OperatorSetting;
 use App\Models\User;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -74,6 +75,17 @@ test('the stored password is never echoed back to the browser', function (): voi
         ->get(route('operator.settings.mail.edit'))
         ->assertOk()
         ->assertDontSee('top-secret-pw');
+});
+
+test('an undecryptable stored password renders the form with a warning instead of a 500', function (): void {
+    // Ciphertext that no longer decrypts (e.g. the APP_KEY was rotated). Written
+    // directly so it bypasses set()'s encryption and lands as a bad value.
+    OperatorSetting::query()->create(['key' => 'mail.password', 'value' => 'not-valid-ciphertext']);
+
+    $this->actingAs(operatorUser())
+        ->get(route('operator.settings.mail.edit'))
+        ->assertOk()
+        ->assertSee('could not be decrypted');
 });
 
 test('an empty password keeps the saved one; the no-password box stores an explicit empty', function (): void {
@@ -176,6 +188,30 @@ test('the send-test refuses a non-delivering transport instead of reporting a fa
 
     Mail::assertNothingSent();
 })->with(['log', 'array']);
+
+test('the send-test refuses a failover chain of only non-delivering transports', function (): void {
+    Mail::fake();
+    config()->set('mail.default', 'failover');
+    config()->set('mail.mailers.failover', ['transport' => 'failover', 'mailers' => ['log', 'array']]);
+
+    $this->actingAs(operatorUser())
+        ->post(route('operator.settings.mail.test'), ['to' => 'me@acme.test'])
+        ->assertSessionHas('error');
+
+    Mail::assertNothingSent();
+});
+
+test('the send-test warns that a failover chain with a local sink may not have delivered', function (): void {
+    Mail::fake();
+    config()->set('mail.default', 'failover');
+    config()->set('mail.mailers.failover', ['transport' => 'failover', 'mailers' => ['smtp', 'log']]);
+
+    $this->actingAs(operatorUser())
+        ->post(route('operator.settings.mail.test'), ['to' => 'me@acme.test'])
+        ->assertSessionHas('status', fn (string $status): bool => str_contains($status, 'may have fallen back'));
+
+    Mail::assertSent(WayfindrMailTestMessage::class);
+});
 
 test('the send-test action validates the recipient', function (): void {
     Mail::fake();
