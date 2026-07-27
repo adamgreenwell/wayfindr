@@ -118,14 +118,16 @@ class OperatorMailSettingsController extends Controller
             'to' => ['required', 'email'],
         ]);
 
-        $mailer = (string) config('mail.default');
+        $mailer = strtolower((string) config('mail.default'));
 
-        // In log mode the send would only write to a log file — never delivered.
-        // Don't report a false success; guide the operator to configure SMTP.
-        if ($mailer === 'log') {
+        // log, array, and unset are non-delivering transports — log writes to a
+        // file, array only holds the message in memory. A send would "succeed"
+        // without leaving the server, so don't report a false delivery; guide the
+        // operator to configure SMTP. (Mirrors the mail readiness check.)
+        if (in_array($mailer, ['', 'log', 'array'], true)) {
             return redirect()
                 ->route('operator.settings.mail.edit')
-                ->with('error', 'Mail transport is still "Log only" — a test message would be written to the log, not delivered. Choose SMTP above and save, then test.');
+                ->with('error', 'Mail transport is still "'.($mailer === '' ? 'not set' : $mailer).'" — a test message would not be delivered. Choose SMTP above and save, then test.');
         }
 
         // Uses the current config — the operator's saved overrides are already

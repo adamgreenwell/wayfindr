@@ -166,16 +166,16 @@ test('the send-test action sends a test email via a real mailer', function (): v
     Mail::assertSent(WayfindrMailTestMessage::class);
 });
 
-test('the send-test refuses in log mode instead of reporting a false delivery', function (): void {
+test('the send-test refuses a non-delivering transport instead of reporting a false delivery', function (string $mailer): void {
     Mail::fake();
-    config()->set('mail.default', 'log');
+    config()->set('mail.default', $mailer); // log writes to a file, array only holds in memory
 
     $this->actingAs(operatorUser())
         ->post(route('operator.settings.mail.test'), ['to' => 'me@acme.test'])
         ->assertSessionHas('error');
 
     Mail::assertNothingSent();
-});
+})->with(['log', 'array']);
 
 test('the send-test action validates the recipient', function (): void {
     Mail::fake();
