@@ -259,6 +259,57 @@ class OperatorSettings
     }
 
     /**
+     * The display status of a stored value WITHOUT exposing a secret's plaintext
+     * or letting a decryption failure escape:
+     *  - 'none': nothing stored, or stored empty;
+     *  - 'set': a non-empty value is stored (and, for a secret, decrypts);
+     *  - 'unreadable': a secret is stored but its ciphertext cannot be decrypted
+     *    (e.g. after an APP_KEY rotation or row corruption).
+     *
+     * A status-rendering caller must use this rather than get(): opening the
+     * settings form must never 500 on a bad stored secret, or the operator loses
+     * the very UI they need to re-enter or clear it. At runtime applyOverrides()
+     * already falls back to the env value for an undecryptable secret.
+     */
+    public function secretStatus(string $key): string
+    {
+        $this->assertManaged($key);
+
+        if (! $this->isSet($key)) {
+            return 'none';
+        }
+
+        try {
+            return (string) $this->get($key) !== '' ? 'set' : 'none';
+        } catch (Throwable) {
+            return 'unreadable';
+        }
+    }
+
+    /**
+     * Like secretStatus(), but reflects the EFFECTIVE credential: with no stored
+     * override, a non-empty env/baseline value still counts as 'set'. Use this
+     * for a write-only status display so an existing environment credential
+     * (MAIL_PASSWORD, or a credential-bearing MAIL_URL folded into config by
+     * applyOverrides) is not shown as "none" — which could tempt an operator
+     * into blanking a working password.
+     *
+     * An explicit override always wins: a stored value ('set'), a deliberate
+     * empty no-password ('none'), or an unreadable ciphertext ('unreadable')
+     * is never masked by the env fallback.
+     */
+    public function effectiveSecretStatus(string $key): string
+    {
+        $override = $this->secretStatus($key);
+
+        if ($override !== 'none' || $this->isSet($key)) {
+            return $override;
+        }
+
+        return trim((string) config(self::MANAGED[$key]['config'])) !== '' ? 'set' : 'none';
+    }
+
+    /**
      * Store (or clear, on null) a managed setting. Secrets are encrypted at
      * rest. Bumps the cache version so the change is live on the next
      * request/job. Auditing is the caller's job — the controller has the actor

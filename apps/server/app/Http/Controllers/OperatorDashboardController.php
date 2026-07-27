@@ -62,6 +62,7 @@ class OperatorDashboardController extends Controller
     {
         return [
             'operator_readiness.confirmed',
+            'operator_settings.mail.updated',
         ];
     }
 
@@ -78,12 +79,20 @@ class OperatorDashboardController extends Controller
     {
         return match ($event->action) {
             'operator_readiness.confirmed' => $this->readinessConfirmationLabel($event),
+            'operator_settings.mail.updated' => 'Mail settings updated',
             default => 'Operator activity',
         };
     }
 
     private function operatorActivityBody(AuditEvent $event): string
     {
+        if ($event->action === 'operator_settings.mail.updated') {
+            return sprintf(
+                'Outbound mail settings were updated (transport: %s).',
+                (string) data_get($event->metadata, 'mailer', 'unknown'),
+            );
+        }
+
         return match (data_get($event->metadata, 'key')) {
             'scheduler' => 'Scheduler readiness proof was recorded.',
             'backups_restore' => 'Backups and restore readiness proof was recorded.',
@@ -111,6 +120,24 @@ class OperatorDashboardController extends Controller
                 [
                     'label' => 'Event type',
                     'value' => 'Readiness confirmation',
+                ],
+            ],
+            'operator_settings.mail.updated' => [
+                [
+                    'label' => 'Transport',
+                    'value' => (string) data_get($event->metadata, 'mailer', 'unknown'),
+                ],
+                [
+                    'label' => 'Password',
+                    'value' => match (data_get($event->metadata, 'password_changed')) {
+                        'updated' => 'Updated',
+                        'removed' => 'Removed',
+                        default => 'Unchanged',
+                    },
+                ],
+                [
+                    'label' => 'Event type',
+                    'value' => 'Instance settings change',
                 ],
             ],
             default => [],
