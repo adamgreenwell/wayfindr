@@ -74,14 +74,17 @@ class OperatorStorageSettingsController extends Controller
             'bucket' => ['nullable', 'required_if:disk,'.self::S3_DISK, 'string', 'max:255'],
             'region' => ['nullable', 'required_if:disk,'.self::S3_DISK, 'string', 'max:255'],
             'endpoint' => ['nullable', 'string', 'max:255', 'url'],
-            'key' => ['nullable', 'string', 'max:255'],
-            'secret' => ['nullable', 'string', 'max:1024'],
+            // s3_access_key / s3_secret_key are registered in the exception
+            // handler's dontFlash list, so a validation failure never flashes
+            // these credentials into the session as plaintext old input.
+            's3_access_key' => ['nullable', 'string', 'max:255'],
+            's3_secret_key' => ['nullable', 'string', 'max:1024'],
             'use_path_style' => ['nullable', 'boolean'],
         ]);
 
         $disk = $validated['disk'];
-        $keyProvided = ($validated['key'] ?? '') !== '';
-        $secretProvided = ($validated['secret'] ?? '') !== '';
+        $keyProvided = ($validated['s3_access_key'] ?? '') !== '';
+        $secretProvided = ($validated['s3_secret_key'] ?? '') !== '';
 
         // Choosing S3 needs credentials — supplied now or already stored — or
         // uploads will fail. Enforce beyond required_if, which cannot see the
@@ -93,8 +96,9 @@ class OperatorStorageSettingsController extends Controller
             if (! $keyReady || ! $secretReady) {
                 return redirect()
                     ->route('operator.settings.storage.edit', $this->returnParams($request))
-                    ->withErrors(['key' => 'An access key and secret are required to store attachments on S3.'])
-                    ->withInput();
+                    ->withErrors(['s3_access_key' => 'An access key and secret are required to store attachments on S3.'])
+                    // Never flash the credentials themselves back into the session.
+                    ->withInput($request->except(['s3_access_key', 's3_secret_key']));
             }
         }
 
@@ -114,10 +118,10 @@ class OperatorStorageSettingsController extends Controller
                 // Keys are write-only: set when supplied, otherwise leave the
                 // stored value untouched.
                 if ($keyProvided) {
-                    $settings->set('storage.s3_key', $validated['key']);
+                    $settings->set('storage.s3_key', $validated['s3_access_key']);
                 }
                 if ($secretProvided) {
-                    $settings->set('storage.s3_secret', $validated['secret']);
+                    $settings->set('storage.s3_secret', $validated['s3_secret_key']);
                 }
             }
 
@@ -177,32 +181,44 @@ class OperatorStorageSettingsController extends Controller
      */
     private function probeDisk(string $diskName): ?string
     {
+        $dir = '.wayfindr-storage-test-'.Str::random(12);
+        $probeKey = $dir.'/.probe';
+        $disk = Storage::disk($diskName);
+        $needsCleanup = false;
+
         try {
-            $dir = '.wayfindr-storage-test-'.Str::random(12);
-            $probeKey = $dir.'/.probe';
-            $disk = Storage::disk($diskName);
-
             $wrote = $disk->put($probeKey, 'ok') !== false;
-            $read = $wrote && $disk->get($probeKey) === 'ok';
-            $listed = $read && in_array($probeKey, $disk->files($dir), true);
-            $deleted = $disk->delete($probeKey);
+            $needsCleanup = $wrote;
 
-            if (! $read) {
+            if (! $wrote || $disk->get($probeKey) !== 'ok') {
                 return 'a write/read round-trip failed.';
             }
 
-            if (! $listed) {
+            if (! in_array($probeKey, $disk->files($dir), true)) {
                 return 'writes work but a listing probe did not return the object — the retention sweep needs list access.';
             }
 
-            if ($deleted === false || $disk->exists($probeKey)) {
+            if ($disk->delete($probeKey) === false || $disk->exists($probeKey)) {
                 return 'writes work but the probe could not be deleted — the retention sweep and upload cleanup need delete access.';
             }
+
+            $needsCleanup = false; // deleted cleanly
+
+            return null;
         } catch (Throwable $exception) {
             return $exception->getMessage();
+        } finally {
+            // If an intermediate step (read/list) threw or returned early after a
+            // successful write, best-effort remove the probe object — it is
+            // dotfile-prefixed, so the orphan sweep would never reclaim it.
+            if ($needsCleanup) {
+                try {
+                    $disk->delete($probeKey);
+                } catch (Throwable) {
+                    // best effort
+                }
+            }
         }
-
-        return null;
     }
 
     /** The allow-listed onboarding return context, or null. */

@@ -62,20 +62,20 @@
             </div>
 
             <div class="field">
-                <label for="key">Access key ID</label>
-                <input id="key" name="key" type="password" autocomplete="off"
+                <label for="s3_access_key">Access key ID</label>
+                <input id="s3_access_key" name="s3_access_key" type="password" autocomplete="off"
                     placeholder="{{ $keyUnreadable ? 'Could not read the saved key — re-enter it' : ($keyIsSet ? '•••••••• (a key is configured)' : 'No key configured') }}">
-                @error('key')<p class="field-error">{{ $message }}</p>@enderror
+                @error('s3_access_key')<p class="field-error">{{ $message }}</p>@enderror
                 @if ($keyUnreadable)
                     <p class="field-error">The saved access key could not be decrypted (this can happen after an APP_KEY change). Re-enter it below.</p>
                 @endif
             </div>
 
             <div class="field">
-                <label for="secret">Secret access key</label>
-                <input id="secret" name="secret" type="password" autocomplete="new-password"
+                <label for="s3_secret_key">Secret access key</label>
+                <input id="s3_secret_key" name="s3_secret_key" type="password" autocomplete="new-password"
                     placeholder="{{ $secretUnreadable ? 'Could not read the saved secret — re-enter it' : ($secretIsSet ? '•••••••• (a secret is configured)' : 'No secret configured') }}">
-                @error('secret')<p class="field-error">{{ $message }}</p>@enderror
+                @error('s3_secret_key')<p class="field-error">{{ $message }}</p>@enderror
                 @if ($secretUnreadable)
                     <p class="field-error">The saved secret access key could not be decrypted (this can happen after an APP_KEY change). Re-enter it below.</p>
                 @endif

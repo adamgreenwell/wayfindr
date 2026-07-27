@@ -53,8 +53,8 @@ test('saving S3 storage settings stores them as live overrides, with a real bool
             'bucket' => 'my-bucket',
             'region' => 'auto',
             'endpoint' => 'https://acct.r2.cloudflarestorage.com',
-            'key' => 'AKIA-test',
-            'secret' => 's3cr3t',
+            's3_access_key' => 'AKIA-test',
+            's3_secret_key' => 's3cr3t',
             'use_path_style' => '1',
         ])
         ->assertRedirect(route('operator.settings.storage.edit'))
@@ -107,7 +107,7 @@ test('choosing S3 without credentials is rejected and saves nothing', function (
             'region' => 'r',
             // no key/secret provided and none stored
         ])
-        ->assertSessionHasErrors('key');
+        ->assertSessionHasErrors('s3_access_key');
 
     expect(storageSettings()->isSet('storage.disk'))->toBeFalse();
 });
@@ -116,6 +116,25 @@ test('S3 requires a bucket and region', function (): void {
     $this->actingAs(storageOperator())
         ->post(route('operator.settings.storage.update'), ['disk' => 'attachments-s3'])
         ->assertSessionHasErrors(['bucket', 'region']);
+});
+
+test('a validation failure never flashes S3 credentials into the session', function (): void {
+    $this->actingAs(storageOperator())
+        ->post(route('operator.settings.storage.update'), [
+            'disk' => 'attachments-s3',
+            'bucket' => 'b',
+            'region' => 'r',
+            'endpoint' => 'not-a-valid-url', // fails validation
+            's3_access_key' => 'should-not-be-flashed',
+            's3_secret_key' => 'should-not-be-flashed-either',
+        ])
+        ->assertSessionHasErrors('endpoint');
+
+    // Non-secret fields are flashed for redisplay; the credentials never are —
+    // they must not land in the session store as plaintext old input.
+    expect(session()->getOldInput('bucket'))->toBe('b')
+        ->and(session()->getOldInput('s3_access_key'))->toBeNull()
+        ->and(session()->getOldInput('s3_secret_key'))->toBeNull();
 });
 
 test('saving other settings preserves a custom disk configured in env', function (): void {
@@ -134,8 +153,8 @@ test('saving storage settings records an instance-scoped audit without the secre
         'disk' => 'attachments-s3',
         'bucket' => 'audit-bucket',
         'region' => 'auto',
-        'key' => 'key-not-logged',
-        'secret' => 'secret-not-logged',
+        's3_access_key' => 'key-not-logged',
+        's3_secret_key' => 'secret-not-logged',
     ]);
 
     $event = AuditEvent::query()->where('action', 'operator_settings.storage.updated')->firstOrFail();
