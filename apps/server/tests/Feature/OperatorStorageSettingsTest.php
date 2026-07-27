@@ -365,6 +365,34 @@ test('changing the S3 location is blocked while S3 is the active disk, even with
     expect($settings->get('storage.s3_bucket'))->toBe('current-bucket');
 });
 
+test('the location guard compares against fresh DB state, not a stale cache', function (): void {
+    $settings = storageSettings();
+    $settings->set('storage.disk', 'attachments-s3');
+    $settings->set('storage.s3_bucket', 'bucket-x');
+    $settings->set('storage.s3_region', 'us-east-1');
+    $settings->set('storage.s3_key', 'k');
+    $settings->set('storage.s3_secret', 's');
+    ConversationMessageAttachment::factory()->create(['storage_disk' => 'attachments-s3']);
+
+    // Another request committed bucket-y straight to the DB (bypassing the
+    // version bump), so this request's cached effective() still reads bucket-x.
+    OperatorSetting::query()->where('key', 'storage.s3_bucket')->update(['value' => 'bucket-y']);
+
+    // Submitting bucket-x looks unchanged against the stale cache, but it IS a
+    // change away from the committed bucket-y where the attachment lives.
+    $this->actingAs(storageOperator())
+        ->post(route('operator.settings.storage.update'), [
+            'disk' => 'attachments-s3',
+            'bucket' => 'bucket-x',
+            'region' => 'us-east-1',
+            'acl' => 'private',
+        ])
+        ->assertSessionHasErrors('bucket');
+
+    // The committed location is untouched.
+    expect(OperatorSetting::query()->where('key', 'storage.s3_bucket')->value('value'))->toBe('bucket-y');
+});
+
 test('rotating S3 credentials is allowed while attachments exist (same location)', function (): void {
     $settings = storageSettings();
     $settings->set('storage.disk', 'attachments-s3');

@@ -141,14 +141,16 @@ class OperatorStorageSettingsController extends Controller
 
         DB::transaction(function () use ($settings, $validated, $disk, $keyProvided, $secretProvided, $clearCreds, $request, $agent): void {
             // Serialize concurrent storage-config writes: lock the storage.disk
-            // setting row (created first so the lock has a target) and re-read the
-            // active disk under it, so the location guard's read of the active
-            // disk + row state is atomic with the write. Without this, two
-            // operators could both pass the guard and activate different S3
-            // locations, stranding an upload written to the first.
+            // setting row (created first so the lock has a target), then refresh
+            // config from the committed database state under the lock. The guard
+            // then compares the active disk AND the S3 location against the
+            // committed-latest values via config() — not the versioned-cache
+            // effective() snapshot, which may pre-date a concurrent change and let
+            // a stale request overwrite a location where an attachment now lives.
             OperatorSetting::query()->firstOrCreate(['key' => 'storage.disk']);
-            $lockedDisk = (string) (OperatorSetting::query()->where('key', 'storage.disk')->lockForUpdate()->value('value') ?? '');
-            $liveCurrentDisk = $lockedDisk !== '' ? $lockedDisk : (string) config('wayfindr.attachments.storage_disk', self::LOCAL_DISK);
+            OperatorSetting::query()->where('key', 'storage.disk')->lockForUpdate()->first();
+            $settings->refreshFromDatabase();
+            $liveCurrentDisk = (string) config('wayfindr.attachments.storage_disk', self::LOCAL_DISK);
 
             if ($disk === self::S3_DISK) {
                 // Existing attachments recorded against this disk name resolve
@@ -164,7 +166,7 @@ class OperatorStorageSettingsController extends Controller
                 $s3IsActive = $liveCurrentDisk === self::S3_DISK;
                 $s3HasRows = ConversationMessageAttachment::query()->where('storage_disk', self::S3_DISK)->exists();
 
-                if ($this->s3LocationChanged($settings, $validated) && ($s3IsActive || $s3HasRows)) {
+                if ($this->s3LocationChanged($validated) && ($s3IsActive || $s3HasRows)) {
                     throw ValidationException::withMessages([
                         'bucket' => 'Changing the S3 bucket, endpoint, or region is not allowed while S3 is the active storage disk or already holds attachments — existing or in-flight uploads would be stranded. Switch storage to the local disk first, then change the S3 connection. If attachments already live on S3, migrate the objects and update the environment directly.',
                     ]);
@@ -301,17 +303,19 @@ class OperatorStorageSettingsController extends Controller
 
     /**
      * Whether the submitted S3 location (bucket / endpoint / region) differs from
-     * the effective current one — the fields that determine where existing
+     * the committed current one — the fields that determine where existing
      * attachments physically live. Credentials, ACL, and path-style are not
-     * location, so they are excluded.
+     * location, so they are excluded. Compares against config(), which the caller
+     * refreshes from the database under the lock, so a concurrent location change
+     * is seen (unlike the versioned-cache effective() snapshot).
      *
      * @param  array<string, mixed>  $validated
      */
-    private function s3LocationChanged(OperatorSettings $settings, array $validated): bool
+    private function s3LocationChanged(array $validated): bool
     {
-        return $this->explicit($validated['bucket'] ?? null) !== (string) $settings->effective('storage.s3_bucket')
-            || $this->explicit($validated['endpoint'] ?? null) !== (string) $settings->effective('storage.s3_endpoint')
-            || $this->explicit($validated['region'] ?? null) !== (string) $settings->effective('storage.s3_region');
+        return $this->explicit($validated['bucket'] ?? null) !== (string) config('filesystems.disks.attachments-s3.bucket')
+            || $this->explicit($validated['endpoint'] ?? null) !== (string) config('filesystems.disks.attachments-s3.endpoint')
+            || $this->explicit($validated['region'] ?? null) !== (string) config('filesystems.disks.attachments-s3.region');
     }
 
     /** The allow-listed onboarding return context, or null. */
