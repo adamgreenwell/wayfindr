@@ -94,6 +94,19 @@ test('confirming background workers completes the checklist', function (): void 
         ->assertSee('All essentials ready');
 });
 
+test('the checklist is scoped to its own items, not the full diagnostic', function (): void {
+    // A misconfigured scanner would surface on the full operator diagnostic, but
+    // the focused checklist must neither run nor depend on unrelated probes
+    // (attachment storage / ClamAV), so it renders regardless.
+    config()->set('wayfindr.attachments.scanner.driver', 'bogus-unreachable');
+
+    $this->actingAs(onboardingOperator())
+        ->get(route('operator.onboarding'))
+        ->assertOk()
+        ->assertDontSee('Attachment scanning')
+        ->assertDontSee('Attachment storage');
+});
+
 test('the onboarding checklist shows the connect-your-first-site card', function (): void {
     $account = Account::factory()->create();
     $operator = onboardingOperator($account);

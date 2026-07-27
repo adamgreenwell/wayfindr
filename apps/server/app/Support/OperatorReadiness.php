@@ -818,6 +818,29 @@ class OperatorReadiness
     }
 
     /**
+     * The readiness items the guided onboarding checklist shows, in guided order
+     * — mail, public URL, background workers, backups. Computes ONLY these, so
+     * the focused checklist (including the first post-/setup landing and every
+     * refresh) never runs unrelated diagnostics like the S3 attachment-disk
+     * write/read/list/delete probe or the ClamAV reachability check, which the
+     * full summary() suite performs and which can block on external-service
+     * timeouts.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function onboardingChecklist(): array
+    {
+        $this->loadConfirmations();
+
+        return [
+            $this->mailTransport(),
+            $this->publicUrl(),
+            $this->backgroundWorkersStep(),
+            $this->backupsRestore(),
+        ];
+    }
+
+    /**
      * A dedicated background-workers step for the guided onboarding checklist. A
      * configured async queue only proves config, not that a queue:work process is
      * actually running — which a request cannot verify — so completion requires

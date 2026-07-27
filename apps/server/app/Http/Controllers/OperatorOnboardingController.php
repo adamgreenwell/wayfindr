@@ -17,27 +17,29 @@ use Illuminate\Http\Request;
  */
 class OperatorOnboardingController extends Controller
 {
+    /**
+     * Operator-config GUI actions per readiness key. A key here gains an inline
+     * Configure button (framed "Manage" once green); keys without one fall back
+     * to the recommended CLI command and the mark-confirmed evidence flow.
+     *
+     * @var array<string, array{route: string, label: string, configured: string}>
+     */
+    private const CONFIGURE_ACTIONS = [
+        'mail_transport' => [
+            'route' => 'operator.settings.mail.edit',
+            'label' => 'Configure mail',
+            'configured' => 'Manage mail settings',
+        ],
+    ];
+
     public function __invoke(Request $request, OperatorReadiness $readiness): View
     {
-        $summary = $readiness->summary();
-        $checksByKey = collect($summary['checks'])->keyBy('key');
-
-        // Essential steps in guided order — mail first. Background workers use a
-        // dedicated attestation step (its own confirmation key) rather than the
-        // driver-only queue_worker check, so an async queue alone — or a
-        // scheduler-only proof — cannot report worker readiness as complete.
-        $steps = collect([
-            $this->step(
-                $checksByKey->get('mail_transport'),
-                configureRoute: 'operator.settings.mail.edit',
-                configureLabel: 'Configure mail',
-                configuredLabel: 'Manage mail settings',
-            ),
-            $this->step($checksByKey->get('public_url')),
-            $this->step($readiness->backgroundWorkersStep()),
-            $this->step($checksByKey->get('backups_restore')),
-        ])
-            ->filter()
+        // Compute ONLY the checklist's items (mail, public URL, background
+        // workers, backups) — not the full diagnostic suite — so the focused
+        // page never runs or blocks on unrelated probes like the S3 attachment
+        // disk or the ClamAV scanner.
+        $steps = collect($readiness->onboardingChecklist())
+            ->map(fn (array $item): array => $this->step($item))
             ->values();
 
         $readyCount = $steps->filter(fn (array $step): bool => $step['check']['status'] === 'ready')->count();
@@ -53,23 +55,15 @@ class OperatorOnboardingController extends Controller
     }
 
     /**
-     * Normalize a readiness item (check or dedicated step) into a checklist
-     * entry, attaching any operator-config GUI action. A blank item (a missing
-     * check key) collapses to null and is filtered out.
+     * Normalize a readiness item into a checklist entry, attaching any
+     * operator-config GUI action registered for its key.
      *
-     * @param  array<string, mixed>|null  $item
-     * @return array{check: array<string, mixed>, configure_url: string|null, configure_label: string|null}|null
+     * @param  array<string, mixed>  $item
+     * @return array{check: array<string, mixed>, configure_url: string|null, configure_label: string|null}
      */
-    private function step(
-        ?array $item,
-        ?string $configureRoute = null,
-        ?string $configureLabel = null,
-        ?string $configuredLabel = null,
-    ): ?array {
-        if ($item === null) {
-            return null;
-        }
-
+    private function step(array $item): array
+    {
+        $configure = self::CONFIGURE_ACTIONS[$item['key']] ?? null;
         $isReady = ($item['status'] ?? null) === 'ready';
 
         return [
@@ -82,10 +76,10 @@ class OperatorOnboardingController extends Controller
             ],
             // Carry the onboarding origin so the config page's back link and its
             // save/test actions return here, not to the dashboard.
-            'configure_url' => $configureRoute !== null ? route($configureRoute, ['from' => 'onboarding']) : null,
-            // Frame the same button as "Configure" while a step needs attention
-            // and "Manage" once it is green.
-            'configure_label' => $isReady ? $configuredLabel : $configureLabel,
+            'configure_url' => $configure !== null ? route($configure['route'], ['from' => 'onboarding']) : null,
+            // Frame the button as "Configure" while a step needs attention and
+            // "Manage" once it is green.
+            'configure_label' => $configure !== null ? ($isReady ? $configure['configured'] : $configure['label']) : null,
         ];
     }
 
