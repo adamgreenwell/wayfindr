@@ -59,8 +59,8 @@ test('first run setup creates the owner account site and session', function (): 
     $site = Site::query()->sole();
 
     $response
-        ->assertRedirect("/dashboard/sites/{$site->id}#install-snippet")
-        ->assertSessionHas('status', 'Wayfindr is ready. Copy the install snippet to connect your first site.');
+        ->assertRedirect(route('operator.onboarding'))
+        ->assertSessionHas('status', 'Wayfindr is ready. Finish setting up your installation below — start by connecting your first site.');
 
     expect($account->name)->toBe('Acme Support')
         ->and($account->slug)->toBe('acme-support')
@@ -106,8 +106,8 @@ test('first run setup claims incomplete bootstrap records without creating dupli
     $agent = User::query()->sole();
 
     $response
-        ->assertRedirect("/dashboard/sites/{$site->id}#install-snippet")
-        ->assertSessionHas('status', 'Wayfindr is ready. Copy the install snippet to connect your first site.');
+        ->assertRedirect(route('operator.onboarding'))
+        ->assertSessionHas('status', 'Wayfindr is ready. Finish setting up your installation below — start by connecting your first site.');
 
     expect(Account::query()->count())->toBe(1)
         ->and(Site::query()->count())->toBe(1)
@@ -183,7 +183,6 @@ test('first run setup handoff shows install guidance and operator readiness link
 
     $this->get("/dashboard/sites/{$site->id}")
         ->assertOk()
-        ->assertSee('Wayfindr is ready. Copy the install snippet to connect your first site.')
         ->assertSee('Install snippet')
         ->assertSee('Next steps')
         ->assertSee('Copy this snippet into docs.example.test.')

@@ -30,10 +30,17 @@ class OperatorMailSettingsController extends Controller
         // *effective* status also counts an env/MAIL_URL credential as set, so
         // the form never implies "no password" when one is working from env.
         $passwordStatus = $settings->effectiveSecretStatus('mail.password');
+        // When the operator arrived from the guided onboarding checklist, keep
+        // that origin so the back link and the save/test actions return there
+        // instead of ejecting them to the dashboard.
+        $from = $this->returnContext($request);
 
         return view('operator.settings.mail', [
             'operator' => $request->user(),
             'mailer' => $mailer,
+            'backUrl' => $from === 'onboarding' ? route('operator.onboarding') : route('operator.dashboard'),
+            'backLabel' => $from === 'onboarding' ? 'Back to setup checklist' : 'Back to operator console',
+            'returnTo' => $from,
             // A transport configured outside this form's editable subset (ses,
             // postmark, sendmail, …) is offered as a preserved option so saving
             // other fields never silently switches delivery to log.
@@ -120,7 +127,7 @@ class OperatorMailSettingsController extends Controller
         });
 
         return redirect()
-            ->route('operator.settings.mail.edit')
+            ->route('operator.settings.mail.edit', $this->returnParams($request))
             ->with('status', 'Mail settings saved. Send a test email to confirm delivery.');
     }
 
@@ -130,6 +137,7 @@ class OperatorMailSettingsController extends Controller
             'to' => ['required', 'email'],
         ]);
 
+        $returnParams = $this->returnParams($request);
         $mailer = (string) config('mail.default');
         $assessment = $this->assessDelivery($mailer);
 
@@ -138,7 +146,7 @@ class OperatorMailSettingsController extends Controller
         // report a false delivery; guide the operator to configure SMTP.
         if ($assessment === 'non_delivering') {
             return redirect()
-                ->route('operator.settings.mail.edit')
+                ->route('operator.settings.mail.edit', $returnParams)
                 ->with('error', 'Mail transport is still "'.($mailer === '' ? 'not set' : $mailer).'" — a test message would not be delivered. Choose SMTP above and save, then test.');
         }
 
@@ -148,7 +156,7 @@ class OperatorMailSettingsController extends Controller
             Mail::to($validated['to'])->send(new WayfindrMailTestMessage);
         } catch (Throwable $exception) {
             return redirect()
-                ->route('operator.settings.mail.edit')
+                ->route('operator.settings.mail.edit', $returnParams)
                 ->with('error', 'Test email failed via ['.$mailer.']: '.$exception->getMessage());
         }
 
@@ -160,8 +168,30 @@ class OperatorMailSettingsController extends Controller
             : 'Test email sent to '.$validated['to'].' via ['.$mailer.']. Check the inbox.';
 
         return redirect()
-            ->route('operator.settings.mail.edit')
+            ->route('operator.settings.mail.edit', $returnParams)
             ->with('status', $message);
+    }
+
+    /**
+     * The allow-listed onboarding return context, or null. Keeps an operator who
+     * reached the mail form from the guided checklist from being ejected to the
+     * dashboard by the back link or the save/test redirects.
+     */
+    private function returnContext(Request $request): ?string
+    {
+        return $request->input('from') === 'onboarding' ? 'onboarding' : null;
+    }
+
+    /**
+     * Route params that carry the onboarding origin back through a redirect.
+     *
+     * @return array<string, string>
+     */
+    private function returnParams(Request $request): array
+    {
+        $from = $this->returnContext($request);
+
+        return $from !== null ? ['from' => $from] : [];
     }
 
     private function assessDelivery(string $mailer): string

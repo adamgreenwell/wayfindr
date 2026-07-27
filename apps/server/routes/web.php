@@ -32,6 +32,7 @@ use App\Http\Controllers\OperatorBreakGlassController;
 use App\Http\Controllers\OperatorBreakGlassViewerController;
 use App\Http\Controllers\OperatorDashboardController;
 use App\Http\Controllers\OperatorMailSettingsController;
+use App\Http\Controllers\OperatorOnboardingController;
 use App\Http\Controllers\OperatorReadinessConfirmationController;
 use App\Http\Controllers\Widget\WidgetScriptController;
 use App\Http\Middleware\EnsureAgentIsActive;
@@ -218,6 +219,7 @@ Route::middleware(['auth', EnsureAgentIsActive::class, EnsurePlatformOperator::c
     ->name('operator.')
     ->group(function (): void {
         Route::get('/', OperatorDashboardController::class)->name('dashboard');
+        Route::get('/onboarding', OperatorOnboardingController::class)->name('onboarding');
         Route::get('/settings/mail', [OperatorMailSettingsController::class, 'edit'])
             ->name('settings.mail.edit');
         Route::post('/settings/mail', [OperatorMailSettingsController::class, 'update'])

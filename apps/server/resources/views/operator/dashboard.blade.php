@@ -18,7 +18,10 @@
         Signed in as {{ $operator->name }}. Platform operator access does not grant support data access.
     </p>
 
-    <p><a class="button secondary" href="{{ route('operator.settings.mail.edit') }}">Configure mail</a></p>
+    <p>
+        <a class="button" href="{{ route('operator.onboarding') }}">Guided setup</a>
+        <a class="button secondary" href="{{ route('operator.settings.mail.edit') }}">Configure mail</a>
+    </p>
 
     <section class="section" aria-labelledby="operator-focus-heading">
         <div class="section-header">

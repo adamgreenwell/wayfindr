@@ -41,7 +41,45 @@ test('the operator sees the mail settings form', function (): void {
         ->get(route('operator.settings.mail.edit'))
         ->assertOk()
         ->assertSee('Outbound mail')
-        ->assertSee('Send a test email');
+        ->assertSee('Send a test email')
+        ->assertSee('Back to operator console');
+});
+
+test('arriving from onboarding keeps the back link and save action on the checklist', function (): void {
+    $operator = operatorUser();
+
+    $this->actingAs($operator)
+        ->get(route('operator.settings.mail.edit', ['from' => 'onboarding']))
+        ->assertOk()
+        ->assertSee('Back to setup checklist')
+        ->assertSee(route('operator.onboarding'), false);
+
+    // Saving preserves the origin so the operator can return to the checklist.
+    $this->actingAs($operator)
+        ->post(route('operator.settings.mail.update'), [
+            'mailer' => 'smtp',
+            'host' => 'smtp.example.com',
+            'port' => 587,
+            'from_address' => 'support@acme.test',
+            'from' => 'onboarding',
+        ])
+        ->assertRedirect(route('operator.settings.mail.edit', ['from' => 'onboarding']));
+});
+
+test('the send-test preserves the onboarding origin on redirect', function (): void {
+    Mail::fake();
+    config()->set('mail.default', 'smtp');
+
+    $this->actingAs(operatorUser())
+        ->post(route('operator.settings.mail.test'), ['to' => 'me@acme.test', 'from' => 'onboarding'])
+        ->assertRedirect(route('operator.settings.mail.edit', ['from' => 'onboarding']));
+});
+
+test('an unknown return context falls back to the operator console', function (): void {
+    $this->actingAs(operatorUser())
+        ->get(route('operator.settings.mail.edit', ['from' => 'somewhere-else']))
+        ->assertOk()
+        ->assertSee('Back to operator console');
 });
 
 test('saving SMTP settings stores them as live overrides', function (): void {
