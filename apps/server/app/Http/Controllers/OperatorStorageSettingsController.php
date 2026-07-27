@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\AuditEvent;
+use App\Models\ConversationMessageAttachment;
 use App\Support\Attachments\AttachmentStorage;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Contracts\View\View;
@@ -131,6 +132,20 @@ class OperatorStorageSettingsController extends Controller
                     // Never flash the credentials themselves back into the session.
                     ->withInput($request->except(['s3_access_key', 's3_secret_key']));
             }
+
+            // Existing attachments recorded against this disk name resolve through
+            // whatever config it currently holds (ConversationMessageAttachment::
+            // disk()), so changing the bucket, endpoint, or region would silently
+            // point them at a different location and strand them. Block a location
+            // change while the disk holds files — credential rotation, ACL, and
+            // path-style stay allowed because they keep the same location.
+            if ($this->s3LocationChanged($settings, $validated)
+                && ConversationMessageAttachment::query()->where('storage_disk', self::S3_DISK)->exists()) {
+                return redirect()
+                    ->route('operator.settings.storage.edit', $this->returnParams($request))
+                    ->withErrors(['bucket' => 'The '.self::S3_DISK.' disk already stores uploaded attachments. Changing the bucket, endpoint, or region would make them unreachable, since existing files are recorded against this disk name. Keep the current bucket, endpoint, and region (credential, ACL, and path-style changes are fine); to move buckets, migrate the objects and update the environment directly.'])
+                    ->withInput($request->except(['s3_access_key', 's3_secret_key']));
+            }
         }
 
         $agent = $request->user();
@@ -257,6 +272,21 @@ class OperatorStorageSettingsController extends Controller
                 }
             }
         }
+    }
+
+    /**
+     * Whether the submitted S3 location (bucket / endpoint / region) differs from
+     * the effective current one — the fields that determine where existing
+     * attachments physically live. Credentials, ACL, and path-style are not
+     * location, so they are excluded.
+     *
+     * @param  array<string, mixed>  $validated
+     */
+    private function s3LocationChanged(OperatorSettings $settings, array $validated): bool
+    {
+        return $this->explicit($validated['bucket'] ?? null) !== (string) $settings->effective('storage.s3_bucket')
+            || $this->explicit($validated['endpoint'] ?? null) !== (string) $settings->effective('storage.s3_endpoint')
+            || $this->explicit($validated['region'] ?? null) !== (string) $settings->effective('storage.s3_region');
     }
 
     /** The allow-listed onboarding return context, or null. */

@@ -39,7 +39,7 @@
             </div>
 
             <h3>S3-compatible bucket</h3>
-            <p class="field-help">Used when the S3 disk is selected. The bucket must stay private — files are only served through Wayfindr, never a bucket URL.</p>
+            <p class="field-help">Used when the S3 disk is selected. The bucket must stay private — files are only served through Wayfindr, never a bucket URL. Once attachments are stored here, the bucket, endpoint, and region are locked so existing files stay reachable (credentials and ACL can still change).</p>
 
             <div class="field">
                 <label for="bucket">Bucket</label>

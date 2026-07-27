@@ -7,6 +7,7 @@
 use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
+use App\Models\ConversationMessageAttachment;
 use App\Models\User;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -236,6 +237,51 @@ test('saving other settings preserves a custom disk configured in env', function
         ->assertSessionHasNoErrors();
 
     expect($settings->get('storage.disk'))->toBe('attachments-custom');
+});
+
+test('changing the S3 location is blocked while attachments already exist there', function (): void {
+    $settings = storageSettings();
+    $settings->set('storage.disk', 'attachments-s3');
+    $settings->set('storage.s3_bucket', 'current-bucket');
+    $settings->set('storage.s3_region', 'us-east-1');
+    $settings->set('storage.s3_key', 'k');
+    $settings->set('storage.s3_secret', 's');
+    // A stored attachment lives on that disk.
+    ConversationMessageAttachment::factory()->create(['storage_disk' => 'attachments-s3']);
+
+    $this->actingAs(storageOperator())
+        ->post(route('operator.settings.storage.update'), [
+            'disk' => 'attachments-s3',
+            'bucket' => 'a-different-bucket', // location change would strand existing files
+            'region' => 'us-east-1',
+            'acl' => 'private',
+        ])
+        ->assertSessionHasErrors('bucket');
+
+    expect($settings->get('storage.s3_bucket'))->toBe('current-bucket'); // unchanged
+});
+
+test('rotating S3 credentials is allowed while attachments exist (same location)', function (): void {
+    $settings = storageSettings();
+    $settings->set('storage.disk', 'attachments-s3');
+    $settings->set('storage.s3_bucket', 'current-bucket');
+    $settings->set('storage.s3_region', 'us-east-1');
+    $settings->set('storage.s3_key', 'old-key');
+    $settings->set('storage.s3_secret', 'old-secret');
+    ConversationMessageAttachment::factory()->create(['storage_disk' => 'attachments-s3']);
+
+    $this->actingAs(storageOperator())
+        ->post(route('operator.settings.storage.update'), [
+            'disk' => 'attachments-s3',
+            'bucket' => 'current-bucket', // same location
+            'region' => 'us-east-1',
+            'acl' => 'private',
+            's3_access_key' => 'new-key',
+            's3_secret_key' => 'new-secret',
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($settings->get('storage.s3_key'))->toBe('new-key');
 });
 
 test('saving storage settings records an instance-scoped audit without the secret', function (): void {
