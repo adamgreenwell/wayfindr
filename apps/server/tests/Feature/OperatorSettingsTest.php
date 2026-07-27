@@ -6,11 +6,14 @@
 
 use App\Models\OperatorSetting;
 use App\Support\Settings\OperatorSettings;
+use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Output\NullOutput;
 
 uses(RefreshDatabase::class);
 
@@ -147,6 +150,41 @@ test('when the settings store is unreadable, config falls back to the env baseli
     settings()->applyOverrides();
 
     expect(config('mail.mailers.smtp.host'))->toBe('env-host');
+});
+
+test('configuring mail nulls the smtp url so an env MAIL_URL cannot supersede it', function (): void {
+    config()->set('mail.mailers.smtp.url', 'smtp://env-user:env-pass@env-host:2525');
+    config()->set('mail.mailers.smtp.host', 'env-host');
+    settings()->captureBaseline();
+
+    settings()->set('mail.host', 'operator-host');
+    settings()->applyOverrides();
+
+    // Laravel derives host/port/creds from the url when present; drop it so the
+    // operator's individual fields take effect.
+    expect(config('mail.mailers.smtp.host'))->toBe('operator-host')
+        ->and(config('mail.mailers.smtp.url'))->toBeNull();
+});
+
+test('with no mail override, an env MAIL_URL is left intact', function (): void {
+    config()->set('mail.mailers.smtp.url', 'smtp://env-host');
+    settings()->captureBaseline();
+
+    settings()->applyOverrides();
+
+    expect(config('mail.mailers.smtp.url'))->toBe('smtp://env-host');
+});
+
+test('a console command start applies operator overrides (so mail-test and scheduled mail see them)', function (): void {
+    // The provider listens for CommandStarting in console — never firing during
+    // config:cache serialization (a bootstrap that runs no command).
+    config()->set('mail.mailers.smtp.host', 'env-host');
+    settings()->captureBaseline();
+    settings()->set('mail.host', 'command-host');
+
+    event(new CommandStarting('some:command', new ArrayInput([]), new NullOutput));
+
+    expect(config('mail.mailers.smtp.host'))->toBe('command-host');
 });
 
 test('an unregistered key cannot be read or written', function (): void {

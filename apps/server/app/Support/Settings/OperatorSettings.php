@@ -46,6 +46,22 @@ class OperatorSettings
     ];
 
     /**
+     * Config paths the operator never sets directly, but which must be kept
+     * coherent with a group's overrides — nulled when that group is configured,
+     * restored to the env baseline when it is not.
+     *
+     * mail.smtp.url: when env has MAIL_URL set, Laravel derives the SMTP host,
+     * port, and credentials FROM the url and ignores the individual fields. So
+     * once an operator configures mail, the url must be dropped or their
+     * host/port/credentials would be silently superseded.
+     *
+     * @var array<string, string> config path => group that, when configured, nulls it
+     */
+    private const DERIVED = [
+        'mail.mailers.smtp.url' => 'mail',
+    ];
+
+    /**
      * The env/config defaults for the managed paths, snapshotted once before any
      * override is applied, so a CLEARED override can be restored rather than
      * left stale on a long-running worker.
@@ -115,7 +131,27 @@ class OperatorSettings
             }
         }
 
+        // Derived paths: null when their group is operator-configured (so a stray
+        // env value can't supersede the operator's fields), else the env baseline.
+        foreach (self::DERIVED as $path => $group) {
+            $targets[$path] = $this->groupIsConfigured($group, $stored) ? null : $this->baseline[$path];
+        }
+
         return $targets;
+    }
+
+    /**
+     * @param  array<string, string|null>  $stored
+     */
+    private function groupIsConfigured(string $group, array $stored): bool
+    {
+        foreach (self::MANAGED as $key => $meta) {
+            if ($meta['group'] === $group && array_key_exists($key, $stored) && $stored[$key] !== null) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -129,6 +165,10 @@ class OperatorSettings
 
         foreach (self::MANAGED as $meta) {
             $this->baseline[$meta['config']] = config($meta['config']);
+        }
+
+        foreach (array_keys(self::DERIVED) as $path) {
+            $this->baseline[$path] = config($path);
         }
     }
 
