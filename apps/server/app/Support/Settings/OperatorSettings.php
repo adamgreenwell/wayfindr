@@ -3,11 +3,13 @@
 namespace App\Support\Settings;
 
 use App\Models\OperatorSetting;
+use Illuminate\Support\ConfigurationUrlParser;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use InvalidArgumentException;
+use Throwable;
 
 /**
  * Operator-set instance configuration that overrides env (ADR 0011).
@@ -108,7 +110,7 @@ class OperatorSettings
     {
         try {
             $stored = $this->storedValues();
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Store unreachable (DB/cache down, table not migrated): env baseline.
             return $this->baseline;
         }
@@ -126,7 +128,7 @@ class OperatorSettings
 
             try {
                 $targets[$meta['config']] = $this->decode($key, $stored[$key]);
-            } catch (\Throwable) {
+            } catch (Throwable) {
                 // A single corrupt/undecryptable secret reverts only its own key
                 // to env; the rest of the override set still applies.
                 $targets[$meta['config']] = $baseline;
@@ -173,6 +175,45 @@ class OperatorSettings
 
         foreach (array_keys(self::DERIVED) as $path) {
             $this->baseline[$path] = config($path);
+        }
+
+        $this->foldMailUrlIntoBaseline();
+    }
+
+    /**
+     * When mail is configured through MAIL_URL, the individual smtp fields are
+     * their empty defaults — the real host/port/credentials live in the url. So
+     * fold the url's parsed values into the individual-field baselines (using
+     * Laravel's own ConfigurationUrlParser), so overriding one connection field
+     * and dropping the url leaves the OTHER fields holding the url's real
+     * values instead of losing them to the empty defaults.
+     */
+    private function foldMailUrlIntoBaseline(): void
+    {
+        $url = $this->baseline['mail.mailers.smtp.url'] ?? null;
+
+        if (! is_string($url) || trim($url) === '') {
+            return;
+        }
+
+        try {
+            $parsed = (new ConfigurationUrlParser)->parseConfiguration(['url' => $url]);
+        } catch (Throwable) {
+            return; // a malformed MAIL_URL must not break baseline capture
+        }
+
+        $map = [
+            'host' => 'mail.mailers.smtp.host',
+            'port' => 'mail.mailers.smtp.port',
+            'username' => 'mail.mailers.smtp.username',
+            'password' => 'mail.mailers.smtp.password',
+            'driver' => 'mail.mailers.smtp.scheme',
+        ];
+
+        foreach ($map as $parsedKey => $configPath) {
+            if (array_key_exists($parsedKey, $parsed)) {
+                $this->baseline[$configPath] = $parsed[$parsedKey];
+            }
         }
     }
 

@@ -188,6 +188,25 @@ test('setting only a non-connection mail field leaves an env MAIL_URL intact', f
     expect(config('mail.mailers.smtp.url'))->toBe('smtp://env-host');
 });
 
+test('overriding one connection field on a MAIL_URL install keeps the url-derived values', function (): void {
+    // MAIL_URL supplies host/port/credentials; the individual fields are their
+    // empty defaults. Overriding just the host must not lose the url's user/pass/port.
+    config()->set('mail.mailers.smtp.url', 'smtp://url-user:url-pass@url-host:2525');
+    config()->set('mail.mailers.smtp.port', 25);          // differs from the url's port
+    config()->set('mail.mailers.smtp.username', null);
+    config()->set('mail.mailers.smtp.password', null);
+    settings()->captureBaseline();
+
+    settings()->set('mail.host', 'operator-host');
+    settings()->applyOverrides();
+
+    expect(config('mail.mailers.smtp.url'))->toBeNull()                 // url dropped
+        ->and(config('mail.mailers.smtp.host'))->toBe('operator-host')  // operator's field
+        ->and(config('mail.mailers.smtp.port'))->toBe(2525)            // preserved from url
+        ->and(config('mail.mailers.smtp.username'))->toBe('url-user')  // preserved from url
+        ->and(config('mail.mailers.smtp.password'))->toBe('url-pass'); // preserved from url
+});
+
 test('a write inside a transaction defers the cache version bump until commit', function (): void {
     settings()->get('mail.host'); // prime the version-0 (empty) cache
 
