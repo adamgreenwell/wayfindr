@@ -197,6 +197,12 @@ class OperatorSettings
         // old rows before this write can only ever store under the previous
         // version — it can never poison the new one (which would otherwise stick
         // forever in a permanent cache).
+        //
+        // add() first: on the database and memcached stores, increment() on a
+        // MISSING key returns false without creating it, which would leave the
+        // version pinned at 0 and the cache never invalidated. add() seeds the
+        // key so increment() always advances it.
+        Cache::add(self::VERSION_KEY, 0);
         Cache::increment(self::VERSION_KEY);
     }
 

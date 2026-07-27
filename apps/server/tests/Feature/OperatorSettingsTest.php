@@ -166,6 +166,18 @@ test('writing a setting busts the cache so the change is live immediately', func
     expect(settings()->get('mail.host'))->toBe('fresh-host');
 });
 
+test('a write invalidates the cache on a store whose increment does not auto-create', function (): void {
+    // On the database/memcached cache stores, increment() on a missing key
+    // returns false without creating it. The version must still advance so the
+    // change is visible, not pinned to a stale cached read.
+    config()->set('cache.default', 'database');
+
+    settings()->get('mail.host');                    // prime the versioned cache
+    settings()->set('mail.host', 'db-cache-host');   // must bump the version
+
+    expect(settings()->get('mail.host'))->toBe('db-cache-host');
+});
+
 test('the mail group lists its managed keys', function (): void {
     expect(settings()->keysForGroup('mail'))
         ->toContain('mail.host', 'mail.password', 'mail.from_address')
