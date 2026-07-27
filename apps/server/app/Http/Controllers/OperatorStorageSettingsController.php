@@ -148,13 +148,22 @@ class OperatorStorageSettingsController extends Controller
 
         DB::transaction(function () use ($settings, $validated, $disk, $keyProvided, $secretProvided, $clearCreds, $migrated, $request, $agent): void {
             // Serialize concurrent storage-config writes: lock the storage.disk
-            // setting row (created first so the lock has a target), then refresh
-            // config from the committed database state under the lock. The guard
-            // then compares the active disk AND the S3 location against the
-            // committed-latest values via config() — not the versioned-cache
-            // effective() snapshot, which may pre-date a concurrent change and let
-            // a stale request overwrite a location where an attachment now lives.
-            OperatorSetting::query()->firstOrCreate(['key' => 'storage.disk']);
+            // setting row, then refresh config from the committed database state
+            // under the lock. The guard compares the active disk AND the S3
+            // location against the committed-latest values via config() — not the
+            // versioned-cache effective() snapshot, which may pre-date a
+            // concurrent change and let a stale request overwrite a location where
+            // an attachment now lives.
+            //
+            // Ensure the lock-target row exists with insertOrIgnore (a WRITE, no
+            // preceding SELECT): a plain SELECT here would, under MySQL/MariaDB
+            // REPEATABLE READ, freeze this transaction's read snapshot before the
+            // lock, so refreshFromDatabase would still read the pre-lock values.
+            OperatorSetting::query()->insertOrIgnore([
+                'key' => 'storage.disk',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
             OperatorSetting::query()->where('key', 'storage.disk')->lockForUpdate()->first();
             $settings->refreshFromDatabase();
             $liveCurrentDisk = (string) config('wayfindr.attachments.storage_disk', self::LOCAL_DISK);

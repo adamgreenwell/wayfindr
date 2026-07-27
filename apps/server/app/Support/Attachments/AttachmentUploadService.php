@@ -91,10 +91,20 @@ class AttachmentUploadService
             // under it. An operator changing the S3 location takes the EXCLUSIVE
             // lock (OperatorStorageSettingsController), so it cannot run between
             // this upload resolving its disk and committing its row — which would
-            // otherwise strand the object in the old bucket. The setting row is
-            // created first so both paths lock the same target; shared locks let
+            // otherwise strand the object in the old bucket. Shared locks let
             // uploads still run concurrently with each other.
-            OperatorSetting::query()->firstOrCreate(['key' => 'storage.disk']);
+            //
+            // Ensure the lock-target row exists with insertOrIgnore — a WRITE with
+            // no preceding SELECT. A plain SELECT (e.g. firstOrCreate) here would,
+            // under MySQL/MariaDB REPEATABLE READ, freeze this transaction's read
+            // snapshot BEFORE the lock, so the later refresh would still read the
+            // pre-change values. With no consistent read before the lock, the
+            // refresh below is the first one and sees the committed-latest state.
+            OperatorSetting::query()->insertOrIgnore([
+                'key' => 'storage.disk',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
             OperatorSetting::query()->where('key', 'storage.disk')->sharedLock()->first();
             // Re-apply the committed storage settings from the DB under the lock:
             // this request's config was bootstrapped at boot and the shared lock
