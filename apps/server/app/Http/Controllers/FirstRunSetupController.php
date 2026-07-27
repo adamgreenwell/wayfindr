@@ -115,10 +115,12 @@ class FirstRunSetupController extends Controller
         Auth::login($agent);
         $request->session()->regenerate();
 
+        // Land on the guided onboarding checklist (ADR 0011 slice 1c) rather than
+        // straight into the diagnostic dashboard — it walks the essentials to
+        // green, mail first, and keeps "connect your first site" one click away.
         return redirect()
-            ->route('dashboard.sites.show', $site)
-            ->withFragment('install-snippet')
-            ->with('status', 'Wayfindr is ready. Copy the install snippet to connect your first site.');
+            ->route('operator.onboarding')
+            ->with('status', 'Wayfindr is ready. Finish setting up your installation below — start by connecting your first site.');
     }
 
     private function redirectAfterSetup(Request $request): RedirectResponse
