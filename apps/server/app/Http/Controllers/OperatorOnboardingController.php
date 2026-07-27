@@ -54,7 +54,9 @@ class OperatorOnboardingController extends Controller
 
                 return [
                     'check' => $check,
-                    'configure_url' => isset($meta['configure']) ? route($meta['configure']) : null,
+                    // Carry the onboarding origin so the config page's back link
+                    // and its save/test actions return here, not to the dashboard.
+                    'configure_url' => isset($meta['configure']) ? route($meta['configure'], ['from' => 'onboarding']) : null,
                     // Frame the same button as "Configure" while a step needs
                     // attention and "Manage" once it is green.
                     'configure_label' => $isReady

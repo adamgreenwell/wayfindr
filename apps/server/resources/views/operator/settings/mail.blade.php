@@ -1,5 +1,5 @@
 <x-layouts.app title="Mail settings">
-    <p><a class="text-link" href="{{ route('operator.dashboard') }}">Back to operator console</a></p>
+    <p><a class="text-link" href="{{ $backUrl }}">{{ $backLabel }}</a></p>
 
     <x-page-header
         title="Mail settings"
@@ -21,6 +21,9 @@
 
         <form class="section-form" method="POST" action="{{ route('operator.settings.mail.update') }}">
             @csrf
+            @if ($returnTo)
+                <input type="hidden" name="from" value="{{ $returnTo }}">
+            @endif
 
             <div class="field">
                 <label for="mailer">Transport</label>
@@ -102,6 +105,9 @@
 
         <form class="section-form" method="POST" action="{{ route('operator.settings.mail.test') }}">
             @csrf
+            @if ($returnTo)
+                <input type="hidden" name="from" value="{{ $returnTo }}">
+            @endif
 
             <div class="field">
                 <label for="to">Recipient</label>
