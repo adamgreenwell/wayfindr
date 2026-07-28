@@ -90,6 +90,27 @@ test('the fail-closed checkbox always submits a value', function (): void {
         ->assertSee('name="fail_closed" value="0"', false);
 });
 
+test('an unknown driver is preserved so saving does not silently disable scanning', function (): void {
+    $settings = scanningSettings();
+    $settings->set('scanning.driver', 'sophos'); // an unknown/external, fail-loud driver
+
+    // The form is prefilled with the external driver as a preserved option.
+    $this->actingAs(scanningOperator())
+        ->get(route('operator.settings.scanning.edit'))
+        ->assertOk()
+        ->assertSee('sophos');
+
+    // Saving (e.g. to change the fail policy) keeps the driver, not None.
+    $this->actingAs(scanningOperator())
+        ->post(route('operator.settings.scanning.update'), [
+            'driver' => 'sophos',
+            'fail_closed' => '1',
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($settings->get('scanning.driver'))->toBe('sophos');
+});
+
 test('saving scanning settings records an instance-scoped audit', function (): void {
     $this->actingAs(scanningOperator())->post(route('operator.settings.scanning.update'), [
         'driver' => 'clamav',

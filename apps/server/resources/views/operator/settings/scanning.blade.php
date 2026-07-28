@@ -28,6 +28,9 @@
             <div class="field">
                 <label for="driver">Scanner</label>
                 <select id="driver" name="driver">
+                    @if ($externalDriver)
+                        <option value="{{ $externalDriver }}" @selected(old('driver', $driver) === $externalDriver)>{{ $externalDriver }} (current, configured in env)</option>
+                    @endif
                     <option value="" @selected(old('driver', $driver) === '')>None (accept with defense-in-depth)</option>
                     <option value="clamav" @selected(old('driver', $driver) === 'clamav')>ClamAV</option>
                 </select>

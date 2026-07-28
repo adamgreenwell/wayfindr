@@ -33,9 +33,11 @@ class OperatorScanningSettingsController extends Controller
 
         return view('operator.settings.scanning', [
             'operator' => $request->user(),
-            // Only 'none' and clamav are valid; anything else is a broken config
-            // that fails loud on upload — normalize display to none.
-            'driver' => $driver === self::CLAMAV ? self::CLAMAV : '',
+            'driver' => $driver,
+            // An unknown driver (a typo, or one configured in env) fails loud on
+            // upload. Offer it as a preserved option so saving another field
+            // (e.g. the fail policy) can't silently switch scanning to None.
+            'externalDriver' => ($driver !== '' && $driver !== self::CLAMAV) ? $driver : null,
             'socket' => (string) $settings->effective('scanning.socket'),
             'failClosed' => filter_var($settings->effective('scanning.fail_closed'), FILTER_VALIDATE_BOOL),
             'backUrl' => $from === 'onboarding' ? route('operator.onboarding') : route('operator.dashboard'),
@@ -46,15 +48,21 @@ class OperatorScanningSettingsController extends Controller
 
     public function update(Request $request, OperatorSettings $settings): RedirectResponse
     {
+        // Allow keeping an unknown driver configured outside this form; the form
+        // can otherwise only choose None or ClamAV.
+        $currentDriver = strtolower(trim((string) $settings->effective('scanning.driver')));
+        $externalDriver = ($currentDriver !== '' && $currentDriver !== self::CLAMAV) ? $currentDriver : null;
+        $allowedDrivers = array_values(array_filter([self::CLAMAV, $externalDriver]));
+
         $validated = $request->validate([
-            // '' (none) or clamav; ConvertEmptyStringsToNull turns a blank select
-            // into null, which nullable accepts as "none".
-            'driver' => ['nullable', Rule::in([self::CLAMAV])],
+            // '' (none) via ConvertEmptyStringsToNull -> null (nullable accepts it
+            // as "none"); otherwise clamav or the preserved external driver.
+            'driver' => ['nullable', Rule::in($allowedDrivers)],
             'socket' => ['nullable', 'required_if:driver,'.self::CLAMAV, 'string', 'max:255'],
             'fail_closed' => ['nullable', 'boolean'],
         ]);
 
-        $driver = ($validated['driver'] ?? '') === self::CLAMAV ? self::CLAMAV : '';
+        $driver = (string) ($validated['driver'] ?? ''); // '' = None, clamav, or preserved external
         $failClosed = $request->boolean('fail_closed');
         $agent = $request->user();
 
@@ -75,7 +83,7 @@ class OperatorScanningSettingsController extends Controller
                 'actor_id' => $agent->id,
                 'action' => 'operator_settings.scanning.updated',
                 'metadata' => [
-                    'driver' => $driver === self::CLAMAV ? self::CLAMAV : 'none',
+                    'driver' => $driver === '' ? 'none' : $driver,
                     'fail_closed' => $failClosed,
                 ],
                 'occurred_at' => now(),
