@@ -57,7 +57,10 @@ class OperatorBackupSettingsController extends Controller
             'keyUnreadable' => $settings->secretStatus('backup.s3_key') === 'unreadable',
             'secretIsSet' => $settings->effectiveSecretStatus('backup.s3_secret') === 'set',
             'secretUnreadable' => $settings->secretStatus('backup.s3_secret') === 'unreadable',
-            'latestRun' => BackupRun::query()->latest('started_at')->first(),
+            // started_at is second-precision, so order by id as a tiebreaker —
+            // otherwise two runs triggered in the same second could show the
+            // older one's status right after the operator queues a new backup.
+            'latestRun' => BackupRun::query()->latest('started_at')->latest('id')->first(),
             'backUrl' => $from === 'onboarding' ? route('operator.onboarding') : route('operator.dashboard'),
             'backLabel' => $from === 'onboarding' ? 'Back to setup checklist' : 'Back to operator console',
             'returnTo' => $from,

@@ -396,6 +396,32 @@ test('the latest backup run shows on the settings page', function (): void {
         ->assertSee('Succeeded');
 });
 
+test('the latest run breaks a same-second tie by id, not started_at alone', function (): void {
+    $operator = backupOperator();
+    $moment = now(); // both runs share the same second-precision started_at
+
+    // Older run (lower id): a success recorded in the same second.
+    BackupRun::query()->create([
+        'status' => BackupRun::STATUS_SUCCEEDED,
+        'started_at' => $moment,
+        'finished_at' => $moment,
+    ]);
+
+    // Newer run (higher id) triggered in the same second: still running.
+    BackupRun::query()->create([
+        'status' => BackupRun::STATUS_RUNNING,
+        'message' => 'freshly-queued-run',
+        'started_at' => $moment,
+    ]);
+
+    // The page must show the newer run, not the older same-second success.
+    $this->actingAs($operator)
+        ->get(route('operator.settings.backups.edit'))
+        ->assertOk()
+        ->assertSee('freshly-queued-run')
+        ->assertDontSee('Succeeded');
+});
+
 test('the shipped backup queue connection targets redis with a valid connection name', function (): void {
     // Default install: the backup connection rides the same Redis the default
     // queue uses, so its connection name must be a real Redis connection.
