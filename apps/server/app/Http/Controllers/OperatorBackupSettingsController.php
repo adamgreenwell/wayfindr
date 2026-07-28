@@ -401,33 +401,43 @@ class OperatorBackupSettingsController extends Controller
         }
 
         $agent = $request->user();
+        $agentId = $agent->id;
+        $agentName = $agent->name;
 
         // Write an immediate durable status (cache, not DB — the restore wipes
         // the DB) so the operator sees "queued" even though the restore is about
         // to log them out.
-        RunRestoreJob::putStatus('running', 'Restore queued…', $archive, $agent->id, $agent->name);
+        RunRestoreJob::putStatus('running', 'Restore queued…', $archive, $agentId, $agentName);
 
-        try {
-            RunRestoreJob::dispatch($archive, $agent->id, $agent->name);
-        } catch (Throwable $exception) {
-            RunRestoreJob::putStatus('failed', 'Could not queue the restore: '.$exception->getMessage(), $archive, $agent->id, $agent->name);
-
-            return redirect()
-                ->route('operator.settings.backups.restore')
-                ->with('error', 'Could not queue the restore — confirm the queue backend is reachable: '.$exception->getMessage());
-        }
-
-        // Audited to the DB — this row is wiped when the restore reloads the
-        // database, but it survives a failed/rolled-back restore, and the durable
-        // outcome lives in the cache status above.
+        // Audit now, as part of THIS request, so the write is committed before
+        // the restore job could start. (This row is wiped when the restore
+        // reloads the database, but it survives a failed/rolled-back restore, and
+        // the durable outcome lives in the cache status above.)
         AuditEvent::query()->create([
             'account_id' => null,
             'actor_type' => $agent->getMorphClass(),
-            'actor_id' => $agent->id,
+            'actor_id' => $agentId,
             'action' => 'operator_settings.backup.restore_triggered',
             'metadata' => ['archive' => $archive],
             'occurred_at' => now(),
         ]);
+
+        // Enqueue only AFTER this request has finished ALL its database access —
+        // its own writes, the audit above, and the database-backed session save
+        // that runs in middleware terminate. An idle backups worker would
+        // otherwise consume the job and DROP the schema while this request is
+        // still writing (a failed response, or a write racing the restore).
+        // terminating() runs after middleware terminate, so the session is
+        // already saved by the time we enqueue.
+        app()->terminating(function () use ($archive, $agentId, $agentName): void {
+            try {
+                RunRestoreJob::dispatch($archive, $agentId, $agentName);
+            } catch (Throwable $exception) {
+                // The response is already sent, so surface the failure through
+                // the cache status the operator reads on the backups page.
+                RunRestoreJob::putStatus('failed', 'Could not queue the restore: '.$exception->getMessage(), $archive, $agentId, $agentName);
+            }
+        });
 
         return redirect()
             ->route('operator.settings.backups.edit')
@@ -507,11 +517,45 @@ class OperatorBackupSettingsController extends Controller
         $cacheStore = (string) config('cache.default');
         $cacheDriver = (string) config("cache.stores.{$cacheStore}.driver");
 
-        /** @var list<string> $safeCacheDrivers */
-        $safeCacheDrivers = (array) config('wayfindr.backup.restore_safe_cache_drivers', ['redis', 'memcached', 'dynamodb']);
-
         return in_array($queueDriver, self::RESTORE_SAFE_QUEUE_DRIVERS, true)
-            && in_array($cacheDriver, $safeCacheDrivers, true);
+            && in_array($cacheDriver, $this->restoreSafeCacheDrivers(), true)
+            && $this->maintenanceModeIsDurable();
+    }
+
+    /**
+     * The maintenance-mode marker must also survive the database reload and be
+     * visible to every app container — otherwise `artisan down` would lift
+     * mid-restore and let web traffic resume while attachments are still being
+     * rebuilt. The `file` driver writes to the shared storage volume (safe); the
+     * `cache` driver is only safe when its store is one of the shared, non-DB
+     * stores (NOT the framework-default `database` store); anything else is
+     * rejected.
+     */
+    private function maintenanceModeIsDurable(): bool
+    {
+        $driver = (string) config('app.maintenance.driver', 'file');
+
+        if ($driver === 'file') {
+            return true;
+        }
+
+        if ($driver === 'cache') {
+            $store = (string) (config('app.maintenance.store') ?: config('cache.default'));
+            $storeDriver = (string) config("cache.stores.{$store}.driver");
+
+            return in_array($storeDriver, $this->restoreSafeCacheDrivers(), true);
+        }
+
+        return false;
+    }
+
+    /** @return list<string> */
+    private function restoreSafeCacheDrivers(): array
+    {
+        /** @var list<string> $drivers */
+        $drivers = (array) config('wayfindr.backup.restore_safe_cache_drivers', ['redis', 'memcached', 'dynamodb']);
+
+        return $drivers;
     }
 
     /**

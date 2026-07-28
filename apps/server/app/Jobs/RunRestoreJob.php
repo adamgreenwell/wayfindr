@@ -36,6 +36,9 @@ class RunRestoreJob implements ShouldQueue
     /** The single cache key holding the latest restore's status (one at a time). */
     public const STATUS_KEY = 'wayfindr:restore:status';
 
+    /** Set while THIS restore holds maintenance mode, so we only lift our own. */
+    private const MAINTENANCE_OWNED_KEY = 'wayfindr:restore:maintenance-owned';
+
     public int $tries = 1;
 
     public bool $failOnTimeout = true;
@@ -103,6 +106,11 @@ class RunRestoreJob implements ShouldQueue
                 return;
             }
 
+            // Mark that WE entered maintenance mode, so bringUp() only lifts the
+            // marker this restore established — never one an operator (or a
+            // failure before our own down) set independently.
+            Cache::put(self::MAINTENANCE_OWNED_KEY, true, now()->addDay());
+
             // force: the operator has already confirmed in the GUI; the guard
             // that refuses to overwrite a populated install is exactly what they
             // acknowledged.
@@ -149,13 +157,23 @@ class RunRestoreJob implements ShouldQueue
         }
     }
 
-    /** Best-effort exit from maintenance mode; a failure here must not throw. */
+    /**
+     * Lift maintenance mode ONLY if this restore established it (tracked in the
+     * cache) — never a marker an operator set independently, or one from a
+     * failure that occurred before our own `down`. Best-effort; must not throw.
+     */
     private function bringUp(): void
     {
+        if (! Cache::get(self::MAINTENANCE_OWNED_KEY)) {
+            return;
+        }
+
         try {
             Artisan::call('up');
         } catch (Throwable $exception) {
             report($exception);
+        } finally {
+            Cache::forget(self::MAINTENANCE_OWNED_KEY);
         }
     }
 

@@ -19,6 +19,7 @@ use App\Support\Settings\OperatorSettings;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Env;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
@@ -674,6 +675,31 @@ test('the restore page rejects a failover cache wrapper', function (): void {
         ->get(route('operator.settings.backups.restore'))
         ->assertOk()
         ->assertSee('In-GUI restore is unavailable');
+});
+
+test('the restore page points to the CLI when maintenance mode uses a database cache store', function (): void {
+    // artisan down would write its marker into the database being replaced, so
+    // maintenance would lift mid-restore.
+    config()->set('app.maintenance.driver', 'cache');
+    config()->set('app.maintenance.store', 'database');
+
+    $this->actingAs(backupOperator())
+        ->get(route('operator.settings.backups.restore'))
+        ->assertOk()
+        ->assertSee('In-GUI restore is unavailable');
+});
+
+test('a restore failure before it entered maintenance does not lift unrelated maintenance mode', function (): void {
+    // Maintenance mode set by someone else; this restore never recorded ownership.
+    Artisan::call('down');
+
+    try {
+        (new RunRestoreJob('x.tar.gz'))->failed(new RuntimeException('failed before down'));
+
+        expect(app()->isDownForMaintenance())->toBeTrue(); // not lifted — we don't own it
+    } finally {
+        Artisan::call('up');
+    }
 });
 
 test('previewing an archive shows the confirmation form with version info', function (): void {

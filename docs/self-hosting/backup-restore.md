@@ -184,11 +184,15 @@ Three things to know:
   your browser session also ends. Wait a minute, log back in (with the credentials
   **as they were in the backup**), and read the restore outcome on the backup
   settings page.
-- **It needs a Redis-backed queue and cache.** The status and the queued job must
-  survive the database being rebuilt, so the in-GUI restore is only offered when
-  neither the queue nor the cache is database-backed (the shipped stack uses
-  Redis for both). Otherwise the page points you back at `php artisan
-  wayfindr:restore`.
+- **It needs Redis-backed queue, cache, and maintenance state.** The queued job,
+  its status, and the maintenance-mode marker all have to survive the database
+  being rebuilt, so the in-GUI restore is only offered when the backup queue, the
+  cache, and the maintenance driver are all non-database, shared stores (the
+  shipped stack uses Redis for the first two and the file driver on the shared
+  storage volume for maintenance). A database-backed maintenance store, for
+  instance, would vanish when the schema is replaced and let traffic back in
+  mid-restore. When any of these is unsafe, the page points you back at `php
+  artisan wayfindr:restore`.
 
 ### Maintenance-posture procedure
 
