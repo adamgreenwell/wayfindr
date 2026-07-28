@@ -232,8 +232,16 @@ class RestoreService
             config('cache.stores.database.table') ?: 'cache',
             config('cache.stores.database.lock_table') ?: 'cache_locks',
             config('queue.connections.database.table') ?: 'jobs',
+            // The dedicated backup queue's table (ADR 0011), so a database-backed
+            // backup queue's operational rows don't make a restore target look
+            // non-empty. Membership is checked with in_array, so a duplicate of
+            // the default 'jobs' is harmless.
+            config('queue.connections.backups.table') ?: 'jobs',
             config('queue.batching.table') ?: 'job_batches',
             config('queue.failed.table') ?: 'failed_jobs',
+            // Operational backup history — its data is excluded from the dump, so
+            // a target that only holds backup runs still counts as empty.
+            'backup_runs',
         ];
     }
 

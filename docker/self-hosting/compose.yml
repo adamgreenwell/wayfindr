@@ -106,6 +106,31 @@ services:
       web:
         condition: service_healthy
 
+  # A dedicated worker for the long-running backup job. It runs on its own queue
+  # connection (config/queue.php "backups") whose retry window exceeds the backup
+  # timeout, so a slow backup is never re-released and false-failed. The default
+  # queue worker above must NOT process this connection, or it would apply the
+  # 90s retry_after. --timeout matches the default backup timeout; the job sets
+  # its own timeout, which takes precedence if WAYFINDR_BACKUP_JOB_TIMEOUT is
+  # raised.
+  backup-queue:
+    <<: *wayfindr-app
+    command: ["php", "artisan", "queue:work", "backups", "--queue=backups", "--sleep=5", "--tries=1", "--timeout=3600"]
+    environment:
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REVERB_HOST: reverb
+      REVERB_PORT: 8080
+      REVERB_SCHEME: http
+    healthcheck:
+      disable: true
+    depends_on:
+      web:
+        condition: service_healthy
+
   scheduler:
     <<: *wayfindr-app
     command: ["php", "artisan", "schedule:work"]

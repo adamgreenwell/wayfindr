@@ -238,7 +238,7 @@ class BackupService
      * hashed so nothing secret leaks into the path) keeps two installs that
      * share a backup disk from pruning each other's archives (ADR 0010).
      */
-    private function backupPrefix(): string
+    public function backupPrefix(): string
     {
         $prefix = trim((string) config('wayfindr.backup.prefix'), '/');
 

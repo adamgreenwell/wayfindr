@@ -73,6 +73,36 @@ return [
             'after_commit' => false,
         ],
 
+        /*
+         * A dedicated connection for the long-running backup job (ADR 0011). Its
+         * retry/visibility window MUST exceed the backup's own timeout: on the
+         * default connection retry_after is 90s, so a backup running longer than
+         * that would be handed to a second worker while the first still runs —
+         * and because the job is tries=1, that second reservation fails before
+         * handle() and can false-fail a backup that is actually succeeding. Here
+         * retry_after derives from the backup timeout plus a buffer, so a slow
+         * backup is never re-released. Defaults to redis (the shipped stack); a
+         * database-queue install can point it at the database driver via env.
+         * This connection needs its own worker — see the self-hosting docs.
+         */
+        'backups' => [
+            'driver' => env('BACKUP_QUEUE_DRIVER', 'redis'),
+            // Driver-aware: for the redis driver this names a Redis connection;
+            // for the database driver it names a DATABASE connection (null → the
+            // default DB connection). A single default hard-coded to the Redis
+            // name would break a database-backed backup queue, since there is no
+            // DB connection called "default". BACKUP_QUEUE_CONNECTION overrides
+            // either way.
+            'connection' => env('BACKUP_QUEUE_CONNECTION', env('BACKUP_QUEUE_DRIVER', 'redis') === 'database'
+                ? null
+                : env('REDIS_QUEUE_CONNECTION', 'default')),
+            'table' => env('BACKUP_QUEUE_TABLE', 'jobs'),
+            'queue' => env('BACKUP_QUEUE', 'backups'),
+            'retry_after' => (int) env('BACKUP_QUEUE_RETRY_AFTER', (int) env('WAYFINDR_BACKUP_JOB_TIMEOUT', 3600) + 300),
+            'block_for' => null,
+            'after_commit' => false,
+        ],
+
         'deferred' => [
             'driver' => 'deferred',
         ],

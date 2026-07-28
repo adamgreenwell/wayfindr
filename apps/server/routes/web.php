@@ -28,6 +28,7 @@ use App\Http\Controllers\AgentTicketQueueController;
 use App\Http\Controllers\AgentVisitorController;
 use App\Http\Controllers\Auth\SessionController;
 use App\Http\Controllers\FirstRunSetupController;
+use App\Http\Controllers\OperatorBackupSettingsController;
 use App\Http\Controllers\OperatorBreakGlassController;
 use App\Http\Controllers\OperatorBreakGlassViewerController;
 use App\Http\Controllers\OperatorDashboardController;
@@ -240,6 +241,14 @@ Route::middleware(['auth', EnsureAgentIsActive::class, EnsurePlatformOperator::c
             ->name('settings.scanning.update');
         Route::post('/settings/scanning/test', [OperatorScanningSettingsController::class, 'test'])
             ->name('settings.scanning.test');
+        Route::get('/settings/backups', [OperatorBackupSettingsController::class, 'edit'])
+            ->name('settings.backups.edit');
+        Route::post('/settings/backups', [OperatorBackupSettingsController::class, 'update'])
+            ->name('settings.backups.update');
+        Route::post('/settings/backups/test', [OperatorBackupSettingsController::class, 'test'])
+            ->name('settings.backups.test');
+        Route::post('/settings/backups/run', [OperatorBackupSettingsController::class, 'run'])
+            ->name('settings.backups.run');
         Route::post('/readiness/confirmations', [OperatorReadinessConfirmationController::class, 'storeFromOperator'])
             ->name('readiness.confirmations.store');
         Route::get('/break-glass', [OperatorBreakGlassController::class, 'index'])
