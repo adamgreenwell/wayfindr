@@ -27,10 +27,14 @@ use Illuminate\Support\Facades\Storage;
 uses(RefreshDatabase::class);
 
 // The suite runs on the array cache in a single process, which the in-GUI
-// restore's durability guard rejects by default (array is process-local). Opt it
-// in so the durable-path tests exercise the restore flow; the rejection tests
-// override this back to the secure default.
-beforeEach(fn () => config()->set('wayfindr.backup.restore_safe_cache_drivers', ['redis', 'memcached', 'dynamodb', 'array']));
+// restore's durability guard rejects by default (array is process-local), and on
+// the file maintenance driver, which the guard accepts only when shared storage
+// is asserted. Opt both in so the durable-path tests exercise the restore flow;
+// the rejection tests override these back to the secure defaults.
+beforeEach(function (): void {
+    config()->set('wayfindr.backup.restore_safe_cache_drivers', ['redis', 'memcached', 'dynamodb', 'array']);
+    config()->set('wayfindr.backup.restore_file_maintenance_shared', true);
+});
 
 function backupOperator(): User
 {
@@ -687,6 +691,67 @@ test('the restore page points to the CLI when maintenance mode uses a database c
         ->get(route('operator.settings.backups.restore'))
         ->assertOk()
         ->assertSee('In-GUI restore is unavailable');
+});
+
+test('the restore page points to the CLI when file maintenance is not asserted shared', function (): void {
+    // Default file driver without the shared-storage assertion: a multi-host
+    // deployment's marker might not be visible to the web process.
+    config()->set('app.maintenance.driver', 'file');
+    config()->set('wayfindr.backup.restore_file_maintenance_shared', false);
+
+    $this->actingAs(backupOperator())
+        ->get(route('operator.settings.backups.restore'))
+        ->assertOk()
+        ->assertSee('In-GUI restore is unavailable');
+});
+
+test('a second restore is rejected while one is already pending', function (): void {
+    Bus::fake();
+    config()->set('app.name', 'wayfindr-prod');
+    seedLocalArchives(['wayfindr-backup-20260728-100000-aaaaaa.tar.gz']);
+
+    $payload = [
+        'archive' => 'wayfindr-backup-20260728-100000-aaaaaa.tar.gz',
+        'confirm_name' => 'wayfindr-prod',
+        'acknowledge' => '1',
+        'workers_stopped' => '1',
+    ];
+
+    // First confirmation claims the pending slot and queues.
+    $this->actingAs(backupOperator())
+        ->post(route('operator.settings.backups.restore.run'), $payload)
+        ->assertRedirect(route('operator.settings.backups.edit'));
+
+    // Second, before the first reaches a terminal state, is rejected.
+    $this->actingAs(backupOperator())
+        ->post(route('operator.settings.backups.restore.run'), $payload)
+        ->assertSessionHas('error');
+
+    Bus::assertDispatchedTimes(RunRestoreJob::class, 1);
+});
+
+test('a restore leaves a pre-existing maintenance window in place', function (): void {
+    Artisan::call('down'); // set by an operator or a deploy, before the restore
+
+    $backups = Mockery::mock(BackupService::class);
+    $backups->shouldReceive('resolveLocalArchivePath')->andReturn('/backups/inst/x.tar.gz');
+    $restores = Mockery::mock(RestoreService::class);
+    $restores->shouldReceive('restore')->once()->andReturn([
+        'version_skew' => false,
+        'archive_version' => '0.3.0',
+        'running_version' => '0.3.0',
+        'integrity' => ['dangling' => []],
+    ]);
+
+    try {
+        (new RunRestoreJob('x.tar.gz'))->handle($restores, $backups);
+
+        // The restore ran, but the maintenance window it did not open stays up.
+        expect(app()->isDownForMaintenance())->toBeTrue()
+            ->and(Cache::get(RunRestoreJob::STATUS_KEY)['status'])->toBe('succeeded');
+    } finally {
+        Artisan::call('up');
+    }
 });
 
 test('a restore failure before it entered maintenance does not lift unrelated maintenance mode', function (): void {

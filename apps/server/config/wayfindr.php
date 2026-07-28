@@ -179,6 +179,17 @@ return [
         // the CLI. (The test suite runs on the array cache in a single process
         // and adds 'array' to this list.)
         'restore_safe_cache_drivers' => ['redis', 'memcached', 'dynamodb'],
+
+        // The in-GUI restore enters maintenance mode from the worker; the marker
+        // must be visible to the web process too. A `cache`-driver maintenance
+        // store on a shared cache is provably cross-process, but the default
+        // `file` driver is only shared when the web and worker processes share the
+        // storage volume — a deployment fact the app cannot detect. Set this true
+        // ONLY when they do (the shipped compose mounts one storage volume across
+        // every app service); otherwise file maintenance is rejected and the
+        // operator is sent to the CLI. Ignored when the maintenance driver is
+        // `cache` on a shared store.
+        'restore_file_maintenance_shared' => (bool) env('WAYFINDR_RESTORE_FILE_MAINTENANCE_SHARED', false),
     ],
 
     // Resolved through ReleaseIdentity so a blank env_file override falls

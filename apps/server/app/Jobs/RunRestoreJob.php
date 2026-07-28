@@ -36,6 +36,10 @@ class RunRestoreJob implements ShouldQueue
     /** The single cache key holding the latest restore's status (one at a time). */
     public const STATUS_KEY = 'wayfindr:restore:status';
 
+    /** Held from confirmation until a restore reaches a terminal state, so only
+     *  one confirmed restore can be queued or running at a time. */
+    public const PENDING_KEY = 'wayfindr:restore:pending';
+
     /** Set while THIS restore holds maintenance mode, so we only lift our own. */
     private const MAINTENANCE_OWNED_KEY = 'wayfindr:restore:maintenance-owned';
 
@@ -100,16 +104,21 @@ class RunRestoreJob implements ShouldQueue
             // already-running job continues; the down marker is on disk, so it
             // survives the database reload. Abort if we cannot quiesce — a live
             // restore is exactly the corruption risk we are guarding against.
-            if (Artisan::call('down') !== 0) {
-                $this->record('failed', 'Could not enter maintenance mode to quiesce writes before the restore; aborted to avoid corrupting data.');
+            // Only transition — and thus own — maintenance mode if the app is not
+            // ALREADY down (an operator or a deploy may have put it there); in
+            // that case it is already quiesced, and we must not lift a window we
+            // did not open.
+            if (! app()->isDownForMaintenance()) {
+                if (Artisan::call('down') !== 0) {
+                    $this->record('failed', 'Could not enter maintenance mode to quiesce writes before the restore; aborted to avoid corrupting data.');
 
-                return;
+                    return;
+                }
+
+                // We transitioned it, so bringUp() may lift it — never a marker an
+                // operator, a deploy, or a failure before our own down set.
+                Cache::put(self::MAINTENANCE_OWNED_KEY, true, now()->addDay());
             }
-
-            // Mark that WE entered maintenance mode, so bringUp() only lifts the
-            // marker this restore established — never one an operator (or a
-            // failure before our own down) set independently.
-            Cache::put(self::MAINTENANCE_OWNED_KEY, true, now()->addDay());
 
             // force: the operator has already confirmed in the GUI; the guard
             // that refuses to overwrite a populated install is exactly what they
@@ -210,11 +219,34 @@ class RunRestoreJob implements ShouldQueue
     }
 
     /**
+     * Atomically claim the single "a restore is pending" slot before enqueueing,
+     * so a double-submit or two operators confirming can't queue two destructive
+     * restores that the dedicated worker would then run one after the other.
+     * Returns false when a restore is already pending or running.
+     */
+    public static function claimPending(): bool
+    {
+        return Cache::add(self::PENDING_KEY, true, (int) config('wayfindr.backup.lock_ttl', 3900));
+    }
+
+    /** Release the pending claim (e.g. when dispatch itself fails). */
+    public static function releasePending(): void
+    {
+        Cache::forget(self::PENDING_KEY);
+    }
+
+    /**
      * @param  array<string, mixed>|null  $result
      */
     private function record(string $status, string $message, ?array $result = null): void
     {
         self::putStatus($status, $message, $this->archiveFilename, $this->triggeredById, $this->triggeredByName, $result);
+
+        // A terminal outcome frees the pending-restore slot so the next one can be
+        // confirmed; a still-running status keeps it held.
+        if ($status !== 'running') {
+            self::releasePending();
+        }
     }
 
     /**

@@ -186,13 +186,17 @@ Three things to know:
   settings page.
 - **It needs Redis-backed queue, cache, and maintenance state.** The queued job,
   its status, and the maintenance-mode marker all have to survive the database
-  being rebuilt, so the in-GUI restore is only offered when the backup queue, the
-  cache, and the maintenance driver are all non-database, shared stores (the
-  shipped stack uses Redis for the first two and the file driver on the shared
-  storage volume for maintenance). A database-backed maintenance store, for
-  instance, would vanish when the schema is replaced and let traffic back in
-  mid-restore. When any of these is unsafe, the page points you back at `php
-  artisan wayfindr:restore`.
+  being rebuilt and be visible across processes, so the in-GUI restore is only
+  offered when the backup queue, the cache, and the maintenance state are all
+  non-database, shared stores. The shipped stack uses Redis for the queue and
+  cache; for maintenance it uses the `file` driver, which is cross-process only
+  because every app service shares one storage volume — asserted with
+  `WAYFINDR_RESTORE_FILE_MAINTENANCE_SHARED=true` (already set in the compose env
+  example; **do not** set it where the web and worker do not share storage). A
+  `cache`-driver maintenance store on Redis is accepted automatically. A
+  database-backed maintenance store would vanish when the schema is replaced and
+  let traffic back in mid-restore. When any of these is unsafe, the page points
+  you back at `php artisan wayfindr:restore`.
 
 ### Maintenance-posture procedure
 

@@ -400,6 +400,15 @@ class OperatorBackupSettingsController extends Controller
                 ->withErrors($errors);
         }
 
+        // Claim the single pending-restore slot atomically BEFORE enqueueing, so a
+        // double-submit (or two operators confirming) can't queue two destructive
+        // restores that the dedicated worker would then run back to back.
+        if (! RunRestoreJob::claimPending()) {
+            return redirect()
+                ->route('operator.settings.backups.restore', ['archive' => $archive])
+                ->with('error', 'A restore is already queued or running. Wait for it to finish before starting another.');
+        }
+
         $agent = $request->user();
         $agentId = $agent->id;
         $agentName = $agent->name;
@@ -429,13 +438,24 @@ class OperatorBackupSettingsController extends Controller
         // still writing (a failed response, or a write racing the restore).
         // terminating() runs after middleware terminate, so the session is
         // already saved by the time we enqueue.
-        app()->terminating(function () use ($archive, $agentId, $agentName): void {
+        $enqueued = false;
+        app()->terminating(function () use (&$enqueued, $archive, $agentId, $agentName): void {
+            // Terminating callbacks are not cleared after they run, so in a
+            // long-lived app (tests, Octane) a later request's terminate would
+            // re-fire this one; dispatch at most once.
+            if ($enqueued) {
+                return;
+            }
+            $enqueued = true;
+
             try {
                 RunRestoreJob::dispatch($archive, $agentId, $agentName);
             } catch (Throwable $exception) {
                 // The response is already sent, so surface the failure through
-                // the cache status the operator reads on the backups page.
+                // the cache status the operator reads on the backups page, and
+                // free the pending slot so they can retry.
                 RunRestoreJob::putStatus('failed', 'Could not queue the restore: '.$exception->getMessage(), $archive, $agentId, $agentName);
+                RunRestoreJob::releasePending();
             }
         });
 
@@ -535,15 +555,23 @@ class OperatorBackupSettingsController extends Controller
     {
         $driver = (string) config('app.maintenance.driver', 'file');
 
-        if ($driver === 'file') {
-            return true;
-        }
-
+        // cache: the marker lives in the named store, which must survive the
+        // reload AND be shared across processes — the same allowlist as the
+        // status/lock. This is provably cross-process, so it needs no assertion.
         if ($driver === 'cache') {
             $store = (string) (config('app.maintenance.store') ?: config('cache.default'));
             $storeDriver = (string) config("cache.stores.{$store}.driver");
 
             return in_array($storeDriver, $this->restoreSafeCacheDrivers(), true);
+        }
+
+        // file: the marker survives the reload (on-disk), but the web process
+        // only sees a marker the worker wrote when they share the storage volume
+        // — which the app cannot detect. Accept it only when the operator has
+        // asserted shared storage (the shipped compose sets this); otherwise a
+        // multi-host/unshared deployment would keep serving traffic mid-restore.
+        if ($driver === 'file') {
+            return (bool) config('wayfindr.backup.restore_file_maintenance_shared', false);
         }
 
         return false;
