@@ -3,14 +3,17 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\RunBackupJob;
+use App\Jobs\RunRestoreJob;
 use App\Models\AuditEvent;
 use App\Models\BackupRun;
 use App\Support\Backup\BackupService;
+use App\Support\Backup\RestoreService;
 use App\Support\Settings\OperatorSettings;
 use Closure;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -68,6 +71,10 @@ class OperatorBackupSettingsController extends Controller
             // otherwise two runs triggered in the same second could show the
             // older one's status right after the operator queues a new backup.
             'latestRun' => BackupRun::query()->latest('started_at')->latest('id')->first(),
+            // The restore outcome lives in the cache (a restore wipes the DB), so
+            // the operator sees it here after the restore logs them out and they
+            // log back in.
+            'restoreStatus' => $this->restoreStatus(),
             'backUrl' => $from === 'onboarding' ? route('operator.onboarding') : route('operator.dashboard'),
             'backLabel' => $from === 'onboarding' ? 'Back to setup checklist' : 'Back to operator console',
             'returnTo' => $from,
@@ -298,6 +305,127 @@ class OperatorBackupSettingsController extends Controller
     }
 
     /**
+     * The confirmed in-GUI restore (ADR 0011 slice 3b). Lists local archives and,
+     * for a chosen one, shows a read-only preflight (version skew) before the
+     * confirmation gates. A restore is the single most destructive action in the
+     * app — it DROPs and reloads the whole database — so it is deliberately a
+     * multi-step, typed-confirmation flow, and it is only offered when the queue
+     * and cache are durable across the restore (see restoreIsDurable).
+     */
+    public function restore(Request $request, BackupService $backups, RestoreService $restores): View
+    {
+        $durable = $this->restoreIsDurable();
+
+        $selected = null;
+        $preflight = null;
+        $preflightError = null;
+        $requested = trim((string) $request->query('archive', ''));
+
+        // Preflight only a genuine local archive (resolveLocalArchivePath rejects
+        // anything not in the real listing — the anti-traversal guard).
+        if ($durable && $requested !== '') {
+            $path = $backups->resolveLocalArchivePath($requested);
+
+            if ($path === null) {
+                $preflightError = 'That archive is no longer available on the local disk. Pick one from the list.';
+            } else {
+                try {
+                    $preflight = $restores->preflight($path);
+                    $selected = $requested;
+                } catch (Throwable $exception) {
+                    $preflightError = 'Could not read that archive: '.$exception->getMessage();
+                }
+            }
+        }
+
+        return view('operator.settings.backups-restore', [
+            'operator' => $request->user(),
+            'durable' => $durable,
+            'archives' => $backups->listLocalArchives(),
+            'selected' => $selected,
+            'preflight' => $preflight,
+            'preflightError' => $preflightError,
+            'instanceName' => trim((string) config('app.name')),
+            'status' => $this->restoreStatus(),
+        ]);
+    }
+
+    /**
+     * Execute the confirmed restore: re-validate the archive and the typed
+     * confirmation gates, then queue RunRestoreJob. The queued job (not this
+     * request) does the destructive work off the request lifecycle.
+     */
+    public function restoreRun(Request $request, BackupService $backups): RedirectResponse
+    {
+        // Re-check durability at submit time (config can change between the page
+        // load and the submit).
+        if (! $this->restoreIsDurable()) {
+            return redirect()
+                ->route('operator.settings.backups.restore')
+                ->with('error', 'In-GUI restore is unavailable on this configuration. Restore from the server with php artisan wayfindr:restore.');
+        }
+
+        $archive = trim((string) $request->input('archive', ''));
+        $path = $backups->resolveLocalArchivePath($archive);
+        $expectedName = trim((string) config('app.name'));
+
+        $errors = [];
+
+        if ($path === null) {
+            $errors['archive'] = 'Choose an archive from the list.';
+        }
+
+        // A typed instance name is the deliberate friction: it forces the
+        // operator to name what they are about to overwrite.
+        if ($expectedName === '' || trim((string) $request->input('confirm_name')) !== $expectedName) {
+            $errors['confirm_name'] = 'Type the exact instance name to confirm: '.($expectedName !== '' ? $expectedName : '(APP_NAME is not set)');
+        }
+
+        if ($request->input('acknowledge') !== '1') {
+            $errors['acknowledge'] = 'You must acknowledge that restoring erases all current data.';
+        }
+
+        if ($errors !== []) {
+            return redirect()
+                ->route('operator.settings.backups.restore', $path !== null ? ['archive' => $archive] : [])
+                ->withErrors($errors);
+        }
+
+        $agent = $request->user();
+
+        // Write an immediate durable status (cache, not DB — the restore wipes
+        // the DB) so the operator sees "queued" even though the restore is about
+        // to log them out.
+        RunRestoreJob::putStatus('running', 'Restore queued…', $archive, $agent->id, $agent->name);
+
+        try {
+            RunRestoreJob::dispatch($archive, $agent->id, $agent->name);
+        } catch (Throwable $exception) {
+            RunRestoreJob::putStatus('failed', 'Could not queue the restore: '.$exception->getMessage(), $archive, $agent->id, $agent->name);
+
+            return redirect()
+                ->route('operator.settings.backups.restore')
+                ->with('error', 'Could not queue the restore — confirm the queue backend is reachable: '.$exception->getMessage());
+        }
+
+        // Audited to the DB — this row is wiped when the restore reloads the
+        // database, but it survives a failed/rolled-back restore, and the durable
+        // outcome lives in the cache status above.
+        AuditEvent::query()->create([
+            'account_id' => null,
+            'actor_type' => $agent->getMorphClass(),
+            'actor_id' => $agent->id,
+            'action' => 'operator_settings.backup.restore_triggered',
+            'metadata' => ['archive' => $archive],
+            'occurred_at' => now(),
+        ]);
+
+        return redirect()
+            ->route('operator.settings.backups.edit')
+            ->with('status', 'Restore queued from '.$archive.'. It replaces ALL current data and will log you out when it runs — wait a minute, log back in, and check the restore status here. If nothing changes, confirm the backup queue worker is running.');
+    }
+
+    /**
      * The write / read / list / delete round-trip a backup upload needs, run
      * inside the given prefix so prefix-scoped credentials are exercised.
      */
@@ -347,6 +475,37 @@ class OperatorBackupSettingsController extends Controller
             ->route('operator.settings.backups.edit', $this->returnParams($request))
             ->withErrors(['s3_access_key' => $message])
             ->withInput($request->except(['s3_access_key', 's3_secret_key']));
+    }
+
+    /**
+     * The in-GUI restore is only safe when the queue reservation AND the status
+     * cache survive the database restore — i.e. neither is database-backed. A
+     * DB-backed queue would delete its own in-flight job when the restore reloads
+     * the DB, and a DB-backed cache would lose the status the operator reads
+     * afterwards. The shipped stack uses Redis for both; otherwise the operator
+     * is pointed at the CLI.
+     */
+    private function restoreIsDurable(): bool
+    {
+        $queueDriver = (string) config('queue.connections.backups.driver');
+
+        $cacheStore = (string) config('cache.default');
+        $cacheDriver = (string) config("cache.stores.{$cacheStore}.driver");
+
+        return $queueDriver !== 'database' && $cacheDriver !== 'database';
+    }
+
+    /**
+     * The latest restore's status, kept in the cache because a restore wipes the
+     * database (and thus any DB-tracked status).
+     *
+     * @return array<string, mixed>|null
+     */
+    private function restoreStatus(): ?array
+    {
+        $status = Cache::get(RunRestoreJob::STATUS_KEY);
+
+        return is_array($status) ? $status : null;
     }
 
     private function returnContext(Request $request): ?string

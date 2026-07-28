@@ -159,6 +159,26 @@ event, so it is guarded:
   binaries live in an external object store (which it cannot verify from the
   box — keep those buckets reachable).
 
+### Restoring from the operator GUI
+
+Operator → Configure backups → **Restore from backup** offers a confirmed in-GUI
+restore of a **local** archive (an offsite-only archive is restored with the CLI
+above). It lists local archives, shows a read-only preflight (version skew)
+before you commit, and gates the action behind typing the instance name
+(`APP_NAME`) and an acknowledgement. The restore then runs on the queue.
+
+Two things to know:
+
+- **A restore logs everyone out.** It reloads the whole database, and the
+  sessions table is not carried in the archive — so your browser session ends
+  when it runs. Wait a minute, log back in (with the credentials **as they were
+  in the backup**), and read the restore outcome on the backup settings page.
+- **It needs a Redis-backed queue and cache.** The status and the queued job must
+  survive the database being rebuilt, so the in-GUI restore is only offered when
+  neither the queue nor the cache is database-backed (the shipped stack uses
+  Redis for both). Otherwise the page points you back at `php artisan
+  wayfindr:restore`.
+
 ### Maintenance-posture procedure
 
 Restore while the app is quiesced so nothing writes into a database that is

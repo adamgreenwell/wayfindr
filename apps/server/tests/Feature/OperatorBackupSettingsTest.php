@@ -6,6 +6,7 @@
 
 use App\Enums\AccountRole;
 use App\Jobs\RunBackupJob;
+use App\Jobs\RunRestoreJob;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\BackupRun;
@@ -566,4 +567,273 @@ test('the backup settings page links to the history', function (): void {
         ->get(route('operator.settings.backups.edit'))
         ->assertOk()
         ->assertSee(route('operator.settings.backups.history'));
+});
+
+// ---- Restore (slice 3b-2) --------------------------------------------------
+
+function seedLocalArchives(array $filenames): string
+{
+    $base = sys_get_temp_dir().'/wf-restore-'.uniqid();
+    config()->set('wayfindr.backup.path', $base);
+    config()->set('wayfindr.backup.prefix', 'inst');
+    $scoped = $base.'/inst';
+    mkdir($scoped, 0777, true);
+    foreach ($filenames as $name) {
+        file_put_contents($scoped.'/'.$name, 'archive-bytes');
+    }
+
+    return $scoped;
+}
+
+test('listLocalArchives returns real archives newest-first and ignores foreign files', function (): void {
+    seedLocalArchives([
+        'wayfindr-backup-20260727-100000-bbbbbb.tar.gz', // older
+        'wayfindr-backup-20260728-100000-aaaaaa.tar.gz', // newer
+        'notes.txt',                                     // ignored — not an archive
+        'wayfindr-backup-bogus.tar.gz',                  // ignored — bad name
+    ]);
+
+    $archives = app(BackupService::class)->listLocalArchives();
+
+    expect($archives)->toHaveCount(2)
+        ->and($archives[0]['filename'])->toBe('wayfindr-backup-20260728-100000-aaaaaa.tar.gz')
+        ->and($archives[1]['filename'])->toBe('wayfindr-backup-20260727-100000-bbbbbb.tar.gz');
+});
+
+test('resolveLocalArchivePath resolves a listed archive and rejects traversal or unknown names', function (): void {
+    $scoped = seedLocalArchives(['wayfindr-backup-20260728-100000-aaaaaa.tar.gz']);
+    $service = app(BackupService::class);
+
+    expect($service->resolveLocalArchivePath('wayfindr-backup-20260728-100000-aaaaaa.tar.gz'))
+        ->toBe($scoped.'/wayfindr-backup-20260728-100000-aaaaaa.tar.gz')
+        ->and($service->resolveLocalArchivePath('../../etc/passwd'))->toBeNull()
+        ->and($service->resolveLocalArchivePath('wayfindr-backup-19990101-000000-ffffff.tar.gz'))->toBeNull();
+});
+
+test('a non-operator cannot reach the restore page', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+
+    $this->actingAs($admin)->get(route('operator.settings.backups.restore'))->assertForbidden();
+});
+
+test('the restore page lists local archives when the queue and cache are durable', function (): void {
+    seedLocalArchives(['wayfindr-backup-20260728-100000-aaaaaa.tar.gz']);
+
+    $this->actingAs(backupOperator())
+        ->get(route('operator.settings.backups.restore'))
+        ->assertOk()
+        ->assertSee('Restore from backup')
+        ->assertSee('Choose an archive')
+        ->assertSee('wayfindr-backup-20260728-100000-aaaaaa.tar.gz');
+});
+
+test('the restore page points to the CLI when the queue is database-backed', function (): void {
+    config()->set('queue.connections.backups.driver', 'database');
+
+    $this->actingAs(backupOperator())
+        ->get(route('operator.settings.backups.restore'))
+        ->assertOk()
+        ->assertSee('In-GUI restore is unavailable')
+        ->assertSee('php artisan wayfindr:restore');
+});
+
+test('the restore page points to the CLI when the cache is database-backed', function (): void {
+    config()->set('cache.default', 'database');
+
+    $this->actingAs(backupOperator())
+        ->get(route('operator.settings.backups.restore'))
+        ->assertOk()
+        ->assertSee('In-GUI restore is unavailable');
+});
+
+test('previewing an archive shows the confirmation form with version info', function (): void {
+    seedLocalArchives(['wayfindr-backup-20260728-100000-aaaaaa.tar.gz']);
+
+    $restores = Mockery::mock(RestoreService::class);
+    $restores->shouldReceive('preflight')->once()->andReturn([
+        'archive_version' => '0.2.0',
+        'running_version' => '0.3.0',
+        'version_skew' => true,
+    ]);
+    $this->app->instance(RestoreService::class, $restores);
+
+    $this->actingAs(backupOperator())
+        ->get(route('operator.settings.backups.restore', ['archive' => 'wayfindr-backup-20260728-100000-aaaaaa.tar.gz']))
+        ->assertOk()
+        ->assertSee('Confirm the restore')
+        ->assertSee('Type the instance name to confirm')
+        ->assertSee('0.2.0')  // backup version
+        ->assertSee('0.3.0'); // running version
+});
+
+test('the restore rejects a wrong instance name and does not queue', function (): void {
+    Bus::fake();
+    config()->set('app.name', 'wayfindr-prod');
+    seedLocalArchives(['wayfindr-backup-20260728-100000-aaaaaa.tar.gz']);
+
+    $this->actingAs(backupOperator())
+        ->post(route('operator.settings.backups.restore.run'), [
+            'archive' => 'wayfindr-backup-20260728-100000-aaaaaa.tar.gz',
+            'confirm_name' => 'not-the-name',
+            'acknowledge' => '1',
+        ])
+        ->assertSessionHasErrors('confirm_name');
+
+    Bus::assertNotDispatched(RunRestoreJob::class);
+});
+
+test('the restore requires the acknowledgement checkbox', function (): void {
+    Bus::fake();
+    config()->set('app.name', 'wayfindr-prod');
+    seedLocalArchives(['wayfindr-backup-20260728-100000-aaaaaa.tar.gz']);
+
+    $this->actingAs(backupOperator())
+        ->post(route('operator.settings.backups.restore.run'), [
+            'archive' => 'wayfindr-backup-20260728-100000-aaaaaa.tar.gz',
+            'confirm_name' => 'wayfindr-prod',
+        ])
+        ->assertSessionHasErrors('acknowledge');
+
+    Bus::assertNotDispatched(RunRestoreJob::class);
+});
+
+test('the restore rejects an unknown archive', function (): void {
+    Bus::fake();
+    config()->set('app.name', 'wayfindr-prod');
+    seedLocalArchives(['wayfindr-backup-20260728-100000-aaaaaa.tar.gz']);
+
+    $this->actingAs(backupOperator())
+        ->post(route('operator.settings.backups.restore.run'), [
+            'archive' => 'wayfindr-backup-19990101-000000-ffffff.tar.gz',
+            'confirm_name' => 'wayfindr-prod',
+            'acknowledge' => '1',
+        ])
+        ->assertSessionHasErrors('archive');
+
+    Bus::assertNotDispatched(RunRestoreJob::class);
+});
+
+test('a confirmed restore queues the job, records a durable status, and audits', function (): void {
+    Bus::fake();
+    config()->set('app.name', 'wayfindr-prod');
+    seedLocalArchives(['wayfindr-backup-20260728-100000-aaaaaa.tar.gz']);
+    $operator = backupOperator();
+
+    $this->actingAs($operator)
+        ->post(route('operator.settings.backups.restore.run'), [
+            'archive' => 'wayfindr-backup-20260728-100000-aaaaaa.tar.gz',
+            'confirm_name' => 'wayfindr-prod',
+            'acknowledge' => '1',
+        ])
+        ->assertRedirect(route('operator.settings.backups.edit'))
+        ->assertSessionHas('status');
+
+    Bus::assertDispatched(RunRestoreJob::class);
+
+    $status = Cache::get(RunRestoreJob::STATUS_KEY);
+    expect($status['status'])->toBe('running')
+        ->and($status['archive'])->toBe('wayfindr-backup-20260728-100000-aaaaaa.tar.gz')
+        ->and($status['triggered_by_name'])->toBe($operator->name);
+
+    expect(AuditEvent::query()->where('action', 'operator_settings.backup.restore_triggered')->exists())->toBeTrue();
+});
+
+test('the restore refuses to run when the queue is database-backed', function (): void {
+    Bus::fake();
+    config()->set('queue.connections.backups.driver', 'database');
+    config()->set('app.name', 'wayfindr-prod');
+    seedLocalArchives(['wayfindr-backup-20260728-100000-aaaaaa.tar.gz']);
+
+    $this->actingAs(backupOperator())
+        ->post(route('operator.settings.backups.restore.run'), [
+            'archive' => 'wayfindr-backup-20260728-100000-aaaaaa.tar.gz',
+            'confirm_name' => 'wayfindr-prod',
+            'acknowledge' => '1',
+        ])
+        ->assertSessionHas('error');
+
+    Bus::assertNotDispatched(RunRestoreJob::class);
+});
+
+test('the restore job records a failure when the archive is gone', function (): void {
+    $backups = Mockery::mock(BackupService::class);
+    $backups->shouldReceive('resolveLocalArchivePath')->andReturn(null);
+    $restores = Mockery::mock(RestoreService::class);
+    $restores->shouldNotReceive('restore');
+
+    (new RunRestoreJob('wayfindr-backup-20260728-100000-aaaaaa.tar.gz'))->handle($restores, $backups);
+
+    expect(Cache::get(RunRestoreJob::STATUS_KEY)['status'])->toBe('failed');
+});
+
+test('the restore job runs the archive and records success with a summary', function (): void {
+    $backups = Mockery::mock(BackupService::class);
+    $backups->shouldReceive('resolveLocalArchivePath')->andReturn('/backups/inst/x.tar.gz');
+    $restores = Mockery::mock(RestoreService::class);
+    $restores->shouldReceive('restore')->once()->with('/backups/inst/x.tar.gz', true)->andReturn([
+        'version_skew' => false,
+        'archive_version' => '0.3.0',
+        'running_version' => '0.3.0',
+        'integrity' => ['dangling' => []],
+    ]);
+
+    (new RunRestoreJob('x.tar.gz', 7, 'Operator'))->handle($restores, $backups);
+
+    $status = Cache::get(RunRestoreJob::STATUS_KEY);
+    expect($status['status'])->toBe('succeeded')
+        ->and($status['message'])->toContain('Restore complete')
+        ->and($status['triggered_by_name'])->toBe('Operator');
+});
+
+test('the restore job skips when a backup or restore already holds the lock', function (): void {
+    $lock = Cache::lock(BackupRunner::LOCK_KEY, 60);
+    $lock->get();
+
+    $backups = Mockery::mock(BackupService::class);
+    $backups->shouldReceive('resolveLocalArchivePath')->andReturn('/backups/inst/x.tar.gz');
+    $restores = Mockery::mock(RestoreService::class);
+    $restores->shouldNotReceive('restore');
+
+    (new RunRestoreJob('x.tar.gz'))->handle($restores, $backups);
+
+    expect(Cache::get(RunRestoreJob::STATUS_KEY)['status'])->toBe('failed')
+        ->and(Cache::get(RunRestoreJob::STATUS_KEY)['message'])->toContain('already running');
+
+    $lock->release();
+});
+
+test('a timed-out restore job records a failure over a running status', function (): void {
+    RunRestoreJob::putStatus('running', 'Restore in progress…', 'x.tar.gz');
+
+    (new RunRestoreJob('x.tar.gz'))->failed(new RuntimeException('timed out'));
+
+    expect(Cache::get(RunRestoreJob::STATUS_KEY)['status'])->toBe('failed')
+        ->and(Cache::get(RunRestoreJob::STATUS_KEY)['message'])->toContain('timed out');
+});
+
+test('the restore failed callback does not clobber a recorded terminal status', function (): void {
+    RunRestoreJob::putStatus('succeeded', 'Restore complete.', 'x.tar.gz');
+
+    (new RunRestoreJob('x.tar.gz'))->failed(new RuntimeException('late timeout'));
+
+    expect(Cache::get(RunRestoreJob::STATUS_KEY)['status'])->toBe('succeeded');
+});
+
+test('the restore job is one-shot, fails on timeout, and rides the backups connection', function (): void {
+    $job = new RunRestoreJob('x.tar.gz');
+
+    expect($job->tries)->toBe(1)
+        ->and($job->failOnTimeout)->toBeTrue()
+        ->and($job->connection)->toBe('backups');
+});
+
+test('the backups settings page shows the latest restore status', function (): void {
+    RunRestoreJob::putStatus('succeeded', 'Restore complete. All good.', 'wayfindr-backup-20260728-100000-aaaaaa.tar.gz', null, 'Operator Jane');
+
+    $this->actingAs(backupOperator())
+        ->get(route('operator.settings.backups.edit'))
+        ->assertOk()
+        ->assertSee('Last restore: succeeded')
+        ->assertSee('Operator Jane');
 });

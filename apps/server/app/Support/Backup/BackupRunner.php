@@ -25,8 +25,12 @@ use Throwable;
  */
 class BackupRunner
 {
-    /** Instance-wide serialization lock shared by every backup entry point. */
-    private const LOCK_KEY = 'wayfindr:backup';
+    /**
+     * Instance-wide serialization lock shared by every backup entry point AND
+     * the restore job (RunRestoreJob), so a restore and a backup — which both
+     * touch the whole database — never run at the same time.
+     */
+    public const LOCK_KEY = 'wayfindr:backup';
 
     public function __construct(private readonly BackupService $backups) {}
 

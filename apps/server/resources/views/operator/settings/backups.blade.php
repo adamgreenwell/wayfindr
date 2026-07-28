@@ -13,11 +13,13 @@
         <p class="status-message">{{ session('error') }}</p>
     @endif
 
+    @include('operator.settings.partials.restore-status', ['status' => $restoreStatus])
+
     <section class="section" aria-labelledby="backup-run-heading">
         <div class="section-header">
             <div>
                 <h2 id="backup-run-heading">Run a backup now</h2>
-                <p class="lede">Queues a backup (database dump + local attachment binaries, plus the offsite copy if configured). It runs in the background. <a class="text-link" href="{{ route('operator.settings.backups.history') }}">View backup history</a>.</p>
+                <p class="lede">Queues a backup (database dump + local attachment binaries, plus the offsite copy if configured). It runs in the background. <a class="text-link" href="{{ route('operator.settings.backups.history') }}">View backup history</a> · <a class="text-link" href="{{ route('operator.settings.backups.restore') }}">Restore from backup</a>.</p>
             </div>
             <form method="POST" action="{{ route('operator.settings.backups.run') }}">
                 @csrf
