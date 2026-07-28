@@ -17,7 +17,7 @@
         <div class="section-header">
             <div>
                 <h2 id="backup-run-heading">Run a backup now</h2>
-                <p class="lede">Queues a backup (database dump + local attachment binaries, plus the offsite copy if configured). It runs in the background.</p>
+                <p class="lede">Queues a backup (database dump + local attachment binaries, plus the offsite copy if configured). It runs in the background. <a class="text-link" href="{{ route('operator.settings.backups.history') }}">View backup history</a>.</p>
             </div>
             <form method="POST" action="{{ route('operator.settings.backups.run') }}">
                 @csrf

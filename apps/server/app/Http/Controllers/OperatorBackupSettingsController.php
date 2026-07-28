@@ -34,6 +34,13 @@ class OperatorBackupSettingsController extends Controller
     /** The private object ACLs the form offers and accepts (see storage slice). */
     private const SAFE_ACLS = ['bucket-owner-full-control', 'private', 'bucket-owner-read'];
 
+    /**
+     * How many recent runs the history view shows. backup_runs grows slowly (a
+     * few a day), so a capped recent list — matching the audit log's approach,
+     * no pagination component in this app — comfortably covers weeks of history.
+     */
+    private const HISTORY_LIMIT = 100;
+
     public function edit(Request $request, OperatorSettings $settings): View
     {
         $disk = trim((string) $settings->effective('backup.disk'));
@@ -64,6 +71,30 @@ class OperatorBackupSettingsController extends Controller
             'backUrl' => $from === 'onboarding' ? route('operator.onboarding') : route('operator.dashboard'),
             'backLabel' => $from === 'onboarding' ? 'Back to setup checklist' : 'Back to operator console',
             'returnTo' => $from,
+        ]);
+    }
+
+    /**
+     * The full backup run history: the scheduled command and the operator
+     * "run now" both record to backup_runs, so this is one place to confirm
+     * backups are actually happening and succeeding.
+     */
+    public function history(Request $request): View
+    {
+        $runs = BackupRun::query()
+            ->with('triggeredBy')
+            ->latest('started_at')
+            ->latest('id')
+            ->limit(self::HISTORY_LIMIT)
+            ->get();
+
+        return view('operator.settings.backups-history', [
+            'operator' => $request->user(),
+            'runs' => $runs,
+            // Signals the capped list so a long-running install knows older runs
+            // exist beyond what is shown.
+            'atLimit' => $runs->count() === self::HISTORY_LIMIT,
+            'limit' => self::HISTORY_LIMIT,
         ]);
     }
 

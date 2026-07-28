@@ -506,3 +506,64 @@ test('a lock-release failure does not turn a completed backup into a failure', f
     expect($result)->not->toBeNull()
         ->and($run->fresh()->status)->toBe(BackupRun::STATUS_SUCCEEDED);
 });
+
+test('a non-operator cannot reach the backup history', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+
+    $this->actingAs($admin)->get(route('operator.settings.backups.history'))->assertForbidden();
+});
+
+test('the backup history lists runs newest-first with trigger, size, offsite, and detail', function (): void {
+    $operator = backupOperator();
+
+    // Older run: scheduled (null trigger), succeeded, mirrored offsite.
+    BackupRun::query()->create([
+        'status' => BackupRun::STATUS_SUCCEEDED,
+        'size_bytes' => 2_097_152,
+        'offsite_disk' => 'backups',
+        'offsite_key' => 'inst-a/wayfindr-old.tar.gz',
+        'triggered_by_id' => null,
+        'started_at' => now()->subHour(),
+        'finished_at' => now()->subHour(),
+    ]);
+
+    // Newer run: operator-triggered, failed with a detail message, local only.
+    BackupRun::query()->create([
+        'status' => BackupRun::STATUS_FAILED,
+        'message' => 'pg_dump not found on PATH',
+        'triggered_by_id' => $operator->id,
+        'started_at' => now(),
+        'finished_at' => now(),
+    ]);
+
+    $response = $this->actingAs($operator)
+        ->get(route('operator.settings.backups.history'))
+        ->assertOk()
+        ->assertSee('Backup history')
+        ->assertSee('Scheduled')                    // null-trigger label
+        ->assertSee($operator->name)                // operator-triggered run
+        ->assertSee('pg_dump not found on PATH')    // failure detail
+        ->assertSee('Uploaded to [backups]')        // offsite label
+        ->assertSee('2.0 MB');                      // size formatting
+
+    // Newest first: the newer failed run (its detail) renders before the older
+    // succeeded run (its offsite label).
+    $body = $response->getContent();
+    expect(strpos($body, 'pg_dump not found on PATH'))
+        ->toBeLessThan(strpos($body, 'Uploaded to [backups]'));
+});
+
+test('the backup history shows an empty state when there are no runs', function (): void {
+    $this->actingAs(backupOperator())
+        ->get(route('operator.settings.backups.history'))
+        ->assertOk()
+        ->assertSee('No backup runs recorded yet');
+});
+
+test('the backup settings page links to the history', function (): void {
+    $this->actingAs(backupOperator())
+        ->get(route('operator.settings.backups.edit'))
+        ->assertOk()
+        ->assertSee(route('operator.settings.backups.history'));
+});
