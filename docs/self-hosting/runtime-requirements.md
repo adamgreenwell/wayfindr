@@ -62,6 +62,13 @@ The default queue worker must not process the `backups` connection. If you skip
 this worker, scheduled backups (via cron) still run, but the operator's
 "run a backup now" button will queue jobs that are never processed.
 
+Backups are serialized instance-wide by a short-lived lock so two never run at
+once. If yours take a long time, raise `WAYFINDR_BACKUP_JOB_TIMEOUT` (seconds;
+default 3600) to cover the queued job, and it also lifts the lock lifetime;
+`WAYFINDR_BACKUP_LOCK_TTL` can raise the lock lifetime alone. The lock lifetime
+must exceed your longest backup — including the untimed scheduled one — or a
+second backup could start before the first finishes.
+
 After the first deploy, use a few boring process checks before trusting the
 install with visitor traffic:
 

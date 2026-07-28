@@ -39,9 +39,12 @@ class BackupRunner
      */
     public function run(BackupRun $run, string $destination): ?array
     {
-        // TTL bounds a lock leaked by a crashed/killed process so future backups
-        // aren't blocked forever; it comfortably exceeds the backup timeout.
-        $lock = Cache::lock(self::LOCK_KEY, (int) config('wayfindr.backup.job_timeout', 3600) + 120);
+        // The lock lifetime must exceed the longest a backup can take — for the
+        // scheduled command that means its whole (untimed) run, not just the
+        // queued job's timeout — while still bounding a lock leaked by a crashed
+        // process so future backups aren't blocked forever. Operators with
+        // multi-hour backups raise wayfindr.backup.lock_ttl to cover them.
+        $lock = Cache::lock(self::LOCK_KEY, (int) config('wayfindr.backup.lock_ttl', 3900));
 
         if (! $lock->get()) {
             $run->update([

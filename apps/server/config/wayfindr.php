@@ -157,6 +157,17 @@ return [
         // overrides the worker's --timeout for that job. Raise it for very large
         // installs.
         'job_timeout' => (int) env('WAYFINDR_BACKUP_JOB_TIMEOUT', 3600),
+
+        // Lifetime of the instance-wide serialization lock that keeps two
+        // backups from running at once (ADR 0011). It MUST exceed the longest a
+        // backup can take, for BOTH entry points: the queued job (bounded by
+        // job_timeout) and the scheduled wayfindr:backup command (which has no
+        // job timeout — it runs until it finishes). If a long scheduled backup
+        // outlives this lock, a second backup could acquire the lock and run
+        // concurrently, so operators with multi-hour backups should raise this
+        // to cover them. It also bounds how long a crashed backup blocks the
+        // next one, so it is not simply "infinite". Defaults above job_timeout.
+        'lock_ttl' => (int) env('WAYFINDR_BACKUP_LOCK_TTL', (int) env('WAYFINDR_BACKUP_JOB_TIMEOUT', 3600) + 300),
     ],
 
     // Resolved through ReleaseIdentity so a blank env_file override falls

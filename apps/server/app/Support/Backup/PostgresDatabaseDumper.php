@@ -82,6 +82,11 @@ class PostgresDatabaseDumper implements DatabaseDumper
             config('cache.stores.database.table') ?: 'cache',
             config('cache.stores.database.lock_table') ?: 'cache_locks',
             config('queue.connections.database.table') ?: 'jobs',
+            // The dedicated backup queue's table (ADR 0011): if it is database-
+            // backed with a custom table, the in-flight RunBackupJob row lives
+            // here during the dump and would otherwise be revived on restore.
+            // Deduped against 'jobs' when it is the default/shared table.
+            config('queue.connections.backups.table') ?: 'jobs',
             config('queue.batching.table') ?: 'job_batches',
             config('queue.failed.table') ?: 'failed_jobs',
             // Operational backup history (ADR 0011): the in-progress run is

@@ -13,8 +13,10 @@ use App\Models\User;
 use App\Support\Backup\BackupRunner;
 use App\Support\Backup\BackupService;
 use App\Support\Backup\PostgresDatabaseDumper;
+use App\Support\Backup\RestoreService;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Env;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
@@ -388,4 +390,46 @@ test('the latest backup run shows on the settings page', function (): void {
         ->assertOk()
         ->assertSee('Latest run')
         ->assertSee('Succeeded');
+});
+
+test('the shipped backup queue connection targets redis with a valid connection name', function (): void {
+    // Default install: the backup connection rides the same Redis the default
+    // queue uses, so its connection name must be a real Redis connection.
+    expect(config('queue.connections.backups.driver'))->toBe('redis')
+        ->and(config('queue.connections.backups.connection'))->toBe('default');
+});
+
+test('a database-driven backup queue defaults its connection to the default DB connection', function (): void {
+    // With the database driver, "connection" names a DATABASE connection, so the
+    // default must be null (→ the default DB connection), not the Redis name.
+    Env::getRepository()->set('BACKUP_QUEUE_DRIVER', 'database');
+
+    try {
+        $config = require base_path('config/queue.php');
+
+        expect($config['connections']['backups']['driver'])->toBe('database')
+            ->and($config['connections']['backups']['connection'])->toBeNull();
+    } finally {
+        Env::getRepository()->clear('BACKUP_QUEUE_DRIVER');
+    }
+});
+
+test('a custom database-backed backup queue table is excluded from the dump', function (): void {
+    config()->set('queue.connections.backups.table', 'backup_jobs');
+
+    expect((new PostgresDatabaseDumper)->excludedTableData())
+        ->toContain('public.backup_jobs');
+});
+
+test('a custom database-backed backup queue table counts as bookkeeping, not real data', function (): void {
+    config()->set('queue.connections.backups.table', 'backup_jobs');
+
+    $method = new ReflectionMethod(RestoreService::class, 'bookkeepingTables');
+
+    expect($method->invoke(app(RestoreService::class)))->toContain('backup_jobs');
+});
+
+test('the backup lock lifetime exceeds the job timeout so a full-length backup stays serialized', function (): void {
+    expect((int) config('wayfindr.backup.lock_ttl'))
+        ->toBeGreaterThan((int) config('wayfindr.backup.job_timeout'));
 });

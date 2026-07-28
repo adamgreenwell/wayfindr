@@ -87,7 +87,15 @@ return [
          */
         'backups' => [
             'driver' => env('BACKUP_QUEUE_DRIVER', 'redis'),
-            'connection' => env('BACKUP_QUEUE_REDIS_CONNECTION', env('REDIS_QUEUE_CONNECTION', 'default')),
+            // Driver-aware: for the redis driver this names a Redis connection;
+            // for the database driver it names a DATABASE connection (null → the
+            // default DB connection). A single default hard-coded to the Redis
+            // name would break a database-backed backup queue, since there is no
+            // DB connection called "default". BACKUP_QUEUE_CONNECTION overrides
+            // either way.
+            'connection' => env('BACKUP_QUEUE_CONNECTION', env('BACKUP_QUEUE_DRIVER', 'redis') === 'database'
+                ? null
+                : env('REDIS_QUEUE_CONNECTION', 'default')),
             'table' => env('BACKUP_QUEUE_TABLE', 'jobs'),
             'queue' => env('BACKUP_QUEUE', 'backups'),
             'retry_after' => (int) env('BACKUP_QUEUE_RETRY_AFTER', (int) env('WAYFINDR_BACKUP_JOB_TIMEOUT', 3600) + 300),
