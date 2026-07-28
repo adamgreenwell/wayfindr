@@ -314,7 +314,8 @@ class OperatorBackupSettingsController extends Controller
      */
     public function restore(Request $request, BackupService $backups, RestoreService $restores): View
     {
-        $durable = $this->restoreIsDurable();
+        $durabilityIssues = $this->restoreDurabilityIssues();
+        $durable = $durabilityIssues === [];
 
         $selected = null;
         $preflight = null;
@@ -341,6 +342,7 @@ class OperatorBackupSettingsController extends Controller
         return view('operator.settings.backups-restore', [
             'operator' => $request->user(),
             'durable' => $durable,
+            'durabilityIssues' => $durabilityIssues,
             'archives' => $backups->listLocalArchives(),
             'selected' => $selected,
             'preflight' => $preflight,
@@ -541,49 +543,74 @@ class OperatorBackupSettingsController extends Controller
      */
     private function restoreIsDurable(): bool
     {
-        $queueDriver = (string) config('queue.connections.backups.driver');
-
-        $cacheStore = (string) config('cache.default');
-        $cacheDriver = (string) config("cache.stores.{$cacheStore}.driver");
-
-        return in_array($queueDriver, self::RESTORE_SAFE_QUEUE_DRIVERS, true)
-            && in_array($cacheDriver, $this->restoreSafeCacheDrivers(), true)
-            && $this->maintenanceModeIsDurable();
+        return $this->restoreDurabilityIssues() === [];
     }
 
     /**
-     * The maintenance-mode marker must also survive the database reload and be
-     * visible to every app container — otherwise `artisan down` would lift
-     * mid-restore and let web traffic resume while attachments are still being
-     * rebuilt. The `file` driver writes to the shared storage volume (safe); the
-     * `cache` driver is only safe when its store is one of the shared, non-DB
-     * stores (NOT the framework-default `database` store); anything else is
-     * rejected.
+     * The specific prerequisites the in-GUI restore fails, so the operator is told
+     * exactly what to fix rather than a generic (and possibly wrong) message. The
+     * queue reservation, the status cache, AND the maintenance-mode marker must
+     * each survive the database reload and be shared between the web process and
+     * the worker. Empty = safe to offer the in-GUI restore.
+     *
+     * @return list<string>
      */
-    private function maintenanceModeIsDurable(): bool
+    private function restoreDurabilityIssues(): array
+    {
+        $issues = [];
+
+        $queueDriver = (string) config('queue.connections.backups.driver');
+        if (! in_array($queueDriver, self::RESTORE_SAFE_QUEUE_DRIVERS, true)) {
+            $issues[] = 'The backup queue must be Redis (set BACKUP_QUEUE_DRIVER=redis); it is currently the "'.$queueDriver.'" driver, whose jobs would not survive the database being rebuilt.';
+        }
+
+        $cacheStore = (string) config('cache.default');
+        $cacheDriver = (string) config("cache.stores.{$cacheStore}.driver");
+        if (! in_array($cacheDriver, $this->restoreSafeCacheDrivers(), true)) {
+            $issues[] = 'The cache must be a shared, non-database store such as Redis (CACHE_STORE); it is currently the "'.$cacheDriver.'" driver, so the restore status and lock would not survive the rebuild or be shared with the worker.';
+        }
+
+        return array_merge($issues, $this->maintenanceDurabilityIssues());
+    }
+
+    /**
+     * The maintenance-mode marker must survive the database reload and be visible
+     * to every app process — otherwise `artisan down` would lift mid-restore and
+     * let web traffic resume while attachments are still being rebuilt.
+     *
+     * @return list<string>
+     */
+    private function maintenanceDurabilityIssues(): array
     {
         $driver = (string) config('app.maintenance.driver', 'file');
 
         // cache: the marker lives in the named store, which must survive the
-        // reload AND be shared across processes — the same allowlist as the
-        // status/lock. This is provably cross-process, so it needs no assertion.
+        // reload AND be shared across processes — provably cross-process, so it
+        // needs no assertion, but NOT the framework-default `database` store.
         if ($driver === 'cache') {
             $store = (string) (config('app.maintenance.store') ?: config('cache.default'));
             $storeDriver = (string) config("cache.stores.{$store}.driver");
 
-            return in_array($storeDriver, $this->restoreSafeCacheDrivers(), true);
+            if (! in_array($storeDriver, $this->restoreSafeCacheDrivers(), true)) {
+                return ['The maintenance-mode cache store must be a shared, non-database store such as Redis (APP_MAINTENANCE_STORE); it is currently the "'.$storeDriver.'" driver.'];
+            }
+
+            return [];
         }
 
-        // file: the marker survives the reload (on-disk), but the web process
-        // only sees a marker the worker wrote when they share the storage volume
-        // — which the app cannot detect. Accept it only when the operator has
-        // asserted shared storage (the shipped compose sets this); otherwise a
-        // multi-host/unshared deployment would keep serving traffic mid-restore.
+        // file: the marker survives the reload (on-disk), but the web process only
+        // sees a marker the worker wrote when they share the storage volume —
+        // which the app cannot detect. Accept it only when the operator asserts
+        // shared storage (the shipped compose sets this).
         if ($driver === 'file') {
-            return (bool) config('wayfindr.backup.restore_file_maintenance_shared', false);
+            if (! (bool) config('wayfindr.backup.restore_file_maintenance_shared', false)) {
+                return ['Maintenance mode uses the file driver, whose marker is only visible across processes when the web and worker share storage. Set WAYFINDR_RESTORE_FILE_MAINTENANCE_SHARED=true only if they do (the shipped compose does), or switch to a Redis-backed maintenance store.'];
+            }
+
+            return [];
         }
 
-        return false;
+        return ['The maintenance-mode driver "'.$driver.'" is not supported for the in-GUI restore; use the file driver on shared storage, or a Redis-backed cache store.'];
     }
 
     /** @return list<string> */

@@ -17,8 +17,13 @@
                 <h2 id="restore-cli-heading">In-GUI restore is unavailable here</h2>
             </div>
             <div class="notice-copy notice-copy-bordered">
-                <p>A restore rebuilds the database, so it can only run safely in the browser when the queue and cache are <strong>not</strong> stored in that same database — otherwise the restore would erase the job and its status mid-run. This install uses a database-backed queue or cache.</p>
-                <p>Restore from the server instead (the archives live under the backup path, in this install's prefix):</p>
+                <p>A restore rebuilds the database, so it can only run safely in the browser when the queue, cache, and maintenance-mode marker all survive the rebuild and are shared with the worker. This install does not meet:</p>
+                <ul>
+                    @foreach ($durabilityIssues as $issue)
+                        <li>{{ $issue }}</li>
+                    @endforeach
+                </ul>
+                <p>Fix the above to enable the in-GUI restore, or restore from the server instead (the archives live under the backup path, in this install's prefix):</p>
             </div>
             <pre class="code-block"><code>php artisan wayfindr:restore &lt;path-to-archive&gt; --force</code></pre>
         </section>

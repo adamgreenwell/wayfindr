@@ -647,6 +647,7 @@ test('the restore page points to the CLI when the queue is database-backed', fun
         ->get(route('operator.settings.backups.restore'))
         ->assertOk()
         ->assertSee('In-GUI restore is unavailable')
+        ->assertSee('BACKUP_QUEUE_DRIVER') // names the actual unmet prerequisite
         ->assertSee('php artisan wayfindr:restore');
 });
 
@@ -696,14 +697,18 @@ test('the restore page points to the CLI when maintenance mode uses a database c
 
 test('the restore page points to the CLI when file maintenance is not asserted shared', function (): void {
     // Default file driver without the shared-storage assertion: a multi-host
-    // deployment's marker might not be visible to the web process.
+    // deployment's marker might not be visible to the web process. The queue and
+    // cache are safe, so the message must name the ACTUAL unmet prerequisite —
+    // the file-maintenance assertion — not wrongly blame the queue/cache.
     config()->set('app.maintenance.driver', 'file');
     config()->set('wayfindr.backup.restore_file_maintenance_shared', false);
 
     $this->actingAs(backupOperator())
         ->get(route('operator.settings.backups.restore'))
         ->assertOk()
-        ->assertSee('In-GUI restore is unavailable');
+        ->assertSee('In-GUI restore is unavailable')
+        ->assertSee('WAYFINDR_RESTORE_FILE_MAINTENANCE_SHARED')
+        ->assertDontSee('database-backed queue');
 });
 
 test('a second restore is rejected while one is already pending', function (): void {
