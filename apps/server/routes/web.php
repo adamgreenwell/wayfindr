@@ -243,6 +243,8 @@ Route::middleware(['auth', EnsureAgentIsActive::class, EnsurePlatformOperator::c
             ->name('settings.scanning.test');
         Route::get('/settings/backups', [OperatorBackupSettingsController::class, 'edit'])
             ->name('settings.backups.edit');
+        Route::get('/settings/backups/history', [OperatorBackupSettingsController::class, 'history'])
+            ->name('settings.backups.history');
         Route::post('/settings/backups', [OperatorBackupSettingsController::class, 'update'])
             ->name('settings.backups.update');
         Route::post('/settings/backups/test', [OperatorBackupSettingsController::class, 'test'])
