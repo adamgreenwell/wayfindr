@@ -741,16 +741,15 @@ test('the pending claim returns a token and rejects a second concurrent claim', 
 });
 
 test('a stale restore job does not release a newer pending claim', function (): void {
-    // A newer restore owns the slot with its own token.
-    Cache::put(RunRestoreJob::PENDING_KEY, 'newer-token', 60);
+    $newer = RunRestoreJob::claimPending(); // a restore owns the slot
 
-    // A stale job releasing with ITS (older) token must not free the newer claim.
+    // A stale job releasing with a DIFFERENT (older) token must not free it.
     RunRestoreJob::releasePending('older-token');
-    expect(Cache::get(RunRestoreJob::PENDING_KEY))->toBe('newer-token');
+    expect(RunRestoreJob::claimPending())->toBeNull(); // still held
 
-    // The matching token frees it.
-    RunRestoreJob::releasePending('newer-token');
-    expect(Cache::get(RunRestoreJob::PENDING_KEY))->toBeNull();
+    // The owner's own token frees it atomically.
+    RunRestoreJob::releasePending($newer);
+    expect(RunRestoreJob::claimPending())->not->toBeNull(); // now claimable
 });
 
 test('the failed callback lifts maintenance it owns even when the ownership cache read fails', function (): void {

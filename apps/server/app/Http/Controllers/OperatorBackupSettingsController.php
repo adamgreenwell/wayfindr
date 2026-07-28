@@ -519,8 +519,14 @@ class OperatorBackupSettingsController extends Controller
             ->withInput($request->except(['s3_access_key', 's3_secret_key']));
     }
 
-    /** Queue drivers whose reservation survives the DB reload and is worker-run. */
-    private const RESTORE_SAFE_QUEUE_DRIVERS = ['redis', 'beanstalkd', 'sqs'];
+    /**
+     * Queue drivers safe for the restore: the reservation must survive the DB
+     * reload and be worker-run. Only `redis` — the `backups` connection in
+     * config/queue.php is redis/database-shaped, so sqs/beanstalkd could not even
+     * be constructed from it (and there is no beanstalkd client), and `database`
+     * is wiped by the restore.
+     */
+    private const RESTORE_SAFE_QUEUE_DRIVERS = ['redis'];
 
     /**
      * The in-GUI restore is only safe when the queue reservation AND the status

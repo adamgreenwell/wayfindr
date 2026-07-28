@@ -12,7 +12,6 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Str;
 use Throwable;
 
 /**
@@ -70,11 +69,6 @@ class RunRestoreJob implements ShouldQueue
 
     public function handle(RestoreService $restores, BackupService $backups): void
     {
-        // Extend the pending claim to cover this execution: the queue wait before
-        // us may have consumed much of the original window, and the claim must
-        // stay held until we reach a terminal state.
-        $this->refreshPendingClaim();
-
         // Re-resolve the filename to a real local archive path — never trust a
         // raw path from the request; an unknown filename yields null.
         $path = $backups->resolveLocalArchivePath($this->archiveFilename);
@@ -274,22 +268,29 @@ class RunRestoreJob implements ShouldQueue
      * so a double-submit or two operators confirming can't queue two destructive
      * restores that the dedicated worker would then run one after the other.
      * Returns an ownership token to pass to the job, or null when a restore is
-     * already pending or running. The TTL is generous enough to cover a realistic
-     * queue wait (a restore may sit behind a running backup) plus the restore's
-     * own run, and the job refreshes it on start; it only expires if the job is
-     * lost entirely, after which a retry is reasonable.
+     * already pending or running.
+     *
+     * Modelled as a cache LOCK so the claim and its owner-checked release are each
+     * a single atomic operation — a plain get-then-forget could delete a newer
+     * operator's token that slipped in between. The TTL is generous enough to
+     * cover a realistic queue wait (a restore may sit behind a running backup)
+     * plus the restore's own run; it only expires if the job is lost entirely,
+     * after which a retry is reasonable. (Actual execution is additionally
+     * serialised by the backup lock, so an expired claim can never cause two
+     * restores to run at once — only, at worst, back to back.)
      */
     public static function claimPending(): ?string
     {
-        $token = (string) Str::uuid();
+        $lock = Cache::lock(self::PENDING_KEY, self::pendingTtl());
 
-        return Cache::add(self::PENDING_KEY, $token, self::pendingTtl()) ? $token : null;
+        return $lock->get() ? $lock->owner() : null;
     }
 
     /**
      * Release the pending claim, but only if it is still OURS — a job that timed
      * out after its slot was reclaimed by a newer restore must not free the new
-     * one. A null token (a direct call with no claim) is a no-op.
+     * one. restoreLock()->release() is an atomic owner-checked delete. A null
+     * token (a direct call with no claim) is a no-op.
      */
     public static function releasePending(?string $token): void
     {
@@ -298,29 +299,7 @@ class RunRestoreJob implements ShouldQueue
         }
 
         try {
-            if (Cache::get(self::PENDING_KEY) === $token) {
-                Cache::forget(self::PENDING_KEY);
-            }
-        } catch (Throwable $exception) {
-            report($exception);
-        }
-    }
-
-    /** Extend our pending claim to cover this execution (see claimPending). */
-    private function refreshPendingClaim(): void
-    {
-        if ($this->pendingToken === null) {
-            return;
-        }
-
-        try {
-            $current = Cache::get(self::PENDING_KEY);
-
-            // Re-assert only when the slot is free or already ours — never stomp a
-            // different token (which would mean a newer restore owns the slot).
-            if ($current === null || $current === $this->pendingToken) {
-                Cache::put(self::PENDING_KEY, $this->pendingToken, self::pendingTtl());
-            }
+            Cache::restoreLock(self::PENDING_KEY, $token)->release();
         } catch (Throwable $exception) {
             report($exception);
         }
