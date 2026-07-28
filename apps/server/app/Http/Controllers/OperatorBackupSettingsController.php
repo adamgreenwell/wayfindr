@@ -357,7 +357,7 @@ class OperatorBackupSettingsController extends Controller
      * confirmation gates, then queue RunRestoreJob. The queued job (not this
      * request) does the destructive work off the request lifecycle.
      */
-    public function restoreRun(Request $request, BackupService $backups): RedirectResponse
+    public function restoreRun(Request $request, BackupService $backups, RestoreService $restores): RedirectResponse
     {
         // Re-check durability at submit time (config can change between the page
         // load and the submit).
@@ -397,6 +397,18 @@ class OperatorBackupSettingsController extends Controller
             $errors['workers_stopped'] = 'Quiesce writes first — stop the background queue and scheduler workers and ensure no long-running uploads are in progress — then confirm. The restore cannot do this for you.';
         }
 
+        // Re-run the read-only preflight at submit time (the archive may have been
+        // submitted without previewing, or swapped since), so a malformed archive
+        // is rejected HERE — before we queue a job that would enter maintenance
+        // mode and then fail, leaving the site down.
+        if ($path !== null && ! isset($errors['archive'])) {
+            try {
+                $restores->preflight($path);
+            } catch (Throwable $exception) {
+                $errors['archive'] = 'This archive could not be read: '.$exception->getMessage();
+            }
+        }
+
         if ($errors !== []) {
             return redirect()
                 ->route('operator.settings.backups.restore', $path !== null ? ['archive' => $archive] : [])
@@ -419,51 +431,63 @@ class OperatorBackupSettingsController extends Controller
         $agentId = $agent->id;
         $agentName = $agent->name;
 
-        // Write an immediate durable status (cache, not DB — the restore wipes
-        // the DB) so the operator sees "queued" even though the restore is about
-        // to log them out.
-        RunRestoreJob::putStatus('running', 'Restore queued…', $archive, $agentId, $agentName);
+        try {
+            // Write an immediate durable status (cache, not DB — the restore wipes
+            // the DB) so the operator sees "queued" even though the restore is
+            // about to log them out.
+            RunRestoreJob::putStatus('running', 'Restore queued…', $archive, $agentId, $agentName);
 
-        // Audit now, as part of THIS request, so the write is committed before
-        // the restore job could start. (This row is wiped when the restore
-        // reloads the database, but it survives a failed/rolled-back restore, and
-        // the durable outcome lives in the cache status above.)
-        AuditEvent::query()->create([
-            'account_id' => null,
-            'actor_type' => $agent->getMorphClass(),
-            'actor_id' => $agentId,
-            'action' => 'operator_settings.backup.restore_triggered',
-            'metadata' => ['archive' => $archive],
-            'occurred_at' => now(),
-        ]);
+            // Audit now, as part of THIS request, so the write is committed before
+            // the restore job could start. (This row is wiped when the restore
+            // reloads the database, but it survives a failed/rolled-back restore,
+            // and the durable outcome lives in the cache status above.)
+            AuditEvent::query()->create([
+                'account_id' => null,
+                'actor_type' => $agent->getMorphClass(),
+                'actor_id' => $agentId,
+                'action' => 'operator_settings.backup.restore_triggered',
+                'metadata' => ['archive' => $archive],
+                'occurred_at' => now(),
+            ]);
 
-        // Enqueue only AFTER this request has finished ALL its database access —
-        // its own writes, the audit above, and the database-backed session save
-        // that runs in middleware terminate. An idle backups worker would
-        // otherwise consume the job and DROP the schema while this request is
-        // still writing (a failed response, or a write racing the restore).
-        // terminating() runs after middleware terminate, so the session is
-        // already saved by the time we enqueue.
-        $enqueued = false;
-        app()->terminating(function () use (&$enqueued, $archive, $agentId, $agentName, $pendingToken): void {
-            // Terminating callbacks are not cleared after they run, so in a
-            // long-lived app (tests, Octane) a later request's terminate would
-            // re-fire this one; dispatch at most once.
-            if ($enqueued) {
-                return;
-            }
-            $enqueued = true;
+            // Enqueue only AFTER this request has finished ALL its database access
+            // — its own writes, the audit above, and the database-backed session
+            // save that runs in middleware terminate. An idle backups worker would
+            // otherwise consume the job and DROP the schema while this request is
+            // still writing (a failed response, or a write racing the restore).
+            // terminating() runs after middleware terminate, so the session is
+            // already saved by the time we enqueue.
+            $enqueued = false;
+            app()->terminating(function () use (&$enqueued, $archive, $agentId, $agentName, $pendingToken): void {
+                // Terminating callbacks are not cleared after they run, so in a
+                // long-lived app (tests, Octane) a later request's terminate would
+                // re-fire this one; dispatch at most once.
+                if ($enqueued) {
+                    return;
+                }
+                $enqueued = true;
 
-            try {
-                RunRestoreJob::dispatch($archive, $agentId, $agentName, $pendingToken);
-            } catch (Throwable $exception) {
-                // The response is already sent, so surface the failure through
-                // the cache status the operator reads on the backups page, and
-                // free the pending slot so they can retry.
-                RunRestoreJob::putStatus('failed', 'Could not queue the restore: '.$exception->getMessage(), $archive, $agentId, $agentName);
-                RunRestoreJob::releasePending($pendingToken);
-            }
-        });
+                try {
+                    RunRestoreJob::dispatch($archive, $agentId, $agentName, $pendingToken);
+                } catch (Throwable $exception) {
+                    // The response is already sent, so surface the failure through
+                    // the cache status the operator reads on the backups page, and
+                    // free the pending slot so they can retry.
+                    RunRestoreJob::putStatus('failed', 'Could not queue the restore: '.$exception->getMessage(), $archive, $agentId, $agentName);
+                    RunRestoreJob::releasePending($pendingToken);
+                }
+            });
+        } catch (Throwable $exception) {
+            // The status write or audit failed (e.g. a transient cache/DB outage)
+            // before anything was queued — free the pending slot so the operator
+            // can retry once it clears, rather than being blocked until the TTL.
+            RunRestoreJob::releasePending($pendingToken);
+            report($exception);
+
+            return redirect()
+                ->route('operator.settings.backups.restore', ['archive' => $archive])
+                ->with('error', 'Could not start the restore: '.$exception->getMessage());
+        }
 
         return redirect()
             ->route('operator.settings.backups.edit')

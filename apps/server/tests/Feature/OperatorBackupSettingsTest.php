@@ -599,6 +599,19 @@ function seedLocalArchives(array $filenames): string
     return $scoped;
 }
 
+// The seeded archives are not real tarballs, so bind a RestoreService whose
+// submit-time preflight passes for the happy-path queue tests.
+function stubPassingPreflight(): void
+{
+    $restores = Mockery::mock(RestoreService::class);
+    $restores->shouldReceive('preflight')->andReturn([
+        'archive_version' => '0.3.0',
+        'running_version' => '0.3.0',
+        'version_skew' => false,
+    ]);
+    app()->instance(RestoreService::class, $restores);
+}
+
 test('listLocalArchives returns real archives newest-first and ignores foreign files', function (): void {
     seedLocalArchives([
         'wayfindr-backup-20260727-100000-bbbbbb.tar.gz', // older
@@ -717,6 +730,7 @@ test('a second restore is rejected while one is already pending', function (): v
     Bus::fake();
     config()->set('app.name', 'wayfindr-prod');
     seedLocalArchives(['wayfindr-backup-20260728-100000-aaaaaa.tar.gz']);
+    stubPassingPreflight();
 
     $payload = [
         'archive' => 'wayfindr-backup-20260728-100000-aaaaaa.tar.gz',
@@ -930,6 +944,7 @@ test('a confirmed restore queues the job, records a durable status, and audits',
     Bus::fake();
     config()->set('app.name', 'wayfindr-prod');
     seedLocalArchives(['wayfindr-backup-20260728-100000-aaaaaa.tar.gz']);
+    stubPassingPreflight();
     $operator = backupOperator();
 
     $this->actingAs($operator)
@@ -950,6 +965,56 @@ test('a confirmed restore queues the job, records a durable status, and audits',
         ->and($status['triggered_by_name'])->toBe($operator->name);
 
     expect(AuditEvent::query()->where('action', 'operator_settings.backup.restore_triggered')->exists())->toBeTrue();
+});
+
+test('a malformed archive is rejected at submit, before anything is queued', function (): void {
+    Bus::fake();
+    config()->set('app.name', 'wayfindr-prod');
+    seedLocalArchives(['wayfindr-backup-20260728-100000-aaaaaa.tar.gz']);
+
+    // Submit-time preflight fails (a corrupt/swapped archive).
+    $restores = Mockery::mock(RestoreService::class);
+    $restores->shouldReceive('preflight')->andThrow(new RuntimeException('not a Wayfindr backup'));
+    $this->app->instance(RestoreService::class, $restores);
+
+    $this->actingAs(backupOperator())
+        ->post(route('operator.settings.backups.restore.run'), [
+            'archive' => 'wayfindr-backup-20260728-100000-aaaaaa.tar.gz',
+            'confirm_name' => 'wayfindr-prod',
+            'acknowledge' => '1',
+            'workers_stopped' => '1',
+        ])
+        ->assertSessionHasErrors('archive');
+
+    Bus::assertNotDispatched(RunRestoreJob::class);
+    // Rejected before the slot was claimed, so nothing is left holding it.
+    expect(RunRestoreJob::claimPending())->not->toBeNull();
+});
+
+test('a setup failure after claiming the slot releases the pending claim', function (): void {
+    Bus::fake();
+    config()->set('app.name', 'wayfindr-prod');
+    seedLocalArchives(['wayfindr-backup-20260728-100000-aaaaaa.tar.gz']);
+    stubPassingPreflight();
+    $operator = backupOperator();
+
+    // The audit write fails (a transient DB outage) AFTER the slot is claimed.
+    AuditEvent::creating(function (): void {
+        throw new RuntimeException('db down');
+    });
+
+    $this->actingAs($operator)
+        ->post(route('operator.settings.backups.restore.run'), [
+            'archive' => 'wayfindr-backup-20260728-100000-aaaaaa.tar.gz',
+            'confirm_name' => 'wayfindr-prod',
+            'acknowledge' => '1',
+            'workers_stopped' => '1',
+        ])
+        ->assertSessionHas('error');
+
+    Bus::assertNotDispatched(RunRestoreJob::class);
+    // The slot must be freed so the operator can retry once the outage clears.
+    expect(RunRestoreJob::claimPending())->not->toBeNull();
 });
 
 test('the restore refuses to run when the queue is database-backed', function (): void {
