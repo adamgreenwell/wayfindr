@@ -2,7 +2,8 @@
 
 namespace App\Console\Commands;
 
-use App\Support\Backup\BackupService;
+use App\Models\BackupRun;
+use App\Support\Backup\BackupRunner;
 use Illuminate\Console\Command;
 use Throwable;
 
@@ -13,14 +14,22 @@ class BackupCommand extends Command
 
     protected $description = 'Write a restorable backup archive (Postgres dump + local attachment binaries).';
 
-    public function handle(BackupService $backups): int
+    public function handle(BackupRunner $runner): int
     {
         $destination = trim((string) $this->option('path')) ?: (string) config('wayfindr.backup.path');
 
         $this->info('Writing Wayfindr backup to '.$destination);
 
+        // Record this run alongside operator-triggered ones so both appear in the
+        // backup history GUI (ADR 0011). null triggered_by = scheduler / CLI.
+        $run = BackupRun::query()->create([
+            'status' => BackupRun::STATUS_RUNNING,
+            'triggered_by_id' => null,
+            'started_at' => now(),
+        ]);
+
         try {
-            $result = $backups->create($destination);
+            $result = $runner->run($run, $destination);
         } catch (Throwable $exception) {
             $this->error('Backup failed: '.$exception->getMessage());
 
@@ -72,19 +81,18 @@ class BackupCommand extends Command
             $this->line('  Offsite copy uploaded to ['.$remote['disk'].']: '.$remote['key']);
         }
 
-        // Retention runs only after a fully successful backup (reached only past
-        // the offsite-failure return above), so a bad run can never prune the
-        // last good history (ADR 0010).
-        // Pass the just-written archive so retention can never delete it, even
-        // if a slow backup ran past a small window (ADR 0010).
-        $pruned = $backups->pruneExpired($destination, basename($result['path']));
+        // Retention was already run by BackupRunner (only after a fully
+        // successful backup, never pruning the just-written archive); report the
+        // counts it recorded on the run.
+        $days = (int) config('wayfindr.backup.retention_days', 0);
+        $run->refresh();
 
-        if ($pruned['days'] > 0 && ($pruned['local'] + $pruned['remote']) > 0) {
+        if ($days > 0 && ($run->pruned_local + $run->pruned_remote) > 0) {
             $this->line(sprintf(
                 '  Retention: pruned %d local and %d offsite archive(s) older than %d day(s).',
-                $pruned['local'],
-                $pruned['remote'],
-                $pruned['days'],
+                $run->pruned_local,
+                $run->pruned_remote,
+                $days,
             ));
         }
 

@@ -17,10 +17,12 @@ return new class extends Migration
             $table->id();
             $table->string('status', 16); // running | succeeded | failed
             $table->text('message')->nullable();
-            $table->string('archive_path')->nullable();
+            // Paths/keys can exceed 255: a 255-char prefix plus the appended
+            // archive filename, or a deep env-configured local destination.
+            $table->text('archive_path')->nullable();
             $table->unsignedBigInteger('size_bytes')->nullable();
             $table->string('offsite_disk')->nullable();
-            $table->string('offsite_key')->nullable();
+            $table->text('offsite_key')->nullable();
             $table->unsignedInteger('pruned_local')->default(0);
             $table->unsignedInteger('pruned_remote')->default(0);
             // Who triggered it (null = the scheduler / system).

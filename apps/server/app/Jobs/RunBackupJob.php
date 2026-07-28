@@ -3,7 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\BackupRun;
-use App\Support\Backup\BackupService;
+use App\Support\Backup\BackupRunner;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -39,6 +39,9 @@ class RunBackupJob implements ShouldQueue
      */
     public int $timeout;
 
+    /** Set once the run row exists, so failed() can mark a timeout-killed run. */
+    public ?int $backupRunId = null;
+
     public function __construct(private readonly ?int $triggeredById = null)
     {
         $this->timeout = (int) config('wayfindr.backup.job_timeout', 3600);
@@ -60,57 +63,38 @@ class RunBackupJob implements ShouldQueue
         ];
     }
 
-    public function handle(BackupService $backups): void
+    public function handle(BackupRunner $runner): void
     {
         $run = BackupRun::query()->create([
             'status' => BackupRun::STATUS_RUNNING,
             'triggered_by_id' => $this->triggeredById,
             'started_at' => now(),
         ]);
+        $this->backupRunId = $run->id;
 
-        $destination = (string) config('wayfindr.backup.path');
+        $runner->run($run, (string) config('wayfindr.backup.path'));
+    }
 
-        try {
-            $result = $backups->create($destination);
-            $remote = $result['remote'] ?? null;
+    /**
+     * Called when the job fails OUTSIDE handle()'s normal path — notably a
+     * worker timeout/kill, which interrupts the run before BackupRunner can
+     * record the outcome. Mark a run left in 'running' as failed so the GUI
+     * never shows it stuck. (A run BackupRunner already failed is left as-is.)
+     */
+    public function failed(?Throwable $exception): void
+    {
+        if ($this->backupRunId === null) {
+            return;
+        }
 
-            // A configured-but-failed offsite upload is a backup failure — the
-            // operator asked for offsite — but the local archive is intact.
-            if (is_array($remote) && isset($remote['error'])) {
-                $run->update([
-                    'status' => BackupRun::STATUS_FAILED,
-                    'archive_path' => $result['path'],
-                    'size_bytes' => $result['size'],
-                    'offsite_disk' => $remote['disk'] ?? null,
-                    'message' => 'Offsite upload to ['.($remote['disk'] ?? '?').'] failed: '.$remote['error'].'. The local archive is intact at '.$result['path'].'.',
-                    'finished_at' => now(),
-                ]);
+        $run = BackupRun::query()->find($this->backupRunId);
 
-                return;
-            }
-
-            // Retention runs only after a fully successful backup, and never
-            // prunes the just-written archive.
-            $pruned = $backups->pruneExpired($destination, basename($result['path']));
-
-            $run->update([
-                'status' => BackupRun::STATUS_SUCCEEDED,
-                'archive_path' => $result['path'],
-                'size_bytes' => $result['size'],
-                'offsite_disk' => is_array($remote) ? ($remote['disk'] ?? null) : null,
-                'offsite_key' => is_array($remote) ? ($remote['key'] ?? null) : null,
-                'pruned_local' => (int) ($pruned['local'] ?? 0),
-                'pruned_remote' => (int) ($pruned['remote'] ?? 0),
-                'finished_at' => now(),
-            ]);
-        } catch (Throwable $exception) {
+        if ($run && $run->status === BackupRun::STATUS_RUNNING) {
             $run->update([
                 'status' => BackupRun::STATUS_FAILED,
-                'message' => $exception->getMessage(),
+                'message' => $exception?->getMessage() ?: 'The backup job was terminated (it may have exceeded the timeout). Check the queue worker and retry.',
                 'finished_at' => now(),
             ]);
-
-            throw $exception; // let the queue record/retry the failure
         }
     }
 }

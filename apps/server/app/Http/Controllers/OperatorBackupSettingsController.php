@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Jobs\RunBackupJob;
 use App\Models\AuditEvent;
 use App\Models\BackupRun;
+use App\Support\Backup\BackupService;
 use App\Support\Settings\OperatorSettings;
 use Closure;
 use Illuminate\Contracts\View\View;
@@ -166,7 +167,7 @@ class OperatorBackupSettingsController extends Controller
             ->with('status', 'Backup settings saved.'.($disk === self::OFFSITE_DISK ? ' Run a connection test to confirm offsite uploads can be stored.' : ''));
     }
 
-    public function test(Request $request): RedirectResponse
+    public function test(Request $request, BackupService $backups): RedirectResponse
     {
         $returnParams = $this->returnParams($request);
         $diskName = trim((string) config('wayfindr.backup.disk'));
@@ -183,7 +184,18 @@ class OperatorBackupSettingsController extends Controller
                 ->with('error', 'The backup disk ['.$diskName.'] is not configured.');
         }
 
-        $failure = $this->probeDisk($diskName);
+        // Probe INSIDE the configured prefix, where real uploads and retention
+        // operate — credentials scoped to that prefix would fail a top-level
+        // probe even though backups work.
+        try {
+            $prefix = $backups->backupPrefix();
+        } catch (Throwable $exception) {
+            return redirect()
+                ->route('operator.settings.backups.edit', $returnParams)
+                ->with('error', 'The backup prefix is invalid: '.$exception->getMessage());
+        }
+
+        $failure = $this->probeDisk($diskName, $prefix);
 
         if ($failure !== null) {
             return redirect()
@@ -218,10 +230,13 @@ class OperatorBackupSettingsController extends Controller
             ->with('status', 'Backup queued. It runs in the background — the latest run appears below once a worker picks it up. Confirm the queue worker is running if it stays queued.');
     }
 
-    /** The write / read / list / delete round-trip a backup upload needs. */
-    private function probeDisk(string $diskName): ?string
+    /**
+     * The write / read / list / delete round-trip a backup upload needs, run
+     * inside the given prefix so prefix-scoped credentials are exercised.
+     */
+    private function probeDisk(string $diskName, string $prefix): ?string
     {
-        $dir = '.wayfindr-backup-test-'.Str::random(12);
+        $dir = trim($prefix, '/').'/.wayfindr-backup-test-'.Str::random(12);
         $probeKey = $dir.'/.probe';
         $disk = null;
         $needsCleanup = false;

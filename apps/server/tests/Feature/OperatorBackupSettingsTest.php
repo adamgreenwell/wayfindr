@@ -10,6 +10,7 @@ use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\BackupRun;
 use App\Models\User;
+use App\Support\Backup\BackupRunner;
 use App\Support\Backup\BackupService;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -176,9 +177,7 @@ test('run a backup now queues the job and audits the trigger', function (): void
     expect(AuditEvent::query()->where('action', 'operator_settings.backup.triggered')->exists())->toBeTrue();
 });
 
-test('the backup job records a succeeded run', function (): void {
-    $operator = backupOperator();
-
+test('the backup runner records a succeeded run', function (): void {
     $service = Mockery::mock(BackupService::class);
     $service->shouldReceive('create')->once()->andReturn([
         'path' => '/backups/wayfindr-20260728.tar.gz',
@@ -188,16 +187,16 @@ test('the backup job records a succeeded run', function (): void {
     ]);
     $service->shouldReceive('pruneExpired')->once()->andReturn(['days' => 30, 'local' => 1, 'remote' => 1]);
 
-    (new RunBackupJob($operator->id))->handle($service);
+    $run = BackupRun::query()->create(['status' => BackupRun::STATUS_RUNNING, 'started_at' => now()]);
+    (new BackupRunner($service))->run($run, '/dest');
 
-    $run = BackupRun::query()->latest('id')->firstOrFail();
-    expect($run->status)->toBe(BackupRun::STATUS_SUCCEEDED)
-        ->and($run->size_bytes)->toBe(2_097_152)
-        ->and($run->offsite_key)->toBe('inst-a/wayfindr-20260728.tar.gz')
-        ->and($run->triggered_by_id)->toBe($operator->id);
+    expect($run->fresh()->status)->toBe(BackupRun::STATUS_SUCCEEDED)
+        ->and($run->fresh()->size_bytes)->toBe(2_097_152)
+        ->and($run->fresh()->offsite_key)->toBe('inst-a/wayfindr-20260728.tar.gz')
+        ->and($run->fresh()->pruned_local)->toBe(1);
 });
 
-test('the backup job records an offsite-upload failure as failed', function (): void {
+test('the backup runner records an offsite-upload failure as failed and does not prune', function (): void {
     $service = Mockery::mock(BackupService::class);
     $service->shouldReceive('create')->once()->andReturn([
         'path' => '/backups/x.tar.gz',
@@ -207,22 +206,60 @@ test('the backup job records an offsite-upload failure as failed', function (): 
     ]);
     $service->shouldNotReceive('pruneExpired'); // never prune after a failed offsite upload
 
-    (new RunBackupJob(null))->handle($service);
+    $run = BackupRun::query()->create(['status' => BackupRun::STATUS_RUNNING, 'started_at' => now()]);
+    (new BackupRunner($service))->run($run, '/dest');
 
-    $run = BackupRun::query()->latest('id')->firstOrFail();
-    expect($run->status)->toBe(BackupRun::STATUS_FAILED)
-        ->and($run->message)->toContain('access denied');
+    expect($run->fresh()->status)->toBe(BackupRun::STATUS_FAILED)
+        ->and($run->fresh()->message)->toContain('access denied');
 });
 
-test('the backup job records a create failure as failed', function (): void {
+test('the backup runner records a create failure as failed and re-throws', function (): void {
     $service = Mockery::mock(BackupService::class);
     $service->shouldReceive('create')->once()->andThrow(new RuntimeException('pg_dump not found'));
 
-    expect(fn () => (new RunBackupJob(null))->handle($service))->toThrow(RuntimeException::class);
+    $run = BackupRun::query()->create(['status' => BackupRun::STATUS_RUNNING, 'started_at' => now()]);
+
+    expect(fn () => (new BackupRunner($service))->run($run, '/dest'))->toThrow(RuntimeException::class);
+
+    expect($run->fresh()->status)->toBe(BackupRun::STATUS_FAILED)
+        ->and($run->fresh()->message)->toContain('pg_dump not found');
+});
+
+test('the backup job creates a running record and delegates to the runner', function (): void {
+    $operator = backupOperator();
+    $runner = Mockery::mock(BackupRunner::class);
+    $runner->shouldReceive('run')->once();
+
+    (new RunBackupJob($operator->id))->handle($runner);
 
     $run = BackupRun::query()->latest('id')->firstOrFail();
-    expect($run->status)->toBe(BackupRun::STATUS_FAILED)
-        ->and($run->message)->toContain('pg_dump not found');
+    expect($run->triggered_by_id)->toBe($operator->id)
+        ->and($run->status)->toBe(BackupRun::STATUS_RUNNING); // the mock runner didn't update it
+});
+
+test('a timed-out backup job marks its still-running record as failed', function (): void {
+    $run = BackupRun::query()->create(['status' => BackupRun::STATUS_RUNNING, 'started_at' => now()]);
+    $job = new RunBackupJob;
+    $job->backupRunId = $run->id;
+
+    $job->failed(new RuntimeException('timed out'));
+
+    expect($run->fresh()->status)->toBe(BackupRun::STATUS_FAILED)
+        ->and($run->fresh()->message)->toContain('timed out');
+});
+
+test('the failed callback does not clobber an already-recorded failure', function (): void {
+    $run = BackupRun::query()->create([
+        'status' => BackupRun::STATUS_FAILED,
+        'message' => 'the real error',
+        'started_at' => now(),
+    ]);
+    $job = new RunBackupJob;
+    $job->backupRunId = $run->id;
+
+    $job->failed(new RuntimeException('timed out'));
+
+    expect($run->fresh()->message)->toBe('the real error'); // left as BackupRunner recorded it
 });
 
 test('the offsite test reports when no offsite disk is configured', function (): void {
@@ -241,6 +278,28 @@ test('the offsite test passes on a working disk', function (): void {
         ->post(route('operator.settings.backups.test'))
         ->assertRedirect(route('operator.settings.backups.edit'))
         ->assertSessionHas('status');
+});
+
+test('the scheduled backup command records a run in the history', function (): void {
+    $service = Mockery::mock(BackupService::class);
+    $service->shouldReceive('create')->andReturn([
+        'path' => '/backups/x.tar.gz',
+        'size' => 1024,
+        'manifest' => [
+            'attachment_storage_disk' => 'attachments',
+            'wayfindr_version' => 'test',
+            'includes_local_attachment_binaries' => false,
+        ],
+        'remote' => null,
+    ]);
+    $service->shouldReceive('pruneExpired')->andReturn(['days' => 0, 'local' => 0, 'remote' => 0]);
+    $this->app->instance(BackupService::class, $service);
+
+    $this->artisan('wayfindr:backup')->assertSuccessful();
+
+    $run = BackupRun::query()->latest('id')->firstOrFail();
+    expect($run->status)->toBe(BackupRun::STATUS_SUCCEEDED)
+        ->and($run->triggered_by_id)->toBeNull(); // scheduler / CLI, not an operator
 });
 
 test('the latest backup run shows on the settings page', function (): void {
