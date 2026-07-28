@@ -388,12 +388,13 @@ class OperatorBackupSettingsController extends Controller
         }
 
         // The app enters maintenance mode for the restore, but it cannot stop the
-        // separate worker/scheduler OS processes — an already-running background
-        // job could still write mid-restore. So the operator must attest they
-        // have stopped those writers (leaving the backup-queue worker up), the
-        // one part of the CLI quiescing procedure the app cannot do itself.
+        // separate worker/scheduler OS processes, nor cut off an HTTP request or
+        // upload already mid-write — maintenance mode only blocks NEW requests. So
+        // the operator must attest the site is quiesced (workers stopped, no
+        // long-running requests in flight), the part of the CLI quiescing
+        // procedure the app cannot do itself.
         if ($request->input('workers_stopped') !== '1') {
-            $errors['workers_stopped'] = 'Stop the background queue and scheduler workers first, then confirm — the restore cannot do this for you.';
+            $errors['workers_stopped'] = 'Quiesce writes first — stop the background queue and scheduler workers and ensure no long-running uploads are in progress — then confirm. The restore cannot do this for you.';
         }
 
         if ($errors !== []) {

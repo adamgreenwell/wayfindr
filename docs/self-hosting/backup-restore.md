@@ -170,14 +170,16 @@ workers (below). The restore then runs on the queue.
 
 Three things to know:
 
-- **Stop the background workers first — the app cannot.** Before you confirm, run
+- **Quiesce the site first — the app cannot fully do it.** Before you confirm, run
   `docker compose stop queue scheduler` (leave the `backup-queue` worker running —
-  it runs the restore). The restore enters maintenance mode automatically, which
-  stops *new* HTTP requests and pauses idle workers, but it cannot drain a
-  background job that is already mid-write, and a queued job inside the app cannot
-  stop sibling worker processes. So the confirm step makes you attest you have
-  stopped them — the one part of the quiescing the app can't do for you. Restart
-  them afterward with `docker compose start queue scheduler`.
+  it runs the restore), and make sure no long-running uploads or requests are in
+  flight (restore during a quiet window). The restore enters maintenance mode
+  automatically — which stops *new* HTTP requests, pauses idle workers, and waits a
+  short drain window for short in-flight requests to finish — but maintenance mode
+  cannot cut off a request or background job already mid-write, and a queued job
+  inside the app cannot stop sibling worker processes. So the confirm step makes
+  you attest the site is quiesced, the part the app can't do for you. Restart the
+  workers afterward with `docker compose start queue scheduler`.
 - **It quiesces the site, then logs everyone out.** The restore puts the app into
   maintenance mode for its duration (visitors and agents get a 503) and, after
   maintenance engages, waits a short drain window (`WAYFINDR_RESTORE_DRAIN_SECONDS`,

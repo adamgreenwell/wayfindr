@@ -82,7 +82,7 @@
 
                 @if ($preflight['version_skew'])
                     <div class="notice-copy notice-copy-bordered">
-                        <p>This backup was taken on a different version (<strong>{{ $preflight['archive_version'] }}</strong>) than this install runs (<strong>{{ $preflight['running_version'] }}</strong>). Because the schema may not match the running code, the site will be <strong>kept in maintenance mode</strong> after the restore — on the server, run <code>php artisan migrate --force</code> then <code>php artisan up</code>.</p>
+                        <p>This backup was taken on a different version (<strong>{{ $preflight['archive_version'] }}</strong>) than this install runs (<strong>{{ $preflight['running_version'] }}</strong>). Because the schema and code may not match, the site will be <strong>kept in maintenance mode</strong> after the restore. On the server, make them compatible — if this backup is <strong>older</strong>, run <code>php artisan migrate --force</code>; if it is <strong>newer</strong>, deploy a matching or newer release — then <code>php artisan up</code>.</p>
                     </div>
                 @endif
 
@@ -115,7 +115,7 @@ docker compose start queue scheduler  # after the restore completes</code></pre>
                     <div class="field">
                         <label class="check-row" for="workers_stopped">
                             <input id="workers_stopped" type="checkbox" name="workers_stopped" value="1">
-                            <span>I have stopped the background queue and scheduler workers (<code>docker compose stop queue scheduler</code>), leaving the backup-queue worker running to run this restore.</span>
+                            <span>I have quiesced writes: stopped the background queue and scheduler workers (<code>docker compose stop queue scheduler</code>, leaving backup-queue), and there are no long-running uploads or requests in progress (maintenance mode blocks new ones, but cannot cut off a request already mid-write).</span>
                         </label>
                         @error('workers_stopped')<p class="field-error">{{ $message }}</p>@enderror
                     </div>
