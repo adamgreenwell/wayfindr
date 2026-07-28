@@ -655,7 +655,16 @@ class OperatorBackupSettingsController extends Controller
      */
     private function restoreStatus(): ?array
     {
-        $status = Cache::get(RunRestoreJob::STATUS_KEY);
+        try {
+            $status = Cache::get(RunRestoreJob::STATUS_KEY);
+        } catch (Throwable $exception) {
+            // A cache outage must not 500 the backup pages — sessions are
+            // DB-backed, so the operator can still reach them to read the config
+            // and durability guidance; just omit the status banner.
+            report($exception);
+
+            return null;
+        }
 
         return is_array($status) ? $status : null;
     }

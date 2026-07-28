@@ -81,7 +81,7 @@ class RunRestoreJob implements ShouldQueue
         // to back. (Concurrent execution is separately impossible: the backup lock
         // below serialises it.)
         if (! $this->stillHoldsPendingClaim()) {
-            $this->record('failed', 'This restore was superseded by a newer one and was not run.');
+            $this->record('failed', 'This restore was superseded by a newer one, or its confirmation lapsed after a long wait, and was not run. Confirm again to retry.');
 
             return;
         }
@@ -363,14 +363,15 @@ class RunRestoreJob implements ShouldQueue
     }
 
     /**
-     * Whether this job still holds (or may safely assume) the pending-restore
-     * lease. A cache lock cannot be atomically renewed, so instead of extending
-     * the TTL we validate ownership at the start: only a DIFFERENT live token — a
-     * newer restore that claimed the slot after ours lapsed — means we were
-     * superseded. If the slot is still ours, or has simply lapsed with nobody else
-     * holding it, we proceed (execution is serialised by the backup lock either
-     * way). A cache read failure is non-fatal for the same reason, and a null
-     * token is a direct/programmatic call (tests) with nothing to validate.
+     * Whether this job still holds the pending-restore lease. We require the slot
+     * to hold OUR EXACT token: a different token means a newer restore superseded
+     * us, and an ABSENT token means our lease lapsed (a long queue wait) — in
+     * which case another operator may have already claimed and enqueued a newer
+     * restore, so we must not proceed as if we still had permission. Either way
+     * the job aborts and the operator re-confirms. A cache READ failure is
+     * non-fatal (the backup lock still serialises execution, and the lock
+     * acquisition below would fail cleanly on a real outage anyway); a null
+     * pendingToken is a direct/programmatic call (tests) with nothing to validate.
      */
     private function stillHoldsPendingClaim(): bool
     {
@@ -379,10 +380,7 @@ class RunRestoreJob implements ShouldQueue
         }
 
         try {
-            // A cache lock stores its owner token as the value at its key.
-            $current = Cache::get(self::PENDING_KEY);
-
-            return $current === null || $current === $this->pendingToken;
+            return Cache::get(self::PENDING_KEY) === $this->pendingToken;
         } catch (Throwable $exception) {
             report($exception);
 

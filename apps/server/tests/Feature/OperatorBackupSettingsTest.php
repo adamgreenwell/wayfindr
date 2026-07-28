@@ -1062,6 +1062,51 @@ test('a superseded restore aborts without running', function (): void {
         ->and(Cache::get(RunRestoreJob::STATUS_KEY)['message'])->toContain('superseded');
 });
 
+test('a restore whose pending claim has expired aborts (does not run as if still permitted)', function (): void {
+    // Nothing holds the pending slot (the lease lapsed), so PENDING is absent.
+    $backups = Mockery::mock(BackupService::class);
+    $backups->shouldNotReceive('resolveLocalArchivePath');
+    $restores = Mockery::mock(RestoreService::class);
+    $restores->shouldNotReceive('restore');
+
+    (new RunRestoreJob('x.tar.gz', null, null, 'expired-token'))->handle($restores, $backups);
+
+    expect(Cache::get(RunRestoreJob::STATUS_KEY)['status'])->toBe('failed')
+        ->and(Cache::get(RunRestoreJob::STATUS_KEY)['message'])->toContain('lapsed');
+});
+
+test('a restore whose pending token still matches proceeds', function (): void {
+    $token = RunRestoreJob::claimPending();
+
+    $backups = Mockery::mock(BackupService::class);
+    $backups->shouldReceive('resolveLocalArchivePath')->andReturn('/backups/inst/x.tar.gz');
+    $restores = Mockery::mock(RestoreService::class);
+    $restores->shouldReceive('restore')->once()->andReturn([
+        'version_skew' => false,
+        'archive_version' => '0.3.0',
+        'running_version' => '0.3.0',
+        'integrity' => ['dangling' => []],
+    ]);
+
+    (new RunRestoreJob('x.tar.gz', null, null, $token))->handle($restores, $backups);
+
+    expect(Cache::get(RunRestoreJob::STATUS_KEY)['status'])->toBe('succeeded');
+});
+
+test('the restore page still renders when the status cache read fails', function (): void {
+    seedLocalArchives([]);
+
+    // The status-banner cache read throws (cache outage); the page must still load
+    // (sessions are DB-backed) so the operator can read config/durability guidance.
+    $store = Mockery::mock(Repository::class);
+    $store->shouldReceive('get')->andThrow(new RuntimeException('redis down'));
+    Cache::swap($store);
+
+    $this->actingAs(backupOperator())
+        ->get(route('operator.settings.backups.restore'))
+        ->assertOk();
+});
+
 test('the restore job runs the archive and records success with a summary', function (): void {
     $backups = Mockery::mock(BackupService::class);
     $backups->shouldReceive('resolveLocalArchivePath')->andReturn('/backups/inst/x.tar.gz');
