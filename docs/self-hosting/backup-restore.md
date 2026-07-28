@@ -159,6 +159,60 @@ event, so it is guarded:
   binaries live in an external object store (which it cannot verify from the
   box — keep those buckets reachable).
 
+### Restoring from the operator GUI
+
+Operator → Configure backups → **Restore from backup** offers a confirmed in-GUI
+restore of a **local** archive (an offsite-only archive is restored with the CLI
+above). It lists local archives, shows a read-only preflight (version skew)
+before you commit, and gates the action behind typing the instance name
+(`APP_NAME`), an acknowledgement, and attesting you have stopped the background
+workers (below). The restore then runs on the queue.
+
+Three things to know:
+
+- **Quiesce the site first — the app cannot fully do it.** Before you confirm, run
+  `docker compose stop queue scheduler` (leave the `backup-queue` worker running —
+  it runs the restore), and make sure no long-running uploads or requests are in
+  flight (restore during a quiet window). The restore enters maintenance mode
+  automatically — which stops *new* HTTP requests, pauses idle workers, and waits a
+  short drain window for short in-flight requests to finish — but maintenance mode
+  cannot cut off a request or background job already mid-write, and a queued job
+  inside the app cannot stop sibling worker processes. So the confirm step makes
+  you attest the site is quiesced, the part the app can't do for you. Restart the
+  workers afterward with `docker compose start queue scheduler`.
+- **It quiesces the site, then logs everyone out.** The restore puts the app into
+  maintenance mode for its duration (visitors and agents get a 503) and, after
+  maintenance engages, waits a short drain window (`WAYFINDR_RESTORE_DRAIN_SECONDS`,
+  default 5) for in-flight requests to finish before touching the database. Because
+  it reloads the whole database and the sessions table is not carried in the
+  archive, your browser session also ends. Wait a minute, log back in (with the
+  credentials **as they were in the backup**), and read the restore outcome on the
+  backup settings page.
+- **On a version mismatch, or any failure, it stays down for you.** The site is
+  brought back up automatically only after a fully clean restore. If the archive's
+  version differs from the running code, or the restore fails part-way (the
+  database can be replaced before attachments finish), the restore leaves the site
+  in maintenance so an inconsistent or incompatible install is never exposed —
+  finish on the server. For a version skew, reconcile schema and code (if the
+  backup is **older**, `php artisan migrate --force`; if it is **newer**, deploy a
+  matching or newer release), then `php artisan up`. For a failure, verify the
+  database and attachments, then `php artisan up` or re-run the restore. Either
+  way, restart the workers you stopped: `docker compose start queue scheduler`.
+  (The recorded status spells out which case you are in.)
+- **It needs Redis-backed queue, cache, and maintenance state.** The queued job,
+  its status, and the maintenance-mode marker all have to survive the database
+  being rebuilt and be visible across processes, so the in-GUI restore is only
+  offered when the backup queue, the cache, and the maintenance state are all
+  non-database, shared stores. The shipped stack uses Redis for the queue and
+  cache; for maintenance it uses the `file` driver, which is cross-process only
+  because every app service shares one storage volume — asserted with
+  `WAYFINDR_RESTORE_FILE_MAINTENANCE_SHARED=true` (already set in the compose env
+  example; **do not** set it where the web and worker do not share storage). A
+  `cache`-driver maintenance store on Redis is accepted automatically. A
+  database-backed maintenance store would vanish when the schema is replaced and
+  let traffic back in mid-restore. When any of these is unsafe, the page points
+  you back at `php artisan wayfindr:restore`.
+
 ### Maintenance-posture procedure
 
 Restore while the app is quiesced so nothing writes into a database that is

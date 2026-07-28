@@ -258,6 +258,88 @@ class BackupService
     }
 
     /**
+     * The local backup archives available to restore, newest first — the
+     * read-only half of pruneLocalArchives (scan only this install's prefix
+     * subdirectory, keep only genuine wayfindr-backup-*.tar.gz files). Each
+     * entry is the bare filename, the instant it was taken, and its size.
+     *
+     * The in-GUI restore lists LOCAL archives only; an offsite-only archive is
+     * the disaster-recovery copy and is restored via the CLI (it must be pulled
+     * down first), so it is deliberately not offered here.
+     *
+     * @return list<array{filename: string, taken_at: Carbon, size: int}>
+     */
+    public function listLocalArchives(): array
+    {
+        $scoped = $this->localArchiveDir();
+
+        if ($scoped === null || ! is_dir($scoped)) {
+            return [];
+        }
+
+        $archives = [];
+
+        foreach (scandir($scoped) ?: [] as $name) {
+            $when = $this->archiveTimestamp($name);
+            $path = $scoped.'/'.$name;
+
+            if ($when === null || ! is_file($path)) {
+                continue;
+            }
+
+            $archives[] = [
+                'filename' => $name,
+                'taken_at' => $when,
+                'size' => (int) (@filesize($path) ?: 0),
+            ];
+        }
+
+        usort($archives, fn (array $a, array $b): int => $b['taken_at']->getTimestamp() <=> $a['taken_at']->getTimestamp());
+
+        return $archives;
+    }
+
+    /**
+     * Resolve a restore archive FILENAME to its absolute local path, re-checking
+     * it against the real listing — never trust a caller-supplied path. A
+     * traversal or an arbitrary file is rejected (returns null) because it is
+     * not among listLocalArchives(), whose names all pass the strict archive
+     * regex. This is the anti-traversal guard between the request and the
+     * destructive restore.
+     */
+    public function resolveLocalArchivePath(string $filename): ?string
+    {
+        $scoped = $this->localArchiveDir();
+
+        if ($scoped === null) {
+            return null;
+        }
+
+        foreach ($this->listLocalArchives() as $archive) {
+            if ($archive['filename'] === $filename) {
+                return $scoped.'/'.$filename;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * This install's local archive directory (backup path + per-install prefix),
+     * or null when no local path is configured.
+     */
+    private function localArchiveDir(): ?string
+    {
+        $dir = trim((string) config('wayfindr.backup.path'));
+
+        if ($dir === '') {
+            return null;
+        }
+
+        return rtrim($dir, '/').'/'.$this->backupPrefix();
+    }
+
+    /**
      * The instant an archive was taken, parsed from its filename — the only
      * files retention will ever act on. Returns null for anything that is not
      * an exact wayfindr-backup-YYYYMMDD-HHMMSS-xxxxxx.tar.gz, so a foreign file

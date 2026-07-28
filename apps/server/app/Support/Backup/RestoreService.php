@@ -4,6 +4,7 @@ namespace App\Support\Backup;
 
 use App\Models\ConversationMessageAttachment;
 use App\Support\Attachments\AttachmentStorage;
+use App\Support\Settings\OperatorSettings;
 use FilesystemIterator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -29,7 +30,10 @@ use Throwable;
  */
 class RestoreService
 {
-    public function __construct(private readonly DatabaseRestorer $restorer) {}
+    public function __construct(
+        private readonly DatabaseRestorer $restorer,
+        private readonly OperatorSettings $operatorSettings,
+    ) {}
 
     /**
      * @return array{
@@ -96,6 +100,13 @@ class RestoreService
 
             // Replace the database with the dump (atomic — see the restorer).
             $this->restorer->restore($dump);
+
+            // The dump replaced the operator_settings rows directly, so bump the
+            // OperatorSettings cache version — otherwise every process keeps
+            // applying the pre-restore mail/storage/scanner/backup configuration
+            // (e.g. writing new attachments to the old bucket) until the day-long
+            // cache entry expires.
+            $this->operatorSettings->invalidateCache();
 
             // Put local attachment binaries back where their rows expect them.
             $attachments = $this->restoreAttachments($work, $localDisks);

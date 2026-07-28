@@ -168,6 +168,44 @@ return [
         // to cover them. It also bounds how long a crashed backup blocks the
         // next one, so it is not simply "infinite". Defaults above job_timeout.
         'lock_ttl' => (int) env('WAYFINDR_BACKUP_LOCK_TTL', (int) env('WAYFINDR_BACKUP_JOB_TIMEOUT', 3600) + 300),
+
+        // Cache drivers the in-GUI restore trusts to hold its status and lock
+        // (ADR 0011 slice 3b). A restore reloads the database, so the cache MUST
+        // (a) survive that — not the `database` driver — and (b) be shared between
+        // the web process that records the status/lock and the worker that runs
+        // the restore — not process-local `array`/`null`, and not a wrapper like
+        // `failover` whose members can't be vouched for here. So it is an
+        // allowlist of network-shared stores; anything else sends the operator to
+        // the CLI. (The test suite runs on the array cache in a single process
+        // and adds 'array' to this list.)
+        'restore_safe_cache_drivers' => ['redis', 'memcached', 'dynamodb'],
+
+        // The in-GUI restore enters maintenance mode from the worker; the marker
+        // must be visible to the web process too. A `cache`-driver maintenance
+        // store on a shared cache is provably cross-process, but the default
+        // `file` driver is only shared when the web and worker processes share the
+        // storage volume — a deployment fact the app cannot detect. Set this true
+        // ONLY when they do (the shipped compose mounts one storage volume across
+        // every app service); otherwise file maintenance is rejected and the
+        // operator is sent to the CLI. Ignored when the maintenance driver is
+        // `cache` on a shared store.
+        'restore_file_maintenance_shared' => (bool) env('WAYFINDR_RESTORE_FILE_MAINTENANCE_SHARED', false),
+
+        // How long the "a restore is pending" claim is held so the GUI accepts
+        // only one confirmed restore at a time (ADR 0011). It must outlast a
+        // realistic queue wait (a restore can sit behind a running backup on the
+        // shared worker) PLUS the restore's own run. If it lapses and a newer
+        // restore claims the slot, the older job validates ownership on start and
+        // aborts as superseded (rather than restoring a second archive back to
+        // back). Defaults to twice the lock lifetime; raise it for deep queues.
+        'restore_pending_ttl' => (int) env('WAYFINDR_RESTORE_PENDING_TTL', 2 * (int) env('WAYFINDR_BACKUP_LOCK_TTL', (int) env('WAYFINDR_BACKUP_JOB_TIMEOUT', 3600) + 300)),
+
+        // Seconds the restore waits after entering maintenance mode, before it
+        // touches the database, to let HTTP requests that were already in flight
+        // when maintenance engaged finish writing (maintenance mode only blocks
+        // NEW requests). Raise it if you serve long uploads/requests; the safest
+        // restore is still run during a quiet window.
+        'restore_drain_seconds' => (int) env('WAYFINDR_RESTORE_DRAIN_SECONDS', 5),
     ],
 
     // Resolved through ReleaseIdentity so a blank env_file override falls

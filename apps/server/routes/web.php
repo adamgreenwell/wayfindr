@@ -251,6 +251,10 @@ Route::middleware(['auth', EnsureAgentIsActive::class, EnsurePlatformOperator::c
             ->name('settings.backups.test');
         Route::post('/settings/backups/run', [OperatorBackupSettingsController::class, 'run'])
             ->name('settings.backups.run');
+        Route::get('/settings/backups/restore', [OperatorBackupSettingsController::class, 'restore'])
+            ->name('settings.backups.restore');
+        Route::post('/settings/backups/restore', [OperatorBackupSettingsController::class, 'restoreRun'])
+            ->name('settings.backups.restore.run');
         Route::post('/readiness/confirmations', [OperatorReadinessConfirmationController::class, 'storeFromOperator'])
             ->name('readiness.confirmations.store');
         Route::get('/break-glass', [OperatorBreakGlassController::class, 'index'])
