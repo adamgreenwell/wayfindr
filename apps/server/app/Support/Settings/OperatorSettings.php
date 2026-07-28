@@ -3,6 +3,7 @@
 namespace App\Support\Settings;
 
 use App\Models\OperatorSetting;
+use App\Support\Attachments\Scanning\AttachmentScanner;
 use Illuminate\Support\ConfigurationUrlParser;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
@@ -68,6 +69,13 @@ class OperatorSettings
         // need 'private'. Only private ACLs are offered/accepted (see the
         // controller) — attachments must never be publicly readable.
         'storage.s3_acl' => ['config' => 'filesystems.disks.attachments-s3.options.ACL', 'secret' => false, 'group' => 'storage'],
+
+        // Attachment malware scanning (ADR 0011 slice 2b). Driver '' (accept with
+        // defense-in-depth) or 'clamav'; the clamd socket; and whether an
+        // unreachable scanner rejects uploads (fail-closed, the safe default).
+        'scanning.driver' => ['config' => 'wayfindr.attachments.scanner.driver', 'secret' => false, 'group' => 'scanning'],
+        'scanning.socket' => ['config' => 'wayfindr.attachments.scanner.clamav.socket', 'secret' => false, 'group' => 'scanning'],
+        'scanning.fail_closed' => ['config' => 'wayfindr.attachments.scanner.fail_closed', 'secret' => false, 'group' => 'scanning', 'cast' => 'bool'],
     ];
 
     /**
@@ -465,6 +473,10 @@ class OperatorSettings
         // Forget the attachment disks so a changed disk choice or S3 connection
         // takes effect on a long-running worker without a restart.
         Storage::forgetDisk(['attachments', 'attachments-s3']);
+
+        // The scanner is a config-built singleton (driver, clamd socket). Forget
+        // it so a changed scanning config rebuilds the right scanner.
+        app()->forgetInstance(AttachmentScanner::class);
     }
 
     private function decode(string $key, ?string $raw): ?string

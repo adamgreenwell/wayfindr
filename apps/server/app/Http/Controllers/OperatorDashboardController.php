@@ -64,6 +64,7 @@ class OperatorDashboardController extends Controller
             'operator_readiness.confirmed',
             'operator_settings.mail.updated',
             'operator_settings.storage.updated',
+            'operator_settings.scanning.updated',
         ];
     }
 
@@ -82,6 +83,7 @@ class OperatorDashboardController extends Controller
             'operator_readiness.confirmed' => $this->readinessConfirmationLabel($event),
             'operator_settings.mail.updated' => 'Mail settings updated',
             'operator_settings.storage.updated' => 'Storage settings updated',
+            'operator_settings.scanning.updated' => 'Scanning settings updated',
             default => 'Operator activity',
         };
     }
@@ -99,6 +101,13 @@ class OperatorDashboardController extends Controller
             return sprintf(
                 'Attachment storage was updated (disk: %s).',
                 (string) data_get($event->metadata, 'disk', 'unknown'),
+            );
+        }
+
+        if ($event->action === 'operator_settings.scanning.updated') {
+            return sprintf(
+                'Attachment scanning was updated (scanner: %s).',
+                (string) data_get($event->metadata, 'driver', 'unknown'),
             );
         }
 
@@ -167,6 +176,20 @@ class OperatorDashboardController extends Controller
                         ], true) => 'Cleared',
                         default => 'Unchanged',
                     },
+                ],
+                [
+                    'label' => 'Event type',
+                    'value' => 'Instance settings change',
+                ],
+            ],
+            'operator_settings.scanning.updated' => [
+                [
+                    'label' => 'Scanner',
+                    'value' => (string) data_get($event->metadata, 'driver', 'unknown'),
+                ],
+                [
+                    'label' => 'Unreachable policy',
+                    'value' => data_get($event->metadata, 'fail_closed') ? 'Fail closed (reject)' : 'Fail open (accept)',
                 ],
                 [
                     'label' => 'Event type',
