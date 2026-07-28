@@ -179,11 +179,18 @@ Three things to know:
   stopped them — the one part of the quiescing the app can't do for you. Restart
   them afterward with `docker compose start queue scheduler`.
 - **It quiesces the site, then logs everyone out.** The restore puts the app into
-  maintenance mode for its duration (visitors and agents get a 503). Because it
-  reloads the whole database and the sessions table is not carried in the archive,
-  your browser session also ends. Wait a minute, log back in (with the credentials
-  **as they were in the backup**), and read the restore outcome on the backup
-  settings page.
+  maintenance mode for its duration (visitors and agents get a 503) and, after
+  maintenance engages, waits a short drain window (`WAYFINDR_RESTORE_DRAIN_SECONDS`,
+  default 5) for in-flight requests to finish before touching the database. Because
+  it reloads the whole database and the sessions table is not carried in the
+  archive, your browser session also ends. Wait a minute, log back in (with the
+  credentials **as they were in the backup**), and read the restore outcome on the
+  backup settings page.
+- **On a version mismatch it stays down for migrations.** If the archive was taken
+  on an older app version, the restored schema may not match the running code, so
+  the restore leaves the site in maintenance mode. Finish on the server with `php
+  artisan migrate --force`, then `php artisan up`. (The preflight and the recorded
+  status both say so.)
 - **It needs Redis-backed queue, cache, and maintenance state.** The queued job,
   its status, and the maintenance-mode marker all have to survive the database
   being rebuilt and be visible across processes, so the in-GUI restore is only

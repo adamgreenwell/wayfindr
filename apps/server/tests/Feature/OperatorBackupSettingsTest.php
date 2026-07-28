@@ -35,6 +35,8 @@ uses(RefreshDatabase::class);
 beforeEach(function (): void {
     config()->set('wayfindr.backup.restore_safe_cache_drivers', ['redis', 'memcached', 'dynamodb', 'array']);
     config()->set('wayfindr.backup.restore_file_maintenance_shared', true);
+    // No real drain sleep in tests.
+    config()->set('wayfindr.backup.restore_drain_seconds', 0);
 });
 
 function backupOperator(): User
@@ -773,6 +775,30 @@ test('the failed callback lifts maintenance it owns even when the ownership cach
         expect(app()->isDownForMaintenance())->toBeFalse(); // lifted despite the cache failure
     } finally {
         // A fresh app per test discards the swapped mock; just ensure the app is up.
+        Artisan::call('up');
+    }
+});
+
+test('a version-skew restore keeps the site in maintenance for migrations', function (): void {
+    $backups = Mockery::mock(BackupService::class);
+    $backups->shouldReceive('resolveLocalArchivePath')->andReturn('/backups/inst/x.tar.gz');
+    $restores = Mockery::mock(RestoreService::class);
+    $restores->shouldReceive('restore')->once()->andReturn([
+        'version_skew' => true,
+        'archive_version' => '0.2.0',
+        'running_version' => '0.3.0',
+        'integrity' => ['dangling' => []],
+    ]);
+
+    try {
+        (new RunRestoreJob('x.tar.gz'))->handle($restores, $backups);
+
+        // Left down so an incompatible schema is never exposed; the message says
+        // how to finish (migrate, then up).
+        expect(app()->isDownForMaintenance())->toBeTrue()
+            ->and(Cache::get(RunRestoreJob::STATUS_KEY)['status'])->toBe('succeeded')
+            ->and(Cache::get(RunRestoreJob::STATUS_KEY)['message'])->toContain('migrate');
+    } finally {
         Artisan::call('up');
     }
 });

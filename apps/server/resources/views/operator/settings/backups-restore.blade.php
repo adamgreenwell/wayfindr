@@ -82,7 +82,7 @@
 
                 @if ($preflight['version_skew'])
                     <div class="notice-copy notice-copy-bordered">
-                        <p>This backup was taken on a different version (<strong>{{ $preflight['archive_version'] }}</strong>) than this install runs (<strong>{{ $preflight['running_version'] }}</strong>). After restoring, run database migrations.</p>
+                        <p>This backup was taken on a different version (<strong>{{ $preflight['archive_version'] }}</strong>) than this install runs (<strong>{{ $preflight['running_version'] }}</strong>). Because the schema may not match the running code, the site will be <strong>kept in maintenance mode</strong> after the restore — on the server, run <code>php artisan migrate --force</code> then <code>php artisan up</code>.</p>
                     </div>
                 @endif
 

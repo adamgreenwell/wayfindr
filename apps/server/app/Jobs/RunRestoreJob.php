@@ -46,6 +46,10 @@ class RunRestoreJob implements ShouldQueue
      *  finally can lift it without a cache read (which could throw). */
     private bool $enteredMaintenance = false;
 
+    /** True when the restore succeeded but the archive's schema predates the
+     *  running code, so the site must stay down until the operator migrates. */
+    private bool $keepMaintenanceForMigrations = false;
+
     public int $tries = 1;
 
     public bool $failOnTimeout = true;
@@ -126,6 +130,11 @@ class RunRestoreJob implements ShouldQueue
                 // failed() callback can read.
                 $this->enteredMaintenance = true;
                 $this->rememberMaintenanceOwnership();
+
+                // Maintenance mode only blocks NEW requests; let any HTTP request
+                // that was already in flight when it engaged finish writing before
+                // we touch the database.
+                $this->drainInFlightRequests();
             }
 
             // force: the operator has already confirmed in the GUI; the guard
@@ -133,16 +142,29 @@ class RunRestoreJob implements ShouldQueue
             // acknowledged.
             $result = $restores->restore($path, force: true);
 
+            // A migration-relevant version skew means the restored schema predates
+            // the running code; keep the site down so the operator migrates before
+            // any request hits an incompatible schema (they were warned in the
+            // preflight and the success message says how).
+            $this->keepMaintenanceForMigrations = (bool) ($result['version_skew'] ?? false);
+
             $this->record('succeeded', $this->successMessage($result), $result);
         } catch (Throwable $exception) {
             $this->record('failed', $exception->getMessage());
 
             throw $exception;
         } finally {
-            // Bring the app back up before releasing the lock. Uses the instance
-            // flag — no cache read — so a cache outage can never leave the site
-            // stuck in the maintenance window this job opened.
-            $this->liftMaintenance($this->enteredMaintenance);
+            if ($this->keepMaintenanceForMigrations) {
+                // Deliberately leave the site in maintenance so an incompatible
+                // schema is never exposed. Hand it to the operator (relinquish our
+                // ownership record) — they run migrations, then `php artisan up`.
+                $this->forgetMaintenanceOwnership();
+            } else {
+                // Bring the app back up before releasing the lock. Uses the
+                // instance flag — no cache read — so a cache outage can never
+                // leave the site stuck in the window this job opened.
+                $this->liftMaintenance($this->enteredMaintenance);
+            }
 
             // A release failure must never mask the restore outcome already
             // recorded above; the lock's TTL expires it.
@@ -151,6 +173,16 @@ class RunRestoreJob implements ShouldQueue
             } catch (Throwable $releaseException) {
                 report($releaseException);
             }
+        }
+    }
+
+    /** Wait for in-flight HTTP requests to drain after maintenance mode engages. */
+    private function drainInFlightRequests(): void
+    {
+        $seconds = (int) config('wayfindr.backup.restore_drain_seconds', 5);
+
+        if ($seconds > 0) {
+            sleep($seconds);
         }
     }
 
@@ -214,6 +246,17 @@ class RunRestoreJob implements ShouldQueue
         } catch (Throwable $exception) {
             // The instance flag still covers the finally path; only the
             // fresh-instance failed() fallback is weakened.
+            report($exception);
+        }
+    }
+
+    /** Relinquish the ownership record without lifting maintenance (see the skew
+     *  path) so nothing auto-lifts a window we intentionally leave up. */
+    private function forgetMaintenanceOwnership(): void
+    {
+        try {
+            Cache::forget(self::MAINTENANCE_OWNED_KEY);
+        } catch (Throwable $exception) {
             report($exception);
         }
     }
@@ -335,7 +378,8 @@ class RunRestoreJob implements ShouldQueue
 
         if ($result['version_skew'] ?? false) {
             $parts[] = 'The backup was taken on version '.($result['archive_version'] ?? '?')
-                .' but this install runs '.($result['running_version'] ?? '?').' — run database migrations.';
+                .' but this install runs '.($result['running_version'] ?? '?')
+                .'. The site is being kept in maintenance mode — on the server run `php artisan migrate --force`, then `php artisan up`.';
         }
 
         $dangling = $result['integrity']['dangling'] ?? null;

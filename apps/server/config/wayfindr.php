@@ -198,6 +198,13 @@ return [
         // start, and it only expires if the job is lost entirely — after which a
         // retry is reasonable. Defaults to twice the lock lifetime.
         'restore_pending_ttl' => (int) env('WAYFINDR_RESTORE_PENDING_TTL', 2 * (int) env('WAYFINDR_BACKUP_LOCK_TTL', (int) env('WAYFINDR_BACKUP_JOB_TIMEOUT', 3600) + 300)),
+
+        // Seconds the restore waits after entering maintenance mode, before it
+        // touches the database, to let HTTP requests that were already in flight
+        // when maintenance engaged finish writing (maintenance mode only blocks
+        // NEW requests). Raise it if you serve long uploads/requests; the safest
+        // restore is still run during a quiet window.
+        'restore_drain_seconds' => (int) env('WAYFINDR_RESTORE_DRAIN_SECONDS', 5),
     ],
 
     // Resolved through ReleaseIdentity so a blank env_file override falls
