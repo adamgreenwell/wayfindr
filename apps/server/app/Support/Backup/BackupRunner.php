@@ -46,12 +46,20 @@ class BackupRunner
         // multi-hour backups raise wayfindr.backup.lock_ttl to cover them.
         $lock = Cache::lock(self::LOCK_KEY, (int) config('wayfindr.backup.lock_ttl', 3900));
 
-        if (! $lock->get()) {
-            $run->update([
-                'status' => BackupRun::STATUS_FAILED,
-                'message' => 'Skipped: another backup was already running. Wait for it to finish, then run again.',
-                'finished_at' => now(),
-            ]);
+        try {
+            $acquired = $lock->get();
+        } catch (Throwable $exception) {
+            // Cache backend down: record the failure so the run isn't left stuck
+            // 'running'. The CLI command only prints the error, and while a
+            // queued job's failed() would also catch this, recording here covers
+            // both entry points. Re-throw so the caller still registers a failure.
+            $this->recordFailure($run, 'Could not acquire the backup lock: '.$exception->getMessage());
+
+            throw $exception;
+        }
+
+        if (! $acquired) {
+            $this->recordFailure($run, 'Skipped: another backup was already running. Wait for it to finish, then run again.');
 
             return null;
         }
@@ -59,8 +67,25 @@ class BackupRunner
         try {
             return $this->perform($run, $destination);
         } finally {
-            $lock->release();
+            // Releasing must never turn a finished backup into a failure:
+            // perform() has already written the archive, uploaded, pruned, and
+            // recorded the outcome. If the cache dropped mid-release, let the
+            // lock's TTL expire it rather than masking a successful backup.
+            try {
+                $lock->release();
+            } catch (Throwable $releaseException) {
+                report($releaseException);
+            }
         }
+    }
+
+    private function recordFailure(BackupRun $run, string $message): void
+    {
+        $run->update([
+            'status' => BackupRun::STATUS_FAILED,
+            'message' => $message,
+            'finished_at' => now(),
+        ]);
     }
 
     /**

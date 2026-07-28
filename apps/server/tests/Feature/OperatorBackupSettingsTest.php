@@ -15,6 +15,7 @@ use App\Support\Backup\BackupService;
 use App\Support\Backup\PostgresDatabaseDumper;
 use App\Support\Backup\RestoreService;
 use App\Support\Settings\OperatorSettings;
+use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Env;
 use Illuminate\Support\Facades\Bus;
@@ -432,4 +433,47 @@ test('a custom database-backed backup queue table counts as bookkeeping, not rea
 test('the backup lock lifetime exceeds the job timeout so a full-length backup stays serialized', function (): void {
     expect((int) config('wayfindr.backup.lock_ttl'))
         ->toBeGreaterThan((int) config('wayfindr.backup.job_timeout'));
+});
+
+test('a lock-acquisition failure finalizes the run instead of leaving it running', function (): void {
+    // The cache backend is unreachable, so acquiring the lock throws.
+    $lock = Mockery::mock(Lock::class);
+    $lock->shouldReceive('get')->andThrow(new RuntimeException('redis unreachable'));
+    Cache::partialMock()->shouldReceive('lock')->andReturn($lock);
+
+    $service = Mockery::mock(BackupService::class);
+    $service->shouldNotReceive('create'); // never reached
+
+    $run = BackupRun::query()->create(['status' => BackupRun::STATUS_RUNNING, 'started_at' => now()]);
+
+    // Re-thrown so the CLI reports failure and a queued job is marked failed…
+    expect(fn () => (new BackupRunner($service))->run($run, '/dest'))
+        ->toThrow(RuntimeException::class);
+
+    // …and the run row is finalized, not stuck 'running'.
+    expect($run->fresh()->status)->toBe(BackupRun::STATUS_FAILED)
+        ->and($run->fresh()->message)->toContain('Could not acquire the backup lock');
+});
+
+test('a lock-release failure does not turn a completed backup into a failure', function (): void {
+    // perform() succeeds, then the cache drops as the lock is released.
+    $lock = Mockery::mock(Lock::class);
+    $lock->shouldReceive('get')->andReturnTrue();
+    $lock->shouldReceive('release')->andThrow(new RuntimeException('redis dropped'));
+    Cache::partialMock()->shouldReceive('lock')->andReturn($lock);
+
+    $service = Mockery::mock(BackupService::class);
+    $service->shouldReceive('create')->once()->andReturn([
+        'path' => '/backups/x.tar.gz',
+        'size' => 4096,
+        'manifest' => [],
+        'remote' => null,
+    ]);
+    $service->shouldReceive('pruneExpired')->once()->andReturn(['days' => 0, 'local' => 0, 'remote' => 0]);
+
+    $run = BackupRun::query()->create(['status' => BackupRun::STATUS_RUNNING, 'started_at' => now()]);
+    $result = (new BackupRunner($service))->run($run, '/dest');
+
+    expect($result)->not->toBeNull()
+        ->and($run->fresh()->status)->toBe(BackupRun::STATUS_SUCCEEDED);
 });
