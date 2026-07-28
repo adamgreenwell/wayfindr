@@ -10,6 +10,7 @@ use App\Jobs\RunRestoreJob;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\BackupRun;
+use App\Models\OperatorSetting;
 use App\Models\User;
 use App\Support\Backup\BackupRunner;
 use App\Support\Backup\BackupService;
@@ -1073,6 +1074,21 @@ test('a restore whose pending claim has expired aborts (does not run as if still
 
     expect(Cache::get(RunRestoreJob::STATUS_KEY)['status'])->toBe('failed')
         ->and(Cache::get(RunRestoreJob::STATUS_KEY)['message'])->toContain('lapsed');
+});
+
+test('invalidating the settings cache lets rows replaced by a restore take effect', function (): void {
+    $settings = app(OperatorSettings::class);
+    $settings->set('backup.prefix', 'old-prefix');
+    expect($settings->get('backup.prefix'))->toBe('old-prefix'); // now cached
+
+    // Simulate the dump replacing the row directly (as a restore does — bypassing
+    // set(), so no version bump). The cache would keep returning 'old-prefix'…
+    OperatorSetting::query()->where('key', 'backup.prefix')->update(['value' => 'restored-prefix']);
+    expect($settings->get('backup.prefix'))->toBe('old-prefix');
+
+    // …until the restore invalidates it.
+    $settings->invalidateCache();
+    expect($settings->get('backup.prefix'))->toBe('restored-prefix');
 });
 
 test('a restore whose pending token still matches proceeds', function (): void {

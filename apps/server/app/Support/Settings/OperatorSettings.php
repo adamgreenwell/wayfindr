@@ -165,6 +165,22 @@ class OperatorSettings
     }
 
     /**
+     * Invalidate the cached stored values by bumping the version, so the next
+     * read refetches from the database. Used after a RESTORE replaces the
+     * operator_settings rows directly (not via set()): otherwise every process
+     * keeps applying the PRE-restore mail/storage/scanner/backup configuration
+     * from the day-long cache entry until it expires — e.g. new attachments would
+     * be written with the old bucket credentials. Same bump as set() (add() before
+     * increment() so a missing key is created, not pinned at 0), but immediate —
+     * the restore has already replaced and committed the rows.
+     */
+    public function invalidateCache(): void
+    {
+        Cache::add(self::VERSION_KEY, 0);
+        Cache::increment(self::VERSION_KEY);
+    }
+
+    /**
      * Re-apply overrides onto config from a FRESH, uncached database read. For
      * callers that must see the latest committed settings even within the tiny
      * window between a write's commit and its deferred cache-version bump — the
