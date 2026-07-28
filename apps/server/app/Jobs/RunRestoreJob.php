@@ -46,9 +46,10 @@ class RunRestoreJob implements ShouldQueue
      *  finally can lift it without a cache read (which could throw). */
     private bool $enteredMaintenance = false;
 
-    /** True when the restore succeeded but the archive's schema predates the
-     *  running code, so the site must stay down until the operator migrates. */
-    private bool $keepMaintenanceForMigrations = false;
+    /** True when the site must be LEFT in maintenance for the operator rather than
+     *  auto-lifted — a version skew, or any failure that may have partially
+     *  applied. Only a fully-clean restore brings the site back up automatically. */
+    private bool $keepMaintenance = false;
 
     public int $tries = 1;
 
@@ -119,15 +120,14 @@ class RunRestoreJob implements ShouldQueue
             // did not open.
             if (! app()->isDownForMaintenance()) {
                 if (Artisan::call('down') !== 0) {
-                    $this->record('failed', 'Could not enter maintenance mode to quiesce writes before the restore; aborted to avoid corrupting data.');
+                    $this->record('failed', 'Could not enter maintenance mode to quiesce writes before the restore; aborted to avoid corrupting data. '.$this->workerRestartHint());
 
                     return;
                 }
 
                 // Record ownership two ways: an instance flag the finally reads
                 // without touching the cache (so a cache outage can't strand the
-                // site in maintenance), and a cache flag the fresh-instance
-                // failed() callback can read.
+                // site in maintenance), and a cache flag we clear on the way out.
                 $this->enteredMaintenance = true;
                 $this->rememberMaintenanceOwnership();
 
@@ -142,27 +142,32 @@ class RunRestoreJob implements ShouldQueue
             // acknowledged.
             $result = $restores->restore($path, force: true);
 
-            // A migration-relevant version skew means the restored schema predates
-            // the running code; keep the site down so the operator migrates before
-            // any request hits an incompatible schema (they were warned in the
+            // A version skew means the restored schema and the running code may
+            // not match (either direction); keep the site down so the operator
+            // reconciles them before any request hits it (they were warned in the
             // preflight and the success message says how).
-            $this->keepMaintenanceForMigrations = (bool) ($result['version_skew'] ?? false);
+            $this->keepMaintenance = (bool) ($result['version_skew'] ?? false);
 
             $this->record('succeeded', $this->successMessage($result), $result);
         } catch (Throwable $exception) {
-            $this->record('failed', $exception->getMessage());
+            // A failure here may be AFTER the database transaction committed (the
+            // attachment purge/copy phase, or a timeout during it), leaving a
+            // PARTIALLY applied restore. Keep the site down for the operator to
+            // verify rather than exposing an inconsistent install.
+            $this->keepMaintenance = true;
+            $this->record('failed', $this->failureMessage($exception));
 
             throw $exception;
         } finally {
-            if ($this->keepMaintenanceForMigrations) {
-                // Deliberately leave the site in maintenance so an incompatible
-                // schema is never exposed. Hand it to the operator (relinquish our
-                // ownership record) — they run migrations, then `php artisan up`.
+            if ($this->keepMaintenance) {
+                // Deliberately leave the site in maintenance (skew, or a possibly
+                // partial failure) and hand it to the operator; relinquish our
+                // ownership record so nothing auto-lifts it.
                 $this->forgetMaintenanceOwnership();
             } else {
-                // Bring the app back up before releasing the lock. Uses the
-                // instance flag — no cache read — so a cache outage can never
-                // leave the site stuck in the window this job opened.
+                // A fully-clean restore: bring the app back up. Uses the instance
+                // flag — no cache read — so a cache outage can never leave the
+                // site stuck in the window this job opened.
                 $this->liftMaintenance($this->enteredMaintenance);
             }
 
@@ -193,22 +198,18 @@ class RunRestoreJob implements ShouldQueue
      */
     public function failed(?Throwable $exception): void
     {
-        // Lift maintenance FIRST — before any other cache access — so a cache
-        // failure while recording the status can never leave the site stranded in
-        // maintenance mode. This runs on a fresh instance, so the instance flag is
-        // gone; fall back to the cache ownership record (which errs toward lifting
-        // if it cannot be read, since an indefinite outage is worse than a
-        // spurious up).
-        $this->liftMaintenance($this->ownsMaintenanceViaCache());
+        // Do NOT lift maintenance here. A failed or timed-out restore may have
+        // partially applied (the database can be replaced before the attachment
+        // phase finishes), so the site stays down for the operator to verify.
+        // Relinquish our ownership record so a later restore starts clean; the
+        // site remains down because we never call `up`.
+        $this->forgetMaintenanceOwnership();
 
         try {
             $status = Cache::get(self::STATUS_KEY);
 
             if (is_array($status) && ($status['status'] ?? null) === 'running') {
-                $this->record(
-                    'failed',
-                    $exception?->getMessage() ?: 'The restore job was terminated (it may have exceeded the timeout). Check the queue worker.',
-                );
+                $this->record('failed', $this->failureMessage($exception));
             }
         } catch (Throwable $cacheException) {
             report($cacheException);
@@ -258,19 +259,6 @@ class RunRestoreJob implements ShouldQueue
             Cache::forget(self::MAINTENANCE_OWNED_KEY);
         } catch (Throwable $exception) {
             report($exception);
-        }
-    }
-
-    private function ownsMaintenanceViaCache(): bool
-    {
-        try {
-            return (bool) Cache::get(self::MAINTENANCE_OWNED_KEY);
-        } catch (Throwable $exception) {
-            report($exception);
-
-            // Cannot tell whether we own it; prefer lifting so a cache outage
-            // never strands the site in maintenance mode.
-            return true;
         }
     }
 
@@ -377,9 +365,12 @@ class RunRestoreJob implements ShouldQueue
         $parts = ['Restore complete.'];
 
         if ($result['version_skew'] ?? false) {
+            // Direction-neutral: version strings may not be reliably comparable
+            // (tags vs commits vs "unknown"), and a NEWER archive can't be fixed
+            // by migrating older code — so name both remedies.
             $parts[] = 'The backup was taken on version '.($result['archive_version'] ?? '?')
                 .' but this install runs '.($result['running_version'] ?? '?')
-                .'. The site is being kept in maintenance mode — on the server run `php artisan migrate --force`, then `php artisan up`.';
+                .'. The site is being kept in maintenance mode so the schema and code can'."'".'t mismatch. On the server, make them compatible — if the backup is OLDER, run `php artisan migrate --force`; if it is NEWER, deploy a matching or newer release — then run `php artisan up`.';
         }
 
         $dangling = $result['integrity']['dangling'] ?? null;
@@ -388,6 +379,22 @@ class RunRestoreJob implements ShouldQueue
             $parts[] = count($dangling).' attachment(s) referenced by the database are missing their files.';
         }
 
+        $parts[] = $this->workerRestartHint();
+
         return implode(' ', $parts);
+    }
+
+    private function failureMessage(?Throwable $exception): string
+    {
+        $reason = $exception?->getMessage() ?: 'The restore job was terminated (it may have exceeded the timeout). Check the queue worker.';
+
+        return 'Restore failed: '.$reason
+            .' The site has been left in maintenance mode in case the restore applied only partially — verify the database and attachments, then run `php artisan up` (or re-run the restore). '
+            .$this->workerRestartHint();
+    }
+
+    private function workerRestartHint(): string
+    {
+        return 'Restart the queue and scheduler workers you stopped: `docker compose start queue scheduler`.';
     }
 }

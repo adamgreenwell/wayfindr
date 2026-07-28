@@ -759,20 +759,20 @@ test('a stale restore job does not release a newer pending claim', function (): 
     expect(RunRestoreJob::claimPending())->not->toBeNull(); // now claimable
 });
 
-test('the failed callback lifts maintenance it owns even when the ownership cache read fails', function (): void {
+test('the failed callback keeps the site down and never throws even when the cache fails', function (): void {
     Artisan::call('down');
 
-    // A cache whose reads throw (Redis unavailable after down); the fallback must
-    // still lift maintenance rather than strand the site.
+    // A cache whose reads/writes throw (Redis unavailable); failed() must not throw
+    // and must NOT lift maintenance — a timed-out restore may be partial.
     $store = Mockery::mock(Repository::class);
     $store->shouldReceive('get')->andThrow(new RuntimeException('redis down'));
-    $store->shouldReceive('forget')->andReturn(true);
+    $store->shouldReceive('forget')->andThrow(new RuntimeException('redis down'));
     Cache::swap($store);
 
     try {
         (new RunRestoreJob('x.tar.gz'))->failed(new RuntimeException('timed out'));
 
-        expect(app()->isDownForMaintenance())->toBeFalse(); // lifted despite the cache failure
+        expect(app()->isDownForMaintenance())->toBeTrue(); // kept down despite the cache failure
     } finally {
         // A fresh app per test discards the swapped mock; just ensure the app is up.
         Artisan::call('up');
@@ -1000,11 +1000,12 @@ test('the restore job runs the archive and records success with a summary', func
         ->and($status['triggered_by_name'])->toBe('Operator');
 });
 
-test('the restore job quiesces writes and brings the app back up even when the restore fails', function (): void {
+test('a failed restore keeps the site in maintenance for the operator to verify', function (): void {
     $backups = Mockery::mock(BackupService::class);
     $backups->shouldReceive('resolveLocalArchivePath')->andReturn('/backups/inst/x.tar.gz');
     $restores = Mockery::mock(RestoreService::class);
-    $restores->shouldReceive('restore')->once()->andThrow(new RuntimeException('psql not found'));
+    // A failure could be AFTER the DB transaction committed (partial restore).
+    $restores->shouldReceive('restore')->once()->andThrow(new RuntimeException('failed copying attachments'));
 
     try {
         (new RunRestoreJob('x.tar.gz'))->handle($restores, $backups);
@@ -1012,9 +1013,34 @@ test('the restore job quiesces writes and brings the app back up even when the r
         // expected — the job re-throws the restore failure
     }
 
-    // Maintenance mode must not be left on after the restore, success or failure.
-    expect(app()->isDownForMaintenance())->toBeFalse()
-        ->and(Cache::get(RunRestoreJob::STATUS_KEY)['status'])->toBe('failed');
+    try {
+        // Left down (a partial restore must not be exposed), status failed, with
+        // verify/restart guidance.
+        expect(app()->isDownForMaintenance())->toBeTrue()
+            ->and(Cache::get(RunRestoreJob::STATUS_KEY)['status'])->toBe('failed')
+            ->and(Cache::get(RunRestoreJob::STATUS_KEY)['message'])->toContain('maintenance')
+            ->and(Cache::get(RunRestoreJob::STATUS_KEY)['message'])->toContain('docker compose start');
+    } finally {
+        Artisan::call('up');
+    }
+});
+
+test('a clean restore brings the site back up and reminds the operator to restart workers', function (): void {
+    $backups = Mockery::mock(BackupService::class);
+    $backups->shouldReceive('resolveLocalArchivePath')->andReturn('/backups/inst/x.tar.gz');
+    $restores = Mockery::mock(RestoreService::class);
+    $restores->shouldReceive('restore')->once()->andReturn([
+        'version_skew' => false,
+        'archive_version' => '0.3.0',
+        'running_version' => '0.3.0',
+        'integrity' => ['dangling' => []],
+    ]);
+
+    (new RunRestoreJob('x.tar.gz'))->handle($restores, $backups);
+
+    expect(app()->isDownForMaintenance())->toBeFalse() // clean success → back up
+        ->and(Cache::get(RunRestoreJob::STATUS_KEY)['status'])->toBe('succeeded')
+        ->and(Cache::get(RunRestoreJob::STATUS_KEY)['message'])->toContain('docker compose start');
 });
 
 test('the restore job skips when a backup or restore already holds the lock', function (): void {

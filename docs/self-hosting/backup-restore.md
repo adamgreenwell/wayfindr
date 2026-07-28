@@ -186,11 +186,17 @@ Three things to know:
   archive, your browser session also ends. Wait a minute, log back in (with the
   credentials **as they were in the backup**), and read the restore outcome on the
   backup settings page.
-- **On a version mismatch it stays down for migrations.** If the archive was taken
-  on an older app version, the restored schema may not match the running code, so
-  the restore leaves the site in maintenance mode. Finish on the server with `php
-  artisan migrate --force`, then `php artisan up`. (The preflight and the recorded
-  status both say so.)
+- **On a version mismatch, or any failure, it stays down for you.** The site is
+  brought back up automatically only after a fully clean restore. If the archive's
+  version differs from the running code, or the restore fails part-way (the
+  database can be replaced before attachments finish), the restore leaves the site
+  in maintenance so an inconsistent or incompatible install is never exposed —
+  finish on the server. For a version skew, reconcile schema and code (if the
+  backup is **older**, `php artisan migrate --force`; if it is **newer**, deploy a
+  matching or newer release), then `php artisan up`. For a failure, verify the
+  database and attachments, then `php artisan up` or re-run the restore. Either
+  way, restart the workers you stopped: `docker compose start queue scheduler`.
+  (The recorded status spells out which case you are in.)
 - **It needs Redis-backed queue, cache, and maintenance state.** The queued job,
   its status, and the maintenance-mode marker all have to survive the database
   being rebuilt and be visible across processes, so the in-GUI restore is only

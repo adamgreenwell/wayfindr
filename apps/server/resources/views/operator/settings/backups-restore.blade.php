@@ -88,9 +88,10 @@
 
                 <div class="notice-copy notice-copy-bordered">
                     <p><strong>Restoring replaces ALL current data</strong> — the database and local attachment files — and cannot be undone. The whole site goes into <strong>maintenance mode</strong> while it runs (visitors and agents see a 503), so nothing new writes into the database mid-restore, and you are <strong>logged out</strong>. Wait a minute, then log back in (with the credentials stored in this backup) and check the restore status on the backup settings page.</p>
-                    <p>Maintenance mode stops <em>new</em> work, but it cannot drain a background job that is already running. Before you restore, stop the background workers so nothing writes into the database as it is rebuilt:</p>
+                    <p>Maintenance mode stops <em>new</em> work, but it cannot drain a background job that is already running. Before you restore, stop the background workers so nothing writes into the database as it is rebuilt, and start them again once the restore reports complete:</p>
                 </div>
-                <pre class="code-block"><code>docker compose stop queue scheduler   # leave the backup-queue worker running</code></pre>
+                <pre class="code-block"><code>docker compose stop queue scheduler   # before — leave backup-queue running
+docker compose start queue scheduler  # after the restore completes</code></pre>
 
                 <form class="section-form" method="POST" action="{{ route('operator.settings.backups.restore.run') }}">
                     @csrf
