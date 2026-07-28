@@ -169,10 +169,14 @@ before you commit, and gates the action behind typing the instance name
 
 Two things to know:
 
-- **A restore logs everyone out.** It reloads the whole database, and the
-  sessions table is not carried in the archive — so your browser session ends
-  when it runs. Wait a minute, log back in (with the credentials **as they were
-  in the backup**), and read the restore outcome on the backup settings page.
+- **It quiesces the site, then logs everyone out.** The restore automatically
+  puts the app into maintenance mode for its duration (visitors and agents get a
+  503, and other queue workers pause) so nothing writes into the database while
+  it is being rebuilt — the same quiescing the CLI procedure below asks you to do
+  by hand. Because it reloads the whole database and the sessions table is not
+  carried in the archive, your browser session also ends. Wait a minute, log back
+  in (with the credentials **as they were in the backup**), and read the restore
+  outcome on the backup settings page.
 - **It needs a Redis-backed queue and cache.** The status and the queued job must
   survive the database being rebuilt, so the in-GUI restore is only offered when
   neither the queue nor the cache is database-backed (the shipped stack uses

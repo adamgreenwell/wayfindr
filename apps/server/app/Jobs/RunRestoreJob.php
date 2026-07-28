@@ -10,6 +10,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Throwable;
 
@@ -87,6 +88,21 @@ class RunRestoreJob implements ShouldQueue
         $this->record('running', 'Restore in progress…');
 
         try {
+            // Quiesce writes for the duration of the restore, the way the CLI
+            // procedure does manually. RestoreService commits the database
+            // replacement BEFORE purging and re-copying attachment files, so a
+            // concurrent upload committing in that window would leave a row whose
+            // file the purge then deletes. Maintenance mode 503s HTTP and pauses
+            // other queue workers (their daemon loop honours it), while this
+            // already-running job continues; the down marker is on disk, so it
+            // survives the database reload. Abort if we cannot quiesce — a live
+            // restore is exactly the corruption risk we are guarding against.
+            if (Artisan::call('down') !== 0) {
+                $this->record('failed', 'Could not enter maintenance mode to quiesce writes before the restore; aborted to avoid corrupting data.');
+
+                return;
+            }
+
             // force: the operator has already confirmed in the GUI; the guard
             // that refuses to overwrite a populated install is exactly what they
             // acknowledged.
@@ -98,6 +114,10 @@ class RunRestoreJob implements ShouldQueue
 
             throw $exception;
         } finally {
+            // Bring the app back up before releasing the lock. Best-effort, and
+            // separately guarded so a failure of one still attempts the other.
+            $this->bringUp();
+
             // A release failure must never mask the restore outcome already
             // recorded above; the lock's TTL expires it.
             try {
@@ -115,6 +135,10 @@ class RunRestoreJob implements ShouldQueue
      */
     public function failed(?Throwable $exception): void
     {
+        // A timeout kill interrupts handle() before its finally can bring the app
+        // back up, so do it here too (idempotent — up when not down is harmless).
+        $this->bringUp();
+
         $status = Cache::get(self::STATUS_KEY);
 
         if (is_array($status) && ($status['status'] ?? null) === 'running') {
@@ -122,6 +146,16 @@ class RunRestoreJob implements ShouldQueue
                 'failed',
                 $exception?->getMessage() ?: 'The restore job was terminated (it may have exceeded the timeout). Check the queue worker.',
             );
+        }
+    }
+
+    /** Best-effort exit from maintenance mode; a failure here must not throw. */
+    private function bringUp(): void
+    {
+        try {
+            Artisan::call('up');
+        } catch (Throwable $exception) {
+            report($exception);
         }
     }
 

@@ -477,13 +477,19 @@ class OperatorBackupSettingsController extends Controller
             ->withInput($request->except(['s3_access_key', 's3_secret_key']));
     }
 
+    /** Queue drivers whose reservation survives the DB reload and is worker-run. */
+    private const RESTORE_SAFE_QUEUE_DRIVERS = ['redis', 'beanstalkd', 'sqs'];
+
     /**
      * The in-GUI restore is only safe when the queue reservation AND the status
-     * cache survive the database restore — i.e. neither is database-backed. A
-     * DB-backed queue would delete its own in-flight job when the restore reloads
-     * the DB, and a DB-backed cache would lose the status the operator reads
-     * afterwards. The shipped stack uses Redis for both; otherwise the operator
-     * is pointed at the CLI.
+     * cache survive the database restore AND are shared between the web process
+     * and the worker. Both are checked against an allowlist of network-shared
+     * stores, NOT a `!== 'database'` test on the top-level driver — that would
+     * wave through a `failover` chain that is database-backed underneath, and the
+     * process-local `array`/`null` stores that the web request and the worker do
+     * not share (the status would never sync and the lock would not exclude). The
+     * shipped stack uses Redis for both; otherwise the operator is pointed at the
+     * CLI.
      */
     private function restoreIsDurable(): bool
     {
@@ -492,7 +498,11 @@ class OperatorBackupSettingsController extends Controller
         $cacheStore = (string) config('cache.default');
         $cacheDriver = (string) config("cache.stores.{$cacheStore}.driver");
 
-        return $queueDriver !== 'database' && $cacheDriver !== 'database';
+        /** @var list<string> $safeCacheDrivers */
+        $safeCacheDrivers = (array) config('wayfindr.backup.restore_safe_cache_drivers', ['redis', 'memcached', 'dynamodb']);
+
+        return in_array($queueDriver, self::RESTORE_SAFE_QUEUE_DRIVERS, true)
+            && in_array($cacheDriver, $safeCacheDrivers, true);
     }
 
     /**

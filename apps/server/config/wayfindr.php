@@ -168,6 +168,17 @@ return [
         // to cover them. It also bounds how long a crashed backup blocks the
         // next one, so it is not simply "infinite". Defaults above job_timeout.
         'lock_ttl' => (int) env('WAYFINDR_BACKUP_LOCK_TTL', (int) env('WAYFINDR_BACKUP_JOB_TIMEOUT', 3600) + 300),
+
+        // Cache drivers the in-GUI restore trusts to hold its status and lock
+        // (ADR 0011 slice 3b). A restore reloads the database, so the cache MUST
+        // (a) survive that — not the `database` driver — and (b) be shared between
+        // the web process that records the status/lock and the worker that runs
+        // the restore — not process-local `array`/`null`, and not a wrapper like
+        // `failover` whose members can't be vouched for here. So it is an
+        // allowlist of network-shared stores; anything else sends the operator to
+        // the CLI. (The test suite runs on the array cache in a single process
+        // and adds 'array' to this list.)
+        'restore_safe_cache_drivers' => ['redis', 'memcached', 'dynamodb'],
     ],
 
     // Resolved through ReleaseIdentity so a blank env_file override falls

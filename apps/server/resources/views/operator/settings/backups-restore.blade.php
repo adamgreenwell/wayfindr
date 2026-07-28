@@ -82,7 +82,7 @@
                 @endif
 
                 <div class="notice-copy notice-copy-bordered">
-                    <p><strong>Restoring replaces ALL current data</strong> — the database and local attachment files — and cannot be undone. It runs in the background and <strong>logs you out</strong> when it starts; wait a minute, then log back in (with the credentials stored in this backup) and check the restore status on the backup settings page.</p>
+                    <p><strong>Restoring replaces ALL current data</strong> — the database and local attachment files — and cannot be undone. The whole site goes into <strong>maintenance mode</strong> while it runs (visitors and agents see a 503), so nothing writes into the database mid-restore, and you are <strong>logged out</strong>. Wait a minute, then log back in (with the credentials stored in this backup) and check the restore status on the backup settings page.</p>
                 </div>
 
                 <form class="section-form" method="POST" action="{{ route('operator.settings.backups.restore.run') }}">

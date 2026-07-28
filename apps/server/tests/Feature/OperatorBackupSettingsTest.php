@@ -25,6 +25,12 @@ use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
 
+// The suite runs on the array cache in a single process, which the in-GUI
+// restore's durability guard rejects by default (array is process-local). Opt it
+// in so the durable-path tests exercise the restore flow; the rejection tests
+// override this back to the secure default.
+beforeEach(fn () => config()->set('wayfindr.backup.restore_safe_cache_drivers', ['redis', 'memcached', 'dynamodb', 'array']));
+
 function backupOperator(): User
 {
     return User::factory()->for(Account::factory())->create([
@@ -647,6 +653,29 @@ test('the restore page points to the CLI when the cache is database-backed', fun
         ->assertSee('In-GUI restore is unavailable');
 });
 
+test('the restore page rejects a process-local array cache by default', function (): void {
+    // Secure default (no 'array'): the array store is process-local, so the web
+    // request and the worker would not share the status or the lock.
+    config()->set('wayfindr.backup.restore_safe_cache_drivers', ['redis', 'memcached', 'dynamodb']);
+
+    $this->actingAs(backupOperator())
+        ->get(route('operator.settings.backups.restore'))
+        ->assertOk()
+        ->assertSee('In-GUI restore is unavailable');
+});
+
+test('the restore page rejects a failover cache wrapper', function (): void {
+    // A failover chain reports its own top-level driver, not its members — the
+    // allowlist rejects it rather than trust a possibly database-backed chain.
+    config()->set('cache.stores.failover', ['driver' => 'failover', 'stores' => ['database', 'array']]);
+    config()->set('cache.default', 'failover');
+
+    $this->actingAs(backupOperator())
+        ->get(route('operator.settings.backups.restore'))
+        ->assertOk()
+        ->assertSee('In-GUI restore is unavailable');
+});
+
 test('previewing an archive shows the confirmation form with version info', function (): void {
     seedLocalArchives(['wayfindr-backup-20260728-100000-aaaaaa.tar.gz']);
 
@@ -784,6 +813,23 @@ test('the restore job runs the archive and records success with a summary', func
     expect($status['status'])->toBe('succeeded')
         ->and($status['message'])->toContain('Restore complete')
         ->and($status['triggered_by_name'])->toBe('Operator');
+});
+
+test('the restore job quiesces writes and brings the app back up even when the restore fails', function (): void {
+    $backups = Mockery::mock(BackupService::class);
+    $backups->shouldReceive('resolveLocalArchivePath')->andReturn('/backups/inst/x.tar.gz');
+    $restores = Mockery::mock(RestoreService::class);
+    $restores->shouldReceive('restore')->once()->andThrow(new RuntimeException('psql not found'));
+
+    try {
+        (new RunRestoreJob('x.tar.gz'))->handle($restores, $backups);
+    } catch (RuntimeException) {
+        // expected — the job re-throws the restore failure
+    }
+
+    // Maintenance mode must not be left on after the restore, success or failure.
+    expect(app()->isDownForMaintenance())->toBeFalse()
+        ->and(Cache::get(RunRestoreJob::STATUS_KEY)['status'])->toBe('failed');
 });
 
 test('the restore job skips when a backup or restore already holds the lock', function (): void {
