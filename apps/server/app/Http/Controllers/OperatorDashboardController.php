@@ -65,6 +65,8 @@ class OperatorDashboardController extends Controller
             'operator_settings.mail.updated',
             'operator_settings.storage.updated',
             'operator_settings.scanning.updated',
+            'operator_settings.backup.updated',
+            'operator_settings.backup.triggered',
         ];
     }
 
@@ -84,6 +86,8 @@ class OperatorDashboardController extends Controller
             'operator_settings.mail.updated' => 'Mail settings updated',
             'operator_settings.storage.updated' => 'Storage settings updated',
             'operator_settings.scanning.updated' => 'Scanning settings updated',
+            'operator_settings.backup.updated' => 'Backup settings updated',
+            'operator_settings.backup.triggered' => 'Backup triggered',
             default => 'Operator activity',
         };
     }
@@ -109,6 +113,17 @@ class OperatorDashboardController extends Controller
                 'Attachment scanning was updated (scanner: %s).',
                 (string) data_get($event->metadata, 'driver', 'unknown'),
             );
+        }
+
+        if ($event->action === 'operator_settings.backup.updated') {
+            return sprintf(
+                'Backup settings were updated (offsite: %s).',
+                (string) data_get($event->metadata, 'offsite_disk', 'unknown'),
+            );
+        }
+
+        if ($event->action === 'operator_settings.backup.triggered') {
+            return 'A backup was queued to run in the background.';
         }
 
         return match (data_get($event->metadata, 'key')) {
@@ -194,6 +209,32 @@ class OperatorDashboardController extends Controller
                 [
                     'label' => 'Event type',
                     'value' => 'Instance settings change',
+                ],
+            ],
+            'operator_settings.backup.updated' => [
+                [
+                    'label' => 'Offsite',
+                    'value' => (string) data_get($event->metadata, 'offsite_disk', 'unknown'),
+                ],
+                [
+                    'label' => 'Retention',
+                    'value' => ((int) data_get($event->metadata, 'retention_days', 0)) > 0
+                        ? data_get($event->metadata, 'retention_days').' day(s)'
+                        : 'Keep everything',
+                ],
+                [
+                    'label' => 'Event type',
+                    'value' => 'Instance settings change',
+                ],
+            ],
+            'operator_settings.backup.triggered' => [
+                [
+                    'label' => 'Offsite',
+                    'value' => (string) data_get($event->metadata, 'offsite_disk', 'unknown'),
+                ],
+                [
+                    'label' => 'Event type',
+                    'value' => 'Backup run (background)',
                 ],
             ],
             default => [],

@@ -76,6 +76,22 @@ class OperatorSettings
         'scanning.driver' => ['config' => 'wayfindr.attachments.scanner.driver', 'secret' => false, 'group' => 'scanning'],
         'scanning.socket' => ['config' => 'wayfindr.attachments.scanner.clamav.socket', 'secret' => false, 'group' => 'scanning'],
         'scanning.fail_closed' => ['config' => 'wayfindr.attachments.scanner.fail_closed', 'secret' => false, 'group' => 'scanning', 'cast' => 'bool'],
+
+        // Backups (ADR 0011 slice 3). The optional offsite mirror disk ('' local-
+        // only or 'backups'), age-based retention, per-install prefix, and the
+        // S3 connection for the 'backups' disk. The local write PATH stays
+        // env-only (a host filesystem path, like boot-critical config).
+        'backup.disk' => ['config' => 'wayfindr.backup.disk', 'secret' => false, 'group' => 'backup'],
+        'backup.retention_days' => ['config' => 'wayfindr.backup.retention_days', 'secret' => false, 'group' => 'backup', 'cast' => 'int'],
+        'backup.prefix' => ['config' => 'wayfindr.backup.prefix', 'secret' => false, 'group' => 'backup'],
+        'backup.s3_bucket' => ['config' => 'filesystems.disks.backups.bucket', 'secret' => false, 'group' => 'backup'],
+        'backup.s3_region' => ['config' => 'filesystems.disks.backups.region', 'secret' => false, 'group' => 'backup'],
+        'backup.s3_endpoint' => ['config' => 'filesystems.disks.backups.endpoint', 'secret' => false, 'group' => 'backup', 'cast' => 'null_if_blank'],
+        'backup.s3_key' => ['config' => 'filesystems.disks.backups.key', 'secret' => true, 'group' => 'backup'],
+        'backup.s3_secret' => ['config' => 'filesystems.disks.backups.secret', 'secret' => true, 'group' => 'backup'],
+        'backup.s3_use_path_style' => ['config' => 'filesystems.disks.backups.use_path_style_endpoint', 'secret' => false, 'group' => 'backup', 'cast' => 'bool'],
+        'backup.s3_acl' => ['config' => 'filesystems.disks.backups.options.ACL', 'secret' => false, 'group' => 'backup'],
+        'backup.s3_root' => ['config' => 'filesystems.disks.backups.root', 'secret' => false, 'group' => 'backup'],
     ];
 
     /**
@@ -502,6 +518,7 @@ class OperatorSettings
 
         return match (self::MANAGED[$key]['cast'] ?? 'string') {
             'bool' => in_array(strtolower(trim($value)), ['1', 'true', 'yes', 'on'], true),
+            'int' => (int) trim($value),
             // A blank override applies as null, not '' — some config consumers
             // (the AWS SDK's endpoint) treat an empty string as a real value.
             // The stored override stays '' so it still wins over a stale env
