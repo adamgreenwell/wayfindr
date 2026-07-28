@@ -1046,6 +1046,22 @@ test('the restore job records a failure when the archive is gone', function (): 
     expect(Cache::get(RunRestoreJob::STATUS_KEY)['status'])->toBe('failed');
 });
 
+test('a superseded restore aborts without running', function (): void {
+    // A newer restore has claimed the pending slot with its own token; this older
+    // job holds a stale one whose lease lapsed.
+    RunRestoreJob::claimPending();
+
+    $backups = Mockery::mock(BackupService::class);
+    $backups->shouldNotReceive('resolveLocalArchivePath'); // aborts before resolving
+    $restores = Mockery::mock(RestoreService::class);
+    $restores->shouldNotReceive('restore');
+
+    (new RunRestoreJob('x.tar.gz', null, null, 'stale-token'))->handle($restores, $backups);
+
+    expect(Cache::get(RunRestoreJob::STATUS_KEY)['status'])->toBe('failed')
+        ->and(Cache::get(RunRestoreJob::STATUS_KEY)['message'])->toContain('superseded');
+});
+
 test('the restore job runs the archive and records success with a summary', function (): void {
     $backups = Mockery::mock(BackupService::class);
     $backups->shouldReceive('resolveLocalArchivePath')->andReturn('/backups/inst/x.tar.gz');

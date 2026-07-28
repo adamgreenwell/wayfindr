@@ -194,9 +194,10 @@ return [
         // How long the "a restore is pending" claim is held so the GUI accepts
         // only one confirmed restore at a time (ADR 0011). It must outlast a
         // realistic queue wait (a restore can sit behind a running backup on the
-        // shared worker) PLUS the restore's own run; the job refreshes it on
-        // start, and it only expires if the job is lost entirely — after which a
-        // retry is reasonable. Defaults to twice the lock lifetime.
+        // shared worker) PLUS the restore's own run. If it lapses and a newer
+        // restore claims the slot, the older job validates ownership on start and
+        // aborts as superseded (rather than restoring a second archive back to
+        // back). Defaults to twice the lock lifetime; raise it for deep queues.
         'restore_pending_ttl' => (int) env('WAYFINDR_RESTORE_PENDING_TTL', 2 * (int) env('WAYFINDR_BACKUP_LOCK_TTL', (int) env('WAYFINDR_BACKUP_JOB_TIMEOUT', 3600) + 300)),
 
         // Seconds the restore waits after entering maintenance mode, before it
