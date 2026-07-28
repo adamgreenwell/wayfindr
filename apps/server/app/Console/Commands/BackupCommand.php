@@ -36,6 +36,15 @@ class BackupCommand extends Command
             return self::FAILURE;
         }
 
+        // Null = another backup already held the instance-wide lock, so this run
+        // was skipped (recorded on the run). The concurrent backup covers the
+        // data, so this is not a cron-alerting failure.
+        if ($result === null) {
+            $this->warn('A backup is already running; this run was skipped.');
+
+            return self::SUCCESS;
+        }
+
         $manifest = $result['manifest'];
 
         $disk = $manifest['attachment_storage_disk'];

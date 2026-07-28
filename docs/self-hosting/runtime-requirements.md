@@ -46,13 +46,21 @@ the Laravel web request process as the whole application.
 | --- | --- | --- |
 | Web | Serves Laravel HTTP routes and the widget script. | Web server to PHP-FPM with root `apps/server/public` |
 | Queue worker | Runs queued jobs outside the request lifecycle. | `php artisan queue:work redis --sleep=3 --tries=3 --timeout=90` |
+| Backup worker | Runs the operator "run a backup now" job. Separate connection so its retry window can exceed the backup timeout. | `php artisan queue:work backups --queue=backups --sleep=5 --tries=1 --timeout=3600` |
 | Scheduler | Lets Laravel run scheduled work once per minute, including hourly alert digest delivery. | `* * * * * cd /path/to/apps/server && php artisan schedule:run` |
 | Reverb | Serves WebSocket connections for live chat/cobrowse notices. | `php artisan reverb:start --host=127.0.0.1 --port=8080` |
 
-Run the worker and Reverb under Supervisor, systemd, your host's process
+Run the workers and Reverb under Supervisor, systemd, your host's process
 manager, or separate containers. The scheduler can be cron, a platform
 scheduled task, or a dedicated process that invokes `schedule:run` once per
 minute.
+
+The **backup worker** runs on its own queue connection (`backups`) whose
+`retry_after` is deliberately larger than the backup timeout, so a backup that
+takes several minutes is never re-released to a second worker and false-failed.
+The default queue worker must not process the `backups` connection. If you skip
+this worker, scheduled backups (via cron) still run, but the operator's
+"run a backup now" button will queue jobs that are never processed.
 
 After the first deploy, use a few boring process checks before trusting the
 install with visitor traffic:
@@ -256,6 +264,8 @@ processes:
 
 - one web process serving `apps/server/public`;
 - one queue worker process;
+- one backup worker process on the `backups` connection (only needed if
+  operators run backups from the GUI; scheduled backups run under the scheduler);
 - one scheduler job or scheduler process;
 - one Reverb process when realtime is enabled;
 - Postgres and Redis services;

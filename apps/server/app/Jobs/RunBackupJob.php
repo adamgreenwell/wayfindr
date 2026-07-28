@@ -9,7 +9,6 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Cache;
 use Throwable;
 
 /**
@@ -48,41 +47,29 @@ class RunBackupJob implements ShouldQueue
     public function __construct(private readonly int $backupRunId)
     {
         $this->timeout = (int) config('wayfindr.backup.job_timeout', 3600);
+
+        // A dedicated connection whose retry/visibility window exceeds this
+        // job's timeout (see config/queue.php), so a slow backup is never
+        // re-released to a second worker mid-run. Without this, the default 90s
+        // retry_after would hand a >90s backup to another worker and — under
+        // tries=1 — fail it before handle() while it is actually succeeding.
+        // (Set here, not as a typed property: the Queueable trait declares
+        // $connection untyped, so a typed redeclaration would fatal.)
+        $this->onConnection('backups');
     }
 
     public function handle(BackupRunner $runner): void
     {
         $run = BackupRun::query()->find($this->backupRunId);
 
-        // Deleted, or already finalized by an earlier attempt (a retry_after
-        // re-release under tries=1 fails before handle(), so the record is only
-        // ever left running by the attempt that actually holds the lock).
+        // Deleted, or already finalized (e.g. by an earlier attempt). The runner
+        // owns the instance-wide lock, so an overlapping backup is finalized as
+        // skipped there — this path just delegates.
         if ($run === null || $run->status !== BackupRun::STATUS_RUNNING) {
             return;
         }
 
-        // Only one backup runs at a time instance-wide. Unlike a WithoutOverlapping
-        // middleware that silently discards an overlapping job (leaving its
-        // pre-created run stuck as 'running'), acquire the lock here so an
-        // overlapping run is explicitly finalized. The TTL bounds a lock leaked
-        // by a crashed/killed worker so future backups aren't blocked forever.
-        $lock = Cache::lock('wayfindr:backup', $this->timeout + 120);
-
-        if (! $lock->get()) {
-            $run->update([
-                'status' => BackupRun::STATUS_FAILED,
-                'message' => 'Skipped: another backup was already running. Wait for it to finish, then run again.',
-                'finished_at' => now(),
-            ]);
-
-            return;
-        }
-
-        try {
-            $runner->run($run, (string) config('wayfindr.backup.path'));
-        } finally {
-            $lock->release();
-        }
+        $runner->run($run, (string) config('wayfindr.backup.path'));
     }
 
     /**

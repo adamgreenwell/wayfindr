@@ -162,21 +162,53 @@ test('the backup job runs once with a generous timeout', function (): void {
         ->and($job->timeout)->toBe(1800);
 });
 
-test('an overlapping backup run is finalized as skipped, not left running', function (): void {
-    // Hold the backup lock so the job sees another backup already in progress.
+test('an overlapping backup run is finalized as skipped, not run', function (): void {
+    // Hold the shared backup lock so the runner sees another backup in progress.
+    // The lock lives in BackupRunner so BOTH entry points (queued job and
+    // scheduled command) serialize through it.
     $lock = Cache::lock('wayfindr:backup', 60);
     $lock->get();
 
-    $runner = Mockery::mock(BackupRunner::class);
-    $runner->shouldNotReceive('run'); // the actual backup must not run
+    $service = Mockery::mock(BackupService::class);
+    $service->shouldNotReceive('create'); // the actual backup must not run while locked
 
     $run = BackupRun::query()->create(['status' => BackupRun::STATUS_RUNNING, 'started_at' => now()]);
-    (new RunBackupJob($run->id))->handle($runner);
+    $result = (new BackupRunner($service))->run($run, '/dest');
 
-    expect($run->fresh()->status)->toBe(BackupRun::STATUS_FAILED)
+    expect($result)->toBeNull()
+        ->and($run->fresh()->status)->toBe(BackupRun::STATUS_FAILED)
         ->and($run->fresh()->message)->toContain('another backup was already running');
 
     $lock->release();
+});
+
+test('the scheduled backup command skips (does not run) when another backup holds the lock', function (): void {
+    $lock = Cache::lock('wayfindr:backup', 60);
+    $lock->get();
+
+    // create() must not run; the command still reports success because the
+    // in-progress backup covers the data, and records the skip in the history.
+    $service = Mockery::mock(BackupService::class);
+    $service->shouldNotReceive('create');
+    $this->app->instance(BackupService::class, $service);
+
+    $this->artisan('wayfindr:backup')->assertSuccessful();
+
+    $run = BackupRun::query()->latest('id')->firstOrFail();
+    expect($run->status)->toBe(BackupRun::STATUS_FAILED)
+        ->and($run->message)->toContain('another backup was already running');
+
+    $lock->release();
+});
+
+test('the backup job runs on the dedicated backups connection with a retry window past its timeout', function (): void {
+    // The re-release guard: a slow backup must never be handed to a second
+    // worker, so its connection's retry_after must exceed the job timeout.
+    $job = new RunBackupJob(1);
+    $retryAfter = (int) config('queue.connections.backups.retry_after');
+
+    expect($job->connection)->toBe('backups')
+        ->and($retryAfter)->toBeGreaterThan($job->timeout);
 });
 
 test('a failed dispatch finalizes the run instead of leaving it running', function (): void {

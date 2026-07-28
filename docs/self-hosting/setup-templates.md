@@ -16,6 +16,7 @@ That target gives Wayfindr the clearest portable shape:
 
 - one web process;
 - one queue worker process;
+- one backup worker process on the `backups` connection (for GUI-triggered backups);
 - one scheduler process or scheduled job;
 - one Reverb process when realtime is enabled;
 - Postgres;
@@ -137,6 +138,7 @@ processes using the same working directory and commands:
 | --- | --- |
 | Web | Host-specific PHP web process serving `apps/server/public` |
 | Queue | `php artisan queue:work redis --sleep=3 --tries=3 --timeout=90` |
+| Backup queue | `php artisan queue:work backups --queue=backups --sleep=5 --tries=1 --timeout=3600` |
 | Scheduler | `php artisan schedule:work` or host scheduler running `php artisan schedule:run` once per minute |
 | Reverb | `php artisan reverb:start --host=0.0.0.0 --port=8080` |
 

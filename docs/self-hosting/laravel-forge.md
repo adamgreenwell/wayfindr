@@ -286,6 +286,18 @@ Create one Forge queue worker for the site:
 php artisan queue:work redis --sleep=3 --tries=3 --timeout=90
 ```
 
+If operators will trigger backups from the GUI (Operator → Configure backups →
+"Run a backup now"), add a **second** Forge queue worker on the dedicated
+`backups` connection, whose retry window exceeds the backup timeout so a slow
+backup is never re-released and false-failed:
+
+```bash
+php artisan queue:work backups --queue=backups --sleep=5 --tries=1 --timeout=3600
+```
+
+Leave this worker off and GUI-triggered backups will queue but never run;
+scheduled backups (run under the scheduler) are unaffected.
+
 Use the Laravel Scheduler toggle in Forge's Application panel. Forge will
 configure it to run once per minute using the site's selected PHP version.
 Forge's scheduler cron and the queue worker both invoke `php artisan ...` from
@@ -411,7 +423,8 @@ background process reloads the active release.
 15. Visit `/setup` and create the first account owner and install site.
 16. Add the queue worker and scheduler, then confirm
     `php artisan wayfindr:send-alert-digests` appears in
-    `php artisan schedule:list`.
+    `php artisan schedule:list`. Add the second `backups`-connection worker if
+    operators will run backups from the GUI.
 17. Add the Reverb process when switching `BROADCAST_CONNECTION` to `reverb`.
 18. Configure real outbound mail when email alerts, password resets, or
     notifications should leave the app, then run `php artisan wayfindr:mail-test
