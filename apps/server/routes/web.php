@@ -34,6 +34,7 @@ use App\Http\Controllers\OperatorDashboardController;
 use App\Http\Controllers\OperatorMailSettingsController;
 use App\Http\Controllers\OperatorOnboardingController;
 use App\Http\Controllers\OperatorReadinessConfirmationController;
+use App\Http\Controllers\OperatorScanningSettingsController;
 use App\Http\Controllers\OperatorStorageSettingsController;
 use App\Http\Controllers\Widget\WidgetScriptController;
 use App\Http\Middleware\EnsureAgentIsActive;
@@ -233,6 +234,12 @@ Route::middleware(['auth', EnsureAgentIsActive::class, EnsurePlatformOperator::c
             ->name('settings.storage.update');
         Route::post('/settings/storage/test', [OperatorStorageSettingsController::class, 'test'])
             ->name('settings.storage.test');
+        Route::get('/settings/scanning', [OperatorScanningSettingsController::class, 'edit'])
+            ->name('settings.scanning.edit');
+        Route::post('/settings/scanning', [OperatorScanningSettingsController::class, 'update'])
+            ->name('settings.scanning.update');
+        Route::post('/settings/scanning/test', [OperatorScanningSettingsController::class, 'test'])
+            ->name('settings.scanning.test');
         Route::post('/readiness/confirmations', [OperatorReadinessConfirmationController::class, 'storeFromOperator'])
             ->name('readiness.confirmations.store');
         Route::get('/break-glass', [OperatorBreakGlassController::class, 'index'])
