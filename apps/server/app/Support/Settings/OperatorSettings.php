@@ -486,9 +486,9 @@ class OperatorSettings
         Mail::forgetMailers();
 
         // Storage caches each built disk with its config (endpoint, credentials).
-        // Forget the attachment disks so a changed disk choice or S3 connection
-        // takes effect on a long-running worker without a restart.
-        Storage::forgetDisk(['attachments', 'attachments-s3']);
+        // Forget the attachment AND backup disks so a changed disk choice or S3
+        // connection takes effect on a long-running worker without a restart.
+        Storage::forgetDisk(['attachments', 'attachments-s3', 'backups']);
 
         // The scanner is a config-built singleton (driver, clamd socket). Forget
         // it so a changed scanning config rebuilds the right scanner.

@@ -8,6 +8,7 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
 use Throwable;
 
@@ -24,7 +25,40 @@ class RunBackupJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public function __construct(private readonly ?int $triggeredById = null) {}
+    /**
+     * A backup is a one-shot operation — retrying a killed run would create a
+     * duplicate archive, which is worse than a missed run the operator can
+     * simply re-trigger.
+     */
+    public int $tries = 1;
+
+    /**
+     * The job's own timeout, well beyond the default 90s worker timeout, so a
+     * slow dump/archive/upload is not SIGALRM-killed mid-run (a job's timeout
+     * overrides the worker's --timeout for that job).
+     */
+    public int $timeout;
+
+    public function __construct(private readonly ?int $triggeredById = null)
+    {
+        $this->timeout = (int) config('wayfindr.backup.job_timeout', 3600);
+    }
+
+    /**
+     * Only one backup runs at a time instance-wide, and — combined with the
+     * generous timeout — a queue retry_after re-release cannot start a duplicate
+     * backup: an overlapping attempt hits the held lock and is discarded.
+     *
+     * @return array<int, object>
+     */
+    public function middleware(): array
+    {
+        return [
+            (new WithoutOverlapping('wayfindr:backup'))
+                ->dontRelease()
+                ->expireAfter($this->timeout + 120),
+        ];
+    }
 
     public function handle(BackupService $backups): void
     {

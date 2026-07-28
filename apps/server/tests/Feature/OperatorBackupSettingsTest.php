@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Support\Backup\BackupService;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Storage;
 
@@ -140,6 +141,26 @@ test('saving backup settings records an instance-scoped audit', function (): voi
         ->and($event->metadata['offsite_disk'])->toBe('backups')
         ->and($event->metadata['retention_days'])->toBe(14)
         ->and(json_encode($event->metadata))->not->toContain('secret-not-logged');
+});
+
+test('a prefix with a traversal segment is rejected', function (): void {
+    $this->actingAs(backupOperator())
+        ->post(route('operator.settings.backups.update'), [
+            'disk' => '',
+            'prefix' => 'tenant/../other', // BackupService would throw on this at runtime
+        ])
+        ->assertSessionHasErrors('prefix');
+});
+
+test('the backup job runs once, with a generous timeout and a no-overlap guard', function (): void {
+    config()->set('wayfindr.backup.job_timeout', 1800);
+    $job = new RunBackupJob(null);
+
+    expect($job->tries)->toBe(1)
+        ->and($job->timeout)->toBe(1800)
+        ->and(collect($job->middleware())->contains(
+            fn ($m) => $m instanceof WithoutOverlapping,
+        ))->toBeTrue();
 });
 
 test('run a backup now queues the job and audits the trigger', function (): void {

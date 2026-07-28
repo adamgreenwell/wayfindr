@@ -6,6 +6,7 @@ use App\Jobs\RunBackupJob;
 use App\Models\AuditEvent;
 use App\Models\BackupRun;
 use App\Support\Settings\OperatorSettings;
+use Closure;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -78,7 +79,15 @@ class OperatorBackupSettingsController extends Controller
             // non-empty value must be an allowed disk.
             'disk' => ['nullable', Rule::in($allowedDisks)],
             'retention_days' => ['nullable', 'integer', 'between:0,3650'],
-            'prefix' => ['nullable', 'string', 'max:255'],
+            // Mirror BackupService::backupPrefix(): a prefix is a namespace UNDER
+            // the destination, never an escape. Reject `..` segments here so an
+            // unusable prefix can't be saved (and pass the probe) only to fail
+            // every backup at runtime.
+            'prefix' => ['nullable', 'string', 'max:255', function (string $attribute, mixed $value, Closure $fail): void {
+                if (preg_match('#(^|/)\.\.(/|$)#', trim((string) $value, '/')) === 1) {
+                    $fail('The prefix must not contain ".." path segments.');
+                }
+            }],
             'bucket' => [$offsite, 'required', 'string', 'max:255'],
             'region' => [$offsite, 'required', 'string', 'max:255'],
             'endpoint' => [$offsite, 'nullable', 'string', 'max:255', 'url'],

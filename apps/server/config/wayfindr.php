@@ -150,6 +150,13 @@ return [
         // two installs can share one backup disk/bucket without pruning each
         // other's archives. Unset = a stable prefix derived from APP_KEY.
         'prefix' => env('WAYFINDR_BACKUP_PREFIX'),
+
+        // Max seconds the queued "run a backup now" job may run (ADR 0011). A
+        // backup (dump + archive + offsite upload) can far exceed the default
+        // 90s worker timeout, so the job sets its own generous timeout, which
+        // overrides the worker's --timeout for that job. Raise it for very large
+        // installs.
+        'job_timeout' => (int) env('WAYFINDR_BACKUP_JOB_TIMEOUT', 3600),
     ],
 
     // Resolved through ReleaseIdentity so a blank env_file override falls
