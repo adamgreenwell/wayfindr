@@ -165,18 +165,25 @@ Operator → Configure backups → **Restore from backup** offers a confirmed in
 restore of a **local** archive (an offsite-only archive is restored with the CLI
 above). It lists local archives, shows a read-only preflight (version skew)
 before you commit, and gates the action behind typing the instance name
-(`APP_NAME`) and an acknowledgement. The restore then runs on the queue.
+(`APP_NAME`), an acknowledgement, and attesting you have stopped the background
+workers (below). The restore then runs on the queue.
 
-Two things to know:
+Three things to know:
 
-- **It quiesces the site, then logs everyone out.** The restore automatically
-  puts the app into maintenance mode for its duration (visitors and agents get a
-  503, and other queue workers pause) so nothing writes into the database while
-  it is being rebuilt — the same quiescing the CLI procedure below asks you to do
-  by hand. Because it reloads the whole database and the sessions table is not
-  carried in the archive, your browser session also ends. Wait a minute, log back
-  in (with the credentials **as they were in the backup**), and read the restore
-  outcome on the backup settings page.
+- **Stop the background workers first — the app cannot.** Before you confirm, run
+  `docker compose stop queue scheduler` (leave the `backup-queue` worker running —
+  it runs the restore). The restore enters maintenance mode automatically, which
+  stops *new* HTTP requests and pauses idle workers, but it cannot drain a
+  background job that is already mid-write, and a queued job inside the app cannot
+  stop sibling worker processes. So the confirm step makes you attest you have
+  stopped them — the one part of the quiescing the app can't do for you. Restart
+  them afterward with `docker compose start queue scheduler`.
+- **It quiesces the site, then logs everyone out.** The restore puts the app into
+  maintenance mode for its duration (visitors and agents get a 503). Because it
+  reloads the whole database and the sessions table is not carried in the archive,
+  your browser session also ends. Wait a minute, log back in (with the credentials
+  **as they were in the backup**), and read the restore outcome on the backup
+  settings page.
 - **It needs a Redis-backed queue and cache.** The status and the queued job must
   survive the database being rebuilt, so the in-GUI restore is only offered when
   neither the queue nor the cache is database-backed (the shipped stack uses

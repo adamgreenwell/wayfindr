@@ -82,8 +82,10 @@
                 @endif
 
                 <div class="notice-copy notice-copy-bordered">
-                    <p><strong>Restoring replaces ALL current data</strong> — the database and local attachment files — and cannot be undone. The whole site goes into <strong>maintenance mode</strong> while it runs (visitors and agents see a 503), so nothing writes into the database mid-restore, and you are <strong>logged out</strong>. Wait a minute, then log back in (with the credentials stored in this backup) and check the restore status on the backup settings page.</p>
+                    <p><strong>Restoring replaces ALL current data</strong> — the database and local attachment files — and cannot be undone. The whole site goes into <strong>maintenance mode</strong> while it runs (visitors and agents see a 503), so nothing new writes into the database mid-restore, and you are <strong>logged out</strong>. Wait a minute, then log back in (with the credentials stored in this backup) and check the restore status on the backup settings page.</p>
+                    <p>Maintenance mode stops <em>new</em> work, but it cannot drain a background job that is already running. Before you restore, stop the background workers so nothing writes into the database as it is rebuilt:</p>
                 </div>
+                <pre class="code-block"><code>docker compose stop queue scheduler   # leave the backup-queue worker running</code></pre>
 
                 <form class="section-form" method="POST" action="{{ route('operator.settings.backups.restore.run') }}">
                     @csrf
@@ -102,6 +104,14 @@
                             <span>I understand this ERASES all current data and cannot be undone.</span>
                         </label>
                         @error('acknowledge')<p class="field-error">{{ $message }}</p>@enderror
+                    </div>
+
+                    <div class="field">
+                        <label class="check-row" for="workers_stopped">
+                            <input id="workers_stopped" type="checkbox" name="workers_stopped" value="1">
+                            <span>I have stopped the background queue and scheduler workers (<code>docker compose stop queue scheduler</code>), leaving the backup-queue worker running to run this restore.</span>
+                        </label>
+                        @error('workers_stopped')<p class="field-error">{{ $message }}</p>@enderror
                     </div>
 
                     <button class="button danger" type="submit">Restore now</button>

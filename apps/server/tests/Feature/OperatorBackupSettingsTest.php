@@ -706,6 +706,7 @@ test('the restore rejects a wrong instance name and does not queue', function ()
             'archive' => 'wayfindr-backup-20260728-100000-aaaaaa.tar.gz',
             'confirm_name' => 'not-the-name',
             'acknowledge' => '1',
+            'workers_stopped' => '1',
         ])
         ->assertSessionHasErrors('confirm_name');
 
@@ -721,8 +722,25 @@ test('the restore requires the acknowledgement checkbox', function (): void {
         ->post(route('operator.settings.backups.restore.run'), [
             'archive' => 'wayfindr-backup-20260728-100000-aaaaaa.tar.gz',
             'confirm_name' => 'wayfindr-prod',
+            'workers_stopped' => '1',
         ])
         ->assertSessionHasErrors('acknowledge');
+
+    Bus::assertNotDispatched(RunRestoreJob::class);
+});
+
+test('the restore requires attesting the background workers are stopped', function (): void {
+    Bus::fake();
+    config()->set('app.name', 'wayfindr-prod');
+    seedLocalArchives(['wayfindr-backup-20260728-100000-aaaaaa.tar.gz']);
+
+    $this->actingAs(backupOperator())
+        ->post(route('operator.settings.backups.restore.run'), [
+            'archive' => 'wayfindr-backup-20260728-100000-aaaaaa.tar.gz',
+            'confirm_name' => 'wayfindr-prod',
+            'acknowledge' => '1',
+        ])
+        ->assertSessionHasErrors('workers_stopped');
 
     Bus::assertNotDispatched(RunRestoreJob::class);
 });
@@ -737,6 +755,7 @@ test('the restore rejects an unknown archive', function (): void {
             'archive' => 'wayfindr-backup-19990101-000000-ffffff.tar.gz',
             'confirm_name' => 'wayfindr-prod',
             'acknowledge' => '1',
+            'workers_stopped' => '1',
         ])
         ->assertSessionHasErrors('archive');
 
@@ -754,6 +773,7 @@ test('a confirmed restore queues the job, records a durable status, and audits',
             'archive' => 'wayfindr-backup-20260728-100000-aaaaaa.tar.gz',
             'confirm_name' => 'wayfindr-prod',
             'acknowledge' => '1',
+            'workers_stopped' => '1',
         ])
         ->assertRedirect(route('operator.settings.backups.edit'))
         ->assertSessionHas('status');
@@ -779,6 +799,7 @@ test('the restore refuses to run when the queue is database-backed', function ()
             'archive' => 'wayfindr-backup-20260728-100000-aaaaaa.tar.gz',
             'confirm_name' => 'wayfindr-prod',
             'acknowledge' => '1',
+            'workers_stopped' => '1',
         ])
         ->assertSessionHas('error');
 

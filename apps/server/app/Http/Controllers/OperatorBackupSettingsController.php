@@ -385,6 +385,15 @@ class OperatorBackupSettingsController extends Controller
             $errors['acknowledge'] = 'You must acknowledge that restoring erases all current data.';
         }
 
+        // The app enters maintenance mode for the restore, but it cannot stop the
+        // separate worker/scheduler OS processes — an already-running background
+        // job could still write mid-restore. So the operator must attest they
+        // have stopped those writers (leaving the backup-queue worker up), the
+        // one part of the CLI quiescing procedure the app cannot do itself.
+        if ($request->input('workers_stopped') !== '1') {
+            $errors['workers_stopped'] = 'Stop the background queue and scheduler workers first, then confirm — the restore cannot do this for you.';
+        }
+
         if ($errors !== []) {
             return redirect()
                 ->route('operator.settings.backups.restore', $path !== null ? ['archive' => $archive] : [])
