@@ -21,6 +21,7 @@
     <p>
         <a class="button" href="{{ route('operator.onboarding') }}">Guided setup</a>
         <a class="button secondary" href="{{ route('operator.settings.mail.edit') }}">Configure mail</a>
+        <a class="button secondary" href="{{ route('operator.settings.storage.edit') }}">Configure storage</a>
     </p>
 
     <section class="section" aria-labelledby="operator-focus-heading">

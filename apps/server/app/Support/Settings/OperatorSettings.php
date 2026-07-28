@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 use InvalidArgumentException;
 use Throwable;
 
@@ -31,9 +32,11 @@ class OperatorSettings
     private const VERSION_KEY = 'wayfindr.operator_settings.version';
 
     /**
-     * The operator-managed settings.
+     * The operator-managed settings. Each entry maps a setting key to the config
+     * path it overrides, whether it is an encrypted secret, its group, and an
+     * optional cast ('bool') for config values that are not plain strings.
      *
-     * @var array<string, array{config: string, secret: bool, group: string}>
+     * @var array<string, array{config: string, secret: bool, group: string, cast?: string}>
      */
     private const MANAGED = [
         // Mail (ADR 0011 slice 1). Setting mail.mailer to 'smtp' activates the
@@ -46,6 +49,25 @@ class OperatorSettings
         'mail.password' => ['config' => 'mail.mailers.smtp.password', 'secret' => true, 'group' => 'mail'],
         'mail.from_address' => ['config' => 'mail.from.address', 'secret' => false, 'group' => 'mail'],
         'mail.from_name' => ['config' => 'mail.from.name', 'secret' => false, 'group' => 'mail'],
+
+        // Attachment storage (ADR 0011 slice 2a). Which disk NEW uploads land on
+        // ('attachments' local, or 'attachments-s3'), and the S3-compatible
+        // connection used when the S3 disk is chosen. Keys/secret are encrypted.
+        'storage.disk' => ['config' => 'wayfindr.attachments.storage_disk', 'secret' => false, 'group' => 'storage'],
+        'storage.s3_bucket' => ['config' => 'filesystems.disks.attachments-s3.bucket', 'secret' => false, 'group' => 'storage'],
+        'storage.s3_region' => ['config' => 'filesystems.disks.attachments-s3.region', 'secret' => false, 'group' => 'storage'],
+        // A blank endpoint must apply as null (AWS regional resolution), not '',
+        // which the AWS SDK treats as a custom endpoint — but the stored blank
+        // override still wins over any stale env endpoint.
+        'storage.s3_endpoint' => ['config' => 'filesystems.disks.attachments-s3.endpoint', 'secret' => false, 'group' => 'storage', 'cast' => 'null_if_blank'],
+        'storage.s3_key' => ['config' => 'filesystems.disks.attachments-s3.key', 'secret' => true, 'group' => 'storage'],
+        'storage.s3_secret' => ['config' => 'filesystems.disks.attachments-s3.secret', 'secret' => true, 'group' => 'storage'],
+        'storage.s3_use_path_style' => ['config' => 'filesystems.disks.attachments-s3.use_path_style_endpoint', 'secret' => false, 'group' => 'storage', 'cast' => 'bool'],
+        // The canned ACL sent on every write. AWS wants bucket-owner-full-control
+        // (the default); Cloudflare R2 and some compatible stores reject it and
+        // need 'private'. Only private ACLs are offered/accepted (see the
+        // controller) — attachments must never be publicly readable.
+        'storage.s3_acl' => ['config' => 'filesystems.disks.attachments-s3.options.ACL', 'secret' => false, 'group' => 'storage'],
     ];
 
     /**
@@ -115,6 +137,49 @@ class OperatorSettings
             return $this->baseline;
         }
 
+        return $this->resolveTargetsFrom($stored);
+    }
+
+    /**
+     * Re-apply overrides onto config from a FRESH, uncached database read. For
+     * callers that must see the latest committed settings even within the tiny
+     * window between a write's commit and its deferred cache-version bump — the
+     * attachment upload path re-resolving its disk under a shared lock. Falls
+     * back to the env baseline if the direct read fails.
+     *
+     * This updates config only; it deliberately does NOT forget built managers
+     * (disks/mailers). The caller resolves and builds its disk AFTER this call,
+     * so it picks up the refreshed config without a forget — which also keeps a
+     * Storage::fake() disk intact in tests.
+     */
+    public function refreshFromDatabase(): void
+    {
+        if ($this->baseline === null) {
+            $this->captureBaseline();
+        }
+
+        try {
+            $stored = OperatorSetting::query()->pluck('value', 'key')->all();
+            $targets = $this->resolveTargetsFrom($stored);
+        } catch (Throwable) {
+            $targets = $this->baseline;
+        }
+
+        foreach ($targets as $configPath => $value) {
+            config()->set($configPath, $value);
+        }
+    }
+
+    /**
+     * The config value to apply for every managed path from a given stored map —
+     * the operator's value when readable, else the env baseline. Never throws and
+     * never returns a partial map.
+     *
+     * @param  array<string, string|null>  $stored
+     * @return array<string, mixed>
+     */
+    private function resolveTargetsFrom(array $stored): array
+    {
         $targets = [];
 
         foreach (self::MANAGED as $key => $meta) {
@@ -127,7 +192,7 @@ class OperatorSettings
             }
 
             try {
-                $targets[$meta['config']] = $this->decode($key, $stored[$key]);
+                $targets[$meta['config']] = $this->castValue($key, $this->decode($key, $stored[$key]));
             } catch (Throwable) {
                 // A single corrupt/undecryptable secret reverts only its own key
                 // to env; the rest of the override set still applies.
@@ -395,6 +460,11 @@ class OperatorSettings
     private function refreshManagers(): void
     {
         Mail::forgetMailers();
+
+        // Storage caches each built disk with its config (endpoint, credentials).
+        // Forget the attachment disks so a changed disk choice or S3 connection
+        // takes effect on a long-running worker without a restart.
+        Storage::forgetDisk(['attachments', 'attachments-s3']);
     }
 
     private function decode(string $key, ?string $raw): ?string
@@ -404,6 +474,29 @@ class OperatorSettings
         }
 
         return self::MANAGED[$key]['secret'] ? Crypt::decryptString($raw) : $raw;
+    }
+
+    /**
+     * Cast a decoded (string) override to the config value's real type. Config
+     * values are stored as strings but some paths need a native type — a boolean
+     * disk flag applied as the string "false" would read truthy. Applied only to
+     * override values; the env baseline is already its native type.
+     */
+    private function castValue(string $key, ?string $value): mixed
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        return match (self::MANAGED[$key]['cast'] ?? 'string') {
+            'bool' => in_array(strtolower(trim($value)), ['1', 'true', 'yes', 'on'], true),
+            // A blank override applies as null, not '' — some config consumers
+            // (the AWS SDK's endpoint) treat an empty string as a real value.
+            // The stored override stays '' so it still wins over a stale env
+            // value; only the applied config is nulled.
+            'null_if_blank' => trim($value) === '' ? null : $value,
+            default => $value,
+        };
     }
 
     private function assertManaged(string $key): void

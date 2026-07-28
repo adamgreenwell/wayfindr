@@ -45,5 +45,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->trustProxies(at: env('TRUSTED_PROXIES'));
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        // On a validation failure Laravel flashes the request input to the
+        // session as old input. Keep operator secrets (S3 access keys) out of
+        // that plaintext flash, alongside the framework's password defaults —
+        // they are encrypted at rest and must never land in the session store.
+        $exceptions->dontFlash(['s3_access_key', 's3_secret_key']);
     })->create();
