@@ -157,12 +157,15 @@ test('a prefix with a traversal segment is rejected', function (): void {
         ->assertSessionHasErrors('prefix');
 });
 
-test('the backup job runs once with a generous timeout', function (): void {
+test('the backup job runs once with a generous timeout and fails on timeout', function (): void {
     config()->set('wayfindr.backup.job_timeout', 1800);
     $job = new RunBackupJob(1);
 
     expect($job->tries)->toBe(1)
-        ->and($job->timeout)->toBe(1800);
+        ->and($job->timeout)->toBe(1800)
+        // Opts into immediate failed() on timeout, so a killed backup is not
+        // left 'running' until retry_after (which is longer than the timeout).
+        ->and($job->failOnTimeout)->toBeTrue();
 });
 
 test('an overlapping backup run is finalized as skipped, not run', function (): void {

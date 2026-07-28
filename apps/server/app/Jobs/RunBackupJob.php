@@ -32,6 +32,16 @@ class RunBackupJob implements ShouldQueue
     public int $tries = 1;
 
     /**
+     * Invoke failed() the moment the job times out. Without this, Laravel only
+     * kills the worker on timeout and does not call failed(); the reserved job
+     * would then sit until retry_after (deliberately longer than the timeout)
+     * before another worker fails it — or forever if the killed worker is not
+     * restarted — leaving the backup_runs row stuck 'running' in the operator
+     * UI. With it, the timeout finalizes the run immediately.
+     */
+    public bool $failOnTimeout = true;
+
+    /**
      * The job's own timeout, well beyond the default 90s worker timeout, so a
      * slow dump/archive/upload is not SIGALRM-killed mid-run (a job's timeout
      * overrides the worker's --timeout for that job).
