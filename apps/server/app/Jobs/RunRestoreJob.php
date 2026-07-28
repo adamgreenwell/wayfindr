@@ -101,9 +101,12 @@ class RunRestoreJob implements ShouldQueue
             return;
         }
 
-        $this->record('running', 'Restore in progress…');
-
         try {
+            // Inside the guarded region so a cache failure recording status still
+            // reaches the finally that releases the lock — otherwise the lock (and
+            // the pending claim) would sit held until their multi-hour TTLs.
+            $this->record('running', 'Restore in progress…');
+
             // Quiesce writes for the duration of the restore, the way the CLI
             // procedure does manually. RestoreService commits the database
             // replacement BEFORE purging and re-copying attachment files, so a

@@ -1085,6 +1085,12 @@ test('a failed restore keeps the site in maintenance for the operator to verify'
             ->and(Cache::get(RunRestoreJob::STATUS_KEY)['status'])->toBe('failed')
             ->and(Cache::get(RunRestoreJob::STATUS_KEY)['message'])->toContain('maintenance')
             ->and(Cache::get(RunRestoreJob::STATUS_KEY)['message'])->toContain('docker compose start');
+
+        // The finally must have released the backup/restore lock despite the
+        // failure, so the next backup or restore is not blocked.
+        $lock = Cache::lock(BackupRunner::LOCK_KEY, 10);
+        expect($lock->get())->toBeTrue();
+        $lock->release();
     } finally {
         Artisan::call('up');
     }
