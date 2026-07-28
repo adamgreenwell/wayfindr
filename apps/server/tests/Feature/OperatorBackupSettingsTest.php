@@ -17,6 +17,7 @@ use App\Support\Backup\PostgresDatabaseDumper;
 use App\Support\Backup\RestoreService;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Contracts\Cache\Lock;
+use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Env;
 use Illuminate\Support\Facades\Artisan;
@@ -728,6 +729,48 @@ test('a second restore is rejected while one is already pending', function (): v
         ->assertSessionHas('error');
 
     Bus::assertDispatchedTimes(RunRestoreJob::class, 1);
+});
+
+test('the pending claim returns a token and rejects a second concurrent claim', function (): void {
+    $first = RunRestoreJob::claimPending();
+    $second = RunRestoreJob::claimPending();
+
+    expect($first)->toBeString()
+        ->and($first)->not->toBeEmpty()
+        ->and($second)->toBeNull();
+});
+
+test('a stale restore job does not release a newer pending claim', function (): void {
+    // A newer restore owns the slot with its own token.
+    Cache::put(RunRestoreJob::PENDING_KEY, 'newer-token', 60);
+
+    // A stale job releasing with ITS (older) token must not free the newer claim.
+    RunRestoreJob::releasePending('older-token');
+    expect(Cache::get(RunRestoreJob::PENDING_KEY))->toBe('newer-token');
+
+    // The matching token frees it.
+    RunRestoreJob::releasePending('newer-token');
+    expect(Cache::get(RunRestoreJob::PENDING_KEY))->toBeNull();
+});
+
+test('the failed callback lifts maintenance it owns even when the ownership cache read fails', function (): void {
+    Artisan::call('down');
+
+    // A cache whose reads throw (Redis unavailable after down); the fallback must
+    // still lift maintenance rather than strand the site.
+    $store = Mockery::mock(Repository::class);
+    $store->shouldReceive('get')->andThrow(new RuntimeException('redis down'));
+    $store->shouldReceive('forget')->andReturn(true);
+    Cache::swap($store);
+
+    try {
+        (new RunRestoreJob('x.tar.gz'))->failed(new RuntimeException('timed out'));
+
+        expect(app()->isDownForMaintenance())->toBeFalse(); // lifted despite the cache failure
+    } finally {
+        // A fresh app per test discards the swapped mock; just ensure the app is up.
+        Artisan::call('up');
+    }
 });
 
 test('a restore leaves a pre-existing maintenance window in place', function (): void {

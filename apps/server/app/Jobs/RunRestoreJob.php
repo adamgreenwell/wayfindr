@@ -12,6 +12,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 use Throwable;
 
 /**
@@ -36,12 +37,15 @@ class RunRestoreJob implements ShouldQueue
     /** The single cache key holding the latest restore's status (one at a time). */
     public const STATUS_KEY = 'wayfindr:restore:status';
 
-    /** Held from confirmation until a restore reaches a terminal state, so only
-     *  one confirmed restore can be queued or running at a time. */
+    /** Holds the token of the one confirmed restore that may be queued/running. */
     public const PENDING_KEY = 'wayfindr:restore:pending';
 
     /** Set while THIS restore holds maintenance mode, so we only lift our own. */
     private const MAINTENANCE_OWNED_KEY = 'wayfindr:restore:maintenance-owned';
+
+    /** True once THIS instance transitioned the app into maintenance mode, so the
+     *  finally can lift it without a cache read (which could throw). */
+    private bool $enteredMaintenance = false;
 
     public int $tries = 1;
 
@@ -53,6 +57,7 @@ class RunRestoreJob implements ShouldQueue
         private readonly string $archiveFilename,
         private readonly ?int $triggeredById = null,
         private readonly ?string $triggeredByName = null,
+        private readonly ?string $pendingToken = null,
     ) {
         $this->timeout = (int) config('wayfindr.backup.job_timeout', 3600);
 
@@ -65,6 +70,11 @@ class RunRestoreJob implements ShouldQueue
 
     public function handle(RestoreService $restores, BackupService $backups): void
     {
+        // Extend the pending claim to cover this execution: the queue wait before
+        // us may have consumed much of the original window, and the claim must
+        // stay held until we reach a terminal state.
+        $this->refreshPendingClaim();
+
         // Re-resolve the filename to a real local archive path — never trust a
         // raw path from the request; an unknown filename yields null.
         $path = $backups->resolveLocalArchivePath($this->archiveFilename);
@@ -104,6 +114,7 @@ class RunRestoreJob implements ShouldQueue
             // already-running job continues; the down marker is on disk, so it
             // survives the database reload. Abort if we cannot quiesce — a live
             // restore is exactly the corruption risk we are guarding against.
+            //
             // Only transition — and thus own — maintenance mode if the app is not
             // ALREADY down (an operator or a deploy may have put it there); in
             // that case it is already quiesced, and we must not lift a window we
@@ -115,9 +126,12 @@ class RunRestoreJob implements ShouldQueue
                     return;
                 }
 
-                // We transitioned it, so bringUp() may lift it — never a marker an
-                // operator, a deploy, or a failure before our own down set.
-                Cache::put(self::MAINTENANCE_OWNED_KEY, true, now()->addDay());
+                // Record ownership two ways: an instance flag the finally reads
+                // without touching the cache (so a cache outage can't strand the
+                // site in maintenance), and a cache flag the fresh-instance
+                // failed() callback can read.
+                $this->enteredMaintenance = true;
+                $this->rememberMaintenanceOwnership();
             }
 
             // force: the operator has already confirmed in the GUI; the guard
@@ -131,9 +145,10 @@ class RunRestoreJob implements ShouldQueue
 
             throw $exception;
         } finally {
-            // Bring the app back up before releasing the lock. Best-effort, and
-            // separately guarded so a failure of one still attempts the other.
-            $this->bringUp();
+            // Bring the app back up before releasing the lock. Uses the instance
+            // flag — no cache read — so a cache outage can never leave the site
+            // stuck in the maintenance window this job opened.
+            $this->liftMaintenance($this->enteredMaintenance);
 
             // A release failure must never mask the restore outcome already
             // recorded above; the lock's TTL expires it.
@@ -152,28 +167,36 @@ class RunRestoreJob implements ShouldQueue
      */
     public function failed(?Throwable $exception): void
     {
-        // A timeout kill interrupts handle() before its finally can bring the app
-        // back up, so do it here too (idempotent — up when not down is harmless).
-        $this->bringUp();
+        // Lift maintenance FIRST — before any other cache access — so a cache
+        // failure while recording the status can never leave the site stranded in
+        // maintenance mode. This runs on a fresh instance, so the instance flag is
+        // gone; fall back to the cache ownership record (which errs toward lifting
+        // if it cannot be read, since an indefinite outage is worse than a
+        // spurious up).
+        $this->liftMaintenance($this->ownsMaintenanceViaCache());
 
-        $status = Cache::get(self::STATUS_KEY);
+        try {
+            $status = Cache::get(self::STATUS_KEY);
 
-        if (is_array($status) && ($status['status'] ?? null) === 'running') {
-            $this->record(
-                'failed',
-                $exception?->getMessage() ?: 'The restore job was terminated (it may have exceeded the timeout). Check the queue worker.',
-            );
+            if (is_array($status) && ($status['status'] ?? null) === 'running') {
+                $this->record(
+                    'failed',
+                    $exception?->getMessage() ?: 'The restore job was terminated (it may have exceeded the timeout). Check the queue worker.',
+                );
+            }
+        } catch (Throwable $cacheException) {
+            report($cacheException);
         }
     }
 
     /**
-     * Lift maintenance mode ONLY if this restore established it (tracked in the
-     * cache) — never a marker an operator set independently, or one from a
-     * failure that occurred before our own `down`. Best-effort; must not throw.
+     * Lift maintenance mode iff this restore established it. Best-effort and fully
+     * guarded: a cache failure here must never throw (that would mask the restore
+     * outcome) nor leave the site stuck down.
      */
-    private function bringUp(): void
+    private function liftMaintenance(bool $owns): void
     {
-        if (! Cache::get(self::MAINTENANCE_OWNED_KEY)) {
+        if (! $owns) {
             return;
         }
 
@@ -181,8 +204,36 @@ class RunRestoreJob implements ShouldQueue
             Artisan::call('up');
         } catch (Throwable $exception) {
             report($exception);
-        } finally {
+        }
+
+        try {
             Cache::forget(self::MAINTENANCE_OWNED_KEY);
+        } catch (Throwable $exception) {
+            report($exception);
+        }
+    }
+
+    private function rememberMaintenanceOwnership(): void
+    {
+        try {
+            Cache::put(self::MAINTENANCE_OWNED_KEY, true, now()->addDay());
+        } catch (Throwable $exception) {
+            // The instance flag still covers the finally path; only the
+            // fresh-instance failed() fallback is weakened.
+            report($exception);
+        }
+    }
+
+    private function ownsMaintenanceViaCache(): bool
+    {
+        try {
+            return (bool) Cache::get(self::MAINTENANCE_OWNED_KEY);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            // Cannot tell whether we own it; prefer lifting so a cache outage
+            // never strands the site in maintenance mode.
+            return true;
         }
     }
 
@@ -222,17 +273,64 @@ class RunRestoreJob implements ShouldQueue
      * Atomically claim the single "a restore is pending" slot before enqueueing,
      * so a double-submit or two operators confirming can't queue two destructive
      * restores that the dedicated worker would then run one after the other.
-     * Returns false when a restore is already pending or running.
+     * Returns an ownership token to pass to the job, or null when a restore is
+     * already pending or running. The TTL is generous enough to cover a realistic
+     * queue wait (a restore may sit behind a running backup) plus the restore's
+     * own run, and the job refreshes it on start; it only expires if the job is
+     * lost entirely, after which a retry is reasonable.
      */
-    public static function claimPending(): bool
+    public static function claimPending(): ?string
     {
-        return Cache::add(self::PENDING_KEY, true, (int) config('wayfindr.backup.lock_ttl', 3900));
+        $token = (string) Str::uuid();
+
+        return Cache::add(self::PENDING_KEY, $token, self::pendingTtl()) ? $token : null;
     }
 
-    /** Release the pending claim (e.g. when dispatch itself fails). */
-    public static function releasePending(): void
+    /**
+     * Release the pending claim, but only if it is still OURS — a job that timed
+     * out after its slot was reclaimed by a newer restore must not free the new
+     * one. A null token (a direct call with no claim) is a no-op.
+     */
+    public static function releasePending(?string $token): void
     {
-        Cache::forget(self::PENDING_KEY);
+        if ($token === null) {
+            return;
+        }
+
+        try {
+            if (Cache::get(self::PENDING_KEY) === $token) {
+                Cache::forget(self::PENDING_KEY);
+            }
+        } catch (Throwable $exception) {
+            report($exception);
+        }
+    }
+
+    /** Extend our pending claim to cover this execution (see claimPending). */
+    private function refreshPendingClaim(): void
+    {
+        if ($this->pendingToken === null) {
+            return;
+        }
+
+        try {
+            $current = Cache::get(self::PENDING_KEY);
+
+            // Re-assert only when the slot is free or already ours — never stomp a
+            // different token (which would mean a newer restore owns the slot).
+            if ($current === null || $current === $this->pendingToken) {
+                Cache::put(self::PENDING_KEY, $this->pendingToken, self::pendingTtl());
+            }
+        } catch (Throwable $exception) {
+            report($exception);
+        }
+    }
+
+    private static function pendingTtl(): int
+    {
+        // Cover a restore waiting behind one long backup (lock_ttl) plus its own
+        // run, with headroom; operators with deeper backup queues can raise it.
+        return (int) config('wayfindr.backup.restore_pending_ttl', 2 * (int) config('wayfindr.backup.lock_ttl', 3900));
     }
 
     /**
@@ -242,10 +340,10 @@ class RunRestoreJob implements ShouldQueue
     {
         self::putStatus($status, $message, $this->archiveFilename, $this->triggeredById, $this->triggeredByName, $result);
 
-        // A terminal outcome frees the pending-restore slot so the next one can be
+        // A terminal outcome frees our pending-restore slot so the next one can be
         // confirmed; a still-running status keeps it held.
         if ($status !== 'running') {
-            self::releasePending();
+            self::releasePending($this->pendingToken);
         }
     }
 

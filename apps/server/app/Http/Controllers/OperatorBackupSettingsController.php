@@ -402,8 +402,11 @@ class OperatorBackupSettingsController extends Controller
 
         // Claim the single pending-restore slot atomically BEFORE enqueueing, so a
         // double-submit (or two operators confirming) can't queue two destructive
-        // restores that the dedicated worker would then run back to back.
-        if (! RunRestoreJob::claimPending()) {
+        // restores that the dedicated worker would then run back to back. The
+        // token ties this claim to the job that will release it.
+        $pendingToken = RunRestoreJob::claimPending();
+
+        if ($pendingToken === null) {
             return redirect()
                 ->route('operator.settings.backups.restore', ['archive' => $archive])
                 ->with('error', 'A restore is already queued or running. Wait for it to finish before starting another.');
@@ -439,7 +442,7 @@ class OperatorBackupSettingsController extends Controller
         // terminating() runs after middleware terminate, so the session is
         // already saved by the time we enqueue.
         $enqueued = false;
-        app()->terminating(function () use (&$enqueued, $archive, $agentId, $agentName): void {
+        app()->terminating(function () use (&$enqueued, $archive, $agentId, $agentName, $pendingToken): void {
             // Terminating callbacks are not cleared after they run, so in a
             // long-lived app (tests, Octane) a later request's terminate would
             // re-fire this one; dispatch at most once.
@@ -449,13 +452,13 @@ class OperatorBackupSettingsController extends Controller
             $enqueued = true;
 
             try {
-                RunRestoreJob::dispatch($archive, $agentId, $agentName);
+                RunRestoreJob::dispatch($archive, $agentId, $agentName, $pendingToken);
             } catch (Throwable $exception) {
                 // The response is already sent, so surface the failure through
                 // the cache status the operator reads on the backups page, and
                 // free the pending slot so they can retry.
                 RunRestoreJob::putStatus('failed', 'Could not queue the restore: '.$exception->getMessage(), $archive, $agentId, $agentName);
-                RunRestoreJob::releasePending();
+                RunRestoreJob::releasePending($pendingToken);
             }
         });
 
