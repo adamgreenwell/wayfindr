@@ -39,10 +39,13 @@ class RunBackupJob implements ShouldQueue
      */
     public int $timeout;
 
-    /** Set once the run row exists, so failed() can mark a timeout-killed run. */
-    public ?int $backupRunId = null;
-
-    public function __construct(private readonly ?int $triggeredById = null)
+    /**
+     * The run row is created by the dispatcher and its id passed here, so it is
+     * part of the serialized payload — the failed() callback runs on a fresh
+     * instance rebuilt from that payload (mutations made during handle() would
+     * be lost), so it must not depend on state set inside handle().
+     */
+    public function __construct(private readonly int $backupRunId)
     {
         $this->timeout = (int) config('wayfindr.backup.job_timeout', 3600);
     }
@@ -65,12 +68,11 @@ class RunBackupJob implements ShouldQueue
 
     public function handle(BackupRunner $runner): void
     {
-        $run = BackupRun::query()->create([
-            'status' => BackupRun::STATUS_RUNNING,
-            'triggered_by_id' => $this->triggeredById,
-            'started_at' => now(),
-        ]);
-        $this->backupRunId = $run->id;
+        $run = BackupRun::query()->find($this->backupRunId);
+
+        if ($run === null) {
+            return; // the run row was deleted before the worker picked it up
+        }
 
         $runner->run($run, (string) config('wayfindr.backup.path'));
     }
@@ -83,10 +85,6 @@ class RunBackupJob implements ShouldQueue
      */
     public function failed(?Throwable $exception): void
     {
-        if ($this->backupRunId === null) {
-            return;
-        }
-
         $run = BackupRun::query()->find($this->backupRunId);
 
         if ($run && $run->status === BackupRun::STATUS_RUNNING) {

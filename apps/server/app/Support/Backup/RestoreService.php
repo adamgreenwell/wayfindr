@@ -234,6 +234,9 @@ class RestoreService
             config('queue.connections.database.table') ?: 'jobs',
             config('queue.batching.table') ?: 'job_batches',
             config('queue.failed.table') ?: 'failed_jobs',
+            // Operational backup history — its data is excluded from the dump, so
+            // a target that only holds backup runs still counts as empty.
+            'backup_runs',
         ];
     }
 

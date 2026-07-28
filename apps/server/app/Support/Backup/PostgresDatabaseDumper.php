@@ -84,6 +84,10 @@ class PostgresDatabaseDumper implements DatabaseDumper
             config('queue.connections.database.table') ?: 'jobs',
             config('queue.batching.table') ?: 'job_batches',
             config('queue.failed.table') ?: 'failed_jobs',
+            // Operational backup history (ADR 0011): the in-progress run is
+            // 'running' while pg_dump captures it, so dumping its data would
+            // revive a phantom active run on restore. The schema is kept.
+            'backup_runs',
         ];
 
         return collect($tables)

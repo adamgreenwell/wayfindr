@@ -212,7 +212,16 @@ class OperatorBackupSettingsController extends Controller
     {
         $agent = $request->user();
 
-        RunBackupJob::dispatch($agent->id);
+        // Create the run row BEFORE dispatch so its id rides in the job payload —
+        // the job's failed() callback (e.g. on a worker timeout) runs on a fresh
+        // instance from that payload and needs the id to mark the run failed.
+        $run = BackupRun::query()->create([
+            'status' => BackupRun::STATUS_RUNNING,
+            'triggered_by_id' => $agent->id,
+            'started_at' => now(),
+        ]);
+
+        RunBackupJob::dispatch($run->id);
 
         AuditEvent::query()->create([
             'account_id' => null,

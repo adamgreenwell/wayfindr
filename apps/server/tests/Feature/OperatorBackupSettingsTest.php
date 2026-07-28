@@ -12,6 +12,7 @@ use App\Models\BackupRun;
 use App\Models\User;
 use App\Support\Backup\BackupRunner;
 use App\Support\Backup\BackupService;
+use App\Support\Backup\PostgresDatabaseDumper;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
@@ -155,7 +156,7 @@ test('a prefix with a traversal segment is rejected', function (): void {
 
 test('the backup job runs once, with a generous timeout and a no-overlap guard', function (): void {
     config()->set('wayfindr.backup.job_timeout', 1800);
-    $job = new RunBackupJob(null);
+    $job = new RunBackupJob(1);
 
     expect($job->tries)->toBe(1)
         ->and($job->timeout)->toBe(1800)
@@ -164,7 +165,7 @@ test('the backup job runs once, with a generous timeout and a no-overlap guard',
         ))->toBeTrue();
 });
 
-test('run a backup now queues the job and audits the trigger', function (): void {
+test('run a backup now creates the run, queues the job, and audits the trigger', function (): void {
     Bus::fake();
     $operator = backupOperator();
 
@@ -172,6 +173,10 @@ test('run a backup now queues the job and audits the trigger', function (): void
         ->post(route('operator.settings.backups.run'))
         ->assertRedirect(route('operator.settings.backups.edit'))
         ->assertSessionHas('status');
+
+    $run = BackupRun::query()->latest('id')->firstOrFail();
+    expect($run->status)->toBe(BackupRun::STATUS_RUNNING)
+        ->and($run->triggered_by_id)->toBe($operator->id);
 
     Bus::assertDispatched(RunBackupJob::class);
     expect(AuditEvent::query()->where('action', 'operator_settings.backup.triggered')->exists())->toBeTrue();
@@ -225,24 +230,20 @@ test('the backup runner records a create failure as failed and re-throws', funct
         ->and($run->fresh()->message)->toContain('pg_dump not found');
 });
 
-test('the backup job creates a running record and delegates to the runner', function (): void {
-    $operator = backupOperator();
+test('the backup job runs the pre-created record through the runner', function (): void {
+    $run = BackupRun::query()->create(['status' => BackupRun::STATUS_RUNNING, 'started_at' => now()]);
     $runner = Mockery::mock(BackupRunner::class);
-    $runner->shouldReceive('run')->once();
+    $runner->shouldReceive('run')->once()->with(Mockery::on(fn ($r) => $r->id === $run->id), Mockery::any());
 
-    (new RunBackupJob($operator->id))->handle($runner);
-
-    $run = BackupRun::query()->latest('id')->firstOrFail();
-    expect($run->triggered_by_id)->toBe($operator->id)
-        ->and($run->status)->toBe(BackupRun::STATUS_RUNNING); // the mock runner didn't update it
+    (new RunBackupJob($run->id))->handle($runner);
 });
 
 test('a timed-out backup job marks its still-running record as failed', function (): void {
+    // The run id is a constructor arg (part of the serialized payload), so
+    // failed() finds it even though it runs on a fresh instance.
     $run = BackupRun::query()->create(['status' => BackupRun::STATUS_RUNNING, 'started_at' => now()]);
-    $job = new RunBackupJob;
-    $job->backupRunId = $run->id;
 
-    $job->failed(new RuntimeException('timed out'));
+    (new RunBackupJob($run->id))->failed(new RuntimeException('timed out'));
 
     expect($run->fresh()->status)->toBe(BackupRun::STATUS_FAILED)
         ->and($run->fresh()->message)->toContain('timed out');
@@ -254,10 +255,8 @@ test('the failed callback does not clobber an already-recorded failure', functio
         'message' => 'the real error',
         'started_at' => now(),
     ]);
-    $job = new RunBackupJob;
-    $job->backupRunId = $run->id;
 
-    $job->failed(new RuntimeException('timed out'));
+    (new RunBackupJob($run->id))->failed(new RuntimeException('timed out'));
 
     expect($run->fresh()->message)->toBe('the real error'); // left as BackupRunner recorded it
 });
@@ -278,6 +277,11 @@ test('the offsite test passes on a working disk', function (): void {
         ->post(route('operator.settings.backups.test'))
         ->assertRedirect(route('operator.settings.backups.edit'))
         ->assertSessionHas('status');
+});
+
+test('backup_runs data is excluded from the dump so no phantom running run rides in', function (): void {
+    expect((new PostgresDatabaseDumper)->excludedTableData())
+        ->toContain('public.backup_runs');
 });
 
 test('the scheduled backup command records a run in the history', function (): void {
