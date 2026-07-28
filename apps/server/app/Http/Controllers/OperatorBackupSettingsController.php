@@ -184,6 +184,15 @@ class OperatorBackupSettingsController extends Controller
                 ->with('error', 'The backup disk ['.$diskName.'] is not configured.');
         }
 
+        // Backups can never live on an attachment disk (BackupService rejects it):
+        // the orphaned-attachment sweep would delete archives written there. A
+        // probe would otherwise pass right before every real backup fails.
+        if (str_starts_with($diskName, 'attachments')) {
+            return redirect()
+                ->route('operator.settings.backups.edit', $returnParams)
+                ->with('error', 'The backup disk ['.$diskName.'] is an attachment disk — the orphaned-attachment sweep would delete backups written there. Use a separate disk for backups.');
+        }
+
         // Probe INSIDE the configured prefix, where real uploads and retention
         // operate — credentials scoped to that prefix would fail a top-level
         // probe even though backups work.
@@ -221,7 +230,22 @@ class OperatorBackupSettingsController extends Controller
             'started_at' => now(),
         ]);
 
-        RunBackupJob::dispatch($run->id);
+        // If the queue backend is unreachable, dispatch throws after the run row
+        // is committed — finalize it so the GUI never shows a backup that was
+        // never actually queued as permanently running.
+        try {
+            RunBackupJob::dispatch($run->id);
+        } catch (Throwable $exception) {
+            $run->update([
+                'status' => BackupRun::STATUS_FAILED,
+                'message' => 'Could not queue the backup: '.$exception->getMessage(),
+                'finished_at' => now(),
+            ]);
+
+            return redirect()
+                ->route('operator.settings.backups.edit', $this->returnParams($request))
+                ->with('error', 'Could not queue the backup — confirm the queue backend is reachable: '.$exception->getMessage());
+        }
 
         AuditEvent::query()->create([
             'account_id' => null,

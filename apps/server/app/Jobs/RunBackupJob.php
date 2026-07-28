@@ -8,8 +8,8 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Cache;
 use Throwable;
 
 /**
@@ -50,31 +50,39 @@ class RunBackupJob implements ShouldQueue
         $this->timeout = (int) config('wayfindr.backup.job_timeout', 3600);
     }
 
-    /**
-     * Only one backup runs at a time instance-wide, and — combined with the
-     * generous timeout — a queue retry_after re-release cannot start a duplicate
-     * backup: an overlapping attempt hits the held lock and is discarded.
-     *
-     * @return array<int, object>
-     */
-    public function middleware(): array
-    {
-        return [
-            (new WithoutOverlapping('wayfindr:backup'))
-                ->dontRelease()
-                ->expireAfter($this->timeout + 120),
-        ];
-    }
-
     public function handle(BackupRunner $runner): void
     {
         $run = BackupRun::query()->find($this->backupRunId);
 
-        if ($run === null) {
-            return; // the run row was deleted before the worker picked it up
+        // Deleted, or already finalized by an earlier attempt (a retry_after
+        // re-release under tries=1 fails before handle(), so the record is only
+        // ever left running by the attempt that actually holds the lock).
+        if ($run === null || $run->status !== BackupRun::STATUS_RUNNING) {
+            return;
         }
 
-        $runner->run($run, (string) config('wayfindr.backup.path'));
+        // Only one backup runs at a time instance-wide. Unlike a WithoutOverlapping
+        // middleware that silently discards an overlapping job (leaving its
+        // pre-created run stuck as 'running'), acquire the lock here so an
+        // overlapping run is explicitly finalized. The TTL bounds a lock leaked
+        // by a crashed/killed worker so future backups aren't blocked forever.
+        $lock = Cache::lock('wayfindr:backup', $this->timeout + 120);
+
+        if (! $lock->get()) {
+            $run->update([
+                'status' => BackupRun::STATUS_FAILED,
+                'message' => 'Skipped: another backup was already running. Wait for it to finish, then run again.',
+                'finished_at' => now(),
+            ]);
+
+            return;
+        }
+
+        try {
+            $runner->run($run, (string) config('wayfindr.backup.path'));
+        } finally {
+            $lock->release();
+        }
     }
 
     /**

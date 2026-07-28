@@ -15,8 +15,8 @@ use App\Support\Backup\BackupService;
 use App\Support\Backup\PostgresDatabaseDumper;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
@@ -154,15 +154,49 @@ test('a prefix with a traversal segment is rejected', function (): void {
         ->assertSessionHasErrors('prefix');
 });
 
-test('the backup job runs once, with a generous timeout and a no-overlap guard', function (): void {
+test('the backup job runs once with a generous timeout', function (): void {
     config()->set('wayfindr.backup.job_timeout', 1800);
     $job = new RunBackupJob(1);
 
     expect($job->tries)->toBe(1)
-        ->and($job->timeout)->toBe(1800)
-        ->and(collect($job->middleware())->contains(
-            fn ($m) => $m instanceof WithoutOverlapping,
-        ))->toBeTrue();
+        ->and($job->timeout)->toBe(1800);
+});
+
+test('an overlapping backup run is finalized as skipped, not left running', function (): void {
+    // Hold the backup lock so the job sees another backup already in progress.
+    $lock = Cache::lock('wayfindr:backup', 60);
+    $lock->get();
+
+    $runner = Mockery::mock(BackupRunner::class);
+    $runner->shouldNotReceive('run'); // the actual backup must not run
+
+    $run = BackupRun::query()->create(['status' => BackupRun::STATUS_RUNNING, 'started_at' => now()]);
+    (new RunBackupJob($run->id))->handle($runner);
+
+    expect($run->fresh()->status)->toBe(BackupRun::STATUS_FAILED)
+        ->and($run->fresh()->message)->toContain('another backup was already running');
+
+    $lock->release();
+});
+
+test('a failed dispatch finalizes the run instead of leaving it running', function (): void {
+    config()->set('queue.default', 'no-such-connection'); // dispatch will throw
+
+    $this->actingAs(backupOperator())
+        ->post(route('operator.settings.backups.run'))
+        ->assertSessionHas('error');
+
+    $run = BackupRun::query()->latest('id')->firstOrFail();
+    expect($run->status)->toBe(BackupRun::STATUS_FAILED)
+        ->and($run->message)->toContain('Could not queue');
+});
+
+test('the offsite test rejects an attachment disk as a backup target', function (): void {
+    config()->set('wayfindr.backup.disk', 'attachments-s3'); // a real, but disallowed, disk
+
+    $this->actingAs(backupOperator())
+        ->post(route('operator.settings.backups.test'))
+        ->assertSessionHas('error');
 });
 
 test('run a backup now creates the run, queues the job, and audits the trigger', function (): void {
