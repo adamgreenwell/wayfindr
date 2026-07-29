@@ -154,8 +154,13 @@ answer, and callers must be written to accept it.
 
 ## Delivery slices
 
-1. **This ADR, `CHANGELOG.md`, and the release-notes convention.** Docs only;
-   establishes the contract before anything depends on it.
+1. **This ADR.** Records the contract before anything depends on it.
+   - **`CHANGELOG.md` and the release-notes convention are deliberately not part
+     of this slice.** Both need choices this ADR does not make: which changelog
+     format to follow, and whether to backfill the three existing alpha tags or
+     start the history at the next release. Until they land, the human-facing
+     half of the declaration described above is undefined — so they must ship
+     before any release claims to follow this ADR.
 2. **Identity everywhere.** Source/Compose builds stamp `-dev+<sha>`;
    `WAYFINDR_VERSION` documented for host-build deploys; `source`/null retired as
    normal outcomes.
