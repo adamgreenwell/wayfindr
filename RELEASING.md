@@ -54,7 +54,12 @@ git tag v0.2.0
 # Push the ONE tag by name. `--tags` pushes every local tag, and any v* tag
 # triggers a build-and-publish — so a stray experimental tag would ship an
 # unintended image and GitHub release.
-git push origin main v0.2.0
+#
+# --atomic so the branch and tag succeed or fail together. Without it, if origin
+# advanced since you prepared the release, `main` is rejected while the tag is
+# still accepted — and the tag alone publishes a release from a commit that
+# never reached the branch.
+git push --atomic origin main v0.2.0
 ```
 
 ### Then advance `VERSION` for the next cycle
