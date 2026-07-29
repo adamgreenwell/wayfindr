@@ -30,7 +30,39 @@ missed while skimming.
 
 ## [Unreleased]
 
-Nothing released yet under this changelog.
+**⚠ Requires operator action.** Running backups from the operator GUI needs a
+**second queue worker** on the dedicated `backups` connection. Without it the
+"Run a backup now" button queues jobs nothing will ever process, and the run sits
+at *Running* indefinitely. Scheduled backups are unaffected.
+
+```bash
+# Compose stacks get the backup-queue service from the refreshed compose.yml.
+# On Forge or any host-managed setup, add a second worker:
+php artisan queue:work backups --queue=backups --sleep=5 --tries=1 --timeout=3600
+```
+
+### Added
+
+- Operator settings under `/operator`: mail, attachment storage, malware
+  scanning, and backups are configured in the browser, stored in the database,
+  and override env without a restart (ADR 0011).
+- A guided onboarding checklist as the landing page after `/setup`, replacing the
+  read-only readiness screen for first-run configuration.
+- Backup and restore: `wayfindr:backup` and a guarded `wayfindr:restore`, with an
+  optional offsite mirror to an S3-compatible bucket and age-based retention
+  (ADR 0009, ADR 0010).
+- Operator backups GUI: configure destination, retention, and per-install prefix;
+  run a backup on demand; review run history; and perform a confirmed in-GUI
+  restore. The in-GUI restore requires a Redis-backed queue, cache, and
+  maintenance state — where that is not met, the page explains why and points to
+  the CLI (ADR 0011).
+
+### Fixed
+
+- A restore no longer treats two unverifiable versions as a match. Installs
+  without a release identity reported `unknown` on both sides, which compared
+  equal and silently skipped the schema-mismatch guard; an unverifiable pair now
+  keeps the site in maintenance for the operator to check.
 
 ---
 
@@ -38,4 +70,6 @@ Releases before this changelog — `v0.1.0-alpha.1` through `v0.1.0-alpha.3`
 (2026-07-21 to 2026-07-22) — are not reconstructed here. They are early alpha
 builds, and their history lives in the git tags and commit log. This changelog
 starts fresh rather than backfilling entries after the fact; the gap is
-deliberate, not an absence of changes.
+deliberate, not an absence of changes. Everything merged *after* `alpha.3` is
+recorded under **Unreleased** above, so an operator upgrading from it still gets
+the full picture.
