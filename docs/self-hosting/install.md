@@ -117,11 +117,27 @@ Then work through the readiness screens:
 
 `/operator` reports which release is running — the official image bakes its
 version and commit in, so an install from the one-liner or the published
-image answers "what code is this?" with no configuration. Source builds
-report `source` unless you pass `WAYFINDR_BUILD_VERSION`. Setting
-`WAYFINDR_VERSION` / `WAYFINDR_COMMIT` in your env file overrides the baked
-values (including blanking them), so leave them alone unless you are
-deploying a custom build. Quote the version when you file an issue.
+image answers "what code is this?" with no configuration.
+
+A **source build** derives `<VERSION>-dev` from the repository's `VERSION` file.
+That names the lineage but not the build, and two source builds many commits
+apart both report it — so anything that compares versions treats a bare `-dev` as
+unverifiable, and a **restore cannot confirm an archive matches the install**
+(it keeps the site in maintenance for you to check). Pass the commit to pin the
+build and make the identity comparable:
+
+```bash
+WAYFINDR_BUILD_COMMIT=$(git rev-parse HEAD) docker compose \
+  -f docker/self-hosting/compose.yml \
+  -f docker/self-hosting/compose.build.yml \
+  --env-file docker/self-hosting/.env up -d --build
+```
+
+`WAYFINDR_BUILD_VERSION` overrides the derived version outright — use it when
+building a specific release from source. Setting `WAYFINDR_VERSION` /
+`WAYFINDR_COMMIT` in your env file overrides the baked values (including blanking
+them), so leave those alone unless you are deploying a custom build. Quote the
+version when you file an issue.
 
 ## Where your data lives
 
