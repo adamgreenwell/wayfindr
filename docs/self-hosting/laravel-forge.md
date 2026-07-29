@@ -294,6 +294,15 @@ while this release keeps reading its stale copy until the next deploy.
 # development build. Deriving this rather than hand-setting it is what keeps a
 # tag-pinned site honest when it later moves off the tag.
 tag=$(git describe --exact-match --tags HEAD 2>/dev/null || true)
+
+# Only accept a version-shaped tag. Git permits characters that are hostile in a
+# sed replacement: `&` expands to the matched text (silently corrupting the
+# identity) and `|` closes the expression (aborting the deploy). A tag outside
+# this set is not a release identity anyway, so fall back to the dev one.
+case "$tag" in
+  ''|*[!A-Za-z0-9.+-]*) tag='' ;;
+esac
+
 version=${tag:-"$(cat VERSION)-dev+$(git rev-parse HEAD)"}
 
 # Only zero-downtime sites share .env as a symlink; note what it was so the
