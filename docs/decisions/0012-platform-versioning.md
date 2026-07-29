@@ -74,9 +74,11 @@ per-release declaration below, not the digit, is authoritative until 1.0.
 `unknown` must become the rare exception, not the norm:
 
 - **Official image** — unchanged: the tag is baked at build.
-- **Source and Compose builds** — stamp `<next-version>-dev+<short-sha>` instead
-  of today's literal `source`, so a development install still sorts and still
-  identifies its code.
+- **Source and Compose builds** — stamp `<next-version>-dev+<sha>` instead of
+  today's literal `source`, so a development install still identifies its code.
+  The sha is not abbreviated: build metadata is what pins the build for
+  comparison, and a colliding abbreviation would make two different commits read
+  as the same build.
 - **Deploys that build from source on the host** (Forge, and ADR 0003's path) —
   document `WAYFINDR_VERSION` as part of the expected environment, since nothing
   bakes it for them.
@@ -121,13 +123,36 @@ an undifferentiated list would present such a step as though it could be done at
 either end, which is worse than not listing it. So each declared action keeps:
 
 - the **release it belongs to**, and
-- an **execution phase** — before pulling, or after the new code is live.
+- an **execution phase**, of which there are three, because the upgrade has three
+  distinct moments (`install.sh --upgrade` pulls, then runs `compose up -d`,
+  which starts the stack *and* runs migrations):
+  - **`before-pull`** — runs on the old release, while it is still the live code.
+  - **`after-pull`** — the new code is present but nothing has started, so the
+    new CLI is available and **automatic migrations have not run yet**. This is
+    where a manual data migration that needs the new code but must precede the
+    schema change belongs.
+  - **`after-start`** — the new release is live and migrations have run.
 
 An action that can only be performed while its own release is running makes the
 jump **non-direct**: the operator is told to step through that release rather
 than being handed a list that cannot be executed in the order given. In other
 words `minimum_upgrade_from` bounds how far back a jump may start; the phase
 information decides whether a supported span can be crossed in one step at all.
+
+**A missing declaration means unknown, not "nothing required".** Every release
+published before this ADR carries no manifest, and reading that absence as
+silence would repeat the mistake this ADR exists to correct — two `unknown`
+versions are not a match. It is not hypothetical: the already-shipped
+backups-worker action sits inside exactly such a span. So a span containing any
+release without a declaration cannot be certified, and the preflight **fails
+closed** — it declines to call the jump unattended-safe, names the releases it
+could not read, and sends the operator to the changelog for that range.
+
+Rather than backfill manifests onto tags cut before the contract existed, the
+first release under this ADR records a **baseline**: the last version that
+predates declarations. Everything at or below it is then *known* to be
+unreadable rather than mysteriously absent — a fact the preflight can state
+plainly instead of guessing at.
 
 ### Comparison answers two questions, not one
 
@@ -212,13 +237,15 @@ introduced, which is why it is settled here rather than in slice 3.
 ## Delivery slices
 
 1. **This ADR.** Records the contract before anything depends on it.
-   - **`CHANGELOG.md` and the release-notes convention are deliberately not part
-     of this slice.** Both need choices this ADR does not make: which changelog
-     format to follow, and whether to backfill the three existing alpha tags or
-     start the history at the next release. Until they land, the human-facing
-     half of the declaration described above is undefined — so they must ship
-     before any release claims to follow this ADR.
-2. **Identity everywhere.** Source/Compose builds stamp `-dev+<sha>`;
+   - **`CHANGELOG.md` and `RELEASING.md` are deliberately not part of this
+     slice.** Both need choices this ADR does not make: which changelog format
+     to follow, and whether to backfill the three existing alpha tags or start
+     the history at the next release. They are created in slice 1b, and until
+     they land the human-facing half of the declaration described above is
+     undefined — so they must ship before any release claims to follow this ADR.
+2. **Identity everywhere.** Creates the repository `VERSION` file — the
+   authoritative source for `<next-version>` that the derivation and the release
+   procedure both read. Source/Compose builds stamp `<VERSION>-dev+<sha>`;
    `WAYFINDR_VERSION` documented for host-build deploys; `source`/null retired as
    normal outcomes.
 3. **Ordered comparator**, keeping identity and precedence separate, normalizing
