@@ -312,10 +312,18 @@ while this release keeps reading its stale copy until the next deploy.
 #
 # Anything rejected falls back to the SHA-qualified development identity, which
 # is the honest description of a checkout that is not on a release.
-tag=$(git tag --points-at HEAD 2>/dev/null \
+# Both Forge deploy scripts run `set -euo pipefail`, so a `grep` that matches
+# nothing would abort the deploy — precisely on the untagged branch deploy this
+# fallback exists to serve. `|| true` keeps the no-match path successful.
+release_tags=$(git tag --points-at HEAD 2>/dev/null \
   | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$' \
-  | grep -vEi -- '-dev$' \
-  | sort -V | tail -1)
+  | grep -vEi -- '-dev$' || true)
+
+# Prefer a stable tag over a prerelease on the same commit. `sort -V` is natural
+# ordering, not SemVer precedence: it ranks `v1.2.3-alpha` ABOVE `v1.2.3`, so a
+# promoted release would otherwise be stamped with its prerelease name.
+tag=$(printf '%s\n' "$release_tags" | grep -v -- '-' | sort -V | tail -1 || true)
+[ -n "$tag" ] || tag=$(printf '%s\n' "$release_tags" | sort -V | tail -1 || true)
 
 version=${tag:-"$(cat VERSION)-dev+$(git rev-parse HEAD)"}
 
