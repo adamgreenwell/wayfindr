@@ -292,6 +292,18 @@ introduced, which is why it is settled here rather than in slice 3.
    and requires stepping when an action cannot be performed outside its own
    release. Restore guidance becomes direction-aware only once it can read these;
    until then it stays neutral (see §"Comparison answers two questions").
+
+   **This slice must also bootstrap itself, or it protects nobody's first
+   upgrade.** Existing installs run *their* copy of `install.sh`, and the upgrade
+   path today refreshes the on-disk script and then keeps going in the
+   already-parsed process — it fetches the new `install.sh`, then proceeds
+   straight to `compose pull` and `compose up -d` without ever executing it. So a
+   preflight added to the shipped script would sit on disk, unrun, while the very
+   first release requiring operator action was pulled and started silently. The
+   refreshed installer must therefore **take over before any pull** (re-exec with
+   the original arguments, guarded against re-exec loops). Overwriting a script
+   that bash is still reading is its own hazard, so the hand-off is worth doing
+   regardless.
 5. **Floor enforcement** — reject a direct upgrade from below
    `minimum_upgrade_from`, with the supported stepping path.
 
