@@ -160,8 +160,12 @@ class RunRestoreJob implements ShouldQueue
             // A version skew means the restored schema and the running code may
             // not match (either direction); keep the site down so the operator
             // reconciles them before any request hits it (they were warned in the
-            // preflight and the success message says how).
-            $this->keepMaintenance = (bool) ($result['version_skew'] ?? false);
+            // preflight and the success message says how). An INDETERMINATE pair
+            // (either side carries no release identity) is treated the same way —
+            // we cannot prove the schema matches, and a destructive restore is
+            // exactly where an unprovable assumption should fail safe.
+            $this->keepMaintenance = (bool) ($result['version_skew'] ?? false)
+                || (bool) ($result['version_indeterminate'] ?? false);
 
             $this->record('succeeded', $this->successMessage($result), $result);
         } catch (Throwable $exception) {
@@ -409,10 +413,17 @@ class RunRestoreJob implements ShouldQueue
     {
         $parts = ['Restore complete.'];
 
-        if ($result['version_skew'] ?? false) {
+        if ($result['version_indeterminate'] ?? false) {
+            $parts[] = 'The versions could NOT be verified (archive: '.($result['archive_version'] ?? '?')
+                .', this install: '.($result['running_version'] ?? '?')
+                .') — this install carries no release identity, so a schema mismatch cannot be ruled out. '
+                .'The site is being kept in maintenance mode. On the server, confirm the schema is current '
+                .'(`php artisan migrate --force` is safe if it is already up to date), then run `php artisan up`. '
+                .'Set WAYFINDR_VERSION so future restores can verify this automatically.';
+        } elseif ($result['version_skew'] ?? false) {
             // Direction-neutral: version strings may not be reliably comparable
-            // (tags vs commits vs "unknown"), and a NEWER archive can't be fixed
-            // by migrating older code — so name both remedies.
+            // (tags vs commits), and a NEWER archive can't be fixed by migrating
+            // older code — so name both remedies.
             $parts[] = 'The backup was taken on version '.($result['archive_version'] ?? '?')
                 .' but this install runs '.($result['running_version'] ?? '?')
                 .'. The site is being kept in maintenance mode so the schema and code can'."'".'t mismatch. On the server, make them compatible — if the backup is OLDER, run `php artisan migrate --force`; if it is NEWER, deploy a matching or newer release — then run `php artisan up`.';

@@ -10,6 +10,7 @@
 use App\Models\Account;
 use App\Models\ConversationMessageAttachment;
 use App\Support\Backup\DatabaseRestorer;
+use App\Support\Backup\RestoreService;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -505,4 +506,67 @@ test('an archive naming a disk this install has not configured warns instead of 
         ->expectsOutputToContain('not configured here ([attachments-orphan])');
 
     expect(Storage::disk('attachments')->get('a/b.bin'))->toBe('OK');
+});
+
+// ---- Version comparability (the skew check must not fail open) -------------
+
+test('two unknown versions are indeterminate, NOT a silent match', function (): void {
+    // The failure this guards: on a source/untagged deploy both sides resolve to
+    // 'unknown', and a plain !== compared them EQUAL — reporting "no skew" and
+    // letting the site come straight back up despite possible schema drift.
+    config()->set('wayfindr.release.version', null); // no release identity
+    $archive = makeBackupArchive(['wayfindr_version' => 'unknown', 'local_attachment_disks' => []]);
+
+    $preflight = app(RestoreService::class)->preflight($archive);
+
+    expect($preflight['version_indeterminate'])->toBeTrue()
+        ->and($preflight['version_skew'])->toBeFalse(); // not "skew" — simply unprovable
+});
+
+test('a source build version is indeterminate', function (): void {
+    // The Dockerfile stamps 'source' when built without a release tag.
+    config()->set('wayfindr.release.version', 'source');
+    $archive = makeBackupArchive(['wayfindr_version' => 'source', 'local_attachment_disks' => []]);
+
+    expect(app(RestoreService::class)->preflight($archive)['version_indeterminate'])
+        ->toBeTrue();
+});
+
+test('one known and one unknown version is still indeterminate', function (): void {
+    config()->set('wayfindr.release.version', 'v0.2.0');
+    $archive = makeBackupArchive(['wayfindr_version' => 'unknown', 'local_attachment_disks' => []]);
+
+    expect(app(RestoreService::class)->preflight($archive)['version_indeterminate'])
+        ->toBeTrue();
+});
+
+test('two known differing versions are a real skew, not indeterminate', function (): void {
+    config()->set('wayfindr.release.version', 'v0.3.0');
+    $archive = makeBackupArchive(['wayfindr_version' => 'v0.2.0', 'local_attachment_disks' => []]);
+
+    $preflight = app(RestoreService::class)->preflight($archive);
+
+    expect($preflight['version_skew'])->toBeTrue()
+        ->and($preflight['version_indeterminate'])->toBeFalse();
+});
+
+test('two known matching versions are neither skewed nor indeterminate', function (): void {
+    config()->set('wayfindr.release.version', 'v0.3.0');
+    $archive = makeBackupArchive(['wayfindr_version' => 'v0.3.0', 'local_attachment_disks' => []]);
+
+    $preflight = app(RestoreService::class)->preflight($archive);
+
+    expect($preflight['version_skew'])->toBeFalse()
+        ->and($preflight['version_indeterminate'])->toBeFalse();
+});
+
+test('the CLI warns that versions could not be verified', function (): void {
+    fakeRestorer();
+    Storage::fake('attachments');
+    config()->set('wayfindr.release.version', null);
+    $archive = makeBackupArchive(['wayfindr_version' => 'unknown', 'local_attachment_disks' => []]);
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive])
+        ->assertSuccessful()
+        ->expectsOutputToContain('could NOT be verified');
 });

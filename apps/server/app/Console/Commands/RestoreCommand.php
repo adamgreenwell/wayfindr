@@ -30,7 +30,15 @@ class RestoreCommand extends Command
             return self::FAILURE;
         }
 
-        if ($preflight['version_skew']) {
+        if ($preflight['version_indeterminate'] ?? false) {
+            $this->warn(sprintf(
+                'Versions could NOT be verified (archive: %s, this install: %s) — no release identity, '
+                .'so a schema mismatch cannot be ruled out. Confirm the schema is current after restoring, '
+                .'and set WAYFINDR_VERSION so this can be checked automatically.',
+                $preflight['archive_version'],
+                $preflight['running_version'],
+            ));
+        } elseif ($preflight['version_skew']) {
             $this->warn(sprintf(
                 'Version skew: the archive was taken on %s but this install runs %s. '
                 .'Run migrations after restoring if the schema has moved on.',

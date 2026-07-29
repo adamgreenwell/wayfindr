@@ -80,7 +80,11 @@
                     </div>
                 </div>
 
-                @if ($preflight['version_skew'])
+                @if ($preflight['version_indeterminate'] ?? false)
+                    <div class="notice-copy notice-copy-bordered">
+                        <p>The versions <strong>could not be verified</strong> (archive: <strong>{{ $preflight['archive_version'] }}</strong>, this install: <strong>{{ $preflight['running_version'] }}</strong>). This install carries no release identity, so a schema mismatch cannot be ruled out — the site will be <strong>kept in maintenance mode</strong> after the restore. On the server, confirm the schema is current, then <code>php artisan up</code>. Set <code>WAYFINDR_VERSION</code> so future restores can verify this automatically.</p>
+                    </div>
+                @elseif ($preflight['version_skew'])
                     <div class="notice-copy notice-copy-bordered">
                         <p>This backup was taken on a different version (<strong>{{ $preflight['archive_version'] }}</strong>) than this install runs (<strong>{{ $preflight['running_version'] }}</strong>). Because the schema and code may not match, the site will be <strong>kept in maintenance mode</strong> after the restore. On the server, make them compatible — if this backup is <strong>older</strong>, run <code>php artisan migrate --force</code>; if it is <strong>newer</strong>, deploy a matching or newer release — then <code>php artisan up</code>.</p>
                     </div>

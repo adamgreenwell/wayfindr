@@ -188,9 +188,12 @@ Three things to know:
   archive, your browser session also ends. Wait a minute, log back in (with the
   credentials **as they were in the backup**), and read the restore outcome on the
   backup settings page.
-- **On a version mismatch, or any failure, it stays down for you.** The site is
-  brought back up automatically only after a fully clean restore. If the archive's
-  version differs from the running code, or the restore fails part-way (the
+- **On a version mismatch, an unverifiable version, or any failure, it stays down
+  for you.** The site is brought back up automatically only after a fully clean
+  restore. If the archive's version differs from the running code, if the versions
+  **cannot be verified** (this install carries no release identity — set
+  `WAYFINDR_VERSION`, or run the official image, so restores can check
+  automatically), or the restore fails part-way (the
   database can be replaced before attachments finish), the restore leaves the site
   in maintenance so an inconsistent or incompatible install is never exposed —
   finish on the server. For a version skew, reconcile schema and code (if the
