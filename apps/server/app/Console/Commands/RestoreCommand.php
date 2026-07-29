@@ -30,7 +30,22 @@ class RestoreCommand extends Command
             return self::FAILURE;
         }
 
-        if ($preflight['version_skew']) {
+        if ($preflight['version_indeterminate'] ?? false) {
+            // Which side is unidentified changes the remedy — an unidentified
+            // ARCHIVE may be from newer code, where migrations cannot help.
+            $detail = match (true) {
+                ! ($preflight['archive_version_known'] ?? false) && ($preflight['running_version_known'] ?? false) => 'the ARCHIVE carries no release identity; if it came from a newer release, migrations here cannot bring the schema forward. Identify the archive (or deploy a matching release) before serving traffic.',
+                ($preflight['archive_version_known'] ?? false) && ! ($preflight['running_version_known'] ?? false) => 'THIS INSTALL carries no release identity. Confirm it runs code compatible with the archive, and set WAYFINDR_VERSION so this can be checked automatically.',
+                default => 'neither side carries a release identity. Confirm the schema is current before serving traffic, and set WAYFINDR_VERSION so this can be checked automatically.',
+            };
+
+            $this->warn(sprintf(
+                'Versions could NOT be verified (archive: %s, this install: %s) — %s',
+                $preflight['archive_version'],
+                $preflight['running_version'],
+                $detail,
+            ));
+        } elseif ($preflight['version_skew']) {
             $this->warn(sprintf(
                 'Version skew: the archive was taken on %s but this install runs %s. '
                 .'Run migrations after restoring if the schema has moved on.',
@@ -49,7 +64,11 @@ class RestoreCommand extends Command
 
         $this->line('Database restored.');
 
-        if (! $result['version_skew']) {
+        // Only when a single version was actually ESTABLISHED — i.e. both sides
+        // were known and agreed. Printing it for an indeterminate pair would
+        // contradict the "could not be verified" warning just above, presenting
+        // 'unknown' as if it were a confirmed common version.
+        if (! $result['version_skew'] && ! ($result['version_indeterminate'] ?? false)) {
             $this->line('  Wayfindr version: '.$result['archive_version']);
         }
 

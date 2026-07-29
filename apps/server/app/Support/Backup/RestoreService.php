@@ -30,10 +30,43 @@ use Throwable;
  */
 class RestoreService
 {
+    /**
+     * Version strings that identify NO release: the fallback used when the
+     * running install or an archive's manifest carries no identity, and the
+     * `source` stamped into a build made without a release tag. Two of these
+     * are not "the same version" — they are both unknown, so a comparison
+     * between them proves nothing and must not read as "no skew".
+     */
+    private const INDETERMINATE_VERSIONS = ['', 'unknown', 'source'];
+
     public function __construct(
         private readonly DatabaseRestorer $restorer,
         private readonly OperatorSettings $operatorSettings,
     ) {}
+
+    /**
+     * Can these two version strings be meaningfully compared at all? A restore
+     * is destructive, so an UNCOMPARABLE pair must fail safe (surface it and
+     * keep the operator in control) rather than silently pass as equal — which
+     * is what a plain `!==` did when both sides were 'unknown', hiding real
+     * schema drift on any source/untagged deploy.
+     */
+    private function versionsAreIndeterminate(string $archiveVersion, string $runningVersion): bool
+    {
+        return ! $this->versionIsKnown($archiveVersion) || ! $this->versionIsKnown($runningVersion);
+    }
+
+    /**
+     * Does this string name an actual release? Callers need to know WHICH side is
+     * unidentified, not just that one of them is: the remedy differs sharply. An
+     * unidentified ARCHIVE may have come from newer code, in which case an older
+     * install has no migrations to run and `migrate` would be a no-op that leaves
+     * an incompatible schema live — so it must not be offered as the fix.
+     */
+    private function versionIsKnown(string $version): bool
+    {
+        return ! in_array(mb_strtolower(trim($version)), self::INDETERMINATE_VERSIONS, true);
+    }
 
     /**
      * @return array{
@@ -41,6 +74,9 @@ class RestoreService
      *     archive_version: string,
      *     running_version: string,
      *     version_skew: bool,
+     *     version_indeterminate: bool,
+     *     archive_version_known: bool,
+     *     running_version_known: bool,
      *     restored_disks: list<string>,
      *     unconfigured_disks: list<string>,
      *     integrity: array{verified: int, dangling: list<array{id: int, disk: string, key: string}>, external: array<string, int>},
@@ -123,7 +159,14 @@ class RestoreService
                 'manifest' => $manifest,
                 'archive_version' => $archiveVersion,
                 'running_version' => $runningVersion,
-                'version_skew' => $archiveVersion !== $runningVersion,
+                // skew = both versions are KNOWN and differ. An uncomparable pair
+                // is reported separately so callers can say "cannot verify"
+                // rather than the untrue "they match".
+                'version_skew' => ! $this->versionsAreIndeterminate($archiveVersion, $runningVersion)
+                    && $archiveVersion !== $runningVersion,
+                'version_indeterminate' => $this->versionsAreIndeterminate($archiveVersion, $runningVersion),
+                'archive_version_known' => $this->versionIsKnown($archiveVersion),
+                'running_version_known' => $this->versionIsKnown($runningVersion),
                 'restored_disks' => $attachments['restored'],
                 'unconfigured_disks' => $attachments['unconfigured'],
                 'integrity' => $integrity,
@@ -139,7 +182,7 @@ class RestoreService
      * version skew while the operator can still abort, rather than discovering
      * it after the database has already been replaced (ADR 0009).
      *
-     * @return array{archive_version: string, running_version: string, version_skew: bool}
+     * @return array{archive_version: string, running_version: string, version_skew: bool, version_indeterminate: bool, archive_version_known: bool, running_version_known: bool}
      */
     public function preflight(string $archivePath): array
     {
@@ -163,7 +206,11 @@ class RestoreService
             return [
                 'archive_version' => $archiveVersion,
                 'running_version' => $runningVersion,
-                'version_skew' => $archiveVersion !== $runningVersion,
+                'version_skew' => ! $this->versionsAreIndeterminate($archiveVersion, $runningVersion)
+                    && $archiveVersion !== $runningVersion,
+                'version_indeterminate' => $this->versionsAreIndeterminate($archiveVersion, $runningVersion),
+                'archive_version_known' => $this->versionIsKnown($archiveVersion),
+                'running_version_known' => $this->versionIsKnown($runningVersion),
             ];
         } finally {
             $this->removeDir($work);

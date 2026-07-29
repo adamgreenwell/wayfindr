@@ -80,7 +80,18 @@
                     </div>
                 </div>
 
-                @if ($preflight['version_skew'])
+                @if ($preflight['version_indeterminate'] ?? false)
+                    <div class="notice-copy notice-copy-bordered">
+                        <p>The versions <strong>could not be verified</strong> (archive: <strong>{{ $preflight['archive_version'] }}</strong>, this install: <strong>{{ $preflight['running_version'] }}</strong>). The site will be <strong>kept in maintenance mode</strong> after the restore.</p>
+                        @if (! ($preflight['archive_version_known'] ?? false) && ($preflight['running_version_known'] ?? false))
+                            <p>The <strong>archive</strong> carries no release identity, so it cannot be checked against this install. If it came from a <strong>newer</strong> release, this install has no migrations that would bring the schema forward — migrating would do nothing and leave an incompatible schema live. Identify which release the archive came from (or deploy a release matching it) before running <code>php artisan up</code>.</p>
+                        @elseif (($preflight['archive_version_known'] ?? false) && ! ($preflight['running_version_known'] ?? false))
+                            <p><strong>This install</strong> carries no release identity. On the server, confirm it runs code compatible with <strong>{{ $preflight['archive_version'] }}</strong> and that the schema is current, then <code>php artisan up</code>. Set <code>WAYFINDR_VERSION</code> so future restores can verify this automatically.</p>
+                        @else
+                            <p>Neither side carries a release identity, so a schema mismatch cannot be ruled out. On the server, confirm the schema is current, then <code>php artisan up</code>. Set <code>WAYFINDR_VERSION</code> so future restores can verify this automatically.</p>
+                        @endif
+                    </div>
+                @elseif ($preflight['version_skew'])
                     <div class="notice-copy notice-copy-bordered">
                         <p>This backup was taken on a different version (<strong>{{ $preflight['archive_version'] }}</strong>) than this install runs (<strong>{{ $preflight['running_version'] }}</strong>). Because the schema and code may not match, the site will be <strong>kept in maintenance mode</strong> after the restore. On the server, make them compatible — if this backup is <strong>older</strong>, run <code>php artisan migrate --force</code>; if it is <strong>newer</strong>, deploy a matching or newer release — then <code>php artisan up</code>.</p>
                     </div>

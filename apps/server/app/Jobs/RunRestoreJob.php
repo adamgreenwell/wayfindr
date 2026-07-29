@@ -160,8 +160,12 @@ class RunRestoreJob implements ShouldQueue
             // A version skew means the restored schema and the running code may
             // not match (either direction); keep the site down so the operator
             // reconciles them before any request hits it (they were warned in the
-            // preflight and the success message says how).
-            $this->keepMaintenance = (bool) ($result['version_skew'] ?? false);
+            // preflight and the success message says how). An INDETERMINATE pair
+            // (either side carries no release identity) is treated the same way —
+            // we cannot prove the schema matches, and a destructive restore is
+            // exactly where an unprovable assumption should fail safe.
+            $this->keepMaintenance = (bool) ($result['version_skew'] ?? false)
+                || (bool) ($result['version_indeterminate'] ?? false);
 
             $this->record('succeeded', $this->successMessage($result), $result);
         } catch (Throwable $exception) {
@@ -409,10 +413,12 @@ class RunRestoreJob implements ShouldQueue
     {
         $parts = ['Restore complete.'];
 
-        if ($result['version_skew'] ?? false) {
+        if ($result['version_indeterminate'] ?? false) {
+            $parts[] = $this->indeterminateVersionMessage($result);
+        } elseif ($result['version_skew'] ?? false) {
             // Direction-neutral: version strings may not be reliably comparable
-            // (tags vs commits vs "unknown"), and a NEWER archive can't be fixed
-            // by migrating older code — so name both remedies.
+            // (tags vs commits), and a NEWER archive can't be fixed by migrating
+            // older code — so name both remedies.
             $parts[] = 'The backup was taken on version '.($result['archive_version'] ?? '?')
                 .' but this install runs '.($result['running_version'] ?? '?')
                 .'. The site is being kept in maintenance mode so the schema and code can'."'".'t mismatch. On the server, make them compatible — if the backup is OLDER, run `php artisan migrate --force`; if it is NEWER, deploy a matching or newer release — then run `php artisan up`.';
@@ -427,6 +433,45 @@ class RunRestoreJob implements ShouldQueue
         $parts[] = $this->workerRestartHint();
 
         return implode(' ', $parts);
+    }
+
+    /**
+     * WHICH side lacks a release identity decides the remedy, so the message must
+     * not assume. In particular, when the ARCHIVE is the unidentified one it may
+     * have come from newer code — an older install then has no newer migrations,
+     * so `migrate` would be a no-op that leaves an incompatible schema live, and
+     * suggesting it would be actively misleading.
+     *
+     * @param  array<string, mixed>  $result
+     */
+    private function indeterminateVersionMessage(array $result): string
+    {
+        $archive = (string) ($result['archive_version'] ?? '?');
+        $running = (string) ($result['running_version'] ?? '?');
+        $archiveKnown = (bool) ($result['archive_version_known'] ?? false);
+        $runningKnown = (bool) ($result['running_version_known'] ?? false);
+
+        $head = 'The versions could NOT be verified (archive: '.$archive.', this install: '.$running.').';
+        $tail = ' The site is being kept in maintenance mode.';
+
+        if (! $archiveKnown && $runningKnown) {
+            return $head.' The ARCHIVE carries no release identity, so it cannot be checked against this'
+                .' install ('.$running.'). If it came from a NEWER release, this install has no migrations'
+                .' that would bring the schema forward — running migrations would do nothing and leave an'
+                .' incompatible schema live.'.$tail.' Identify which release the archive came from (or deploy'
+                .' a release matching it) before running `php artisan up`.';
+        }
+
+        if ($archiveKnown && ! $runningKnown) {
+            return $head.' THIS INSTALL carries no release identity, so it cannot be checked against the'
+                .' archive ('.$archive.').'.$tail.' On the server, confirm this install runs code compatible'
+                .' with '.$archive.' and that the schema is current, then run `php artisan up`.'
+                .' Set WAYFINDR_VERSION so future restores can verify this automatically.';
+        }
+
+        return $head.' Neither the archive nor this install carries a release identity, so a schema mismatch'
+            .' cannot be ruled out.'.$tail.' On the server, confirm the schema is current, then run'
+            .' `php artisan up`. Set WAYFINDR_VERSION so future restores can verify this automatically.';
     }
 
     private function failureMessage(?Throwable $exception): string

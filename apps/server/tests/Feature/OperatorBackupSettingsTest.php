@@ -818,6 +818,61 @@ test('a version-skew restore keeps the site in maintenance for migrations', func
     }
 });
 
+test('an unverifiable-version restore keeps the site in maintenance', function (): void {
+    $backups = Mockery::mock(BackupService::class);
+    $backups->shouldReceive('resolveLocalArchivePath')->andReturn('/backups/inst/x.tar.gz');
+    $restores = Mockery::mock(RestoreService::class);
+    $restores->shouldReceive('restore')->once()->andReturn([
+        'version_skew' => false,           // not a skew — simply unprovable
+        'version_indeterminate' => true,   // no release identity on either side
+        'archive_version' => 'unknown',
+        'running_version' => 'unknown',
+        'integrity' => ['dangling' => []],
+    ]);
+
+    try {
+        (new RunRestoreJob('x.tar.gz'))->handle($restores, $backups);
+
+        // Fails safe: an unprovable schema match must not silently come back up.
+        expect(app()->isDownForMaintenance())->toBeTrue()
+            ->and(Cache::get(RunRestoreJob::STATUS_KEY)['status'])->toBe('succeeded')
+            ->and(Cache::get(RunRestoreJob::STATUS_KEY)['message'])->toContain('could NOT be verified')
+            ->and(Cache::get(RunRestoreJob::STATUS_KEY)['message'])->toContain('WAYFINDR_VERSION');
+    } finally {
+        Artisan::call('up');
+    }
+});
+
+test('an unidentified ARCHIVE is not told to run migrations', function (): void {
+    $backups = Mockery::mock(BackupService::class);
+    $backups->shouldReceive('resolveLocalArchivePath')->andReturn('/backups/inst/x.tar.gz');
+    $restores = Mockery::mock(RestoreService::class);
+    $restores->shouldReceive('restore')->once()->andReturn([
+        'version_skew' => false,
+        'version_indeterminate' => true,
+        'archive_version_known' => false, // the ARCHIVE is the unidentified side
+        'running_version_known' => true,
+        'archive_version' => 'unknown',
+        'running_version' => 'v0.3.0',
+        'integrity' => ['dangling' => []],
+    ]);
+
+    try {
+        (new RunRestoreJob('x.tar.gz'))->handle($restores, $backups);
+
+        $message = Cache::get(RunRestoreJob::STATUS_KEY)['message'];
+
+        // Must blame the archive, not the install, and must NOT prescribe
+        // migrations — the archive may be from newer code, where migrating here
+        // is a no-op that leaves an incompatible schema live.
+        expect(app()->isDownForMaintenance())->toBeTrue()
+            ->and($message)->toContain('ARCHIVE carries no release identity')
+            ->and($message)->not->toContain('migrate --force');
+    } finally {
+        Artisan::call('up');
+    }
+});
+
 test('a restore leaves a pre-existing maintenance window in place', function (): void {
     Artisan::call('down'); // set by an operator or a deploy, before the restore
 
