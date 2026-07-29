@@ -86,10 +86,17 @@ per-release declaration below, not the digit, is authoritative until 1.0.
   consumes mutable inputs — `node:24-alpine`, `dunglas/frankenphp:1-php8.4`,
   `composer:2`, live apt repositories — so rebuilding one clean commit months
   apart can yield different runtimes under an identical `<version>-dev+<sha>`.
-  For a published release this is moot: the image has an immutable digest, and
-  that digest is the artifact identity. For source builds the sha is the best
-  available approximation, and the honest reading of a matching pair is "same
-  source", not "same image".
+  A published release is *less* exposed but not exempt, and it is worth being
+  precise about why: the registry does give the image an immutable digest, but
+  that digest appears in neither the declared identity nor the backup manifest,
+  so nothing that compares versions can see it. Re-running the release workflow
+  for an existing tag would publish a different image under the same version and
+  commit, and a restore would read the two as the same build. A published tag is
+  therefore treated as **immutable — never rebuilt** — which is a process rule
+  standing in for a technical one. Pinning the base images by digest, or carrying
+  the artifact digest in the identity, are the durable fixes. For source builds
+  the sha is the best available approximation, and the honest reading of a
+  matching pair is "same source", not "same image".
 - **Deploys that build from source on the host** (Forge, and ADR 0003's path) —
   `WAYFINDR_VERSION` is part of the expected environment, since nothing bakes it
   for them. It must be **derived from the deployed commit by the deploy
@@ -414,6 +421,14 @@ introduced, which is why it is settled here rather than in slice 3.
    therefore belongs ahead of the migration in the entrypoint, halting there, or
    the release must offer a migration-suppressed start for the operator to
    complete the prerequisite from.
+
+   **The guard is phase-aware, or it deadlocks.** Only `before-pull` and
+   `after-pull` prerequisites may block the migration — those genuinely must
+   precede it. An unmet `after-start` action needs the migrated schema and the
+   running code in order to be performed at all, so blocking migration on it
+   would withhold the very state it requires and the requirement could never be
+   satisfied. Unmet `after-start` requirements therefore gate *serving*, after
+   migration, not migration itself.
 
    (This layering question, along with the manifest shape below, has grown past
    what a versioning ADR should settle. Slice 4 likely warrants its own decision
