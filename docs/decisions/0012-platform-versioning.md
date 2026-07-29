@@ -140,6 +140,20 @@ but a commit hash has no meaningful order, so that would only manufacture
 confident-sounding nonsense. Admitting the direction is unknown is the honest
 answer, and callers must be written to accept it.
 
+**The canonical form carries no `v` prefix.** Git tags keep it by convention, and
+the release workflow bakes the tag verbatim, so official installs identify as
+`v0.1.0-alpha.3` while a source build produces `0.1.0-dev`. SemVer has no `v` in
+it: a strict parser rejects every official release outright, and a permissive one
+still reports `v0.1.0` and `0.1.0` as different builds. So a leading `v` is
+stripped wherever a version is **read or compared** — including versions read
+from the manifests of archives taken before this ADR — and the unprefixed form is
+what gets stored, compared, and displayed. Tag naming does not change.
+
+Today's string comparison is merely imprecise here rather than unsafe: without
+normalization more things compare *unequal*, so the failure direction is a false
+skew, which fails safe. It becomes a correctness problem the moment a parser is
+introduced, which is why it is settled here rather than in slice 3.
+
 ## What stays out of scope
 
 - **The update-in-place mechanism itself.** This ADR defines the version contract
@@ -164,8 +178,9 @@ answer, and callers must be written to accept it.
 2. **Identity everywhere.** Source/Compose builds stamp `-dev+<sha>`;
    `WAYFINDR_VERSION` documented for host-build deploys; `source`/null retired as
    normal outcomes.
-3. **Ordered comparator**, keeping identity and precedence separate (§"Comparison
-   answers two questions"), and the restore's skew guidance becomes
+3. **Ordered comparator**, keeping identity and precedence separate and
+   normalizing the `v` prefix on every version it reads (§"Comparison answers two
+   questions"), and the restore's skew guidance becomes
    direction-aware *where a direction exists* — still neutral between two builds
    of the same version. Slice 2's guarantee that two differing dev builds count
    as skew must survive this change; today it holds only because comparison is
