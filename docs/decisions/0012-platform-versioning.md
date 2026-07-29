@@ -166,8 +166,14 @@ either end, which is worse than not listing it. So each declared action keeps:
 - the **release it belongs to**,
 - whether it **depends on that release's own code or schema** (which decides
   whether a direct jump may skip past it — see below),
-- any earlier action it **supersedes**, so a requirement a later release retires
-  is not presented to someone skipping past both, and
+- its **applicability** — which upgrades it actually applies to. A pointer at an
+  earlier action is not enough to express retirement: if `v2` adds a worker and
+  `v3` removes the need, then `v3` must tell an install that *ran* `v2` to remove
+  it while telling a direct `v1 → v3` upgrade nothing at all, since that install
+  never created it. One action cannot mean both. Applicability is therefore
+  conditioned on where the upgrade started, or better on observable state ("if
+  the worker exists"), and a retirement can stand alone as a tombstone rather
+  than only as an annotation on something else, and
 - an **execution phase**, of which there are three, because the upgrade has three
   distinct moments (`install.sh --upgrade` pulls, then runs `compose up -d`,
   which starts the stack *and* runs migrations):
@@ -369,9 +375,24 @@ introduced, which is why it is settled here rather than in slice 3.
    replacement says. The capability can only take effect from the *next* upgrade
    onward. The release that introduces the preflight must therefore itself
    **require no operator action** — safe to take unprotected — so that every
-   install gets one harmless hop that leaves the hand-off in place. Only releases
-   after that bootstrap may rely on the preflight, and no release requiring
-   operator action may ship until it has landed.
+   install gets one harmless hop that leaves the hand-off in place.
+
+   **And a bootstrap release cannot be made mandatory.** Publishing a harmless
+   release does not make anyone traverse it: an operator who sits on a pre-slice-4
+   version until an action-required release exists resolves straight to that
+   release, and their old installer pulls and starts it in the old process. No
+   installer-side guard binds an installer that already exists. So enforcement
+   cannot live in the installer at all — it has to live in the artifact being
+   installed, which is the one thing the upgrade *does* fetch. **A release
+   requiring operator action must be able to detect its own unmet requirement at
+   runtime and say so loudly** — refusing to serve, or surfacing it unmissably —
+   rather than assuming a preflight ran. The installer preflight is then what it
+   honestly is: a good experience for installs that have it, not the guarantee.
+
+   (This layering question, along with the manifest shape below, has grown past
+   what a versioning ADR should settle. Slice 4 likely warrants its own decision
+   record; what belongs *here* is the constraint that the guarantee cannot rest
+   on installer-side code.)
 5. **Floor enforcement** — reject a direct upgrade from below
    `minimum_upgrade_from`, with the supported stepping path.
 
