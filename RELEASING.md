@@ -36,9 +36,11 @@ Write it for someone several releases behind who has never read the PR.
 ## 3. Update `VERSION`, then tag to match
 
 `VERSION` holds the version under development, and it is what source builds
-report as `<VERSION>-dev`. **It must match the tag you are about to push.** If
-they drift, every source build between this release and the next claims the wrong
-lineage — a build after `v0.2.0` would still report `0.1.0-dev`.
+report as `<VERSION>-dev` — the derivation lives in `server.Dockerfile` for image
+builds and in `ReleaseIdentity` for host builds. **It must match the tag you are
+about to push.** If they drift, every source build between this release and the
+next claims the wrong lineage — a build after `v0.2.0` would still report
+`0.1.0-dev`.
 
 ```bash
 # VERSION and the tag must agree; the tag carries the conventional "v".
@@ -48,7 +50,11 @@ printf '0.2.0\n' > VERSION
 git add VERSION CHANGELOG.md
 git commit -m "Release 0.2.0"
 git tag v0.2.0
-git push origin main --tags
+
+# Push the ONE tag by name. `--tags` pushes every local tag, and any v* tag
+# triggers a build-and-publish — so a stray experimental tag would ship an
+# unintended image and GitHub release.
+git push origin main v0.2.0
 ```
 
 ### Then advance `VERSION` for the next cycle
