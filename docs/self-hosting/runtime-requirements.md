@@ -196,10 +196,15 @@ is routed through HTTPS. Switch to `reverb` when live message delivery should
 be active. The Reverb app key is public browser configuration; keep
 `REVERB_APP_SECRET` private.
 
-Set `WAYFINDR_VERSION` and `WAYFINDR_COMMIT` from the deploy pipeline when
-available. They are optional, but they make `/operator` and
-`/dashboard/readiness` much more useful when someone needs to confirm what is
-running.
+Set `WAYFINDR_VERSION` and `WAYFINDR_COMMIT` from the deploy pipeline. The
+official image bakes both, and a deploy that builds from source falls back to
+`<VERSION>-dev` (from the repository's `VERSION` file), so an install always
+reports *something* — but a bare `-dev` names the lineage, not the build. Setting
+them pins the exact build, which is what lets version checks actually verify:
+without it, a **restore cannot confirm an archive matches this install** and
+keeps the site in maintenance for you to check (ADR 0012). They also make
+`/operator` and `/dashboard/readiness` far more useful when someone needs to
+confirm what is running.
 
 ## Deploy Flow
 

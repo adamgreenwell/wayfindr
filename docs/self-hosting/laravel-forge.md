@@ -261,9 +261,32 @@ database dumps, storage retention, monitoring, or restore drills from inside the
 application request. Confirm those pieces in Forge or your infrastructure
 provider before putting real visitor conversations through the instance.
 
-`WAYFINDR_VERSION` and `WAYFINDR_COMMIT` are optional release identity values.
-Set them from your deploy process when available so the operator console can
-show the running build without exposing secrets.
+`WAYFINDR_VERSION` and `WAYFINDR_COMMIT` are the release identity. A Forge site
+builds from source on the host, so nothing bakes an identity into it the way the
+official image does. Without them the install falls back to `<VERSION>-dev` (read
+from the repository's `VERSION` file) — honest about the lineage, but it does not
+pin a build, so anything that compares versions treats it as unverifiable. In
+practice that means a **restore cannot confirm the archive matches this install**
+and will keep the site in maintenance for you to check (ADR 0012).
+
+To pin the exact build, set them in Forge's **Environment** panel — that is the
+site's `.env`, which is where the application reads them from. Use the tag when
+you deploy a tagged release (`WAYFINDR_VERSION=v0.1.0-alpha.3`), so it reports as
+that release rather than a development build.
+
+For per-deploy precision without editing the panel each time, have the deploy
+script rewrite those two lines. They must be written **before** `config:cache`,
+because the identity is resolved in a config file and is therefore baked into the
+config cache:
+
+```bash
+# in the site root, before the artisan cache steps
+sed -i "s|^WAYFINDR_VERSION=.*|WAYFINDR_VERSION=$(cat VERSION)-dev+$(git rev-parse --short HEAD)|" .env
+sed -i "s|^WAYFINDR_COMMIT=.*|WAYFINDR_COMMIT=$(git rev-parse HEAD)|" .env
+```
+
+(Both keys are present-but-empty in the environment template above, so `sed`
+has a line to replace.)
 
 The command refuses to run when bootstrap records already exist. Use `--force`
 only when you intentionally want to create or update the supplied account,

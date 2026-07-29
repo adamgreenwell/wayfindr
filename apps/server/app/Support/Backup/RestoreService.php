@@ -57,15 +57,27 @@ class RestoreService
     }
 
     /**
-     * Does this string name an actual release? Callers need to know WHICH side is
+     * Does this string pin a specific BUILD? Callers need to know WHICH side is
      * unidentified, not just that one of them is: the remedy differs sharply. An
      * unidentified ARCHIVE may have come from newer code, in which case an older
      * install has no migrations to run and `migrate` would be a no-op that leaves
      * an incompatible schema live — so it must not be offered as the fix.
+     *
+     * A development version (`0.1.0-dev`, ADR 0012) names a LINEAGE, not a build:
+     * two installs can both report it and be many commits — and migrations —
+     * apart. Comparing them as equal would be the same fail-open the sentinels
+     * caused, so it only counts as identified once build metadata (`+<sha>`)
+     * pins the exact build.
      */
     private function versionIsKnown(string $version): bool
     {
-        return ! in_array(mb_strtolower(trim($version)), self::INDETERMINATE_VERSIONS, true);
+        $normalized = mb_strtolower(trim($version));
+
+        if (in_array($normalized, self::INDETERMINATE_VERSIONS, true)) {
+            return false;
+        }
+
+        return ! str_contains($normalized, '-dev') || str_contains($normalized, '+');
     }
 
     /**

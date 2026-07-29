@@ -20,7 +20,18 @@ class ReleaseIdentity
 
     public static function version(): ?string
     {
-        return self::resolve(env('WAYFINDR_VERSION'), self::readFile(self::VERSION_FILE));
+        return self::resolve(
+            env('WAYFINDR_VERSION'),
+            self::readFile(self::VERSION_FILE),
+            // Last resort for a deploy that builds from source ON THE HOST
+            // (Forge, ADR 0003): nothing bakes /etc/wayfindr, so without this it
+            // would report no identity at all. The repo's VERSION file names the
+            // version under development, so `<VERSION>-dev` is the honest answer
+            // — it identifies the lineage without claiming to be that release.
+            // Operators who want an exact identity set WAYFINDR_VERSION, which
+            // still wins (ADR 0012).
+            self::developmentVersion(),
+        );
     }
 
     public static function commit(): ?string
@@ -29,18 +40,34 @@ class ReleaseIdentity
     }
 
     /**
-     * First non-blank of the env override then the baked value; null when
-     * neither carries anything (a source build with no identity set).
+     * First non-blank candidate, in precedence order; null when none carries
+     * anything.
      */
-    public static function resolve(?string $envValue, ?string $bakedValue): ?string
+    public static function resolve(?string ...$candidates): ?string
     {
-        foreach ([$envValue, $bakedValue] as $candidate) {
+        foreach ($candidates as $candidate) {
             if (is_string($candidate) && trim($candidate) !== '') {
                 return trim($candidate);
             }
         }
 
         return null;
+    }
+
+    /**
+     * `<VERSION>-dev` from the repository's VERSION file (two levels above the
+     * Laravel app root in this monorepo), or null when it is not readable — the
+     * published image, where /etc/wayfindr already answered.
+     */
+    private static function developmentVersion(): ?string
+    {
+        $version = self::readFile(dirname(base_path(), 2).'/VERSION');
+
+        if ($version === null || trim($version) === '') {
+            return null;
+        }
+
+        return trim($version).'-dev';
     }
 
     private static function readFile(string $path): ?string

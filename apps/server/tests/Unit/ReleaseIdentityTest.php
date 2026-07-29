@@ -33,3 +33,16 @@ test('nothing set anywhere resolves to null', function (): void {
         ->and(ReleaseIdentity::resolve('', ''))->toBeNull()
         ->and(ReleaseIdentity::resolve('  ', "\n"))->toBeNull();
 });
+
+// ---- Development identity (ADR 0012 slice 2) ------------------------------
+
+test('the baked image value still wins over the development fallback', function (): void {
+    // Precedence is env → baked → dev: a published image must never report -dev.
+    expect(ReleaseIdentity::resolve(null, 'v0.1.0-alpha.3', '0.1.0-dev'))
+        ->toBe('v0.1.0-alpha.3');
+});
+
+test('a host build with no baked identity falls back to the development version', function (): void {
+    // The Forge/source-on-host case that previously resolved to null → "unknown".
+    expect(ReleaseIdentity::resolve(null, null, '0.1.0-dev'))->toBe('0.1.0-dev');
+});
