@@ -114,12 +114,37 @@ consumer: **anything evaluating an upgrade must collect the declarations of ever
 release in `(current, target]` and present the union of their required actions.**
 A release manifest is never read in isolation.
 
+**A union is not enough on its own, because actions are ordered.** An action
+belonging to `v2` may need `v2`'s code or schema to exist — it can be runnable
+neither on `v1` before pulling, nor on `v3` afterwards. Collapsing the span into
+an undifferentiated list would present such a step as though it could be done at
+either end, which is worse than not listing it. So each declared action keeps:
+
+- the **release it belongs to**, and
+- an **execution phase** — before pulling, or after the new code is live.
+
+An action that can only be performed while its own release is running makes the
+jump **non-direct**: the operator is told to step through that release rather
+than being handed a list that cannot be executed in the order given. In other
+words `minimum_upgrade_from` bounds how far back a jump may start; the phase
+information decides whether a supported span can be crossed in one step at all.
+
 ### Comparison answers two questions, not one
 
 Comparisons use an ordered SemVer comparator rather than string equality, so the
 restore can tell an operator whether an archive is *older or newer* instead of
 hedging both remedies, and the upgrade path can evaluate `minimum_upgrade_from`
 and refuse an unsupported jump.
+
+**Direction alone is not a remedy, though.** Knowing an archive is older says
+only which way the gap runs, not that it can be closed: the span it crosses may
+contain a release whose action is phase-bound, or start below the running
+release's `minimum_upgrade_from`, in which case "just migrate forward" is
+confidently wrong advice about an unsupported move. So restore guidance is
+direction-aware only once the intervening declarations and the upgrade floor have
+been consulted; where they are unavailable or say the span cannot be crossed
+directly, it stays neutral and says why. Precedence narrows the guidance — it
+does not license it.
 
 But SemVer §10 says **build metadata is ignored when determining precedence** —
 `0.1.0-dev+aaaaaaa` and `0.1.0-dev+bbbbbbb` are *equal* to a conforming
@@ -198,16 +223,20 @@ introduced, which is why it is settled here rather than in slice 3.
    normal outcomes.
 3. **Ordered comparator**, keeping identity and precedence separate, normalizing
    the `v` prefix on every version it reads, and returning *no direction* when
-   either side is a development version (§"Comparison answers two questions"),
-   and the restore's skew guidance becomes
-   direction-aware *where a direction exists* — still neutral between two builds
-   of the same version. Slice 2's guarantee that two differing dev builds count
-   as skew must survive this change; today it holds only because comparison is
-   string-based, so it needs a regression test before the comparator lands.
-4. **Release manifest** (`requires_operator_action`, `minimum_upgrade_from`)
-   published with each release, and `install.sh --upgrade` gains a preflight that
-   collects the declarations across `(current, target]` — not just the target's —
-   and refuses or warns before pulling.
+   either side is a development version (§"Comparison answers two questions").
+   Slice 2's guarantee that two differing dev builds count as skew must survive
+   this change; today it holds only because comparison is string-based, so it
+   needs a regression test before the comparator lands. Note this slice does
+   **not** by itself make the restore's guidance direction-aware — direction is
+   necessary but not sufficient, and the declarations that make it safe to act on
+   arrive in slice 4. Until then the guidance stays neutral.
+4. **Release manifest** (`requires_operator_action` with each action's release and
+   execution phase, plus `minimum_upgrade_from`) published with each release, and
+   `install.sh --upgrade` gains a preflight that collects the declarations across
+   `(current, target]` — not just the target's — refuses or warns before pulling,
+   and requires stepping when an action cannot be performed outside its own
+   release. Restore guidance becomes direction-aware only once it can read these;
+   until then it stays neutral (see §"Comparison answers two questions").
 5. **Floor enforcement** — reject a direct upgrade from below
    `minimum_upgrade_from`, with the supported stepping path.
 
