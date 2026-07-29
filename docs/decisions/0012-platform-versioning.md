@@ -165,7 +165,9 @@ either end, which is worse than not listing it. So each declared action keeps:
 
 - the **release it belongs to**,
 - whether it **depends on that release's own code or schema** (which decides
-  whether a direct jump may skip past it — see below), and
+  whether a direct jump may skip past it — see below),
+- any earlier action it **supersedes**, so a requirement a later release retires
+  is not presented to someone skipping past both, and
 - an **execution phase**, of which there are three, because the upgrade has three
   distinct moments (`install.sh --upgrade` pulls, then runs `compose up -d`,
   which starts the stack *and* runs migrations):
@@ -194,9 +196,23 @@ release. Anything that runs *its release's* code must declare that dependence,
 and any such action in the span makes the jump **non-direct**: the operator steps
 through that release rather than being handed a sequence that cannot be executed.
 
+**Later releases can also retire earlier requirements, and the union must respect
+that.** If `v2` requires a second worker and `v3` folds that queue back into the
+default one, the `v2` action is code-independent — so the dependence rule lets it
+cross a skipped release — yet presenting it to someone jumping `v1 → v3` tells
+them to build infrastructure the target does not want. An obsolete instruction is
+arguably worse than a missing one: it is confidently actionable and wrong.
+
+So a release may declare that it **supersedes** an earlier action, and anything
+evaluating a span resolves supersession *before* presenting the union. Where
+supersession cannot be determined — an undeclared release in the span, say — the
+span falls back to the same conservative answer as everywhere else in this ADR:
+step through rather than assert.
+
 In other words `minimum_upgrade_from` bounds how far back a jump may start; the
 declared dependence of intermediate actions decides whether a supported span can
-be crossed in one step at all.
+be crossed in one step; and supersession decides which of the surviving actions
+are still real by the time the operator arrives at the target.
 
 **A missing declaration means unknown, not "nothing required".** Every release
 published before this ADR carries no manifest, and reading that absence as
@@ -238,7 +254,14 @@ would therefore hand back the fail-open this whole effort exists to remove.
 So the system asks two separate questions, and must not conflate them:
 
 1. **"Are these the same build?"** — compared over the **full** identity,
-   including build metadata. This is what a restore's skew check uses.
+   including build metadata. This is what a restore's skew check uses. For a
+   **development identity that carries no build metadata**, the answer is always
+   *indeterminate* — never "same", even against a byte-identical string. A dirty
+   build deliberately omits the commit, so every dirty checkout sharing a
+   `VERSION` reports the same bare `<version>-dev` while containing different
+   code; equating those would walk straight back into the fail-open this ADR
+   exists to close. Equality for a development identity therefore *requires* the
+   commit.
 2. **"Which is newer?"** — SemVer precedence, which ignores build metadata and is
    therefore **undefined** between two builds of the same version.
 
