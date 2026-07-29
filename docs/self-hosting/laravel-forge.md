@@ -288,7 +288,14 @@ detached from the Environment panel: later panel edits update the shared file
 while this release keeps reading its stale copy until the next deploy.
 
 ```bash
-# in the site root, before the artisan cache steps.
+# Insert before the artisan cache steps. Both scripts have changed into
+# `apps/server` by that point, so nothing here may assume the repository root is
+# the working directory: `VERSION` lives at the root, and `git ls-files` is
+# scoped to the current directory, which would hide an untracked file elsewhere
+# in the repo from the clean-tree gate below. Resolve the root once and be
+# explicit about it. Everything else (`git tag`, `git diff`, `git rev-parse`)
+# is repo-wide from any subdirectory.
+root=$(git rev-parse --show-toplevel)
 
 # A checkout sitting exactly on a tag reports that tag; anything else is a
 # development build. Deriving this rather than hand-setting it is what keeps a
@@ -368,7 +375,7 @@ fi
 # brand-new migration is invisible to a tracked-changes check but is very much
 # part of what is deployed.
 if git diff --quiet && git diff --cached --quiet \
-   && [ -z "$(git ls-files --others --exclude-standard)" ]; then
+   && [ -z "$(git -C "$root" ls-files --others --exclude-standard)" ]; then
   commit=$(git rev-parse HEAD)
 else
   # A tag names a commit, not a modified copy of one, so a dirty tree cannot
@@ -382,13 +389,15 @@ fi
 # 0012 makes it never compare equal to anything, so the restore treats it as
 # indeterminate and warns rather than asserting a match it cannot support.
 if [ -n "$commit" ]; then
-  version=${tag:-"$(cat VERSION)-dev+$commit"}
+  version=${tag:-"$(cat "$root/VERSION")-dev+$commit"}
 else
-  version=${tag:-"$(cat VERSION)-dev"}
+  version=${tag:-"$(cat "$root/VERSION")-dev"}
 fi
 
-# Only zero-downtime sites share .env as a symlink; note what it was so the
-# check below applies to the mode you are actually running.
+# Running from `apps/server`, this `.env` is the link both deploy scripts create
+# to the Forge environment file at the repository root, so it is a symlink on
+# every site type rather than only on zero-downtime ones. Record what it was
+# rather than assuming, so the check below still fits if you relocate this block.
 was_link=0; [ -L .env ] && was_link=1
 
 sed -i --follow-symlinks "s|^WAYFINDR_VERSION=.*|WAYFINDR_VERSION=${version}|" .env
