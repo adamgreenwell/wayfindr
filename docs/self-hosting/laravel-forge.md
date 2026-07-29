@@ -288,6 +288,14 @@ sed -i "s|^WAYFINDR_COMMIT=.*|WAYFINDR_COMMIT=$(git rev-parse HEAD)|" .env
 (Both keys are present-but-empty in the environment template above, so `sed`
 has a line to replace.)
 
+This pins the commit because a Forge release is a **fresh checkout of the ref** —
+the tree is clean by construction, so the sha genuinely names the deployed code.
+If you adapt this for a host where the working tree can carry local edits or
+untracked files, apply the clean-tree gate from
+[install.md](install.md) first: a sha stamped from a modified tree names code
+that is not what is running, and two differently-modified deploys would claim the
+same identity.
+
 The command refuses to run when bootstrap records already exist. Use `--force`
 only when you intentionally want to create or update the supplied account,
 agent, and site records:

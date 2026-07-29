@@ -17,8 +17,13 @@ services:
         # Left unset, a source build derives `<VERSION>-dev` from the committed
         # VERSION file (ADR 0012). Pass the commit to pin the exact build, which
         # is what makes the identity comparable — a bare `-dev` names a lineage,
-        # not a build, so version checks treat it as unverifiable:
+        # not a build, so version checks treat it as unverifiable.
         #
-        #   WAYFINDR_BUILD_COMMIT=$(git rev-parse HEAD) docker compose ... --build
+        # Pass it ONLY from a clean checkout. `git rev-parse HEAD` names the last
+        # commit regardless of local edits or new files, but the build context
+        # includes them — so two materially different dirty builds would carry the
+        # same "pinned" identity and a restore would read them as an exact match.
+        # See docs/self-hosting/install.md for the guarded command; a dirty tree
+        # should build with WAYFINDR_BUILD_COMMIT unset.
         WAYFINDR_VERSION: ${WAYFINDR_BUILD_VERSION:-}
         WAYFINDR_COMMIT: ${WAYFINDR_BUILD_COMMIT:-}
