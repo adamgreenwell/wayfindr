@@ -78,7 +78,9 @@ per-release declaration below, not the digit, is authoritative until 1.0.
   today's literal `source`, so a development install still identifies its code.
   The sha is not abbreviated: build metadata is what pins the build for
   comparison, and a colliding abbreviation would make two different commits read
-  as the same build.
+  as the same build. A sha pins the build **only from a clean checkout** (see
+  below); a dirty tree stamps no commit at all, because the alternative is an
+  identity that is confidently wrong.
 - **Deploys that build from source on the host** (Forge, and ADR 0003's path) —
   document `WAYFINDR_VERSION` as part of the expected environment, since nothing
   bakes it for them.
@@ -96,10 +98,21 @@ Reserving it in the scheme is what makes the inference sound. (`-dev.1` or
 
 **A dirty tree cannot pin a build.** `git rev-parse HEAD` still reports the last
 commit when the working tree has uncommitted edits, so stamping it would name
-code that is not what was built — and two different dirty builds would claim the
-same identity, which is a fail-open. A build from a dirty tree therefore omits
+code that is not what was built — and a clean checkout plus any number of
+differently-modified ones would all claim the *same* identity, which is a
+fail-open in the restore's skew check. A build from a dirty tree therefore omits
 the commit and identifies by lineage only, which consumers correctly treat as
 unverifiable.
+
+This one is a **discipline, not an enforced invariant**, and the ADR says so
+rather than implying a guarantee it cannot make: `.git` is excluded from the
+Docker build context, so the build genuinely cannot inspect the tree it was
+handed — it can only trust the commit the builder passes. The documented build
+commands therefore check the tree *before* invoking the build, and the honest
+framing for anyone automating their own path is that supplying a sha is an
+assertion of cleanliness. A content digest over the build context would make it
+self-verifying, and is the natural upgrade if development builds ever start
+circulating beyond the machine that made them.
 
 An unidentified install is not an error, but every feature that compares
 versions must treat "no identity" as *indeterminate* — never as agreement. That
