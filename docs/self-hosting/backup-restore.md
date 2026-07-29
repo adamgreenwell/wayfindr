@@ -190,18 +190,37 @@ Three things to know:
   backup settings page.
 - **On a version mismatch, an unverifiable version, or any failure, it stays down
   for you.** The site is brought back up automatically only after a fully clean
-  restore. If the archive's version differs from the running code, if the versions
-  **cannot be verified** (this install carries no release identity — set
-  `WAYFINDR_VERSION`, or run the official image, so restores can check
-  automatically), or the restore fails part-way (the
-  database can be replaced before attachments finish), the restore leaves the site
-  in maintenance so an inconsistent or incompatible install is never exposed —
-  finish on the server. For a version skew, reconcile schema and code (if the
-  backup is **older**, `php artisan migrate --force`; if it is **newer**, deploy a
-  matching or newer release), then `php artisan up`. For a failure, verify the
-  database and attachments, then `php artisan up` or re-run the restore. Either
-  way, restart the workers you stopped: `docker compose start queue scheduler`.
-  (The recorded status spells out which case you are in.)
+  restore. Otherwise it leaves the site in maintenance so an inconsistent or
+  incompatible install is never exposed — finish on the server, then
+  `php artisan up`, and restart the workers you stopped
+  (`docker compose start queue scheduler`). The recorded status spells out which
+  case you are in:
+
+  - **Version skew** (both versions known, and they differ) — reconcile schema and
+    code: if the backup is **older**, `php artisan migrate --force`; if it is
+    **newer**, deploy a matching or newer release.
+  - **This install has no release identity** — confirm it runs code compatible
+    with the version the archive names, and that the schema is current. Set
+    `WAYFINDR_VERSION` (or run the official image, which bakes it in) so future
+    restores can verify automatically.
+  - **The archive has no release identity** — setting `WAYFINDR_VERSION` now does
+    **not** help: the identity is written into the archive's manifest at backup
+    time, so an already-taken archive cannot be identified after the fact. If it
+    came from a **newer** release, this install has no migrations that would bring
+    the schema forward — migrating would do nothing and leave an incompatible
+    schema live. Establish which release it came from before lifting maintenance.
+    The manifest still carries the commit and the timestamp, which is usually
+    enough:
+
+    ```bash
+    tar -xzOf /backups/<prefix>/wayfindr-backup-YYYYMMDD-HHMMSS-xxxxxx.tar.gz ./manifest.json
+    ```
+
+    Read `wayfindr_commit` (identifies the exact code, even when the version is
+    unset) and `created_at` (correlate against your deploy history), then deploy
+    code compatible with it.
+  - **A failed or part-way restore** — verify the database and attachments, then
+    bring the site up or re-run the restore.
 - **It needs Redis-backed queue, cache, and maintenance state.** The queued job,
   its status, and the maintenance-mode marker all have to survive the database
   being rebuilt and be visible across processes, so the in-GUI restore is only
