@@ -606,3 +606,27 @@ test('the CLI points at WAYFINDR_VERSION when THIS INSTALL is the unidentified s
         ->assertSuccessful()
         ->expectsOutputToContain('THIS INSTALL carries no release identity');
 });
+
+test('an indeterminate restore does not print a version summary that contradicts the warning', function (): void {
+    fakeRestorer();
+    Storage::fake('attachments');
+    config()->set('wayfindr.release.version', null);
+    $archive = makeBackupArchive(['wayfindr_version' => 'unknown', 'local_attachment_disks' => []]);
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive])
+        ->assertSuccessful()
+        ->expectsOutputToContain('could NOT be verified')
+        // ...and must NOT then present 'unknown' as an established common version.
+        ->doesntExpectOutputToContain('Wayfindr version:');
+});
+
+test('a verified matching restore still prints the established version', function (): void {
+    fakeRestorer();
+    Storage::fake('attachments');
+    config()->set('wayfindr.release.version', 'v0.3.0');
+    $archive = makeBackupArchive(['wayfindr_version' => 'v0.3.0', 'local_attachment_disks' => []]);
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive])
+        ->assertSuccessful()
+        ->expectsOutputToContain('Wayfindr version: v0.3.0');
+});

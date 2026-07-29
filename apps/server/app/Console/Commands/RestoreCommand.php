@@ -64,7 +64,11 @@ class RestoreCommand extends Command
 
         $this->line('Database restored.');
 
-        if (! $result['version_skew']) {
+        // Only when a single version was actually ESTABLISHED — i.e. both sides
+        // were known and agreed. Printing it for an indeterminate pair would
+        // contradict the "could not be verified" warning just above, presenting
+        // 'unknown' as if it were a confirmed common version.
+        if (! $result['version_skew'] && ! ($result['version_indeterminate'] ?? false)) {
             $this->line('  Wayfindr version: '.$result['archive_version']);
         }
 
