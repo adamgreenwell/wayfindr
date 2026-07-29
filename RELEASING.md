@@ -4,7 +4,7 @@ Wayfindr is self-hosted: a release is something other people have to *operate*.
 The version number and the changelog entry are the only signals an operator gets
 about whether an upgrade is safe to take unattended, so both are decided
 deliberately, not derived from the diff. The contract is ADR
-[0012](docs/decisions/0012-platform-versioning.md).
+0012 (`docs/decisions/0012-platform-versioning.md`).
 
 ## 1. Decide the number
 
