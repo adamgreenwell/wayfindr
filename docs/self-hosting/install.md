@@ -127,15 +127,20 @@ unverifiable, and a **restore cannot confirm an archive matches the install**
 build and make the identity comparable:
 
 ```bash
-# Commit first. `git rev-parse HEAD` reports the last commit even when the tree
-# has uncommitted edits, but Docker builds the edited files — so a dirty build
-# would claim to be a commit it is not, and two different dirty builds would
-# claim to be the same one. Build a dirty tree WITHOUT the commit instead: it
-# then identifies by lineage only, which version checks correctly treat as
-# unverifiable.
-git diff --quiet && git diff --cached --quiet || echo 'Uncommitted changes: omit WAYFINDR_BUILD_COMMIT for this build.'
+# The commit is passed ONLY from a clean checkout. `git rev-parse HEAD` reports
+# the last commit even when the tree has uncommitted edits, but Docker builds the
+# edited files — so a dirty build would claim to be a commit it is not, and two
+# differently-edited trees would claim to be the same one. A dirty build
+# therefore gets no commit and identifies by lineage only (`0.1.0-dev`), which
+# version checks correctly treat as unverifiable.
+if git diff --quiet && git diff --cached --quiet; then
+  export WAYFINDR_BUILD_COMMIT="$(git rev-parse HEAD)"
+else
+  unset WAYFINDR_BUILD_COMMIT
+  echo 'Uncommitted changes — building without a pinned commit identity.'
+fi
 
-WAYFINDR_BUILD_COMMIT=$(git rev-parse HEAD) docker compose \
+docker compose \
   -f docker/self-hosting/compose.yml \
   -f docker/self-hosting/compose.build.yml \
   --env-file docker/self-hosting/.env up -d --build
