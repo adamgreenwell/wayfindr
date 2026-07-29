@@ -133,11 +133,16 @@ build and make the identity comparable:
 # differently-edited trees would claim to be the same one. A dirty build
 # therefore gets no commit and identifies by lineage only (`0.1.0-dev`), which
 # version checks correctly treat as unverifiable.
-if git diff --quiet && git diff --cached --quiet; then
+# `git diff` only inspects TRACKED files, so the untracked check matters too: a
+# brand-new migration or class is invisible to it but goes straight into the
+# build context. `--exclude-standard` honours .gitignore, so vendor/ and friends
+# do not count as dirt.
+if git diff --quiet && git diff --cached --quiet \
+   && [ -z "$(git ls-files --others --exclude-standard)" ]; then
   export WAYFINDR_BUILD_COMMIT="$(git rev-parse HEAD)"
 else
   unset WAYFINDR_BUILD_COMMIT
-  echo 'Uncommitted changes — building without a pinned commit identity.'
+  echo 'Uncommitted or untracked changes — building without a pinned commit identity.'
 fi
 
 docker compose \
