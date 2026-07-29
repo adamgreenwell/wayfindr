@@ -322,52 +322,56 @@ root=$(git rev-parse --show-toplevel)
 # Both Forge deploy scripts run `set -euo pipefail`, so a `grep` that matches
 # nothing would abort the deploy — precisely on the untagged branch deploy this
 # fallback exists to serve. `|| true` keeps the no-match path successful.
+# Canonicalize once, here, rather than at each place that reads this list. ADR
+# 0012 makes the unprefixed form canonical, and folding `v1.2.3` into `1.2.3` at
+# the boundary means `1.2.3` and its `v1.2.3` alias are one entry rather than
+# two — so adding an alias cannot change what is selected, how many candidates
+# there appear to be, or the identity of unchanged code. Every step below can
+# then assume unprefixed input and compare like with like.
 release_tags=$(git tag --points-at HEAD 2>/dev/null \
   | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$' \
-  | grep -vEi -- '-dev$' || true)
+  | grep -vEi -- '-dev$' \
+  | sed -E 's/^v//' \
+  | sort -u || true)
 
 # Prefer a stable tag over a prerelease on the same commit. `sort -V` is natural
 # ordering, not SemVer precedence: it ranks `v1.2.3-alpha` ABOVE `v1.2.3`, so a
 # promoted release would otherwise be stamped with its prerelease name.
 #
 # A prerelease is a hyphen immediately after the version core — NOT any hyphen,
-# which would misread `v1.2.3+build-1` (a stable release with a hyphen in its
+# which would misread `1.2.3+build-1` (a stable release with a hyphen in its
 # build metadata) as a prerelease and hand the identity back to the alpha tag.
+# The `v?` is belt-and-braces: the list is unprefixed by construction, and this
+# keeps the filter correct rather than silently wrong if that ever changes.
 #
-# Sort on a `v`-stripped key, not the raw tag. `sort -V` compares the surrounding
-# text too, so a digit sorts before `v` and a mixed-convention pair (`1.3.0`
-# alongside `v1.2.3`, from a renaming or a compatibility alias) would otherwise
-# select the OLDER tag. Decorate with the key, sort, then drop it: a space is a
-# safe separator because git ref names cannot contain one, and `-E` keeps the
-# expression valid on both GNU and BSD sed.
+# Sorting is safe now that every candidate is unprefixed. On mixed input it is
+# not — `sort -V` compares the surrounding text too, so a digit sorts before `v`
+# and `1.3.0` alongside `v1.2.3` would select the OLDER tag. Canonicalizing at
+# the boundary is what removes that hazard, rather than a decorated sort key here.
 #
-# Keep the stripped key as the recorded value, not the raw tag. ADR 0012 makes
-# the unprefixed form canonical, and recording it here is what keeps the identity
-# stable: a commit tagged `1.2.3` that later gains the alias `v1.2.3` must not
-# change identity, which is the same "an alias must not rename unchanged code"
-# rule the enumeration above exists to satisfy. Nothing normalizes this on read
-# yet — RestoreService still compares with a plain `!==` — so a writer that
-# emitted both forms over time would report skew against its own older backups.
-#
-# Official images are still stamped verbatim by release-image.yml, so an archive
-# from one reads `v0.1.0-alpha.3` against a Forge install's `0.1.0-alpha.3`. That
-# comparison comes out unequal, which warns rather than proceeds; ADR 0012's
-# read-side normalization (slice 3) is what reconciles the two paths for good.
+# Nothing normalizes the `v` on read yet — RestoreService still compares with a
+# plain `!==` — so recording the canonical form is what keeps a site's own
+# backups comparable across an alias being added. Official images are still
+# stamped verbatim by release-image.yml, so an archive from one reads
+# `v0.1.0-alpha.3` against a Forge install's `0.1.0-alpha.3`; that pair compares
+# unequal, which warns rather than proceeds, and ADR 0012's read-side
+# normalization (slice 3) is what reconciles the two writers for good.
 tag=$(printf '%s\n' "$release_tags" \
   | grep -vE '^v?[0-9]+\.[0-9]+\.[0-9]+-' \
-  | sed -E 's/^(v?)(.*)$/\2 \1\2/' \
   | sort -V \
-  | tail -1 \
-  | cut -d' ' -f1 || true)
+  | tail -1 || true)
 
 # No stable tag: take a prerelease only when it is unambiguous. `sort -V` is not
 # SemVer precedence for prerelease identifiers either — SemVer ranks `alpha.beta`
 # above `alpha.1`, `sort -V` inverts it — and rather than implement that
 # comparison here, decline to choose. Picking arbitrarily would let a later alias
 # change the identity of unchanged code and report skew between identical builds.
+# The count is over canonical, deduplicated versions, so `1.2.3-alpha.1` and its
+# `v1.2.3-alpha.1` alias count once. Counting raw tags would read that pair as
+# two candidates, call an unambiguous release ambiguous, and drop a site that had
+# been identifying as `1.2.3-alpha.1` down to a development identity.
 if [ -z "$tag" ] && [ "$(printf '%s\n' "$release_tags" | grep -c .)" = 1 ]; then
-  # Stripped here too, for the same reason the stable path strips.
-  tag=${release_tags#v}
+  tag=$release_tags
 fi
 
 # Two or more prereleases and no stable tag leaves `tag` empty on purpose. The
