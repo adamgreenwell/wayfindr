@@ -140,6 +140,24 @@ but a commit hash has no meaningful order, so that would only manufacture
 confident-sounding nonsense. Admitting the direction is unknown is the honest
 answer, and callers must be written to accept it.
 
+**A development version has no precedence at all.** The same trap applies to the
+`-dev` suffix itself, not just the sha, and it is worse because the ordering
+*looks* meaningful:
+
+- `0.1.0-alpha.3 < 0.1.0-dev` — "alpha" sorts before "dev", so a source checkout
+  that **predates** alpha.3 still reads as newer than it.
+- `0.2.0-dev < 0.2.0` — a prerelease sorts below its stable version, so a
+  checkout taken *after* `v0.2.0` reads as older than the release it follows.
+
+A development build sits at an unknown point in history; nothing in its identity
+says where. So precedence is **undefined whenever either side is a development
+version**, and callers must treat that as direction-unknown rather than trusting
+the comparator's answer. Only the identity question ("same build?") remains
+meaningful. Keeping `VERSION` moving to the *next* development version after each
+release (see `RELEASING.md`) avoids publishing an identity that is wrong on its
+face, but it does not make the ordering trustworthy — that is why the rule is
+stated here rather than left to release hygiene.
+
 **The canonical form carries no `v` prefix.** Git tags keep it by convention, and
 the release workflow bakes the tag verbatim, so official installs identify as
 `v0.1.0-alpha.3` while a source build produces `0.1.0-dev`. SemVer has no `v` in
@@ -178,9 +196,10 @@ introduced, which is why it is settled here rather than in slice 3.
 2. **Identity everywhere.** Source/Compose builds stamp `-dev+<sha>`;
    `WAYFINDR_VERSION` documented for host-build deploys; `source`/null retired as
    normal outcomes.
-3. **Ordered comparator**, keeping identity and precedence separate and
-   normalizing the `v` prefix on every version it reads (§"Comparison answers two
-   questions"), and the restore's skew guidance becomes
+3. **Ordered comparator**, keeping identity and precedence separate, normalizing
+   the `v` prefix on every version it reads, and returning *no direction* when
+   either side is a development version (§"Comparison answers two questions"),
+   and the restore's skew guidance becomes
    direction-aware *where a direction exists* — still neutral between two builds
    of the same version. Slice 2's guarantee that two differing dev builds count
    as skew must survive this change; today it holds only because comparison is
