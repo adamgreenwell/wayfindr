@@ -102,9 +102,15 @@ FROM php-base AS runtime
 #
 # The release workflow passes the tag and commit. A SOURCE build passes neither,
 # and instead of the old opaque "source" it derives an identity from the
-# committed VERSION file: `<VERSION>-dev`, plus `+<short-sha>` when the builder
+# committed VERSION file: `<VERSION>-dev`, plus `+<sha>` when the builder
 # supplies a commit (ADR 0012). `.git` is dockerignored, so the VERSION file is
 # the only in-context anchor a source build has.
+#
+# The sha is NOT abbreviated. Build metadata is what pins the build for version
+# comparison, and an abbreviation that collides would make two different commits
+# compare as the same build — reintroducing the fail-open this is here to
+# prevent. The operator console shows the commit on its own line ("Source
+# revision"), so the version string carries no display burden.
 ARG WAYFINDR_VERSION=
 ARG WAYFINDR_COMMIT=
 
@@ -118,7 +124,7 @@ RUN mkdir -p /etc/wayfindr \
        else \
            version="$(tr -d '[:space:]' < /tmp/wayfindr-version)-dev"; \
            if [ -n "${WAYFINDR_COMMIT}" ]; then \
-               version="${version}+$(printf '%s' "${WAYFINDR_COMMIT}" | cut -c1-7)"; \
+               version="${version}+$(printf '%s' "${WAYFINDR_COMMIT}" | tr -cd '[:alnum:]')"; \
            fi; \
        fi \
     && printf '%s' "${version}" > /etc/wayfindr/version \

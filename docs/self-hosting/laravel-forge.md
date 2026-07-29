@@ -281,7 +281,7 @@ config cache:
 
 ```bash
 # in the site root, before the artisan cache steps
-sed -i "s|^WAYFINDR_VERSION=.*|WAYFINDR_VERSION=$(cat VERSION)-dev+$(git rev-parse --short HEAD)|" .env
+sed -i "s|^WAYFINDR_VERSION=.*|WAYFINDR_VERSION=$(cat VERSION)-dev+$(git rev-parse HEAD)|" .env
 sed -i "s|^WAYFINDR_COMMIT=.*|WAYFINDR_COMMIT=$(git rev-parse HEAD)|" .env
 ```
 
