@@ -339,8 +339,12 @@ introduced, which is why it is settled here rather than in slice 3.
    **not** by itself make the restore's guidance direction-aware — direction is
    necessary but not sufficient, and the declarations that make it safe to act on
    arrive in slice 4. Until then the guidance stays neutral.
-4. **Release manifest** (`requires_operator_action` with each action's release and
-   execution phase, plus `minimum_upgrade_from`) published with each release, and
+4. **Release manifest** — `requires_operator_action` carrying, for each action,
+   its release, its **code/schema dependence**, anything it **supersedes**, and
+   its execution phase, plus `minimum_upgrade_from`. All four action fields are
+   load-bearing: without dependence the preflight cannot tell when an
+   intermediate release must not be skipped, and without supersession it presents
+   work a later release has already retired. Published with each release, and
    `install.sh --upgrade` gains a preflight that collects the declarations across
    `(current, target]` — not just the target's — refuses or warns before pulling,
    and requires stepping when an action cannot be performed outside its own
@@ -358,6 +362,16 @@ introduced, which is why it is settled here rather than in slice 3.
    the original arguments, guarded against re-exec loops). Overwriting a script
    that bash is still reading is its own hazard, so the hand-off is worth doing
    regardless.
+
+   **The hand-off cannot protect its own arrival.** An upgrade launched by any
+   pre-slice-4 installer runs a process that contains no re-exec instruction, so
+   the replacement it downloads is never given control no matter what that
+   replacement says. The capability can only take effect from the *next* upgrade
+   onward. The release that introduces the preflight must therefore itself
+   **require no operator action** — safe to take unprotected — so that every
+   install gets one harmless hop that leaves the hand-off in place. Only releases
+   after that bootstrap may rely on the preflight, and no release requiring
+   operator action may ship until it has landed.
 5. **Floor enforcement** — reject a direct upgrade from below
    `minimum_upgrade_from`, with the supported stepping path.
 
