@@ -41,12 +41,35 @@ they drift, every source build between this release and the next claims the wron
 lineage — a build after `v0.2.0` would still report `0.1.0-dev`.
 
 ```bash
-# VERSION and the tag must agree; the tag carries the conventional "v"
+# VERSION and the tag must agree; the tag carries the conventional "v".
+# Stage both explicitly — `commit -a` would skip VERSION the first time,
+# because a file git has never seen is untracked, not modified.
 printf '0.2.0\n' > VERSION
-git commit -am "Release 0.2.0"
+git add VERSION CHANGELOG.md
+git commit -m "Release 0.2.0"
 git tag v0.2.0
 git push origin main --tags
 ```
+
+### Then advance `VERSION` for the next cycle
+
+Immediately after tagging, move `VERSION` on to the *next* development version
+and commit that separately:
+
+```bash
+printf '0.3.0\n' > VERSION
+git add VERSION
+git commit -m "Begin 0.3.0 development"
+git push origin main
+```
+
+Leaving it at the version you just released would stamp every subsequent source
+build as `0.2.0-dev` — code that is *newer* than `0.2.0`, wearing a prerelease
+label that SemVer orders *below* it. A comparator would then read the newer
+checkout as older and could give backwards restore guidance. (Precedence for
+development builds is treated as indeterminate for exactly this reason — see
+ADR 0012 — but there is no sense in publishing an identity that is wrong on its
+face.)
 
 Pushing a `v*` tag is what triggers
 [release-image.yml](.github/workflows/release-image.yml) to build and publish the
