@@ -81,9 +81,24 @@ per-release declaration below, not the digit, is authoritative until 1.0.
   as the same build. A sha pins the build **only from a clean checkout** (see
   below); a dirty tree stamps no commit at all, because the alternative is an
   identity that is confidently wrong.
+
+  Even then a commit pins the **source, not the artifact**. The Dockerfile
+  consumes mutable inputs — `node:24-alpine`, `dunglas/frankenphp:1-php8.4`,
+  `composer:2`, live apt repositories — so rebuilding one clean commit months
+  apart can yield different runtimes under an identical `<version>-dev+<sha>`.
+  For a published release this is moot: the image has an immutable digest, and
+  that digest is the artifact identity. For source builds the sha is the best
+  available approximation, and the honest reading of a matching pair is "same
+  source", not "same image".
 - **Deploys that build from source on the host** (Forge, and ADR 0003's path) —
-  document `WAYFINDR_VERSION` as part of the expected environment, since nothing
-  bakes it for them.
+  `WAYFINDR_VERSION` is part of the expected environment, since nothing bakes it
+  for them. It must be **derived from the deployed commit by the deploy
+  pipeline**, not typed in once: a hand-entered value survives across every
+  subsequent deploy, so a continuously-deployed branch would run many commits
+  under one identity — and because a non-`-dev` value is eligible for
+  full-identity equality, backups taken from different code would compare as the
+  same build. Deriving it per deploy (or at minimum setting `WAYFINDR_COMMIT`
+  from the checkout) is what keeps the identity tied to what is running.
 - **`wayfindr_commit` is the fallback identity.** It resolves independently of
   the version and is already captured in every backup manifest, so an archive
   whose version is unset can still be traced to its code.
