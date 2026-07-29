@@ -404,6 +404,17 @@ introduced, which is why it is settled here rather than in slice 3.
    rather than assuming a preflight ran. The installer preflight is then what it
    honestly is: a good experience for installs that have it, not the guarantee.
 
+   **And that check must run before the automatic migration, not at serve time.**
+   `docker-entrypoint.sh` runs `php artisan migrate --force` and only then execs
+   the server, so a guard that refuses to *serve* has already let the schema
+   change happen — which is precisely what an `after-pull` action exists to
+   precede. The database would be altered before the required manual step, and
+   for the class of action that must run against the old schema, refusing to
+   serve afterwards is not a safeguard but an epitaph. The artifact's check
+   therefore belongs ahead of the migration in the entrypoint, halting there, or
+   the release must offer a migration-suppressed start for the operator to
+   complete the prerequisite from.
+
    (This layering question, along with the manifest shape below, has grown past
    what a versioning ADR should settle. Slice 4 likely warrants its own decision
    record; what belongs *here* is the constraint that the guarantee cannot rest
