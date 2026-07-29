@@ -415,8 +415,12 @@ if [ -z "$tag" ] && [ "$(printf '%s\n' "$release_tags" | grep -c .)" = 1 ]; then
   tag=$release_tags
 fi
 
-# Two or more prereleases and no stable tag leaves `tag` empty on purpose. The
-# only thing below that may touch it is the dirty-tree gate, which clears it.
+# `tag` is empty here in three cases, all deliberate: no release tag at all, two
+# or more stable tags tied on precedence, or two or more prereleases with no
+# stable tag. The last two are declined answers rather than missing ones — if a
+# future reader takes an empty `tag` for an oversight and resolves it by picking
+# a candidate, that reintroduces an alias renaming unchanged code. The only thing
+# below that may touch it is the dirty-tree gate, which clears it.
 
 # A commit names the deployed code only when the tree matches it. Forge's
 # zero-downtime path makes a fresh checkout per release, so this passes by
