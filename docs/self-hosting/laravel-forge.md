@@ -497,8 +497,34 @@ fi
 
 was_link=0; [ -L .env ] && was_link=1
 
-sed -i --follow-symlinks "s|^WAYFINDR_VERSION=.*|WAYFINDR_VERSION=${version}|" .env
-sed -i --follow-symlinks "s|^WAYFINDR_COMMIT=.*|WAYFINDR_COMMIT=${commit}|" .env
+# Replace the line when it is there, append it when it is not. A substitution on
+# its own writes nothing if there is no matching line, and an .env created before
+# these two keys joined the template above has no such line - so the deploy would
+# succeed, report nothing, and leave the identity sitting at its fallback. That
+# is the worst shape a failure can take, because it looks like it worked.
+set_env_value() {
+  key=$1
+  value=$2
+
+  if grep -q "^${key}=" .env; then
+    sed -i --follow-symlinks "s|^${key}=.*|${key}=${value}|" .env
+    return
+  fi
+
+  # Appending to a file whose last line has no trailing newline would splice the
+  # new key onto the end of the old line. Command substitution strips trailing
+  # newlines, so this is empty exactly when the file already ends in one.
+  if [ -s .env ] && [ -n "$(tail -c 1 .env)" ]; then
+    printf '\n' >> .env
+  fi
+
+  printf '%s=%s\n' "$key" "$value" >> .env
+}
+
+# `>>` writes through a symlink rather than replacing it, so the append path
+# needs no equivalent of `--follow-symlinks`.
+set_env_value WAYFINDR_VERSION "$version"
+set_env_value WAYFINDR_COMMIT "$commit"
 
 # If it was a shared symlink, it must still be one. Written as an `if` rather
 # than an `&&` chain because this is the last line of the snippet: an `&&` chain
@@ -509,8 +535,12 @@ if [ "$was_link" = 1 ] && [ ! -L .env ]; then
 fi
 ```
 
-(Both keys are present-but-empty in the environment template above, so `sed`
-has a line to replace.)
+Both keys appear present-but-empty in the environment template above, so a new
+site already has the lines to replace. An **existing** site does not: its `.env`
+predates those keys, and a plain substitution against a missing line writes
+nothing at all. The snippet therefore appends when the key is absent, which
+means it also works on a site that was set up before this section existed —
+without asking the operator to hand-edit the file first.
 
 Deploying a **tagged release** rather than a branch needs nothing extra: the
 snippet detects a checkout sitting exactly on a tag and reports that tag's
