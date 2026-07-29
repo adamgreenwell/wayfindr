@@ -97,12 +97,17 @@ Reserving it in the scheme is what makes the inference sound. (`-dev.1` or
 `-devpreview` are ordinary prerelease identifiers and stay available.)
 
 **A dirty tree cannot pin a build.** `git rev-parse HEAD` still reports the last
-commit when the working tree has uncommitted edits, so stamping it would name
-code that is not what was built — and a clean checkout plus any number of
+commit when the working tree carries uncommitted edits **or untracked files**, so
+stamping it would name code that is not what was built — and a clean checkout plus any number of
 differently-modified ones would all claim the *same* identity, which is a
 fail-open in the restore's skew check. A build from a dirty tree therefore omits
 the commit and identifies by lineage only, which consumers correctly treat as
 unverifiable.
+
+"Dirty" here means tracked modifications *and* non-ignored untracked files: a
+brand-new migration is invisible to a tracked-changes check but goes straight
+into the build context, which is the likeliest way to stamp a sha onto code that
+commit does not contain.
 
 This one is a **discipline, not an enforced invariant**, and the ADR says so
 rather than implying a guarantee it cannot make: `.git` is excluded from the
