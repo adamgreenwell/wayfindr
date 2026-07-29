@@ -163,7 +163,9 @@ neither on `v1` before pulling, nor on `v3` afterwards. Collapsing the span into
 an undifferentiated list would present such a step as though it could be done at
 either end, which is worse than not listing it. So each declared action keeps:
 
-- the **release it belongs to**, and
+- the **release it belongs to**,
+- whether it **depends on that release's own code or schema** (which decides
+  whether a direct jump may skip past it — see below), and
 - an **execution phase**, of which there are three, because the upgrade has three
   distinct moments (`install.sh --upgrade` pulls, then runs `compose up -d`,
   which starts the stack *and* runs migrations):
@@ -174,11 +176,27 @@ either end, which is worse than not listing it. So each declared action keeps:
     schema change belongs.
   - **`after-start`** — the new release is live and migrations have run.
 
-An action that can only be performed while its own release is running makes the
-jump **non-direct**: the operator is told to step through that release rather
-than being handed a list that cannot be executed in the order given. In other
-words `minimum_upgrade_from` bounds how far back a jump may start; the phase
-information decides whether a supported span can be crossed in one step at all.
+The phases describe where an action sits relative to *the upgrade being
+performed*, and that is only the whole story for the **target** release. For an
+**intermediate** release the phases do not save you, because in a `v1 → v3` jump
+`v2`'s code is never present at any point: `before-pull` has `v1`, and both
+`after-pull` and `after-start` have `v3`. A `v2` action that invokes a `v2`
+command is therefore unexecutable at every phase — and the command may have
+changed or been removed by `v3`, so attempting it is not merely awkward but
+potentially destructive.
+
+So the rule is about **dependence, not timing**. An intermediate release's action
+survives a direct jump only when it does not depend on that release's own code or
+schema — "run a second queue worker" or "set this env var" are infrastructure
+changes that hold regardless of which version is installed, which is why the
+already-shipped backups-worker action would be safe to carry across a skipped
+release. Anything that runs *its release's* code must declare that dependence,
+and any such action in the span makes the jump **non-direct**: the operator steps
+through that release rather than being handed a sequence that cannot be executed.
+
+In other words `minimum_upgrade_from` bounds how far back a jump may start; the
+declared dependence of intermediate actions decides whether a supported span can
+be crossed in one step at all.
 
 **A missing declaration means unknown, not "nothing required".** Every release
 published before this ADR carries no manifest, and reading that absence as
