@@ -68,6 +68,13 @@ class RestoreService
      * apart. Comparing them as equal would be the same fail-open the sentinels
      * caused, so it only counts as identified once build metadata (`+<sha>`)
      * pins the exact build.
+     *
+     * Matched as a SUFFIX, not a substring: only the bare generated `<VERSION>-dev`
+     * form is ambiguous. A deliberately tagged prerelease that merely contains
+     * those characters — `v0.2.0-dev.1`, `1.0.0-devpreview` — is a real release
+     * identifier, and flagging it would keep a site in maintenance for a pair
+     * that actually matches. (A `+<sha>` build cannot end in `-dev`, so this one
+     * test covers both cases.)
      */
     private function versionIsKnown(string $version): bool
     {
@@ -77,7 +84,7 @@ class RestoreService
             return false;
         }
 
-        return ! str_contains($normalized, '-dev') || str_contains($normalized, '+');
+        return ! str_ends_with($normalized, '-dev');
     }
 
     /**

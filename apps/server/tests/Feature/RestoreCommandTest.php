@@ -664,3 +664,16 @@ test('two different development builds are a real skew', function (): void {
     expect($preflight['version_skew'])->toBeTrue()
         ->and($preflight['version_indeterminate'])->toBeFalse();
 });
+
+test('a tagged prerelease that merely contains "dev" is a real identity', function (): void {
+    // Only the generated bare `<VERSION>-dev` form is ambiguous. A deliberately
+    // tagged prerelease is a real release identifier, and treating it as
+    // unverifiable would keep a site in maintenance for a pair that matches.
+    config()->set('wayfindr.release.version', 'v0.2.0-dev.1');
+    $archive = makeBackupArchive(['wayfindr_version' => 'v0.2.0-dev.1', 'local_attachment_disks' => []]);
+
+    $preflight = app(RestoreService::class)->preflight($archive);
+
+    expect($preflight['version_indeterminate'])->toBeFalse()
+        ->and($preflight['version_skew'])->toBeFalse();
+});
