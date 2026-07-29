@@ -570,3 +570,39 @@ test('the CLI warns that versions could not be verified', function (): void {
         ->assertSuccessful()
         ->expectsOutputToContain('could NOT be verified');
 });
+
+test('preflight reports WHICH side lacks a release identity', function (): void {
+    config()->set('wayfindr.release.version', 'v0.3.0');
+    $archive = makeBackupArchive(['wayfindr_version' => 'unknown', 'local_attachment_disks' => []]);
+
+    $preflight = app(RestoreService::class)->preflight($archive);
+
+    // The archive is the unidentified side; the install is known.
+    expect($preflight['archive_version_known'])->toBeFalse()
+        ->and($preflight['running_version_known'])->toBeTrue();
+});
+
+test('the CLI does not suggest migrations when the ARCHIVE is the unidentified side', function (): void {
+    // The trap: an unidentified archive may come from NEWER code, where this
+    // install has no migrations to run — "migrate then up" would be a no-op that
+    // leaves an incompatible schema live.
+    fakeRestorer();
+    Storage::fake('attachments');
+    config()->set('wayfindr.release.version', 'v0.3.0');
+    $archive = makeBackupArchive(['wayfindr_version' => 'unknown', 'local_attachment_disks' => []]);
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive])
+        ->assertSuccessful()
+        ->expectsOutputToContain('the ARCHIVE carries no release identity');
+});
+
+test('the CLI points at WAYFINDR_VERSION when THIS INSTALL is the unidentified side', function (): void {
+    fakeRestorer();
+    Storage::fake('attachments');
+    config()->set('wayfindr.release.version', null);
+    $archive = makeBackupArchive(['wayfindr_version' => 'v0.2.0', 'local_attachment_disks' => []]);
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive])
+        ->assertSuccessful()
+        ->expectsOutputToContain('THIS INSTALL carries no release identity');
+});

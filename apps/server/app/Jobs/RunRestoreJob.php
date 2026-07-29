@@ -414,12 +414,7 @@ class RunRestoreJob implements ShouldQueue
         $parts = ['Restore complete.'];
 
         if ($result['version_indeterminate'] ?? false) {
-            $parts[] = 'The versions could NOT be verified (archive: '.($result['archive_version'] ?? '?')
-                .', this install: '.($result['running_version'] ?? '?')
-                .') — this install carries no release identity, so a schema mismatch cannot be ruled out. '
-                .'The site is being kept in maintenance mode. On the server, confirm the schema is current '
-                .'(`php artisan migrate --force` is safe if it is already up to date), then run `php artisan up`. '
-                .'Set WAYFINDR_VERSION so future restores can verify this automatically.';
+            $parts[] = $this->indeterminateVersionMessage($result);
         } elseif ($result['version_skew'] ?? false) {
             // Direction-neutral: version strings may not be reliably comparable
             // (tags vs commits), and a NEWER archive can't be fixed by migrating
@@ -438,6 +433,45 @@ class RunRestoreJob implements ShouldQueue
         $parts[] = $this->workerRestartHint();
 
         return implode(' ', $parts);
+    }
+
+    /**
+     * WHICH side lacks a release identity decides the remedy, so the message must
+     * not assume. In particular, when the ARCHIVE is the unidentified one it may
+     * have come from newer code — an older install then has no newer migrations,
+     * so `migrate` would be a no-op that leaves an incompatible schema live, and
+     * suggesting it would be actively misleading.
+     *
+     * @param  array<string, mixed>  $result
+     */
+    private function indeterminateVersionMessage(array $result): string
+    {
+        $archive = (string) ($result['archive_version'] ?? '?');
+        $running = (string) ($result['running_version'] ?? '?');
+        $archiveKnown = (bool) ($result['archive_version_known'] ?? false);
+        $runningKnown = (bool) ($result['running_version_known'] ?? false);
+
+        $head = 'The versions could NOT be verified (archive: '.$archive.', this install: '.$running.').';
+        $tail = ' The site is being kept in maintenance mode.';
+
+        if (! $archiveKnown && $runningKnown) {
+            return $head.' The ARCHIVE carries no release identity, so it cannot be checked against this'
+                .' install ('.$running.'). If it came from a NEWER release, this install has no migrations'
+                .' that would bring the schema forward — running migrations would do nothing and leave an'
+                .' incompatible schema live.'.$tail.' Identify which release the archive came from (or deploy'
+                .' a release matching it) before running `php artisan up`.';
+        }
+
+        if ($archiveKnown && ! $runningKnown) {
+            return $head.' THIS INSTALL carries no release identity, so it cannot be checked against the'
+                .' archive ('.$archive.').'.$tail.' On the server, confirm this install runs code compatible'
+                .' with '.$archive.' and that the schema is current, then run `php artisan up`.'
+                .' Set WAYFINDR_VERSION so future restores can verify this automatically.';
+        }
+
+        return $head.' Neither the archive nor this install carries a release identity, so a schema mismatch'
+            .' cannot be ruled out.'.$tail.' On the server, confirm the schema is current, then run'
+            .' `php artisan up`. Set WAYFINDR_VERSION so future restores can verify this automatically.';
     }
 
     private function failureMessage(?Throwable $exception): string

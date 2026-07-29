@@ -31,12 +31,19 @@ class RestoreCommand extends Command
         }
 
         if ($preflight['version_indeterminate'] ?? false) {
+            // Which side is unidentified changes the remedy — an unidentified
+            // ARCHIVE may be from newer code, where migrations cannot help.
+            $detail = match (true) {
+                ! ($preflight['archive_version_known'] ?? false) && ($preflight['running_version_known'] ?? false) => 'the ARCHIVE carries no release identity; if it came from a newer release, migrations here cannot bring the schema forward. Identify the archive (or deploy a matching release) before serving traffic.',
+                ($preflight['archive_version_known'] ?? false) && ! ($preflight['running_version_known'] ?? false) => 'THIS INSTALL carries no release identity. Confirm it runs code compatible with the archive, and set WAYFINDR_VERSION so this can be checked automatically.',
+                default => 'neither side carries a release identity. Confirm the schema is current before serving traffic, and set WAYFINDR_VERSION so this can be checked automatically.',
+            };
+
             $this->warn(sprintf(
-                'Versions could NOT be verified (archive: %s, this install: %s) — no release identity, '
-                .'so a schema mismatch cannot be ruled out. Confirm the schema is current after restoring, '
-                .'and set WAYFINDR_VERSION so this can be checked automatically.',
+                'Versions could NOT be verified (archive: %s, this install: %s) — %s',
                 $preflight['archive_version'],
                 $preflight['running_version'],
+                $detail,
             ));
         } elseif ($preflight['version_skew']) {
             $this->warn(sprintf(
