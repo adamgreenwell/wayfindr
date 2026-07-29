@@ -290,11 +290,16 @@ while this release keeps reading its stale copy until the next deploy.
 ```bash
 # Insert before the artisan cache steps. Both scripts have changed into
 # `apps/server` by that point, so nothing here may assume the repository root is
-# the working directory: `VERSION` lives at the root, and `git ls-files` is
-# scoped to the current directory, which would hide an untracked file elsewhere
-# in the repo from the clean-tree gate below. Resolve the root once and be
-# explicit about it. Everything else (`git tag`, `git diff`, `git rev-parse`)
-# is repo-wide from any subdirectory.
+# the working directory: `VERSION` lives at the root, and the clean-tree gate
+# below would otherwise inspect only `apps/server` and miss a change anywhere
+# else in the repo. Resolve the root once and run every path-sensitive command
+# through it.
+#
+# `git ls-files` is scoped to the current directory on its own, and the gate's
+# `git diff` calls take a `.` pathspec so that the shared path can be excluded —
+# which makes them cwd-sensitive too. Do not drop the `-C "$root"` from either on
+# the grounds that a bare `git diff` is repo-wide; these are not bare.
+# `git tag` and `git rev-parse` need no help.
 root=$(git rev-parse --show-toplevel)
 
 # A checkout sitting exactly on a tag reports that tag's canonical version;
