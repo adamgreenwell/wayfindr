@@ -327,6 +327,15 @@ release_tags=$(git tag --points-at HEAD 2>/dev/null \
 # which would misread `v1.2.3+build-1` (a stable release with a hyphen in its
 # build metadata) as a prerelease and hand the identity back to the alpha tag.
 tag=$(printf '%s\n' "$release_tags" | grep -vE '^v?[0-9]+\.[0-9]+\.[0-9]+-' | sort -V | tail -1 || true)
+
+# No stable tag: take a prerelease only when it is unambiguous. `sort -V` is not
+# SemVer precedence for prerelease identifiers either — SemVer ranks `alpha.beta`
+# above `alpha.1`, `sort -V` inverts it — and rather than implement that
+# comparison here, decline to choose. Picking arbitrarily would let a later alias
+# change the identity of unchanged code and report skew between identical builds.
+if [ -z "$tag" ] && [ "$(printf '%s\n' "$release_tags" | grep -c .)" = 1 ]; then
+  tag=$release_tags
+fi
 [ -n "$tag" ] || tag=$(printf '%s\n' "$release_tags" | sort -V | tail -1 || true)
 
 version=${tag:-"$(cat VERSION)-dev+$(git rev-parse HEAD)"}
