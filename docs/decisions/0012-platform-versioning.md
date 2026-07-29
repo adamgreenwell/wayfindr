@@ -86,6 +86,21 @@ per-release declaration below, not the digit, is authoritative until 1.0.
   the version and is already captured in every backup manifest, so an archive
   whose version is unset can still be traced to its code.
 
+**A trailing `-dev` is reserved.** It is the generated development identity, and
+it must never be used as a release tag. Consumers distinguish a development build
+by that suffix, so without the reservation they would be inferring a semantic
+property from a naming convention an operator could legitimately collide with —
+a release tagged `v0.2.0-dev` would be misread as an unpinned development build.
+Reserving it in the scheme is what makes the inference sound. (`-dev.1` or
+`-devpreview` are ordinary prerelease identifiers and stay available.)
+
+**A dirty tree cannot pin a build.** `git rev-parse HEAD` still reports the last
+commit when the working tree has uncommitted edits, so stamping it would name
+code that is not what was built — and two different dirty builds would claim the
+same identity, which is a fail-open. A build from a dirty tree therefore omits
+the commit and identifies by lineage only, which consumers correctly treat as
+unverifiable.
+
 An unidentified install is not an error, but every feature that compares
 versions must treat "no identity" as *indeterminate* — never as agreement. That
 principle is already implemented in the restore (#635) and applies to everything
