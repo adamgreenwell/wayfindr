@@ -287,6 +287,14 @@ is therefore baked into the config cache:
 detached from the Environment panel: later panel edits update the shared file
 while this release keeps reading its stale copy until the next deploy.
 
+Keep this block **ASCII-only** when editing it, including the comments. Unlike
+the rest of this guide it is not read in place — it is selected, copied, and
+pasted into a browser-based editor, and every one of those steps is a chance for
+a non-ASCII character to arrive as something else. Two of the `echo` lines carry
+their text in single quotes, so a mangled dash there does not spoil a sentence,
+it ends a quoted string early and the deploy dies at a syntax error somewhere
+further down. An em dash buys nothing that a hyphen does not.
+
 ```bash
 # Insert before the artisan cache steps. Both scripts have changed into
 # `apps/server` by that point, so nothing here may assume the repository root is
@@ -296,7 +304,7 @@ while this release keeps reading its stale copy until the next deploy.
 # through it.
 #
 # `git ls-files` is scoped to the current directory on its own, and the gate's
-# `git diff` calls take a `.` pathspec so that the shared path can be excluded —
+# `git diff` calls take a `.` pathspec so that the shared path can be excluded -
 # which makes them cwd-sensitive too. Do not drop the `-C "$root"` from either on
 # the grounds that a bare `git diff` is repo-wide; these are not bare.
 # `git tag` and `git rev-parse` need no help.
@@ -315,7 +323,7 @@ root=$(git rev-parse --show-toplevel)
 # The grammar is anchored and explicit about digits, because shell globs are not
 # (`v[0-9]*.[0-9]*.[0-9]*` also accepts `v1-production.2.3`, `1a.2b.3c`,
 # `v1.2.3.4`). Matching the whole string doubles as the safety check: git permits
-# `&` and `|` in ref names and both are hostile in the sed below — `&` expands to
+# `&` and `|` in ref names and both are hostile in the sed below - `&` expands to
 # the matched text, `|` closes the expression.
 #
 # It is the real SemVer grammar rather than a digits-and-dots approximation,
@@ -332,12 +340,12 @@ root=$(git rev-parse --show-toplevel)
 # Anything rejected falls back to the SHA-qualified development identity, which
 # is the honest description of a checkout that is not on a release.
 # Both Forge deploy scripts run `set -euo pipefail`, so a `grep` that matches
-# nothing would abort the deploy — precisely on the untagged branch deploy this
+# nothing would abort the deploy - precisely on the untagged branch deploy this
 # fallback exists to serve. `|| true` keeps the no-match path successful.
 # Canonicalize once, here, rather than at each place that reads this list. ADR
 # 0012 makes the unprefixed form canonical, and folding `v1.2.3` into `1.2.3` at
 # the boundary means `1.2.3` and its `v1.2.3` alias are one entry rather than
-# two — so adding an alias cannot change what is selected, how many candidates
+# two - so adding an alias cannot change what is selected, how many candidates
 # there appear to be, or the identity of unchanged code. Every step below can
 # then assume unprefixed input and compare like with like.
 # No leading zeroes in the three core numbers.
@@ -359,19 +367,19 @@ release_tags=$(git tag --points-at HEAD 2>/dev/null \
 # ordering, not SemVer precedence: it ranks `1.2.3-alpha` ABOVE `1.2.3`, so a
 # promoted release would otherwise be stamped with its prerelease name.
 #
-# A prerelease is a hyphen immediately after the version core — NOT any hyphen,
+# A prerelease is a hyphen immediately after the version core - NOT any hyphen,
 # which would misread `1.2.3+build-1` (a stable release with a hyphen in its
 # build metadata) as a prerelease and hand the identity back to the alpha tag.
 # The `v?` is belt-and-braces: the list is unprefixed by construction, and this
 # keeps the filter correct rather than silently wrong if that ever changes.
 #
 # Sorting is safe now that every candidate is unprefixed. On mixed input it is
-# not — `sort -V` compares the surrounding text too, so a digit sorts before `v`
+# not - `sort -V` compares the surrounding text too, so a digit sorts before `v`
 # and `1.3.0` alongside `v1.2.3` would select the OLDER tag. Canonicalizing at
 # the boundary is what removes that hazard, rather than a decorated sort key here.
 #
-# Nothing normalizes the `v` on read yet — RestoreService still compares with a
-# plain `!==` — so recording the canonical form is what keeps a site's own
+# Nothing normalizes the `v` on read yet - RestoreService still compares with a
+# plain `!==` - so recording the canonical form is what keeps a site's own
 # backups comparable across an alias being added. Official images are still
 # stamped verbatim by release-image.yml, so an archive from one reads
 # `v0.1.0-alpha.3` against a Forge install's `0.1.0-alpha.3`; that pair compares
@@ -380,14 +388,14 @@ release_tags=$(git tag --points-at HEAD 2>/dev/null \
 tag=
 stable=$(printf '%s\n' "$release_tags" | grep -vE '^v?[0-9]+\.[0-9]+\.[0-9]+-' || true)
 
-# Precedence ignores build metadata (SemVer §10), so `1.2.3` and `1.2.3+build.1`
-# do not rank against each other — they tie. `sort -V | tail -1` would hand the
+# Precedence ignores build metadata (SemVer section 10), so `1.2.3` and `1.2.3+build.1`
+# do not rank against each other - they tie. `sort -V | tail -1` would hand the
 # identity to whichever sorts last, and adding a metadata alias to a released
 # commit would then rename code that has not changed.
 #
 # Metadata cannot simply be stripped to break the tie: ADR 0012 treats two builds
 # differing only in build metadata as different code, so folding them together
-# would equate builds that are not the same — a fail-open, and a worse one than
+# would equate builds that are not the same - a fail-open, and a worse one than
 # the problem it solves.
 #
 # So rank on the metadata-free key, then look at everything holding the top rank.
@@ -396,15 +404,15 @@ top_precedence=$(printf '%s\n' "$stable_ranked" | cut -d' ' -f1 | sort -V | tail
 top_stable=$(printf '%s\n' "$stable_ranked" | awk -v k="$top_precedence" '$1 == k { print $2 }')
 
 # One tag at the top rank is the release. Several means they differ only in build
-# metadata, which SemVer does not order — the same position as two prereleases,
+# metadata, which SemVer does not order - the same position as two prereleases,
 # answered the same way: decline, and let the development identity say so.
 if [ "$(printf '%s\n' "$top_stable" | grep -c .)" = 1 ]; then
   tag=$top_stable
 fi
 
 # No stable tag: take a prerelease only when it is unambiguous. `sort -V` is not
-# SemVer precedence for prerelease identifiers either — SemVer ranks `alpha.beta`
-# above `alpha.1`, `sort -V` inverts it — and rather than implement that
+# SemVer precedence for prerelease identifiers either - SemVer ranks `alpha.beta`
+# above `alpha.1`, `sort -V` inverts it - and rather than implement that
 # comparison here, decline to choose. Picking arbitrarily would let a later alias
 # change the identity of unchanged code and report skew between identical builds.
 # The count is over canonical, deduplicated versions, so `1.2.3-alpha.1` and its
@@ -417,14 +425,14 @@ fi
 
 # `tag` is empty here in three cases, all deliberate: no release tag at all, two
 # or more stable tags tied on precedence, or two or more prereleases with no
-# stable tag. The last two are declined answers rather than missing ones — if a
+# stable tag. The last two are declined answers rather than missing ones - if a
 # future reader takes an empty `tag` for an oversight and resolves it by picking
 # a candidate, that reintroduces an alias renaming unchanged code. The only thing
 # below that may touch it is the dirty-tree gate, which clears it.
 
 # A commit names the deployed code only when the tree matches it. Forge's
 # zero-downtime path makes a fresh checkout per release, so this passes by
-# construction — but the standard path runs `git pull` in a persistent checkout
+# construction - but the standard path runs `git pull` in a persistent checkout
 # (deploy/forge/standard-deploy.sh) that can carry local edits, and a sha
 # stamped from a modified tree names code that is not what is running. Worse,
 # a clean checkout and any number of differently-modified ones would then all
@@ -436,7 +444,7 @@ fi
 #
 # The shared path has to be excluded or this check fires on every healthy
 # zero-downtime release. Forge's `$CREATE_RELEASE()` installs shared paths before
-# this block runs, replacing `apps/server/storage` with a symlink — so git sees
+# this block runs, replacing `apps/server/storage` with a symlink - so git sees
 # the ten tracked `.gitignore` files under it as deleted, and the symlink itself
 # as untracked. That is the platform doing exactly what it was configured to do,
 # and it says nothing about whether the deployed code matches HEAD. Left in, it
@@ -457,7 +465,7 @@ else
   # claim a release either.
   commit=
   tag=
-  echo 'WARNING: working tree is not clean — recording an unverifiable identity.'
+  echo 'WARNING: working tree is not clean - recording an unverifiable identity.'
 fi
 
 # No commit means identify by lineage only. The bare `-dev` is deliberate: ADR
@@ -474,7 +482,7 @@ fi
 # every site type rather than only on zero-downtime ones. Record what it was
 # rather than assuming, so the check below still fits if you relocate this block.
 #
-# A regular file here means the link was already broken before this deploy — most
+# A regular file here means the link was already broken before this deploy - most
 # likely by an earlier version of this snippet, which used a bare `sed -i` and so
 # let GNU sed replace the link with a copy. Everything below still writes the
 # identity to the file the app reads, so the version stays correct; what is lost
@@ -497,7 +505,7 @@ sed -i --follow-symlinks "s|^WAYFINDR_COMMIT=.*|WAYFINDR_COMMIT=${commit}|" .env
 # whose warning does not fire exits non-zero, which is fine mid-script but fails
 # the whole deploy for anyone who pastes this block at the end of theirs.
 if [ "$was_link" = 1 ] && [ ! -L .env ]; then
-  echo 'WARNING: .env is no longer a symlink — this release is detached from the Environment panel.'
+  echo 'WARNING: .env is no longer a symlink - this release is detached from the Environment panel.'
 fi
 ```
 
