@@ -341,15 +341,24 @@ release_tags=$(git tag --points-at HEAD 2>/dev/null \
 # safe separator because git ref names cannot contain one, and `-E` keeps the
 # expression valid on both GNU and BSD sed.
 #
-# The tag itself is recorded verbatim, matching what release-image.yml bakes
-# into official images. Canonicalizing the `v` away belongs to the comparator
-# that reads these values (ADR 0012, slice 3), not to each writer.
+# Keep the stripped key as the recorded value, not the raw tag. ADR 0012 makes
+# the unprefixed form canonical, and recording it here is what keeps the identity
+# stable: a commit tagged `1.2.3` that later gains the alias `v1.2.3` must not
+# change identity, which is the same "an alias must not rename unchanged code"
+# rule the enumeration above exists to satisfy. Nothing normalizes this on read
+# yet — RestoreService still compares with a plain `!==` — so a writer that
+# emitted both forms over time would report skew against its own older backups.
+#
+# Official images are still stamped verbatim by release-image.yml, so an archive
+# from one reads `v0.1.0-alpha.3` against a Forge install's `0.1.0-alpha.3`. That
+# comparison comes out unequal, which warns rather than proceeds; ADR 0012's
+# read-side normalization (slice 3) is what reconciles the two paths for good.
 tag=$(printf '%s\n' "$release_tags" \
   | grep -vE '^v?[0-9]+\.[0-9]+\.[0-9]+-' \
   | sed -E 's/^(v?)(.*)$/\2 \1\2/' \
   | sort -V \
   | tail -1 \
-  | cut -d' ' -f2 || true)
+  | cut -d' ' -f1 || true)
 
 # No stable tag: take a prerelease only when it is unambiguous. `sort -V` is not
 # SemVer precedence for prerelease identifiers either — SemVer ranks `alpha.beta`
@@ -357,7 +366,8 @@ tag=$(printf '%s\n' "$release_tags" \
 # comparison here, decline to choose. Picking arbitrarily would let a later alias
 # change the identity of unchanged code and report skew between identical builds.
 if [ -z "$tag" ] && [ "$(printf '%s\n' "$release_tags" | grep -c .)" = 1 ]; then
-  tag=$release_tags
+  # Stripped here too, for the same reason the stable path strips.
+  tag=${release_tags#v}
 fi
 
 # Two or more prereleases and no stable tag leaves `tag` empty on purpose. The
@@ -398,25 +408,80 @@ fi
 # to the Forge environment file at the repository root, so it is a symlink on
 # every site type rather than only on zero-downtime ones. Record what it was
 # rather than assuming, so the check below still fits if you relocate this block.
+#
+# A regular file here means the link was already broken before this deploy — most
+# likely by an earlier version of this snippet, which used a bare `sed -i` and so
+# let GNU sed replace the link with a copy. Everything below still writes the
+# identity to the file the app reads, so the version stays correct; what is lost
+# is the Environment panel, whose edits now go to a file nobody reads. Say so
+# rather than repairing it: that copy may hold the only version of values that
+# were edited into it, and a deploy script is the wrong place to silently discard
+# an operator's configuration. See "Repairing a detached environment file".
+if [ ! -L .env ]; then
+  echo 'WARNING: .env is a regular file, not a link to the Forge environment file.'
+  echo '         Environment panel edits are not reaching this site.'
+fi
+
 was_link=0; [ -L .env ] && was_link=1
 
 sed -i --follow-symlinks "s|^WAYFINDR_VERSION=.*|WAYFINDR_VERSION=${version}|" .env
 sed -i --follow-symlinks "s|^WAYFINDR_COMMIT=.*|WAYFINDR_COMMIT=${commit}|" .env
 
-# If it was a shared symlink, it must still be one.
-[ "$was_link" = 1 ] && [ ! -L .env ] \
-  && echo 'WARNING: .env is no longer a symlink — this release is detached from the Environment panel.'
+# If it was a shared symlink, it must still be one. Written as an `if` rather
+# than an `&&` chain because this is the last line of the snippet: an `&&` chain
+# whose warning does not fire exits non-zero, which is fine mid-script but fails
+# the whole deploy for anyone who pastes this block at the end of theirs.
+if [ "$was_link" = 1 ] && [ ! -L .env ]; then
+  echo 'WARNING: .env is no longer a symlink — this release is detached from the Environment panel.'
+fi
 ```
 
 (Both keys are present-but-empty in the environment template above, so `sed`
 has a line to replace.)
 
 Deploying a **tagged release** rather than a branch needs nothing extra: the
-snippet detects a checkout sitting exactly on a tag and reports the tag, falling
-back to a development identity otherwise. That is deliberately derived rather
-than hand-set — a value typed into the panel for a tagged deploy keeps claiming
-that tag after the site moves off it, which is the stale-identity problem this
-section exists to avoid.
+snippet detects a checkout sitting exactly on a tag and reports that tag's
+version, falling back to a development identity otherwise. That is deliberately
+derived rather than hand-set — a value typed into the panel for a tagged deploy
+keeps claiming that tag after the site moves off it, which is the stale-identity
+problem this section exists to avoid.
+
+The recorded value drops the tag's leading `v`, so `v1.2.3` is stored as
+`1.2.3`. ADR 0012 makes the unprefixed form canonical, and storing it is what
+keeps an identity stable when a commit later gains a `v`-prefixed alias of a tag
+it already had.
+
+### Repairing a detached environment file
+
+If a deploy warns that `.env` is a regular file rather than a link, an earlier
+version of this snippet replaced the link with a copy — it used a bare `sed -i`,
+and GNU sed rewrites the link itself unless told to follow it. The site keeps
+working, because Laravel reads the copy, but the Forge Environment panel now
+edits a file nothing loads: a password rotated in the panel never reaches the
+app, and the discrepancy is invisible until something fails to connect.
+
+Repair it by hand rather than by script — the copy is the file that has been
+live, so it, not the panel, may hold the current values:
+
+```bash
+cd ~/your-site.com/current/apps/server
+diff <(sort .env) <(sort ../../.env)
+```
+
+Copy anything the panel is missing into the Forge Environment editor, save, and
+confirm the two agree. Then replace the copy with the link the deploy scripts
+expect, keeping a backup until the site is verified:
+
+```bash
+mv .env .env.detached.bak
+ln -s ../../.env .env
+readlink .env    # ../../.env
+```
+
+Redeploy, confirm the site is healthy, and delete `.env.detached.bak`. Keeping a
+stale copy is its own hazard: `link_laravel_environment_file` skips linking
+whenever a `.env` already exists, so a leftover file silently detaches the site
+again on a future deploy.
 
 The clean-tree gate is not optional, and it is not only for other people's
 hosts. A **zero-downtime** Forge release is a fresh checkout of the ref, so its
