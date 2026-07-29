@@ -295,21 +295,22 @@ while this release keeps reading its stale copy until the next deploy.
 # tag-pinned site honest when it later moves off the tag.
 tag=$(git describe --exact-match --tags HEAD 2>/dev/null || true)
 
-# Accept only a release-version tag, for two separate reasons.
+# Accept only a release-version tag, matched against the whole string.
 #
-# Characters: git permits `&` and `|` in ref names, and both are hostile in the
-# sed replacement below — `&` expands to the matched text (silently corrupting
-# the identity), `|` closes the expression (aborting the deploy).
+# This covers two separate hazards at once. Characters: git permits `&` and `|`
+# in ref names, and both are hostile in the sed replacement below — `&` expands
+# to the matched text (silently corrupting the identity), `|` closes the
+# expression (aborting the deploy). Shape: a movable tag like `production`,
+# `staging` or `latest` substitutes safely but is not an identity, since moving
+# it hands materially different deployments the same version.
 #
-# Shape: a movable tag like `production`, `staging` or `latest` is safe to
-# substitute but is not an identity — moving it hands materially different
-# deployments the same version. Anything not shaped like a release version falls
-# back to the SHA-qualified development identity, which is the honest answer.
-case "$tag" in
-  ''|*[!A-Za-z0-9.+-]*)                        tag='' ;;
-  v[0-9]*.[0-9]*.[0-9]*|[0-9]*.[0-9]*.[0-9]*)  : ;;
-  *)                                           tag='' ;;
-esac
+# Anchored and explicit about digits, because shell globs are not: `v[0-9]*.…`
+# would also accept `v1-production.2.3`, `1a.2b.3c` and `v1.2.3.4`. Anything
+# rejected falls back to the SHA-qualified development identity, which is the
+# honest description of a checkout that is not on a release.
+printf '%s' "$tag" \
+  | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$' \
+  || tag=''
 
 version=${tag:-"$(cat VERSION)-dev+$(git rev-parse HEAD)"}
 
