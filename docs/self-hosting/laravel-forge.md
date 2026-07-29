@@ -293,24 +293,29 @@ while this release keeps reading its stale copy until the next deploy.
 # A checkout sitting exactly on a tag reports that tag; anything else is a
 # development build. Deriving this rather than hand-setting it is what keeps a
 # tag-pinned site honest when it later moves off the tag.
-tag=$(git describe --exact-match --tags HEAD 2>/dev/null || true)
-
-# Accept only a release-version tag, matched against the whole string.
+# Pick the highest release-version tag pointing at HEAD.
 #
-# This covers two separate hazards at once. Characters: git permits `&` and `|`
-# in ref names, and both are hostile in the sed replacement below — `&` expands
-# to the matched text (silently corrupting the identity), `|` closes the
-# expression (aborting the deploy). Shape: a movable tag like `production`,
-# `staging` or `latest` substitutes safely but is not an identity, since moving
-# it hands materially different deployments the same version.
+# Enumerate rather than use `git describe --exact-match`, which returns only ONE
+# tag: with both `v1.2.3` and a movable `production` on the same commit it may
+# return the alias, and adding an alias would then change the identity of an
+# unchanged release.
 #
-# Anchored and explicit about digits, because shell globs are not: `v[0-9]*.…`
-# would also accept `v1-production.2.3`, `1a.2b.3c` and `v1.2.3.4`. Anything
-# rejected falls back to the SHA-qualified development identity, which is the
-# honest description of a checkout that is not on a release.
-printf '%s' "$tag" \
-  | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$' \
-  || tag=''
+# The grammar is anchored and explicit about digits, because shell globs are not
+# (`v[0-9]*.[0-9]*.[0-9]*` also accepts `v1-production.2.3`, `1a.2b.3c`,
+# `v1.2.3.4`). Matching the whole string doubles as the safety check: git permits
+# `&` and `|` in ref names and both are hostile in the sed below — `&` expands to
+# the matched text, `|` closes the expression.
+#
+# A trailing `-dev` is reserved for development identities (ADR 0012); a tag
+# using it would be recorded as exact here while the restore treats it as
+# unverifiable, so it is excluded too.
+#
+# Anything rejected falls back to the SHA-qualified development identity, which
+# is the honest description of a checkout that is not on a release.
+tag=$(git tag --points-at HEAD 2>/dev/null \
+  | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$' \
+  | grep -vEi -- '-dev$' \
+  | sort -V | tail -1)
 
 version=${tag:-"$(cat VERSION)-dev+$(git rev-parse HEAD)"}
 
