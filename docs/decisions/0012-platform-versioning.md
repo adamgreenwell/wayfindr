@@ -367,12 +367,15 @@ introduced, which is why it is settled here rather than in slice 3.
    **not** by itself make the restore's guidance direction-aware — direction is
    necessary but not sufficient, and the declarations that make it safe to act on
    arrive in slice 4. Until then the guidance stays neutral.
-4. **Release manifest** — `requires_operator_action` carrying, for each action,
-   its release, its **code/schema dependence**, anything it **supersedes**, and
-   its execution phase, plus `minimum_upgrade_from`. All four action fields are
-   load-bearing: without dependence the preflight cannot tell when an
-   intermediate release must not be skipped, and without supersession it presents
-   work a later release has already retired. Published with each release, and
+4. **Release manifest** — `requires_operator_action` carrying **every field
+   listed in §"Every release declares its upgrade impact"** for each action, plus
+   `minimum_upgrade_from`. The fields are deliberately not re-enumerated here:
+   this list has drifted from that section three times during review, and each
+   drift silently narrowed what an implementation would build. Every field is
+   load-bearing — drop dependence and the preflight cannot tell when an
+   intermediate release must not be skipped; drop applicability and it cannot
+   distinguish an upgrade that must undo a retired requirement from one that
+   never applied it. Published with each release, and
    `install.sh --upgrade` gains a preflight that collects the declarations across
    `(current, target]` — not just the target's — refuses or warns before pulling,
    and requires stepping when an action cannot be performed outside its own
