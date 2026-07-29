@@ -46,6 +46,12 @@ next claims the wrong lineage — a build after `v0.2.0` would still report
 # VERSION and the tag must agree; the tag carries the conventional "v".
 # Stage both explicitly — `commit -a` would skip VERSION the first time,
 # because a file git has never seen is untracked, not modified.
+# Release from main. --atomic makes the branch and tag updates transactional,
+# but it does not check that the branch you push actually contains the tagged
+# commit — tag a release branch while pushing an unchanged `main` and the tag
+# lands on a commit unreachable from remote main, which still publishes.
+[ "$(git rev-parse --abbrev-ref HEAD)" = "main" ] || { echo 'Release from main.'; exit 1; }
+
 printf '0.2.0\n' > VERSION
 git add VERSION CHANGELOG.md
 git commit -m "Release 0.2.0"
