@@ -297,8 +297,8 @@ while this release keeps reading its stale copy until the next deploy.
 # is repo-wide from any subdirectory.
 root=$(git rev-parse --show-toplevel)
 
-# A checkout sitting exactly on a tag reports that tag; anything else is a
-# development build. Deriving this rather than hand-setting it is what keeps a
+# A checkout sitting exactly on a tag reports that tag's canonical version;
+# anything else is a development build. Deriving this rather than hand-setting it is what keeps a
 # tag-pinned site honest when it later moves off the tag.
 # Pick the highest release-version tag pointing at HEAD.
 #
@@ -351,7 +351,7 @@ release_tags=$(git tag --points-at HEAD 2>/dev/null \
   | sort -u || true)
 
 # Prefer a stable tag over a prerelease on the same commit. `sort -V` is natural
-# ordering, not SemVer precedence: it ranks `v1.2.3-alpha` ABOVE `v1.2.3`, so a
+# ordering, not SemVer precedence: it ranks `1.2.3-alpha` ABOVE `1.2.3`, so a
 # promoted release would otherwise be stamped with its prerelease name.
 #
 # A prerelease is a hyphen immediately after the version core — NOT any hyphen,
