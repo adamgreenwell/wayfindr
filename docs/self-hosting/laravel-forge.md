@@ -404,8 +404,24 @@ fi
 # "Dirty" means tracked modifications AND non-ignored untracked files: a
 # brand-new migration is invisible to a tracked-changes check but is very much
 # part of what is deployed.
-if git diff --quiet && git diff --cached --quiet \
-   && [ -z "$(git -C "$root" ls-files --others --exclude-standard)" ]; then
+#
+# The shared path has to be excluded or this check fires on every healthy
+# zero-downtime release. Forge's `$CREATE_RELEASE()` installs shared paths before
+# this block runs, replacing `apps/server/storage` with a symlink — so git sees
+# the ten tracked `.gitignore` files under it as deleted, and the symlink itself
+# as untracked. That is the platform doing exactly what it was configured to do,
+# and it says nothing about whether the deployed code matches HEAD. Left in, it
+# would put every clean release on the unverifiable identity and print a warning
+# each time, which is how operators learn to ignore warnings.
+#
+# Excluded by path rather than by ignoring deletions generally: this hides only
+# the directory Forge is documented to share, and a modified migration or a new
+# untracked file anywhere else is still caught.
+shared_paths=':!apps/server/storage'
+
+if git -C "$root" diff --quiet -- . "$shared_paths" \
+   && git -C "$root" diff --cached --quiet -- . "$shared_paths" \
+   && [ -z "$(git -C "$root" ls-files --others --exclude-standard -- . "$shared_paths")" ]; then
   commit=$(git rev-parse HEAD)
 else
   # A tag names a commit, not a modified copy of one, so a dirty tree cannot
