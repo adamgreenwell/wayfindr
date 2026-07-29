@@ -57,15 +57,41 @@ class RestoreService
     }
 
     /**
-     * Does this string name an actual release? Callers need to know WHICH side is
+     * Does this string pin a specific BUILD? Callers need to know WHICH side is
      * unidentified, not just that one of them is: the remedy differs sharply. An
      * unidentified ARCHIVE may have come from newer code, in which case an older
      * install has no migrations to run and `migrate` would be a no-op that leaves
      * an incompatible schema live — so it must not be offered as the fix.
+     *
+     * A development version (`0.1.0-dev`, ADR 0012) names a LINEAGE, not a build:
+     * two installs can both report it and be many commits — and migrations —
+     * apart. Comparing them as equal would be the same fail-open the sentinels
+     * caused, so it only counts as identified once build metadata (`+<sha>`)
+     * pins the exact build.
+     *
+     * Matched as a SUFFIX, not a substring: only the bare generated `<VERSION>-dev`
+     * form is ambiguous. A deliberately tagged prerelease that merely contains
+     * those characters — `v0.2.0-dev.1`, `1.0.0-devpreview` — is a real release
+     * identifier, and flagging it would keep a site in maintenance for a pair
+     * that actually matches. (A `+<sha>` build cannot end in `-dev`, so this one
+     * test covers both cases.)
+     *
+     * This works because ADR 0012 RESERVES a trailing `-dev`: it is the generated
+     * development identity and must never be used as a release tag. Without that
+     * reservation the check would be inferring a semantic property from a naming
+     * convention an operator could legitimately collide with. Note the failure
+     * direction if one ever did: an unnecessary "unverifiable", which keeps a
+     * site in maintenance — annoying, but the safe way to be wrong.
      */
     private function versionIsKnown(string $version): bool
     {
-        return ! in_array(mb_strtolower(trim($version)), self::INDETERMINATE_VERSIONS, true);
+        $normalized = mb_strtolower(trim($version));
+
+        if (in_array($normalized, self::INDETERMINATE_VERSIONS, true)) {
+            return false;
+        }
+
+        return ! str_ends_with($normalized, '-dev');
     }
 
     /**

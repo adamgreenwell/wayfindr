@@ -95,18 +95,47 @@ RUN composer dump-autoload --no-dev --classmap-authoritative --no-scripts \
 
 FROM php-base AS runtime
 
-# Release identity is baked at build time so the official image can answer
-# "what is running here?" on /operator without operator configuration. The
-# release workflow passes the tag and commit; local builds get "source". It
-# goes into BOTH env (visibility) and files (the un-shadowable source config
-# falls back to when a blank env_file line would otherwise override the env).
-ARG WAYFINDR_VERSION=source
+# Release identity is baked at build time so the image can answer "what is
+# running here?" on /operator without operator configuration. It goes into BOTH
+# env (visibility) and files (the un-shadowable source config falls back to when
+# a blank env_file line would otherwise override the env).
+#
+# The release workflow passes the tag and commit. A SOURCE build passes neither,
+# and instead of the old opaque "source" it derives an identity from the
+# committed VERSION file: `<VERSION>-dev`, plus `+<sha>` when the builder
+# supplies a commit (ADR 0012). `.git` is dockerignored, so the VERSION file is
+# the only in-context anchor a source build has.
+#
+# The sha is NOT abbreviated. Build metadata is what pins the build for version
+# comparison, and an abbreviation that collides would make two different commits
+# compare as the same build — reintroducing the fail-open this is here to
+# prevent. The operator console shows the commit on its own line ("Source
+# revision"), so the version string carries no display burden.
+ARG WAYFINDR_VERSION=
 ARG WAYFINDR_COMMIT=
 
-RUN mkdir -p /etc/wayfindr \
-    && printf '%s' "${WAYFINDR_VERSION}" > /etc/wayfindr/version \
-    && printf '%s' "${WAYFINDR_COMMIT}" > /etc/wayfindr/commit
+COPY VERSION /tmp/wayfindr-version
 
+RUN mkdir -p /etc/wayfindr \
+    # "source" is accepted as a synonym for "unset" so a stale compose overlay
+    # passing the retired literal still derives a real identity.
+    && if [ -n "${WAYFINDR_VERSION}" ] && [ "${WAYFINDR_VERSION}" != "source" ]; then \
+           version="${WAYFINDR_VERSION}"; \
+       else \
+           version="$(tr -d '[:space:]' < /tmp/wayfindr-version)-dev"; \
+           if [ -n "${WAYFINDR_COMMIT}" ]; then \
+               version="${version}+$(printf '%s' "${WAYFINDR_COMMIT}" | tr -cd '[:alnum:]')"; \
+           fi; \
+       fi \
+    && printf '%s' "${version}" > /etc/wayfindr/version \
+    && printf '%s' "${WAYFINDR_COMMIT}" > /etc/wayfindr/commit \
+    && rm -f /tmp/wayfindr-version
+
+# NOTE: ENV can only re-export the raw ARG — it cannot see the value derived in
+# the RUN above. So on a source build this exports blank (harmless: a blank env
+# falls through to the baked file) and on a stale overlay passing the retired
+# literal it exports `source`. ReleaseIdentity therefore treats `source` as "not
+# given" too, so it can never shadow the derived identity in the file.
 ENV APP_ENV=production \
     APP_DEBUG=false \
     LOG_CHANNEL=stderr \

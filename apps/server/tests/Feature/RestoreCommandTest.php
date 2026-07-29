@@ -630,3 +630,50 @@ test('a verified matching restore still prints the established version', functio
         ->assertSuccessful()
         ->expectsOutputToContain('Wayfindr version: v0.3.0');
 });
+
+test('a bare development version is indeterminate — it names a lineage, not a build', function (): void {
+    // The regression this guards: slice 2 replaced 'source'/null with
+    // '0.1.0-dev', and two installs can BOTH report that while sitting many
+    // commits (and migrations) apart. Comparing them as equal would recreate the
+    // exact fail-open the sentinels caused.
+    config()->set('wayfindr.release.version', '0.1.0-dev');
+    $archive = makeBackupArchive(['wayfindr_version' => '0.1.0-dev', 'local_attachment_disks' => []]);
+
+    $preflight = app(RestoreService::class)->preflight($archive);
+
+    expect($preflight['version_indeterminate'])->toBeTrue()
+        ->and($preflight['version_skew'])->toBeFalse();
+});
+
+test('build metadata pins the build, making a development version comparable', function (): void {
+    config()->set('wayfindr.release.version', '0.1.0-dev+abc1234');
+    $archive = makeBackupArchive(['wayfindr_version' => '0.1.0-dev+abc1234', 'local_attachment_disks' => []]);
+
+    $preflight = app(RestoreService::class)->preflight($archive);
+
+    expect($preflight['version_indeterminate'])->toBeFalse()
+        ->and($preflight['version_skew'])->toBeFalse(); // same build → genuinely verified
+});
+
+test('two different development builds are a real skew', function (): void {
+    config()->set('wayfindr.release.version', '0.1.0-dev+abc1234');
+    $archive = makeBackupArchive(['wayfindr_version' => '0.1.0-dev+9999999', 'local_attachment_disks' => []]);
+
+    $preflight = app(RestoreService::class)->preflight($archive);
+
+    expect($preflight['version_skew'])->toBeTrue()
+        ->and($preflight['version_indeterminate'])->toBeFalse();
+});
+
+test('a tagged prerelease that merely contains "dev" is a real identity', function (): void {
+    // Only the generated bare `<VERSION>-dev` form is ambiguous. A deliberately
+    // tagged prerelease is a real release identifier, and treating it as
+    // unverifiable would keep a site in maintenance for a pair that matches.
+    config()->set('wayfindr.release.version', 'v0.2.0-dev.1');
+    $archive = makeBackupArchive(['wayfindr_version' => 'v0.2.0-dev.1', 'local_attachment_disks' => []]);
+
+    $preflight = app(RestoreService::class)->preflight($archive);
+
+    expect($preflight['version_indeterminate'])->toBeFalse()
+        ->and($preflight['version_skew'])->toBeFalse();
+});
