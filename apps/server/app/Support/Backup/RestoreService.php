@@ -75,6 +75,13 @@ class RestoreService
      * identifier, and flagging it would keep a site in maintenance for a pair
      * that actually matches. (A `+<sha>` build cannot end in `-dev`, so this one
      * test covers both cases.)
+     *
+     * This works because ADR 0012 RESERVES a trailing `-dev`: it is the generated
+     * development identity and must never be used as a release tag. Without that
+     * reservation the check would be inferring a semantic property from a naming
+     * convention an operator could legitimately collide with. Note the failure
+     * direction if one ever did: an unnecessary "unverifiable", which keeps a
+     * site in maintenance — annoying, but the safe way to be wrong.
      */
     private function versionIsKnown(string $version): bool
     {

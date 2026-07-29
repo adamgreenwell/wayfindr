@@ -127,6 +127,14 @@ unverifiable, and a **restore cannot confirm an archive matches the install**
 build and make the identity comparable:
 
 ```bash
+# Commit first. `git rev-parse HEAD` reports the last commit even when the tree
+# has uncommitted edits, but Docker builds the edited files — so a dirty build
+# would claim to be a commit it is not, and two different dirty builds would
+# claim to be the same one. Build a dirty tree WITHOUT the commit instead: it
+# then identifies by lineage only, which version checks correctly treat as
+# unverifiable.
+git diff --quiet && git diff --cached --quiet || echo 'Uncommitted changes: omit WAYFINDR_BUILD_COMMIT for this build.'
+
 WAYFINDR_BUILD_COMMIT=$(git rev-parse HEAD) docker compose \
   -f docker/self-hosting/compose.yml \
   -f docker/self-hosting/compose.build.yml \
