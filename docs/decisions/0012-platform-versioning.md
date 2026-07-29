@@ -34,9 +34,12 @@ A third gap surfaced while validating the restore: an install with no release
 identity reports `unknown`, and the restore's skew check compared two `unknown`s
 as *equal* — silently losing its schema-mismatch guard (fixed in #635, which now
 treats an unverifiable pair as indeterminate). That fix closed the fail-open but
-underlined the root problem: **a meaningful fraction of installs carry no
-identity at all**, because only the official image bakes one and source/Forge
-deploys set nothing.
+underlined the root problem: **a meaningful fraction of installs carried no
+identity at all**, because only the official image baked one and source/Forge
+deploys set nothing. That gap is now closed in the baseline — slice 2 (#637)
+shipped the `VERSION` anchor, the source-build derivation, and the host fallback
+— so what follows records the contract those rules answer to, not work still
+outstanding.
 
 ## Decision
 
@@ -104,9 +107,11 @@ per-release declaration below, not the digit, is authoritative until 1.0.
   subsequent deploy, so a continuously-deployed branch would run many commits
   under one identity — and because a non-`-dev` value is eligible for
   full-identity equality, backups taken from different code would compare as the
-  same build. The version itself must therefore be derived per deploy — updating
-  only `WAYFINDR_COMMIT` while the version stays fixed is *not* sufficient, since
-  equality is decided on the version identity and a stale one would still match.
+  same build. The version itself must therefore be derived per deploy. A stale
+  version with a refreshed commit *is* caught by the commit rule below, but that
+  is a backstop, not a substitute: the version is what operators read, what
+  precedence is computed from, and what appears in every archive, so leaving it
+  wrong to be rescued by a second field is a poor trade.
 - **`wayfindr_commit` is the fallback identity.** It resolves independently of
   the version and is already captured in every backup manifest, so an archive
   whose version is unset can still be traced to its code.
@@ -362,7 +367,7 @@ introduced, which is why it is settled here rather than in slice 3.
      the history at the next release. They are created in slice 1b, and until
      they land the human-facing half of the declaration described above is
      undefined — so they must ship before any release claims to follow this ADR.
-2. **Identity everywhere.** Creates the repository `VERSION` file — the
+2. **Identity everywhere — delivered (#637).** Creates the repository `VERSION` file — the
    authoritative source for `<next-version>` that the derivation and the release
    procedure both read. Source/Compose builds stamp `<VERSION>-dev+<sha>`;
    `WAYFINDR_VERSION` documented for host-build deploys; `source`/null retired as
