@@ -104,12 +104,41 @@ declaration is what makes `--upgrade` able to stop and say "this jump needs you
 first" instead of discovering it afterwards, and it is the input an
 update-in-place mechanism will consume.
 
-### Version comparison is ordered and explicit
+**A declaration describes its own release, so upgrades must be evaluated over the
+whole span.** An install on `v1` upgrading to `v3` gets every change in `v2` as
+well; if `v2` required an action and `v3` did not, reading only `v3`'s
+declaration would miss it — precisely the several-releases-behind case this ADR
+exists to fix, and `minimum_upgrade_from` does not save it (the jump is
+*supported*, it just has a step in the middle). The contract is therefore on the
+consumer: **anything evaluating an upgrade must collect the declarations of every
+release in `(current, target]` and present the union of their required actions.**
+A release manifest is never read in isolation.
 
-Comparisons use an ordered SemVer comparator, not string equality. Two
-consequences follow immediately: the restore can tell an operator whether an
-archive is *older or newer* rather than hedging both remedies, and the upgrade
-path can evaluate `minimum_upgrade_from` and refuse an unsupported jump.
+### Comparison answers two questions, not one
+
+Comparisons use an ordered SemVer comparator rather than string equality, so the
+restore can tell an operator whether an archive is *older or newer* instead of
+hedging both remedies, and the upgrade path can evaluate `minimum_upgrade_from`
+and refuse an unsupported jump.
+
+But SemVer §10 says **build metadata is ignored when determining precedence** —
+`0.1.0-dev+aaaaaaa` and `0.1.0-dev+bbbbbbb` are *equal* to a conforming
+comparator, even though they are different code. Relying on precedence alone
+would therefore hand back the fail-open this whole effort exists to remove.
+
+So the system asks two separate questions, and must not conflate them:
+
+1. **"Are these the same build?"** — compared over the **full** identity,
+   including build metadata. This is what a restore's skew check uses.
+2. **"Which is newer?"** — SemVer precedence, which ignores build metadata and is
+   therefore **undefined** between two builds of the same version.
+
+Two dev builds with different shas are consequently *different, direction
+unknown*: skew is real, and guidance for that case must stay direction-neutral.
+Putting the sha in the prerelease portion (`-dev.abc1234`) would make it sort,
+but a commit hash has no meaningful order, so that would only manufacture
+confident-sounding nonsense. Admitting the direction is unknown is the honest
+answer, and callers must be written to accept it.
 
 ## What stays out of scope
 
@@ -130,11 +159,16 @@ path can evaluate `minimum_upgrade_from` and refuse an unsupported jump.
 2. **Identity everywhere.** Source/Compose builds stamp `-dev+<sha>`;
    `WAYFINDR_VERSION` documented for host-build deploys; `source`/null retired as
    normal outcomes.
-3. **Ordered comparator**, and the restore's skew guidance becomes
-   direction-aware (replacing the current "if older … if newer …" hedge).
+3. **Ordered comparator**, keeping identity and precedence separate (§"Comparison
+   answers two questions"), and the restore's skew guidance becomes
+   direction-aware *where a direction exists* — still neutral between two builds
+   of the same version. Slice 2's guarantee that two differing dev builds count
+   as skew must survive this change; today it holds only because comparison is
+   string-based, so it needs a regression test before the comparator lands.
 4. **Release manifest** (`requires_operator_action`, `minimum_upgrade_from`)
    published with each release, and `install.sh --upgrade` gains a preflight that
-   reads it and refuses or warns before pulling.
+   collects the declarations across `(current, target]` — not just the target's —
+   and refuses or warns before pulling.
 5. **Floor enforcement** — reject a direct upgrade from below
    `minimum_upgrade_from`, with the supported stepping path.
 
