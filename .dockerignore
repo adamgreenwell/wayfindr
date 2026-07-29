@@ -20,3 +20,29 @@ apps/server/storage/framework/views/*
 apps/server/storage/logs/*
 
 docker/self-hosting/.env
+
+# Local artifacts that .gitignore hides but the build context would otherwise
+# carry in via `COPY apps/server ./`. Two reasons they matter:
+#
+# 1. auth.json holds Composer registry CREDENTIALS. It is copied after
+#    `composer install`, so the build never even uses it — it would simply be
+#    baked into the image, leaking if that image is ever pushed.
+# 2. The rest change image contents while git still reports a clean tree, so a
+#    source build could stamp a commit onto materially different code (ADR 0012).
+**/auth.json
+**/_ide_helper.php
+**/.phpactor.json
+**/*.log
+apps/server/.phpunit.cache
+apps/server/public/hot
+apps/server/public/storage
+apps/server/public/fonts-manifest.dev.json
+apps/server/storage/*.key
+apps/server/storage/pail
+
+.idea
+.vscode
+.zed
+.nova
+.cursor
+.codex
