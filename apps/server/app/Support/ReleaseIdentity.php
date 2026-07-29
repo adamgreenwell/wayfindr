@@ -18,11 +18,21 @@ class ReleaseIdentity
 
     public const COMMIT_FILE = '/etc/wayfindr/commit';
 
+    /**
+     * The retired sentinel that older builds used to mean "no release identity".
+     * It is still exported as `ENV WAYFINDR_VERSION=source` by images published
+     * before ADR 0012, and lingers in `.env` files copied from older docs — and
+     * because a non-blank env value outranks the baked file, leaving it in place
+     * would let it shadow a perfectly good derived identity. Treat it as "not
+     * given" wherever a version comes from.
+     */
+    private const RETIRED_SENTINEL = 'source';
+
     public static function version(): ?string
     {
         return self::resolve(
-            env('WAYFINDR_VERSION'),
-            self::readFile(self::VERSION_FILE),
+            self::identifying(env('WAYFINDR_VERSION')),
+            self::identifying(self::readFile(self::VERSION_FILE)),
             // Last resort for a deploy that builds from source ON THE HOST
             // (Forge, ADR 0003): nothing bakes /etc/wayfindr, so without this it
             // would report no identity at all. The repo's VERSION file names the
@@ -52,6 +62,19 @@ class ReleaseIdentity
         }
 
         return null;
+    }
+
+    /**
+     * The candidate unless it is the retired `source` sentinel, which carries no
+     * identity and must not outrank a real one.
+     */
+    private static function identifying(?string $candidate): ?string
+    {
+        if (is_string($candidate) && mb_strtolower(trim($candidate)) === self::RETIRED_SENTINEL) {
+            return null;
+        }
+
+        return $candidate;
     }
 
     /**

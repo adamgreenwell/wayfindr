@@ -125,6 +125,11 @@ RUN mkdir -p /etc/wayfindr \
     && printf '%s' "${WAYFINDR_COMMIT}" > /etc/wayfindr/commit \
     && rm -f /tmp/wayfindr-version
 
+# NOTE: ENV can only re-export the raw ARG — it cannot see the value derived in
+# the RUN above. So on a source build this exports blank (harmless: a blank env
+# falls through to the baked file) and on a stale overlay passing the retired
+# literal it exports `source`. ReleaseIdentity therefore treats `source` as "not
+# given" too, so it can never shadow the derived identity in the file.
 ENV APP_ENV=production \
     APP_DEBUG=false \
     LOG_CHANNEL=stderr \
