@@ -104,8 +104,9 @@ per-release declaration below, not the digit, is authoritative until 1.0.
   subsequent deploy, so a continuously-deployed branch would run many commits
   under one identity — and because a non-`-dev` value is eligible for
   full-identity equality, backups taken from different code would compare as the
-  same build. Deriving it per deploy (or at minimum setting `WAYFINDR_COMMIT`
-  from the checkout) is what keeps the identity tied to what is running.
+  same build. The version itself must therefore be derived per deploy — updating
+  only `WAYFINDR_COMMIT` while the version stays fixed is *not* sufficient, since
+  equality is decided on the version identity and a stale one would still match.
 - **`wayfindr_commit` is the fallback identity.** It resolves independently of
   the version and is already captured in every backup manifest, so an archive
   whose version is unset can still be traced to its code.
@@ -290,6 +291,14 @@ So the system asks two separate questions, and must not conflate them:
    code; equating those would walk straight back into the fail-open this ADR
    exists to close. Equality for a development identity therefore *requires* the
    commit.
+
+   **A differing commit defeats equality even when the versions match.** The
+   backup manifest already records `wayfindr_commit` independently, so when both
+   sides carry one and they disagree, that is decisive whatever the version
+   strings say. It costs nothing — the data is already captured — and it removes
+   the guarantee's dependence on every operator deriving their version correctly:
+   a fixed `WAYFINDR_VERSION` with a refreshed commit is caught anyway. Version
+   equality is necessary, not sufficient.
 2. **"Which is newer?"** — SemVer precedence, which ignores build metadata and is
    therefore **undefined** between two builds of the same version.
 
