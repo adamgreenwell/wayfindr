@@ -377,10 +377,30 @@ release_tags=$(git tag --points-at HEAD 2>/dev/null \
 # `v0.1.0-alpha.3` against a Forge install's `0.1.0-alpha.3`; that pair compares
 # unequal, which warns rather than proceeds, and ADR 0012's read-side
 # normalization (slice 3) is what reconciles the two writers for good.
-tag=$(printf '%s\n' "$release_tags" \
-  | grep -vE '^v?[0-9]+\.[0-9]+\.[0-9]+-' \
-  | sort -V \
-  | tail -1 || true)
+tag=
+stable=$(printf '%s\n' "$release_tags" | grep -vE '^v?[0-9]+\.[0-9]+\.[0-9]+-' || true)
+
+# Precedence ignores build metadata (SemVer §10), so `1.2.3` and `1.2.3+build.1`
+# do not rank against each other — they tie. `sort -V | tail -1` would hand the
+# identity to whichever sorts last, and adding a metadata alias to a released
+# commit would then rename code that has not changed.
+#
+# Metadata cannot simply be stripped to break the tie: ADR 0012 treats two builds
+# differing only in build metadata as different code, so folding them together
+# would equate builds that are not the same — a fail-open, and a worse one than
+# the problem it solves.
+#
+# So rank on the metadata-free key, then look at everything holding the top rank.
+stable_ranked=$(printf '%s\n' "$stable" | sed -E 's/^([^+]*)(.*)$/\1 \1\2/')
+top_precedence=$(printf '%s\n' "$stable_ranked" | cut -d' ' -f1 | sort -V | tail -1)
+top_stable=$(printf '%s\n' "$stable_ranked" | awk -v k="$top_precedence" '$1 == k { print $2 }')
+
+# One tag at the top rank is the release. Several means they differ only in build
+# metadata, which SemVer does not order — the same position as two prereleases,
+# answered the same way: decline, and let the development identity say so.
+if [ "$(printf '%s\n' "$top_stable" | grep -c .)" = 1 ]; then
+  tag=$top_stable
+fi
 
 # No stable tag: take a prerelease only when it is unambiguous. `sort -V` is not
 # SemVer precedence for prerelease identifiers either — SemVer ranks `alpha.beta`
