@@ -269,15 +269,17 @@ pin a build, so anything that compares versions treats it as unverifiable. In
 practice that means a **restore cannot confirm the archive matches this install**
 and will keep the site in maintenance for you to check (ADR 0012).
 
-To pin the exact build, set them in Forge's **Environment** panel — that is the
-site's `.env`, which is where the application reads them from. Use the tag when
-you deploy a tagged release (`WAYFINDR_VERSION=v0.1.0-alpha.3`), so it reports as
-that release rather than a development build.
+**Derive them per deploy rather than typing them in once.** A value set by hand
+in Forge's Environment panel survives every later deploy, so a
+continuously-deployed branch runs many commits under one identity — and since a
+version that is not a development build is treated as an exact identity, backups
+taken from materially different code would compare as the *same build* and a
+restore would skip its schema-mismatch warning. A stale identity is worse than no
+identity, because it is believed.
 
-For per-deploy precision without editing the panel each time, have the deploy
-script rewrite those two lines. They must be written **before** `config:cache`,
-because the identity is resolved in a config file and is therefore baked into the
-config cache:
+So have the deploy script rewrite those two lines. They must be written
+**before** `config:cache`, because the identity is resolved in a config file and
+is therefore baked into the config cache:
 
 ```bash
 # in the site root, before the artisan cache steps
@@ -287,6 +289,11 @@ sed -i "s|^WAYFINDR_COMMIT=.*|WAYFINDR_COMMIT=$(git rev-parse HEAD)|" .env
 
 (Both keys are present-but-empty in the environment template above, so `sed`
 has a line to replace.)
+
+Deploying a **tagged release** rather than a branch? Set `WAYFINDR_VERSION` to
+the tag (`v0.1.0-alpha.3`) so it reports as that release instead of a development
+build — that value is accurate for exactly as long as the site stays on the tag,
+so if the site tracks a branch, derive it instead.
 
 This pins the commit because a Forge release is a **fresh checkout of the ref** —
 the tree is clean by construction, so the sha genuinely names the deployed code.
