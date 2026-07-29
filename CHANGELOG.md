@@ -51,11 +51,12 @@ php artisan queue:work backups --queue=backups --sleep=5 --tries=1 --timeout=360
 - Backup and restore: `wayfindr:backup` and a guarded `wayfindr:restore`, with an
   optional offsite mirror to an S3-compatible bucket and age-based retention
   (ADR 0009, ADR 0010).
-- Operator backups GUI: configure destination, retention, and per-install prefix;
-  run a backup on demand; review run history; and perform a confirmed in-GUI
-  restore. The in-GUI restore requires a Redis-backed queue, cache, and
-  maintenance state — where that is not met, the page explains why and points to
-  the CLI (ADR 0011).
+- **⚠ Operator action** — Operator backups GUI: configure destination, retention,
+  and per-install prefix; run a backup on demand; review run history; and perform
+  a confirmed in-GUI restore. Running backups from the GUI needs the second queue
+  worker described above; without it those runs never start. The in-GUI restore
+  additionally requires a Redis-backed queue, cache, and maintenance state — where
+  that is not met, the page explains why and points to the CLI (ADR 0011).
 
 ### Fixed
 
