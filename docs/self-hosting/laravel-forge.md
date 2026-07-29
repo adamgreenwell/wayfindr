@@ -295,12 +295,20 @@ while this release keeps reading its stale copy until the next deploy.
 # tag-pinned site honest when it later moves off the tag.
 tag=$(git describe --exact-match --tags HEAD 2>/dev/null || true)
 
-# Only accept a version-shaped tag. Git permits characters that are hostile in a
-# sed replacement: `&` expands to the matched text (silently corrupting the
-# identity) and `|` closes the expression (aborting the deploy). A tag outside
-# this set is not a release identity anyway, so fall back to the dev one.
+# Accept only a release-version tag, for two separate reasons.
+#
+# Characters: git permits `&` and `|` in ref names, and both are hostile in the
+# sed replacement below — `&` expands to the matched text (silently corrupting
+# the identity), `|` closes the expression (aborting the deploy).
+#
+# Shape: a movable tag like `production`, `staging` or `latest` is safe to
+# substitute but is not an identity — moving it hands materially different
+# deployments the same version. Anything not shaped like a release version falls
+# back to the SHA-qualified development identity, which is the honest answer.
 case "$tag" in
-  ''|*[!A-Za-z0-9.+-]*) tag='' ;;
+  ''|*[!A-Za-z0-9.+-]*)                        tag='' ;;
+  v[0-9]*.[0-9]*.[0-9]*|[0-9]*.[0-9]*.[0-9]*)  : ;;
+  *)                                           tag='' ;;
 esac
 
 version=${tag:-"$(cat VERSION)-dev+$(git rev-parse HEAD)"}
