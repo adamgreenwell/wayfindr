@@ -337,16 +337,46 @@ if [ -z "$tag" ] && [ "$(printf '%s\n' "$release_tags" | grep -c .)" = 1 ]; then
   tag=$release_tags
 fi
 
-# Two or more prereleases and no stable tag leaves `tag` empty on purpose, and
-# nothing below may quietly fill it back in.
-version=${tag:-"$(cat VERSION)-dev+$(git rev-parse HEAD)"}
+# Two or more prereleases and no stable tag leaves `tag` empty on purpose. The
+# only thing below that may touch it is the dirty-tree gate, which clears it.
+
+# A commit names the deployed code only when the tree matches it. Forge's
+# zero-downtime path makes a fresh checkout per release, so this passes by
+# construction — but the standard path runs `git pull` in a persistent checkout
+# (deploy/forge/standard-deploy.sh) that can carry local edits, and a sha
+# stamped from a modified tree names code that is not what is running. Worse,
+# a clean checkout and any number of differently-modified ones would then all
+# claim the SAME identity, which is a fail-open in the restore's skew check.
+#
+# "Dirty" means tracked modifications AND non-ignored untracked files: a
+# brand-new migration is invisible to a tracked-changes check but is very much
+# part of what is deployed.
+if git diff --quiet && git diff --cached --quiet \
+   && [ -z "$(git ls-files --others --exclude-standard)" ]; then
+  commit=$(git rev-parse HEAD)
+else
+  # A tag names a commit, not a modified copy of one, so a dirty tree cannot
+  # claim a release either.
+  commit=
+  tag=
+  echo 'WARNING: working tree is not clean — recording an unverifiable identity.'
+fi
+
+# No commit means identify by lineage only. The bare `-dev` is deliberate: ADR
+# 0012 makes it never compare equal to anything, so the restore treats it as
+# indeterminate and warns rather than asserting a match it cannot support.
+if [ -n "$commit" ]; then
+  version=${tag:-"$(cat VERSION)-dev+$commit"}
+else
+  version=${tag:-"$(cat VERSION)-dev"}
+fi
 
 # Only zero-downtime sites share .env as a symlink; note what it was so the
 # check below applies to the mode you are actually running.
 was_link=0; [ -L .env ] && was_link=1
 
 sed -i --follow-symlinks "s|^WAYFINDR_VERSION=.*|WAYFINDR_VERSION=${version}|" .env
-sed -i --follow-symlinks "s|^WAYFINDR_COMMIT=.*|WAYFINDR_COMMIT=$(git rev-parse HEAD)|" .env
+sed -i --follow-symlinks "s|^WAYFINDR_COMMIT=.*|WAYFINDR_COMMIT=${commit}|" .env
 
 # If it was a shared symlink, it must still be one.
 [ "$was_link" = 1 ] && [ ! -L .env ] \
@@ -363,13 +393,22 @@ than hand-set — a value typed into the panel for a tagged deploy keeps claimin
 that tag after the site moves off it, which is the stale-identity problem this
 section exists to avoid.
 
-This pins the commit because a Forge release is a **fresh checkout of the ref** —
-the tree is clean by construction, so the sha genuinely names the deployed code.
-If you adapt this for a host where the working tree can carry local edits or
-untracked files, apply the clean-tree gate from
-[install.md](install.md) first: a sha stamped from a modified tree names code
-that is not what is running, and two differently-modified deploys would claim the
-same identity.
+The clean-tree gate is not optional, and it is not only for other people's
+hosts. A **zero-downtime** Forge release is a fresh checkout of the ref, so its
+tree is clean by construction and the gate costs nothing. The **standard**
+deploy path is different: [standard-deploy.sh](../../deploy/forge/standard-deploy.sh)
+runs `git pull` in a persistent checkout, without a reset and without a
+cleanliness check, so whatever was left in that directory is part of what runs.
+A sha stamped there can name code that is not deployed, and every
+differently-modified checkout would claim the same identity — the fail-open in
+the restore's skew check that this whole section exists to prevent.
+
+So the snippet always gates, and a dirty tree drops both the tag and the commit
+rather than publishing a confident lie. What it records instead is a bare
+`<version>-dev`, which ADR 0012 defines as never equal to anything — the restore
+then reports the pair as indeterminate and warns, which is the honest answer for
+a tree nobody can identify. The same gate guards source builds in
+[install.md](install.md).
 
 The command refuses to run when bootstrap records already exist. Use `--force`
 only when you intentionally want to create or update the supplied account,
