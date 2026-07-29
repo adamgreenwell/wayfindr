@@ -58,12 +58,29 @@ php artisan queue:work backups --queue=backups --sleep=5 --tries=1 --timeout=360
   additionally requires a Redis-backed queue, cache, and maintenance state — where
   that is not met, the page explains why and points to the CLI (ADR 0011).
 
+- Every install now carries a release identity — official images bake theirs at
+  build time, source builds derive one from the `VERSION` file, and `WAYFINDR_VERSION`
+  and `WAYFINDR_COMMIT` override both. Backup archives record it, so a restore can
+  tell whether an archive came from the code that is running (ADR 0012).
+- Forge deploys derive that identity from the checkout on every deploy, rather
+  than reading a value typed into the Environment panel that keeps claiming a
+  release after the site has moved off it. A tagged checkout reports its version,
+  anything else reports a development identity, and a working tree carrying local
+  edits reports one that is explicitly unverifiable rather than a commit that does
+  not describe what is deployed.
+
 ### Fixed
 
 - A restore no longer treats two unverifiable versions as a match. Installs
   without a release identity reported `unknown` on both sides, which compared
   equal and silently skipped the schema-mismatch guard; an unverifiable pair now
   keeps the site in maintenance for the operator to check.
+- The Forge identity snippet no longer aborts untagged deploys, replaces the
+  `.env` symlink with a detached copy, or reports every clean zero-downtime
+  release as a modified tree. This only affects operators tracking `main` who
+  copied the snippet before this release — no published release contained it. If
+  a deploy warns that `.env` is a regular file, follow *Repairing a detached
+  environment file* in the Forge guide.
 
 ---
 
