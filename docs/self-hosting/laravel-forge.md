@@ -336,8 +336,9 @@ tag=$(printf '%s\n' "$release_tags" | grep -vE '^v?[0-9]+\.[0-9]+\.[0-9]+-' | so
 if [ -z "$tag" ] && [ "$(printf '%s\n' "$release_tags" | grep -c .)" = 1 ]; then
   tag=$release_tags
 fi
-[ -n "$tag" ] || tag=$(printf '%s\n' "$release_tags" | sort -V | tail -1 || true)
 
+# Two or more prereleases and no stable tag leaves `tag` empty on purpose, and
+# nothing below may quietly fill it back in.
 version=${tag:-"$(cat VERSION)-dev+$(git rev-parse HEAD)"}
 
 # Only zero-downtime sites share .env as a symlink; note what it was so the
