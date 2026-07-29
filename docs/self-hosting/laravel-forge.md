@@ -326,7 +326,23 @@ release_tags=$(git tag --points-at HEAD 2>/dev/null \
 # A prerelease is a hyphen immediately after the version core — NOT any hyphen,
 # which would misread `v1.2.3+build-1` (a stable release with a hyphen in its
 # build metadata) as a prerelease and hand the identity back to the alpha tag.
-tag=$(printf '%s\n' "$release_tags" | grep -vE '^v?[0-9]+\.[0-9]+\.[0-9]+-' | sort -V | tail -1 || true)
+#
+# Sort on a `v`-stripped key, not the raw tag. `sort -V` compares the surrounding
+# text too, so a digit sorts before `v` and a mixed-convention pair (`1.3.0`
+# alongside `v1.2.3`, from a renaming or a compatibility alias) would otherwise
+# select the OLDER tag. Decorate with the key, sort, then drop it: a space is a
+# safe separator because git ref names cannot contain one, and `-E` keeps the
+# expression valid on both GNU and BSD sed.
+#
+# The tag itself is recorded verbatim, matching what release-image.yml bakes
+# into official images. Canonicalizing the `v` away belongs to the comparator
+# that reads these values (ADR 0012, slice 3), not to each writer.
+tag=$(printf '%s\n' "$release_tags" \
+  | grep -vE '^v?[0-9]+\.[0-9]+\.[0-9]+-' \
+  | sed -E 's/^(v?)(.*)$/\2 \1\2/' \
+  | sort -V \
+  | tail -1 \
+  | cut -d' ' -f2 || true)
 
 # No stable tag: take a prerelease only when it is unambiguous. `sort -V` is not
 # SemVer precedence for prerelease identifiers either — SemVer ranks `alpha.beta`
