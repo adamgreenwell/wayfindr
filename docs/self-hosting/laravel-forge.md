@@ -281,10 +281,19 @@ So have the deploy script rewrite those two lines. They must be written
 **before** `config:cache`, because the identity is resolved in a config file and
 is therefore baked into the config cache:
 
+`--follow-symlinks` is not optional here. On a zero-downtime site Forge shares
+`.env` as a symlink into the release, and GNU `sed -i` without that flag
+*replaces* the symlink with a regular copy — silently. The release is then
+detached from the Environment panel: later panel edits update the shared file
+while this release keeps reading its stale copy until the next deploy.
+
 ```bash
 # in the site root, before the artisan cache steps
-sed -i "s|^WAYFINDR_VERSION=.*|WAYFINDR_VERSION=$(cat VERSION)-dev+$(git rev-parse HEAD)|" .env
-sed -i "s|^WAYFINDR_COMMIT=.*|WAYFINDR_COMMIT=$(git rev-parse HEAD)|" .env
+sed -i --follow-symlinks "s|^WAYFINDR_VERSION=.*|WAYFINDR_VERSION=$(cat VERSION)-dev+$(git rev-parse HEAD)|" .env
+sed -i --follow-symlinks "s|^WAYFINDR_COMMIT=.*|WAYFINDR_COMMIT=$(git rev-parse HEAD)|" .env
+
+# the shared link must survive the edit
+readlink .env >/dev/null || echo 'WARNING: .env is no longer a symlink — this release is detached from the Environment panel.'
 ```
 
 (Both keys are present-but-empty in the environment template above, so `sed`
