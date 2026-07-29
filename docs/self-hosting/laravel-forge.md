@@ -322,7 +322,11 @@ release_tags=$(git tag --points-at HEAD 2>/dev/null \
 # Prefer a stable tag over a prerelease on the same commit. `sort -V` is natural
 # ordering, not SemVer precedence: it ranks `v1.2.3-alpha` ABOVE `v1.2.3`, so a
 # promoted release would otherwise be stamped with its prerelease name.
-tag=$(printf '%s\n' "$release_tags" | grep -v -- '-' | sort -V | tail -1 || true)
+#
+# A prerelease is a hyphen immediately after the version core — NOT any hyphen,
+# which would misread `v1.2.3+build-1` (a stable release with a hyphen in its
+# build metadata) as a prerelease and hand the identity back to the alpha tag.
+tag=$(printf '%s\n' "$release_tags" | grep -vE '^v?[0-9]+\.[0-9]+\.[0-9]+-' | sort -V | tail -1 || true)
 [ -n "$tag" ] || tag=$(printf '%s\n' "$release_tags" | sort -V | tail -1 || true)
 
 version=${tag:-"$(cat VERSION)-dev+$(git rev-parse HEAD)"}
