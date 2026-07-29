@@ -109,6 +109,14 @@ brand-new migration is invisible to a tracked-changes check but goes straight
 into the build context, which is the likeliest way to stamp a sha onto code that
 commit does not contain.
 
+Even that is a **proxy**, because git-cleanliness is not build-context
+cleanliness — `.gitignore` and `.dockerignore` are different sets, so a file can
+be invisible to git and still enter the image. `apps/server/public/hot` was
+exactly this: gitignored, not Docker-excluded, and copied in wholesale. The
+remedy is to keep the two sets aligned for anything the build would carry (done
+for the known cases), while recognising that only a content digest over the
+effective build context closes the class rather than the instances.
+
 This one is a **discipline, not an enforced invariant**, and the ADR says so
 rather than implying a guarantee it cannot make: `.git` is excluded from the
 Docker build context, so the build genuinely cannot inspect the tree it was
