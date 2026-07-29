@@ -313,6 +313,13 @@ root=$(git rev-parse --show-toplevel)
 # `&` and `|` in ref names and both are hostile in the sed below — `&` expands to
 # the matched text, `|` closes the expression.
 #
+# It is the real SemVer grammar rather than a digits-and-dots approximation,
+# assembled from named parts because one anchored expression would be unreadable.
+# ADR 0012 adopts SemVer and plans a parser, so a tag this accepts must be one
+# that parser will accept: `01.2.3`, `1.2.3-01` and `1.2.3-alpha..1` all look
+# like versions and are none of them valid, and stamping one as an exact release
+# identity would record a version nothing downstream can parse.
+#
 # A trailing `-dev` is reserved for development identities (ADR 0012); a tag
 # using it would be recorded as exact here while the restore treats it as
 # unverifiable, so it is excluded too.
@@ -328,8 +335,17 @@ root=$(git rev-parse --show-toplevel)
 # two — so adding an alias cannot change what is selected, how many candidates
 # there appear to be, or the identity of unchanged code. Every step below can
 # then assume unprefixed input and compare like with like.
+# No leading zeroes in the three core numbers.
+semver_core='(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)'
+# A prerelease identifier is numeric without leading zeroes, or contains a
+# non-digit. Dot-separated, and none of them may be empty.
+semver_pre_id='(0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*)'
+semver_pre="(-${semver_pre_id}(\.${semver_pre_id})*)?"
+# Build metadata is looser: any non-empty alphanumeric-or-hyphen identifiers.
+semver_build='(\+[0-9a-zA-Z-]+(\.[0-9a-zA-Z-]+)*)?'
+
 release_tags=$(git tag --points-at HEAD 2>/dev/null \
-  | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$' \
+  | grep -E "^v?${semver_core}${semver_pre}${semver_build}$" \
   | grep -vEi -- '-dev$' \
   | sed -E 's/^v//' \
   | sort -u || true)
@@ -465,10 +481,15 @@ edits a file nothing loads: a password rotated in the panel never reaches the
 app, and the discrepancy is invisible until something fails to connect.
 
 Repair it by hand rather than by script — the copy is the file that has been
-live, so it, not the panel, may hold the current values:
+live, so it, not the panel, may hold the current values.
+
+Start from the site's Laravel directory. Only zero-downtime sites have the
+`current` release link; a standard site works in the site path directly, so use
+whichever exists rather than assuming:
 
 ```bash
-cd ~/your-site.com/current/apps/server
+cd ~/your-site.com/current/apps/server 2>/dev/null || cd ~/your-site.com/apps/server
+pwd
 diff <(sort .env) <(sort ../../.env)
 ```
 
