@@ -288,21 +288,35 @@ detached from the Environment panel: later panel edits update the shared file
 while this release keeps reading its stale copy until the next deploy.
 
 ```bash
-# in the site root, before the artisan cache steps
-sed -i --follow-symlinks "s|^WAYFINDR_VERSION=.*|WAYFINDR_VERSION=$(cat VERSION)-dev+$(git rev-parse HEAD)|" .env
+# in the site root, before the artisan cache steps.
+
+# A checkout sitting exactly on a tag reports that tag; anything else is a
+# development build. Deriving this rather than hand-setting it is what keeps a
+# tag-pinned site honest when it later moves off the tag.
+tag=$(git describe --exact-match --tags HEAD 2>/dev/null || true)
+version=${tag:-"$(cat VERSION)-dev+$(git rev-parse HEAD)"}
+
+# Only zero-downtime sites share .env as a symlink; note what it was so the
+# check below applies to the mode you are actually running.
+was_link=0; [ -L .env ] && was_link=1
+
+sed -i --follow-symlinks "s|^WAYFINDR_VERSION=.*|WAYFINDR_VERSION=${version}|" .env
 sed -i --follow-symlinks "s|^WAYFINDR_COMMIT=.*|WAYFINDR_COMMIT=$(git rev-parse HEAD)|" .env
 
-# the shared link must survive the edit
-readlink .env >/dev/null || echo 'WARNING: .env is no longer a symlink — this release is detached from the Environment panel.'
+# If it was a shared symlink, it must still be one.
+[ "$was_link" = 1 ] && [ ! -L .env ] \
+  && echo 'WARNING: .env is no longer a symlink — this release is detached from the Environment panel.'
 ```
 
 (Both keys are present-but-empty in the environment template above, so `sed`
 has a line to replace.)
 
-Deploying a **tagged release** rather than a branch? Set `WAYFINDR_VERSION` to
-the tag (`v0.1.0-alpha.3`) so it reports as that release instead of a development
-build — that value is accurate for exactly as long as the site stays on the tag,
-so if the site tracks a branch, derive it instead.
+Deploying a **tagged release** rather than a branch needs nothing extra: the
+snippet detects a checkout sitting exactly on a tag and reports the tag, falling
+back to a development identity otherwise. That is deliberately derived rather
+than hand-set — a value typed into the panel for a tagged deploy keeps claiming
+that tag after the site moves off it, which is the stale-identity problem this
+section exists to avoid.
 
 This pins the commit because a Forge release is a **fresh checkout of the ref** —
 the tree is clean by construction, so the sha genuinely names the deployed code.
