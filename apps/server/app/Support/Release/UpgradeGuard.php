@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Release;
 
+use App\Support\Version\VersionComparator;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -71,7 +72,7 @@ final class UpgradeGuard
     /**
      * What this upgrade still owes before it may migrate.
      *
-     * @return array{blocked: bool, reason: string, actions: list<array<string, mixed>>, from: ?string, target: ?string, legacy: bool}
+     * @return array{blocked: bool, reason: string, actions: list<array<string, mixed>>, from: ?string, target: ?string, legacy: bool, floor: ?string}
      */
     public function assess(bool $includeTarget = false): array
     {
@@ -109,6 +110,33 @@ final class UpgradeGuard
         // upgrade-only work from releases it never ran.
         $fresh = $recorded === null && ! $existing;
 
+        // The floor: releases below it cannot upgrade directly, because the
+        // migration path that would carry them has been retired. This is checked
+        // before requirements, since an unsupported jump is not something an
+        // acknowledgement can make safe - there is no work the operator could do
+        // to make the missing migrations exist.
+        $floor = $manifest['minimum_upgrade_from'] ?? null;
+
+        if (is_string($floor) && $recorded !== null) {
+            $comparison = VersionComparator::compare($recorded, $floor);
+
+            // Only a definite "below" refuses. A comparison with no answer - a
+            // development version on either side - is not evidence of an
+            // unsupported jump, and refusing on it would strand source installs
+            // that are perfectly current.
+            if ($comparison !== null && $comparison < 0) {
+                return [
+                    'blocked' => true,
+                    'reason' => 'below the minimum upgrade floor',
+                    'actions' => [],
+                    'from' => $recorded,
+                    'target' => $target,
+                    'legacy' => $legacy,
+                    'floor' => $floor,
+                ];
+            }
+        }
+
         $outstanding = UpgradeRequirements::outstanding(
             $history,
             $recorded,
@@ -138,11 +166,12 @@ final class UpgradeGuard
             'from' => $recorded,
             'target' => $target,
             'legacy' => $legacy,
+            'floor' => null,
         ];
     }
 
     /**
-     * @return array{blocked: bool, reason: string, actions: list<array<string, mixed>>, from: ?string, target: ?string, legacy: bool}
+     * @return array{blocked: bool, reason: string, actions: list<array<string, mixed>>, from: ?string, target: ?string, legacy: bool, floor: ?string}
      */
     private function clear(string $reason): array
     {
@@ -153,6 +182,7 @@ final class UpgradeGuard
             'from' => null,
             'target' => null,
             'legacy' => false,
+            'floor' => null,
         ];
     }
 

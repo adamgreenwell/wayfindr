@@ -174,3 +174,40 @@ test('a fresh install is not handed historical upgrade work', function (): void 
 
     expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeFalse();
 });
+
+test('an install below the floor cannot upgrade directly', function (): void {
+    // Not a to-do list: the migrations that would carry it forward have been
+    // retired, so no acknowledgement can make the jump safe.
+    bakeRelease(['minimum_upgrade_from' => '0.5.0', 'actions' => []], '0.6.0');
+    app(ReleaseState::class)->record('0.2.0', 'abc');
+
+    $assessment = app(UpgradeGuard::class)->assess();
+
+    expect($assessment['blocked'])->toBeTrue()
+        ->and($assessment['floor'])->toBe('0.5.0');
+});
+
+test('an install at the floor may upgrade', function (): void {
+    bakeRelease(['minimum_upgrade_from' => '0.5.0', 'actions' => []], '0.6.0');
+    app(ReleaseState::class)->record('0.5.0', 'abc');
+
+    expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeFalse();
+});
+
+test('a development version is not refused by the floor', function (): void {
+    // Precedence against one is undefined, so "below" cannot be established.
+    // Refusing on no answer would strand source installs that are current.
+    bakeRelease(['minimum_upgrade_from' => '0.5.0', 'actions' => []], '0.6.0');
+    app(ReleaseState::class)->record('0.6.0-dev', 'abc');
+
+    expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeFalse();
+});
+
+test('the floor refusal says acknowledgement cannot help', function (): void {
+    bakeRelease(['minimum_upgrade_from' => '0.5.0', 'actions' => []], '0.6.0');
+    app(ReleaseState::class)->record('0.2.0', 'abc');
+
+    $this->artisan('wayfindr:upgrade-guard')
+        ->expectsOutputToContain('oldest supported starting point is 0.5.0')
+        ->assertFailed();
+});

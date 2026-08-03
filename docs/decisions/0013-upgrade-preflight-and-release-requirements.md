@@ -289,5 +289,13 @@ have it, and the artifact guard is the guarantee for everyone else.
    `minimum_upgrade_from`, with the supported stepping path. Depends on the
    manifest, so it follows rather than leads.
 
+   Refused **before** requirements are evaluated, and reported differently: an
+   unsupported jump is not a to-do list. No acknowledgement can make it safe,
+   because the migrations that would carry the install forward no longer ship —
+   the only remedy is to upgrade in steps. A comparison with *no answer* (a
+   development version on either side) does not refuse: that is not evidence of
+   an unsupported jump, and treating it as one would strand source installs that
+   are perfectly current.
+
 The bootstrap constraint applies to whichever release first carries slice 2: it
 must require no operator action.

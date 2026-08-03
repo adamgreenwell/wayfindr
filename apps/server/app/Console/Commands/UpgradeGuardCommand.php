@@ -48,6 +48,16 @@ class UpgradeGuardCommand extends Command
             $this->warn('  is being checked. Some may already have been done.');
         }
 
+        if (($assessment['floor'] ?? null) !== null) {
+            $this->error(sprintf('  This install (%s) is older than %s allows to upgrade directly.',
+                $assessment['from'] ?? 'unknown', $assessment['target'] ?? 'this release'));
+            $this->line(sprintf('  The oldest supported starting point is %s.', $assessment['floor']));
+            $this->line('  Upgrade to that release first, let it start, then upgrade again.');
+            $this->line('  Acknowledgement cannot help: the migrations for this jump no longer ship.');
+
+            return self::FAILURE;
+        }
+
         if (! $assessment['blocked']) {
             $this->info('  Nothing outstanding — migrations may run.');
 

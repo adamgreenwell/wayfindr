@@ -60,6 +60,27 @@ class BlockMigrationsWithUnmetRequirements
         $output->writeln('');
         $output->writeln('  <error> UPGRADE BLOCKED </error>');
         $output->writeln('');
+
+        // A floor refusal is not a to-do list. The migrations that would carry
+        // this install forward have been retired, so there is nothing the
+        // operator can do here except upgrade in steps - saying "acknowledge
+        // these" would be advice that cannot work.
+        if (($assessment['floor'] ?? null) !== null) {
+            $output->writeln(sprintf(
+                '  This install (%s) is older than %s allows to upgrade directly.',
+                $assessment['from'] ?? 'unknown', $assessment['target'] ?? 'this release',
+            ));
+            $output->writeln('');
+            $output->writeln(sprintf('  The oldest supported starting point is %s.', $assessment['floor']));
+            $output->writeln('  Upgrade to that release first, let it start, then upgrade again.');
+            $output->writeln('');
+            $output->writeln('  Nothing has been changed. Acknowledgement cannot help here: the');
+            $output->writeln('  migrations for this jump no longer ship.');
+            $output->writeln('');
+
+            exit(UpgradeGuard::EXIT_BLOCKED);
+        }
+
         $output->writeln(sprintf(
             '  This release (%s) needs something done before its migrations may run.',
             $assessment['target'] ?? 'unknown',
