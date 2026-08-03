@@ -146,6 +146,29 @@ ENV APP_ENV=production \
 WORKDIR /app/apps/server
 
 COPY --from=vendor /app/apps/server /app/apps/server
+COPY release.json /app/release.json
+COPY releases/history.json /app/releases/history.json
+COPY scripts/release/build-manifest.php /app/scripts/release/build-manifest.php
+
+# What this release requires of an operator, and the history a skipped span needs
+# (ADR 0013). Both are read by the guard before migrations run, so they have to
+# be on disk in the image rather than fetched.
+#
+# The history starts from the repository's record of published releases and gains
+# this build on top. Seeding it from the repo is what lets the guard evaluate a
+# v1 -> v3 jump: the v3 image has to know what v2 asked for, and v2's declaration
+# exists nowhere else at build time.
+#
+# `version` is re-read from the identity file rather than recomputed, so the
+# manifest and /etc/wayfindr/version cannot disagree about which release this is.
+RUN cp /app/releases/history.json /etc/wayfindr/release-history.json \
+    && php /app/scripts/release/build-manifest.php \
+        --version="$(cat /etc/wayfindr/version)" \
+        --commit="$(cat /etc/wayfindr/commit)" \
+        --declaration=/app/release.json \
+        --out=/etc/wayfindr/release.json \
+        --history=/etc/wayfindr/release-history.json \
+    && rm -rf /app/release.json /app/releases /app/scripts
 COPY packages/widget-js/src /app/packages/widget-js/src
 COPY docker/self-hosting/Caddyfile /etc/frankenphp/Caddyfile
 COPY docker/self-hosting/docker-entrypoint.sh /usr/local/bin/wayfindr-entrypoint

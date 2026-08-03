@@ -53,10 +53,10 @@ which is precisely what an `after-pull` action exists to precede.
 
 The check runs **ahead of the migration**, prints what is required, and exits
 non-zero. The schema is untouched and the previous image still runs, so the
-operator's recovery is to complete the action or to restart the old tag. In the
-container that means `docker-entrypoint.sh` calling the guard before its
-migration block; the same call goes ahead of every other documented migration
-(see §"Every documented pre-migration path calls the same guard").
+operator's recovery is to complete the action or to restart the old tag. It runs
+inside the migration path itself rather than in front of each caller, so every
+deployment style is covered by one enforcement point
+(see §"Migration itself enforces the guard").
 
 The alternative — starting with migrations suppressed so the operator has a live
 shell to work from — was considered and rejected for now. It means maintaining a
@@ -76,6 +76,25 @@ order to be performed at all. Blocking migration on it would withhold the very
 state the action requires, and the requirement could never be satisfied. Unmet
 `after-start` requirements therefore gate **serving**, after migration — the app
 starts, refuses traffic, and says what is outstanding.
+
+**`before-pull` is detected by the artifact, not prevented by it.** The artifact
+guard runs when the new image starts, which is after `compose pull` has already
+completed. A `before-pull` action must be performed while the *old* release is
+live, so by the time any artifact-side code can look, the moment has passed.
+Blocking the migration does not give it back.
+
+This is a real limit and the record states it rather than implying otherwise:
+
+- Only the **installer preflight** can stop a `before-pull` requirement from
+  being missed, and the preflight is the part that may not exist.
+- What the artifact still provides is **no silent progression**. It detects the
+  unmet requirement, refuses to migrate, and names the recovery — restart the
+  previous release, perform the action there, then upgrade again. The pull is
+  reversible; a migration past a missed prerequisite frequently is not.
+
+So `before-pull` should be chosen sparingly, and only where that recovery is
+genuinely available. An action that cannot be performed after a rollback does not
+belong in this phase.
 
 ### Requirements are verified where possible and attested where not
 
@@ -105,9 +124,17 @@ action that required it and cannot be a blanket opt-out. It is deliberately
 verbose to type: this is the operator asserting something the platform cannot
 check, and it should read like an assertion.
 
-For the same reason, a `check` **may** consult infrastructure and the *old*
-schema, but must not assume the new one. A check that queries a table the
-pending migration creates would fail on every upgrade it was meant to guard.
+A `check` sees whatever exists **when it runs**, which follows from its action's
+phase rather than from a blanket rule:
+
+- `before-pull` and `after-pull` checks are evaluated *before* migration, so they
+  may consult infrastructure and the **old** schema but must not assume the new
+  one. A check querying a table the pending migration creates would fail on every
+  upgrade it was meant to guard.
+- `after-start` checks are evaluated *after* migration, at the serving gate, so
+  the **new** schema is present and is often exactly what they need to inspect —
+  which is why `after-start` may depend on `schema` at all. Forbidding it there
+  would push genuinely verifiable requirements into unverifiable attestations.
 
 ### The artifact carries the history, not just its own declaration
 

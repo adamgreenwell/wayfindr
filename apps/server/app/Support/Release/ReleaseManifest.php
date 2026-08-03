@@ -49,8 +49,10 @@ final class ReleaseManifest
     {
         self::validateDeclaration($declaration);
 
+        $declaration = self::withoutComments($declaration);
+
         /** @var list<array<string, mixed>> $actions */
-        $actions = $declaration['actions'] ?? [];
+        $actions = array_map(self::withoutComments(...), $declaration['actions'] ?? []);
 
         // Each action records the release it belongs to. A consumer collecting a
         // span reads many manifests into one list, and an action that has lost
@@ -77,6 +79,8 @@ final class ReleaseManifest
      */
     public static function validateDeclaration(array $declaration): void
     {
+        $declaration = self::withoutComments($declaration);
+
         $unknown = array_diff(array_keys($declaration), ['minimum_upgrade_from', 'actions']);
 
         if ($unknown !== []) {
@@ -98,7 +102,7 @@ final class ReleaseManifest
                 throw new InvalidArgumentException("Action #{$index} must be an object.");
             }
 
-            self::validateAction($action, $index);
+            self::validateAction(self::withoutComments($action), $index);
 
             $id = $action['id'];
 
@@ -111,6 +115,24 @@ final class ReleaseManifest
 
             $seen[$id] = true;
         }
+    }
+
+    /**
+     * JSON has no comments, so an authored declaration explains itself with
+     * `_`-prefixed keys. They are stripped here rather than tolerated downstream:
+     * the published manifest is read by machines and should carry no prose that a
+     * consumer might one day start depending on.
+     *
+     * @param  array<string, mixed>  $value
+     * @return array<string, mixed>
+     */
+    private static function withoutComments(array $value): array
+    {
+        return array_filter(
+            $value,
+            static fn (string $key): bool => ! str_starts_with($key, '_'),
+            ARRAY_FILTER_USE_KEY,
+        );
     }
 
     /**
@@ -268,6 +290,62 @@ final class ReleaseManifest
             );
         }
 
+        self::validatePublished($decoded);
+
         return $decoded;
+    }
+
+    /**
+     * Check a manifest that claims a schema this build understands.
+     *
+     * `decode()` is a trust boundary — the input is a file baked by some earlier
+     * build or an asset fetched from a release — so a matching schema number is
+     * not evidence the contents are sound. Without this, `{"schema":1}` reads as
+     * a valid declaration of nothing, and a manifest saying
+     * `requires_operator_action: false` beside a non-empty action list reads as
+     * "no action needed". Both are the fail-open direction: a consumer would
+     * proceed past requirements rather than stop at unreadable data.
+     *
+     * @param  array<string, mixed>  $manifest
+     */
+    private static function validatePublished(array $manifest): void
+    {
+        foreach (['version', 'commit', 'requires_operator_action', 'actions'] as $required) {
+            if (! array_key_exists($required, $manifest)) {
+                throw new InvalidArgumentException("Release manifest is missing \"{$required}\".");
+            }
+        }
+
+        if (! is_string($manifest['version']) || $manifest['version'] === '') {
+            throw new InvalidArgumentException('Release manifest has no usable version.');
+        }
+
+        if (! is_array($manifest['actions'])) {
+            throw new InvalidArgumentException('Release manifest "actions" must be a list.');
+        }
+
+        foreach ($manifest['actions'] as $index => $action) {
+            if (! is_array($action)) {
+                throw new InvalidArgumentException("Published action #{$index} must be an object.");
+            }
+
+            self::validateAction(self::withoutComments($action), $index);
+
+            if (! isset($action['release']) || ! is_string($action['release'])) {
+                throw new InvalidArgumentException(
+                    "Published action #{$index} does not say which release it belongs to. "
+                    .'A span is read as one list, so an unattributed action cannot be ordered.'
+                );
+            }
+        }
+
+        // The flag is derived at build time. If a published manifest disagrees
+        // with its own action list, something rewrote one without the other, and
+        // the disagreement is only dangerous in one direction.
+        if ($manifest['requires_operator_action'] !== ($manifest['actions'] !== [])) {
+            throw new InvalidArgumentException(
+                'Release manifest requires_operator_action contradicts its action list.'
+            );
+        }
     }
 }

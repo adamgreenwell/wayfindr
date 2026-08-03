@@ -149,6 +149,32 @@ describe('decoding', function (): void {
             ->toThrow(InvalidArgumentException::class, 'this build understands');
     });
 
+    test('refuses a manifest whose flag contradicts its actions', function (): void {
+        // decode() is a trust boundary; a matching schema number is not evidence
+        // the contents are sound, and this disagreement reads as "nothing needed".
+        $manifest = ReleaseManifest::build(['actions' => [validAction()]], '0.2.0', 'abc');
+        $manifest['requires_operator_action'] = false;
+
+        expect(fn () => ReleaseManifest::decode(json_encode($manifest)))
+            ->toThrow(InvalidArgumentException::class, 'contradicts its action list');
+    });
+
+    test('refuses a published action that does not name its release', function (): void {
+        $manifest = ReleaseManifest::build(['actions' => [validAction()]], '0.2.0', 'abc');
+        unset($manifest['actions'][0]['release']);
+
+        expect(fn () => ReleaseManifest::decode(json_encode($manifest)))
+            ->toThrow(InvalidArgumentException::class, 'does not say which release');
+    });
+
+    test('refuses a published action that is malformed', function (): void {
+        $manifest = ReleaseManifest::build(['actions' => [validAction()]], '0.2.0', 'abc');
+        $manifest['actions'][0]['phase'] = 'whenever';
+
+        expect(fn () => ReleaseManifest::decode(json_encode($manifest)))
+            ->toThrow(InvalidArgumentException::class, 'must be one of');
+    });
+
     test('reads a manifest of its own schema', function (): void {
         $json = json_encode(ReleaseManifest::build(['actions' => []], '0.2.0', 'abc'));
 
@@ -157,5 +183,12 @@ describe('decoding', function (): void {
 
     test('refuses input that is not a manifest', function (string $json): void {
         expect(fn () => ReleaseManifest::decode($json))->toThrow(InvalidArgumentException::class);
-    })->with(['not json', '"a string"', '{}', '{"version":"1.0.0"}']);
+    })->with([
+        'not json',
+        '"a string"',
+        '{}',
+        '{"version":"1.0.0"}',
+        '{"schema":1}',                                    // schema alone is not a manifest
+        '{"schema":1,"version":"","commit":"a","requires_operator_action":false,"actions":[]}',
+    ]);
 });
