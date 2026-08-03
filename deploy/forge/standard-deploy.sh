@@ -69,6 +69,10 @@ fi
 prepare_laravel_runtime_directories
 forge_php artisan storage:link || true
 forge_php artisan migrate --force
+# Write this release identity into the Forge environment file. Must run before
+# config:cache, which bakes the identity in.
+bash ../../deploy/forge/write-release-identity.sh
+
 forge_php artisan config:cache
 forge_php artisan route:cache
 forge_php artisan view:cache
