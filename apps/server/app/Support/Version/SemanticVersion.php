@@ -39,12 +39,21 @@ final readonly class SemanticVersion implements Stringable
     private const SENTINELS = ['', 'unknown', 'source'];
 
     /**
+     * The core components stay DIGIT STRINGS rather than ints. SemVer sets no
+     * upper bound on them, and casting saturates at PHP_INT_MAX: two distinct
+     * versions above it would collapse to one value, making `sameBuild()` answer
+     * true for different code. That is the fail-open this whole effort exists to
+     * close, so the components are compared as numbers without ever becoming one.
+     *
+     * The grammar already forbids leading zeroes, so these strings are canonical
+     * and can be compared by length then lexicographically.
+     *
      * @param  list<string>  $prerelease
      */
     private function __construct(
-        public int $major,
-        public int $minor,
-        public int $patch,
+        public string $major,
+        public string $minor,
+        public string $patch,
         public array $prerelease,
         public ?string $build,
     ) {}
@@ -71,9 +80,9 @@ final readonly class SemanticVersion implements Stringable
         }
 
         return new self(
-            (int) $m[1],
-            (int) $m[2],
-            (int) $m[3],
+            $m[1],
+            $m[2],
+            $m[3],
             ($m[4] ?? '') === '' ? [] : explode('.', $m[4]),
             ($m[5] ?? '') === '' ? null : $m[5],
         );

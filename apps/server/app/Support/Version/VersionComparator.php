@@ -99,7 +99,11 @@ final class VersionComparator
      */
     private static function precedence(SemanticVersion $a, SemanticVersion $b): int
     {
-        $core = [$a->major <=> $b->major, $a->minor <=> $b->minor, $a->patch <=> $b->patch];
+        $core = [
+            self::compareNumeric($a->major, $b->major),
+            self::compareNumeric($a->minor, $b->minor),
+            self::compareNumeric($a->patch, $b->patch),
+        ];
 
         foreach ($core as $result) {
             if ($result !== 0) {
@@ -149,7 +153,7 @@ final class VersionComparator
         $bNumeric = self::isNumeric($b);
 
         if ($aNumeric && $bNumeric) {
-            return (int) $a <=> (int) $b;
+            return self::compareNumeric($a, $b);
         }
 
         // Numeric identifiers always rank lower than alphanumeric ones. This is
@@ -163,6 +167,19 @@ final class VersionComparator
         }
 
         return strcmp($a, $b) <=> 0;
+    }
+
+    /**
+     * Compare two digit strings as numbers, without turning them into numbers.
+     *
+     * SemVer bounds neither the core components nor numeric prerelease
+     * identifiers, so anything above PHP_INT_MAX saturates on cast and distinct
+     * versions start comparing equal. The grammar forbids leading zeroes, so a
+     * longer string is the larger number and equal lengths order lexicographically.
+     */
+    private static function compareNumeric(string $a, string $b): int
+    {
+        return [strlen($a), $a] <=> [strlen($b), $b];
     }
 
     private static function isNumeric(string $identifier): bool

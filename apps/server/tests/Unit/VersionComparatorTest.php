@@ -103,6 +103,40 @@ describe('"are these the same build?"', function (): void {
     })->with([null, '', '   ', 'unknown', 'source']);
 });
 
+describe('components larger than PHP_INT_MAX', function (): void {
+    // SemVer bounds neither the core components nor numeric prerelease
+    // identifiers. Casting them saturates, and two distinct versions above the
+    // limit then compare EQUAL — a fail-open in the destructive-restore guard,
+    // which is the one direction this must never fail in.
+    test('distinguishes core components beyond the integer range', function (): void {
+        expect(VersionComparator::sameBuild('9223372036854775808.0.0', '9223372036854775809.0.0'))
+            ->toBeFalse();
+    });
+
+    test('orders core components beyond the integer range', function (): void {
+        expect(VersionComparator::compare('9223372036854775808.0.0', '9223372036854775809.0.0'))->toBe(-1)
+            ->and(VersionComparator::compare('9223372036854775809.0.0', '9223372036854775808.0.0'))->toBe(1)
+            ->and(VersionComparator::compare('9223372036854775808.0.0', '9223372036854775808.0.0'))->toBe(0);
+    });
+
+    test('orders numeric prerelease identifiers beyond the integer range', function (): void {
+        expect(VersionComparator::compare('1.0.0-alpha.9223372036854775808', '1.0.0-alpha.9223372036854775809'))
+            ->toBe(-1);
+    });
+
+    test('orders by magnitude, not by string length alone', function (): void {
+        // A longer digit string is the larger number only because the grammar
+        // forbids leading zeroes; check the ordinary case still holds.
+        expect(VersionComparator::compare('9.0.0', '10.0.0'))->toBe(-1)
+            ->and(VersionComparator::compare('100.0.0', '99.0.0'))->toBe(1);
+    });
+
+    test('preserves a huge component in the canonical form', function (): void {
+        expect(SemanticVersion::parse('v9223372036854775808.0.0')?->canonical())
+            ->toBe('9223372036854775808.0.0');
+    });
+});
+
 describe('"which is newer?"', function (): void {
     test('orders the SemVer spec\'s precedence chain', function (): void {
         $ascending = [
