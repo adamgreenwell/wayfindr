@@ -129,8 +129,25 @@ started successfully. The next image reads that file before migrating to learn
 where the upgrade is coming from. It lives on the volume rather than in the
 database because the guard runs pre-migration, and it is written after a
 successful start rather than before, so a release that never came up does not
-claim to have been installed. Absent file means a fresh install: no span, no
-requirements.
+claim to have been installed.
+
+**An absent file does not mean a fresh install.** Every install predating this
+mechanism has no state file, which is most of them, and reading absence as "fresh"
+would evaluate no span at all — recreating the pre-enforcement bypass the history
+was added to close. The bootstrap release cannot rescue this either, since nothing
+makes an operator traverse it.
+
+Absence is therefore disambiguated against state that already exists: a populated
+`migrations` table means an install that has been running, whatever the file says.
+That is readable pre-migration, because it belongs to the *old* schema.
+
+- No file, no prior schema -> genuinely fresh. No span, no requirements.
+- No file, prior schema -> a **legacy upgrade** from an unknown starting point.
+  The start cannot be recovered, so the conservative reading is the only honest
+  one: evaluate the entire baked history and require every unmet requirement in
+  it to be satisfied or acknowledged. That is louder than necessary for an
+  operator who was already current, and it is the safe direction — the
+  alternative is silence for precisely the installs with the furthest to travel.
 
 ### Published twice, for two different readers
 
@@ -143,31 +160,43 @@ requirements.
 
 Both come from one builder so they cannot disagree.
 
-### Every documented pre-migration path calls the same guard
+### Migration itself enforces the guard
 
-The container entrypoint is not the only way Wayfindr reaches production. ADR
-0012 explicitly covers **host builds** — the Forge path is a first-class
-deployment target, and both shipped deploy scripts run `artisan migrate --force`
-directly:
+The container entrypoint is not the only way Wayfindr migrates. ADR 0012 treats
+**host builds** as first-class, and a repo-wide search finds thirteen
+`artisan migrate` invocations across the shipped deploy scripts, the entrypoint,
+the smoke test, and the operator documentation — including the restore flow and
+the Forge guide:
 
 ```
 deploy/forge/zero-downtime-deploy.forge:59
 deploy/forge/standard-deploy.sh:71
+docker/self-hosting/docker-entrypoint.sh:22
+docs/self-hosting/runtime-requirements.md:223
+docs/self-hosting/backup-restore.md:260
+docs/self-hosting/setup-templates.md:86
+...
 ```
 
-Neither `install.sh` nor `docker-entrypoint.sh` executes there, so a guard living
-only in the entrypoint would let an action-required release migrate and serve on
-the deployment path this project's own staging environment uses.
+The first draft asked every one of those to call a guard first. That is a rule
+each call site must remember, and the set grows: a new runbook, a support reply,
+an operator's own script. Any of them silently bypasses the guarantee, and the
+bypass looks exactly like the documented command.
 
-The guard is therefore an **artisan command**, and every documented path that
-migrates calls it first. The container entrypoint calls it before its migration
-block; the Forge deploy scripts call it before theirs. One implementation, one
-test suite, several call sites — and any host path a self-hoster builds gets the
-same guard by running the same command.
+So the guard runs **inside the migration path**, not in front of its callers. One
+enforcement point, no call sites to maintain, and using a different documented
+command cannot route around it. The mechanism belongs to slice 2, with one
+binding requirement: it must abort **before any schema change is applied**, not
+merely before the command returns.
 
-This also settles a question the entrypoint raised on its own: the check does not
-belong in shell. The shell reads a file and dispatches; the decision is testable
-PHP.
+Two consequences fall out of putting it there, both wanted:
+
+- **A development checkout is unaffected.** No baked history means nothing is
+  declared, and nothing declared means nothing to enforce. `local-setup.md`'s
+  plain `artisan migrate` keeps working without a special case.
+- **The restore flow is covered.** `backup-restore.md` tells an operator to
+  migrate forward after restoring an older archive; if the running release needs
+  an action first, that is exactly a migration that should stop.
 
 ### The installer hands off to the version it downloaded
 
@@ -204,9 +233,12 @@ have it, and the artifact guard is the guarantee for everyone else.
   cost per release, and the point: a declaration nobody can evaluate is a comment.
 - The first enforcing release is unprotected by design. That is not a gap to fix
   but a property to schedule around — it must require nothing.
-- The guard is one artisan command with several callers, so host deployments are
-  covered on the same terms as the image. Operators on bespoke deploy paths must
-  add the call; the docs have to say so plainly.
+- Enforcement sits in the migration path, so every deployment style is covered on
+  the same terms and no call site has to remember it — including scripts this
+  project never wrote.
+- Migration gains the ability to refuse. That is a significant behaviour change
+  for a command operators trust to be mechanical, so its message must be
+  unmistakable and its bypass documented for genuine emergencies.
 - The image grows a bounded history rather than one manifest, and releases gain a
   state file on the volume. Both are small, and the floor keeps the history from
   growing without limit.
@@ -219,10 +251,10 @@ have it, and the artifact guard is the guarantee for everyone else.
    have real data to read.
 2. **Artifact guard** — the artisan command, phase-aware, with `check` and
    `attest` verification and the acknowledgement env value; the release state
-   file; and the call wired into the container entrypoint *and* both Forge deploy
-   scripts. This is the guarantee, and it lands before the installer work because
-   it is the part that does not depend on the operator having a current
-   installer.
+   file with legacy-install disambiguation; and enforcement inside the migration
+   path, proven to abort before any schema change. This is the guarantee, and it
+   lands before the installer work because it is the part that does not depend on
+   the operator having a current installer.
 3. **Installer hand-off and preflight** — re-exec before pull, then the
    span-collecting preflight that refuses or warns and requires stepping where an
    action cannot be performed outside its own release.

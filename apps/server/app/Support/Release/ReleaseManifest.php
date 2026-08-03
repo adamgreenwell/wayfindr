@@ -133,9 +133,46 @@ final class ReleaseManifest
 
         self::assertOneOf($action['phase'], self::PHASES, "Action \"{$action['id']}\" phase");
         self::assertOneOf($action['depends_on_release'], self::DEPENDENCIES, "Action \"{$action['id']}\" depends_on_release");
+        self::validatePhaseDependency($action['phase'], $action['depends_on_release'], $action['id']);
 
         self::validateApplicability($action['applicability'], $action['id']);
         self::validateVerification($action['verification'], $action['id']);
+    }
+
+    /**
+     * Some phase/dependency pairs describe an action that can never be performed,
+     * and validating the two fields independently lets one through.
+     *
+     * `before-pull` runs while the OLD release is still live, so the new
+     * release's code and schema are both absent. `after-pull` has the new code
+     * but migrations have not run, so the new schema is not there yet — which is
+     * the entire reason that phase exists.
+     *
+     * Publishing such a pair leaves the preflight with no moment at which to tell
+     * the operator to act, so the failure is silent: an action that is declared,
+     * required, and impossible.
+     */
+    private static function validatePhaseDependency(string $phase, string $dependency, string $id): void
+    {
+        $allowed = [
+            'before-pull' => ['none'],
+            'after-pull' => ['none', 'code'],
+            'after-start' => ['none', 'code', 'schema'],
+        ];
+
+        if (in_array($dependency, $allowed[$phase], true)) {
+            return;
+        }
+
+        $why = match (true) {
+            $phase === 'before-pull' => 'before-pull runs on the old release, where neither the new code nor its schema exists',
+            default => 'after-pull runs before migrations, so the new schema does not exist yet',
+        };
+
+        throw new InvalidArgumentException(
+            "Action \"{$id}\" cannot depend on the release's {$dependency} at phase {$phase}: {$why}. "
+            .'Move it to a later phase, or reduce what it depends on.'
+        );
     }
 
     /**
