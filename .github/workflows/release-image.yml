@@ -61,6 +61,16 @@ jobs:
       # A bare git tag creates no GitHub Release, and the installer resolves
       # releases/latest first — publish one so tag pushes alone keep installs
       # pinned (the installer also falls back to the tags API).
+      # The installer preflight reads declarations for releases it never pulls,
+      # so the manifest has to be fetchable without the image (ADR 0013).
+      - name: Build the release manifest
+        run: |
+          php scripts/release/build-manifest.php \
+            --version="${{ github.ref_name }}" \
+            --commit="${{ github.sha }}" \
+            --out=release-manifest.json
+          cat release-manifest.json
+
       - name: Create the GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -70,3 +80,4 @@ jobs:
           # exists, installs prefer it over newer alphas; before any stable,
           # the installer's tags-API fallback still pins to the prerelease.
           prerelease: ${{ contains(github.ref_name, '-') }}
+          files: release-manifest.json

@@ -446,10 +446,11 @@ introduced, which is why it is settled here rather than in slice 3.
    satisfied. Unmet `after-start` requirements therefore gate *serving*, after
    migration, not migration itself.
 
-   (This layering question, along with the manifest shape below, has grown past
-   what a versioning ADR should settle. Slice 4 likely warrants its own decision
-   record; what belongs *here* is the constraint that the guarantee cannot rest
-   on installer-side code.)
+   (This layering question, along with the manifest shape below, grew past what a
+   versioning ADR should settle and is now
+   [ADR 0013](0013-upgrade-preflight-and-release-requirements.md), which also
+   absorbs slice 5. What belongs *here* is the constraint that the guarantee
+   cannot rest on installer-side code.)
 5. **Floor enforcement** — reject a direct upgrade from below
    `minimum_upgrade_from`, with the supported stepping path.
 

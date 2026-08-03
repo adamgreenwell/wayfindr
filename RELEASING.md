@@ -53,7 +53,15 @@ next claims the wrong lineage — a build after `v0.2.0` would still report
 [ "$(git rev-parse --abbrev-ref HEAD)" = "main" ] || { echo 'Release from main.'; exit 1; }
 
 printf '0.2.0\n' > VERSION
-git add VERSION CHANGELOG.md
+
+# Append this release's declaration to the published record. The image bakes this
+# file, and it is how a later release knows what an intermediate one required —
+# a v1 -> v3 upgrade has to learn v2's requirements from somewhere (ADR 0013).
+# No --commit: the release commit does not exist yet, and recording its parent
+# would be wrong. The image build stamps the real identity into the copy it bakes;
+# what this file records is the DECLARATION, which is what a later release needs.
+php scripts/release/build-manifest.php --version=0.2.0 --history=releases/history.json
+git add VERSION CHANGELOG.md releases/history.json
 git commit -m "Release 0.2.0"
 git tag v0.2.0
 
