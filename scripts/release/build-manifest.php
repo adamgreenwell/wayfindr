@@ -15,8 +15,12 @@ declare(strict_types=1);
  *   --out       one manifest for this release, published as a release asset for
  *               the installer preflight, which reads releases it never pulls
  *   --history   this manifest appended to the declarations already published,
- *               baked into the image for the artifact guard, which must evaluate
- *               a skipped span offline
+ *               bounded at the declared floor, and baked into the image for the
+ *               artifact guard, which must evaluate a skipped span offline
+ *
+ *   --reset-declaration
+ *               empty the authored `actions` once recorded, so the next release
+ *               does not re-declare them under a new version
  *
  * Run from the repository root during the image build and by the release
  * workflow. Deliberately standalone: the image build has no booted application,
@@ -28,8 +32,10 @@ declare(strict_types=1);
 // for a validator that needs neither.
 require __DIR__.'/../../apps/server/app/Support/Version/SemanticVersion.php';
 require __DIR__.'/../../apps/server/app/Support/Release/ReleaseManifest.php';
+require __DIR__.'/../../apps/server/app/Support/Version/VersionComparator.php';
 
 use App\Support\Release\ReleaseManifest;
+use App\Support\Version\VersionComparator;
 
 /** @return array<string, string> */
 function options(array $argv): array
@@ -39,6 +45,15 @@ function options(array $argv): array
     foreach (array_slice($argv, 1) as $argument) {
         if (preg_match('/^--([a-z-]+)=(.*)$/', $argument, $m) === 1) {
             $options[$m[1]] = $m[2];
+
+            continue;
+        }
+
+        // Valueless flags. Without this a bare `--reset-declaration` parses as
+        // nothing and is silently ignored, which is the worst outcome for a flag
+        // whose whole job is preventing a stale declaration from being reused.
+        if (preg_match('/^--([a-z-]+)$/', $argument, $m) === 1) {
+            $options[$m[1]] = '';
         }
     }
 
@@ -114,10 +129,55 @@ if (isset($options['history'])) {
 
     $existing[] = $manifest;
 
+    // Bound the history at this release's floor. An upgrade from below the floor
+    // is refused outright, so declarations older than it can never be needed —
+    // and the legacy path, which evaluates the WHOLE baked history when it cannot
+    // tell where an upgrade started, would otherwise demand obsolete actions that
+    // no supported upgrade can reach.
+    //
+    // An entry whose order against the floor cannot be determined is KEPT. That
+    // is the safe direction: dropping something we cannot prove is obsolete would
+    // silently discard a requirement.
+    $floor = $manifest['minimum_upgrade_from'] ?? null;
+
+    if (is_string($floor)) {
+        $existing = array_values(array_filter(
+            $existing,
+            static function (array $entry) use ($floor): bool {
+                $version = $entry['version'] ?? null;
+
+                if (! is_string($version)) {
+                    return true;
+                }
+
+                $comparison = VersionComparator::compare($version, $floor);
+
+                return $comparison === null || $comparison >= 0;
+            },
+        ));
+    }
+
     file_put_contents($options['history'], $encode([
         'schema' => ReleaseManifest::SCHEMA,
         'releases' => $existing,
     ]));
+}
+
+// Clear the authored actions once they are recorded in history. Without this the
+// next release rebuilds the previous release's actions and stamps them with the
+// new version, so an operator who already acknowledged `0.2.0/thing` is asked
+// again for `0.3.0/thing` — work they have demonstrably already done.
+if (isset($options['reset-declaration'])) {
+    /** @var mixed $authored */
+    $authored = json_decode((string) file_get_contents($declarationPath), true);
+
+    if (! is_array($authored)) {
+        fail("{$declarationPath} is not valid JSON.");
+    }
+
+    $authored['actions'] = [];
+
+    file_put_contents($declarationPath, $encode($authored));
 }
 
 if (! isset($options['out']) && ! isset($options['history'])) {

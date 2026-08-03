@@ -57,12 +57,20 @@ printf '0.2.0\n' > VERSION
 # Append this release's declaration to the published record. The image bakes this
 # file, and it is how a later release knows what an intermediate one required —
 # a v1 -> v3 upgrade has to learn v2's requirements from somewhere (ADR 0013).
-# Field reference: docs/self-hosting/release-manifest.md
 # No --commit: the release commit does not exist yet, and recording its parent
 # would be wrong. The image build stamps the real identity into the copy it bakes;
 # what this file records is the DECLARATION, which is what a later release needs.
-php scripts/release/build-manifest.php --version=0.2.0 --history=releases/history.json
-git add VERSION CHANGELOG.md releases/history.json
+# Field reference: docs/self-hosting/release-manifest.md
+#
+# --reset-declaration empties release.json's actions once they are recorded.
+# Without it the next release rebuilds these same actions under its own version,
+# and an operator who already acknowledged 0.2.0/thing is asked again for
+# 0.3.0/thing - work they have demonstrably already done.
+php scripts/release/build-manifest.php \
+  --version=0.2.0 \
+  --history=releases/history.json \
+  --reset-declaration
+git add VERSION CHANGELOG.md releases/history.json release.json
 git commit -m "Release 0.2.0"
 git tag v0.2.0
 

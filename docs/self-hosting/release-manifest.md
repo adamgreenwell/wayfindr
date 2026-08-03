@@ -179,6 +179,52 @@ What a `check` may inspect follows its phase, because that is when it runs:
 - `after-start` checks run **after** migration, so the new schema is present and
   is often what they need.
 
+## What the guard does at upgrade time
+
+The declaration is not advice — the release enforces it against itself.
+
+**Before migrating.** Any unmet `before-pull` or `after-pull` requirement stops
+`artisan migrate` before a single schema change is applied, prints what is
+needed, and exits **78**. The container entrypoint treats that code as a refusal
+rather than a transient failure, so it stops immediately instead of retrying.
+Nothing has been changed, and the previous release still runs.
+
+**After migrating.** An unmet `after-start` requirement cannot block migration —
+the action needs the migrated schema to be performed at all — so it gates
+serving instead. The release starts, returns `503` with the outstanding
+requirements on every route, and keeps `/up` answering so an orchestrator does
+not restart it in a loop.
+
+To see where an install stands without attempting an upgrade:
+
+```bash
+php artisan wayfindr:upgrade-guard          # human readable
+php artisan wayfindr:upgrade-guard --json   # for tooling
+```
+
+It exits non-zero when something is outstanding.
+
+### Where the upgrade is measured from
+
+After a successful migration the release records its identity to
+`storage/app/release-state.json`, so the next upgrade knows where it started and
+which declarations its span covers.
+
+An install with no such file is **not** assumed to be fresh — every install
+predating this mechanism has none. If the database already carries migrations,
+it is treated as a legacy upgrade from an unknown starting point, and the whole
+published history is evaluated. That is louder than necessary for someone who
+was already current, and it is the safe direction: the alternative is silence for
+the installs with the furthest to travel.
+
+### The first enforcing release declares nothing
+
+The release that introduces the guard must require nothing of an operator, or it
+refuses traffic on every install the moment it lands — including those already
+doing the right thing. `release.json` is therefore empty for that release, and
+`tests/Feature/BootstrapSelfEnforcementTest.php` fails if an action is added back
+without the constraint being reconsidered.
+
 ## At release time
 
 `RELEASING.md` carries the step. The declaration is appended to
