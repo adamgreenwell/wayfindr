@@ -234,6 +234,23 @@ without the constraint being reconsidered.
 php scripts/release/build-manifest.php --version=0.2.0 --history=releases/history.json
 ```
 
+The declaration is **not** cleared at this point. The tagged tree is what the
+release workflow and the image build both read, and both regenerate this
+release's manifest from `release.json` — so emptying it before the tag would
+publish an asset, and bake a history entry, declaring that no operator action is
+required. That would overwrite the entry this very command just recorded.
+
+Clearing happens after the tag, alongside advancing `VERSION` for the next cycle:
+
+```bash
+php scripts/release/build-manifest.php --version=0.3.0 --reset-declaration
+```
+
+Without it the next release rebuilds the same actions under its own version, and
+an operator who already acknowledged `0.2.0/thing` is asked again for
+`0.3.0/thing` — work they have demonstrably already done. The floor and any
+comment keys are preserved; only `actions` is cleared.
+
 That file is the record of what published releases required, and the image bakes
 it. It is how a later release knows what an intermediate one asked for: a
 `v1 -> v3` upgrade must learn `v2`'s requirements from somewhere, and at build
