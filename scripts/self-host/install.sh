@@ -53,6 +53,11 @@ USAGE
 say() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
+# The parse loop below consumes $@ with `shift`, so the hand-off would have
+# nothing left to replay. Capture the operator's arguments first — losing --dir
+# would silently upgrade a different install than the one they asked for.
+WAYFINDR_ORIGINAL_ARGS=("$@")
+
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --app-url) APP_URL="${2:-}"; shift 2 ;;
@@ -128,6 +133,119 @@ pin_image() {
     fi
 }
 
+# Collects the declarations for every release this upgrade traverses and refuses
+# to pull when one of them needs the operator first (ADR 0013).
+#
+# This is the good experience, NOT the guarantee. An install whose installer
+# predates this has no preflight at all, which is exactly why the artifact
+# refuses to migrate on its own. Anything reported here the image reports again
+# on start; the difference is that here nothing has been pulled yet.
+#
+# JSON and version ordering are handled by the CURRENT image's php via
+# `compose run`, because Docker is already a hard requirement of this script
+# while jq, python and a host php are not. It runs against the image already on
+# disk, needs no network, and does not depend on the release being gated.
+php_in_current_image() {
+    compose run --rm --no-deps -T \
+        -e WF_FROM="${1:-}" -e WF_TO="${2:-}" -e WF_ACK="${3:-}" \
+        --entrypoint php web -r "$4" 2>/dev/null
+}
+
+current_release() {
+    # The pinned image tag is the most reliable statement of what is installed:
+    # it is what compose actually runs. `latest` names no version.
+    local pinned
+    pinned="$(grep -E '^WAYFINDR_IMAGE=' "$ENV_FILE" 2>/dev/null | head -1 | sed 's#.*:##')"
+
+    case "$pinned" in
+        ''|latest) printf '' ;;
+        *) printf '%s' "$pinned" ;;
+    esac
+}
+
+upgrade_preflight() {
+    local from to ack tags span manifest all_actions actions tag
+
+    to="${IMAGE_TAG:-}"
+
+    if [ -z "$to" ]; then
+        say "Preflight skipped: no resolved release to check against."
+        return 0
+    fi
+
+    from="$(current_release)"
+    ack="$(grep -E '^WAYFINDR_ACKNOWLEDGED_ACTIONS=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+
+    # A declaration describes its own release, so an upgrade must read EVERY
+    # release it passes through, not just the one it lands on. Skipping the
+    # middle is the several-releases-behind case this exists to catch.
+    tags="$(curl -fsSL "$TAGS_API" 2>/dev/null | grep -o '"name": *"v[^"]*"' | sed 's/.*"v/v/; s/"$//' || true)"
+
+    span="$(printf '%s\n' "$tags" | php_in_current_image "$from" "$to" "" '
+        require "/app/apps/server/app/Support/Version/SemanticVersion.php";
+        require "/app/apps/server/app/Support/Version/VersionComparator.php";
+        $from = getenv("WF_FROM") ?: null;
+        $to = getenv("WF_TO");
+        foreach (explode("\n", trim(stream_get_contents(STDIN))) as $tag) {
+            $tag = trim($tag);
+            if ($tag === "") { continue; }
+            $above = App\Support\Version\VersionComparator::compare($tag, $to);
+            if ($above !== null && $above > 0) { continue; }
+            if ($from !== null) {
+                $after = App\Support\Version\VersionComparator::compare($tag, $from);
+                if ($after !== null && $after <= 0) { continue; }
+            }
+            echo $tag, "\n";
+        }')"
+
+    [ -n "$span" ] || span="v$to"
+
+    all_actions=""
+
+    for tag in $span; do
+        manifest="$(curl -fsSL "https://github.com/adamgreenwell/wayfindr/releases/download/${tag}/release-manifest.json" 2>/dev/null || true)"
+
+        # A release published before manifests existed simply has no asset. That
+        # is not an error - it declared nothing.
+        [ -n "$manifest" ] || continue
+
+        actions="$(printf '%s' "$manifest" | php_in_current_image "" "" "$ack" '
+            $m = json_decode(stream_get_contents(STDIN), true);
+            $ack = array_map("trim", explode(",", (string) getenv("WF_ACK")));
+            foreach ($m["actions"] ?? [] as $a) {
+                $key = ($a["release"] ?? "") . "/" . ($a["id"] ?? "");
+                if (in_array($key, $ack, true)) { continue; }
+                printf("%s|%s|%s|%s\n", $key, $a["phase"] ?? "", $a["summary"] ?? "", $a["detail"] ?? "");
+            }')"
+
+        [ -n "$actions" ] && all_actions="${all_actions}${actions}
+"
+    done
+
+    all_actions="$(printf '%s' "$all_actions" | grep -v '^$' || true)"
+
+    if [ -z "$all_actions" ]; then
+        say "Preflight: nothing outstanding between ${from:-unknown} and $to."
+        return 0
+    fi
+
+    printf '\n\033[1;31mUPGRADE NEEDS YOU FIRST\033[0m\n\n'
+    printf '  Upgrading %s -> %s requires operator action.\n\n' "${from:-unknown}" "$to"
+
+    printf '%s\n' "$all_actions" | while IFS='|' read -r key phase summary detail; do
+        [ -n "$key" ] || continue
+        printf '  \033[1;33m%s\033[0m (%s)\n    %s\n' "$key" "$phase" "$summary"
+        [ -n "$detail" ] && printf '    %s\n' "$detail"
+        printf '\n'
+    done
+
+    printf '  Nothing has been pulled or changed.\n'
+    printf '  Do the work, then add the entries above to WAYFINDR_ACKNOWLEDGED_ACTIONS\n'
+    printf '  in %s and run this again.\n\n' "$ENV_FILE"
+
+    exit 78
+}
+
 migrate_env() {
     # Installs generated before release identity was baked carry blank
     # WAYFINDR_VERSION= / WAYFINDR_COMMIT= lines, and env_file entries
@@ -170,8 +288,30 @@ if [ "$UPGRADE" = "1" ]; then
     resolve_release
     say "Refreshing stack files at $REF."
     fetch docker/self-hosting/compose.yml "$COMPOSE_FILE"
-    fetch scripts/self-host/install.sh "$TARGET_DIR/install.sh"
-    chmod +x "$TARGET_DIR/install.sh"
+
+    # Hand off to the version we just downloaded, BEFORE anything is pulled.
+    #
+    # Without this the upgrade refreshes install.sh on disk and then carries on
+    # in the already-parsed process, so a preflight shipped in the new script
+    # would sit there unrun while the release it was written to guard is pulled
+    # and started. Re-execing is also the only safe way to overwrite a script
+    # bash is still reading: bash reads incrementally, so replacing the file
+    # underneath a running process can make it resume at the wrong offset.
+    #
+    # WAYFINDR_HANDED_OFF guards the recursion. It is exported rather than passed
+    # as an argument so it cannot collide with the operator's own flags, and it
+    # is checked before the fetch so a hand-off never re-fetches.
+    if [ -z "${WAYFINDR_HANDED_OFF:-}" ]; then
+        fetch scripts/self-host/install.sh "$TARGET_DIR/install.sh.new"
+        chmod +x "$TARGET_DIR/install.sh.new"
+        mv "$TARGET_DIR/install.sh.new" "$TARGET_DIR/install.sh"
+
+        say "Handing off to the refreshed installer."
+        WAYFINDR_HANDED_OFF=1 exec "$TARGET_DIR/install.sh" "${WAYFINDR_ORIGINAL_ARGS[@]}"
+    fi
+
+    upgrade_preflight
+
     migrate_env
     pin_image
     say "Pulling the release image."
