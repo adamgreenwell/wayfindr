@@ -497,34 +497,27 @@ fi
 
 was_link=0; [ -L .env ] && was_link=1
 
-# Replace the line when it is there, append it when it is not. A substitution on
-# its own writes nothing if there is no matching line, and an .env created before
-# these two keys joined the template above has no such line - so the deploy would
-# succeed, report nothing, and leave the identity sitting at its fallback. That
-# is the worst shape a failure can take, because it looks like it worked.
-set_env_value() {
-  key=$1
-  value=$2
+# Make sure each key exists before substituting, because a substitution writes
+# nothing when there is no matching line. An .env created before these two keys
+# joined the template above has no such line, so the deploy would succeed, report
+# nothing, and leave the identity on its fallback - the worst shape a failure can
+# take, because it looks like it worked.
+#
+# The leading newline matters: an .env whose last line has no newline of its own
+# would otherwise get the new key spliced onto the end of it. A blank line in an
+# .env is harmless, and this only ever runs once per key.
+#
+# Deliberately written without a helper function. Forge substitutes its own
+# `$CREATE_RELEASE()` macro into this script before running it, and a deploy that
+# added a function definition here failed with the macro left unexpanded - bash
+# then read `$CREATE_RELEASE()` as a malformed function definition and died on
+# the next line. Whatever the mechanism, plain top-level commands are what this
+# editor is known to survive.
+grep -q '^WAYFINDR_VERSION=' .env || printf '\nWAYFINDR_VERSION=\n' >> .env
+grep -q '^WAYFINDR_COMMIT=' .env || printf '\nWAYFINDR_COMMIT=\n' >> .env
 
-  if grep -q "^${key}=" .env; then
-    sed -i --follow-symlinks "s|^${key}=.*|${key}=${value}|" .env
-    return
-  fi
-
-  # Appending to a file whose last line has no trailing newline would splice the
-  # new key onto the end of the old line. Command substitution strips trailing
-  # newlines, so this is empty exactly when the file already ends in one.
-  if [ -s .env ] && [ -n "$(tail -c 1 .env)" ]; then
-    printf '\n' >> .env
-  fi
-
-  printf '%s=%s\n' "$key" "$value" >> .env
-}
-
-# `>>` writes through a symlink rather than replacing it, so the append path
-# needs no equivalent of `--follow-symlinks`.
-set_env_value WAYFINDR_VERSION "$version"
-set_env_value WAYFINDR_COMMIT "$commit"
+sed -i --follow-symlinks "s|^WAYFINDR_VERSION=.*|WAYFINDR_VERSION=${version}|" .env
+sed -i --follow-symlinks "s|^WAYFINDR_COMMIT=.*|WAYFINDR_COMMIT=${commit}|" .env
 
 # If it was a shared symlink, it must still be one. Written as an `if` rather
 # than an `&&` chain because this is the last line of the snippet: an `&&` chain
