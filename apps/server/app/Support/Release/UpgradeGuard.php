@@ -1,0 +1,209 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Support\Release;
+
+use Illuminate\Support\Facades\DB;
+use Throwable;
+
+/**
+ * Decides whether this release may migrate, given what it declares and what the
+ * operator has done about it (ADR 0013).
+ *
+ * Reads the baked declaration and history, works out where the upgrade started,
+ * and hands the evaluation to {@see UpgradeRequirements}. Everything it touches
+ * has to work BEFORE migrations run: the schema is whatever the previous release
+ * left, so nothing here may assume a table this release is about to create.
+ */
+final class UpgradeGuard
+{
+    /**
+     * A distinguished exit code, so a caller can tell "requirements unmet" from
+     * "something went wrong". The container entrypoint needs the difference —
+     * its migrate loop retries on failure, and would otherwise read a refusal as
+     * an unreachable database and repeat the operator's instructions thirty
+     * times before reporting the wrong cause.
+     */
+    public const EXIT_BLOCKED = 78;
+
+    public const MANIFEST_FILE = '/etc/wayfindr/release.json';
+
+    public const HISTORY_FILE = '/etc/wayfindr/release-history.json';
+
+    public function __construct(
+        private readonly ReleaseState $state,
+        private readonly CheckRegistry $checks,
+    ) {}
+
+    /**
+     * What this upgrade still owes before it may migrate.
+     *
+     * @return array{blocked: bool, reason: string, actions: list<array<string, mixed>>, from: ?string, target: ?string, legacy: bool}
+     */
+    public function assess(): array
+    {
+        $manifest = $this->read(self::MANIFEST_FILE);
+
+        // No baked declaration means a development checkout or a build that
+        // predates this mechanism. Nothing is declared, so nothing is enforced —
+        // this is what keeps `artisan migrate` ordinary for contributors.
+        if ($manifest === null) {
+            return $this->clear('no release manifest is baked into this build');
+        }
+
+        $target = $manifest['version'] ?? null;
+
+        if (! is_string($target)) {
+            return $this->clear('the baked manifest names no version');
+        }
+
+        $history = $this->history();
+
+        // The target's own declaration may not be in the baked history yet — a
+        // source build, or a release cut before the history step ran. Include it
+        // so an upgrade is never evaluated without the release it is upgrading TO.
+        if (! $this->historyContains($history, $target)) {
+            $history[] = $manifest;
+        }
+
+        $recorded = $this->state->recordedVersion();
+        $legacy = $recorded === null && $this->hasExistingInstall();
+
+        $outstanding = UpgradeRequirements::outstanding(
+            $history,
+            $recorded,
+            $target,
+            UpgradeRequirements::parseAcknowledged(config('wayfindr.release.acknowledged_actions')),
+            fn (string $name): ?bool => $this->checks->evaluate($name),
+        );
+
+        // Only the phases that must precede the schema change may block it. An
+        // unmet after-start action needs the migrated schema to be performed at
+        // all, so blocking migration on it could never be satisfied.
+        $blocking = array_values(array_filter(
+            $outstanding,
+            static fn (array $a): bool => in_array(
+                $a['phase'] ?? '', UpgradeRequirements::BLOCKS_MIGRATION, true,
+            ),
+        ));
+
+        return [
+            'blocked' => $blocking !== [],
+            'reason' => $blocking === [] ? 'no outstanding pre-migration requirements' : 'requirements outstanding',
+            'actions' => $blocking,
+            'from' => $recorded,
+            'target' => $target,
+            'legacy' => $legacy,
+        ];
+    }
+
+    /**
+     * @return array{blocked: bool, reason: string, actions: list<array<string, mixed>>, from: ?string, target: ?string, legacy: bool}
+     */
+    private function clear(string $reason): array
+    {
+        return [
+            'blocked' => false,
+            'reason' => $reason,
+            'actions' => [],
+            'from' => null,
+            'target' => null,
+            'legacy' => false,
+        ];
+    }
+
+    /**
+     * Declarations of every release from the floor up to this one.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function history(): array
+    {
+        $raw = $this->readRaw(self::HISTORY_FILE);
+
+        if ($raw === null) {
+            return [];
+        }
+
+        try {
+            /** @var mixed $decoded */
+            $decoded = json_decode($raw, true, flags: JSON_THROW_ON_ERROR);
+        } catch (Throwable) {
+            return [];
+        }
+
+        if (! is_array($decoded) || ! is_array($decoded['releases'] ?? null)) {
+            return [];
+        }
+
+        $releases = [];
+
+        foreach ($decoded['releases'] as $release) {
+            if (is_array($release)) {
+                $releases[] = $release;
+            }
+        }
+
+        return $releases;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $history
+     */
+    private function historyContains(array $history, string $version): bool
+    {
+        foreach ($history as $manifest) {
+            if (($manifest['version'] ?? null) === $version) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function read(string $path): ?array
+    {
+        $raw = $this->readRaw($path);
+
+        if ($raw === null) {
+            return null;
+        }
+
+        try {
+            return ReleaseManifest::decode($raw);
+        } catch (Throwable) {
+            // A manifest we cannot read is not a manifest that permits anything,
+            // but refusing every migration on a corrupt file would strand an
+            // install with no way forward. Treated as absent and surfaced by the
+            // command, which reports the reason.
+            return null;
+        }
+    }
+
+    private function readRaw(string $path): ?string
+    {
+        return is_file($path) ? ((string) @file_get_contents($path)) : null;
+    }
+
+    /**
+     * Has this install been running, even though it has no state file?
+     *
+     * Every install predating the state file has none, so absence alone cannot
+     * mean "fresh" — reading it that way would evaluate no span for exactly the
+     * population the history exists to protect. A populated `migrations` table
+     * is the evidence, and it belongs to the OLD schema so it is readable here.
+     */
+    private function hasExistingInstall(): bool
+    {
+        try {
+            return DB::table('migrations')->exists();
+        } catch (Throwable) {
+            // No table, or no database yet: a genuinely fresh install.
+            return false;
+        }
+    }
+}
