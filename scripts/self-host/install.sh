@@ -203,19 +203,50 @@ upgrade_preflight() {
     all_actions=""
 
     for tag in $span; do
-        manifest="$(curl -fsSL "https://github.com/adamgreenwell/wayfindr/releases/download/${tag}/release-manifest.json" 2>/dev/null || true)"
+        local status
+        manifest="$(curl -fsSL -w '\n%{http_code}' "https://github.com/adamgreenwell/wayfindr/releases/download/${tag}/release-manifest.json" 2>/dev/null || printf '\n000')"
+        status="$(printf '%s' "$manifest" | tail -1)"
+        manifest="$(printf '%s' "$manifest" | sed '$d')"
 
-        # A release published before manifests existed simply has no asset. That
-        # is not an error - it declared nothing.
+        # A 404 means the release published no manifest - true of anything cut
+        # before the contract existed, and not an error: it declared nothing.
+        #
+        # Anything else is a FAILURE TO KNOW, and must not be read as "no
+        # requirements". A transient network fault would otherwise let the pull
+        # proceed past a before-pull action that was never seen.
+        case "$status" in
+            200) : ;;
+            404) continue ;;
+            *)
+                printf '\n\033[1;31mPREFLIGHT COULD NOT VERIFY THIS UPGRADE\033[0m\n\n'
+                printf '  Could not fetch the declaration for %s (HTTP %s).\n' "$tag" "$status"
+                printf '  Refusing rather than assuming it requires nothing.\n\n'
+                printf '  Nothing has been pulled or changed. Retry when the network settles.\n\n'
+                exit 78
+                ;;
+        esac
+
         [ -n "$manifest" ] || continue
 
-        actions="$(printf '%s' "$manifest" | php_in_current_image "" "" "$ack" '
+        actions="$(printf '%s' "$manifest" | php_in_current_image "" "$to" "$ack" '
             $m = json_decode(stream_get_contents(STDIN), true);
             $ack = array_map("trim", explode(",", (string) getenv("WF_ACK")));
+            $target = getenv("WF_TO");
             foreach ($m["actions"] ?? [] as $a) {
-                $key = ($a["release"] ?? "") . "/" . ($a["id"] ?? "");
+                $release = $a["release"] ?? "";
+                $key = $release . "/" . ($a["id"] ?? "");
                 if (in_array($key, $ack, true)) { continue; }
-                printf("%s|%s|%s|%s\n", $key, $a["phase"] ?? "", $a["summary"] ?? "", $a["detail"] ?? "");
+
+                // An action belonging to an INTERMEDIATE release that needs that
+                // release own code or schema cannot be performed at any point in
+                // a direct jump: before-pull has the old release, and both
+                // after-pull and after-start have the target. The only way to
+                // satisfy it is to stop at the release it belongs to.
+                $stranded = $release !== $target
+                    && in_array($a["depends_on_release"] ?? "none", ["code", "schema"], true);
+
+                printf("%s|%s|%s|%s|%s\n", $stranded ? "STEP" : "DO",
+                    $key, $a["phase"] ?? "", $a["summary"] ?? "", $a["detail"] ?? "");
             }')"
 
         [ -n "$actions" ] && all_actions="${all_actions}${actions}
@@ -229,10 +260,55 @@ upgrade_preflight() {
         return 0
     fi
 
+    local stranded blocking later
+    stranded="$(printf '%s\n' "$all_actions" | grep '^STEP|' || true)"
+
+    # Only `before-pull` may stop the pull. An `after-pull` action needs the new
+    # code, and `after-start` needs the migrated schema - neither exists yet, so
+    # refusing to pull because of them would make them permanently unsatisfiable.
+    # The artifact enforces those itself once the code is there: after-pull blocks
+    # the migration, after-start gates serving.
+    blocking="$(printf '%s\n' "$all_actions" | grep -E '^(STEP|DO)\|[^|]*\|before-pull\|' || true)"
+    blocking="$(printf '%s\n' "$blocking
+$stranded" | grep -v '^$' | sort -u || true)"
+    later="$(printf '%s\n' "$all_actions" | grep -vE '^(STEP|DO)\|[^|]*\|before-pull\|' | grep -v '^STEP|' || true)"
+
+    if [ -z "$blocking" ]; then
+        say "Preflight: nothing to do before pulling."
+
+        if [ -n "$later" ]; then
+            printf '\n  \033[1;33mAfter this upgrade you will need to:\033[0m\n'
+            printf '%s\n' "$later" | while IFS='|' read -r _ key phase summary _; do
+                [ -n "$key" ] || continue
+                printf '    %s (%s) - %s\n' "$key" "$phase" "$summary"
+            done
+            printf '\n  The release enforces these itself: it refuses to migrate or to serve\n'
+            printf '  until they are done or acknowledged.\n\n'
+        fi
+
+        return 0
+    fi
+
+    all_actions="$blocking"
+
     printf '\n\033[1;31mUPGRADE NEEDS YOU FIRST\033[0m\n\n'
     printf '  Upgrading %s -> %s requires operator action.\n\n' "${from:-unknown}" "$to"
 
-    printf '%s\n' "$all_actions" | while IFS='|' read -r key phase summary detail; do
+    if [ -n "$stranded" ]; then
+        printf '  \033[1;31mThis jump cannot be made directly.\033[0m The steps below belong to a\n'
+        printf '  release you would skip over, and need that release own code or schema -\n'
+        printf '  so they can be run neither before the pull nor after it. Upgrade to that\n'
+        printf '  release first with --ref, complete them there, then continue.\n\n'
+
+        printf '%s\n' "$stranded" | while IFS='|' read -r _ key phase summary detail; do
+            [ -n "$key" ] || continue
+            printf '  \033[1;31m%s\033[0m (%s, must run on its own release)\n    %s\n' "$key" "$phase" "$summary"
+            [ -n "$detail" ] && printf '    %s\n' "$detail"
+            printf '\n'
+        done
+    fi
+
+    printf '%s\n' "$all_actions" | grep '^DO|' | while IFS='|' read -r _ key phase summary detail; do
         [ -n "$key" ] || continue
         printf '  \033[1;33m%s\033[0m (%s)\n    %s\n' "$key" "$phase" "$summary"
         [ -n "$detail" ] && printf '    %s\n' "$detail"
@@ -240,8 +316,14 @@ upgrade_preflight() {
     done
 
     printf '  Nothing has been pulled or changed.\n'
-    printf '  Do the work, then add the entries above to WAYFINDR_ACKNOWLEDGED_ACTIONS\n'
-    printf '  in %s and run this again.\n\n' "$ENV_FILE"
+
+    if [ -n "$stranded" ]; then
+        printf '  Acknowledging will not help with the steps above: they are unreachable\n'
+        printf '  from this jump, not merely undone.\n\n'
+    else
+        printf '  Do the work, then add the entries above to WAYFINDR_ACKNOWLEDGED_ACTIONS\n'
+        printf '  in %s and run this again.\n\n' "$ENV_FILE"
+    fi
 
     exit 78
 }

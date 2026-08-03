@@ -12,8 +12,8 @@ use App\Console\Commands\RestoreCommand;
 use App\Console\Commands\SendAlertDigestsCommand;
 use App\Console\Commands\SendUnattendedConversationAlertsCommand;
 use App\Console\Commands\SweepOrphanedAttachmentsCommand;
+use App\Console\Commands\UpgradeGuardCommand;
 use App\Http\Middleware\RefuseServingWithUnmetRequirements;
-use Commands\UpgradeGuardCommand;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -31,7 +31,6 @@ return Application::configure(basePath: dirname(__DIR__))
         BackupCommand::class,
         BootstrapWayfindrCommand::class,
         CobrowseTransportSmokeCommand::class,
-        UpgradeGuardCommand::class,
         CreateAgentCommand::class,
         ExpireBreakGlassGrantsCommand::class,
         MailTestCommand::class,
@@ -40,6 +39,7 @@ return Application::configure(basePath: dirname(__DIR__))
         SendAlertDigestsCommand::class,
         SendUnattendedConversationAlertsCommand::class,
         SweepOrphanedAttachmentsCommand::class,
+        UpgradeGuardCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         // Only containerized behind-proxy installs set TRUSTED_PROXIES (the
