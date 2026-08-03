@@ -60,8 +60,12 @@ php artisan queue:work backups --queue=backups --sleep=5 --tries=1 --timeout=360
 
 - Every install now carries a release identity — official images bake theirs at
   build time, source builds derive one from the `VERSION` file, and `WAYFINDR_VERSION`
-  and `WAYFINDR_COMMIT` override both. Backup archives record it, so a restore can
-  tell whether an archive came from the code that is running (ADR 0012).
+  and `WAYFINDR_COMMIT` override both. Backup archives record the version and the
+  commit, and a restore warns when the archive's *version* does not match the
+  running install. Where a build stamps its commit into that version — official
+  images and derived Forge deploys both do — two different builds are told apart.
+  Two archives sharing a plain version string are not, because the separately
+  recorded commit is not yet compared (ADR 0012).
 - Forge deploys derive that identity from the checkout on every deploy, rather
   than reading a value typed into the Environment panel that keeps claiming a
   release after the site has moved off it. A tagged checkout reports its version,
