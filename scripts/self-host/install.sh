@@ -53,11 +53,6 @@ USAGE
 say() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
-# The parse loop below consumes $@ with `shift`, so the hand-off would have
-# nothing left to replay. Capture the operator's arguments first — losing --dir
-# would silently upgrade a different install than the one they asked for.
-WAYFINDR_ORIGINAL_ARGS=("$@")
-
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --app-url) APP_URL="${2:-}"; shift 2 ;;
@@ -175,30 +170,8 @@ if [ "$UPGRADE" = "1" ]; then
     resolve_release
     say "Refreshing stack files at $REF."
     fetch docker/self-hosting/compose.yml "$COMPOSE_FILE"
-
-    # Hand off to the version we just downloaded, BEFORE anything is pulled.
-    #
-    # Without this the upgrade refreshes install.sh on disk and then carries on
-    # in the already-parsed process, so a preflight shipped in the new script
-    # would sit there unrun while the release it was written to guard is pulled
-    # and started. Re-execing is also the only safe way to overwrite a script
-    # bash is still reading: bash reads incrementally, so replacing the file
-    # underneath a running process can make it resume at the wrong offset.
-    #
-    # WAYFINDR_HANDED_OFF guards the recursion. It is exported rather than passed
-    # as an argument so it cannot collide with the operator's own flags, and it
-    # is checked before the fetch so a hand-off never re-fetches.
-    if [ -z "${WAYFINDR_HANDED_OFF:-}" ]; then
-        fetch scripts/self-host/install.sh "$TARGET_DIR/install.sh.new"
-        chmod +x "$TARGET_DIR/install.sh.new"
-        mv "$TARGET_DIR/install.sh.new" "$TARGET_DIR/install.sh"
-
-        say "Handing off to the refreshed installer."
-        WAYFINDR_HANDED_OFF=1 exec "$TARGET_DIR/install.sh" "${WAYFINDR_ORIGINAL_ARGS[@]}"
-    fi
-
-    upgrade_preflight
-
+    fetch scripts/self-host/install.sh "$TARGET_DIR/install.sh"
+    chmod +x "$TARGET_DIR/install.sh"
     migrate_env
     pin_image
     say "Pulling the release image."

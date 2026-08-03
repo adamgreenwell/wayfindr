@@ -143,10 +143,20 @@ if (isset($options['history'])) {
     if (is_string($floor)) {
         $existing = array_values(array_filter(
             $existing,
-            static function (array $entry) use ($floor): bool {
+            static function (array $entry) use ($floor, $canonical): bool {
                 $version = $entry['version'] ?? null;
 
                 if (! is_string($version)) {
+                    return true;
+                }
+
+                // The release being built always survives its own floor. A
+                // declaration can legitimately set a floor above its own version
+                // during a renumbering, and nothing stops a typo doing it by
+                // accident - either way, dropping the entry this run just
+                // recorded would publish an image whose history omits the very
+                // release it is.
+                if ($version === $canonical) {
                     return true;
                 }
 
