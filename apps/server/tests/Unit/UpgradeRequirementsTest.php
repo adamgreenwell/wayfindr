@@ -184,3 +184,78 @@ describe('parsing acknowledgements', function (): void {
         expect(UpgradeRequirements::parseAcknowledged($raw))->toBe([]);
     })->with([null, '', '   ', ',', ' , ']);
 });
+
+describe('fresh installs versus legacy ones', function (): void {
+    test('a fresh install owes nothing', function (): void {
+        // It has not upgraded from anywhere. Treating its null start as "unknown"
+        // would evaluate the whole history and hand a brand-new install
+        // upgrade-only work from releases it never ran.
+        $history = [guardManifest('0.1.0', [guardAction(['release' => '0.1.0'])]),
+            guardManifest('0.2.0', [guardAction(['release' => '0.2.0'])])];
+
+        $out = UpgradeRequirements::outstanding(
+            $history, null, '0.2.0', [], guardChecks([]), freshInstall: true,
+        );
+
+        expect($out)->toBeEmpty();
+    });
+
+    test('a legacy install with an unknown start still owes everything', function (): void {
+        $history = [guardManifest('0.1.0', [guardAction(['release' => '0.1.0'])]),
+            guardManifest('0.2.0', [guardAction(['release' => '0.2.0'])])];
+
+        $out = UpgradeRequirements::outstanding(
+            $history, null, '0.2.0', [], guardChecks([]), freshInstall: false,
+        );
+
+        expect($out)->toHaveCount(2);
+    });
+});
+
+describe('the running release keeps its own requirements', function (): void {
+    test('a target-inclusive span survives the release being recorded', function (): void {
+        // After migration the recorded version IS the target, so the ordinary
+        // span (target, target] is empty — which would silently disable the
+        // serving gate.
+        $history = [guardManifest('0.2.0', [guardAction(['release' => '0.2.0'])])];
+
+        expect(UpgradeRequirements::span($history, '0.2.0', '0.2.0'))->toBeEmpty()
+            ->and(UpgradeRequirements::span($history, '0.2.0', '0.2.0', includeTarget: true))
+            ->toHaveCount(1);
+    });
+
+    test('outstanding still reports the target after it is recorded', function (): void {
+        $history = [guardManifest('0.2.0', [guardAction(['release' => '0.2.0'])])];
+
+        $out = UpgradeRequirements::outstanding(
+            $history, '0.2.0', '0.2.0', [], guardChecks([]), includeTarget: true,
+        );
+
+        expect($out)->toHaveCount(1);
+    });
+});
+
+describe('state applicability', function (): void {
+    test('a state check answering false makes the action irrelevant', function (): void {
+        // Otherwise the operator is asked to acknowledge work that does not
+        // apply to their install.
+        $action = guardAction(['applicability' => ['type' => 'state', 'check' => 'worker-exists']]);
+
+        expect(UpgradeRequirements::applies($action, '0.1.0', guardChecks(['worker-exists' => false])))
+            ->toBeFalse();
+    });
+
+    test('a state check answering true keeps it in scope', function (): void {
+        $action = guardAction(['applicability' => ['type' => 'state', 'check' => 'worker-exists']]);
+
+        expect(UpgradeRequirements::applies($action, '0.1.0', guardChecks(['worker-exists' => true])))
+            ->toBeTrue();
+    });
+
+    test('a state check that cannot be evaluated keeps it in scope', function (): void {
+        // "Cannot tell" must not silently drop a requirement.
+        $action = guardAction(['applicability' => ['type' => 'state', 'check' => 'worker-exists']]);
+
+        expect(UpgradeRequirements::applies($action, '0.1.0', guardChecks([])))->toBeTrue();
+    });
+});

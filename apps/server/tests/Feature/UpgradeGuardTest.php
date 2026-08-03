@@ -3,8 +3,10 @@
 declare(strict_types=1);
 
 use App\Support\Release\ReleaseManifest;
+use App\Support\Release\ReleaseState;
 use App\Support\Release\UpgradeGuard;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
@@ -142,4 +144,33 @@ test('a pre-migration requirement does not gate serving', function (): void {
     bakeRelease(blockingDeclaration('after-pull'), '0.2.0');
 
     expect($this->get('/')->status())->not->toBe(503);
+});
+
+test('the serving gate survives the release being recorded', function (): void {
+    // The regression: recording the release makes the span (target, target],
+    // which is empty, so every unmet after-start action would vanish and traffic
+    // would be served despite the requirement.
+    bakeRelease(blockingDeclaration('after-start'), '0.2.0');
+    app(ReleaseState::class)->record('0.2.0', 'abc123');
+
+    $this->get('/')->assertStatus(503)->assertSee('do-the-thing');
+});
+
+test('the command reports an after-start requirement the migration gate ignores', function (): void {
+    // assess() filters it out as non-migration-blocking; the command must not,
+    // or it prints "nothing outstanding" while the app refuses traffic.
+    bakeRelease(blockingDeclaration('after-start'), '0.2.0');
+
+    $this->artisan('wayfindr:upgrade-guard')
+        ->expectsOutputToContain('Blocks: serving')
+        ->assertFailed();
+});
+
+test('a fresh install is not handed historical upgrade work', function (): void {
+    // No state file and no prior schema. RefreshDatabase would normally leave a
+    // populated migrations table, so drop it to model a genuinely new install.
+    bakeRelease(blockingDeclaration('after-pull'), '0.2.0');
+    Schema::drop('migrations');
+
+    expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeFalse();
 });

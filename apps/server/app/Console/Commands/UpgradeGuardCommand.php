@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Support\Release\UpgradeGuard;
+use App\Support\Release\UpgradeRequirements;
 use Illuminate\Console\Command;
 
 class UpgradeGuardCommand extends Command
@@ -15,6 +16,14 @@ class UpgradeGuardCommand extends Command
     public function handle(UpgradeGuard $guard): int
     {
         $assessment = $guard->assess();
+
+        // assess() reports only what blocks MIGRATION. Reporting that alone would
+        // print "nothing outstanding" and exit 0 while the serving gate refuses
+        // traffic for an unmet after-start action — the command contradicting the
+        // running system.
+        $all = $guard->assessAll();
+        $assessment['actions'] = $all;
+        $assessment['blocked'] = $all !== [];
 
         if ($this->option('json')) {
             $this->line((string) json_encode($assessment, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
@@ -45,7 +54,7 @@ class UpgradeGuardCommand extends Command
             return self::SUCCESS;
         }
 
-        $this->error(sprintf('  %d requirement(s) must be met before migrating:', count($assessment['actions'])));
+        $this->error(sprintf('  %d requirement(s) outstanding:', count($assessment['actions'])));
 
         foreach ($assessment['actions'] as $action) {
             $this->line('');
@@ -59,6 +68,9 @@ class UpgradeGuardCommand extends Command
 
             $this->line(sprintf('    Acknowledge with: %s/%s',
                 $action['release'] ?? '?', $action['id'] ?? '?'));
+            $this->line(sprintf('    Blocks: %s',
+                in_array($action['phase'] ?? '', UpgradeRequirements::BLOCKS_MIGRATION, true)
+                    ? 'migration' : 'serving'));
         }
 
         $this->line('');

@@ -59,7 +59,11 @@ final class UpgradeGuard
      */
     public function assessAll(): array
     {
-        $this->assess();
+        // Target-inclusive: an after-start requirement belongs to the release
+        // that is RUNNING, and stays in force until satisfied. Once the release
+        // is recorded the ordinary span is (target, target] — empty — so without
+        // this the serving gate would silently stop enforcing anything.
+        $this->assess(includeTarget: true);
 
         return $this->lastOutstanding;
     }
@@ -69,7 +73,7 @@ final class UpgradeGuard
      *
      * @return array{blocked: bool, reason: string, actions: list<array<string, mixed>>, from: ?string, target: ?string, legacy: bool}
      */
-    public function assess(): array
+    public function assess(bool $includeTarget = false): array
     {
         $manifest = $this->read($this->manifestPath());
 
@@ -96,7 +100,14 @@ final class UpgradeGuard
         }
 
         $recorded = $this->state->recordedVersion();
-        $legacy = $recorded === null && $this->hasExistingInstall();
+        $existing = $this->hasExistingInstall();
+        $legacy = $recorded === null && $existing;
+
+        // No state file AND no prior schema: nothing to upgrade from. Left as a
+        // null start it would take the legacy path and evaluate the whole
+        // history, so a brand-new install of a later image would be handed
+        // upgrade-only work from releases it never ran.
+        $fresh = $recorded === null && ! $existing;
 
         $outstanding = UpgradeRequirements::outstanding(
             $history,
@@ -104,6 +115,8 @@ final class UpgradeGuard
             $target,
             UpgradeRequirements::parseAcknowledged(config('wayfindr.release.acknowledged_actions')),
             fn (string $name): ?bool => $this->checks->evaluate($name),
+            freshInstall: $fresh,
+            includeTarget: $includeTarget,
         );
 
         $this->lastOutstanding = $outstanding;

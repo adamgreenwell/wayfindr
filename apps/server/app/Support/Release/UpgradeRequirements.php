@@ -46,12 +46,22 @@ final class UpgradeRequirements
         string $target,
         array $acknowledged,
         callable $evaluateCheck,
+        bool $freshInstall = false,
+        bool $includeTarget = false,
     ): array {
+        // A genuinely fresh install has not upgraded from anywhere. Passing its
+        // null start into the legacy path would evaluate the entire history, so a
+        // new install of a later image could be blocked by upgrade-only work from
+        // releases it never ran.
+        if ($freshInstall) {
+            return [];
+        }
+
         $outstanding = [];
 
-        foreach (self::span($history, $from, $target) as $manifest) {
+        foreach (self::span($history, $from, $target, $includeTarget) as $manifest) {
             foreach ($manifest['actions'] ?? [] as $action) {
-                if (! self::applies($action, $from)) {
+                if (! self::applies($action, $from, $evaluateCheck)) {
                     continue;
                 }
 
@@ -79,9 +89,13 @@ final class UpgradeRequirements
      * @param  list<array<string, mixed>>  $history
      * @return list<array<string, mixed>>
      */
-    public static function span(array $history, ?string $from, string $target): array
-    {
-        $span = array_filter($history, static function (array $manifest) use ($from, $target): bool {
+    public static function span(
+        array $history,
+        ?string $from,
+        string $target,
+        bool $includeTarget = false,
+    ): array {
+        $span = array_filter($history, static function (array $manifest) use ($from, $target, $includeTarget): bool {
             $version = $manifest['version'] ?? null;
 
             if (! is_string($version)) {
@@ -93,6 +107,15 @@ final class UpgradeRequirements
 
             if ($toTarget !== null && $toTarget > 0) {
                 return false;
+            }
+
+            // The running release's own requirements stay in force until they
+            // are satisfied, however the install got here. Without this the
+            // serving gate dies the moment the release is recorded: the span
+            // becomes (target, target], which is empty, and unmet after-start
+            // actions vanish rather than being enforced.
+            if ($includeTarget && $version === $target) {
+                return true;
             }
 
             // Unknown start: take the lot. Also covers the case where precedence
@@ -115,7 +138,7 @@ final class UpgradeRequirements
      *
      * @param  array<string, mixed>  $action
      */
-    public static function applies(array $action, ?string $from): bool
+    public static function applies(array $action, ?string $from, ?callable $evaluateCheck = null): bool
     {
         $applicability = $action['applicability'] ?? ['type' => 'always'];
         $type = $applicability['type'] ?? 'always';
@@ -143,8 +166,19 @@ final class UpgradeRequirements
             return $comparison === null || $comparison >= 0;
         }
 
-        // `state` applicability is decided by a machine check at evaluation time,
-        // so it is in scope here and settled below.
+        if ($type === 'state') {
+            $result = $evaluateCheck === null
+                ? null
+                : $evaluateCheck((string) ($applicability['check'] ?? ''));
+
+            // Applies unless the check positively says otherwise. "Cannot tell"
+            // must not silently drop a requirement — but a check that answers
+            // false has demonstrated the action is irrelevant to this install,
+            // and demanding it anyway would make an operator acknowledge work
+            // that does not apply to them.
+            return $result !== false;
+        }
+
         return true;
     }
 
