@@ -250,10 +250,8 @@ final class ReleaseManifest
             self::assertVersion($applicability['min'], "Action \"{$id}\" applicability min");
         }
 
-        if ($applicability['type'] === 'state' && ! isset($applicability['check'])) {
-            throw new InvalidArgumentException(
-                "Action \"{$id}\" is applicable by state but names no \"check\"."
-            );
+        if ($applicability['type'] === 'state') {
+            self::assertCheckName($applicability['check'] ?? null, "Action \"{$id}\" applicability");
         }
     }
 
@@ -270,11 +268,8 @@ final class ReleaseManifest
 
         // A `check` without something to run is an attestation wearing a
         // verification's label, which is the one confusion ADR 0013 forbids.
-        if ($verification['type'] === 'check' && ! isset($verification['check'])) {
-            throw new InvalidArgumentException(
-                "Action \"{$id}\" claims machine verification but names no \"check\". "
-                .'Declare it as "attest" if the artifact cannot confirm it.'
-            );
+        if ($verification['type'] === 'check') {
+            self::assertCheckName($verification['check'] ?? null, "Action \"{$id}\" verification");
         }
     }
 
@@ -283,9 +278,38 @@ final class ReleaseManifest
      */
     private static function assertVersion($value, string $label): void
     {
-        if (! is_string($value) || SemanticVersion::parse($value) === null) {
+        $parsed = is_string($value) ? SemanticVersion::parse($value) : null;
+
+        if ($parsed === null) {
             throw new InvalidArgumentException(
                 $label.' must be a version this build can parse, so it can be compared.'
+            );
+        }
+
+        // A development identity sits at an unknown point in history, so
+        // precedence against it is undefined and the comparator returns "no
+        // answer" (ADR 0012). A bound that can never be compared is not a bound;
+        // accepting one here would certify it as usable and leave the floor and
+        // applicability checks with nothing to decide on.
+        if ($parsed->isDevelopment()) {
+            throw new InvalidArgumentException(
+                $label.' cannot be a development version: precedence against one is '
+                .'undefined, so the bound could never be compared.'
+            );
+        }
+    }
+
+    /**
+     * @param  mixed  $value
+     */
+    private static function assertCheckName($value, string $label): void
+    {
+        // `isset()` is satisfied by an empty string, which names no condition for
+        // the guard to dispatch — the same "declared but unusable" shape the
+        // phase/dependency rules reject.
+        if (! is_string($value) || trim($value) === '') {
+            throw new InvalidArgumentException(
+                $label.' names no check to run. Declare it as "attest" if the artifact cannot confirm it.'
             );
         }
     }

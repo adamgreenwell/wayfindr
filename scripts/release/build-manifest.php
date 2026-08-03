@@ -100,11 +100,16 @@ if (isset($options['history'])) {
         $existing = is_array($decoded['releases'] ?? null) ? $decoded['releases'] : [];
     }
 
-    // Replace rather than append when rebuilding the same version, so a rebuild
-    // cannot leave two entries claiming one release.
+    // Compare against the CANONICAL version the manifest carries, not the raw
+    // argument. The release workflow passes the git tag (`v0.2.0`) while the
+    // committed history was written from `0.2.0`, so filtering on the argument
+    // matches nothing and appends a second entry — duplicating the release and
+    // every requirement in it, in every official image.
+    $canonical = $manifest['version'];
+
     $existing = array_values(array_filter(
         $existing,
-        static fn (array $entry): bool => ($entry['version'] ?? null) !== $version,
+        static fn (array $entry): bool => ($entry['version'] ?? null) !== $canonical,
     ));
 
     $existing[] = $manifest;
