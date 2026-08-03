@@ -316,18 +316,6 @@ final class ReleaseManifest
 
     /**
      * @param  mixed  $value
-     */
-    private static function assertVersion($value, string $label): void
-    {
-        if (! is_string($value) || SemanticVersion::parse($value) === null) {
-            throw new InvalidArgumentException(
-                $label.' must be a version this build can parse, so it can be compared.'
-            );
-        }
-    }
-
-    /**
-     * @param  mixed  $value
      * @param  list<string>  $allowed
      */
     private static function assertOneOf($value, array $allowed, string $label): void

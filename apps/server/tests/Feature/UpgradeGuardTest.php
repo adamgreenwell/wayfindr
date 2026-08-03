@@ -110,3 +110,36 @@ test('the command emits machine-readable output on request', function (): void {
         ->expectsOutputToContain('"blocked": true')
         ->assertFailed();
 });
+
+test('an unmet after-start requirement refuses traffic but keeps health up', function (): void {
+    bakeRelease(blockingDeclaration('after-start'), '0.2.0');
+
+    // Migration is deliberately not blocked by this phase...
+    expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeFalse();
+
+    // ...but the release must not serve until it is done.
+    $this->get('/')->assertStatus(503)->assertSee('do-the-thing');
+
+    // The health endpoint stays up: a failing health check would have the
+    // orchestrator restart the container on a loop, replacing a legible message
+    // with a crash loop.
+    $this->get('/up')->assertSuccessful();
+});
+
+test('serving resumes once the requirement is acknowledged', function (): void {
+    bakeRelease(blockingDeclaration('after-start'), '0.2.0');
+    config()->set('wayfindr.release.acknowledged_actions', '0.2.0/do-the-thing');
+
+    $this->get('/up')->assertSuccessful();
+    // `/` redirects normally in this app; what matters is that it is no longer
+    // being refused.
+    expect($this->get('/')->status())->not->toBe(503);
+});
+
+test('a pre-migration requirement does not gate serving', function (): void {
+    // It gates migration instead; gating both would strand an operator whose
+    // recovery needs the app.
+    bakeRelease(blockingDeclaration('after-pull'), '0.2.0');
+
+    expect($this->get('/')->status())->not->toBe(503);
+});

@@ -6,21 +6,19 @@
     "`requires_operator_action` is derived too, from whether `actions` is empty.",
     "See docs/self-hosting/release-manifest.md for the field reference."
   ],
+  "_bootstrap": [
+    "Deliberately empty for the release that introduces the upgrade guard.",
+    "ADR 0013: the first enforcing release must require nothing itself, or it",
+    "refuses traffic on every install the moment it lands - including installs",
+    "that were already doing the right thing. The backups-queue-worker",
+    "requirement has not gone away; it stays in the CHANGELOG as an operator",
+    "action, and can be declared here in a LATER release once the",
+    "backups-queue-consumer check can actually evaluate it. Declaring a check",
+    "that always answers 'cannot tell' would force every operator to attest,",
+    "which is weaker than the note it replaced.",
+    "tests/Feature/BootstrapSelfEnforcementTest.php fails if this is re-declared",
+    "without the check being implementable."
+  ],
   "minimum_upgrade_from": "0.1.0-alpha.1",
-  "actions": [
-    {
-      "id": "backups-queue-worker",
-      "summary": "Run a second queue worker on the dedicated backups connection.",
-      "detail": "Backups triggered from the operator GUI are dispatched to a separate `backups` queue connection so a long backup cannot block ordinary jobs. Without a worker consuming it, the \"Run a backup now\" button queues work nothing will ever process and the run sits at Running indefinitely. Scheduled backups are unaffected. Compose stacks get the backup-queue service from the refreshed compose.yml; on Forge or any host-managed setup, add: php artisan queue:work backups --queue=backups --sleep=5 --tries=1 --timeout=3600",
-      "phase": "after-start",
-      "depends_on_release": "code",
-      "applicability": {
-        "type": "always"
-      },
-      "verification": {
-        "type": "check",
-        "check": "backups-queue-consumer"
-      }
-    }
-  ]
+  "actions": []
 }

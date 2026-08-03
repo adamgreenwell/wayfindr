@@ -12,6 +12,7 @@ use App\Console\Commands\RestoreCommand;
 use App\Console\Commands\SendAlertDigestsCommand;
 use App\Console\Commands\SendUnattendedConversationAlertsCommand;
 use App\Console\Commands\SweepOrphanedAttachmentsCommand;
+use App\Http\Middleware\RefuseServingWithUnmetRequirements;
 use Commands\UpgradeGuardCommand;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -45,6 +46,11 @@ return Application::configure(basePath: dirname(__DIR__))
         // self-hosting env generator's --behind-proxy mode); everywhere else
         // this is null and no proxy is trusted.
         $middleware->trustProxies(at: env('TRUSTED_PROXIES'));
+
+        // Refuses traffic while an after-start requirement is outstanding
+        // (ADR 0013). Appended globally rather than to a route group, because a
+        // release that is not fit to serve is not fit to serve anything.
+        $middleware->append(RefuseServingWithUnmetRequirements::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // On a validation failure Laravel flashes the request input to the

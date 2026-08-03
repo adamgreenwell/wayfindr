@@ -41,10 +41,28 @@ final class UpgradeGuard
         return (string) config('wayfindr.release.history_path', self::HISTORY_FILE);
     }
 
+    /** @var list<array<string, mixed>> */
+    private array $lastOutstanding = [];
+
     public function __construct(
         private readonly ReleaseState $state,
         private readonly CheckRegistry $checks,
     ) {}
+
+    /**
+     * Every outstanding action, whatever its phase.
+     *
+     * The serving gate needs the after-start ones, which assess() deliberately
+     * filters out because they must not block migration.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function assessAll(): array
+    {
+        $this->assess();
+
+        return $this->lastOutstanding;
+    }
 
     /**
      * What this upgrade still owes before it may migrate.
@@ -87,6 +105,8 @@ final class UpgradeGuard
             UpgradeRequirements::parseAcknowledged(config('wayfindr.release.acknowledged_actions')),
             fn (string $name): ?bool => $this->checks->evaluate($name),
         );
+
+        $this->lastOutstanding = $outstanding;
 
         // Only the phases that must precede the schema change may block it. An
         // unmet after-start action needs the migrated schema to be performed at
