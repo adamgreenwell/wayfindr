@@ -31,6 +31,16 @@ final class UpgradeGuard
 
     public const HISTORY_FILE = '/etc/wayfindr/release-history.json';
 
+    private function manifestPath(): string
+    {
+        return (string) config('wayfindr.release.manifest_path', self::MANIFEST_FILE);
+    }
+
+    private function historyPath(): string
+    {
+        return (string) config('wayfindr.release.history_path', self::HISTORY_FILE);
+    }
+
     public function __construct(
         private readonly ReleaseState $state,
         private readonly CheckRegistry $checks,
@@ -43,7 +53,7 @@ final class UpgradeGuard
      */
     public function assess(): array
     {
-        $manifest = $this->read(self::MANIFEST_FILE);
+        $manifest = $this->read($this->manifestPath());
 
         // No baked declaration means a development checkout or a build that
         // predates this mechanism. Nothing is declared, so nothing is enforced —
@@ -120,7 +130,7 @@ final class UpgradeGuard
      */
     private function history(): array
     {
-        $raw = $this->readRaw(self::HISTORY_FILE);
+        $raw = $this->readRaw($this->historyPath());
 
         if ($raw === null) {
             return [];

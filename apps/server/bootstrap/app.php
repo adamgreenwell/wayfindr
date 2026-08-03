@@ -12,6 +12,7 @@ use App\Console\Commands\RestoreCommand;
 use App\Console\Commands\SendAlertDigestsCommand;
 use App\Console\Commands\SendUnattendedConversationAlertsCommand;
 use App\Console\Commands\SweepOrphanedAttachmentsCommand;
+use Commands\UpgradeGuardCommand;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -29,6 +30,7 @@ return Application::configure(basePath: dirname(__DIR__))
         BackupCommand::class,
         BootstrapWayfindrCommand::class,
         CobrowseTransportSmokeCommand::class,
+        UpgradeGuardCommand::class,
         CreateAgentCommand::class,
         ExpireBreakGlassGrantsCommand::class,
         MailTestCommand::class,

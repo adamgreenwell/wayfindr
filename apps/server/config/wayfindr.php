@@ -225,5 +225,10 @@ return [
         // knows where the upgrade started. On the storage volume because
         // /etc/wayfindr is root-owned and the app runs unprivileged.
         'state_path' => env('WAYFINDR_RELEASE_STATE_PATH', storage_path('app/release-state.json')),
+
+        // Baked by the image build. Overridable so tests can point at fixtures;
+        // operators have no reason to move them.
+        'manifest_path' => env('WAYFINDR_RELEASE_MANIFEST_PATH', '/etc/wayfindr/release.json'),
+        'history_path' => env('WAYFINDR_RELEASE_HISTORY_PATH', '/etc/wayfindr/release-history.json'),
     ],
 ];
