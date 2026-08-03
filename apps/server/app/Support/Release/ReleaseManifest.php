@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Release;
 
+use App\Support\Version\SemanticVersion;
 use InvalidArgumentException;
 
 /**
@@ -49,6 +50,13 @@ final class ReleaseManifest
     {
         self::validateDeclaration($declaration);
 
+        // Canonical spelling, so the acknowledgement key an operator types is
+        // stable. The release workflow passes the git tag verbatim, so the same
+        // release arrives as `v0.2.0` from an official build and `0.2.0` from a
+        // source one; leaving both in the data would mean `v0.2.0/backups-worker`
+        // satisfies nothing on an install that stamped it the other way.
+        $version = SemanticVersion::parse($version)?->canonical() ?? $version;
+
         $declaration = self::withoutComments($declaration);
 
         /** @var list<array<string, mixed>> $actions */
@@ -87,6 +95,10 @@ final class ReleaseManifest
             throw new InvalidArgumentException(
                 'Unknown key(s) in the release declaration: '.implode(', ', $unknown)
             );
+        }
+
+        if (isset($declaration['minimum_upgrade_from'])) {
+            self::assertVersion($declaration['minimum_upgrade_from'], 'minimum_upgrade_from');
         }
 
         $actions = $declaration['actions'] ?? [];
@@ -140,9 +152,21 @@ final class ReleaseManifest
      */
     private static function validateAction(array $action, int $index): void
     {
-        foreach (['id', 'summary', 'phase', 'depends_on_release', 'applicability', 'verification'] as $required) {
+        foreach (['id', 'summary', 'detail', 'phase', 'depends_on_release', 'applicability', 'verification'] as $required) {
             if (! isset($action[$required])) {
                 throw new InvalidArgumentException("Action #{$index} is missing \"{$required}\".");
+            }
+        }
+
+        // ADR 0013 makes the message part of the feature: the guard halts, so this
+        // text is the operator's recovery path. A halt with nothing actionable in
+        // it is a worse outcome than no guard, so an empty one fails the build.
+        foreach (['summary', 'detail'] as $prose) {
+            if (! is_string($action[$prose] ?? null) || trim((string) ($action[$prose] ?? '')) === '') {
+                throw new InvalidArgumentException(
+                    "Action #{$index} has no usable \"{$prose}\". The guard stops an upgrade with "
+                    .'this text; it has to tell the operator what to do.'
+                );
             }
         }
 
@@ -213,10 +237,17 @@ final class ReleaseManifest
         // release to undo it, while telling a direct jump that never applied it
         // nothing at all. So applicability is conditioned on where the upgrade
         // started, or on observable state.
-        if ($applicability['type'] === 'upgrade-from' && ! isset($applicability['min'])) {
-            throw new InvalidArgumentException(
-                "Action \"{$id}\" is applicable by upgrade-from but names no \"min\"."
-            );
+        if ($applicability['type'] === 'upgrade-from') {
+            if (! isset($applicability['min'])) {
+                throw new InvalidArgumentException(
+                    "Action \"{$id}\" is applicable by upgrade-from but names no \"min\"."
+                );
+            }
+
+            // It is compared against the upgrade's starting version, so a value
+            // that does not parse would silently make the action apply to every
+            // upgrade — including the ones it was written to exclude.
+            self::assertVersion($applicability['min'], "Action \"{$id}\" applicability min");
         }
 
         if ($applicability['type'] === 'state' && ! isset($applicability['check'])) {
@@ -243,6 +274,18 @@ final class ReleaseManifest
             throw new InvalidArgumentException(
                 "Action \"{$id}\" claims machine verification but names no \"check\". "
                 .'Declare it as "attest" if the artifact cannot confirm it.'
+            );
+        }
+    }
+
+    /**
+     * @param  mixed  $value
+     */
+    private static function assertVersion($value, string $label): void
+    {
+        if (! is_string($value) || SemanticVersion::parse($value) === null) {
+            throw new InvalidArgumentException(
+                $label.' must be a version this build can parse, so it can be compared.'
             );
         }
     }

@@ -164,6 +164,12 @@ WAYFINDR_ACKNOWLEDGED_ACTIONS=0.2.0/backups-queue-worker
 Each entry is `<release>/<action-id>`, so an acknowledgement is specific to the
 action that required it and can never become a blanket opt-out.
 
+The release part is the **canonical** version — no leading `v`. The release
+workflow passes the git tag verbatim, so the same release would otherwise arrive
+as `v0.2.0` from an official build and `0.2.0` from a source one, and an
+acknowledgement typed for one would satisfy nothing on the other. The builder
+canonicalises it, so `v0.2.0` and `0.2.0` produce the same key.
+
 What a `check` may inspect follows its phase, because that is when it runs:
 
 - `before-pull` and `after-pull` checks run **before** migration, so they may read
@@ -201,3 +207,21 @@ php scripts/release/build-manifest.php --version=0.0.0-test
 ```
 
 It prints the manifest it would publish, or exits non-zero naming the problem.
+
+What it checks, specifically:
+
+- every required field is present, and `summary` and `detail` are non-empty
+  strings — the guard halts an upgrade with that text, so an empty one is a halt
+  with no recovery in it
+- `id` is a unique lowercase slug
+- `phase`, `depends_on_release`, and the applicability and verification types are
+  known values, and the phase/dependency pair is one that can actually be
+  performed
+- a `check` names a condition to run
+- `minimum_upgrade_from` and an `upgrade-from` `min` parse as versions, since
+  they are compared against the upgrade's starting point — a value that does not
+  parse would silently make an action apply to every upgrade, including the ones
+  it was written to exclude
+
+What it does **not** check is whether the `detail` you wrote is *useful*, or
+whether a named `check` is implemented. Those are review's job.

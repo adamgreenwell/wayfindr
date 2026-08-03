@@ -26,6 +26,7 @@ declare(strict_types=1);
 // deliberately framework-free, and requiring vendor/ would mean a composer
 // install in the release workflow and a build ordering constraint in the image
 // for a validator that needs neither.
+require __DIR__.'/../../apps/server/app/Support/Version/SemanticVersion.php';
 require __DIR__.'/../../apps/server/app/Support/Release/ReleaseManifest.php';
 
 use App\Support\Release\ReleaseManifest;
