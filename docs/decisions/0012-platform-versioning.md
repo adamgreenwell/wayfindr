@@ -372,12 +372,11 @@ introduced, which is why it is settled here rather than in slice 3.
    procedure both read. Source/Compose builds stamp `<VERSION>-dev+<sha>`;
    `WAYFINDR_VERSION` documented for host-build deploys; `source`/null retired as
    normal outcomes.
-3. **Ordered comparator**, keeping identity and precedence separate, normalizing
-   the `v` prefix on every version it reads, and returning *no direction* when
-   either side is a development version (§"Comparison answers two questions").
-   Slice 2's guarantee that two differing dev builds count as skew must survive
-   this change; today it holds only because comparison is string-based, so it
-   needs a regression test before the comparator lands. Note this slice does
+3. **Ordered comparator** (delivered), keeping identity and precedence separate,
+   normalizing the `v` prefix on every version it reads, and returning *no
+   direction* when either side is a development version (§"Comparison answers two
+   questions"). Slice 2's guarantee that two differing dev builds count as skew
+   survives, guarded by the regression test that slice added. Note this slice does
    **not** by itself make the restore's guidance direction-aware — direction is
    necessary but not sufficient, and the declarations that make it safe to act on
    arrive in slice 4. Until then the guidance stays neutral.

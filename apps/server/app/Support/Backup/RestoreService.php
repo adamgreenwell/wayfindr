@@ -5,6 +5,8 @@ namespace App\Support\Backup;
 use App\Models\ConversationMessageAttachment;
 use App\Support\Attachments\AttachmentStorage;
 use App\Support\Settings\OperatorSettings;
+use App\Support\Version\SemanticVersion;
+use App\Support\Version\VersionComparator;
 use FilesystemIterator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -37,23 +39,46 @@ class RestoreService
      * are not "the same version" — they are both unknown, so a comparison
      * between them proves nothing and must not read as "no skew".
      */
-    private const INDETERMINATE_VERSIONS = ['', 'unknown', 'source'];
-
     public function __construct(
         private readonly DatabaseRestorer $restorer,
         private readonly OperatorSettings $operatorSettings,
     ) {}
 
     /**
-     * Can these two version strings be meaningfully compared at all? A restore
-     * is destructive, so an UNCOMPARABLE pair must fail safe (surface it and
-     * keep the operator in control) rather than silently pass as equal — which
-     * is what a plain `!==` did when both sides were 'unknown', hiding real
-     * schema drift on any source/untagged deploy.
+     * The version half of a restore report, in the shape every caller expects.
+     *
+     * ADR 0012 asks two separate questions of a pair of identities, and only the
+     * first belongs here: "are these the same build?", compared over the full
+     * identity plus the recorded commit. The second — "which is newer?" — has an
+     * ordered comparator now, but acting on direction needs the intervening
+     * release declarations that arrive with slice 4, so restore guidance stays
+     * deliberately neutral until then. Computing a direction we cannot yet use
+     * safely would only invite someone to use it.
+     *
+     * @return array{version_skew: bool, version_indeterminate: bool, archive_version_known: bool, running_version_known: bool}
      */
-    private function versionsAreIndeterminate(string $archiveVersion, string $runningVersion): bool
-    {
-        return ! $this->versionIsKnown($archiveVersion) || ! $this->versionIsKnown($runningVersion);
+    private function assessVersions(
+        string $archiveVersion,
+        string $runningVersion,
+        ?string $archiveCommit,
+        ?string $runningCommit,
+    ): array {
+        $sameBuild = VersionComparator::sameBuild(
+            $archiveVersion,
+            $runningVersion,
+            $archiveCommit,
+            $runningCommit,
+        );
+
+        return [
+            // Skew = we positively know they differ. Null is NOT skew; it is
+            // reported separately so callers say "cannot verify" rather than the
+            // untrue "they match".
+            'version_skew' => $sameBuild === false,
+            'version_indeterminate' => $sameBuild === null,
+            'archive_version_known' => self::identifiesBuild($archiveVersion),
+            'running_version_known' => self::identifiesBuild($runningVersion),
+        ];
     }
 
     /**
@@ -62,36 +87,10 @@ class RestoreService
      * unidentified ARCHIVE may have come from newer code, in which case an older
      * install has no migrations to run and `migrate` would be a no-op that leaves
      * an incompatible schema live — so it must not be offered as the fix.
-     *
-     * A development version (`0.1.0-dev`, ADR 0012) names a LINEAGE, not a build:
-     * two installs can both report it and be many commits — and migrations —
-     * apart. Comparing them as equal would be the same fail-open the sentinels
-     * caused, so it only counts as identified once build metadata (`+<sha>`)
-     * pins the exact build.
-     *
-     * Matched as a SUFFIX, not a substring: only the bare generated `<VERSION>-dev`
-     * form is ambiguous. A deliberately tagged prerelease that merely contains
-     * those characters — `v0.2.0-dev.1`, `1.0.0-devpreview` — is a real release
-     * identifier, and flagging it would keep a site in maintenance for a pair
-     * that actually matches. (A `+<sha>` build cannot end in `-dev`, so this one
-     * test covers both cases.)
-     *
-     * This works because ADR 0012 RESERVES a trailing `-dev`: it is the generated
-     * development identity and must never be used as a release tag. Without that
-     * reservation the check would be inferring a semantic property from a naming
-     * convention an operator could legitimately collide with. Note the failure
-     * direction if one ever did: an unnecessary "unverifiable", which keeps a
-     * site in maintenance — annoying, but the safe way to be wrong.
      */
-    private function versionIsKnown(string $version): bool
+    private static function identifiesBuild(string $version): bool
     {
-        $normalized = mb_strtolower(trim($version));
-
-        if (in_array($normalized, self::INDETERMINATE_VERSIONS, true)) {
-            return false;
-        }
-
-        return ! str_ends_with($normalized, '-dev');
+        return SemanticVersion::parse($version)?->identifiesBuild() ?? false;
     }
 
     /**
@@ -185,14 +184,12 @@ class RestoreService
                 'manifest' => $manifest,
                 'archive_version' => $archiveVersion,
                 'running_version' => $runningVersion,
-                // skew = both versions are KNOWN and differ. An uncomparable pair
-                // is reported separately so callers can say "cannot verify"
-                // rather than the untrue "they match".
-                'version_skew' => ! $this->versionsAreIndeterminate($archiveVersion, $runningVersion)
-                    && $archiveVersion !== $runningVersion,
-                'version_indeterminate' => $this->versionsAreIndeterminate($archiveVersion, $runningVersion),
-                'archive_version_known' => $this->versionIsKnown($archiveVersion),
-                'running_version_known' => $this->versionIsKnown($runningVersion),
+                ...$this->assessVersions(
+                    $archiveVersion,
+                    $runningVersion,
+                    $manifest['wayfindr_commit'] ?? null,
+                    config('wayfindr.release.commit'),
+                ),
                 'restored_disks' => $attachments['restored'],
                 'unconfigured_disks' => $attachments['unconfigured'],
                 'integrity' => $integrity,
@@ -232,11 +229,12 @@ class RestoreService
             return [
                 'archive_version' => $archiveVersion,
                 'running_version' => $runningVersion,
-                'version_skew' => ! $this->versionsAreIndeterminate($archiveVersion, $runningVersion)
-                    && $archiveVersion !== $runningVersion,
-                'version_indeterminate' => $this->versionsAreIndeterminate($archiveVersion, $runningVersion),
-                'archive_version_known' => $this->versionIsKnown($archiveVersion),
-                'running_version_known' => $this->versionIsKnown($runningVersion),
+                ...$this->assessVersions(
+                    $archiveVersion,
+                    $runningVersion,
+                    $manifest['wayfindr_commit'] ?? null,
+                    config('wayfindr.release.commit'),
+                ),
             ];
         } finally {
             $this->removeDir($work);

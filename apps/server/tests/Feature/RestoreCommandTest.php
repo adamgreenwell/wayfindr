@@ -665,6 +665,72 @@ test('two different development builds are a real skew', function (): void {
         ->and($preflight['version_indeterminate'])->toBeFalse();
 });
 
+test('a differing commit defeats equality even when the versions match', function (): void {
+    // The gap this closes: the manifest has always recorded wayfindr_commit and
+    // the restore never read it, so a hand-pinned WAYFINDR_VERSION left in place
+    // across deploys reported a match between genuinely different code. Version
+    // equality is necessary, not sufficient (ADR 0012).
+    config()->set('wayfindr.release.version', '1.2.3');
+    config()->set('wayfindr.release.commit', 'bbbbbbbbbbbb');
+    $archive = makeBackupArchive([
+        'wayfindr_version' => '1.2.3',
+        'wayfindr_commit' => 'aaaaaaaaaaaa',
+        'local_attachment_disks' => [],
+    ]);
+
+    $preflight = app(RestoreService::class)->preflight($archive);
+
+    expect($preflight['version_skew'])->toBeTrue()
+        ->and($preflight['version_indeterminate'])->toBeFalse();
+});
+
+test('a matching commit leaves matching versions a match', function (): void {
+    config()->set('wayfindr.release.version', '1.2.3');
+    config()->set('wayfindr.release.commit', 'aaaaaaaaaaaa');
+    $archive = makeBackupArchive([
+        'wayfindr_version' => '1.2.3',
+        'wayfindr_commit' => 'aaaaaaaaaaaa',
+        'local_attachment_disks' => [],
+    ]);
+
+    $preflight = app(RestoreService::class)->preflight($archive);
+
+    expect($preflight['version_skew'])->toBeFalse()
+        ->and($preflight['version_indeterminate'])->toBeFalse();
+});
+
+test('a differing commit is decisive even when neither version is identified', function (): void {
+    // An archive written before ADR 0012 carries 'unknown' but may still record a
+    // commit. That is enough to know the code differs, which beats "cannot tell".
+    config()->set('wayfindr.release.version', 'unknown');
+    config()->set('wayfindr.release.commit', 'bbbbbbbbbbbb');
+    $archive = makeBackupArchive([
+        'wayfindr_version' => 'unknown',
+        'wayfindr_commit' => 'aaaaaaaaaaaa',
+        'local_attachment_disks' => [],
+    ]);
+
+    $preflight = app(RestoreService::class)->preflight($archive);
+
+    expect($preflight['version_skew'])->toBeTrue()
+        ->and($preflight['version_indeterminate'])->toBeFalse();
+});
+
+test('the two spellings of one release are not a skew', function (): void {
+    // Official images bake the tag verbatim (v-prefixed) while a derived install
+    // records the canonical form. Same release; reporting skew would be false.
+    config()->set('wayfindr.release.version', '0.1.0-alpha.3');
+    $archive = makeBackupArchive([
+        'wayfindr_version' => 'v0.1.0-alpha.3',
+        'local_attachment_disks' => [],
+    ]);
+
+    $preflight = app(RestoreService::class)->preflight($archive);
+
+    expect($preflight['version_skew'])->toBeFalse()
+        ->and($preflight['version_indeterminate'])->toBeFalse();
+});
+
 test('a tagged prerelease that merely contains "dev" is a real identity', function (): void {
     // Only the generated bare `<VERSION>-dev` form is ambiguous. A deliberately
     // tagged prerelease is a real release identifier, and treating it as
