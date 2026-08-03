@@ -60,7 +60,17 @@ printf '0.2.0\n' > VERSION
 # No --commit: the release commit does not exist yet, and recording its parent
 # would be wrong. The image build stamps the real identity into the copy it bakes;
 # what this file records is the DECLARATION, which is what a later release needs.
-php scripts/release/build-manifest.php --version=0.2.0 --history=releases/history.json
+# Field reference: docs/self-hosting/release-manifest.md
+#
+# NOT --reset-declaration here. The tagged tree is what the release workflow and
+# the image build read, and both regenerate this release's manifest from
+# release.json. Emptying it before the tag would publish an asset and bake a
+# history entry declaring that no operator action is required - overwriting the
+# action-bearing entry this command just recorded. The reset belongs after the
+# tag, with the other next-cycle housekeeping below.
+php scripts/release/build-manifest.php \
+  --version=0.2.0 \
+  --history=releases/history.json
 git add VERSION CHANGELOG.md releases/history.json
 git commit -m "Release 0.2.0"
 git tag v0.2.0
@@ -83,7 +93,14 @@ and commit that separately:
 
 ```bash
 printf '0.3.0\n' > VERSION
-git add VERSION
+
+# Clear the actions now that the release carrying them is tagged and its
+# artifacts are built from it. Without this the next release rebuilds the same
+# actions under its own version, and an operator who already acknowledged
+# 0.2.0/thing is asked again for 0.3.0/thing - work they have demonstrably done.
+php scripts/release/build-manifest.php --version=0.3.0 --reset-declaration >/dev/null
+
+git add VERSION release.json
 git commit -m "Begin 0.3.0 development"
 git push origin main
 ```

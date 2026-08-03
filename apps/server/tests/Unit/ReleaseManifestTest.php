@@ -9,6 +9,7 @@ function validAction(array $overrides = []): array
     return array_replace([
         'id' => 'backups-queue-worker',
         'summary' => 'Run a second queue worker on the backups connection.',
+        'detail' => 'php artisan queue:work backups --queue=backups',
         'phase' => 'after-start',
         'depends_on_release' => 'code',
         'applicability' => ['type' => 'always'],
@@ -92,7 +93,7 @@ describe('validation', function (): void {
             ['actions' => [validAction(['verification' => ['type' => 'check']])]],
             '0.2.0',
             'abc',
-        ))->toThrow(InvalidArgumentException::class, 'names no "check"');
+        ))->toThrow(InvalidArgumentException::class, 'names no check to run');
     });
 
     test('accepts an attestation, which needs nothing to run', function (): void {
@@ -121,6 +122,76 @@ describe('validation', function (): void {
         ))->toThrow(InvalidArgumentException::class, 'lowercase slug');
     })->with(['Backups Worker', 'backups_worker', 'BACKUPS', 'backups--worker', '-backups']);
 
+    test('requires prose the guard can actually show an operator', function (array $overrides, string $field): void {
+        // ADR 0013 makes the message part of the feature: the guard halts, so an
+        // action with nothing actionable in it is a halt with no recovery.
+        expect(fn () => ReleaseManifest::build(
+            ['actions' => [validAction($overrides)]], '0.2.0', 'abc',
+        ))->toThrow(InvalidArgumentException::class, $field);
+    })->with([
+        [['summary' => '   '], 'summary'],
+        [['summary' => 123], 'summary'],
+        [['detail' => ''], 'detail'],
+    ]);
+
+    test('requires version-shaped fields to be versions', function (): void {
+        // They are compared against the upgrade's start, so an unparseable value
+        // would silently make an action apply to every upgrade.
+        expect(fn () => ReleaseManifest::build(['minimum_upgrade_from' => 'soon'], '0.2.0', 'abc'))
+            ->toThrow(InvalidArgumentException::class, 'must be a version');
+
+        expect(fn () => ReleaseManifest::build(
+            ['actions' => [validAction(['applicability' => ['type' => 'upgrade-from', 'min' => 'old']])]],
+            '0.2.0', 'abc',
+        ))->toThrow(InvalidArgumentException::class, 'must be a version');
+    });
+
+    test('canonicalises the release so an acknowledgement key is stable', function (): void {
+        // The workflow passes the git tag verbatim, so the same release arrives
+        // as v0.2.0 officially and 0.2.0 from source. An acknowledgement typed
+        // for one must satisfy the other.
+        $tagged = ReleaseManifest::build(['actions' => [validAction()]], 'v0.2.0', 'abc');
+        $plain = ReleaseManifest::build(['actions' => [validAction()]], '0.2.0', 'abc');
+
+        expect($tagged['version'])->toBe('0.2.0')
+            ->and($tagged['actions'][0]['release'])->toBe('0.2.0')
+            ->and($tagged['actions'][0]['release'])->toBe($plain['actions'][0]['release']);
+    });
+
+    test('rejects a check name that names nothing', function (array $overrides): void {
+        // isset() is satisfied by an empty string, which gives the guard nothing
+        // to dispatch — declared but unusable, the same shape the phase rules
+        // already reject.
+        expect(fn () => ReleaseManifest::build(['actions' => [validAction($overrides)]], '0.2.0', 'abc'))
+            ->toThrow(InvalidArgumentException::class, 'names no check to run');
+    })->with([
+        [['verification' => ['type' => 'check', 'check' => '']]],
+        [['verification' => ['type' => 'check', 'check' => '   ']]],
+        [['verification' => ['type' => 'check', 'check' => 123]]],
+        [['applicability' => ['type' => 'state', 'check' => '']]],
+        [['applicability' => ['type' => 'state']]],
+    ]);
+
+    test('rejects a development identity as a comparison bound', function (): void {
+        // Precedence against a development version is undefined, so the
+        // comparator returns no answer — a bound that can never be compared.
+        expect(fn () => ReleaseManifest::build(['minimum_upgrade_from' => '0.2.0-dev'], '0.3.0', 'abc'))
+            ->toThrow(InvalidArgumentException::class, 'cannot be a development version');
+
+        expect(fn () => ReleaseManifest::build(
+            ['actions' => [validAction(['applicability' => ['type' => 'upgrade-from', 'min' => '0.2.0-dev']])]],
+            '0.3.0', 'abc',
+        ))->toThrow(InvalidArgumentException::class, 'cannot be a development version');
+    });
+
+    test('still accepts a real prerelease as a bound', function (): void {
+        // Only the generated -dev form is uncomparable; a tagged prerelease
+        // orders perfectly well.
+        $manifest = ReleaseManifest::build(['minimum_upgrade_from' => '0.1.0-alpha.3'], '0.3.0', 'abc');
+
+        expect($manifest['minimum_upgrade_from'])->toBe('0.1.0-alpha.3');
+    });
+
     test('rejects unknown top-level keys', function (): void {
         expect(fn () => ReleaseManifest::build(['requires_operator_action' => false], '0.2.0', 'abc'))
             ->toThrow(InvalidArgumentException::class, 'Unknown key');
@@ -134,7 +205,7 @@ describe('validation', function (): void {
         ))->toThrow(InvalidArgumentException::class, $expected);
     })->with([
         [['type' => 'upgrade-from'], 'names no "min"'],
-        [['type' => 'state'], 'names no "check"'],
+        [['type' => 'state'], 'names no check to run'],
         [['type' => 'whenever'], 'must be one of'],
     ]);
 });
