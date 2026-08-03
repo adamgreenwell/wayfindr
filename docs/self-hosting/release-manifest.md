@@ -181,6 +181,12 @@ What a `check` may inspect follows its phase, because that is when it runs:
 
 ## What the guard does at upgrade time
 
+> **Enforcement arrives with the guard, not with the manifest.** This section
+> describes the contract a declaration enters into. Publishing the declaration
+> comes first (ADR 0013 slice 1) so that the enforcement built on top of it has
+> real data to read; a release that predates the guard publishes its manifest and
+> enforces nothing.
+
 The declaration is not advice — the release enforces it against itself.
 
 **Before migrating.** Any unmet `before-pull` or `after-pull` requirement stops
