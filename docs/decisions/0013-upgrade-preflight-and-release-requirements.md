@@ -51,10 +51,12 @@ which is precisely what an `after-pull` action exists to precede.
 
 ### The artifact refuses to start, halting before migration
 
-The check runs in `docker-entrypoint.sh` **ahead of the migration block**, prints
-what is required, and exits non-zero. The schema is untouched and the previous
-image still runs, so the operator's recovery is to complete the action or to
-restart the old tag.
+The check runs **ahead of the migration**, prints what is required, and exits
+non-zero. The schema is untouched and the previous image still runs, so the
+operator's recovery is to complete the action or to restart the old tag. In the
+container that means `docker-entrypoint.sh` calling the guard before its
+migration block; the same call goes ahead of every other documented migration
+(see §"Every documented pre-migration path calls the same guard").
 
 The alternative — starting with migrations suppressed so the operator has a live
 shell to work from — was considered and rejected for now. It means maintaining a
@@ -107,17 +109,65 @@ For the same reason, a `check` **may** consult infrastructure and the *old*
 schema, but must not assume the new one. A check that queries a table the
 pending migration creates would fail on every upgrade it was meant to guard.
 
-### The release manifest is published twice, for two different readers
+### The artifact carries the history, not just its own declaration
 
-- **Baked into the image** (alongside `/etc/wayfindr/version`, ADR 0012) — this
-  is what the entrypoint guard reads. It must be present without network access,
-  because a guard that cannot fetch its own rules would have to choose between
-  failing every offline start and skipping the check.
-- **Published as a release asset** — this is what the installer preflight reads,
-  and it must be fetchable *without pulling each image*, because the preflight
-  collects declarations across `(current, target]` for releases it never pulls.
+An artifact that knows only its own requirements cannot keep the promise this
+record is built on. A `v1 -> v3` jump made by a pre-enforcement installer fetches
+the `v3` image, and if `v2` declared the action then nothing in `v3`'s own
+manifest mentions it. Assigning span collection solely to the installer preflight
+puts it in the component that, by assumption, may not exist. The skipped-release
+case is precisely the one the artifact guard is for.
 
-The two must agree; the release workflow publishes both from one source.
+So the image carries **every declaration from `minimum_upgrade_from` up to its
+own release**, not a single manifest. The floor bounds the history: an upgrade
+from below it is refused outright, so declarations older than the floor can never
+be needed.
+
+Evaluating a span also needs its start. Nothing records that today, so **the
+running release writes its identity to the persistent volume** once it has
+started successfully. The next image reads that file before migrating to learn
+where the upgrade is coming from. It lives on the volume rather than in the
+database because the guard runs pre-migration, and it is written after a
+successful start rather than before, so a release that never came up does not
+claim to have been installed. Absent file means a fresh install: no span, no
+requirements.
+
+### Published twice, for two different readers
+
+- **Baked into the image** (alongside `/etc/wayfindr/version`, ADR 0012) — the
+  history above, read by the artifact guard. It must work without network access,
+  or a guard that cannot fetch its own rules has to choose between failing every
+  offline start and skipping the check.
+- **Published as a release asset** — one manifest per release, read by the
+  installer preflight, which must evaluate releases it never pulls.
+
+Both come from one builder so they cannot disagree.
+
+### Every documented pre-migration path calls the same guard
+
+The container entrypoint is not the only way Wayfindr reaches production. ADR
+0012 explicitly covers **host builds** — the Forge path is a first-class
+deployment target, and both shipped deploy scripts run `artisan migrate --force`
+directly:
+
+```
+deploy/forge/zero-downtime-deploy.forge:59
+deploy/forge/standard-deploy.sh:71
+```
+
+Neither `install.sh` nor `docker-entrypoint.sh` executes there, so a guard living
+only in the entrypoint would let an action-required release migrate and serve on
+the deployment path this project's own staging environment uses.
+
+The guard is therefore an **artisan command**, and every documented path that
+migrates calls it first. The container entrypoint calls it before its migration
+block; the Forge deploy scripts call it before theirs. One implementation, one
+test suite, several call sites — and any host path a self-hoster builds gets the
+same guard by running the same command.
+
+This also settles a question the entrypoint raised on its own: the check does not
+belong in shell. The shell reads a file and dispatches; the decision is testable
+PHP.
 
 ### The installer hands off to the version it downloaded
 
@@ -154,19 +204,25 @@ have it, and the artifact guard is the guarantee for everyone else.
   cost per release, and the point: a declaration nobody can evaluate is a comment.
 - The first enforcing release is unprotected by design. That is not a gap to fix
   but a property to schedule around — it must require nothing.
-- `docker-entrypoint.sh` grows a responsibility beyond directory setup, and is
-  shell rather than PHP. Keep the shell to reading the manifest and dispatching
-  to an artisan command that can be tested.
+- The guard is one artisan command with several callers, so host deployments are
+  covered on the same terms as the image. Operators on bespoke deploy paths must
+  add the call; the docs have to say so plainly.
+- The image grows a bounded history rather than one manifest, and releases gain a
+  state file on the volume. Both are small, and the floor keeps the history from
+  growing without limit.
 
 ## Delivery slices
 
-1. **Release manifest** — the declaration format, generated at build, baked into
-   the image and published as a release asset. No enforcement yet; publishing
-   first means later slices have real data to read.
-2. **Artifact guard** — the entrypoint check ahead of migration, phase-aware,
-   with `check` and `attest` verification and the acknowledgement env value. This
-   is the guarantee; it lands before the installer work because it is the part
-   that does not depend on the operator having a current installer.
+1. **Release manifest** — the declaration format and builder, generated at build,
+   with this release's manifest published as an asset and the bounded history
+   baked into the image. No enforcement yet; publishing first means later slices
+   have real data to read.
+2. **Artifact guard** — the artisan command, phase-aware, with `check` and
+   `attest` verification and the acknowledgement env value; the release state
+   file; and the call wired into the container entrypoint *and* both Forge deploy
+   scripts. This is the guarantee, and it lands before the installer work because
+   it is the part that does not depend on the operator having a current
+   installer.
 3. **Installer hand-off and preflight** — re-exec before pull, then the
    span-collecting preflight that refuses or warns and requires stepping where an
    action cannot be performed outside its own release.
