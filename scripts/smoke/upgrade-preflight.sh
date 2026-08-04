@@ -910,6 +910,36 @@ check "any other exit is surfaced"     STOPPED "$(container_verdict false 1 no)"
 check "a serving container completes"  SERVING "$(container_verdict true 0 yes)"
 check "still starting is not complete" WAITING "$(container_verdict true 0 no)"
 
+# `/up` is deliberately exempt from the serving gate, so a healthy `/up` says the
+# container is ALIVE, not that it is serving. An outstanding after-start action
+# leaves every other route on 503, and reporting the upgrade complete there is
+# the same mistake as reporting it over a stopped container.
+serving_verdict() {
+    local up="$1" root="$2"
+
+    [ "$up" = ok ] || { printf 'WAITING'; return 0; }
+    [ "$root" = 503 ] && printf 'GATED' || printf 'SERVING'
+}
+
+echo
+echo "a healthy /up is not proof of serving:"
+check "up healthy, routes gated"      GATED   "$(serving_verdict ok 503)"
+check "up healthy, routes answering"  SERVING "$(serving_verdict ok 200)"
+# A redirect to the login page is an answer, not a refusal.
+check "up healthy, route redirects"   SERVING "$(serving_verdict ok 302)"
+check "up not yet healthy"            WAITING "$(serving_verdict no 000)"
+
+# And the wait must actually probe a gated route rather than only /up.
+wait_body="$(awk '/^await_web_start\(\) \{/,/^\}/' "$INSTALLER")"
+
+echo
+echo "the startup wait probes past the exemption:"
+check "it probes /up"                 1 "$(printf '%s' "$wait_body" | grep -c 'local_url/up')"
+# Presence, not a count: the root is probed twice, once for the status and once
+# to show the operator what the release is asking for.
+check "it also probes a real route"   yes "$(printf '%s' "$wait_body" | grep -q 'local_url/\"' && echo yes || echo no)"
+check "it treats 503 as not serving"  1 "$(printf '%s' "$wait_body" | grep -c '= \"503\"')"
+
 # And the installer must actually consult it before saying the upgrade worked.
 upgrade_tail="$(awk '/say "Restarting the stack/,/say "Upgrade complete/' "$INSTALLER")"
 

@@ -249,7 +249,7 @@ pin_image() {
 # deliberately lets it through, because the pull is what delivers what the action
 # needs, and the artifact is then the thing that refuses.
 await_web_start() {
-    local tries=0 cid running code local_bind local_url
+    local tries=0 cid running code local_bind local_url serving
 
     local_bind="$(env_value WAYFINDR_LOCAL_BIND)"
     local_url="http://${local_bind:-127.0.0.1:8000}"
@@ -279,7 +279,28 @@ await_web_start() {
             fi
         fi
 
-        curl -fs --max-time 2 "$local_url/up" >/dev/null 2>&1 && return 0
+        if curl -fs --max-time 2 "$local_url/up" >/dev/null 2>&1; then
+            # Alive, which is not the same as serving. `/up` is deliberately
+            # exempt from the serving gate so an orchestrator does not restart a
+            # release that is refusing on purpose - which means a healthy `/up`
+            # with an outstanding after-start action sits in front of a service
+            # returning 503 to every user, and reporting the upgrade complete
+            # there is the same mistake as reporting it over a stopped container.
+            serving="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$local_url/" 2>/dev/null || true)"
+
+            if [ "$serving" = "503" ]; then
+                printf '\n\033[1;31mTHE RELEASE IS UP BUT WILL NOT SERVE\033[0m\n\n'
+                printf '  Migrations ran. Something the release declared must be done before it\n'
+                printf '  will answer requests, and it is refusing rather than serving half a\n'
+                printf '  service. What it asks for:\n\n'
+                curl -s --max-time 5 "$local_url/" 2>/dev/null | sed 's/^/    /' || true
+                printf '\n  Do that, then restart the stack. Nothing needs re-running here.\n\n'
+
+                return 1
+            fi
+
+            return 0
+        fi
 
         tries=$((tries + 1))
         sleep 2
