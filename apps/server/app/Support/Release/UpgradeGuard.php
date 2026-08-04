@@ -257,6 +257,12 @@ final class UpgradeGuard
             fn (string $name): ?bool => $this->checks->evaluate($name),
             freshInstall: $fresh,
             includeTarget: $includeTarget,
+            // The release this install is actually running. The span may start
+            // further back to keep unpaid debt in view, but a newly traversed
+            // action's `upgrade-from` must be measured from here — measuring it
+            // from the retained origin would decide the install never reached a
+            // release it has been running for an upgrade or more.
+            traversedFrom: $recorded,
         );
 
         $this->lastOutstanding = $outstanding;

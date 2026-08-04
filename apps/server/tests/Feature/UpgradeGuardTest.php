@@ -387,3 +387,69 @@ test('a floor refusal stays blocked in machine-readable output', function (): vo
         ->and($decoded['blocked'])->toBeTrue()
         ->and($decoded['floor'])->toBe('0.2.0');
 });
+
+test('a newly traversed retirement is measured from the release actually running', function (): void {
+    // The fail-open the retained-debt span introduces if the two origins are
+    // shared. This install ran 0.3.0 and still owes 0.2.0 work, so the span
+    // reaches back to 0.1.0. A 0.4.0 action retiring what 0.3.0 set up carries
+    // upgrade-from.min = 0.3.0 - and measured from 0.1.0 it looks inapplicable,
+    // so the retirement is dropped on precisely the install that needs it.
+    $retirement = ['actions' => [[
+        'id' => 'retire-the-worker',
+        'summary' => 'Stop the worker 0.3.0 introduced.',
+        'detail' => 'systemctl disable wayfindr-worker',
+        'phase' => 'after-start',
+        'depends_on_release' => 'none',
+        'applicability' => ['type' => 'upgrade-from', 'min' => '0.3.0'],
+        'verification' => ['type' => 'attest'],
+    ]]];
+
+    bakeRelease($retirement, '0.4.0', history: [
+        ReleaseManifest::build(['actions' => []], '0.1.0', 'aaa'),
+        ReleaseManifest::build(blockingDeclaration('after-start'), '0.2.0', 'bbb'),
+        ReleaseManifest::build(['actions' => []], '0.3.0', 'ccc'),
+        ReleaseManifest::build($retirement, '0.4.0', 'ddd'),
+    ]);
+
+    // Running 0.3.0, but still carrying unpaid 0.2.0 debt.
+    app(ReleaseState::class)->record('0.3.0', 'ccc', satisfiedThrough: '0.1.0');
+
+    $ids = array_column(app(UpgradeGuard::class)->assessAll(), 'id');
+
+    // Both: the retained 0.2.0 debt AND the newly traversed 0.4.0 retirement.
+    expect($ids)->toContain('retire-the-worker')
+        ->and($ids)->toContain('do-the-thing');
+});
+
+test('retained debt keeps the origin its own upgrade started from', function (): void {
+    // The other side of the split. A 0.2.0 action that only applies to installs
+    // starting at 0.2.0 or later must NOT become applicable just because the
+    // install has since moved to 0.3.0 - this install started at 0.1.0, which is
+    // what decided its applicability, and moving on does not rewrite that.
+    //
+    // The min is deliberately BETWEEN the two origins: measured from 0.1.0 it
+    // does not apply, measured from 0.3.0 it does, so the test can tell the two
+    // apart. (An earlier draft used 0.15.0, where SemVer ranks minor 15 above 3
+    // and both origins rejected it - passing for the wrong reason.)
+    $conditional = ['actions' => [[
+        'id' => 'only-for-recent-starts',
+        'summary' => 'Applies only from 0.2.0 up.',
+        'detail' => 'Not this install.',
+        'phase' => 'after-start',
+        'depends_on_release' => 'none',
+        'applicability' => ['type' => 'upgrade-from', 'min' => '0.2.0'],
+        'verification' => ['type' => 'attest'],
+    ]]];
+
+    bakeRelease(['actions' => []], '0.4.0', history: [
+        ReleaseManifest::build(['actions' => []], '0.1.0', 'aaa'),
+        ReleaseManifest::build($conditional, '0.2.0', 'bbb'),
+        ReleaseManifest::build(['actions' => []], '0.3.0', 'ccc'),
+        ReleaseManifest::build(['actions' => []], '0.4.0', 'ddd'),
+    ]);
+
+    app(ReleaseState::class)->record('0.3.0', 'ccc', satisfiedThrough: '0.1.0');
+
+    expect(array_column(app(UpgradeGuard::class)->assessAll(), 'id'))
+        ->not->toContain('only-for-recent-starts');
+});

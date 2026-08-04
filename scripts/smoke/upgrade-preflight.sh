@@ -210,5 +210,66 @@ check "a usable tag list proceeds"          PROCEED "$(discovery ok)"
 check "a rate-limited API refuses"          REFUSE  "$(discovery rated)"
 check "an unreachable API refuses"          REFUSE  "$(discovery down)"
 
+# Tag discovery has to read every page. `per_page=100` caps one response, so past
+# a hundred tags the older half of a span is simply absent - and an upgrade from
+# far enough back computes an empty span and calls it clear.
+paginate() {
+    local total="$1" page=1 collected=0 page_count body
+
+    curl() {
+        # Positional, matching the real call: -sSL -o BODY -w FMT URL
+        local out="$3" url="$6" p remaining n i
+        p="${url##*page=}"
+        remaining=$(( total - (p - 1) * 100 ))
+        [ "$remaining" -lt 0 ] && remaining=0
+        n=$(( remaining > 100 ? 100 : remaining ))
+        : > "$out"
+        i=0
+        while [ "$i" -lt "$n" ]; do printf '"name": "v0.0.%d"\n' "$i" >> "$out"; i=$((i + 1)); done
+        printf '200'
+    }
+
+    body="$(mktemp)"
+
+    while :; do
+        curl -sSL -o "$body" -w '%{http_code}' "https://example.invalid/tags?per_page=100&page=${page}" >/dev/null
+        page_count="$(grep -c '"name":' "$body" || true)"
+        collected=$((collected + page_count))
+        [ "$page_count" -lt 100 ] && break
+        page=$((page + 1))
+        [ "$page" -gt 20 ] && break
+    done
+
+    rm -f "$body"
+    unset -f curl
+    printf '%s' "$collected"
+}
+
+echo
+echo "tag discovery pagination:"
+check "a short first page is the whole list" 50  "$(paginate 50)"
+check "an exactly-full page reads the next"  100 "$(paginate 100)"
+check "several pages are all read"           250 "$(paginate 250)"
+
+# A guard refusal on the standard Forge path must not be followed by `artisan up`:
+# that path replaces the source in place, so the new code would serve against the
+# un-migrated schema - the very thing refusing to migrate prevented. The serving
+# gate cannot catch it, because it gates after-start requirements and this
+# refusal is a before-pull or after-pull one.
+refusal_block="$(awk '/migrate_status" -eq 78/,/^fi$/' "$ROOT/deploy/forge/standard-deploy.sh")"
+
+echo
+echo "forge standard deploy, guard refusal:"
+# Assert the extraction found something first. A pattern that matched nothing
+# would make every count below 0 and read as a clean pass for absent code.
+check "the refusal branch was found"        1 "$(printf '%s' "$refusal_block" | grep -c 'migrate_status')"
+check "it clears the restore trap"          1 "$(printf '%s' "$refusal_block" | grep -c 'trap - EXIT')"
+check "it leaves maintenance enabled"       1 "$(printf '%s' "$refusal_block" | grep -c 'maintenance_enabled=0')"
+check "it propagates the refusal code"      1 "$(printf '%s' "$refusal_block" | grep -c 'exit 78')"
+# `forge_php artisan up`, not bare "artisan up" - the branch's own guidance text
+# tells the operator how to bring the site back by hand, and matching that would
+# fail on the message rather than on a call.
+check "it does not bring the site back up"  0 "$(printf '%s' "$refusal_block" | grep -c 'forge_php artisan up')"
+
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

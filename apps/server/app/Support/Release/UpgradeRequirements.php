@@ -48,6 +48,7 @@ final class UpgradeRequirements
         callable $evaluateCheck,
         bool $freshInstall = false,
         bool $includeTarget = false,
+        ?string $traversedFrom = null,
     ): array {
         // A genuinely fresh install has not upgraded from anywhere. Passing its
         // null start into the legacy path would evaluate the entire history, so a
@@ -60,8 +61,10 @@ final class UpgradeRequirements
         $outstanding = [];
 
         foreach (self::span($history, $from, $target, $includeTarget) as $manifest) {
+            $origin = self::applicabilityOrigin($manifest['version'] ?? null, $from, $traversedFrom);
+
             foreach ($manifest['actions'] ?? [] as $action) {
-                if (! self::applies($action, $from, $evaluateCheck)) {
+                if (! self::applies($action, $origin, $evaluateCheck)) {
                     continue;
                 }
 
@@ -138,6 +141,36 @@ final class UpgradeRequirements
      *
      * @param  array<string, mixed>  $action
      */
+    /**
+     * Which starting point an action's `upgrade-from` is measured against.
+     *
+     * The span can reach further back than this upgrade actually started, because
+     * an unmet after-start action from an earlier one holds it open. The two
+     * halves answer different questions and must not share an origin:
+     *
+     * - the RETAINED half is debt from a previous upgrade, and its applicability
+     *   was settled by where THAT upgrade began
+     * - anything above the release this install is running is newly traversed,
+     *   and its applicability is settled by where the install is now
+     *
+     * Sharing one origin fails open in the worst direction. An install that ran
+     * v3 and still owes v2 work would evaluate a v4 action retiring v3's state
+     * against v1, conclude the install never had that state, and skip it — the
+     * retirement silently dropped on exactly the install that needs it.
+     */
+    private static function applicabilityOrigin(?string $release, ?string $from, ?string $traversedFrom): ?string
+    {
+        if ($traversedFrom === null || ! is_string($release)) {
+            return $from;
+        }
+
+        $rank = VersionComparator::compare($release, $traversedFrom);
+
+        // An undecidable rank keeps the wider origin, which over-applies rather
+        // than under-applies.
+        return $rank !== null && $rank > 0 ? $traversedFrom : $from;
+    }
+
     public static function applies(array $action, ?string $from, ?callable $evaluateCheck = null): bool
     {
         $applicability = $action['applicability'] ?? ['type' => 'always'];

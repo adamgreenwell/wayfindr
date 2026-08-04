@@ -199,27 +199,64 @@ upgrade_preflight() {
     # A declaration describes its own release, so an upgrade must read EVERY
     # release it passes through, not just the one it lands on. Skipping the
     # middle is the several-releases-behind case this exists to catch.
-    # Fail CLOSED. Discarding the error here made a transient fault or a 403 look
-    # identical to "there are no other releases": the span fell back to the
-    # target alone, every intermediate manifest went unread, and a before-pull
-    # action in one of them was skipped without a word. That is the one outcome
-    # this preflight exists to prevent, arrived at by not being able to look.
-    local tags_body tags_status
+    # Fail CLOSED, and read EVERY page.
+    #
+    # Discarding the error made a transient fault or a 403 look identical to
+    # "there are no other releases": the span fell back to the target alone,
+    # every intermediate manifest went unread, and a before-pull action in one of
+    # them was skipped without a word. That is the one outcome this preflight
+    # exists to prevent, arrived at by not being able to look.
+    #
+    # Pagination is the same failure with a slower fuse. `per_page=100` caps a
+    # single response, so past a hundred tags the older half of the span simply
+    # is not in the answer - and an upgrade from far enough back would compute an
+    # empty span and call it clear. Walk the pages until one comes back short.
+    local tags_body tags_status page page_count tag_count
     tags_body="$(mktemp)"
-    tags_status="$(curl -sSL -o "$tags_body" -w '%{http_code}' "$TAGS_API" 2>/dev/null || true)"
-    [ -n "$tags_status" ] || tags_status="000"
+    tags=""
+    page=1
 
-    if [ "$tags_status" != "200" ]; then
-        rm -f "$tags_body"
-        printf '\n\033[1;31mPREFLIGHT COULD NOT VERIFY THIS UPGRADE\033[0m\n\n'
-        printf '  Could not list releases to work out what this upgrade passes through (HTTP %s).\n' "$tags_status"
-        printf '  Refusing rather than checking only the target and calling that the whole span.\n\n'
-        printf '  Nothing has been pulled or changed. Retry when the network settles.\n\n'
-        exit 78
-    fi
+    while :; do
+        tags_status="$(curl -sSL -o "$tags_body" -w '%{http_code}' "${TAGS_API}&page=${page}" 2>/dev/null || true)"
+        [ -n "$tags_status" ] || tags_status="000"
 
-    tags="$(grep -o '"name": *"v[^"]*"' "$tags_body" | sed 's/.*"v/v/; s/"$//' || true)"
+        if [ "$tags_status" != "200" ]; then
+            rm -f "$tags_body"
+            printf '\n\033[1;31mPREFLIGHT COULD NOT VERIFY THIS UPGRADE\033[0m\n\n'
+            printf '  Could not list releases to work out what this upgrade passes through (HTTP %s).\n' "$tags_status"
+            printf '  Refusing rather than checking only the target and calling that the whole span.\n\n'
+            printf '  Nothing has been pulled or changed. Retry when the network settles.\n\n'
+            exit 78
+        fi
+
+        # Every tag on the page, and only the release-shaped ones. The two counts
+        # differ deliberately: a full page of non-release tags still means there
+        # is another page to read.
+        page_count="$(grep -c '"name":' "$tags_body" || true)"
+        tag_count="$(grep -o '"name": *"v[^"]*"' "$tags_body" | sed 's/.*"v/v/; s/"$//' || true)"
+
+        [ -n "$tag_count" ] && tags="${tags}${tag_count}
+"
+
+        [ "$page_count" -lt 100 ] && break
+
+        page=$((page + 1))
+
+        # A stop, not a limit to raise. Twenty full pages is two thousand tags,
+        # which means the loop is not terminating - and looping forever against
+        # someone's API is a worse failure than refusing.
+        if [ "$page" -gt 20 ]; then
+            rm -f "$tags_body"
+            printf '\n\033[1;31mPREFLIGHT COULD NOT VERIFY THIS UPGRADE\033[0m\n\n'
+            printf '  Gave up listing releases after %d pages.\n' "$((page - 1))"
+            printf '  Refusing rather than checking an incomplete span.\n\n'
+            printf '  Nothing has been pulled or changed.\n\n'
+            exit 78
+        fi
+    done
+
     rm -f "$tags_body"
+    tags="$(printf '%s' "$tags" | grep -v '^$' || true)"
 
     span="$(printf '%s\n' "$tags" | php_in_current_image "$from" "$to" "" '
         require "/app/apps/server/app/Support/Version/SemanticVersion.php";

@@ -80,7 +80,37 @@ bash ../../deploy/forge/write-release-identity.sh
 bash ../../deploy/forge/write-release-manifest.sh
 forge_php artisan config:cache
 
-forge_php artisan migrate --force
+# A guard refusal (exit 78) must NOT be followed by `artisan up`.
+#
+# This path replaces the source in place, so the new code is already on disk by
+# the time the guard refuses. Bringing the site back would serve that new code
+# against the un-migrated schema — exactly what refusing to migrate was
+# protecting against. The serving gate cannot catch it either: that gates
+# after-start requirements, and a refusal here is a before-pull or after-pull one.
+#
+# So the site is left in maintenance, on the previous schema, deliberately. The
+# zero-downtime path needs none of this — `set -e` aborts it before
+# `$ACTIVATE_RELEASE()`, so the old release simply keeps serving.
+migrate_status=0
+forge_php artisan migrate --force || migrate_status=$?
+
+if [[ "$migrate_status" -eq 78 ]]; then
+    maintenance_enabled=0
+    trap - EXIT
+
+    echo >&2
+    echo "The upgrade guard refused this release: an operator requirement is outstanding." >&2
+    echo "The site has been LEFT IN MAINTENANCE MODE, still on the previous schema." >&2
+    echo "Do what the refusal above asks, then deploy again. To abandon the upgrade," >&2
+    echo "check out the previous commit, deploy it, and run 'php artisan up'." >&2
+
+    exit 78
+fi
+
+# Any other failure keeps the previous behaviour: the trap restores the site.
+if [[ "$migrate_status" -ne 0 ]]; then
+    exit "$migrate_status"
+fi
 
 forge_php artisan route:cache
 forge_php artisan view:cache
