@@ -53,6 +53,40 @@ Options:
 USAGE
 }
 
+# Read a key from the environment file the way everything that consumes it does.
+#
+# dotenv quoting is valid and common - `WAYFINDR_IMAGE="ghcr.io/.../wayfindr:latest"`
+# - and Compose, Laravel and this script must all agree on the value. Keeping the
+# quotes made an official image classify as custom, so the preflight skipped; an
+# acknowledgement never matched the key it was written for; and a declared origin
+# failed to parse. Every one of those fails quietly.
+env_value() {
+    local raw
+
+    raw="$(grep -E "^[[:space:]]*(export[[:space:]]+)?$1=" "$ENV_FILE" 2>/dev/null \
+        | head -1 \
+        | sed -E "s/^[[:space:]]*(export[[:space:]]+)?$1=//" || true)"
+
+    # Trailing CR, for a file written on Windows.
+    raw="${raw%$'\r'}"
+
+    case "$raw" in
+        \"*\") raw="${raw#\"}"; raw="${raw%\"}" ;;
+        \'*\') raw="${raw#\'}"; raw="${raw%\'}" ;;
+    esac
+
+    printf '%s' "$raw"
+}
+
+# Whether the configured image is the official one, which is what makes its tag a
+# release this can look up.
+is_official_image() {
+    case "$1" in
+        ghcr.io/adamgreenwell/wayfindr:*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 say() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
@@ -130,8 +164,11 @@ pin_image() {
     if [ -n "${WAYFINDR_IMAGE:-}" ]; then
         sed -i.bak "s#^WAYFINDR_IMAGE=.*#WAYFINDR_IMAGE=$WAYFINDR_IMAGE#" "$ENV_FILE"
         rm -f "$ENV_FILE.bak"
-    elif [ -n "$IMAGE_TAG" ] && grep -q '^WAYFINDR_IMAGE=ghcr.io/adamgreenwell/wayfindr:' "$ENV_FILE"; then
-        sed -i.bak "s#^WAYFINDR_IMAGE=ghcr.io/adamgreenwell/wayfindr:.*#WAYFINDR_IMAGE=ghcr.io/adamgreenwell/wayfindr:$IMAGE_TAG#" "$ENV_FILE"
+    elif [ -n "$IMAGE_TAG" ] && is_official_image "$(env_value WAYFINDR_IMAGE)"; then
+        # The whole line, not a prefix match: a quoted value is official all the
+        # same, and a pattern anchored on the unquoted form left it untouched -
+        # so the upgrade retagged nothing and pulled whatever was already there.
+        sed -i.bak "s#^WAYFINDR_IMAGE=.*#WAYFINDR_IMAGE=ghcr.io/adamgreenwell/wayfindr:$IMAGE_TAG#" "$ENV_FILE"
         rm -f "$ENV_FILE.bak"
     fi
 }
@@ -332,12 +369,11 @@ upgrade_preflight() {
     effective_image="${WAYFINDR_IMAGE:-}"
 
     if [ -z "$effective_image" ]; then
-        persisted="$(grep -E '^WAYFINDR_IMAGE=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+        persisted="$(env_value WAYFINDR_IMAGE)"
 
-        case "$persisted" in
-            ghcr.io/adamgreenwell/wayfindr:*|'') : ;;
-            *) effective_image="$persisted" ;;
-        esac
+        if [ -n "$persisted" ] && ! is_official_image "$persisted"; then
+            effective_image="$persisted"
+        fi
     fi
 
     if [ -n "$effective_image" ]; then
@@ -349,17 +385,14 @@ upgrade_preflight() {
         #
         # There is nowhere to fetch a fork's manifest from, so this skips. The
         # fork's own artifact still refuses to migrate, which is the guarantee.
-        case "$effective_image" in
-            ghcr.io/adamgreenwell/wayfindr:*) : ;;
-            *)
-                say "Preflight skipped: the image is not an official Wayfindr build."
-                printf '    %s\n' "$effective_image"
-                printf '    Its release declarations are not published where this can read them.\n'
-                printf '    The image enforces its own requirements when it starts.\n'
+        if ! is_official_image "$effective_image"; then
+            say "Preflight skipped: the image is not an official Wayfindr build."
+            printf '    %s\n' "$effective_image"
+            printf '    Its release declarations are not published where this can read them.\n'
+            printf '    The image enforces its own requirements when it starts.\n'
 
-                return 0
-                ;;
-        esac
+            return 0
+        fi
 
         # Split on the last colon AFTER the last slash, so a registry port
         # (registry:5000/wayfindr) is not mistaken for a tag.
@@ -439,7 +472,7 @@ upgrade_preflight() {
 
     if [ -z "$from" ]; then
         local declared
-        declared="$(grep -E '^WAYFINDR_UPGRADE_FROM=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+        declared="$(env_value WAYFINDR_UPGRADE_FROM)"
 
         if [ -n "$declared" ]; then
             from="$(declared_origin "$declared")"
@@ -464,7 +497,7 @@ upgrade_preflight() {
     # is what an empty WF_FROM already means to the span filter.
     [ "$span_known" = "1" ] || span_origin=""
     : "${span_origin:=}"
-    ack="$(grep -E '^WAYFINDR_ACKNOWLEDGED_ACTIONS=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+    ack="$(env_value WAYFINDR_ACKNOWLEDGED_ACTIONS)"
 
     # A declaration describes its own release, so an upgrade must read EVERY
     # release it passes through, not just the one it lands on. Skipping the

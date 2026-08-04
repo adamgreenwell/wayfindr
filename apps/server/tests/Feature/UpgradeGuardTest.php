@@ -1387,3 +1387,25 @@ test('the release state is reset before anything that can throw', function (): v
     expect($record)->toBeGreaterThan($replace)
         ->and($record)->toBeLessThan($attachments);
 });
+
+test('a restore that cannot update the release record fails loudly', function (): void {
+    // Both writes can fail on a read-only volume. Ignoring that reported a
+    // successful restore whose release record still described the database that
+    // was just replaced - and the documented next step measures its floor and
+    // span from that stale version.
+    bakeRelease(['actions' => []], '0.5.0');
+    config()->set('wayfindr.release.state_path', '/nonexistent-root/no/state.json');
+
+    expect(fn () => app(RestoreService::class)->recordRestoredRelease('0.2.0', 'archived'))
+        ->toThrow(RuntimeException::class);
+});
+
+test('a restore that can update the record does not throw', function (): void {
+    // So the failure above cannot be satisfied by always throwing.
+    bakeRelease(['actions' => []], '0.5.0');
+
+    expect(fn () => app(RestoreService::class)->recordRestoredRelease('0.2.0', 'archived'))
+        ->not->toThrow(RuntimeException::class);
+
+    expect(app(ReleaseState::class)->recordedVersion())->toBe('0.2.0');
+});

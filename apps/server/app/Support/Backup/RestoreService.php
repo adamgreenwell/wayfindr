@@ -239,18 +239,36 @@ class RestoreService
         // Cleared first so the write cannot inherit the previous install's
         // marker — `record()` preserves it when not given one, which is right
         // for an upgrade and wrong for a database that has been replaced.
-        $state->forget();
+        $failed = ! $state->forget();
 
         $parsed = SemanticVersion::parse($archiveVersion);
 
-        if ($parsed === null) {
+        if (! $failed && $parsed !== null) {
+            $failed = ! $state->record(
+                $parsed->canonical(),
+                is_string($archiveCommit) && trim($archiveCommit) !== '' ? $archiveCommit : null,
+            );
+        }
+
+        if (! $failed) {
             return;
         }
 
-        $state->record(
-            $parsed->canonical(),
-            is_string($archiveCommit) && trim($archiveCommit) !== '' ? $archiveCommit : null,
-        );
+        // Both writes can fail on a read-only volume, and ignoring that reported
+        // a successful restore whose release record still described the database
+        // that was just replaced. The documented next step is
+        // `artisan migrate --force`, which would measure its floor and its span
+        // from that stale version.
+        //
+        // Raised rather than warned. The database HAS been restored, and the
+        // message says so — but a restore that leaves the guard pointed at the
+        // wrong release is not one an operator should carry on from unaware.
+        throw new RuntimeException(sprintf(
+            'The database was restored, but the release record at %s could not be updated. '
+            .'Delete that file by hand before running migrations: until it is gone, the upgrade '
+            .'guard will evaluate this install as the release it was on before the restore.',
+            (string) config('wayfindr.release.state_path'),
+        ));
     }
 
     /**

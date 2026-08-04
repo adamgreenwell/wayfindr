@@ -703,5 +703,54 @@ check "a major.minor alias"         NO  "$(names_one_release 0.3)"
 check "latest"                      NO  "$(names_one_release latest)"
 check "nothing"                     NO  "$(names_one_release '')"
 
+# dotenv quoting is valid and common, and Compose, Laravel and this script must
+# all agree on the value. Keeping the quotes made an official image classify as
+# custom (so the preflight skipped), an acknowledgement never match the key it
+# was written for, and a declared origin fail to parse - all quietly.
+dotenv_read() {
+    local file key raw
+    file="$(mktemp)"
+    printf '%s\n' "$1" > "$file"
+    key="$2"
+
+    raw="$(grep -E "^[[:space:]]*(export[[:space:]]+)?$key=" "$file" 2>/dev/null \
+        | head -1 \
+        | sed -E "s/^[[:space:]]*(export[[:space:]]+)?$key=//" || true)"
+
+    raw="${raw%$'\r'}"
+
+    case "$raw" in
+        \"*\") raw="${raw#\"}"; raw="${raw%\"}" ;;
+        \'*\') raw="${raw#\'}"; raw="${raw%\'}" ;;
+    esac
+
+    rm -f "$file"
+    printf '%s' "$raw"
+}
+
+echo
+echo "environment values are read with dotenv semantics:"
+check "an unquoted value"      'ghcr.io/x/y:0.3.0'  "$(dotenv_read 'WAYFINDR_IMAGE=ghcr.io/x/y:0.3.0' WAYFINDR_IMAGE)"
+check "a double-quoted value"  'ghcr.io/x/y:0.3.0'  "$(dotenv_read 'WAYFINDR_IMAGE="ghcr.io/x/y:0.3.0"' WAYFINDR_IMAGE)"
+check "a single-quoted value"  'ghcr.io/x/y:0.3.0'  "$(dotenv_read "WAYFINDR_IMAGE='ghcr.io/x/y:0.3.0'" WAYFINDR_IMAGE)"
+check "an exported value"      '0.2.4'              "$(dotenv_read 'export WAYFINDR_UPGRADE_FROM=0.2.4' WAYFINDR_UPGRADE_FROM)"
+check "a value with = in it"   'a/b,c/d'            "$(dotenv_read 'WAYFINDR_ACKNOWLEDGED_ACTIONS=a/b,c/d' WAYFINDR_ACKNOWLEDGED_ACTIONS)"
+check "an absent key"          ''                   "$(dotenv_read 'OTHER=1' WAYFINDR_IMAGE)"
+
+# And the official-image test has to run on the PARSED value, or a quoted
+# official image reads as a fork and the preflight skips the release it will pull.
+official() {
+    case "$1" in
+        ghcr.io/adamgreenwell/wayfindr:*) printf 'OFFICIAL' ;;
+        *) printf 'FOREIGN' ;;
+    esac
+}
+
+echo
+echo "quoting does not change what an image is:"
+check "unquoted official"  OFFICIAL "$(official "$(dotenv_read 'WAYFINDR_IMAGE=ghcr.io/adamgreenwell/wayfindr:latest' WAYFINDR_IMAGE)")"
+check "quoted official"    OFFICIAL "$(official "$(dotenv_read 'WAYFINDR_IMAGE="ghcr.io/adamgreenwell/wayfindr:latest"' WAYFINDR_IMAGE)")"
+check "quoted fork"        FOREIGN  "$(official "$(dotenv_read 'WAYFINDR_IMAGE="registry.example/fork:0.3.0"' WAYFINDR_IMAGE)")"
+
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
