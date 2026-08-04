@@ -154,7 +154,7 @@ class BlockMigrationsWithUnmetRequirements
             // migration, or on any upgrade whose installer preflight was skipped,
             // so it has to carry the same guidance the command does rather than
             // relying on them running the command as well.
-            if (UpgradeRequirements::stranded($action, $assessment['target'] ?? null, $assessment['from'] ?? null)) {
+            if (UpgradeRequirements::unacknowledgeable($action, $assessment['target'] ?? null, $assessment['from'] ?? null)) {
                 $output->writeln(sprintf(
                     '    <error>Cannot be done on this jump.</error> It needs %s, which this upgrade skips.',
                     $action['release'] ?? 'an intermediate release',

@@ -1040,8 +1040,13 @@ stranded_for() {
     '
 }
 
+# The preflight runs BEFORE the pull, so the release the install is on is still
+# the code that is present - its work is performable now, and it is reported as a
+# thing to do rather than a release to step through. The artifact, which runs
+# after the pull, answers differently: there the code is gone, so the action
+# blocks unless it was acknowledged while it could still be done.
 echo
-echo "stranded means skipped, not merely different:"
+echo "before the pull, the current release is actionable:"
 check "the release the install is on"   DO   "$(stranded_for 0.2.0 0.3.0 0.2.0)"
 check "a release it skipped over"       STEP "$(stranded_for 0.2.0 0.3.0 0.1.0)"
 check "a release it has passed"         DO   "$(stranded_for 0.2.0 0.5.0 0.4.0)"

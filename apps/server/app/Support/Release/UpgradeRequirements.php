@@ -39,51 +39,64 @@ final class UpgradeRequirements
      * facing a requirement that cannot be met at all. Refusing first leaves the
      * previous release running and the operator able to step through.
      */
-    public static function stranded(array $action, ?string $target, ?string $current = null): bool
+    public static function stranded(array $action, ?string $target): bool
     {
-        if ($target === null) {
-            return false;
-        }
+        return $target !== null
+            && ($action['release'] ?? null) !== $target
+            && in_array($action['depends_on_release'] ?? 'none', ['code', 'schema'], true);
+    }
 
+    /**
+     * Whether nothing the operator can say will settle this action.
+     *
+     * The question the messages need: an action that is stranded AND belongs to a
+     * release the install never ran is one where offering an acknowledgement key
+     * would be documenting a bypass. Anything else — reachable, or not stranded —
+     * is clearable by acknowledging it, and the message should say so.
+     */
+    public static function unacknowledgeable(array $action, ?string $target, ?string $current): bool
+    {
+        return self::stranded($action, $target) && ! self::reached($action, $current);
+    }
+
+    /**
+     * Whether an ACKNOWLEDGEMENT of a stranded action is credible.
+     *
+     * These are two different questions and conflating them is how the guard got
+     * this wrong twice, in opposite directions.
+     *
+     * "Stranded" asks whether the work can be performed on this jump, and it is
+     * answered by the code that is present — which, everywhere the artifact runs,
+     * is the TARGET's, because the pull has already happened. A `0.2.0` action
+     * needing `0.2.0` code cannot be done once `0.3.0` is installed, whatever the
+     * install used to be running.
+     *
+     * This asks something narrower: could the operator credibly have done it
+     * ALREADY? Yes, if the install actually ran that release — the code was there
+     * before the pull, and the attestation is about the past. No, if the upgrade
+     * skipped it, because the operator never had that code at all and no
+     * attestation about it can be true.
+     *
+     * So an unacknowledged prior-release action still blocks, and an acknowledged
+     * one settles.
+     */
+    public static function reached(array $action, ?string $current): bool
+    {
         $release = $action['release'] ?? null;
 
-        if (! is_string($release) || $release === $target) {
+        if ($current === null || ! is_string($release)) {
             return false;
         }
 
-        if (! in_array($action['depends_on_release'] ?? 'none', ['code', 'schema'], true)) {
-            return false;
+        if ($release === $current) {
+            return true;
         }
 
-        // A release the install has RUN is not one it skipped.
-        //
-        // This used to strand anything whose release was not the target, which
-        // catches an intermediate the upgrade jumps over — and also caught the
-        // release the install is sitting on. That work is performable: its code
-        // and schema are what is running right now, before the pull. So an
-        // install on 0.2.0 carrying a retained 0.2.0 action could do the work,
-        // acknowledge it, and still be refused by both gates with no way to
-        // clear it — and told to install a release it was already running.
-        //
-        // Equality first, so the ordinary case needs no comparison at all, then
-        // precedence for anything the install has passed.
-        if ($current !== null && $release === $current) {
-            return false;
-        }
+        $rank = VersionComparator::compare($release, $current);
 
-        if ($current !== null) {
-            $rank = VersionComparator::compare($release, $current);
-
-            // At or below where the install has reached: it ran that release, so
-            // an attestation that the work was done is credible. Above it, or
-            // unorderable, the install never had that code and the only route is
-            // to stop at the release itself.
-            if ($rank !== null && $rank <= 0) {
-                return false;
-            }
-        }
-
-        return true;
+        // At or below where the install got to. Unorderable stays false: nothing
+        // shows the install ever ran it.
+        return $rank !== null && $rank <= 0;
     }
 
     /**
@@ -132,19 +145,21 @@ final class UpgradeRequirements
 
                 $settled = self::settled($action, $acknowledged, $evaluateCheck);
 
-                // An acknowledgement cannot settle a STRANDED action.
+                // An acknowledgement cannot settle a stranded action belonging to
+                // a release this upgrade SKIPPED: the operator never had that
+                // code, so no attestation about it can be true, and the refusal
+                // printing a key beside every action would otherwise document the
+                // bypass it is warning against.
                 //
-                // It belongs to a release this jump skips past and needs that
-                // release's own code or schema, so attesting that it was done
-                // does not make it possible. And the refusal prints an
-                // acknowledgement key beside every action — so an operator
-                // following the guidance would bypass the intermediate step the
-                // very same message is telling them to take.
+                // It CAN settle one belonging to a release the install actually
+                // ran. The code was there before the pull, so the work was
+                // performable then and the attestation is about the past.
                 //
-                // A machine check is different: if it answers true then the thing
-                // exists, whatever route it took to get there.
+                // A machine check is different again: if it answers true then the
+                // thing exists, whatever route it took to get there.
                 $bypassed = $settled['by'] === 'acknowledged'
-                    && self::stranded($action, $target, $traversedFrom);
+                    && self::stranded($action, $target)
+                    && ! self::reached($action, $traversedFrom);
 
                 if ($settled['satisfied'] && ! $bypassed) {
                     continue;

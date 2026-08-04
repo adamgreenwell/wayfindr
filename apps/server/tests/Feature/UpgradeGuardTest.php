@@ -1702,7 +1702,7 @@ test('the migration refusal does not offer a key it will not honour', function (
     // actually have to install.
     $source = file_get_contents(app_path('Listeners/BlockMigrationsWithUnmetRequirements.php'));
 
-    $strandedBranch = strpos($source, 'UpgradeRequirements::stranded(');
+    $strandedBranch = strpos($source, 'UpgradeRequirements::unacknowledgeable(');
     $acknowledgeLine = strpos($source, 'Acknowledge with:');
 
     expect($strandedBranch)->not->toBeFalse()
@@ -1953,27 +1953,68 @@ test('an action for a release the install skipped is still stranded', function (
     }
 });
 
-test('an action for a release the install has passed is reachable', function (): void {
-    // Ran 0.2.0 on the way to 0.4.0, so the work was performable at the time and
-    // the attestation stands.
-    expect(UpgradeRequirements::stranded(
-        ['release' => '0.2.0', 'depends_on_release' => 'code'], '0.5.0', '0.4.0',
-    ))->toBeFalse();
+test('an action needing a release that is gone still blocks, acknowledged or not', function (): void {
+    // The two questions kept apart. `stranded` asks whether the work can be done
+    // NOW - and after the pull the target's code has replaced everything, so a
+    // 0.2.0 action needing 0.2.0 code cannot be, whatever the install used to run.
+    $action = ['release' => '0.2.0', 'depends_on_release' => 'code'];
+
+    expect(UpgradeRequirements::stranded($action, '0.3.0'))->toBeTrue()
+        // But an acknowledgement is about the PAST, and an install that ran 0.2.0
+        // could have done it before the pull - so saying so settles it.
+        ->and(UpgradeRequirements::unacknowledgeable($action, '0.3.0', '0.2.0'))->toBeFalse()
+        // An install that skipped 0.2.0 never had that code, so nothing it says
+        // about the work can be true.
+        ->and(UpgradeRequirements::unacknowledgeable($action, '0.3.0', '0.1.0'))->toBeTrue();
 });
 
-test('an unrecorded origin leaves an intermediate action stranded', function (): void {
+test('an action for a release the install has passed can be acknowledged', function (): void {
+    // Ran 0.2.0 on the way to 0.4.0, so the work was performable at the time.
+    expect(UpgradeRequirements::reached(['release' => '0.2.0'], '0.4.0'))->toBeTrue();
+});
+
+test('an unrecorded origin cannot be acknowledged past', function (): void {
     // Nothing says the install ever ran it, and the recovery - stop at that
     // release - is real, so this stays the conservative answer.
-    expect(UpgradeRequirements::stranded(
+    expect(UpgradeRequirements::unacknowledgeable(
         ['release' => '0.2.0', 'depends_on_release' => 'code'], '0.3.0', null,
     ))->toBeTrue();
 });
 
-test('an unorderable origin leaves an intermediate action stranded', function (): void {
+test('an unorderable origin cannot be acknowledged past', function (): void {
     // A development identity does not order, so nothing shows the install ever
     // reached 0.2.0. "Cannot tell" keeps the conservative answer here because the
     // recovery is real - stop at that release - rather than a dead end.
-    expect(UpgradeRequirements::stranded(
+    expect(UpgradeRequirements::unacknowledgeable(
         ['release' => '0.2.0', 'depends_on_release' => 'code'], '0.3.0', '0.2.0-dev+abc',
     ))->toBeTrue();
+});
+
+test('an unacknowledged prior-release action still blocks migration', function (): void {
+    // The case that made the first version of this fix wrong. The install ran
+    // 0.2.0, so an acknowledgement WOULD settle the action - but there is none,
+    // and after the pull 0.2.0's code is gone. Letting it through migration on
+    // reachability alone would migrate, then gate serving forever on work that
+    // can no longer be performed.
+    $needsOwnCode = ['actions' => [[
+        'id' => 'needs-its-own-code',
+        'summary' => 'Needs 0.2.0 code.',
+        'detail' => 'php artisan something',
+        'phase' => 'after-start',
+        'depends_on_release' => 'code',
+        'applicability' => ['type' => 'always'],
+        'verification' => ['type' => 'attest'],
+    ]]];
+
+    bakeRelease(['actions' => []], '0.3.0', history: [
+        ReleaseManifest::build($needsOwnCode, '0.2.0', 'bbb'),
+        ReleaseManifest::build(['actions' => []], '0.3.0', 'abc123'),
+    ]);
+
+    app(ReleaseState::class)->record('0.2.0', 'bbb', satisfiedThrough: '0.1.0');
+
+    $assessment = app(UpgradeGuard::class)->assess();
+
+    expect($assessment['blocked'])->toBeTrue()
+        ->and(array_column($assessment['actions'], 'id'))->toContain('needs-its-own-code');
 });

@@ -122,7 +122,7 @@ class UpgradeGuardCommand extends Command
             // settles it, and printing the key beside instructions to step
             // through the release was the contradiction that made the bypass
             // look like the documented route.
-            if (! UpgradeRequirements::stranded($action, $assessment['target'] ?? null, $assessment['from'] ?? null)) {
+            if (! UpgradeRequirements::unacknowledgeable($action, $assessment['target'] ?? null, $assessment['from'] ?? null)) {
                 $this->line(sprintf('    Acknowledge with: %s/%s',
                     $action['release'] ?? '?', $action['id'] ?? '?'));
             }
@@ -132,13 +132,17 @@ class UpgradeGuardCommand extends Command
             // listener that actually refuses — in precisely the case where the
             // operator's recovery (roll back, step through) depends on knowing
             // the migration is what stopped.
+            // Blocking follows STRANDED, not acknowledgeability: an action whose
+            // own release is gone cannot be performed now whatever the operator
+            // could once have done, so it stops the migration either way. What
+            // acknowledgeability changes is only whether saying so clears it.
             $blocksMigration = in_array(
                 $action['phase'] ?? '', UpgradeRequirements::BLOCKS_MIGRATION, true,
-            ) || UpgradeRequirements::stranded($action, $assessment['target'] ?? null, $assessment['from'] ?? null);
+            ) || UpgradeRequirements::stranded($action, $assessment['target'] ?? null);
 
             $this->line(sprintf('    Blocks: %s', $blocksMigration ? 'migration' : 'serving'));
 
-            if (UpgradeRequirements::stranded($action, $assessment['target'] ?? null, $assessment['from'] ?? null)) {
+            if (UpgradeRequirements::unacknowledgeable($action, $assessment['target'] ?? null, $assessment['from'] ?? null)) {
                 $this->line(sprintf('    Cannot be done on this jump: it needs %s, which this upgrade skips.',
                     $action['release'] ?? 'an intermediate release'));
                 $this->line('    Upgrade to that release first, let it start, then continue.');
