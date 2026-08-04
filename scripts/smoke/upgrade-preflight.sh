@@ -976,5 +976,45 @@ check "an unprefixed tag agrees too"  OK       "$(manifest_matches_tag 0.3.0 0.3
 check "a manifest for another release" MISMATCH "$(manifest_matches_tag v0.3.0 0.2.0)"
 check "a tag that is not a version"   MISMATCH "$(manifest_matches_tag not-a-tag 0.3.0)"
 
+# The target is added when this upgrade actually TRAVERSES it. An install already
+# recorded at the target has a legitimately empty span, and evaluating the target
+# anyway made a re-run of --upgrade refuse forever: a fresh install holds no
+# acknowledgement for the target's own upgrade-only work, because the artifact
+# exempted it rather than asking.
+span_for() {
+    local span="$1" from="$2" to="$3"
+
+    if [ "$from" != "$to" ]; then
+        span="$(printf '%s\nv%s\n' "$span" "$to" | grep -v '^$' | sort -u || true)"
+    fi
+
+    printf '%s' "$(printf '%s' "$span" | tr '\n' ' ' | sed 's/ $//')"
+}
+
+echo
+echo "the target is spanned only when traversed:"
+check "tags already had it"        "v0.2.0 v0.3.0" "$(span_for 'v0.2.0
+v0.3.0' 0.1.0 0.3.0)"
+check "tags missed it"             "v0.2.0 v0.3.0" "$(span_for 'v0.2.0' 0.1.0 0.3.0)"
+check "unknown origin"             "v0.1.0 v0.3.0" "$(span_for 'v0.1.0' '' 0.3.0)"
+# The idempotency case: already there, so nothing is traversed and a re-run must
+# not resurrect the target's own upgrade-only work.
+check "already at the target"      ""              "$(span_for '' 0.3.0 0.3.0)"
+
+# Prose travels base64d, because it is prose: a summary or detail may legitimately
+# contain a newline or a `|` - a shell pipeline in an instruction is the obvious
+# case - and this is a pipe-delimited, newline-separated protocol.
+if printf 'eA==' | base64 --decode >/dev/null 2>&1; then B64="base64 --decode"; else B64="base64 -D"; fi
+unprose_smoke() { printf '%s' "$1" | $B64 2>/dev/null || printf '%s' "$1"; }
+
+hostile="$("${PHP:-php}" -r 'echo base64_encode("Run: php artisan a | grep b\nThen restart.");')"
+
+echo
+echo "prose cannot forge fields or records:"
+check "it survives the round trip" 'Run: php artisan a | grep b
+Then restart.' "$(unprose_smoke "$hostile")"
+check "the record stays one line"  1 "$(printf 'DO|k|before-pull|%s|%s|ATTEST\n' "$hostile" "$hostile" | wc -l | tr -d ' ')"
+check "fields parse correctly"     'DO/k/before-pull/ATTEST' "$(printf 'DO|k|before-pull|%s|%s|ATTEST\n' "$hostile" "$hostile" | while IFS='|' read -r t k p _ _ v; do printf '%s/%s/%s/%s' "$t" "$k" "$p" "$v"; done)"
+
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

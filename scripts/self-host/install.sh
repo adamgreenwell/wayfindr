@@ -135,6 +135,16 @@ is_official_image() {
     esac
 }
 
+# GNU coreutils spells this `--decode` and BSD spells it `-D`, and an installer
+# runs on whichever the operator has. Chosen once, by asking.
+if printf 'eA==' | base64 --decode >/dev/null 2>&1; then
+    B64_DECODE="base64 --decode"
+else
+    B64_DECODE="base64 -D"
+fi
+
+unprose() { printf '%s' "$1" | $B64_DECODE 2>/dev/null || printf '%s' "$1"; }
+
 say() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
@@ -865,7 +875,20 @@ upgrade_preflight() {
     # nonempty span of OLDER releases, which suppressed this fallback entirely:
     # the target's own manifest was never fetched, so its floor and its
     # before-pull actions went unread before it was pulled and started.
-    span="$(printf '%s\nv%s\n' "$span" "$to" | grep -v '^$' | sort -u || true)"
+    # The target is added when this upgrade actually TRAVERSES it - which is not
+    # the same as always. An install already recorded at the target has a
+    # legitimately empty span, `(target, target]`, and evaluating the target
+    # anyway made a re-run of `--upgrade` refuse forever: a fresh install holds no
+    # acknowledgement for the target's own upgrade-only work, because the artifact
+    # exempted it rather than asking, so an always-applicable before-pull action
+    # would exit 78 on every convergence run.
+    #
+    # The missing-tags fallback is what this is for: when the tag list does not
+    # contain the release being installed, and the install is somewhere else, the
+    # target still has to be read.
+    if [ "$from" != "$to" ]; then
+        span="$(printf '%s\nv%s\n' "$span" "$to" | grep -v '^$' | sort -u || true)"
+    fi
 
     all_actions=""
 
@@ -1106,8 +1129,16 @@ upgrade_preflight() {
                 // accusation they have not.
                 $unverifiable = ($a["verification"]["type"] ?? "attest") === "check";
 
+                // Prose is base64d, because it is prose. A summary or detail may
+                // legitimately contain a newline or a `|` - a shell pipeline in
+                // an instruction is the obvious case - and this is a
+                // pipe-delimited, newline-separated protocol. Raw, an
+                // instruction could truncate itself at the first pipe or forge
+                // an entire extra action at the first newline.
                 printf("%s|%s|%s|%s|%s|%s\n", $stranded ? "STEP" : "DO",
-                    $key, $a["phase"] ?? "", $a["summary"] ?? "", $a["detail"] ?? "",
+                    $key, $a["phase"] ?? "",
+                    base64_encode((string) ($a["summary"] ?? "")),
+                    base64_encode((string) ($a["detail"] ?? "")),
                     $unverifiable ? "CHECK" : "ATTEST");
             }' "WF_FROM=$span_origin" "WF_TO=$to" "WF_ACK=$ack" \
                 "WF_ORIGIN_KNOWN=$origin_known" "WF_RECORDED=$from" "WF_TAG=$tag")"
@@ -1185,7 +1216,7 @@ $stranded" | grep -v '^$' | sort -u || true)"
             printf '\n  \033[1;33mAfter this upgrade you will need to:\033[0m\n'
             printf '%s\n' "$later" | while IFS='|' read -r _ key phase summary _; do
                 [ -n "$key" ] || continue
-                printf '    %s (%s) - %s\n' "$key" "$phase" "$summary"
+                printf '    %s (%s) - %s\n' "$key" "$phase" "$(unprose "$summary")"
             done
             printf '\n  The release enforces these itself: it refuses to migrate or to serve\n'
             printf '  until they are done or acknowledged.\n\n'
@@ -1207,16 +1238,16 @@ $stranded" | grep -v '^$' | sort -u || true)"
 
         printf '%s\n' "$stranded" | while IFS='|' read -r _ key phase summary detail verification; do
             [ -n "$key" ] || continue
-            printf '  \033[1;31m%s\033[0m (%s, must run on its own release)\n    %s\n' "$key" "$phase" "$summary"
-            [ -n "$detail" ] && printf '    %s\n' "$detail"
+            printf '  \033[1;31m%s\033[0m (%s, must run on its own release)\n    %s\n' "$key" "$phase" "$(unprose "$summary")"
+            [ -n "$detail" ] && printf '    %s\n' "$(unprose "$detail")"
             printf '\n'
         done
     fi
 
     printf '%s\n' "$all_actions" | grep '^DO|' | while IFS='|' read -r _ key phase summary detail verification; do
         [ -n "$key" ] || continue
-        printf '  \033[1;33m%s\033[0m (%s)\n    %s\n' "$key" "$phase" "$summary"
-        [ -n "$detail" ] && printf '    %s\n' "$detail"
+        printf '  \033[1;33m%s\033[0m (%s)\n    %s\n' "$key" "$phase" "$(unprose "$summary")"
+        [ -n "$detail" ] && printf '    %s\n' "$(unprose "$detail")"
 
         # Said plainly, because the two are different situations for the reader.
         # A `check` is verified by the release itself, and this cannot run it -
