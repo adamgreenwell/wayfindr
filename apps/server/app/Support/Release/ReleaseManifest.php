@@ -474,6 +474,8 @@ final class ReleaseManifest
             throw new InvalidArgumentException('Release manifest "actions" must be a list.');
         }
 
+        $seen = [];
+
         foreach ($manifest['actions'] as $index => $action) {
             if (! is_array($action)) {
                 throw new InvalidArgumentException("Published action #{$index} must be an object.");
@@ -501,6 +503,27 @@ final class ReleaseManifest
                     "Published action #{$index} claims release \"{$action['release']}\" "
                     ."in the manifest for \"{$manifest['version']}\"."
                 );
+            }
+
+            // Unique, as the authored declaration already requires. An
+            // acknowledgement is keyed `<release>/<action-id>`, so two actions
+            // sharing an id share a key — and acknowledging the one an operator
+            // read settles the other silently, with its work never done.
+            //
+            // The authored side has always checked this; the published side is
+            // where a hand-edited or truncated manifest arrives, and it did not.
+            $id = $action['id'] ?? null;
+
+            if (is_string($id)) {
+                if (isset($seen[$id])) {
+                    throw new InvalidArgumentException(
+                        "Published action #{$index} repeats the id \"{$id}\". "
+                        .'Acknowledgements are keyed by release and id, so a repeat would '
+                        .'settle more than the operator agreed to.'
+                    );
+                }
+
+                $seen[$id] = true;
             }
         }
 

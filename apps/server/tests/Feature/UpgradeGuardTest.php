@@ -1713,3 +1713,55 @@ test('the builder canonicalises so its own output always passes', function (): v
         ->and(fn () => ReleaseManifest::assertPublished($manifest))
         ->not->toThrow(InvalidArgumentException::class);
 });
+
+test('a published manifest repeating an action id is rejected', function (): void {
+    // An acknowledgement is keyed `<release>/<action-id>`, so two actions sharing
+    // an id share a key - and acknowledging the one the operator read settles the
+    // other silently, with its work never done. The authored declaration has
+    // always required unique ids; the published side, where a hand-edited or
+    // truncated manifest arrives, did not.
+    $action = [
+        'id' => 'same-id',
+        'summary' => 'Do a thing.',
+        'detail' => 'php artisan thing',
+        'phase' => 'after-start',
+        'depends_on_release' => 'none',
+        'applicability' => ['type' => 'always'],
+        'verification' => ['type' => 'attest'],
+    ];
+
+    $manifest = ReleaseManifest::build(['actions' => [$action]], '0.3.0', 'ccc');
+    $manifest['actions'][] = $manifest['actions'][0];
+
+    expect(fn () => ReleaseManifest::assertPublished($manifest))
+        ->toThrow(InvalidArgumentException::class);
+});
+
+test('distinct action ids in one manifest are still accepted', function (): void {
+    // So the check cannot be satisfied by rejecting every manifest with more than
+    // one action - which is the ordinary case for a release that asks for two
+    // unrelated things.
+    $manifest = ReleaseManifest::build(['actions' => [
+        [
+            'id' => 'first-thing',
+            'summary' => 'One.',
+            'detail' => 'php artisan one',
+            'phase' => 'after-start',
+            'depends_on_release' => 'none',
+            'applicability' => ['type' => 'always'],
+            'verification' => ['type' => 'attest'],
+        ],
+        [
+            'id' => 'second-thing',
+            'summary' => 'Two.',
+            'detail' => 'php artisan two',
+            'phase' => 'after-start',
+            'depends_on_release' => 'none',
+            'applicability' => ['type' => 'always'],
+            'verification' => ['type' => 'attest'],
+        ],
+    ]], '0.3.0', 'ccc');
+
+    expect(fn () => ReleaseManifest::assertPublished($manifest))
+        ->not->toThrow(InvalidArgumentException::class);
+});
