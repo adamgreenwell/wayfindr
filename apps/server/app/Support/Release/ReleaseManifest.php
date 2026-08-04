@@ -432,6 +432,21 @@ final class ReleaseManifest
                     .'A span is read as one list, so an unattributed action cannot be ordered.'
                 );
             }
+
+            // And it must belong to THIS release. `build()` stamps them equal, so
+            // a difference means the manifest was rewritten by something else —
+            // and misattribution changes what the action IS. Whether an action is
+            // stranded is decided by comparing its release against the target, so
+            // an intermediate manifest attributing its work to the target turns an
+            // unperformable action into a permitted one: migration proceeds, and
+            // serving is then gated on something that cannot be done at all
+            // because the release whose code it needs was skipped.
+            if ($action['release'] !== $manifest['version']) {
+                throw new InvalidArgumentException(
+                    "Published action #{$index} claims release \"{$action['release']}\" "
+                    ."in the manifest for \"{$manifest['version']}\"."
+                );
+            }
         }
 
         // The flag is derived at build time. If a published manifest disagrees

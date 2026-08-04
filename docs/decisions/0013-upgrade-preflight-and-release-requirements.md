@@ -269,6 +269,27 @@ have it, and the artifact guard is the guarantee for everyone else.
 - The image grows a bounded history rather than one manifest, and releases gain a
   state file on the volume. Both are small, and the floor keeps the history from
   growing without limit.
+- **The preflight is a second implementation of the guard's decision, in another
+  language, running a version behind it.** Every change to `UpgradeGuard` is a
+  latent divergence until `upgrade_preflight` in `scripts/self-host/install.sh`
+  is changed to match, and a divergence here is silent by construction: the
+  preflight says "clear", the operator pulls, and the artifact refuses on a
+  release that is already installed. This is the standing maintenance cost of
+  wanting an answer *before* the pull, and it is not visible from either file.
+
+  Two constraints follow, both learned the hard way:
+
+  - The preflight may only use APIs the release being upgraded **from** already
+    had. It runs inside that image, so a method added by the release being
+    installed does not exist there — and a probe must confirm the classes are
+    present at all, since anything cut before this ADR carries none of them.
+  - It must predict what the artifact will do, not compute its own better
+    answer. Where the artifact treats a value as unknown, the preflight has to
+    as well, even when it can see more — an origin derived from the image tag is
+    invisible to the artifact and cannot satisfy its floor.
+
+  When changing the guard, the checklist is: which origin does this read, what
+  does it do when that origin is unknown, and does the preflight now disagree?
 
 ## Delivery slices
 

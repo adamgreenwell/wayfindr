@@ -1150,3 +1150,52 @@ test('the manifest commit is recorded, not the runtime override', function (): v
     // And the fresh exemption therefore survives into the serving gate.
     expect($this->get('/')->status())->not->toBe(503);
 });
+
+test('an action attributed to another release makes the manifest unreadable', function (): void {
+    // Misattribution changes what the action IS. stranded() decides by comparing
+    // an action's release against the target, so an intermediate manifest
+    // claiming its work belongs to the target turns an unperformable action into
+    // a permitted one: migration proceeds, then serving is gated on something
+    // that cannot be done at all because the release it needs was skipped.
+    $dir = storage_path('framework/testing/release-'.bin2hex(random_bytes(4)));
+    mkdir($dir, 0700, true);
+
+    $intermediate = ReleaseManifest::build([
+        'actions' => [[
+            'id' => 'needs-its-own-code',
+            'summary' => 'Needs 0.2.0 code.',
+            'detail' => 'php artisan something',
+            'phase' => 'after-start',
+            'depends_on_release' => 'code',
+            'applicability' => ['type' => 'always'],
+            'verification' => ['type' => 'attest'],
+        ]],
+    ], '0.2.0', 'bbb');
+
+    // Rewritten to claim the target, which is what makes it look performable.
+    $intermediate['actions'][0]['release'] = '0.3.0';
+
+    file_put_contents($dir.'/release.json', json_encode(
+        ReleaseManifest::build(['actions' => []], '0.3.0', 'ccc'),
+    ));
+    file_put_contents($dir.'/history.json', json_encode([
+        'schema' => 1,
+        'releases' => [$intermediate, ReleaseManifest::build(['actions' => []], '0.3.0', 'ccc')],
+    ]));
+
+    config()->set('wayfindr.release.manifest_path', $dir.'/release.json');
+    config()->set('wayfindr.release.history_path', $dir.'/history.json');
+    config()->set('wayfindr.release.state_path', $dir.'/state.json');
+
+    $assessment = app(UpgradeGuard::class)->assess();
+
+    expect($assessment['blocked'])->toBeTrue()
+        ->and($assessment['reason'])->toContain('could not be read');
+});
+
+test('a correctly attributed action is still accepted', function (): void {
+    // So the check above cannot be satisfied by rejecting every action.
+    expect(fn () => ReleaseManifest::assertPublished(
+        ReleaseManifest::build(blockingDeclaration(), '0.2.0', 'bbb'),
+    ))->not->toThrow(InvalidArgumentException::class);
+});
