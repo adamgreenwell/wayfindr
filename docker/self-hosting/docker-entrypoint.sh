@@ -19,7 +19,19 @@ mkdir -p \
 # off and simply wait on the web service's health.
 if [ "${WAYFINDR_AUTO_MIGRATE:-0}" = "1" ] || [ "${WAYFINDR_AUTO_MIGRATE:-false}" = "true" ]; then
     tries=0
-    until php artisan migrate --force --no-interaction; do
+    while true; do
+        php artisan migrate --force --no-interaction && break
+
+        # 78 is the upgrade guard refusing: this release needs the operator to do
+        # something first (ADR 0013). It is not a transient failure, so retrying
+        # would repeat the instructions thirty times and then report the wrong
+        # cause. The guard has already printed what to do.
+        status=$?
+        if [ "$status" -eq 78 ]; then
+            echo "wayfindr: upgrade requirements not met; refusing to start." >&2
+            exit 78
+        fi
+
         tries=$((tries + 1))
         if [ "$tries" -ge 30 ]; then
             echo "wayfindr: database not reachable after ${tries} attempts; giving up" >&2

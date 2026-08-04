@@ -345,7 +345,27 @@ final class ReleaseManifest
             throw new InvalidArgumentException('Release manifest is not valid JSON.');
         }
 
-        $schema = $decoded['schema'] ?? null;
+        self::assertPublished($decoded);
+
+        return $decoded;
+    }
+
+    /**
+     * The same trust boundary as {@see decode()}, for a manifest that arrives
+     * already decoded.
+     *
+     * History entries are members of a larger document, so they never pass
+     * through `decode()` — but they are published manifests and are exactly as
+     * much a trust boundary. Accepting any array meant `{"version":"0.2.0"}`
+     * contributed no actions, and if that version matched the target it also
+     * stopped the real manifest being appended, so the target's own
+     * pre-migration requirements disappeared with it.
+     *
+     * @param  array<string, mixed>  $manifest
+     */
+    public static function assertPublished(array $manifest): void
+    {
+        $schema = $manifest['schema'] ?? null;
 
         if (! is_int($schema)) {
             throw new InvalidArgumentException('Release manifest declares no schema version.');
@@ -357,9 +377,17 @@ final class ReleaseManifest
             );
         }
 
-        self::validatePublished($decoded);
+        self::validatePublished($manifest);
 
-        return $decoded;
+        // The floor is a BOUND, and a bound that cannot be ordered silently
+        // stops bounding: `compare()` returns null for it, and the guard
+        // deliberately refuses only on a definite "below" — so an install
+        // demonstrably older than the intended floor migrates anyway. `build()`
+        // has always checked this; reading a published manifest did not, which is
+        // the path a corrupt or hand-edited one arrives by.
+        if ($manifest['minimum_upgrade_from'] !== null) {
+            self::assertVersion($manifest['minimum_upgrade_from'], 'minimum_upgrade_from');
+        }
     }
 
     /**
@@ -377,7 +405,11 @@ final class ReleaseManifest
      */
     private static function validatePublished(array $manifest): void
     {
-        foreach (['version', 'commit', 'requires_operator_action', 'actions'] as $required) {
+        // `minimum_upgrade_from` is required, and null is how "no floor" is said.
+        // build() always emits it, so a manifest without the key was truncated or
+        // edited - and its absence erases a declared floor silently, letting an
+        // install below the supported starting point migrate.
+        foreach (['version', 'commit', 'requires_operator_action', 'actions', 'minimum_upgrade_from'] as $required) {
             if (! array_key_exists($required, $manifest)) {
                 throw new InvalidArgumentException("Release manifest is missing \"{$required}\".");
             }
@@ -387,9 +419,62 @@ final class ReleaseManifest
             throw new InvalidArgumentException('Release manifest has no usable version.');
         }
 
+        // And it must parse, or nothing downstream can use it. `build()` keeps an
+        // unparseable value verbatim, the recorder writes it to the state file,
+        // and `recordedVersion()` then discards it — so every later process reads
+        // a populated install as legacy, re-evaluating retired requirements and
+        // refusing the next floor-bearing release it meets.
+        //
+        // A development identity is allowed here, unlike in a bound: this is what
+        // the release IS rather than a limit to compare against, and the guard
+        // already treats an unorderable running version conservatively.
+        $parsedVersion = SemanticVersion::parse($manifest['version']);
+
+        if ($parsedVersion === null) {
+            throw new InvalidArgumentException(
+                'Release manifest version must be one this build can parse.'
+            );
+        }
+
+        // And it must already be CANONICAL. `v0.3.0` parses, so it survived the
+        // check above — but `ReleaseState::recordedVersion()` canonicalises what
+        // it reads while the guard keeps the manifest's spelling as the target,
+        // so the two stop comparing equal. A genuinely fresh install then loses
+        // its exemption on the next request and starts returning 503 for
+        // upgrade-only work it never owed.
+        //
+        // `build()` canonicalises the version and every action's release stamp,
+        // so a manifest that is not canonical did not come from this builder.
+        // Rejecting it keeps one spelling in play everywhere rather than leaving
+        // each reader to normalise and hoping they agree.
+        if ($parsedVersion->canonical() !== $manifest['version']) {
+            throw new InvalidArgumentException(sprintf(
+                'Release manifest version must be canonical: "%s" should be "%s".',
+                $manifest['version'],
+                $parsedVersion->canonical(),
+            ));
+        }
+
+        // A string, and null is not one. `buildChanged()` compares the recorded
+        // commit against this, and a null reads as "cannot tell" — which it
+        // resolves as changed, permanently. On a fresh install that drops the
+        // freshness exemption on the next request and gates serving on
+        // upgrade-only work the install never owed.
+        //
+        // EMPTY is allowed, because the documented release flow produces it: the
+        // history-recording step runs before the release commit exists and passes
+        // no `--commit` (RELEASING.md), so its entries carry "". Those are never
+        // compared against a running build — only the target manifest's commit is
+        // — so an empty one there is honest rather than dangerous.
+        if (! is_string($manifest['commit'])) {
+            throw new InvalidArgumentException('Release manifest commit must be a string.');
+        }
+
         if (! is_array($manifest['actions'])) {
             throw new InvalidArgumentException('Release manifest "actions" must be a list.');
         }
+
+        $seen = [];
 
         foreach ($manifest['actions'] as $index => $action) {
             if (! is_array($action)) {
@@ -403,6 +488,42 @@ final class ReleaseManifest
                     "Published action #{$index} does not say which release it belongs to. "
                     .'A span is read as one list, so an unattributed action cannot be ordered.'
                 );
+            }
+
+            // And it must belong to THIS release. `build()` stamps them equal, so
+            // a difference means the manifest was rewritten by something else —
+            // and misattribution changes what the action IS. Whether an action is
+            // stranded is decided by comparing its release against the target, so
+            // an intermediate manifest attributing its work to the target turns an
+            // unperformable action into a permitted one: migration proceeds, and
+            // serving is then gated on something that cannot be done at all
+            // because the release whose code it needs was skipped.
+            if ($action['release'] !== $manifest['version']) {
+                throw new InvalidArgumentException(
+                    "Published action #{$index} claims release \"{$action['release']}\" "
+                    ."in the manifest for \"{$manifest['version']}\"."
+                );
+            }
+
+            // Unique, as the authored declaration already requires. An
+            // acknowledgement is keyed `<release>/<action-id>`, so two actions
+            // sharing an id share a key — and acknowledging the one an operator
+            // read settles the other silently, with its work never done.
+            //
+            // The authored side has always checked this; the published side is
+            // where a hand-edited or truncated manifest arrives, and it did not.
+            $id = $action['id'] ?? null;
+
+            if (is_string($id)) {
+                if (isset($seen[$id])) {
+                    throw new InvalidArgumentException(
+                        "Published action #{$index} repeats the id \"{$id}\". "
+                        .'Acknowledgements are keyed by release and id, so a repeat would '
+                        .'settle more than the operator agreed to.'
+                    );
+                }
+
+                $seen[$id] = true;
             }
         }
 

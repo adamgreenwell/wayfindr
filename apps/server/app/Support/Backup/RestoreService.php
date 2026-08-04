@@ -4,6 +4,7 @@ namespace App\Support\Backup;
 
 use App\Models\ConversationMessageAttachment;
 use App\Support\Attachments\AttachmentStorage;
+use App\Support\Release\ReleaseState;
 use App\Support\Settings\OperatorSettings;
 use App\Support\Version\SemanticVersion;
 use App\Support\Version\VersionComparator;
@@ -162,6 +163,21 @@ class RestoreService
             // Replace the database with the dump (atomic — see the restorer).
             $this->restorer->restore($dump);
 
+            // Immediately, before anything that can throw.
+            //
+            // The release state lives on the volume rather than inside the dump,
+            // so it survives this and goes on claiming the release that was
+            // running. The documented next step is `artisan migrate --force`,
+            // which would then measure its floor and its span from a version this
+            // schema is not at — skipping intermediate requirements, or clearing
+            // a floor the restored ledger is now below.
+            //
+            // Attachment restoration and the integrity pass below both throw on
+            // failure, and the schema is already replaced by then. Recording at
+            // the end of the method meant a partial restore left the state
+            // describing a database that no longer exists.
+            $this->recordRestoredRelease($archiveVersion, $manifest['wayfindr_commit'] ?? null);
+
             // The dump replaced the operator_settings rows directly, so bump the
             // OperatorSettings cache version — otherwise every process keeps
             // applying the pre-restore mail/storage/scanner/backup configuration
@@ -197,6 +213,62 @@ class RestoreService
         } finally {
             $this->removeDir($work);
         }
+    }
+
+    /**
+     * Point the release state at what was just restored.
+     *
+     * `satisfied_through` is deliberately left unknown rather than carried over.
+     * What this restored database still owed is recorded nowhere — the archive
+     * predates whatever the running install had done about it — so the whole
+     * published history goes back into scope, which is the conservative reading
+     * and the one the guard already has a name for.
+     *
+     * An archive that cannot say what it is gets forgotten instead. That routes
+     * to the unverifiable-floor refusal: safe, and clearable by stating the
+     * version rather than by guessing one here.
+     *
+     * Public so it can be exercised directly. Reaching it through restore()
+     * means standing up a full archive and a live database, which tests the
+     * extraction rather than the decision this makes.
+     */
+    public function recordRestoredRelease(string $archiveVersion, mixed $archiveCommit): void
+    {
+        $state = app(ReleaseState::class);
+
+        // Cleared first so the write cannot inherit the previous install's
+        // marker — `record()` preserves it when not given one, which is right
+        // for an upgrade and wrong for a database that has been replaced.
+        $failed = ! $state->forget();
+
+        $parsed = SemanticVersion::parse($archiveVersion);
+
+        if (! $failed && $parsed !== null) {
+            $failed = ! $state->record(
+                $parsed->canonical(),
+                is_string($archiveCommit) && trim($archiveCommit) !== '' ? $archiveCommit : null,
+            );
+        }
+
+        if (! $failed) {
+            return;
+        }
+
+        // Both writes can fail on a read-only volume, and ignoring that reported
+        // a successful restore whose release record still described the database
+        // that was just replaced. The documented next step is
+        // `artisan migrate --force`, which would measure its floor and its span
+        // from that stale version.
+        //
+        // Raised rather than warned. The database HAS been restored, and the
+        // message says so — but a restore that leaves the guard pointed at the
+        // wrong release is not one an operator should carry on from unaware.
+        throw new RuntimeException(sprintf(
+            'The database was restored, but the release record at %s could not be updated. '
+            .'Delete that file by hand before running migrations: until it is gone, the upgrade '
+            .'guard will evaluate this install as the release it was on before the restore.',
+            (string) config('wayfindr.release.state_path'),
+        ));
     }
 
     /**

@@ -213,5 +213,41 @@ return [
     'release' => [
         'commit' => ReleaseIdentity::commit(),
         'version' => ReleaseIdentity::version(),
+
+        // Actions the operator asserts they have completed, as a comma-separated
+        // list of `<release>/<action-id>` (ADR 0013). Read before migrations
+        // run, so it cannot live in the database — env is the one channel that
+        // exists at that point. Scoped per action so it can never become a
+        // blanket opt-out.
+        'acknowledged_actions' => env('WAYFINDR_ACKNOWLEDGED_ACTIONS'),
+
+        // Where an install predating the state file states it is upgrading FROM.
+        // Only consulted when nothing is recorded, and only so the floor check
+        // has something to verify against — without it, an install whose origin
+        // cannot be established is refused, since "unknown" is not evidence the
+        // jump is supported.
+        'upgrade_from' => env('WAYFINDR_UPGRADE_FROM'),
+
+        // Where this install records the release it last ran, so the next one
+        // knows where the upgrade started. On the storage volume because
+        // /etc/wayfindr is root-owned and the app runs unprivileged.
+        'state_path' => env('WAYFINDR_RELEASE_STATE_PATH', storage_path('app/release-state.json')),
+
+        // Baked by the image build. Overridable so tests can point at fixtures;
+        // operators have no reason to move them.
+        'manifest_path' => env('WAYFINDR_RELEASE_MANIFEST_PATH', '/etc/wayfindr/release.json'),
+        'history_path' => env('WAYFINDR_RELEASE_HISTORY_PATH', '/etc/wayfindr/release-history.json'),
+
+        // Where the same two files live in a source deployment, which has no
+        // /etc/wayfindr because only the image build writes there. Without these
+        // the guard finds no manifest on a host install and enforces nothing —
+        // silently, on exactly the deployments the installer preflight does not
+        // cover. The history is committed; the deploy generates the manifest.
+        //
+        // Set to an empty string to disable the fallback, which is what the test
+        // suite does so a fixture's absence is not quietly answered by the real
+        // repository files.
+        'manifest_fallback_path' => env('WAYFINDR_RELEASE_MANIFEST_FALLBACK', base_path('../../release-manifest.json')),
+        'history_fallback_path' => env('WAYFINDR_RELEASE_HISTORY_FALLBACK', base_path('../../releases/history.json')),
     ],
 ];

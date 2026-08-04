@@ -12,6 +12,8 @@ use App\Console\Commands\RestoreCommand;
 use App\Console\Commands\SendAlertDigestsCommand;
 use App\Console\Commands\SendUnattendedConversationAlertsCommand;
 use App\Console\Commands\SweepOrphanedAttachmentsCommand;
+use App\Console\Commands\UpgradeGuardCommand;
+use App\Http\Middleware\RefuseServingWithUnmetRequirements;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -37,12 +39,18 @@ return Application::configure(basePath: dirname(__DIR__))
         SendAlertDigestsCommand::class,
         SendUnattendedConversationAlertsCommand::class,
         SweepOrphanedAttachmentsCommand::class,
+        UpgradeGuardCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         // Only containerized behind-proxy installs set TRUSTED_PROXIES (the
         // self-hosting env generator's --behind-proxy mode); everywhere else
         // this is null and no proxy is trusted.
         $middleware->trustProxies(at: env('TRUSTED_PROXIES'));
+
+        // Refuses traffic while an after-start requirement is outstanding
+        // (ADR 0013). Appended globally rather than to a route group, because a
+        // release that is not fit to serve is not fit to serve anything.
+        $middleware->append(RefuseServingWithUnmetRequirements::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // On a validation failure Laravel flashes the request input to the

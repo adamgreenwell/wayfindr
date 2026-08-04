@@ -35,6 +35,11 @@ disagree:
   migrations run
 - **published as a release asset** — read by the installer preflight, which must
   evaluate releases it never pulls
+- **generated into the checkout** on a source deployment, by
+  `deploy/forge/write-release-manifest.sh` before `artisan migrate` — only the
+  image build writes `/etc/wayfindr`, so without this the guard would find no
+  declaration on a host install and enforce nothing at all. The history needs no
+  generating there: `releases/history.json` is committed.
 
 ## Authoring `release.json`
 
@@ -66,6 +71,21 @@ The oldest version that may upgrade **directly** to this one. Older installs mus
 step through an intermediate release. This is what lets an old migration path be
 retired without stranding anyone silently, and it is what bounds the history
 baked into the image.
+
+Checking it needs to know where the install is starting from, and an install
+predating `release-state.json` has nothing on record. That is refused rather than
+waved through — an unknown origin *may* be below the floor, and migrations whose
+path was retired are exactly what the floor exists to stop. It is cleared by
+establishing the origin, not by overriding the floor, either by upgrading to the
+floor release first (which records it) or by stating it:
+
+```dotenv
+WAYFINDR_UPGRADE_FROM=0.2.4
+```
+
+That value is only consulted when nothing is recorded, and it is read live, like
+an acknowledgement. Stating a version *below* the floor is still refused — it
+establishes where you are, it does not grant permission.
 
 ### `id`
 
@@ -164,6 +184,13 @@ WAYFINDR_ACKNOWLEDGED_ACTIONS=0.2.0/backups-queue-worker
 Each entry is `<release>/<action-id>`, so an acknowledgement is specific to the
 action that required it and can never become a blanket opt-out.
 
+This one value is read live — from the process environment, then from `.env` —
+rather than through the config cache. You are setting it at the one moment a
+cached value would be wrong: the upgrade has just been refused, and you are
+adding what the refusal asked for and running it again. Reading the cache would
+refuse a second time, identically, and the only way forward would be clearing a
+cache nothing had mentioned.
+
 The release part is the **canonical** version — no leading `v`. The release
 workflow passes the git tag verbatim, so the same release would otherwise arrive
 as `v0.2.0` from an official build and `0.2.0` from a source one, and an
@@ -212,9 +239,26 @@ It exits non-zero when something is outstanding.
 
 ### Where the upgrade is measured from
 
-After a successful migration the release records its identity to
+After a successful migration the release records itself to
 `storage/app/release-state.json`, so the next upgrade knows where it started and
 which declarations its span covers.
+
+What it records is the **canonical release** — the version the manifest carries —
+not the running identity. On a source deployment those differ: the identity is
+`<version>-dev+<sha>` and changes with every commit, while the manifest is
+stamped with `VERSION`. Recording the identity would mean the install never
+equals its own target and cannot be ordered against a floor. The commit is kept
+alongside, so nothing about which build ran is lost.
+
+That file also carries `satisfied_through`: the newest release whose
+requirements were *all* met, which is not the same as the newest release that
+migrated. A `v1 -> v3` upgrade passes through `v2`, and an `after-start` action
+of `v2`'s cannot block the migration — it needs the migrated schema to be
+performed at all. So the migration completes and `v3` is recorded, and measuring
+the span from what is *running* would collapse it to `(v3, v3]`: the requirement
+would be outstanding one moment and gone the next. The marker only advances on a
+clean assessment, so the span keeps reaching back to the last release that
+genuinely owed nothing.
 
 An install with no such file is **not** assumed to be fresh — every install
 predating this mechanism has none. If the database already carries migrations,

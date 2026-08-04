@@ -37,5 +37,12 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <!-- The guard falls back to the repository's own release files when the
+             baked ones are absent, which is what makes it work on a source
+             deployment. In tests that would answer a deliberately-missing
+             fixture with the real thing, so a case asserting "nothing declared"
+             would pass or fail on the contents of releases/history.json. -->
+        <env name="WAYFINDR_RELEASE_MANIFEST_FALLBACK" value=""/>
+        <env name="WAYFINDR_RELEASE_HISTORY_FALLBACK" value=""/>
     </php>
 </phpunit>

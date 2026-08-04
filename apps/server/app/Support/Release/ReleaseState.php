@@ -1,0 +1,208 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Support\Release;
+
+use App\Support\Version\SemanticVersion;
+use Throwable;
+
+/**
+ * Which release this install was last running (ADR 0013).
+ *
+ * The guard needs the upgrade's starting point to know which declarations it
+ * traverses, and nothing recorded it before this. It lives on the persistent
+ * volume rather than in the database because the guard runs before migrations,
+ * and rather than beside the baked manifest because /etc/wayfindr is root-owned
+ * while the application runs as an unprivileged user.
+ */
+final class ReleaseState
+{
+    public function path(): string
+    {
+        return (string) config('wayfindr.release.state_path', storage_path('app/release-state.json'));
+    }
+
+    /**
+     * The release recorded by the last successful run, or null when there is no
+     * record. Null is NOT "fresh install" on its own — see UpgradeGuard, which
+     * disambiguates it against the existing schema.
+     */
+    public function recordedVersion(): ?string
+    {
+        $value = $this->read()['version'] ?? null;
+
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        // It has to parse, or it is not an origin. The floor refuses only a
+        // definite "below", so a malformed or mistyped version compares as null
+        // and lets a potentially unsupported migration through — where reporting
+        // no origin at all routes to the unverifiable-floor refusal, which is
+        // both safe and clearable.
+        //
+        // A DEVELOPMENT identity is kept, unlike a declared origin. This is a
+        // record of what ran, not an assertion made to clear a refusal, and the
+        // floor already treats a development version on either side as no
+        // evidence of an unsupported jump rather than as permission.
+        $parsed = SemanticVersion::parse(trim($value));
+
+        return $parsed?->canonical();
+    }
+
+    /** @return array<string, mixed> */
+    private function read(): array
+    {
+        $path = $this->path();
+
+        if (! is_file($path)) {
+            return [];
+        }
+
+        try {
+            /** @var mixed $decoded */
+            $decoded = json_decode((string) @file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+        } catch (Throwable) {
+            return [];
+        }
+
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    /**
+     * The commit recorded alongside the release, or null when none was.
+     *
+     * On a source deployment the version alone cannot tell one build of a release
+     * from another — `VERSION` is stamped on every commit of a cycle — so this is
+     * what distinguishes "this release again" from "this release, changed".
+     */
+    public function recordedCommit(): ?string
+    {
+        $value = $this->read()['commit'] ?? null;
+
+        return is_string($value) && trim($value) !== '' ? $value : null;
+    }
+
+    /**
+     * The newest release whose requirements were ALL met, which is not the same
+     * as the newest release that migrated.
+     *
+     * A v1 -> v3 upgrade passes through v2, and an after-start action of v2's
+     * cannot block the migration — it needs the migrated schema to be performed
+     * at all. So migration completes, v3 is recorded, and if the span were
+     * computed from what is RUNNING it would collapse to (v3, v3] and v2's
+     * requirement would vanish: outstanding one moment, served the next, with
+     * nothing done about it.
+     *
+     * This marker only advances when nothing is outstanding, so the span keeps
+     * reaching back to the last release that was genuinely clean.
+     *
+     * Null means it has never advanced — read by the guard as "fall back to the
+     * recorded version", which is the right answer for an install that has only
+     * ever been clean.
+     */
+    /**
+     * Whether the marker has ever been WRITTEN, which is not the same as whether
+     * it has a value.
+     *
+     * A legacy upgrade that leaves work outstanding records it as null on
+     * purpose: the origin was unknown, so the span must keep evaluating the whole
+     * history. Treating that null as "never set" and falling back to the recorded
+     * release collapses the span to the target and drops the very debt the null
+     * was recording.
+     */
+    public function satisfiedThroughRecorded(): bool
+    {
+        return array_key_exists('satisfied_through', $this->read());
+    }
+
+    public function satisfiedThrough(): ?string
+    {
+        $value = $this->read()['satisfied_through'] ?? null;
+
+        return is_string($value) && trim($value) !== '' ? $value : null;
+    }
+
+    /**
+     * Record that this release got far enough to be considered installed.
+     *
+     * Written only after migrations complete successfully. A release whose
+     * migrations failed has not arrived, and recording it would let the next
+     * upgrade compute its span from a release that never took effect.
+     *
+     * `$satisfiedThrough` is deliberately a separate argument rather than
+     * defaulting to `$version`: advancing it is a claim that nothing is
+     * outstanding, and only the caller that just evaluated the requirements is
+     * in a position to make it.
+     *
+     * What is passed is what is WRITTEN, including null. This used to coalesce a
+     * null back to the stored value as a convenience for "do not advance it", and
+     * that hid a case: when the stored marker already sits at or above a release
+     * whose work has since become outstanding, preserving it drops that debt from
+     * the next upgrade's span. Deciding between advance, keep and forget needs
+     * the outstanding list, so it belongs to the caller holding it.
+     */
+    /**
+     * Whether the release on record was installed onto an empty database.
+     *
+     * The migrations table is the evidence, and migrating populates it — so this
+     * question is unanswerable by the time the serving gate asks it, in a process
+     * that never saw the install happen. Recorded once, at the only moment it can
+     * still be observed.
+     */
+    public function wasFreshInstall(): bool
+    {
+        return ($this->read()['fresh_install'] ?? null) === true;
+    }
+
+    /**
+     * Forget which release this install is running.
+     *
+     * A rollback rewinds the schema and says nothing about the record, so the
+     * state goes on claiming a release whose migrations have just been undone.
+     * That claim is load-bearing: a later upgrade measures its floor and its span
+     * from it, so a rewound install can pass a `minimum_upgrade_from` it is now
+     * below and migrate on a path that has been retired.
+     *
+     * Forgetting is the honest answer, not guessing a version. What the schema
+     * corresponds to after an arbitrary number of steps is not knowable from
+     * here, and the guard already has a safe reading for "no record": treat it as
+     * a legacy install, refuse a floor it cannot verify, and let the operator say
+     * where they are.
+     */
+    public function forget(): bool
+    {
+        $path = $this->path();
+
+        if (! is_file($path)) {
+            return true;
+        }
+
+        return @unlink($path);
+    }
+
+    public function record(
+        string $version,
+        ?string $commit,
+        ?string $satisfiedThrough = null,
+        bool $freshInstall = false,
+    ): bool {
+        $path = $this->path();
+        $dir = dirname($path);
+
+        if (! is_dir($dir) && ! @mkdir($dir, 0700, true) && ! is_dir($dir)) {
+            return false;
+        }
+
+        $written = @file_put_contents($path, json_encode([
+            'version' => $version,
+            'commit' => $commit,
+            'satisfied_through' => $satisfiedThrough,
+            'fresh_install' => $freshInstall,
+            'recorded_at' => gmdate('c'),
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
+
+        return $written !== false;
+    }
+}

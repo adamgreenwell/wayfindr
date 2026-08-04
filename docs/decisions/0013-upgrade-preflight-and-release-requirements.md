@@ -269,6 +269,27 @@ have it, and the artifact guard is the guarantee for everyone else.
 - The image grows a bounded history rather than one manifest, and releases gain a
   state file on the volume. Both are small, and the floor keeps the history from
   growing without limit.
+- **The preflight is a second implementation of the guard's decision, in another
+  language, running a version behind it.** Every change to `UpgradeGuard` is a
+  latent divergence until `upgrade_preflight` in `scripts/self-host/install.sh`
+  is changed to match, and a divergence here is silent by construction: the
+  preflight says "clear", the operator pulls, and the artifact refuses on a
+  release that is already installed. This is the standing maintenance cost of
+  wanting an answer *before* the pull, and it is not visible from either file.
+
+  Two constraints follow, both learned the hard way:
+
+  - The preflight may only use APIs the release being upgraded **from** already
+    had. It runs inside that image, so a method added by the release being
+    installed does not exist there — and a probe must confirm the classes are
+    present at all, since anything cut before this ADR carries none of them.
+  - It must predict what the artifact will do, not compute its own better
+    answer. Where the artifact treats a value as unknown, the preflight has to
+    as well, even when it can see more — an origin derived from the image tag is
+    invisible to the artifact and cannot satisfy its floor.
+
+  When changing the guard, the checklist is: which origin does this read, what
+  does it do when that origin is unknown, and does the preflight now disagree?
 
 ## Delivery slices
 
@@ -288,6 +309,14 @@ have it, and the artifact guard is the guarantee for everyone else.
 4. **Floor enforcement** (ADR 0012 slice 5) — reject a direct upgrade from below
    `minimum_upgrade_from`, with the supported stepping path. Depends on the
    manifest, so it follows rather than leads.
+
+   Refused **before** requirements are evaluated, and reported differently: an
+   unsupported jump is not a to-do list. No acknowledgement can make it safe,
+   because the migrations that would carry the install forward no longer ship —
+   the only remedy is to upgrade in steps. A comparison with *no answer* (a
+   development version on either side) does not refuse: that is not evidence of
+   an unsupported jump, and treating it as one would strand source installs that
+   are perfectly current.
 
 The bootstrap constraint applies to whichever release first carries slice 2: it
 must require no operator action.
