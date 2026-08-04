@@ -145,30 +145,43 @@ class BlockMigrationsWithUnmetRequirements
                 $output->writeln('    '.$action['detail']);
             }
 
-            // A stranded action gets instructions, not a key. Acknowledging one
-            // no longer settles it, so printing the key here told the operator to
-            // do something that produces this identical refusal — and never
-            // mentioned the intermediate release they actually have to install.
-            //
-            // This is the refusal an operator meets on Forge, on a manual
-            // migration, or on any upgrade whose installer preflight was skipped,
-            // so it has to carry the same guidance the command does rather than
-            // relying on them running the command as well.
-            if (UpgradeRequirements::unacknowledgeable($action, $assessment['target'] ?? null, $assessment['from'] ?? null)) {
-                $output->writeln(sprintf(
-                    '    <error>Cannot be done on this jump.</error> It needs %s, which this upgrade skips.',
-                    $action['release'] ?? 'an intermediate release',
-                ));
-                $output->writeln('    Install that release first, let it start, then upgrade again.');
-                $output->writeln('    Acknowledging will not clear this: the work is unreachable, not undone.');
+            $target = $assessment['target'] ?? null;
+            $from = $assessment['from'] ?? null;
 
-                $stranded = true;
-
-                continue;
+            // The key comes first, and only when saying so would actually settle
+            // the action. Offering it for work belonging to a release the upgrade
+            // SKIPPED would document the bypass this refusal exists to prevent.
+            if (! UpgradeRequirements::unacknowledgeable($action, $target, $from)) {
+                $output->writeln(sprintf('    Acknowledge with: %s/%s',
+                    $action['release'] ?? '?', $action['id'] ?? '?'));
             }
 
-            $output->writeln(sprintf('    Acknowledge with: %s/%s',
-                $action['release'] ?? '?', $action['id'] ?? '?'));
+            // Then the recovery, for EVERY stranded action rather than only the
+            // ones no acknowledgement can clear. An operator who has not done the
+            // work cannot do it now either — the code it needs was replaced by
+            // the pull — so a key on its own leaves them with an instruction they
+            // cannot follow.
+            //
+            // This is the refusal an operator meets on Forge, on a manual
+            // migration, or on any upgrade whose preflight was skipped, so it has
+            // to carry the guidance itself rather than assume they also run the
+            // command.
+            if (UpgradeRequirements::stranded($action, $target)) {
+                $output->writeln(sprintf(
+                    '    <error>Cannot be done now.</error> It needs %s, whose code this upgrade replaced.',
+                    $action['release'] ?? 'an intermediate release',
+                ));
+
+                if (UpgradeRequirements::unacknowledgeable($action, $target, $from)) {
+                    $output->writeln('    Install that release first, let it start, then upgrade again.');
+                    $output->writeln('    Acknowledging will not clear this: the work is unreachable, not undone.');
+                } else {
+                    $output->writeln('    If you did it before upgrading, acknowledge it with the key above.');
+                    $output->writeln('    If not, roll back to that release, do it there, and upgrade again.');
+                }
+
+                $stranded = true;
+            }
         }
 
         $output->writeln('');

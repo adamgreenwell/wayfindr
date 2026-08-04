@@ -2018,3 +2018,25 @@ test('an unacknowledged prior-release action still blocks migration', function (
     expect($assessment['blocked'])->toBeTrue()
         ->and(array_column($assessment['actions'], 'id'))->toContain('needs-its-own-code');
 });
+
+test('the refusal carries recovery for stranded work an acknowledgement could clear', function (): void {
+    // An operator who did the work before upgrading only needs the key. One who
+    // did not cannot do it now either - the code it needs was replaced by the
+    // pull - so a key on its own leaves them with an instruction they cannot
+    // follow. Both readers are in this message.
+    $source = file_get_contents(app_path('Listeners/BlockMigrationsWithUnmetRequirements.php'));
+
+    $key = strpos($source, 'Acknowledge with:');
+    $recovery = strpos($source, 'Cannot be done now.');
+
+    expect($key)->not->toBeFalse()
+        ->and($recovery)->not->toBeFalse()
+        // The key is printed first, so "the key above" in the recovery refers to
+        // something the operator has actually seen.
+        ->and($key)->toBeLessThan($recovery);
+
+    // The recovery is gated on stranded(), not on acknowledgeability - that was
+    // the bug: reachable stranded work got a key and no explanation.
+    expect($source)->toContain('UpgradeRequirements::stranded($action, $target)')
+        ->and($source)->toContain('roll back to that release');
+});
