@@ -92,7 +92,21 @@ final class UpgradeRequirements
 
                 $settled = self::settled($action, $acknowledged, $evaluateCheck);
 
-                if ($settled['satisfied']) {
+                // An acknowledgement cannot settle a STRANDED action.
+                //
+                // It belongs to a release this jump skips past and needs that
+                // release's own code or schema, so attesting that it was done
+                // does not make it possible. And the refusal prints an
+                // acknowledgement key beside every action — so an operator
+                // following the guidance would bypass the intermediate step the
+                // very same message is telling them to take.
+                //
+                // A machine check is different: if it answers true then the thing
+                // exists, whatever route it took to get there.
+                $bypassed = $settled['by'] === 'acknowledged'
+                    && self::stranded($action, $target);
+
+                if ($settled['satisfied'] && ! $bypassed) {
                     continue;
                 }
 

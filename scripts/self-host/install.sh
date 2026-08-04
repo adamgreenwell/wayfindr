@@ -272,8 +272,17 @@ php_in_current_image() {
     # INSTALLED_IMAGE is the value persisted in the environment file: what is
     # running now, which is what "in the current image" was always supposed to
     # mean.
+    #
+    # `--pull never` because a probe must never fetch anything. Pinning the name
+    # stops it running the target, but a pinned tag that is no longer in the local
+    # store - pruned while the old container kept running - would otherwise be
+    # PULLED to run the probe. For a moving tag that means downloading the target
+    # before a single before-pull requirement has been read.
+    #
+    # A missing image makes the probe fail, which reads as "this image cannot
+    # evaluate the preflight" and skips. That is the right answer: it cannot.
     WAYFINDR_IMAGE="${INSTALLED_IMAGE:-${WAYFINDR_IMAGE:-}}" \
-        compose run --rm --no-deps -T ${env_args[@]+"${env_args[@]}"} \
+        compose run --rm --no-deps --pull never -T ${env_args[@]+"${env_args[@]}"} \
         --entrypoint php web -r "$code" 2>/dev/null
 }
 
@@ -953,8 +962,19 @@ upgrade_preflight() {
                 $stranded = $release !== $target
                     && in_array($a["depends_on_release"] ?? "none", ["code", "schema"], true);
 
-                printf("%s|%s|%s|%s|%s\n", $stranded ? "STEP" : "DO",
-                    $key, $a["phase"] ?? "", $a["summary"] ?? "", $a["detail"] ?? "");
+                // A `check` names a condition only the RELEASE implements, and
+                // this runs before that release is here - so the preflight
+                // cannot evaluate it and reports it as unverified rather than as
+                // unmet. Refusing on one it cannot read is the safe direction (a
+                // missed before-pull action is the failure this exists to
+                // prevent), but the wording has to say which it is, or an
+                // operator reads a check they have already satisfied as an
+                // accusation they have not.
+                $unverifiable = ($a["verification"]["type"] ?? "attest") === "check";
+
+                printf("%s|%s|%s|%s|%s|%s\n", $stranded ? "STEP" : "DO",
+                    $key, $a["phase"] ?? "", $a["summary"] ?? "", $a["detail"] ?? "",
+                    $unverifiable ? "CHECK" : "ATTEST");
             }' "WF_FROM=$span_origin" "WF_TO=$to" "WF_ACK=$ack" \
                 "WF_ORIGIN_KNOWN=$origin_known" "WF_RECORDED=$from")"
 
@@ -1042,7 +1062,7 @@ $stranded" | grep -v '^$' | sort -u || true)"
         printf '  so they can be run neither before the pull nor after it. Upgrade to that\n'
         printf '  release first with --ref, complete them there, then continue.\n\n'
 
-        printf '%s\n' "$stranded" | while IFS='|' read -r _ key phase summary detail; do
+        printf '%s\n' "$stranded" | while IFS='|' read -r _ key phase summary detail verification; do
             [ -n "$key" ] || continue
             printf '  \033[1;31m%s\033[0m (%s, must run on its own release)\n    %s\n' "$key" "$phase" "$summary"
             [ -n "$detail" ] && printf '    %s\n' "$detail"
@@ -1050,10 +1070,21 @@ $stranded" | grep -v '^$' | sort -u || true)"
         done
     fi
 
-    printf '%s\n' "$all_actions" | grep '^DO|' | while IFS='|' read -r _ key phase summary detail; do
+    printf '%s\n' "$all_actions" | grep '^DO|' | while IFS='|' read -r _ key phase summary detail verification; do
         [ -n "$key" ] || continue
         printf '  \033[1;33m%s\033[0m (%s)\n    %s\n' "$key" "$phase" "$summary"
         [ -n "$detail" ] && printf '    %s\n' "$detail"
+
+        # Said plainly, because the two are different situations for the reader.
+        # A `check` is verified by the release itself, and this cannot run it -
+        # so listing it without saying so reads as an accusation of something
+        # undone, when the honest statement is that nothing here could tell.
+        if [ "$verification" = "CHECK" ]; then
+            printf '    (This release verifies this itself. The preflight cannot run that\n'
+            printf '     check before pulling, so it is listed as unverified rather than\n'
+            printf '     as undone - if it is already done, the release will say so.)\n'
+        fi
+
         printf '\n'
     done
 

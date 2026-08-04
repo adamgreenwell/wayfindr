@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Listeners\ForgetReleaseAfterRollback;
 use App\Support\Backup\RestoreService;
+use App\Support\Release\CheckRegistry;
 use App\Support\Release\ReleaseManifest;
 use App\Support\Release\ReleaseState;
 use App\Support\Release\UpgradeContext;
@@ -1569,4 +1570,75 @@ test('a development version is still a valid manifest version', function (): voi
     expect(fn () => ReleaseManifest::assertPublished(
         ReleaseManifest::build(['actions' => []], '0.3.0-dev+abc', 'ccc'),
     ))->not->toThrow(InvalidArgumentException::class);
+});
+
+test('acknowledging a stranded action does not settle it', function (): void {
+    // The refusal prints an acknowledgement key beside every action, so an
+    // operator following the guidance could bypass the intermediate step the
+    // same message tells them to take. Attesting that something was done cannot
+    // make it possible when the release whose code it needs is skipped.
+    $stranded = ['actions' => [[
+        'id' => 'needs-its-own-code',
+        'summary' => 'Needs 0.2.0 code.',
+        'detail' => 'php artisan something',
+        'phase' => 'after-start',
+        'depends_on_release' => 'code',
+        'applicability' => ['type' => 'always'],
+        'verification' => ['type' => 'attest'],
+    ]]];
+
+    bakeRelease(['actions' => []], '0.3.0', history: [
+        ReleaseManifest::build(['actions' => []], '0.1.0', 'aaa'),
+        ReleaseManifest::build($stranded, '0.2.0', 'bbb'),
+        ReleaseManifest::build(['actions' => []], '0.3.0', 'abc123'),
+    ]);
+
+    app(ReleaseState::class)->record('0.1.0', 'aaa', satisfiedThrough: '0.1.0');
+    putenv('WAYFINDR_ACKNOWLEDGED_ACTIONS=0.2.0/needs-its-own-code');
+
+    try {
+        $assessment = app(UpgradeGuard::class)->assess();
+
+        expect($assessment['blocked'])->toBeTrue()
+            ->and(array_column($assessment['actions'], 'id'))->toContain('needs-its-own-code');
+    } finally {
+        putenv('WAYFINDR_ACKNOWLEDGED_ACTIONS');
+    }
+});
+
+test('a passing check does settle a stranded action', function (): void {
+    // A machine check is evidence rather than an assertion: if it answers true
+    // the thing exists, whatever route it took. Only the attestation is refused.
+    $stranded = ['actions' => [[
+        'id' => 'needs-its-own-code',
+        'summary' => 'Needs 0.2.0 code.',
+        'detail' => 'php artisan something',
+        'phase' => 'after-start',
+        'depends_on_release' => 'code',
+        'applicability' => ['type' => 'always'],
+        'verification' => ['type' => 'check', 'check' => 'the-thing-exists'],
+    ]]];
+
+    bakeRelease(['actions' => []], '0.3.0', history: [
+        ReleaseManifest::build($stranded, '0.2.0', 'bbb'),
+        ReleaseManifest::build(['actions' => []], '0.3.0', 'abc123'),
+    ]);
+
+    app(ReleaseState::class)->record('0.1.0', 'aaa', satisfiedThrough: '0.1.0');
+    app(CheckRegistry::class)->register('the-thing-exists', fn (): bool => true);
+
+    expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeFalse();
+});
+
+test('an acknowledgement still settles an ordinary action', function (): void {
+    // So the stranded rule cannot be satisfied by refusing every acknowledgement.
+    bakeRelease(blockingDeclaration(), '0.2.0');
+
+    putenv('WAYFINDR_ACKNOWLEDGED_ACTIONS=0.2.0/do-the-thing');
+
+    try {
+        expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeFalse();
+    } finally {
+        putenv('WAYFINDR_ACKNOWLEDGED_ACTIONS');
+    }
 });

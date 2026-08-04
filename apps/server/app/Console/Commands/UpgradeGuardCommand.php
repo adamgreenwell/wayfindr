@@ -118,8 +118,14 @@ class UpgradeGuardCommand extends Command
                 $this->line('    '.$action['detail']);
             }
 
-            $this->line(sprintf('    Acknowledge with: %s/%s',
-                $action['release'] ?? '?', $action['id'] ?? '?'));
+            // Not offered for a stranded action: acknowledging one no longer
+            // settles it, and printing the key beside instructions to step
+            // through the release was the contradiction that made the bypass
+            // look like the documented route.
+            if (! UpgradeRequirements::stranded($action, $assessment['target'] ?? null)) {
+                $this->line(sprintf('    Acknowledge with: %s/%s',
+                    $action['release'] ?? '?', $action['id'] ?? '?'));
+            }
             // Phase alone is the wrong label for a stranded action. One belonging
             // to a release this jump skips past blocks MIGRATION whatever its
             // phase, so labelling an after-start one "serving" contradicts the
