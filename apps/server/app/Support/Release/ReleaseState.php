@@ -85,6 +85,21 @@ final class ReleaseState
      * recorded version", which is the right answer for an install that has only
      * ever been clean.
      */
+    /**
+     * Whether the marker has ever been WRITTEN, which is not the same as whether
+     * it has a value.
+     *
+     * A legacy upgrade that leaves work outstanding records it as null on
+     * purpose: the origin was unknown, so the span must keep evaluating the whole
+     * history. Treating that null as "never set" and falling back to the recorded
+     * release collapses the span to the target and drops the very debt the null
+     * was recording.
+     */
+    public function satisfiedThroughRecorded(): bool
+    {
+        return array_key_exists('satisfied_through', $this->read());
+    }
+
     public function satisfiedThrough(): ?string
     {
         $value = $this->read()['satisfied_through'] ?? null;

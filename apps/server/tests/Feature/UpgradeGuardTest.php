@@ -466,7 +466,10 @@ test('a fresh install stays fresh across the migration that populates the table'
         ReleaseManifest::build(blockingDeclaration('after-start'), '0.2.0', 'bbb'),
     ]);
     config()->set('wayfindr.release.version', '0.2.0');
-    config()->set('wayfindr.release.commit', 'bbb');
+    // Matching the commit bakeRelease() stamps. A real deploy derives the
+    // recorded commit and the manifest's from one build, so a fixture where they
+    // disagree exercises a CHANGED build by accident.
+    config()->set('wayfindr.release.commit', 'abc123');
 
     // Observed while the database is still empty, exactly as the blocking
     // listener does on CommandStarting.
@@ -529,7 +532,7 @@ test('the canonical release is recorded, not the development identity', function
         ReleaseManifest::build(blockingDeclaration('after-start'), '0.2.0', 'bbb'),
     ]);
     config()->set('wayfindr.release.version', '0.2.0-dev+abcdef');
-    config()->set('wayfindr.release.commit', 'abcdef');
+    config()->set('wayfindr.release.commit', 'abc123');
 
     app(UpgradeContext::class)->observeFreshInstall(true);
     event(new CommandFinished('migrate', new ArrayInput([]), new NullOutput, 0));
@@ -962,4 +965,53 @@ test('a successful state write says nothing', function (): void {
     event(new CommandFinished('migrate', new ArrayInput([]), $output, 0));
 
     expect($output->fetch())->not->toContain('Could not record');
+});
+
+test('the fresh exemption does not survive a changed build of the same version', function (): void {
+    // A Forge database first installed by one commit at 0.2.0 records
+    // fresh_install. A later commit under the SAME VERSION adds an action - and
+    // a fresh install short-circuits to "nothing outstanding" before the span is
+    // consulted at all, so re-including the target would not save it.
+    bakeRelease(blockingDeclaration('after-pull'), '0.2.0');
+
+    app(ReleaseState::class)->record('0.2.0', 'older-commit', satisfiedThrough: '0.2.0', freshInstall: true);
+
+    expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeTrue();
+});
+
+test('legacy debt is not discharged by recording the target', function (): void {
+    // A state-less legacy install crossing an intermediate after-start action
+    // records satisfied_through as null on purpose: the origin is unknown, so the
+    // span must keep evaluating the whole history. Reading that null as "never
+    // set" and falling back to the recorded release collapses the span to the
+    // target and drops the very debt the null was recording.
+    bakeRelease(['actions' => []], '0.3.0', history: [
+        ReleaseManifest::build(blockingDeclaration('after-start'), '0.2.0', 'bbb'),
+        ReleaseManifest::build(['actions' => []], '0.3.0', 'abc123'),
+    ]);
+
+    // What the recorder writes for a legacy upgrade that still owes something.
+    app(ReleaseState::class)->record('0.3.0', 'abc123', satisfiedThrough: null);
+
+    expect(app(ReleaseState::class)->satisfiedThroughRecorded())->toBeTrue()
+        ->and(app(ReleaseState::class)->satisfiedThrough())->toBeNull()
+        ->and(app(UpgradeGuard::class)->assessAll())->toHaveCount(1);
+});
+
+test('a state file predating the marker still falls back to the recorded release', function (): void {
+    // Old state files have no `satisfied_through` key at all, and those must keep
+    // using the recorded release as their origin rather than being read as
+    // legacy debt.
+    bakeRelease(['actions' => []], '0.3.0', history: [
+        ReleaseManifest::build(blockingDeclaration('after-start'), '0.2.0', 'bbb'),
+        ReleaseManifest::build(['actions' => []], '0.3.0', 'abc123'),
+    ]);
+
+    file_put_contents(
+        (string) config('wayfindr.release.state_path'),
+        json_encode(['version' => '0.3.0', 'commit' => 'abc123']),
+    );
+
+    expect(app(ReleaseState::class)->satisfiedThroughRecorded())->toBeFalse()
+        ->and(app(UpgradeGuard::class)->assessAll())->toBe([]);
 });

@@ -324,7 +324,17 @@ final class UpgradeGuard
         // which runs in a different process entirely. Scoped to the exact release
         // it was recorded at: an install that was fresh at 0.2.0 is not fresh
         // when it later upgrades to 0.3.0, and must be evaluated normally then.
-        if (! $fresh && $recorded !== null && $recorded === $target && $this->state->wasFreshInstall()) {
+        // Scoped to the exact BUILD, not just the version. A source deployment
+        // stamps every commit of a cycle with the same VERSION, so a database
+        // first installed by one commit would keep its fresh exemption when a
+        // later commit adds an action under that same version — and a fresh
+        // install short-circuits to "nothing outstanding" before the span is even
+        // consulted, so re-including the target would not save it.
+        if (! $fresh
+            && $recorded !== null
+            && $recorded === $target
+            && ! $this->buildChanged($manifest)
+            && $this->state->wasFreshInstall()) {
             $fresh = true;
         }
 
@@ -402,7 +412,14 @@ final class UpgradeGuard
         //
         // Falls back to the recorded version, which is correct for an install
         // that has only ever been clean and for one that predates the marker.
-        $from = $this->state->satisfiedThrough() ?? $recorded;
+        // A written null means "unknown origin, still owing" and must stay null;
+        // only an ABSENT marker falls back to the recorded release. Collapsing
+        // the two drops a legacy upgrade's outstanding intermediate work the
+        // moment the target is recorded — the same disappearance the marker
+        // exists to prevent, reached through its own fallback.
+        $from = $this->state->satisfiedThroughRecorded()
+            ? $this->state->satisfiedThrough()
+            : $recorded;
 
         $outstanding = UpgradeRequirements::outstanding(
             $history,

@@ -408,5 +408,29 @@ echo "tag page counting:"
 check "a pretty-printed page counts 100" 100 "$(page_count pretty)"
 check "a minified page also counts 100"  100 "$(page_count minified)"
 
+# The preflight runs inside the image being upgraded FROM, so it may only call an
+# API that image already had. `assertPublished()` was added by the release being
+# INSTALLED, so calling it raised an undefined-method Error that the catch read as
+# "malformed manifest" - refusing every upgrade, valid ones included.
+echo
+echo "preflight uses only pre-upgrade APIs:"
+preflight_php="$(awk '/actions="\$\(printf/,/^        \x27\)"$/' "$INSTALLER")"
+# Matched as CALLS (`Class::method`), not as prose: the block carries a comment
+# naming assertPublished to explain why it is not used, and a looser pattern
+# fails on the explanation rather than on the code.
+check "the preflight block was found"          1 "$(printf '%s' "$preflight_php" | grep -c 'ReleaseManifest.php')"
+check "it does not call assertPublished"       0 "$(printf '%s' "$preflight_php" | grep -c 'ReleaseManifest::assertPublished')"
+check "it calls decode()"                      1 "$(printf '%s' "$preflight_php" | grep -c 'ReleaseManifest::decode')"
+
+# And when the old image has none of these classes at all - true of everything cut
+# before ADR 0013 - the requires fatal, stderr is suppressed, and every check
+# silently reads as "nothing to report". It has to say so and skip.
+echo
+echo "preflight degrades loudly on a pre-contract image:"
+probe="$(awk '/^preflight_supported\(\)/,/^}/' "$INSTALLER")"
+check "a capability probe exists"           1 "$(printf '%s' "$probe" | grep -c 'is_file')"
+check "it checks the manifest class"        1 "$(printf '%s' "$probe" | grep -c 'ReleaseManifest.php')"
+check "the preflight consults it"           1 "$(grep -c 'if ! preflight_supported' "$INSTALLER")"
+
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

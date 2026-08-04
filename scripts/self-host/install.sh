@@ -154,6 +154,35 @@ php_in_current_image() {
         --entrypoint php web -r "$4" 2>/dev/null
 }
 
+# Whether the CURRENTLY INSTALLED image can evaluate any of this.
+#
+# The preflight deliberately runs inside that image - the release being upgraded
+# FROM - which is older than this installer by definition. Anything cut before
+# ADR 0013 carries none of these classes, so every `require` below fatals,
+# php_in_current_image suppresses stderr, and each check silently reads as
+# "nothing to report": the span collapses to the target alone and no action is
+# ever seen.
+#
+# Say so and skip instead. A skipped preflight is the DOCUMENTED position for an
+# install predating the mechanism: the artifact refuses to migrate on its own,
+# which is exactly why this is the good experience and not the guarantee.
+preflight_supported() {
+    local answer
+    answer="$(php_in_current_image "" "" "" '
+        $needed = [
+            "/app/apps/server/app/Support/Version/SemanticVersion.php",
+            "/app/apps/server/app/Support/Version/VersionComparator.php",
+            "/app/apps/server/app/Support/Release/ReleaseManifest.php",
+        ];
+        foreach ($needed as $path) {
+            if (! is_file($path)) { echo "NO"; exit(0); }
+        }
+        echo "YES";
+    ')"
+
+    [ "$answer" = "YES" ]
+}
+
 # Whether a release is one that publishes a manifest, so a missing asset can be
 # told apart from one that never existed.
 manifest_expected() {
@@ -205,6 +234,14 @@ upgrade_preflight() {
 
     if [ -z "$to" ]; then
         say "Preflight skipped: no resolved release to check against."
+        return 0
+    fi
+
+    if ! preflight_supported; then
+        say "Preflight skipped: the installed release predates this check."
+        printf '    The new release enforces its own requirements when it starts, and\n'
+        printf '    refuses to migrate rather than proceeding silently.\n'
+
         return 0
     fi
 
@@ -389,25 +426,20 @@ upgrade_preflight() {
             require "/app/apps/server/app/Support/Version/SemanticVersion.php";
             require "/app/apps/server/app/Support/Version/VersionComparator.php";
             require "/app/apps/server/app/Support/Release/ReleaseManifest.php";
-            $m = json_decode(stream_get_contents(STDIN), true);
-
-            // A body that is not a manifest must never be read as one that
-            // declares nothing. `?? []` did exactly that: malformed or truncated
-            // JSON decoded to null, the action loop ran over an empty list, and a
-            // before-pull requirement was skipped on the way to pulling the image.
-            //
             // Validated with the artifact own validator rather than a minimal
             // shape check. An action missing `phase` passes any looser test and
             // then classifies as neither before-pull nor anything else - so the
             // pull proceeds, and the artifact rejects the manifest afterwards,
             // once the only phase that could have prevented anything is past.
-            if (! is_array($m)) {
-                echo "INVALID\n";
-                exit(0);
-            }
-
+            //
+            // decode(), NOT assertPublished(): this runs in the image being
+            // upgraded FROM, and that image only has the API its own release
+            // shipped. A method added by the release being installed does not
+            // exist there, and the undefined-method Error would be caught below
+            // as "malformed manifest" - refusing every upgrade, including the
+            // valid ones.
             try {
-                App\Support\Release\ReleaseManifest::assertPublished($m);
+                $m = App\Support\Release\ReleaseManifest::decode(stream_get_contents(STDIN));
             } catch (Throwable $e) {
                 echo "INVALID\n";
                 exit(0);
