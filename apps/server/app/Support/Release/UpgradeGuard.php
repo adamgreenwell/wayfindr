@@ -143,6 +143,22 @@ final class UpgradeGuard
     /** @var list<array<string, mixed>> */
     private array $lastOutstanding = [];
 
+    private ?string $lastTarget = null;
+
+    /**
+     * The canonical release the last assessment was about, from the manifest.
+     *
+     * Not the same string as the running identity on a source deployment, where
+     * the identity is `<version>-dev+<sha>` and the manifest is stamped with the
+     * canonical `VERSION`. Whatever is recorded as this install's release has to
+     * be the one the guard compares against, or it never equals its own target
+     * and cannot be ordered against a floor.
+     */
+    public function lastTarget(): ?string
+    {
+        return $this->lastTarget;
+    }
+
     public function __construct(
         private readonly ReleaseState $state,
         private readonly CheckRegistry $checks,
@@ -175,6 +191,8 @@ final class UpgradeGuard
      */
     public function assess(bool $includeTarget = false): array
     {
+        $this->lastTarget = null;
+
         $manifest = $this->read($this->manifestPath());
 
         // No baked declaration means a development checkout or a build that
@@ -190,7 +208,24 @@ final class UpgradeGuard
             return $this->clear('the baked manifest names no version');
         }
 
+        $this->lastTarget = $target;
+
         $history = $this->history();
+
+        // Present but unreadable. Refusing is recoverable — the history ships
+        // with the release, so repulling the image or the checkout replaces it —
+        // and the alternative is migrating past requirements nobody could read.
+        if ($history === null) {
+            return [
+                'blocked' => true,
+                'reason' => 'the published release history is present but could not be read',
+                'actions' => [],
+                'from' => $this->state->recordedVersion(),
+                'target' => $target,
+                'legacy' => false,
+                'floor' => null,
+            ];
+        }
 
         // The target's own declaration may not be in the baked history yet — a
         // source build, or a release cut before the history step ran. Include it
@@ -328,7 +363,18 @@ final class UpgradeGuard
      *
      * @return list<array<string, mixed>>
      */
-    private function history(): array
+    /**
+     * The published history, or NULL when the file is there but unreadable.
+     *
+     * Those two are not the same answer and were being given the same one. An
+     * absent history is legitimate — a build cut before the history existed
+     * published none. An unreadable one is an inability to see what the upgrade
+     * passes through, and flattening it to "no prior release declared anything"
+     * lets a span with before-pull work in it report clear.
+     *
+     * @return ?list<array<string, mixed>>
+     */
+    private function history(): ?array
     {
         $raw = $this->readRaw($this->historyPath());
 
@@ -340,11 +386,11 @@ final class UpgradeGuard
             /** @var mixed $decoded */
             $decoded = json_decode($raw, true, flags: JSON_THROW_ON_ERROR);
         } catch (Throwable) {
-            return [];
+            return null;
         }
 
         if (! is_array($decoded) || ! is_array($decoded['releases'] ?? null)) {
-            return [];
+            return null;
         }
 
         $releases = [];

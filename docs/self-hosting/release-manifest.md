@@ -224,9 +224,16 @@ It exits non-zero when something is outstanding.
 
 ### Where the upgrade is measured from
 
-After a successful migration the release records its identity to
+After a successful migration the release records itself to
 `storage/app/release-state.json`, so the next upgrade knows where it started and
 which declarations its span covers.
+
+What it records is the **canonical release** — the version the manifest carries —
+not the running identity. On a source deployment those differ: the identity is
+`<version>-dev+<sha>` and changes with every commit, while the manifest is
+stamped with `VERSION`. Recording the identity would mean the install never
+equals its own target and cannot be ordered against a floor. The commit is kept
+alongside, so nothing about which build ran is lost.
 
 That file also carries `satisfied_through`: the newest release whose
 requirements were *all* met, which is not the same as the newest release that

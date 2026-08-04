@@ -516,3 +516,66 @@ test('a legacy install is still handed its history', function (): void {
     expect(app(ReleaseState::class)->wasFreshInstall())->toBeFalse();
     $this->get('/')->assertStatus(503);
 });
+
+test('the canonical release is recorded, not the development identity', function (): void {
+    // A source deployment stamps the manifest with VERSION (0.2.0) while the
+    // running identity is 0.2.0-dev+<sha>. Recording the identity means the
+    // recorded release never equals the guard's own target, so the cross-process
+    // freshness check fails and a brand-new Forge install is reclassified as an
+    // upgrade - handed upgrade-only work it never had.
+    bakeRelease(blockingDeclaration('after-start'), '0.2.0', history: [
+        ReleaseManifest::build(blockingDeclaration('after-start'), '0.2.0', 'bbb'),
+    ]);
+    config()->set('wayfindr.release.version', '0.2.0-dev+abcdef');
+    config()->set('wayfindr.release.commit', 'abcdef');
+
+    app(UpgradeContext::class)->observeFreshInstall(true);
+    event(new CommandFinished('migrate', new ArrayInput([]), new NullOutput, 0));
+
+    $state = app(ReleaseState::class);
+
+    expect($state->recordedVersion())->toBe('0.2.0')
+        // The build is not lost - it is kept as the commit.
+        ->and($state->wasFreshInstall())->toBeTrue();
+
+    // And the freshness scoping now matches, so the gate stays open.
+    expect($this->get('/')->status())->not->toBe(503);
+});
+
+test('an unreadable release history refuses rather than reporting clear', function (): void {
+    // Truncated history: the target manifest still reads, so assess() would
+    // append it and evaluate a span of one - silently omitting every
+    // intermediate release's before-pull and after-pull work.
+    $dir = storage_path('framework/testing/release-'.bin2hex(random_bytes(4)));
+    mkdir($dir, 0700, true);
+
+    $manifest = ReleaseManifest::build(['actions' => []], '0.3.0', 'ccc');
+    file_put_contents($dir.'/release.json', json_encode($manifest));
+    file_put_contents($dir.'/history.json', '{"schema":1,"releases":[{"version":"0.2.0"');
+
+    config()->set('wayfindr.release.manifest_path', $dir.'/release.json');
+    config()->set('wayfindr.release.history_path', $dir.'/history.json');
+    config()->set('wayfindr.release.state_path', $dir.'/state.json');
+
+    $assessment = app(UpgradeGuard::class)->assess();
+
+    expect($assessment['blocked'])->toBeTrue()
+        ->and($assessment['reason'])->toContain('could not be read');
+});
+
+test('an absent release history is still legitimate', function (): void {
+    // Absent is not the same as unreadable: a build cut before the history
+    // existed published none, and must migrate as normal.
+    $dir = storage_path('framework/testing/release-'.bin2hex(random_bytes(4)));
+    mkdir($dir, 0700, true);
+
+    file_put_contents($dir.'/release.json', json_encode(
+        ReleaseManifest::build(['actions' => []], '0.3.0', 'ccc'),
+    ));
+
+    config()->set('wayfindr.release.manifest_path', $dir.'/release.json');
+    config()->set('wayfindr.release.history_path', $dir.'/absent.json');
+    config()->set('wayfindr.release.state_path', $dir.'/state.json');
+
+    expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeFalse();
+});

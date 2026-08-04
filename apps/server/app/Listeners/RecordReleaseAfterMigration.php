@@ -58,7 +58,22 @@ class RecordReleaseAfterMigration
         //
         // Target-inclusive, because an after-start requirement of the release
         // just installed is exactly the kind this has to see.
-        $outstanding = app(UpgradeGuard::class)->assessAll();
+        $guard = app(UpgradeGuard::class);
+        $outstanding = $guard->assessAll();
+
+        // Record the CANONICAL release, not the running identity.
+        //
+        // On a source deployment those differ: the identity is
+        // `<version>-dev+<sha>` and changes with every commit, while the manifest
+        // is stamped with `VERSION` so acknowledgements survive a redeploy. Store
+        // the identity and the recorded release never equals the guard's own
+        // target — which reclassifies a brand-new Forge install as an upgrade and
+        // hands it upgrade-only work — and it cannot be ordered against a floor
+        // either, since a development identity does not compare.
+        //
+        // The commit is kept separately below, so nothing about which build ran
+        // is lost by recording the release it belongs to.
+        $version = $guard->lastTarget() ?? $version;
 
         // The marker advances only on a clean assessment. Left where it is, the
         // span keeps reaching back past the intermediate releases whose
