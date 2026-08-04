@@ -54,6 +54,20 @@ final class ReleaseState
     }
 
     /**
+     * The commit recorded alongside the release, or null when none was.
+     *
+     * On a source deployment the version alone cannot tell one build of a release
+     * from another — `VERSION` is stamped on every commit of a cycle — so this is
+     * what distinguishes "this release again" from "this release, changed".
+     */
+    public function recordedCommit(): ?string
+    {
+        $value = $this->read()['commit'] ?? null;
+
+        return is_string($value) && trim($value) !== '' ? $value : null;
+    }
+
+    /**
      * The newest release whose requirements were ALL met, which is not the same
      * as the newest release that migrated.
      *

@@ -376,6 +376,20 @@ final class UpgradeGuard
             }
         }
 
+        // A source deployment stamps every build of a cycle with the same
+        // `VERSION`, so `recorded === target` does NOT mean "this release has
+        // already been dealt with" — a later commit can add an action under the
+        // same version. Without this the span is (target, target], empty, and the
+        // newly declared pre-migration action is skipped; serving cannot catch it
+        // either, since that gates only after-start.
+        //
+        // The commit is what tells the two apart. Equal and both known means the
+        // same build; anything else is treated as changed, which re-evaluates
+        // actions that are already satisfied and finds them satisfied.
+        if (! $includeTarget && $recorded === $target && $this->buildChanged($manifest)) {
+            $includeTarget = true;
+        }
+
         // The span starts at the last release that was genuinely CLEAN, not
         // simply the last one that migrated.
         //
@@ -441,6 +455,24 @@ final class UpgradeGuard
     /**
      * @return array{blocked: bool, reason: string, actions: list<array<string, mixed>>, from: ?string, target: ?string, legacy: bool, floor: ?string}
      */
+    /**
+     * Whether the build on record differs from the one being assessed.
+     *
+     * @param  array<string, mixed>  $manifest
+     */
+    private function buildChanged(array $manifest): bool
+    {
+        $recordedCommit = $this->state->recordedCommit();
+        $currentCommit = $manifest['commit'] ?? null;
+
+        // Only two known, equal commits mean the same build. An unknown on either
+        // side is not evidence of sameness, and assuming it would skip exactly the
+        // actions this exists to catch.
+        return ! (is_string($recordedCommit)
+            && is_string($currentCommit)
+            && $recordedCommit === $currentCommit);
+    }
+
     private function clear(string $reason): array
     {
         return [

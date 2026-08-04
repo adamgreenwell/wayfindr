@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Output\BufferedOutput;
 use Symfony\Component\Console\Output\NullOutput;
 
 uses(RefreshDatabase::class);
@@ -909,4 +910,56 @@ test('the serving gate tolerates an unreachable database', function (): void {
     DB::shouldReceive('connection')->andThrow(new RuntimeException('could not connect'));
 
     expect($this->get('/')->status())->not->toBe(500);
+});
+
+test('a changed build of the same version is reassessed', function (): void {
+    // A source deployment stamps every build of a cycle with the same VERSION, so
+    // `recorded === target` does not mean the release has been dealt with - a
+    // later commit can add an action under the same version. The span would be
+    // (target, target], empty, and the new pre-migration action skipped; serving
+    // cannot catch it either, since that gates only after-start.
+    bakeRelease(blockingDeclaration('after-pull'), '0.2.0');
+
+    // The previous deploy of the SAME version, a different commit.
+    app(ReleaseState::class)->record('0.2.0', 'older-commit', satisfiedThrough: '0.2.0');
+
+    expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeTrue();
+});
+
+test('an unchanged build of the same version is not reassessed', function (): void {
+    // The counterpart: re-running migrate on the same build must not resurrect
+    // work that was already settled, or a released image would block on every
+    // restart.
+    bakeRelease(blockingDeclaration('after-pull'), '0.2.0');
+
+    // bakeRelease() stamps 'abc123' as the commit.
+    app(ReleaseState::class)->record('0.2.0', 'abc123', satisfiedThrough: '0.2.0');
+
+    expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeFalse();
+});
+
+test('a failed state write is reported on the migration output', function (): void {
+    // Silent failure here is delayed and confusing: the next process sees a
+    // populated database with no state and reads the install as legacy.
+    bakeRelease(['actions' => []], '0.2.0');
+    config()->set('wayfindr.release.version', '0.2.0');
+    config()->set('wayfindr.release.commit', 'bbb');
+    config()->set('wayfindr.release.state_path', '/nonexistent-root/no/state.json');
+
+    $output = new BufferedOutput;
+    event(new CommandFinished('migrate', new ArrayInput([]), $output, 0));
+
+    expect($output->fetch())->toContain('Could not record this release');
+});
+
+test('a successful state write says nothing', function (): void {
+    // So the warning above cannot be satisfied by always printing it.
+    bakeRelease(['actions' => []], '0.2.0');
+    config()->set('wayfindr.release.version', '0.2.0');
+    config()->set('wayfindr.release.commit', 'bbb');
+
+    $output = new BufferedOutput;
+    event(new CommandFinished('migrate', new ArrayInput([]), $output, 0));
+
+    expect($output->fetch())->not->toContain('Could not record');
 });

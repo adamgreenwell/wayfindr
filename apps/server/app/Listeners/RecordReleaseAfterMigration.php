@@ -106,7 +106,7 @@ class RecordReleaseAfterMigration
         // outstanding, which is later than strictly necessary and harmless: a
         // wider span re-evaluates actions that are already satisfied and finds
         // them satisfied.
-        app(ReleaseState::class)->record(
+        $recorded = app(ReleaseState::class)->record(
             $version,
             is_string($commit) && trim($commit) !== '' ? $commit : null,
             satisfiedThrough: $outstanding === [] ? $version : null,
@@ -115,5 +115,30 @@ class RecordReleaseAfterMigration
             // the empty database — agree that this install upgraded from nowhere.
             freshInstall: app(UpgradeContext::class)->wasFreshInstall() === true,
         );
+
+        if ($recorded) {
+            return;
+        }
+
+        // The write failed — an unwritable or full storage volume. The migration
+        // itself succeeded, so failing here is not an option worth taking: the
+        // container entrypoint retries a failed migrate, and a retry would find
+        // nothing pending, fail to record again, and loop for as long as the disk
+        // stays full.
+        //
+        // Said loudly instead, because the consequence is delayed and confusing
+        // rather than immediate: the next process sees a populated database with
+        // no state, reads the install as legacy, and may refuse a floor it cannot
+        // verify or gate serving on the target's own after-start work. Those are
+        // over-refusals rather than silent passes, which is the safe direction —
+        // but an operator who never saw this line will not know why.
+        $output = $event->output;
+        $output->writeln('');
+        $output->writeln('<error>Could not record this release to the state file.</error>');
+        $output->writeln(sprintf('  Tried: %s', (string) config('wayfindr.release.state_path')));
+        $output->writeln('  The migration succeeded, but the upgrade guard has no record of it.');
+        $output->writeln('  Until this is writable, later upgrades will be treated as starting from');
+        $output->writeln('  an unknown release, and may refuse until you say where you are.');
+        $output->writeln('');
     }
 }

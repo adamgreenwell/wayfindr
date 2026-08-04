@@ -377,5 +377,36 @@ check "an empty origin is not"              UNKNOWN "$(origin_usable '')"
 # development version the same way rather than refusing it.
 check "a development identity is usable"    USABLE  "$(origin_usable '0.2.0-dev+abc')"
 
+# The page count has to be OCCURRENCES, not lines. `grep -c` counts matching
+# lines, and nothing obliges the API to put one tag per line - a minified page of
+# a hundred reads as a page of one, ends pagination immediately, and drops every
+# older release along with any before-pull requirement in it.
+page_count() {
+    local style="$1" body i
+    body="$(mktemp)"
+
+    if [ "$style" = minified ]; then
+        printf '[' > "$body"
+        i=0
+        while [ "$i" -lt 100 ]; do
+            [ "$i" -gt 0 ] && printf ',' >> "$body"
+            printf '{"name":"v0.0.%d"}' "$i" >> "$body"
+            i=$((i + 1))
+        done
+        printf ']' >> "$body"
+    else
+        i=0
+        while [ "$i" -lt 100 ]; do printf '  "name": "v0.0.%d",\n' "$i" >> "$body"; i=$((i + 1)); done
+    fi
+
+    grep -o '"name":' "$body" | wc -l | tr -d ' '
+    rm -f "$body"
+}
+
+echo
+echo "tag page counting:"
+check "a pretty-printed page counts 100" 100 "$(page_count pretty)"
+check "a minified page also counts 100"  100 "$(page_count minified)"
+
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

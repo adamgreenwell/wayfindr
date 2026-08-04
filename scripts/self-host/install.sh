@@ -261,7 +261,14 @@ upgrade_preflight() {
         # Every tag on the page, and only the release-shaped ones. The two counts
         # differ deliberately: a full page of non-release tags still means there
         # is another page to read.
-        page_count="$(grep -c '"name":' "$tags_body" || true)"
+        #
+        # Counted as OCCURRENCES, not lines. `grep -c` counts matching lines, and
+        # nothing obliges the API to put one tag per line - a minified response
+        # puts all hundred on one, which reads as a page of 1, ends pagination
+        # immediately, and drops every older release along with any before-pull
+        # requirement in it.
+        page_count="$(grep -o '"name":' "$tags_body" | wc -l | tr -d ' ')"
+        [ -n "$page_count" ] || page_count=0
         tag_count="$(grep -o '"name": *"v[^"]*"' "$tags_body" | sed 's/.*"v/v/; s/"$//' || true)"
 
         [ -n "$tag_count" ] && tags="${tags}${tag_count}
