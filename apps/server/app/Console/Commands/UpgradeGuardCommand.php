@@ -24,14 +24,13 @@ class UpgradeGuardCommand extends Command
         $all = $guard->assessAll();
         $assessment['actions'] = $all;
 
-        // A floor refusal carries NO actions: nothing an operator could do to
-        // this install makes the jump supported, so assess() returns before it
-        // evaluates requirements at all. Deriving `blocked` from the action count
-        // alone therefore overwrote a refusal with success — and the --json
-        // branch returns right below, before the floor-specific path that would
-        // otherwise have caught it. Tooling was handed a clean assessment for an
-        // upgrade the guard had already refused.
-        $assessment['blocked'] = $all !== [] || ($assessment['floor'] ?? null) !== null;
+        // ADD to what assess() decided; never recompute it. A refusal can carry
+        // no actions at all — the floor, an unreadable manifest, an unreadable
+        // history — and deriving `blocked` from the action list alone reported
+        // success for a release the migration gate refuses. Enumerating those
+        // cases here was the previous shape and it went stale the moment another
+        // actionless refusal was added, so the count only ever adds now.
+        $assessment['blocked'] = $assessment['blocked'] || $all !== [];
 
         if ($this->option('json')) {
             $this->line((string) json_encode($assessment, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));

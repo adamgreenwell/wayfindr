@@ -193,7 +193,19 @@ final class UpgradeGuard
     {
         $this->lastTarget = null;
 
-        $manifest = $this->read($this->manifestPath());
+        try {
+            $manifest = $this->read($this->manifestPath());
+        } catch (Throwable) {
+            return [
+                'blocked' => true,
+                'reason' => 'the release manifest is present but could not be read',
+                'actions' => [],
+                'from' => $this->state->recordedVersion(),
+                'target' => null,
+                'legacy' => false,
+                'floor' => null,
+            ];
+        }
 
         // No baked declaration means a development checkout or a build that
         // predates this mechanism. Nothing is declared, so nothing is enforced —
@@ -324,11 +336,20 @@ final class UpgradeGuard
         // Only the phases that must precede the schema change may block it. An
         // unmet after-start action needs the migrated schema to be performed at
         // all, so blocking migration on it could never be satisfied.
+        //
+        // Except when it is STRANDED. An action belonging to a release this jump
+        // skips past, needing that release's own code or schema, cannot be
+        // performed at any phase — so letting a stranded after-start action
+        // through migration only to gate serving leaves the install migrated,
+        // refusing traffic, and holding a requirement with no way to satisfy it.
+        // The installer preflight already refuses these; every other path here
+        // (the container entrypoint, both Forge scripts, a manual migrate) had no
+        // such check.
         $blocking = array_values(array_filter(
             $outstanding,
             static fn (array $a): bool => in_array(
                 $a['phase'] ?? '', UpgradeRequirements::BLOCKS_MIGRATION, true,
-            ),
+            ) || UpgradeRequirements::stranded($a, $target),
         ));
 
         return [
@@ -421,6 +442,19 @@ final class UpgradeGuard
     /**
      * @return array<string, mixed>|null
      */
+    /**
+     * The decoded manifest, or null when there is no manifest file at all.
+     *
+     * Throws when the file is PRESENT but unreadable. Those are different
+     * answers: absent means a development checkout or a build predating this
+     * mechanism, and must migrate as normal; unreadable means the release cannot
+     * say what it requires, and answering "then it requires nothing" disables
+     * the guard entirely — floor included — on the strength of a corrupt file.
+     *
+     * It is recoverable, which is what makes refusing the right call: the
+     * manifest ships with the release, so repulling the image or the checkout
+     * replaces it.
+     */
     private function read(string $path): ?array
     {
         $raw = $this->readRaw($path);
@@ -429,15 +463,7 @@ final class UpgradeGuard
             return null;
         }
 
-        try {
-            return ReleaseManifest::decode($raw);
-        } catch (Throwable) {
-            // A manifest we cannot read is not a manifest that permits anything,
-            // but refusing every migration on a corrupt file would strand an
-            // install with no way forward. Treated as absent and surfaced by the
-            // command, which reports the reason.
-            return null;
-        }
+        return ReleaseManifest::decode($raw);
     }
 
     private function readRaw(string $path): ?string

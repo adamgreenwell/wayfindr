@@ -25,6 +25,28 @@ final class UpgradeRequirements
     public const BLOCKS_SERVING = ['after-start'];
 
     /**
+     * Whether an action can never be performed on this upgrade, whatever its
+     * phase, because the release it belongs to is skipped past.
+     *
+     * An action needing its OWN release's code or schema is unperformable in a
+     * direct jump: `before-pull` has the old release, and `after-pull` and
+     * `after-start` both have the target. The only way to satisfy it is to stop
+     * at the release it belongs to.
+     *
+     * This has to block MIGRATION even when the phase says otherwise. A stranded
+     * `after-start` action would otherwise let the migration through and gate
+     * serving afterwards — leaving the install migrated, refusing traffic, and
+     * facing a requirement that cannot be met at all. Refusing first leaves the
+     * previous release running and the operator able to step through.
+     */
+    public static function stranded(array $action, ?string $target): bool
+    {
+        return $target !== null
+            && ($action['release'] ?? null) !== $target
+            && in_array($action['depends_on_release'] ?? 'none', ['code', 'schema'], true);
+    }
+
+    /**
      * Collect the actions in `(from, target]` that are still outstanding.
      *
      * `$from` is null for an upgrade whose starting point cannot be recovered —

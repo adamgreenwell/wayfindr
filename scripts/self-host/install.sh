@@ -211,14 +211,21 @@ upgrade_preflight() {
     # single response, so past a hundred tags the older half of the span simply
     # is not in the answer - and an upgrade from far enough back would compute an
     # empty span and call it clear. Walk the pages until one comes back short.
-    local tags_body tags_status page page_count tag_count
+    local tags_body tags_status tags_curl_exit page page_count tag_count
     tags_body="$(mktemp)"
     tags=""
     page=1
 
     while :; do
-        tags_status="$(curl -sSL -o "$tags_body" -w '%{http_code}' "${TAGS_API}&page=${page}" 2>/dev/null || true)"
+        # curl's own exit status as well as the HTTP code, for the same reason
+        # the manifest fetch checks both: a transfer that dies partway still
+        # reports the 200 it saw in the headers, and a truncated page is short -
+        # which this loop would read as "the last page" and stop, dropping every
+        # release after it.
+        tags_curl_exit=0
+        tags_status="$(curl -sSL -o "$tags_body" -w '%{http_code}' "${TAGS_API}&page=${page}" 2>/dev/null)" || tags_curl_exit=$?
         [ -n "$tags_status" ] || tags_status="000"
+        [ "$tags_curl_exit" -eq 0 ] || tags_status="000"
 
         if [ "$tags_status" != "200" ]; then
             rm -f "$tags_body"

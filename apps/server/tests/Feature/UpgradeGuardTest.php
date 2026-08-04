@@ -579,3 +579,95 @@ test('an absent release history is still legitimate', function (): void {
 
     expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeFalse();
 });
+
+test('a stranded intermediate action blocks migration whatever its phase', function (): void {
+    // A v0.2.0 action needing v0.2.0's own code cannot be performed on a direct
+    // 0.1.0 -> 0.3.0 jump at ANY phase. Letting an after-start one through
+    // migration and gating serving afterwards leaves the install migrated,
+    // refusing traffic, and holding a requirement with no way to satisfy it.
+    $stranded = ['actions' => [[
+        'id' => 'needs-its-own-code',
+        'summary' => 'Run a command that only 0.2.0 ships.',
+        'detail' => 'php artisan something:only-in-0.2.0',
+        'phase' => 'after-start',
+        'depends_on_release' => 'code',
+        'applicability' => ['type' => 'always'],
+        'verification' => ['type' => 'attest'],
+    ]]];
+
+    bakeRelease(['actions' => []], '0.3.0', history: [
+        ReleaseManifest::build(['actions' => []], '0.1.0', 'aaa'),
+        ReleaseManifest::build($stranded, '0.2.0', 'bbb'),
+        ReleaseManifest::build(['actions' => []], '0.3.0', 'ccc'),
+    ]);
+
+    app(ReleaseState::class)->record('0.1.0', 'aaa', satisfiedThrough: '0.1.0');
+
+    $assessment = app(UpgradeGuard::class)->assess();
+
+    expect($assessment['blocked'])->toBeTrue()
+        ->and(array_column($assessment['actions'], 'id'))->toContain('needs-its-own-code');
+});
+
+test('the targets own after-start action still does not block migration', function (): void {
+    // The stranded rule must not swallow the ordinary case: an after-start action
+    // of the release being installed needs the migrated schema, so blocking
+    // migration on it could never be satisfied.
+    $own = ['actions' => [[
+        'id' => 'needs-new-schema',
+        'summary' => 'Backfill using the new column.',
+        'detail' => 'php artisan backfill',
+        'phase' => 'after-start',
+        'depends_on_release' => 'schema',
+        'applicability' => ['type' => 'always'],
+        'verification' => ['type' => 'attest'],
+    ]]];
+
+    bakeRelease($own, '0.3.0', history: [
+        ReleaseManifest::build(['actions' => []], '0.1.0', 'aaa'),
+        ReleaseManifest::build($own, '0.3.0', 'ccc'),
+    ]);
+
+    app(ReleaseState::class)->record('0.1.0', 'aaa', satisfiedThrough: '0.1.0');
+
+    expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeFalse()
+        ->and(app(UpgradeGuard::class)->assessAll())->toHaveCount(1);
+});
+
+test('an unreadable target manifest refuses rather than disabling the guard', function (): void {
+    // Reading it as absent turned a corrupt file into "this build declares
+    // nothing" - which disables the floor as well as the actions.
+    $dir = storage_path('framework/testing/release-'.bin2hex(random_bytes(4)));
+    mkdir($dir, 0700, true);
+    file_put_contents($dir.'/release.json', '{"schema":1,"version":"0.3.0","act');
+
+    config()->set('wayfindr.release.manifest_path', $dir.'/release.json');
+    config()->set('wayfindr.release.state_path', $dir.'/state.json');
+
+    $assessment = app(UpgradeGuard::class)->assess();
+
+    expect($assessment['blocked'])->toBeTrue()
+        ->and($assessment['reason'])->toContain('could not be read');
+});
+
+test('an actionless refusal is preserved in command output', function (): void {
+    // Any refusal that carries no actions - floor, unreadable manifest,
+    // unreadable history - was recomputed to success by the command, which then
+    // reported clear for a release the migration gate refuses.
+    $dir = storage_path('framework/testing/release-'.bin2hex(random_bytes(4)));
+    mkdir($dir, 0700, true);
+    file_put_contents($dir.'/release.json', json_encode(
+        ReleaseManifest::build(['actions' => []], '0.3.0', 'ccc'),
+    ));
+    file_put_contents($dir.'/history.json', '{"schema":1,"releases":[{"ver');
+
+    config()->set('wayfindr.release.manifest_path', $dir.'/release.json');
+    config()->set('wayfindr.release.history_path', $dir.'/history.json');
+    config()->set('wayfindr.release.state_path', $dir.'/state.json');
+
+    $exit = Artisan::call('wayfindr:upgrade-guard', ['--json' => true]);
+    $decoded = json_decode(Artisan::output(), true);
+
+    expect($exit)->toBe(1)
+        ->and($decoded['blocked'])->toBeTrue();
+});

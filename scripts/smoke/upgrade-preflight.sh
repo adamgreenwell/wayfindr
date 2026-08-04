@@ -109,7 +109,7 @@ check "arguments are captured before the parse loop" ok \
 # "this release published no manifest" never ran - which refused every upgrade,
 # because every release that exists today predates the contract.
 fetch_status() {
-    local scenario="$1" body status
+    local scenario="$1" body status curl_exit
 
     curl() {
         case "$scenario" in
@@ -185,19 +185,25 @@ check "an unplaceable tag is not exempt"           YES "$(manifest_expected '0.1
 # look identical to "there are no other releases": the span silently shrank to
 # the target and every intermediate declaration went unread.
 discovery() {
-    local scenario="$1" body status
+    local scenario="$1" body status curl_exit
 
     curl() {
         case "$scenario" in
-            ok)     printf '[{"name": "v0.2.0"}]' > "$3"; printf '200' ;;
-            rated)  printf '{"message":"rate limited"}' > "$3"; printf '403'; return 22 ;;
-            down)   printf '000'; return 7 ;;
+            ok)      printf '[{"name": "v0.2.0"}]' > "$3"; printf '200' ;;
+            rated)   printf '{"message":"rate limited"}' > "$3"; printf '403'; return 22 ;;
+            down)    printf '000'; return 7 ;;
+            # A transfer that died partway. curl reports the 200 it saw in the
+            # headers and exits 18, so the HTTP code alone says "fine" while the
+            # body is short - which the pager reads as the final page.
+            partial) printf '[{"name": "v0.2' > "$3"; printf '200'; return 18 ;;
         esac
     }
 
     body="$(mktemp)"
-    status="$(curl -sSL -o "$body" -w '%{http_code}' https://example.invalid 2>/dev/null || true)"
+    curl_exit=0
+    status="$(curl -sSL -o "$body" -w '%{http_code}' https://example.invalid 2>/dev/null)" || curl_exit=$?
     [ -n "$status" ] || status="000"
+    [ "$curl_exit" -eq 0 ] || status="000"
     rm -f "$body"
     unset -f curl
 
@@ -209,6 +215,7 @@ echo "tag discovery fails closed:"
 check "a usable tag list proceeds"          PROCEED "$(discovery ok)"
 check "a rate-limited API refuses"          REFUSE  "$(discovery rated)"
 check "an unreachable API refuses"          REFUSE  "$(discovery down)"
+check "a partial transfer refuses"          REFUSE  "$(discovery partial)"
 
 # Tag discovery has to read every page. `per_page=100` caps one response, so past
 # a hundred tags the older half of a span is simply absent - and an upgrade from
