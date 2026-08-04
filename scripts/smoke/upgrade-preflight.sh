@@ -939,6 +939,11 @@ check "it probes /up"                 1 "$(printf '%s' "$wait_body" | grep -c 'l
 # to show the operator what the release is asking for.
 check "it also probes a real route"   yes "$(printf '%s' "$wait_body" | grep -q 'local_url/\"' && echo yes || echo no)"
 check "it treats 503 as not serving"  1 "$(printf '%s' "$wait_body" | grep -c '= \"503\"')"
+# A container that EXITED is not listed without --all, which is precisely the
+# container this is looking for. Without it the refusal went unseen and the loop
+# ran its full two minutes before printing a generic failure.
+check "it lists stopped containers"   yes "$(printf '%s' "$wait_body" | grep -q 'compose ps --all -q web' && echo yes || echo no)"
+check "it does not use the bare form" 0   "$(printf '%s' "$wait_body" | grep -c 'compose ps -q web')"
 
 # And the installer must actually consult it before saying the upgrade worked.
 upgrade_tail="$(awk '/say "Restarting the stack/,/say "Upgrade complete/' "$INSTALLER")"

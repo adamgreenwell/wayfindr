@@ -249,18 +249,42 @@ pin_image() {
 # deliberately lets it through, because the pull is what delivers what the action
 # needs, and the artifact is then the thing that refuses.
 await_web_start() {
-    local tries=0 cid running code local_bind local_url serving
+    local tries=0 cid running code this_code local_bind local_url serving
 
     local_bind="$(env_value WAYFINDR_LOCAL_BIND)"
     local_url="http://${local_bind:-127.0.0.1:8000}"
 
     while [ "$tries" -lt 60 ]; do
-        cid="$(compose ps -q web 2>/dev/null | head -1 || true)"
+        # `--all`, or a container that has EXITED is not listed - which is
+        # precisely the container this is looking for. Without it the refusal
+        # went unseen, the loop ran its full two minutes, and the operator got a
+        # generic "did not come up" instead of the release's own message.
+        #
+        # Every id is inspected rather than the first, because a replaced
+        # container can still be listed alongside its replacement and nothing
+        # promises an order. Running anywhere means still starting; otherwise the
+        # first non-zero exit is the one to report.
+        running=""
+        code=""
 
-        if [ -n "$cid" ]; then
-            running="$(docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null || true)"
-            code="$(docker inspect -f '{{.State.ExitCode}}' "$cid" 2>/dev/null || true)"
+        for cid in $(compose ps --all -q web 2>/dev/null || true); do
+            if [ "$(docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null || true)" = "true" ]; then
+                running="true"
+                break
+            fi
 
+            running="false"
+            this_code="$(docker inspect -f '{{.State.ExitCode}}' "$cid" 2>/dev/null || true)"
+
+            if [ -n "$this_code" ] && [ "$this_code" != "0" ]; then
+                code="$this_code"
+                break
+            fi
+
+            code="${this_code:-0}"
+        done
+
+        if [ -n "$running" ]; then
             if [ "$running" = "false" ] && [ "$code" = "78" ]; then
                 printf '\n\033[1;31mTHE NEW RELEASE REFUSED TO START\033[0m\n\n'
                 printf '  It needs something done before its migrations may run, and stopped\n'
