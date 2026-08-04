@@ -214,7 +214,12 @@ declared_origin() {
 # unknown and the whole history is in span.
 release_state() {
     php_in_current_image '
-        $path = "/app/apps/server/storage/app/release-state.json";
+        // The path the APP resolves, not the default alone. An operator who set
+        // WAYFINDR_RELEASE_STATE_PATH has a state file the artifact reads and
+        // this would not see - reporting no record for an install that has one,
+        // which is the same disagreement from the other side.
+        $path = getenv("WAYFINDR_RELEASE_STATE_PATH")
+            ?: "/app/apps/server/storage/app/release-state.json";
 
         if (! is_file($path)) { exit(0); }
 
@@ -285,32 +290,6 @@ manifest_expected() {
     [ "$answer" = "YES" ]
 }
 
-current_release() {
-    # The pinned image tag is the most reliable statement of what is installed:
-    # it is what compose actually runs. `latest` names no version.
-    local pinned baked
-    pinned="$(grep -E '^WAYFINDR_IMAGE=' "$ENV_FILE" 2>/dev/null | head -1 | sed 's#.*:##')"
-
-    case "$pinned" in
-        ''|latest) : ;;
-        *) printf '%s' "$pinned"; return 0 ;;
-    esac
-
-    # An unversioned pin still runs a real image, and that image knows what it
-    # is: the build bakes its own manifest. Ask it, rather than reporting an
-    # unknown origin and refusing an upgrade that is perfectly determinable.
-    #
-    # `latest` is the default for anyone who installed without pinning, so this
-    # is the common case, not an edge one.
-    baked="$(php_in_current_image '
-        $path = "/etc/wayfindr/release.json";
-        if (! is_file($path)) { exit(0); }
-        $m = json_decode((string) file_get_contents($path), true);
-        if (is_array($m) && is_string($m["version"] ?? null)) { echo $m["version"]; }
-    ')"
-
-    printf '%s' "$baked"
-}
 
 upgrade_preflight() {
     local from to ack tags span manifest all_actions actions tag floor
@@ -440,10 +419,17 @@ upgrade_preflight() {
         fi
     fi
 
-    if [ -z "$from" ]; then
-        from="$(current_release)"
-        span_origin="$from"
-    fi
+    # Nothing recorded and nothing declared means the artifact will read this as a
+    # legacy install and evaluate the WHOLE published history. The preflight has
+    # to do the same.
+    #
+    # A version derived from the running image was used here, and it narrowed the
+    # span: everything at or below it dropped out, so an older before-pull
+    # requirement - or an after-start debt now stranded - went unseen and the
+    # working image was replaced before the artifact refused. The image is
+    # something only the installer can see, and every use of it so far has turned
+    # into a disagreement, so it is gone rather than narrowed again.
+    [ -n "$from" ] || span_origin=""
 
     # An unknown span origin means the whole published history is in scope, which
     # is what an empty WF_FROM already means to the span filter.
@@ -454,6 +440,7 @@ upgrade_preflight() {
     # A declaration describes its own release, so an upgrade must read EVERY
     # release it passes through, not just the one it lands on. Skipping the
     # middle is the several-releases-behind case this exists to catch.
+    #
     # Fail CLOSED, and read EVERY page.
     #
     # Discarding the error made a transient fault or a 403 look identical to

@@ -621,5 +621,60 @@ check "a bare -dev is rejected"             REJECTED "$(usable_declaration '0.2.
 check "a typo is rejected"                  REJECTED "$(usable_declaration 0.2.O)"
 check "an empty declaration is rejected"    REJECTED "$(usable_declaration '')"
 
+# With nothing recorded and nothing declared, the artifact reads the install as
+# legacy and evaluates the WHOLE published history. The preflight has to match:
+# narrowing the span from a version only IT can see - the running image - drops
+# every declaration at or below that version, so an older before-pull requirement
+# goes unseen and the working image is replaced before the artifact refuses.
+resolve_origin() {
+    local state="$1" declared="$2"
+    local from origin_known span_origin span_known
+
+    origin_known=0
+    span_known=1
+    span_origin=""
+    from="${state%%|*}"
+
+    if [ -n "$state" ]; then
+        span_origin="$(printf '%s' "$state" | cut -d'|' -f2)"
+        span_known="$(printf '%s' "$state" | cut -d'|' -f3)"
+    fi
+
+    [ -n "$from" ] && origin_known=1
+
+    if [ -z "$from" ] && [ -n "$declared" ]; then
+        from="$declared"
+        origin_known=1
+        span_origin="$declared"
+    fi
+
+    [ -n "$from" ] || span_origin=""
+    [ "$span_known" = "1" ] || span_origin=""
+
+    printf '%s/%s/%s' "$from" "$span_origin" "$origin_known"
+}
+
+echo
+echo "origin resolution matches the artifact:"
+check "a clean state"              "0.2.0/0.2.0/1" "$(resolve_origin '0.2.0|0.2.0|1' '')"
+check "retained debt reaches back"  "0.2.0/0.1.0/1" "$(resolve_origin '0.2.0|0.1.0|1' '')"
+check "unknown debt takes the lot"  "0.2.0//1"      "$(resolve_origin '0.2.0||0' '')"
+check "no state, but declared"      "0.2.4/0.2.4/1" "$(resolve_origin '' '0.2.4')"
+# The case this round fixed: nothing known, so the span must be the whole
+# history rather than everything above whatever the image happens to be.
+check "nothing known at all"        "//0"           "$(resolve_origin '' '')"
+
+# And the state file is read where the APP resolves it, not only at the default.
+echo
+echo "state path follows the app:"
+state_path() {
+    WAYFINDR_RELEASE_STATE_PATH="$1" "${PHP:-php}" -r '
+        echo getenv("WAYFINDR_RELEASE_STATE_PATH")
+            ?: "/app/apps/server/storage/app/release-state.json";
+    '
+}
+check "the default when unset"   /app/apps/server/storage/app/release-state.json "$(state_path '')"
+check "a configured override"    /srv/wayfindr/state.json                        "$(state_path /srv/wayfindr/state.json)"
+
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
