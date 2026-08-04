@@ -28,8 +28,27 @@ class ForgetReleaseAfterRollback
 {
     private const REWINDING_COMMANDS = ['migrate:rollback', 'migrate:reset'];
 
+    /**
+     * Commands that tear the ledger down and rebuild it in one go.
+     *
+     * A successful rebuild ends by migrating, so the recorder writes an accurate
+     * record and nothing needs forgetting. A FAILED one has wiped or reset the
+     * ledger and then not finished re-applying it, so the record describes a
+     * schema that is no longer installed — and the refresh path deliberately
+     * preserves state through its nested reset, so nothing else clears it.
+     */
+    private const REBUILDING_COMMANDS = ['migrate:fresh', 'migrate:refresh'];
+
     public function handle(CommandFinished $event): void
     {
+        if (in_array($event->command, self::REBUILDING_COMMANDS, true)) {
+            if ($event->exitCode !== 0) {
+                $this->forget($event);
+            }
+
+            return;
+        }
+
         if (! in_array($event->command, self::REWINDING_COMMANDS, true)) {
             return;
         }
@@ -57,6 +76,11 @@ class ForgetReleaseAfterRollback
         // installed only costs a refusal the operator can clear by saying where
         // they are.
 
+        $this->forget($event);
+    }
+
+    private function forget(CommandFinished $event): void
+    {
         if (app(ReleaseState::class)->forget()) {
             return;
         }

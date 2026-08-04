@@ -26,6 +26,7 @@ MAIL_FROM="support@example.com"
 BEHIND_PROXY=0
 TARGET_DIR="$PWD/wayfindr"
 SOURCE_DIR=""
+INSTALLED_IMAGE=""
 UPGRADE=0
 NO_START=0
 
@@ -260,7 +261,19 @@ php_in_current_image() {
         shift
     done
 
-    compose run --rm --no-deps -T ${env_args[@]+"${env_args[@]}"} \
+    # WAYFINDR_IMAGE is pinned for the duration of the probe.
+    #
+    # compose.yml names the service image `${WAYFINDR_IMAGE:-...}`, and Compose
+    # interpolates from the shell environment ahead of --env-file - so an
+    # exported override made every one of these probes run, and therefore PULL,
+    # the target image. The preflight would have fetched the very release it
+    # exists to check before pulling, which defeats before-pull entirely.
+    #
+    # INSTALLED_IMAGE is the value persisted in the environment file: what is
+    # running now, which is what "in the current image" was always supposed to
+    # mean.
+    WAYFINDR_IMAGE="${INSTALLED_IMAGE:-${WAYFINDR_IMAGE:-}}" \
+        compose run --rm --no-deps -T ${env_args[@]+"${env_args[@]}"} \
         --entrypoint php web -r "$code" 2>/dev/null
 }
 
@@ -417,6 +430,22 @@ manifest_expected() {
 
 upgrade_preflight() {
     local from to ack tags span manifest all_actions actions tag floor
+
+    # Pinned FIRST, because every probe below runs through compose and would
+    # otherwise resolve the service image through an exported override - pulling
+    # the target before a single check has run.
+    INSTALLED_IMAGE="$(env_value WAYFINDR_IMAGE)"
+
+    if [ -z "$INSTALLED_IMAGE" ] || env_interpolated "$INSTALLED_IMAGE"; then
+        # Nothing usable to pin to, so a probe could not be trusted to run the
+        # installed release. Skipping is the honest answer; the artifact still
+        # refuses to migrate on its own.
+        say "Preflight skipped: cannot tell which image is currently installed."
+        printf '    %s\n' "${INSTALLED_IMAGE:-(unset)}"
+        printf '    The release enforces its own requirements when it starts.\n'
+
+        return 0
+    fi
 
     to="${IMAGE_TAG:-}"
 

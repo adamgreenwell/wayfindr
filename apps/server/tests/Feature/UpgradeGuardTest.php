@@ -1454,3 +1454,59 @@ test('a standalone reset still forgets', function (): void {
 
     expect(app(ReleaseState::class)->recordedVersion())->toBeNull();
 });
+
+test('a failed migrate:fresh forgets the release', function (): void {
+    // The wipe succeeded and the re-migration did not, so the ledger is empty or
+    // partial while the record still claims the release that was installed. The
+    // recorder returns early on a non-zero exit, and the refresh path
+    // deliberately preserves state through its nested reset, so nothing else
+    // clears it.
+    bakeRelease(['actions' => []], '0.3.0');
+    app(ReleaseState::class)->record('0.3.0', 'ccc', satisfiedThrough: '0.3.0');
+
+    event(new CommandStarting('migrate:fresh', new ArrayInput([]), new NullOutput));
+    event(new CommandFinished('migrate:fresh', new ArrayInput([]), new NullOutput, 1));
+
+    expect(app(ReleaseState::class)->recordedVersion())->toBeNull();
+});
+
+test('a failed migrate:refresh forgets the release', function (): void {
+    // The nested reset is skipped on purpose, so the outer failure is the only
+    // chance to notice the ledger no longer matches the record.
+    bakeRelease(['actions' => []], '0.3.0');
+    app(ReleaseState::class)->record('0.3.0', 'ccc', satisfiedThrough: '0.3.0');
+
+    event(new CommandStarting('migrate:refresh', new ArrayInput([]), new NullOutput));
+    event(new CommandFinished('migrate:reset', new ArrayInput([]), new NullOutput, 0));
+    event(new CommandFinished('migrate:refresh', new ArrayInput([]), new NullOutput, 1));
+
+    expect(app(ReleaseState::class)->recordedVersion())->toBeNull();
+});
+
+test('a successful rebuild keeps the record the recorder wrote', function (): void {
+    // A rebuild that worked ends by migrating, so the recorder writes an accurate
+    // record - forgetting it would undo the very thing that makes the state right.
+    bakeRelease(['actions' => []], '0.3.0');
+    config()->set('wayfindr.release.version', '0.3.0');
+    config()->set('wayfindr.release.commit', 'abc123');
+
+    event(new CommandStarting('migrate:fresh', new ArrayInput([]), new NullOutput));
+    event(new CommandFinished('migrate:fresh', new ArrayInput([]), new NullOutput, 0));
+
+    expect(app(ReleaseState::class)->recordedVersion())->toBe('0.3.0');
+});
+
+test('the rollback listener does not forget a successful rebuild', function (): void {
+    // Dispatched straight at the listener. Through the event this passes whenever
+    // the recorder happens to run second and rewrite what was removed - the same
+    // ordering trap as the migrate:refresh case, and it hid the difference when
+    // this was first checked by mutation.
+    bakeRelease(['actions' => []], '0.3.0');
+    app(ReleaseState::class)->record('0.3.0', 'ccc', satisfiedThrough: '0.3.0');
+
+    app(ForgetReleaseAfterRollback::class)->handle(
+        new CommandFinished('migrate:fresh', new ArrayInput([]), new NullOutput, 0),
+    );
+
+    expect(app(ReleaseState::class)->recordedVersion())->toBe('0.3.0');
+});

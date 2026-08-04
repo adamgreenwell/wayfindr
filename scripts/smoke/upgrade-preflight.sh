@@ -809,5 +809,44 @@ check "leading whitespace"     '  WAYFINDR_IMAGE=NEW'        "$(retag '  WAYFIND
 check "a quoted value"         'WAYFINDR_IMAGE=NEW'          "$(retag 'WAYFINDR_IMAGE="ghcr.io/adamgreenwell/wayfindr:0.1.0"')"
 check "an unrelated key"       'OTHER=1'                     "$(retag 'OTHER=1')"
 
+# The probes must run the INSTALLED image, not the target.
+#
+# compose.yml names the service image `${WAYFINDR_IMAGE:-...}` and Compose
+# interpolates from the shell environment ahead of --env-file - so an exported
+# override made every probe run, and therefore pull, the release being checked.
+# The preflight would have fetched the very image it exists to check before
+# pulling, which defeats before-pull entirely.
+probe_image() {
+    local installed="$1" exported="$2"
+    (
+        compose() { printf '%s' "${WAYFINDR_IMAGE:-<compose default>}"; }
+        INSTALLED_IMAGE="$installed"
+        [ -n "$exported" ] && export WAYFINDR_IMAGE="$exported"
+        WAYFINDR_IMAGE="${INSTALLED_IMAGE:-${WAYFINDR_IMAGE:-}}" compose run
+    )
+}
+
+echo
+echo "probes run the installed image:"
+check "an exported override does not leak" 'ghcr.io/adamgreenwell/wayfindr:0.1.0' \
+    "$(probe_image ghcr.io/adamgreenwell/wayfindr:0.1.0 ghcr.io/adamgreenwell/wayfindr:0.9.0)"
+check "no override, installed still wins" 'ghcr.io/adamgreenwell/wayfindr:0.1.0' \
+    "$(probe_image ghcr.io/adamgreenwell/wayfindr:0.1.0 '')"
+
+# And when the installed image cannot be established, no probe should run at all.
+installed_usable() {
+    case "$1" in
+        '') printf 'SKIP' ;;
+        *'$'*) printf 'SKIP' ;;
+        *) printf 'PROBE' ;;
+    esac
+}
+
+echo
+echo "no probe without a known installed image:"
+check "a concrete image"      PROBE "$(installed_usable ghcr.io/adamgreenwell/wayfindr:0.1.0)"
+check "an unset image"        SKIP  "$(installed_usable '')"
+check "an interpolated image" SKIP  "$(installed_usable '${REGISTRY}/wayfindr:0.1.0')"
+
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
