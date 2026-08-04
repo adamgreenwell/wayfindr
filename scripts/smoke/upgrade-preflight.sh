@@ -755,6 +755,16 @@ check "a quoted inline comment" 'ghcr.io/x/y:0.3.0' "$(dotenv_read 'WAYFINDR_IMA
 check "a bare inline comment"   'ghcr.io/x/y:0.3.0' "$(dotenv_read 'WAYFINDR_IMAGE=ghcr.io/x/y:0.3.0 # pinned' WAYFINDR_IMAGE)"
 check "trailing whitespace"     'ghcr.io/x/y:0.3.0' "$(dotenv_read 'WAYFINDR_IMAGE=ghcr.io/x/y:0.3.0   ' WAYFINDR_IMAGE)"
 check "a hash inside the value" 'ghcr.io/x/y:0.3.0#z' "$(dotenv_read 'WAYFINDR_IMAGE=ghcr.io/x/y:0.3.0#z' WAYFINDR_IMAGE)"
+# A duplicate key is what an operator produces by APPENDING a line rather than
+# editing the one already there. Compose and the artifact's Dotenv both take the
+# later value; reading the earlier one made the installer act on a stale origin,
+# permit the pull, and hand over to an artifact that reads the newer value and
+# refuses - a working image replaced over which line counts.
+check "a duplicate key takes the last" '0.1.0' "$(dotenv_read 'WAYFINDR_UPGRADE_FROM=0.9.0
+WAYFINDR_UPGRADE_FROM=0.1.0' WAYFINDR_UPGRADE_FROM)"
+check "three assignments take the last" 'c' "$(dotenv_read 'WAYFINDR_ACKNOWLEDGED_ACTIONS=a
+WAYFINDR_ACKNOWLEDGED_ACTIONS=b
+WAYFINDR_ACKNOWLEDGED_ACTIONS=c' WAYFINDR_ACKNOWLEDGED_ACTIONS)"
 
 # And the official-image test has to run on the PARSED value, or a quoted
 # official image reads as a fork and the preflight skips the release it will pull.

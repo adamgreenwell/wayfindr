@@ -64,8 +64,15 @@ USAGE
 env_value() {
     local raw
 
+    # The LAST assignment, not the first. A duplicate key is what an operator
+    # produces by appending a line rather than editing the one already there -
+    # and Compose and the artifact's Dotenv both take the later value. Reading
+    # the earlier one made the installer act on a stale origin or a stale
+    # acknowledgement, permit the pull, and hand over to an artifact that reads
+    # the newer value and refuses: a working image replaced over a disagreement
+    # about which line counts.
     raw="$(grep -E "^[[:space:]]*(export[[:space:]]+)?$1=" "$ENV_FILE" 2>/dev/null \
-        | head -1 \
+        | tail -1 \
         | sed -E "s/^[[:space:]]*(export[[:space:]]+)?$1=//" || true)"
 
     # Trailing CR, for a file written on Windows.
