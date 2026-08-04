@@ -569,9 +569,12 @@ test('an unreadable release history refuses rather than reporting clear', functi
         ->and($assessment['reason'])->toContain('could not be read');
 });
 
-test('an absent release history is still legitimate', function (): void {
-    // Absent is not the same as unreadable: a build cut before the history
-    // existed published none, and must migrate as normal.
+test('a manifest with no history beside it refuses', function (): void {
+    // Both producers write the pair together - the image build emits --out and
+    // --history from one invocation, and the Forge deploy generates the manifest
+    // beside the committed history. So a manifest with no history is an
+    // incomplete artifact, and reading it as "no prior release declared
+    // anything" reduces a v1 -> v3 upgrade to the target alone.
     $dir = storage_path('framework/testing/release-'.bin2hex(random_bytes(4)));
     mkdir($dir, 0700, true);
 
@@ -583,7 +586,10 @@ test('an absent release history is still legitimate', function (): void {
     config()->set('wayfindr.release.history_path', $dir.'/absent.json');
     config()->set('wayfindr.release.state_path', $dir.'/state.json');
 
-    expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeFalse();
+    $assessment = app(UpgradeGuard::class)->assess();
+
+    expect($assessment['blocked'])->toBeTrue()
+        ->and($assessment['reason'])->toContain('missing or could not be read');
 });
 
 test('a stranded intermediate action blocks migration whatever its phase', function (): void {
@@ -1056,19 +1062,26 @@ test('an unorderable floor makes the manifest unreadable', function (): void {
         ->and($assessment['reason'])->toContain('could not be read');
 });
 
-test('a manifest with no floor is still readable', function (): void {
-    // Absent is legitimate - most releases retire nothing.
-    $dir = storage_path('framework/testing/release-'.bin2hex(random_bytes(4)));
-    mkdir($dir, 0700, true);
+test('a null floor is how a release says it retires nothing', function (): void {
+    // Most releases declare no floor, and build() emits the key as null for them.
+    // That must stay readable, or every ordinary release becomes unreadable.
+    expect(ReleaseManifest::build(['actions' => []], '0.3.0', 'ccc'))
+        ->toHaveKey('minimum_upgrade_from', null);
 
-    $manifest = ReleaseManifest::build(['actions' => []], '0.3.0', 'ccc');
+    expect(fn () => ReleaseManifest::assertPublished(
+        ReleaseManifest::build(['actions' => []], '0.3.0', 'ccc'),
+    ))->not->toThrow(InvalidArgumentException::class);
+});
+
+test('a manifest missing the floor key entirely is rejected', function (): void {
+    // build() always emits it, so its absence means truncated or edited - and the
+    // absence silently erases a declared floor, letting an install below the
+    // supported starting point migrate.
+    $manifest = ReleaseManifest::build(['minimum_upgrade_from' => '0.2.0', 'actions' => []], '0.3.0', 'ccc');
     unset($manifest['minimum_upgrade_from']);
-    file_put_contents($dir.'/release.json', json_encode($manifest));
 
-    config()->set('wayfindr.release.manifest_path', $dir.'/release.json');
-    config()->set('wayfindr.release.state_path', $dir.'/state.json');
-
-    expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeFalse();
+    expect(fn () => ReleaseManifest::assertPublished($manifest))
+        ->toThrow(InvalidArgumentException::class);
 });
 
 test('a recorded install does not query the database to assess', function (): void {
@@ -1257,14 +1270,18 @@ test('a rollback forgets which release is installed', function (): void {
     expect(app(ReleaseState::class)->recordedVersion())->toBeNull();
 });
 
-test('a failed rollback changes nothing', function (): void {
-    // Nothing was rewound, so there is no disagreement to resolve.
+test('a rollback that failed partway still forgets', function (): void {
+    // Reverting one migration and then failing on a later down() exits non-zero
+    // having already changed the schema, so a non-zero exit is not evidence that
+    // nothing happened. Forgetting a release that is still installed only costs a
+    // refusal the operator can clear; keeping one whose migrations are partly
+    // undone lets a later upgrade pass a floor it is now below.
     bakeRelease(['actions' => []], '0.3.0');
     app(ReleaseState::class)->record('0.3.0', 'ccc', satisfiedThrough: '0.3.0');
 
     event(new CommandFinished('migrate:rollback', new ArrayInput([]), new NullOutput, 1));
 
-    expect(app(ReleaseState::class)->recordedVersion())->toBe('0.3.0');
+    expect(app(ReleaseState::class)->recordedVersion())->toBeNull();
 });
 
 test('migrate:refresh still records rather than forgetting', function (): void {

@@ -385,7 +385,7 @@ final class ReleaseManifest
         // demonstrably older than the intended floor migrates anyway. `build()`
         // has always checked this; reading a published manifest did not, which is
         // the path a corrupt or hand-edited one arrives by.
-        if (array_key_exists('minimum_upgrade_from', $manifest) && $manifest['minimum_upgrade_from'] !== null) {
+        if ($manifest['minimum_upgrade_from'] !== null) {
             self::assertVersion($manifest['minimum_upgrade_from'], 'minimum_upgrade_from');
         }
     }
@@ -405,7 +405,11 @@ final class ReleaseManifest
      */
     private static function validatePublished(array $manifest): void
     {
-        foreach (['version', 'commit', 'requires_operator_action', 'actions'] as $required) {
+        // `minimum_upgrade_from` is required, and null is how "no floor" is said.
+        // build() always emits it, so a manifest without the key was truncated or
+        // edited - and its absence erases a declared floor silently, letting an
+        // install below the supported starting point migrate.
+        foreach (['version', 'commit', 'requires_operator_action', 'actions', 'minimum_upgrade_from'] as $required) {
             if (! array_key_exists($required, $manifest)) {
                 throw new InvalidArgumentException("Release manifest is missing \"{$required}\".");
             }

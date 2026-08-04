@@ -303,7 +303,7 @@ final class UpgradeGuard
         if ($history === null) {
             return [
                 'blocked' => true,
-                'reason' => 'the published release history is present but could not be read',
+                'reason' => 'the published release history is missing or could not be read',
                 'actions' => [],
                 'from' => $this->state->recordedVersion(),
                 'target' => $target,
@@ -546,13 +546,19 @@ final class UpgradeGuard
      * @return list<array<string, mixed>>
      */
     /**
-     * The published history, or NULL when the file is there but unreadable.
+     * The published history, or NULL when it cannot be trusted.
      *
-     * Those two are not the same answer and were being given the same one. An
-     * absent history is legitimate — a build cut before the history existed
-     * published none. An unreadable one is an inability to see what the upgrade
-     * passes through, and flattening it to "no prior release declared anything"
-     * lets a span with before-pull work in it report clear.
+     * Absent counts as untrustworthy here, which it did not before. This is only
+     * ever called once a manifest has been read, and both producers write the
+     * pair together — the image build emits `--out` and `--history` from one
+     * invocation, and the Forge deploy generates the manifest beside the history
+     * committed with the release. So a manifest with no history beside it is an
+     * incomplete artifact or a partial checkout, not a release predating the
+     * mechanism.
+     *
+     * Read as "no prior release declared anything" it reduces a v1 -> v3 upgrade
+     * to the target alone, skipping every intermediate requirement — which is the
+     * failure this whole file exists to prevent, reached by finding nothing.
      *
      * @return ?list<array<string, mixed>>
      */
@@ -561,7 +567,7 @@ final class UpgradeGuard
         $raw = $this->readRaw($this->historyPath());
 
         if ($raw === null) {
-            return [];
+            return null;
         }
 
         try {

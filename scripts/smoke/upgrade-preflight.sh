@@ -346,14 +346,19 @@ manifest_full() {
     '
 }
 
-wellformed='{"schema":1,"version":"0.2.0","commit":"abc","requires_operator_action":false,"actions":[]}'
-nophase='{"schema":1,"version":"0.2.0","commit":"abc","requires_operator_action":true,"actions":[{"id":"a","summary":"s","detail":"d","depends_on_release":"none","release":"0.2.0"}]}'
+# `minimum_upgrade_from` is part of the published schema - build() always emits
+# it, as null when a release retires nothing - so a fixture without it is not a
+# well-formed manifest.
+wellformed='{"schema":1,"version":"0.2.0","commit":"abc","requires_operator_action":false,"minimum_upgrade_from":null,"actions":[]}'
+nofloorkey='{"schema":1,"version":"0.2.0","commit":"abc","requires_operator_action":false,"actions":[]}'
+nophase='{"schema":1,"version":"0.2.0","commit":"abc","requires_operator_action":true,"minimum_upgrade_from":null,"actions":[{"id":"a","summary":"s","detail":"d","depends_on_release":"none","release":"0.2.0"}]}'
 
 echo
 echo "preflight manifest validation matches the artifact:"
 check "a well-formed manifest passes"          OK      "$(manifest_full "$wellformed")"
 check "an action with no phase is rejected"    INVALID "$(manifest_full "$nophase")"
 check "a manifest with no schema is rejected"  INVALID "$(manifest_full '{"version":"0.2.0","actions":[]}')"
+check "a manifest with no floor key"          INVALID "$(manifest_full "$nofloorkey")"
 
 # An origin that does not parse is not an origin. The floor refuses only a
 # definite "below", so a typo compares as null and would clear the very check it

@@ -33,10 +33,16 @@ class ForgetReleaseAfterRollback
             return;
         }
 
-        // A rollback that failed has changed nothing to disagree with.
-        if ($event->exitCode !== 0) {
-            return;
-        }
+        // Deliberately regardless of exit code. A rollback that reverts one
+        // migration and then fails on a later `down()` exits non-zero having
+        // already changed the schema, so a non-zero exit is not evidence that
+        // nothing happened — and the record would go on claiming a release whose
+        // migrations are now partly undone.
+        //
+        // The asymmetry with the recorder is intended: recording a release that
+        // did not install is a false claim, while forgetting one that is still
+        // installed only costs a refusal the operator can clear by saying where
+        // they are.
 
         if (app(ReleaseState::class)->forget()) {
             return;
