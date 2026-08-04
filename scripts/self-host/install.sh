@@ -150,8 +150,26 @@ pin_image() {
 # disk, needs no network, and does not depend on the release being gated.
 php_in_current_image() {
     compose run --rm --no-deps -T \
-        -e WF_FROM="${1:-}" -e WF_TO="${2:-}" -e WF_ACK="${3:-}" \
+        -e WF_FROM="${1:-}" -e WF_TO="${2:-}" -e WF_ACK="${3:-}" -e WF_ORIGIN_KNOWN="${5:-}" \
         --entrypoint php web -r "$4" 2>/dev/null
+}
+
+# The release the ARTIFACT will consider this install to be at, which is not what
+# the image tag says. It reads its own state file, and that is the value its floor
+# check uses - so a preflight that predicts a different one predicts the wrong
+# outcome.
+recorded_release() {
+    php_in_current_image "" "" "" '
+        $path = "/app/apps/server/storage/app/release-state.json";
+
+        if (! is_file($path)) { exit(0); }
+
+        $state = json_decode((string) file_get_contents($path), true);
+
+        if (is_array($state) && is_string($state["version"] ?? null)) {
+            echo $state["version"];
+        }
+    '
 }
 
 # Whether the CURRENTLY INSTALLED image can evaluate any of this.
@@ -296,13 +314,33 @@ upgrade_preflight() {
         return 0
     fi
 
-    from="$(current_release)"
+    # Resolved in the artifact's own order, because the floor decision has to
+    # predict what the artifact will do rather than what the installer can see:
+    #
+    #   1. the recorded state file - what the artifact reads
+    #   2. WAYFINDR_UPGRADE_FROM - the operator's declared origin, which the
+    #      refusal below tells them to set, so it has to be read or the refusal
+    #      cannot be cleared
+    #   3. the image tag or its baked version - useful to the preflight for
+    #      working out which actions apply, and INVISIBLE to the artifact
+    #
+    # Only the first two make the artifact's origin known. An install sitting on
+    # case 3 is one the artifact will refuse the moment it starts, whatever the
+    # image tag says, so the preflight must refuse first - while the release that
+    # is running is still the one running.
+    local origin_known
+    origin_known=0
 
-    # The refusal below tells the operator to state where they are, so the
-    # preflight has to READ that - otherwise it is a refusal they cannot clear,
-    # which is the failure the artifact-side escape was added to avoid.
+    from="$(recorded_release)"
+    [ -n "$from" ] && origin_known=1
+
     if [ -z "$from" ]; then
         from="$(grep -E '^WAYFINDR_UPGRADE_FROM=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+        [ -n "$from" ] && origin_known=1
+    fi
+
+    if [ -z "$from" ]; then
+        from="$(current_release)"
     fi
     ack="$(grep -E '^WAYFINDR_ACKNOWLEDGED_ACTIONS=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)"
 
@@ -321,7 +359,11 @@ upgrade_preflight() {
     # single response, so past a hundred tags the older half of the span simply
     # is not in the answer - and an upgrade from far enough back would compute an
     # empty span and call it clear. Walk the pages until one comes back short.
-    local tags_body tags_status tags_curl_exit page page_count tag_count
+    # `page` is the loop index and nothing else. Landing the parsed response on
+    # it made `page=$((page + 1))` evaluate a multiline string as arithmetic,
+    # which under `set -u` aborts the installer outright - so the preflight broke
+    # the moment the tag history needed a second page.
+    local tags_body tags_status tags_curl_exit page page_body page_count tag_count
     tags_body="$(mktemp)"
     tags=""
     page=1
@@ -355,7 +397,7 @@ upgrade_preflight() {
         # The two numbers differ deliberately: the page count is EVERY entry,
         # because a full page of non-release tags still means there is another
         # page to read, while only release-shaped names are collected.
-        page="$(printf '%s' "$(cat "$tags_body")" | php_in_current_image "" "" "" '
+        page_body="$(printf '%s' "$(cat "$tags_body")" | php_in_current_image "" "" "" '
             $decoded = json_decode(stream_get_contents(STDIN), true);
 
             if (! is_array($decoded) || array_is_list($decoded) === false) {
@@ -374,7 +416,7 @@ upgrade_preflight() {
             echo "COUNT:", count($decoded), "\n", implode("\n", $names);
         ')"
 
-        if [ "${page%%$'\n'*}" = "INVALID" ] || [ -z "$page" ]; then
+        if [ "${page_body%%$'\n'*}" = "INVALID" ] || [ -z "$page_body" ]; then
             rm -f "$tags_body"
             printf '\n\033[1;31mPREFLIGHT COULD NOT VERIFY THIS UPGRADE\033[0m\n\n'
             printf '  The release list came back unreadable.\n'
@@ -383,9 +425,9 @@ upgrade_preflight() {
             exit 78
         fi
 
-        page_count="$(printf '%s' "$page" | sed -n 's/^COUNT://p' | head -1)"
+        page_count="$(printf '%s' "$page_body" | sed -n 's/^COUNT://p' | head -1)"
         [ -n "$page_count" ] || page_count=0
-        tag_count="$(printf '%s' "$page" | sed '1d' | grep -E '^v[0-9]' || true)"
+        tag_count="$(printf '%s' "$page_body" | sed '1d' | grep -E '^v[0-9]' || true)"
 
         [ -n "$tag_count" ] && tags="${tags}${tag_count}
 "
@@ -548,7 +590,18 @@ upgrade_preflight() {
             $floor = $m["minimum_upgrade_from"] ?? null;
 
             if (is_string($floor) && ($m["version"] ?? null) === $target) {
-                if ($from === null) {
+                // The artifact refuses a floor it cannot verify, and it can only
+                // verify one against an origin IT has - its state file, or a
+                // declared one. A version derived from the image tag is invisible
+                // to it, so an install resting on that is refused the moment the
+                // new release starts however orderable that version looks here.
+                //
+                // This is also where a development identity lands: it parses but
+                // does not order, so it can neither clear the floor nor be ranked
+                // against it.
+                $originKnown = getenv("WF_ORIGIN_KNOWN") === "1";
+
+                if ($from === null || ! $originKnown) {
                     // A floor in force and no way to tell where this install
                     // started. The artifact refuses this same case - so pulling
                     // anyway replaces a WORKING service with a container that
@@ -609,7 +662,7 @@ upgrade_preflight() {
 
                 printf("%s|%s|%s|%s|%s\n", $stranded ? "STEP" : "DO",
                     $key, $a["phase"] ?? "", $a["summary"] ?? "", $a["detail"] ?? "");
-            }')"
+            }' "$origin_known")"
 
         # Refused before anything is pulled, which is the whole point: the old
         # release is still running and is the one that can still upgrade.

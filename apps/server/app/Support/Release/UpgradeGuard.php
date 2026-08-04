@@ -196,6 +196,8 @@ final class UpgradeGuard
 
     private ?string $lastTarget = null;
 
+    private ?string $lastCommit = null;
+
     /**
      * The canonical release the last assessment was about, from the manifest.
      *
@@ -208,6 +210,20 @@ final class UpgradeGuard
     public function lastTarget(): ?string
     {
         return $this->lastTarget;
+    }
+
+    /**
+     * The commit the last assessment's manifest carried.
+     *
+     * Recorded alongside the version for the same reason: `buildChanged()`
+     * compares what is on record against the MANIFEST, so persisting the runtime
+     * identity instead means an overridden or stale `WAYFINDR_COMMIT` reads as a
+     * different build on the very next request — dropping a fresh install's
+     * exemption and gating serving on upgrade-only work it never owed.
+     */
+    public function lastCommit(): ?string
+    {
+        return $this->lastCommit;
     }
 
     public function __construct(
@@ -243,6 +259,7 @@ final class UpgradeGuard
     public function assess(bool $includeTarget = false): array
     {
         $this->lastTarget = null;
+        $this->lastCommit = null;
 
         try {
             $manifest = $this->read($this->manifestPath());
@@ -272,6 +289,11 @@ final class UpgradeGuard
         }
 
         $this->lastTarget = $target;
+
+        $manifestCommit = $manifest['commit'] ?? null;
+        $this->lastCommit = is_string($manifestCommit) && trim($manifestCommit) !== ''
+            ? $manifestCommit
+            : null;
 
         $history = $this->history();
 

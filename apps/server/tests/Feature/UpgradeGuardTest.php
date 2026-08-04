@@ -1129,3 +1129,24 @@ test('a recorded version is canonicalised on read', function (): void {
 
     expect(app(ReleaseState::class)->recordedVersion())->toBe('0.2.4');
 });
+
+test('the manifest commit is recorded, not the runtime override', function (): void {
+    // buildChanged() compares what is on record against the MANIFEST, so
+    // recording an overridden or stale WAYFINDR_COMMIT reads as a different build
+    // on the very next request - dropping a fresh install's exemption and gating
+    // serving on upgrade-only work it never owed.
+    bakeRelease(blockingDeclaration('after-start'), '0.2.0', history: [
+        ReleaseManifest::build(blockingDeclaration('after-start'), '0.2.0', 'abc123'),
+    ]);
+    config()->set('wayfindr.release.version', '0.2.0');
+    // A runtime identity that disagrees with the manifest bakeRelease() built.
+    config()->set('wayfindr.release.commit', 'stale-override');
+
+    app(UpgradeContext::class)->observeFreshInstall(true);
+    event(new CommandFinished('migrate', new ArrayInput([]), new NullOutput, 0));
+
+    expect(app(ReleaseState::class)->recordedCommit())->toBe('abc123');
+
+    // And the fresh exemption therefore survives into the serving gate.
+    expect($this->get('/')->status())->not->toBe(503);
+});

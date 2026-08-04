@@ -97,6 +97,13 @@ class RecordReleaseAfterMigration
         // is lost by recording the release it belongs to.
         $version = $guard->lastTarget() ?? $version;
 
+        // The manifest's commit too, for the same reason. `buildChanged()`
+        // compares what is on record against the MANIFEST, so recording the
+        // runtime identity means a stale or overridden WAYFINDR_COMMIT reads as a
+        // different build on the very next request — which drops a fresh
+        // install's exemption and gates serving on work it never owed.
+        $commit = $guard->lastCommit() ?? $commit;
+
         // The marker advances only on a clean assessment. Left where it is, the
         // span keeps reaching back past the intermediate releases whose
         // after-start work is still owed — the alternative is that migrating

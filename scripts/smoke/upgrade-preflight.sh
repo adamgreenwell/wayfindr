@@ -510,5 +510,48 @@ check "a persisted custom image is the target"    0.9.0 "$(effective_target '' g
 check "a persisted custom :latest skips"          SKIP  "$(effective_target '' ghcr.io/x/y:latest 0.2.0)"
 check "no override falls back to the resolved"    0.2.0 "$(effective_target '' '' 0.2.0)"
 
+# The floor decision has to predict what the ARTIFACT will do, not what the
+# installer can see. The artifact verifies a floor only against an origin IT has -
+# its state file, or a declared one - so an install resting on a version derived
+# from the image tag is refused the moment the new release starts, however
+# orderable that version looks here.
+floor_decision() {
+    WF_FROM="$1" WF_ORIGIN_KNOWN="$2" WF_MIN="${3:-0.2.0}" "${PHP:-php}" -r '
+        require getenv("APP")."/app/Support/Version/SemanticVersion.php";
+        require getenv("APP")."/app/Support/Version/VersionComparator.php";
+        $from = getenv("WF_FROM") ?: null;
+        $floor = getenv("WF_MIN");
+        $originKnown = getenv("WF_ORIGIN_KNOWN") === "1";
+        if ($from === null || ! $originKnown) { echo "FLOORUNKNOWN"; exit(0); }
+        $rank = App\Support\Version\VersionComparator::compare($from, $floor);
+        echo ($rank !== null && $rank < 0) ? "FLOOR" : "PROCEED";
+    '
+}
+
+echo
+echo "floor decision matches the artifact:"
+check "a known origin above the floor proceeds"  PROCEED      "$(floor_decision 0.2.4 1)"
+check "a known origin below it refuses"          FLOOR        "$(floor_decision 0.1.0 1)"
+check "no origin at all cannot be verified"      FLOORUNKNOWN "$(floor_decision '' 0)"
+# The artifact never sees the image tag, so an orderable version derived from it
+# is not an origin the artifact can verify against.
+check "an image-derived origin is not known"     FLOORUNKNOWN "$(floor_decision 0.2.4 0)"
+check "a development identity from the image"    FLOORUNKNOWN "$(floor_decision '0.2.0-dev+abc' 0)"
+# But a development identity the artifact HAS recorded is one it accepts, so
+# refusing here would be over-refusing relative to what will actually happen.
+check "a development identity from state"        PROCEED      "$(floor_decision '0.2.0-dev+abc' 1)"
+
+# The pagination index must stay numeric. This is checked against the REAL
+# function rather than a reimplementation, because a reimplementation is exactly
+# what missed the collision that put a parsed multiline response onto `page` and
+# made `page=$((page + 1))` abort the installer under `set -u`.
+preflight_body="$(awk '/^upgrade_preflight\(\)/,/^}/' "$INSTALLER")"
+
+echo
+echo "pagination index stays numeric:"
+check "the preflight body was found"     1 "$(printf '%s' "$preflight_body" | grep -c 'while :; do')"
+check "page is assigned only numerics"   0 "$(printf '%s' "$preflight_body" | grep -oE '^[[:space:]]*page=.*' | grep -vcE 'page=1$|page=\$\(\(page \+ 1\)\)$' || true)"
+check "the parsed response has its own"  1 "$(printf '%s' "$preflight_body" | grep -c 'page_body=')"
+
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
