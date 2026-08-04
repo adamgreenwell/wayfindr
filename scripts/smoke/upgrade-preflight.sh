@@ -162,5 +162,53 @@ check "a start above the min did"               APPLIES "$(applies 0.3.0 0.2.0)"
 check "an unknown start stays conservative"     APPLIES "$(applies '' 0.2.0)"
 check "an unorderable start stays conservative" APPLIES "$(applies '0.2.0-dev+abc' 0.2.0)"
 
+# Whether a 404 is the truth or a fault, which depends on when the release was
+# cut. Exempting all of them let a post-contract release with a deleted asset be
+# read as "declares nothing" - and pulled straight past a before-pull action.
+manifest_expected() {
+    WF_FROM="$1" WF_TO="${2:-0.1.0}" "${PHP:-php}" -r '
+        require getenv("APP")."/app/Support/Version/SemanticVersion.php";
+        require getenv("APP")."/app/Support/Version/VersionComparator.php";
+        $rank = App\Support\Version\VersionComparator::compare(getenv("WF_FROM"), getenv("WF_TO"));
+        echo ($rank === null || $rank >= 0) ? "YES" : "NO";
+    '
+}
+
+echo
+echo "missing-manifest classification (contract from 0.1.0):"
+check "a pre-contract release is exempt"           NO  "$(manifest_expected 0.1.0-alpha.1)"
+check "the contract release itself is not"         YES "$(manifest_expected 0.1.0)"
+check "a later release is not"                     YES "$(manifest_expected 0.2.0)"
+check "an unplaceable tag is not exempt"           YES "$(manifest_expected '0.1.0-dev+abc')"
+
+# Tag discovery has to fail closed. Discarding the error made a 403 or a blip
+# look identical to "there are no other releases": the span silently shrank to
+# the target and every intermediate declaration went unread.
+discovery() {
+    local scenario="$1" body status
+
+    curl() {
+        case "$scenario" in
+            ok)     printf '[{"name": "v0.2.0"}]' > "$3"; printf '200' ;;
+            rated)  printf '{"message":"rate limited"}' > "$3"; printf '403'; return 22 ;;
+            down)   printf '000'; return 7 ;;
+        esac
+    }
+
+    body="$(mktemp)"
+    status="$(curl -sSL -o "$body" -w '%{http_code}' https://example.invalid 2>/dev/null || true)"
+    [ -n "$status" ] || status="000"
+    rm -f "$body"
+    unset -f curl
+
+    [ "$status" = "200" ] && printf 'PROCEED' || printf 'REFUSE'
+}
+
+echo
+echo "tag discovery fails closed:"
+check "a usable tag list proceeds"          PROCEED "$(discovery ok)"
+check "a rate-limited API refuses"          REFUSE  "$(discovery rated)"
+check "an unreachable API refuses"          REFUSE  "$(discovery down)"
+
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

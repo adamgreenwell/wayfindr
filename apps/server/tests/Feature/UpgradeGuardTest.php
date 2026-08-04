@@ -5,8 +5,12 @@ declare(strict_types=1);
 use App\Support\Release\ReleaseManifest;
 use App\Support\Release\ReleaseState;
 use App\Support\Release\UpgradeGuard;
+use Illuminate\Console\Events\CommandFinished;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schema;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Output\NullOutput;
 
 uses(RefreshDatabase::class);
 
@@ -286,4 +290,100 @@ test('the live environment wins over a config value that disagrees', function ()
     } finally {
         putenv('WAYFINDR_ACKNOWLEDGED_ACTIONS');
     }
+});
+
+test('an intermediate release after-start action survives the target being recorded', function (): void {
+    // The same collapse one level deeper. A v0.1.0 -> v0.3.0 upgrade passes
+    // through v0.2.0, whose after-start action CANNOT block the migration - it
+    // needs the migrated schema to be performed at all. So migration completes,
+    // v0.3.0 is recorded, and reading the span from what is RUNNING makes it
+    // (0.3.0, 0.3.0]: target inclusion restores v0.3.0's own actions and nothing
+    // of v0.2.0's. The requirement is outstanding one moment and served the next.
+    $intermediate = ReleaseManifest::build(blockingDeclaration('after-start'), '0.2.0', 'bbb');
+
+    bakeRelease(['actions' => []], '0.3.0', history: [
+        ReleaseManifest::build(['actions' => []], '0.1.0', 'aaa'),
+        $intermediate,
+        ReleaseManifest::build(['actions' => []], '0.3.0', 'ccc'),
+    ]);
+
+    $state = app(ReleaseState::class);
+    $state->record('0.1.0', 'aaa', satisfiedThrough: '0.1.0');
+
+    // Outstanding before the upgrade is recorded.
+    expect(app(UpgradeGuard::class)->assessAll())->toHaveCount(1);
+
+    // The upgrade lands. Nothing was done about v0.2.0's action, so the marker
+    // must not advance past it.
+    $state->record('0.3.0', 'ccc', satisfiedThrough: null);
+
+    expect($state->recordedVersion())->toBe('0.3.0')
+        ->and($state->satisfiedThrough())->toBe('0.1.0');
+
+    $this->get('/')->assertStatus(503)->assertSee('do-the-thing');
+});
+
+test('the recording listener advances the marker only on a clean assessment', function (): void {
+    // The listener is what decides, and it decides BEFORE recording - once the
+    // target is recorded the span collapses and the answer is always "clean".
+    bakeRelease(['actions' => []], '0.3.0', history: [
+        ReleaseManifest::build(['actions' => []], '0.1.0', 'aaa'),
+        ReleaseManifest::build(blockingDeclaration('after-start'), '0.2.0', 'bbb'),
+        ReleaseManifest::build(['actions' => []], '0.3.0', 'ccc'),
+    ]);
+    config()->set('wayfindr.release.version', '0.3.0');
+    config()->set('wayfindr.release.commit', 'ccc');
+
+    $state = app(ReleaseState::class);
+    $state->record('0.1.0', 'aaa', satisfiedThrough: '0.1.0');
+
+    event(new CommandFinished('migrate', new ArrayInput([]), new NullOutput, 0));
+
+    expect($state->recordedVersion())->toBe('0.3.0')
+        ->and($state->satisfiedThrough())->toBe('0.1.0');
+});
+
+test('the recording listener advances the marker when nothing is owed', function (): void {
+    // The other half: an install that owed nothing must not stay pinned to an
+    // old starting point, or every later upgrade evaluates a span that only grows.
+    bakeRelease(['actions' => []], '0.3.0', history: [
+        ReleaseManifest::build(['actions' => []], '0.1.0', 'aaa'),
+        ReleaseManifest::build(['actions' => []], '0.3.0', 'ccc'),
+    ]);
+    config()->set('wayfindr.release.version', '0.3.0');
+    config()->set('wayfindr.release.commit', 'ccc');
+
+    $state = app(ReleaseState::class);
+    $state->record('0.1.0', 'aaa', satisfiedThrough: '0.1.0');
+
+    event(new CommandFinished('migrate', new ArrayInput([]), new NullOutput, 0));
+
+    expect($state->satisfiedThrough())->toBe('0.3.0');
+});
+
+test('recording preserves the marker when the caller does not advance it', function (): void {
+    // Dropping it on a later write would silently widen the span back to the
+    // recorded version - the exact collapse the field exists to prevent.
+    bakeRelease(['actions' => []], '0.3.0');
+
+    $state = app(ReleaseState::class);
+    $state->record('0.2.0', 'bbb', satisfiedThrough: '0.1.0');
+    $state->record('0.3.0', 'ccc');
+
+    expect($state->satisfiedThrough())->toBe('0.1.0');
+});
+
+test('a floor refusal stays blocked in machine-readable output', function (): void {
+    // A floor refusal carries no actions, so deriving `blocked` from the action
+    // count reported success for an upgrade the guard had already refused - and
+    // --json returns before the floor-specific path that would have caught it.
+    bakeRelease(['minimum_upgrade_from' => '0.2.0', 'actions' => []], '0.3.0');
+    app(ReleaseState::class)->record('0.1.0', 'aaa');
+
+    $exit = Artisan::call('wayfindr:upgrade-guard', ['--json' => true]);
+    $decoded = json_decode(Artisan::output(), true);
+
+    expect($exit)->toBe(1)
+        ->and($decoded['blocked'])->toBeTrue()
+        ->and($decoded['floor'])->toBe('0.2.0');
 });

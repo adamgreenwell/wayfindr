@@ -228,6 +228,16 @@ After a successful migration the release records its identity to
 `storage/app/release-state.json`, so the next upgrade knows where it started and
 which declarations its span covers.
 
+That file also carries `satisfied_through`: the newest release whose
+requirements were *all* met, which is not the same as the newest release that
+migrated. A `v1 -> v3` upgrade passes through `v2`, and an `after-start` action
+of `v2`'s cannot block the migration — it needs the migrated schema to be
+performed at all. So the migration completes and `v3` is recorded, and measuring
+the span from what is *running* would collapse it to `(v3, v3]`: the requirement
+would be outstanding one moment and gone the next. The marker only advances on a
+clean assessment, so the span keeps reaching back to the last release that
+genuinely owed nothing.
+
 An install with no such file is **not** assumed to be fresh — every install
 predating this mechanism has none. If the database already carries migrations,
 it is treated as a legacy upgrade from an unknown starting point, and the whole

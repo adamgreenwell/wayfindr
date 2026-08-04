@@ -235,9 +235,23 @@ final class UpgradeGuard
             }
         }
 
+        // The span starts at the last release that was genuinely CLEAN, not
+        // simply the last one that migrated.
+        //
+        // A v1 -> v3 upgrade passes through v2, and an after-start action of
+        // v2's cannot block the migration — it needs the migrated schema to be
+        // performed at all. So the migration completes and v3 is recorded. Read
+        // the span from what is running and it collapses to (v3, v3]: v2's
+        // requirement is outstanding one moment and gone the next, and the
+        // serving gate opens on work nobody did.
+        //
+        // Falls back to the recorded version, which is correct for an install
+        // that has only ever been clean and for one that predates the marker.
+        $from = $this->state->satisfiedThrough() ?? $recorded;
+
         $outstanding = UpgradeRequirements::outstanding(
             $history,
-            $recorded,
+            $from,
             $target,
             UpgradeRequirements::parseAcknowledged($this->acknowledged()),
             fn (string $name): ?bool => $this->checks->evaluate($name),

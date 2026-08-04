@@ -15,6 +15,9 @@ set -euo pipefail
 RAW_BASE_DEFAULT="https://raw.githubusercontent.com/adamgreenwell/wayfindr"
 RELEASES_API="https://api.github.com/repos/adamgreenwell/wayfindr/releases/latest"
 TAGS_API="https://api.github.com/repos/adamgreenwell/wayfindr/tags?per_page=100"
+# The first release that publishes a release-manifest.json asset (ADR 0013).
+# Below this a missing manifest is the truth; at or above it, it is a fault.
+MANIFEST_CONTRACT_FROM="0.1.0"
 REF=""
 IMAGE_TAG=""
 PRERELEASE=0
@@ -151,6 +154,23 @@ php_in_current_image() {
         --entrypoint php web -r "$4" 2>/dev/null
 }
 
+# Whether a release is one that publishes a manifest, so a missing asset can be
+# told apart from one that never existed.
+manifest_expected() {
+    local answer
+    answer="$(php_in_current_image "$1" "$MANIFEST_CONTRACT_FROM" "" '
+        require "/app/apps/server/app/Support/Version/SemanticVersion.php";
+        require "/app/apps/server/app/Support/Version/VersionComparator.php";
+        $rank = App\Support\Version\VersionComparator::compare(getenv("WF_FROM"), getenv("WF_TO"));
+        // An undecidable rank counts as expected. The exemption is for releases
+        // we can SHOW predate the contract; one we cannot place must not inherit
+        // it, or an unparseable tag becomes a way to skip the check entirely.
+        echo ($rank === null || $rank >= 0) ? "YES" : "NO";
+    ')"
+
+    [ "$answer" = "YES" ]
+}
+
 current_release() {
     # The pinned image tag is the most reliable statement of what is installed:
     # it is what compose actually runs. `latest` names no version.
@@ -179,7 +199,27 @@ upgrade_preflight() {
     # A declaration describes its own release, so an upgrade must read EVERY
     # release it passes through, not just the one it lands on. Skipping the
     # middle is the several-releases-behind case this exists to catch.
-    tags="$(curl -fsSL "$TAGS_API" 2>/dev/null | grep -o '"name": *"v[^"]*"' | sed 's/.*"v/v/; s/"$//' || true)"
+    # Fail CLOSED. Discarding the error here made a transient fault or a 403 look
+    # identical to "there are no other releases": the span fell back to the
+    # target alone, every intermediate manifest went unread, and a before-pull
+    # action in one of them was skipped without a word. That is the one outcome
+    # this preflight exists to prevent, arrived at by not being able to look.
+    local tags_body tags_status
+    tags_body="$(mktemp)"
+    tags_status="$(curl -sSL -o "$tags_body" -w '%{http_code}' "$TAGS_API" 2>/dev/null || true)"
+    [ -n "$tags_status" ] || tags_status="000"
+
+    if [ "$tags_status" != "200" ]; then
+        rm -f "$tags_body"
+        printf '\n\033[1;31mPREFLIGHT COULD NOT VERIFY THIS UPGRADE\033[0m\n\n'
+        printf '  Could not list releases to work out what this upgrade passes through (HTTP %s).\n' "$tags_status"
+        printf '  Refusing rather than checking only the target and calling that the whole span.\n\n'
+        printf '  Nothing has been pulled or changed. Retry when the network settles.\n\n'
+        exit 78
+    fi
+
+    tags="$(grep -o '"name": *"v[^"]*"' "$tags_body" | sed 's/.*"v/v/; s/"$//' || true)"
+    rm -f "$tags_body"
 
     span="$(printf '%s\n' "$tags" | php_in_current_image "$from" "$to" "" '
         require "/app/apps/server/app/Support/Version/SemanticVersion.php";
@@ -237,7 +277,25 @@ upgrade_preflight() {
         # proceed past a before-pull action that was never seen.
         case "$status" in
             200) : ;;
-            404) continue ;;
+            404)
+                # A release that published no manifest. True of everything cut
+                # before this contract existed - they declared nothing and had no
+                # way to say so - and not an error.
+                #
+                # It is an error for anything from the contract onward: those
+                # releases publish the asset, so a missing one means deleted or
+                # never uploaded, and reading it as "declares nothing" would pull
+                # straight past a before-pull requirement nobody saw.
+                if manifest_expected "$tag"; then
+                    printf '\n\033[1;31mPREFLIGHT COULD NOT VERIFY THIS UPGRADE\033[0m\n\n'
+                    printf '  %s publishes a release manifest, but it is missing (HTTP 404).\n' "$tag"
+                    printf '  Refusing rather than assuming it requires nothing.\n\n'
+                    printf '  Nothing has been pulled or changed. Report this - the release is incomplete.\n\n'
+                    exit 78
+                fi
+
+                continue
+                ;;
             *)
                 printf '\n\033[1;31mPREFLIGHT COULD NOT VERIFY THIS UPGRADE\033[0m\n\n'
                 printf '  Could not fetch the declaration for %s (HTTP %s).\n' "$tag" "$status"

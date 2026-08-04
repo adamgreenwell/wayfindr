@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Listeners;
 
 use App\Support\Release\ReleaseState;
+use App\Support\Release\UpgradeGuard;
 use Illuminate\Console\Events\CommandFinished;
 
 /**
@@ -50,9 +51,27 @@ class RecordReleaseAfterMigration
 
         $commit = config('wayfindr.release.commit');
 
+        // Evaluated BEFORE recording, while the state still says where this
+        // upgrade started — recording first would collapse the span to the
+        // target and answer "nothing outstanding" every time.
+        //
+        // Target-inclusive, because an after-start requirement of the release
+        // just installed is exactly the kind this has to see.
+        $outstanding = app(UpgradeGuard::class)->assessAll();
+
+        // The marker advances only on a clean assessment. Left where it is, the
+        // span keeps reaching back past the intermediate releases whose
+        // after-start work is still owed — the alternative is that migrating
+        // silently discharges requirements nobody performed.
+        //
+        // It stays put until the NEXT successful migration finds nothing
+        // outstanding, which is later than strictly necessary and harmless: a
+        // wider span re-evaluates actions that are already satisfied and finds
+        // them satisfied.
         app(ReleaseState::class)->record(
             $version,
             is_string($commit) && trim($commit) !== '' ? $commit : null,
+            satisfiedThrough: $outstanding === [] ? $version : null,
         );
     }
 }
