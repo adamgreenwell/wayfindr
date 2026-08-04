@@ -163,6 +163,21 @@ class RestoreService
             // Replace the database with the dump (atomic — see the restorer).
             $this->restorer->restore($dump);
 
+            // Immediately, before anything that can throw.
+            //
+            // The release state lives on the volume rather than inside the dump,
+            // so it survives this and goes on claiming the release that was
+            // running. The documented next step is `artisan migrate --force`,
+            // which would then measure its floor and its span from a version this
+            // schema is not at — skipping intermediate requirements, or clearing
+            // a floor the restored ledger is now below.
+            //
+            // Attachment restoration and the integrity pass below both throw on
+            // failure, and the schema is already replaced by then. Recording at
+            // the end of the method meant a partial restore left the state
+            // describing a database that no longer exists.
+            $this->recordRestoredRelease($archiveVersion, $manifest['wayfindr_commit'] ?? null);
+
             // The dump replaced the operator_settings rows directly, so bump the
             // OperatorSettings cache version — otherwise every process keeps
             // applying the pre-restore mail/storage/scanner/backup configuration
@@ -180,15 +195,6 @@ class RestoreService
                 $attachments['restored'],
                 $attachments['unconfigured'],
             );
-
-            // The database has just been replaced with an older one, and the
-            // release state lives on the volume rather than inside the dump — so
-            // it goes on claiming the release that was running. The documented
-            // next step is `artisan migrate --force`, which would then measure
-            // its floor and its span from a version this schema is not at:
-            // skipping intermediate requirements, or clearing a floor the
-            // restored ledger is now below.
-            $this->recordRestoredRelease($archiveVersion, $manifest['wayfindr_commit'] ?? null);
 
             return [
                 'manifest' => $manifest,

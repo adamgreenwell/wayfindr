@@ -1343,3 +1343,47 @@ test('a restore from an archive that cannot say what it is forgets', function ()
 
     expect($state->recordedVersion())->toBeNull();
 });
+
+test('a manifest with a null commit is rejected', function (): void {
+    // buildChanged() compares the recorded commit against this, and a null reads
+    // as "cannot tell" - which it resolves as changed, permanently. On a fresh
+    // install that drops the exemption on the next request and gates serving on
+    // upgrade-only work the install never owed.
+    $manifest = ReleaseManifest::build(['actions' => []], '0.3.0', 'ccc');
+    $manifest['commit'] = null;
+
+    expect(fn () => ReleaseManifest::assertPublished($manifest))
+        ->toThrow(InvalidArgumentException::class);
+});
+
+test('a manifest with an empty commit is still accepted', function (): void {
+    // The documented release flow produces it: the history-recording step runs
+    // before the release commit exists and passes no --commit, so its entries
+    // carry "". Rejecting those would break `build-manifest.php --history`.
+    expect(fn () => ReleaseManifest::assertPublished(
+        ReleaseManifest::build(['actions' => []], '0.3.0', ''),
+    ))->not->toThrow(InvalidArgumentException::class);
+});
+
+test('the release state is reset before anything that can throw', function (): void {
+    // A source-position check, deliberately. Both restoreAttachments() and the
+    // integrity pass throw on failure, and the schema is already replaced by
+    // then - so recording at the end of the method left a partial restore with
+    // state describing a database that no longer exists.
+    //
+    // Exercising that for real means a live database, an assembled archive, and
+    // an injected failure in the attachment copy; what the fix actually is, is an
+    // ordering, and this binds to the ordering in the real file.
+    $source = file_get_contents(app_path('Support/Backup/RestoreService.php'));
+
+    $replace = strpos($source, '$this->restorer->restore($dump);');
+    $record = strpos($source, '$this->recordRestoredRelease(');
+    $attachments = strpos($source, '$attachments = $this->restoreAttachments(');
+
+    expect($replace)->not->toBeFalse()
+        ->and($record)->not->toBeFalse()
+        ->and($attachments)->not->toBeFalse();
+
+    expect($record)->toBeGreaterThan($replace)
+        ->and($record)->toBeLessThan($attachments);
+});

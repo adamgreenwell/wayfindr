@@ -419,6 +419,21 @@ final class ReleaseManifest
             throw new InvalidArgumentException('Release manifest has no usable version.');
         }
 
+        // A string, and null is not one. `buildChanged()` compares the recorded
+        // commit against this, and a null reads as "cannot tell" — which it
+        // resolves as changed, permanently. On a fresh install that drops the
+        // freshness exemption on the next request and gates serving on
+        // upgrade-only work the install never owed.
+        //
+        // EMPTY is allowed, because the documented release flow produces it: the
+        // history-recording step runs before the release commit exists and passes
+        // no `--commit` (RELEASING.md), so its entries carry "". Those are never
+        // compared against a running build — only the target manifest's commit is
+        // — so an empty one there is honest rather than dangerous.
+        if (! is_string($manifest['commit'])) {
+            throw new InvalidArgumentException('Release manifest commit must be a string.');
+        }
+
         if (! is_array($manifest['actions'])) {
             throw new InvalidArgumentException('Release manifest "actions" must be a list.');
         }
