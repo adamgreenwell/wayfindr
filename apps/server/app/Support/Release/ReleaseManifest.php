@@ -419,6 +419,21 @@ final class ReleaseManifest
             throw new InvalidArgumentException('Release manifest has no usable version.');
         }
 
+        // And it must parse, or nothing downstream can use it. `build()` keeps an
+        // unparseable value verbatim, the recorder writes it to the state file,
+        // and `recordedVersion()` then discards it — so every later process reads
+        // a populated install as legacy, re-evaluating retired requirements and
+        // refusing the next floor-bearing release it meets.
+        //
+        // A development identity is allowed here, unlike in a bound: this is what
+        // the release IS rather than a limit to compare against, and the guard
+        // already treats an unorderable running version conservatively.
+        if (SemanticVersion::parse($manifest['version']) === null) {
+            throw new InvalidArgumentException(
+                'Release manifest version must be one this build can parse.'
+            );
+        }
+
         // A string, and null is not one. `buildChanged()` compares the recorded
         // commit against this, and a null reads as "cannot tell" — which it
         // resolves as changed, permanently. On a fresh install that drops the

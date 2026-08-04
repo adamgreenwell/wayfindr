@@ -1510,3 +1510,63 @@ test('the rollback listener does not forget a successful rebuild', function (): 
 
     expect(app(ReleaseState::class)->recordedVersion())->toBe('0.3.0');
 });
+
+test('a standalone db:wipe forgets the release', function (): void {
+    // The schema is gone, but nothing was clearing the record - so the next
+    // migrate saw the recorded release, never noticed the database was empty,
+    // and could evaluate a floor against a schema that no longer exists.
+    bakeRelease(['actions' => []], '0.3.0');
+    app(ReleaseState::class)->record('0.3.0', 'ccc', satisfiedThrough: '0.3.0');
+
+    event(new CommandStarting('db:wipe', new ArrayInput([]), new NullOutput));
+    event(new CommandFinished('db:wipe', new ArrayInput([]), new NullOutput, 0));
+
+    expect(app(ReleaseState::class)->recordedVersion())->toBeNull();
+});
+
+test('the db:wipe inside migrate:fresh is left alone', function (): void {
+    // migrate:fresh runs db:wipe and then migrates, so the recorder writes an
+    // accurate record. Forgetting on the nested wipe would erase it - or worse,
+    // leave the nested migration calling a long-standing install fresh.
+    bakeRelease(['actions' => []], '0.3.0');
+    app(ReleaseState::class)->record('0.3.0', 'ccc', satisfiedThrough: '0.3.0');
+
+    event(new CommandStarting('migrate:fresh', new ArrayInput([]), new NullOutput));
+
+    app(ForgetReleaseAfterRollback::class)->handle(
+        new CommandFinished('db:wipe', new ArrayInput([]), new NullOutput, 0),
+    );
+
+    expect(app(ReleaseState::class)->recordedVersion())->toBe('0.3.0');
+});
+
+test('a pretend rollback rewinds nothing and forgets nothing', function (): void {
+    // --pretend prints the SQL and rewinds nothing, so there is no disagreement
+    // to resolve. Forgetting would make an inspection change the install.
+    bakeRelease(['actions' => []], '0.3.0');
+    app(ReleaseState::class)->record('0.3.0', 'ccc', satisfiedThrough: '0.3.0');
+
+    $input = new ArrayInput(['--pretend' => true]);
+    event(new CommandStarting('migrate:rollback', $input, new NullOutput));
+    event(new CommandFinished('migrate:rollback', $input, new NullOutput, 0));
+
+    expect(app(ReleaseState::class)->recordedVersion())->toBe('0.3.0');
+});
+
+test('a manifest whose version cannot be parsed is rejected', function (): void {
+    // build() keeps an unparseable value verbatim, the recorder writes it to the
+    // state file, and recordedVersion() then discards it - so every later process
+    // reads a populated install as legacy.
+    expect(fn () => ReleaseManifest::assertPublished(
+        ReleaseManifest::build(['actions' => []], '0.3.O', 'ccc'),
+    ))->toThrow(InvalidArgumentException::class);
+});
+
+test('a development version is still a valid manifest version', function (): void {
+    // Unlike a bound, this is what the release IS rather than a limit to compare
+    // against, and the guard already treats an unorderable running version
+    // conservatively. Rejecting it would make source builds unreadable.
+    expect(fn () => ReleaseManifest::assertPublished(
+        ReleaseManifest::build(['actions' => []], '0.3.0-dev+abc', 'ccc'),
+    ))->not->toThrow(InvalidArgumentException::class);
+});

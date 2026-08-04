@@ -26,7 +26,7 @@ use Illuminate\Console\Events\CommandFinished;
  */
 class ForgetReleaseAfterRollback
 {
-    private const REWINDING_COMMANDS = ['migrate:rollback', 'migrate:reset'];
+    private const REWINDING_COMMANDS = ['migrate:rollback', 'migrate:reset', 'db:wipe'];
 
     /**
      * Commands that tear the ledger down and rebuild it in one go.
@@ -53,15 +53,30 @@ class ForgetReleaseAfterRollback
             return;
         }
 
-        // `migrate:refresh` runs `migrate:reset` and then a nested `migrate`, so
-        // the reset's own CommandFinished arrives here. Forgetting on it left the
-        // nested migration reading an empty ledger, classifying a long-standing
-        // install as fresh, and recording that exemption — which erases
-        // outstanding after-start work from the serving gate.
+        // Nested inside a rebuild, rather than run on its own.
         //
-        // The refresh ends by migrating, so the recorder writes an accurate
-        // record; nothing needs forgetting on that path.
-        if (app(UpgradeContext::class)->outerCommand() === 'migrate:refresh') {
+        // `migrate:refresh` runs `migrate:reset`, and `migrate:fresh` runs
+        // `db:wipe` — each firing its own CommandFinished here. Forgetting on
+        // those left the nested migration reading an empty ledger, classifying a
+        // long-standing install as fresh, and recording that exemption, which
+        // erases outstanding after-start work from the serving gate.
+        //
+        // A rebuild ends by migrating, so the recorder writes an accurate record
+        // and nothing needs forgetting; a rebuild that FAILS is caught above.
+        //
+        // Written as "the outer command is a rebuild and this is not it" rather
+        // than by naming the pairs, so a rebuild calling something else still
+        // behaves.
+        $outer = app(UpgradeContext::class)->outerCommand();
+
+        if ($outer !== $event->command && in_array($outer, self::REBUILDING_COMMANDS, true)) {
+            return;
+        }
+
+        // `--pretend` prints the SQL and rewinds nothing, so there is no
+        // disagreement to resolve — and forgetting would make an inspection
+        // change the install, which is the one thing a dry run must not do.
+        if ($event->input->hasParameterOption('--pretend')) {
             return;
         }
 
