@@ -881,5 +881,33 @@ check "stranded, not acknowledged"        STEP    "$(settle 0.2.0 schema 0.3.0 N
 # acknowledgement settles it as usual.
 check "intermediate needing nothing"      SETTLED "$(settle 0.2.0 none   0.3.0 YES)"
 
+# `compose up -d` returns once containers are STARTED, not once they are up - so
+# a container whose entrypoint refuses to migrate and exits 78 is invisible to
+# it. Reporting "Upgrade complete" over a service that had already stopped is
+# worse than the refusal itself, because it sends the operator away.
+container_verdict() {
+    local running="$1" code="$2" healthy="$3"
+
+    if [ "$running" = false ] && [ "$code" = 78 ]; then printf 'REFUSED'; return 0; fi
+    if [ "$running" = false ] && [ "$code" != 0 ]; then printf 'STOPPED'; return 0; fi
+    [ "$healthy" = yes ] && printf 'SERVING' || printf 'WAITING'
+}
+
+echo
+echo "upgrade reports what the container actually did:"
+check "a guard refusal is surfaced"    REFUSED "$(container_verdict false 78 no)"
+check "any other exit is surfaced"     STOPPED "$(container_verdict false 1 no)"
+check "a serving container completes"  SERVING "$(container_verdict true 0 yes)"
+check "still starting is not complete" WAITING "$(container_verdict true 0 no)"
+
+# And the installer must actually consult it before saying the upgrade worked.
+upgrade_tail="$(awk '/say "Restarting the stack/,/say "Upgrade complete/' "$INSTALLER")"
+
+echo
+echo "the upgrade path waits before declaring success:"
+check "the wait was found"             1 "$(printf '%s' "$upgrade_tail" | grep -c 'await_web_start')"
+check "it exits 78 on a refusal"       1 "$(printf '%s' "$upgrade_tail" | grep -c 'exit 78')"
+check "success comes after the wait"   1 "$(printf '%s' "$upgrade_tail" | grep -c 'Upgrade complete')"
+
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

@@ -1765,3 +1765,56 @@ test('distinct action ids in one manifest are still accepted', function (): void
     expect(fn () => ReleaseManifest::assertPublished($manifest))
         ->not->toThrow(InvalidArgumentException::class);
 });
+
+test('a history repeating a release is unreadable', function (): void {
+    // Each manifest validates on its own, so two entries for the same canonical
+    // release both pass - and an action id reused between them gives two
+    // different pieces of work the same acknowledgement key, so acknowledging
+    // either settles both.
+    $dir = storage_path('framework/testing/release-'.bin2hex(random_bytes(4)));
+    mkdir($dir, 0700, true);
+
+    $entry = ReleaseManifest::build(blockingDeclaration('after-start'), '0.2.0', 'bbb');
+
+    file_put_contents($dir.'/release.json', json_encode(
+        ReleaseManifest::build(['actions' => []], '0.3.0', 'ccc'),
+    ));
+    file_put_contents($dir.'/history.json', json_encode([
+        'schema' => 1,
+        'releases' => [$entry, $entry, ReleaseManifest::build(['actions' => []], '0.3.0', 'ccc')],
+    ]));
+
+    config()->set('wayfindr.release.manifest_path', $dir.'/release.json');
+    config()->set('wayfindr.release.history_path', $dir.'/history.json');
+    config()->set('wayfindr.release.state_path', $dir.'/state.json');
+
+    $assessment = app(UpgradeGuard::class)->assess();
+
+    expect($assessment['blocked'])->toBeTrue()
+        ->and($assessment['reason'])->toContain('could not be read');
+});
+
+test('a history of distinct releases is still readable', function (): void {
+    // So the check cannot be satisfied by rejecting every history with more than
+    // one entry, which is what a history is for.
+    $dir = storage_path('framework/testing/release-'.bin2hex(random_bytes(4)));
+    mkdir($dir, 0700, true);
+
+    file_put_contents($dir.'/release.json', json_encode(
+        ReleaseManifest::build(['actions' => []], '0.3.0', 'ccc'),
+    ));
+    file_put_contents($dir.'/history.json', json_encode([
+        'schema' => 1,
+        'releases' => [
+            ReleaseManifest::build(['actions' => []], '0.1.0', 'aaa'),
+            ReleaseManifest::build(['actions' => []], '0.2.0', 'bbb'),
+            ReleaseManifest::build(['actions' => []], '0.3.0', 'ccc'),
+        ],
+    ]));
+
+    config()->set('wayfindr.release.manifest_path', $dir.'/release.json');
+    config()->set('wayfindr.release.history_path', $dir.'/history.json');
+    config()->set('wayfindr.release.state_path', $dir.'/state.json');
+
+    expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeFalse();
+});

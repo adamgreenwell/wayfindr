@@ -582,6 +582,7 @@ final class UpgradeGuard
         }
 
         $releases = [];
+        $seenVersions = [];
 
         foreach ($decoded['releases'] as $release) {
             // Dropping the entry would shorten the history rather than reject it,
@@ -602,6 +603,22 @@ final class UpgradeGuard
             } catch (Throwable) {
                 return null;
             }
+
+            // One entry per release, across the WHOLE history.
+            //
+            // Each manifest validates on its own, so two entries for the same
+            // canonical release both pass — and an action id reused between them
+            // gives two different pieces of work the same
+            // `<release>/<action-id>` acknowledgement key. Acknowledging either
+            // then settles both. The builder dedupes on canonical version, so a
+            // repeat here means the file was edited or merged by something else.
+            $version = $release['version'];
+
+            if (isset($seenVersions[$version])) {
+                return null;
+            }
+
+            $seenVersions[$version] = true;
 
             $releases[] = $release;
         }

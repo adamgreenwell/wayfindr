@@ -232,6 +232,58 @@ pin_image() {
     fi
 }
 
+# Wait for the new release to actually be serving, and surface it if it refuses.
+#
+# `compose up -d` returns once the containers are STARTED, not once they are up -
+# so a container whose entrypoint refuses to migrate and exits is invisible to
+# it. The installer printed "Upgrade complete" over a service that had already
+# stopped, with the actionable refusal buried in logs nobody had been told to
+# read. An after-pull requirement reaches exactly this path: the preflight
+# deliberately lets it through, because the pull is what delivers what the action
+# needs, and the artifact is then the thing that refuses.
+await_web_start() {
+    local tries=0 cid running code local_bind local_url
+
+    local_bind="$(env_value WAYFINDR_LOCAL_BIND)"
+    local_url="http://${local_bind:-127.0.0.1:8000}"
+
+    while [ "$tries" -lt 60 ]; do
+        cid="$(compose ps -q web 2>/dev/null | head -1 || true)"
+
+        if [ -n "$cid" ]; then
+            running="$(docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null || true)"
+            code="$(docker inspect -f '{{.State.ExitCode}}' "$cid" 2>/dev/null || true)"
+
+            if [ "$running" = "false" ] && [ "$code" = "78" ]; then
+                printf '\n\033[1;31mTHE NEW RELEASE REFUSED TO START\033[0m\n\n'
+                printf '  It needs something done before its migrations may run, and stopped\n'
+                printf '  rather than half-upgrading. Its own message:\n\n'
+                compose logs --tail 40 web 2>/dev/null || true
+                printf '\n  The database has NOT been changed. Do what it asks, then run this again.\n\n'
+
+                return 1
+            fi
+
+            if [ "$running" = "false" ] && [ -n "$code" ] && [ "$code" != "0" ]; then
+                printf '\n\033[1;31mTHE NEW RELEASE STOPPED\033[0m (exit %s)\n\n' "$code"
+                compose logs --tail 40 web 2>/dev/null || true
+
+                return 1
+            fi
+        fi
+
+        curl -fs --max-time 2 "$local_url/up" >/dev/null 2>&1 && return 0
+
+        tries=$((tries + 1))
+        sleep 2
+    done
+
+    printf '\n\033[1;31mTHE NEW RELEASE DID NOT COME UP\033[0m\n\n'
+    printf '  Inspect: docker compose -f %s --env-file %s logs web\n\n' "$COMPOSE_FILE" "$ENV_FILE"
+
+    return 1
+}
+
 # Collects the declarations for every release this upgrade traverses and refuses
 # to pull when one of them needs the operator first (ADR 0013).
 #
@@ -1176,6 +1228,14 @@ if [ "$UPGRADE" = "1" ]; then
     compose pull web || say "Pull failed; keeping the current image (pre-release or locally built installs)."
     say "Restarting the stack (migrations run automatically)."
     compose up -d
+
+    # Reported only once it is actually serving. Saying "complete" over a
+    # container that refused and stopped is the one outcome worse than the
+    # refusal itself, because it sends the operator away.
+    if ! await_web_start; then
+        exit 78
+    fi
+
     say "Upgrade complete."
     exit 0
 fi
