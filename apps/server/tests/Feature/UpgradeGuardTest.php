@@ -9,6 +9,7 @@ use App\Support\Release\UpgradeGuard;
 use Illuminate\Console\Events\CommandFinished;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\NullOutput;
@@ -834,4 +835,78 @@ test('a history entry that is not a published manifest is rejected', function ()
 
     expect($assessment['blocked'])->toBeTrue()
         ->and($assessment['reason'])->toContain('could not be read');
+});
+
+test('an unparseable declared origin does not clear the floor refusal', function (): void {
+    // The escape hatch has to be an ORDERABLE version. The floor deliberately
+    // refuses only a definite "below", and a typo compares as null - so an
+    // unvalidated value would clear the unknown-origin refusal without ever
+    // being ranked against the floor at all.
+    bakeRelease(['minimum_upgrade_from' => '0.2.0', 'actions' => []], '0.3.0');
+
+    putenv('WAYFINDR_UPGRADE_FROM=0.2.O');
+
+    try {
+        $assessment = app(UpgradeGuard::class)->assess();
+
+        expect($assessment['blocked'])->toBeTrue()
+            ->and($assessment['from'])->toBeNull();
+    } finally {
+        putenv('WAYFINDR_UPGRADE_FROM');
+    }
+});
+
+test('a development identity is not accepted as a declared origin', function (): void {
+    // It parses but does not order, so it could never be ranked against the
+    // floor either - the same bypass wearing a valid-looking value.
+    bakeRelease(['minimum_upgrade_from' => '0.2.0', 'actions' => []], '0.3.0');
+
+    putenv('WAYFINDR_UPGRADE_FROM=0.2.5-dev');
+
+    try {
+        expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeTrue();
+    } finally {
+        putenv('WAYFINDR_UPGRADE_FROM');
+    }
+});
+
+test('a declared origin is canonicalised', function (): void {
+    // `v0.2.4` and `0.2.4` are the same release, and an operator typing the tag
+    // they saw on a release page must not get a different answer.
+    bakeRelease(['minimum_upgrade_from' => '0.2.0', 'actions' => []], '0.3.0');
+
+    putenv('WAYFINDR_UPGRADE_FROM=v0.2.4');
+
+    try {
+        $assessment = app(UpgradeGuard::class)->assess();
+
+        expect($assessment['blocked'])->toBeFalse()
+            ->and($assessment['from'])->toBe('0.2.4');
+    } finally {
+        putenv('WAYFINDR_UPGRADE_FROM');
+    }
+});
+
+test('an unreachable database is not a fresh install', function (): void {
+    // Reading a connection failure as "fresh" exempts the entire history AND the
+    // floor. A connection that blips during this check and recovers before the
+    // migrator's own access would migrate with every requirement unevaluated.
+    bakeRelease(blockingDeclaration(), '0.2.0');
+
+    DB::shouldReceive('connection')->andThrow(new RuntimeException('could not connect'));
+
+    expect(fn () => app(UpgradeGuard::class)->assess())->toThrow(RuntimeException::class);
+});
+
+test('the serving gate tolerates an unreachable database', function (): void {
+    // Enforcement belongs to the migration gate. Turning a blip into a 500 from
+    // middleware would take out pages that do not need the database at all.
+    bakeRelease(blockingDeclaration('after-start'), '0.2.0');
+    app(ReleaseState::class)->record('0.2.0', 'abc123');
+
+    $this->get('/')->assertStatus(503);
+
+    DB::shouldReceive('connection')->andThrow(new RuntimeException('could not connect'));
+
+    expect($this->get('/')->status())->not->toBe(500);
 });

@@ -330,5 +330,52 @@ check "above the floor proceeds"                PROCEED "$(floor_check 0.3.0 0.2
 check "an unknown start proceeds"               PROCEED "$(floor_check '' 0.2.0)"
 check "an unorderable start proceeds"           PROCEED "$(floor_check '0.1.0-dev+abc' 0.2.0)"
 
+# The preflight validates a manifest the way the artifact does. A minimal shape
+# check passed an action with no `phase`, which then classified as neither
+# before-pull nor anything else - so the pull went ahead and the artifact rejected
+# the manifest afterwards, once the only preventable phase had passed.
+manifest_full() {
+    printf '%s' "$1" | "${PHP:-php}" -r '
+        require getenv("APP")."/app/Support/Version/SemanticVersion.php";
+        require getenv("APP")."/app/Support/Release/ReleaseManifest.php";
+        $m = json_decode(stream_get_contents(STDIN), true);
+        if (! is_array($m)) { echo "INVALID"; exit(0); }
+        try { App\Support\Release\ReleaseManifest::assertPublished($m); }
+        catch (Throwable $e) { echo "INVALID"; exit(0); }
+        echo "OK";
+    '
+}
+
+wellformed='{"schema":1,"version":"0.2.0","commit":"abc","requires_operator_action":false,"actions":[]}'
+nophase='{"schema":1,"version":"0.2.0","commit":"abc","requires_operator_action":true,"actions":[{"id":"a","summary":"s","detail":"d","depends_on_release":"none","release":"0.2.0"}]}'
+
+echo
+echo "preflight manifest validation matches the artifact:"
+check "a well-formed manifest passes"          OK      "$(manifest_full "$wellformed")"
+check "an action with no phase is rejected"    INVALID "$(manifest_full "$nophase")"
+check "a manifest with no schema is rejected"  INVALID "$(manifest_full '{"version":"0.2.0","actions":[]}')"
+
+# An origin that does not parse is not an origin. The floor refuses only a
+# definite "below", so a typo compares as null and would clear the very check it
+# was supposed to be measured by.
+origin_usable() {
+    WF_FROM="$1" "${PHP:-php}" -r '
+        require getenv("APP")."/app/Support/Version/SemanticVersion.php";
+        $from = getenv("WF_FROM") ?: null;
+        if ($from !== null && App\Support\Version\SemanticVersion::parse($from) === null) { $from = null; }
+        echo $from === null ? "UNKNOWN" : "USABLE";
+    '
+}
+
+echo
+echo "declared origin validation:"
+check "a real version is usable"            USABLE  "$(origin_usable 0.2.4)"
+check "a v-prefixed version is usable"      USABLE  "$(origin_usable v0.2.4)"
+check "a typo is not"                       UNKNOWN "$(origin_usable 0.2.O)"
+check "an empty origin is not"              UNKNOWN "$(origin_usable '')"
+# Parses, does not order - kept, because the artifact treats a recorded
+# development version the same way rather than refusing it.
+check "a development identity is usable"    USABLE  "$(origin_usable '0.2.0-dev+abc')"
+
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

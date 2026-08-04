@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Support\Release;
 
+use App\Support\Version\SemanticVersion;
 use App\Support\Version\VersionComparator;
 use Dotenv\Dotenv;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Throwable;
 
 /**
@@ -114,7 +116,23 @@ final class UpgradeGuard
     {
         $declared = $this->live(self::UPGRADE_FROM_ENV, 'wayfindr.release.upgrade_from');
 
-        return is_string($declared) && trim($declared) !== '' ? trim($declared) : null;
+        if (! is_string($declared) || trim($declared) === '') {
+            return null;
+        }
+
+        // It has to be an ORDERABLE release version, canonicalised, or it is not
+        // evidence of anything. The floor deliberately refuses only a definite
+        // "below", so a value that does not compare - a typo like `0.2.O`, or a
+        // development identity, both of which yield null - would clear the
+        // unknown-origin refusal without ever being ranked against the floor.
+        // That turns a statement of where you are into a way to skip the check.
+        $parsed = SemanticVersion::parse(trim($declared));
+
+        if ($parsed === null || $parsed->isDevelopment()) {
+            return null;
+        }
+
+        return $parsed->canonical();
     }
 
     /**
@@ -553,13 +571,29 @@ final class UpgradeGuard
      * population the history exists to protect. A populated `migrations` table
      * is the evidence, and it belongs to the OLD schema so it is readable here.
      */
+    /**
+     * Whether this database already carries migrations.
+     *
+     * Throws when the question cannot be answered at all. "Cannot reach the
+     * database" was being answered "this is a fresh install", which exempts the
+     * entire history AND the floor — so a connection that blips during the
+     * guard's check and recovers before the migrator's own access would let a
+     * legacy install migrate with every requirement skipped. That is the exact
+     * population this guard exists for.
+     *
+     * The missing table is asked about separately from the query, because those
+     * two failures arrive as the same exception type from most drivers.
+     */
     private function hasExistingInstall(): bool
     {
-        try {
-            return DB::table('migrations')->exists();
-        } catch (Throwable) {
-            // No table, or no database yet: a genuinely fresh install.
+        // Forces a connection. A failure here is an infrastructure problem, and
+        // it propagates rather than being read as a statement about the schema.
+        DB::connection()->getPdo();
+
+        if (! Schema::hasTable('migrations')) {
             return false;
         }
+
+        return DB::table('migrations')->exists();
     }
 }

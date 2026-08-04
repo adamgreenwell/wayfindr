@@ -174,13 +174,28 @@ manifest_expected() {
 current_release() {
     # The pinned image tag is the most reliable statement of what is installed:
     # it is what compose actually runs. `latest` names no version.
-    local pinned
+    local pinned baked
     pinned="$(grep -E '^WAYFINDR_IMAGE=' "$ENV_FILE" 2>/dev/null | head -1 | sed 's#.*:##')"
 
     case "$pinned" in
-        ''|latest) printf '' ;;
-        *) printf '%s' "$pinned" ;;
+        ''|latest) : ;;
+        *) printf '%s' "$pinned"; return 0 ;;
     esac
+
+    # An unversioned pin still runs a real image, and that image knows what it
+    # is: the build bakes its own manifest. Ask it, rather than reporting an
+    # unknown origin and refusing an upgrade that is perfectly determinable.
+    #
+    # `latest` is the default for anyone who installed without pinning, so this
+    # is the common case, not an edge one.
+    baked="$(php_in_current_image "" "" "" '
+        $path = "/etc/wayfindr/release.json";
+        if (! is_file($path)) { exit(0); }
+        $m = json_decode((string) file_get_contents($path), true);
+        if (is_array($m) && is_string($m["version"] ?? null)) { echo $m["version"]; }
+    ')"
+
+    printf '%s' "$baked"
 }
 
 upgrade_preflight() {
@@ -194,6 +209,13 @@ upgrade_preflight() {
     fi
 
     from="$(current_release)"
+
+    # The refusal below tells the operator to state where they are, so the
+    # preflight has to READ that - otherwise it is a refusal they cannot clear,
+    # which is the failure the artifact-side escape was added to avoid.
+    if [ -z "$from" ]; then
+        from="$(grep -E '^WAYFINDR_UPGRADE_FROM=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+    fi
     ack="$(grep -E '^WAYFINDR_ACKNOWLEDGED_ACTIONS=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)"
 
     # A declaration describes its own release, so an upgrade must read EVERY
@@ -359,13 +381,27 @@ upgrade_preflight() {
         actions="$(printf '%s' "$manifest" | php_in_current_image "$from" "$to" "$ack" '
             require "/app/apps/server/app/Support/Version/SemanticVersion.php";
             require "/app/apps/server/app/Support/Version/VersionComparator.php";
+            require "/app/apps/server/app/Support/Release/ReleaseManifest.php";
             $m = json_decode(stream_get_contents(STDIN), true);
 
             // A body that is not a manifest must never be read as one that
             // declares nothing. `?? []` did exactly that: malformed or truncated
             // JSON decoded to null, the action loop ran over an empty list, and a
             // before-pull requirement was skipped on the way to pulling the image.
-            if (! is_array($m) || ! is_string($m["version"] ?? null) || ! is_array($m["actions"] ?? null)) {
+            //
+            // Validated with the artifact own validator rather than a minimal
+            // shape check. An action missing `phase` passes any looser test and
+            // then classifies as neither before-pull nor anything else - so the
+            // pull proceeds, and the artifact rejects the manifest afterwards,
+            // once the only phase that could have prevented anything is past.
+            if (! is_array($m)) {
+                echo "INVALID\n";
+                exit(0);
+            }
+
+            try {
+                App\Support\Release\ReleaseManifest::assertPublished($m);
+            } catch (Throwable $e) {
                 echo "INVALID\n";
                 exit(0);
             }
@@ -373,6 +409,16 @@ upgrade_preflight() {
             $ack = array_map("trim", explode(",", (string) getenv("WF_ACK")));
             $target = getenv("WF_TO");
             $from = getenv("WF_FROM") ?: null;
+
+            // An origin that does not parse is not an origin. A typo would
+            // otherwise compare as null against the floor, and "no definite
+            // answer" does not refuse - so the typo would clear the check it was
+            // supposed to be measured by. A DEVELOPMENT identity is kept: it
+            // parses, it simply does not order, and the artifact treats a
+            // recorded development version the same way.
+            if ($from !== null && App\Support\Version\SemanticVersion::parse($from) === null) {
+                $from = null;
+            }
 
             // The floor stops the pull, not the container afterwards. An install
             // below `minimum_upgrade_from` is refused by the new release the
@@ -383,14 +429,23 @@ upgrade_preflight() {
             // the version that could have done it is no longer running.
             $floor = $m["minimum_upgrade_from"] ?? null;
 
-            if (is_string($floor) && ($m["version"] ?? null) === $target && $from !== null) {
-                $rank = App\Support\Version\VersionComparator::compare($from, $floor);
+            if (is_string($floor) && ($m["version"] ?? null) === $target) {
+                if ($from === null) {
+                    // A floor in force and no way to tell where this install
+                    // started. The artifact refuses this same case - so pulling
+                    // anyway replaces a WORKING service with a container that
+                    // cannot start, which is the outcome the preflight exists to
+                    // prevent. Refuse here, while the old release is still up.
+                    printf("FLOORUNKNOWN|%s\n", $floor);
+                } else {
+                    $rank = App\Support\Version\VersionComparator::compare($from, $floor);
 
-                // Only a definite "below" refuses. An undecidable comparison is a
-                // development identity on one side, which is not evidence of an
-                // unsupported jump.
-                if ($rank !== null && $rank < 0) {
-                    printf("FLOOR|%s\n", $floor);
+                    // Only a definite "below" refuses. An undecidable comparison
+                    // is a development identity on one side, which is not
+                    // evidence of an unsupported jump.
+                    if ($rank !== null && $rank < 0) {
+                        printf("FLOOR|%s\n", $floor);
+                    }
                 }
             }
 
@@ -440,6 +495,18 @@ upgrade_preflight() {
 
         # Refused before anything is pulled, which is the whole point: the old
         # release is still running and is the one that can still upgrade.
+        if printf '%s' "$actions" | grep -q '^FLOORUNKNOWN|'; then
+            floor="$(printf '%s' "$actions" | sed -n 's/^FLOORUNKNOWN|//p' | head -1)"
+            printf '\n\033[1;31mTHIS UPGRADE CANNOT BE VERIFIED\033[0m\n\n'
+            printf '  %s only supports upgrading from %s or later, and nothing here\n' "$to" "$floor"
+            printf '  records which version this install is running.\n\n'
+            printf '  Pin the version you are on in %s, for example:\n' "$ENV_FILE"
+            printf '    WAYFINDR_UPGRADE_FROM=%s\n\n' "$floor"
+            printf '  Or upgrade to %s first, which records it.\n\n' "$floor"
+            printf '  Nothing has been pulled or changed - the release you are running is intact.\n\n'
+            exit 78
+        fi
+
         if printf '%s' "$actions" | grep -q '^FLOOR|'; then
             floor="$(printf '%s' "$actions" | sed -n 's/^FLOOR|//p' | head -1)"
             printf '\n\033[1;31mTHIS UPGRADE IS NOT SUPPORTED DIRECTLY\033[0m\n\n'

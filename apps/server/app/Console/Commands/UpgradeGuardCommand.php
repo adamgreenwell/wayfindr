@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Support\Release\UpgradeGuard;
 use App\Support\Release\UpgradeRequirements;
 use Illuminate\Console\Command;
+use Throwable;
 
 class UpgradeGuardCommand extends Command
 {
@@ -15,7 +16,14 @@ class UpgradeGuardCommand extends Command
 
     public function handle(UpgradeGuard $guard): int
     {
-        $assessment = $guard->assess();
+        try {
+            $assessment = $guard->assess();
+        } catch (Throwable $e) {
+            $this->error('Cannot check this release.');
+            $this->line('  '.$e->getMessage());
+
+            return self::FAILURE;
+        }
 
         // assess() reports only what blocks MIGRATION. Reporting that alone would
         // print "nothing outstanding" and exit 0 while the serving gate refuses
@@ -112,9 +120,23 @@ class UpgradeGuardCommand extends Command
 
             $this->line(sprintf('    Acknowledge with: %s/%s',
                 $action['release'] ?? '?', $action['id'] ?? '?'));
-            $this->line(sprintf('    Blocks: %s',
-                in_array($action['phase'] ?? '', UpgradeRequirements::BLOCKS_MIGRATION, true)
-                    ? 'migration' : 'serving'));
+            // Phase alone is the wrong label for a stranded action. One belonging
+            // to a release this jump skips past blocks MIGRATION whatever its
+            // phase, so labelling an after-start one "serving" contradicts the
+            // listener that actually refuses — in precisely the case where the
+            // operator's recovery (roll back, step through) depends on knowing
+            // the migration is what stopped.
+            $blocksMigration = in_array(
+                $action['phase'] ?? '', UpgradeRequirements::BLOCKS_MIGRATION, true,
+            ) || UpgradeRequirements::stranded($action, $assessment['target'] ?? null);
+
+            $this->line(sprintf('    Blocks: %s', $blocksMigration ? 'migration' : 'serving'));
+
+            if (UpgradeRequirements::stranded($action, $assessment['target'] ?? null)) {
+                $this->line(sprintf('    Cannot be done on this jump: it needs %s, which this upgrade skips.',
+                    $action['release'] ?? 'an intermediate release'));
+                $this->line('    Upgrade to that release first, let it start, then continue.');
+            }
         }
 
         $this->line('');

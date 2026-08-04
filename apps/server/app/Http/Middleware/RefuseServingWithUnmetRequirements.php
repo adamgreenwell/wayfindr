@@ -9,6 +9,7 @@ use App\Support\Release\UpgradeRequirements;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Throwable;
 
 /**
  * Refuses traffic while an `after-start` requirement is outstanding (ADR 0013).
@@ -65,7 +66,16 @@ class RefuseServingWithUnmetRequirements
      */
     private function outstanding(): array
     {
-        $assessment = app(UpgradeGuard::class)->assessAll();
+        try {
+            $assessment = app(UpgradeGuard::class)->assessAll();
+        } catch (Throwable) {
+            // Unassessable, which here means the database is unreachable. Serving
+            // is not the place to enforce that: the request will fail on its own
+            // if it needs the database, and turning a blip into a 500 from
+            // middleware would take out `/up`-adjacent routes and any page that
+            // does not. The migration gate is where this is actually enforced.
+            return [];
+        }
 
         return array_values(array_filter(
             $assessment,

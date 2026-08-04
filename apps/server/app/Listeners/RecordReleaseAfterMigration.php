@@ -8,6 +8,7 @@ use App\Support\Release\ReleaseState;
 use App\Support\Release\UpgradeContext;
 use App\Support\Release\UpgradeGuard;
 use Illuminate\Console\Events\CommandFinished;
+use Throwable;
 
 /**
  * Records which release this install is running, once its migrations succeed
@@ -71,7 +72,16 @@ class RecordReleaseAfterMigration
         // Target-inclusive, because an after-start requirement of the release
         // just installed is exactly the kind this has to see.
         $guard = app(UpgradeGuard::class);
-        $outstanding = $guard->assessAll();
+
+        try {
+            $outstanding = $guard->assessAll();
+        } catch (Throwable) {
+            // The migration succeeded, so the database was reachable a moment
+            // ago; if it is not now, record nothing rather than fail a migration
+            // that worked. An unrecorded release reads as legacy next time, which
+            // evaluates more than necessary — the safe direction.
+            return;
+        }
 
         // Record the CANONICAL release, not the running identity.
         //
