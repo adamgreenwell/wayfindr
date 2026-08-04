@@ -417,9 +417,15 @@ final class UpgradeGuard
         $releases = [];
 
         foreach ($decoded['releases'] as $release) {
-            if (is_array($release)) {
-                $releases[] = $release;
+            // Dropping the entry would shorten the history rather than reject it,
+            // and a release that quietly disappears takes its before-pull and
+            // after-pull requirements with it. Valid JSON is not the same as a
+            // history we can trust.
+            if (! is_array($release)) {
+                return null;
             }
+
+            $releases[] = $release;
         }
 
         return $releases;

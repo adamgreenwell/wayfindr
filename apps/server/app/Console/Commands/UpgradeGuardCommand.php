@@ -39,6 +39,17 @@ class UpgradeGuardCommand extends Command
         }
 
         if ($assessment['target'] === null) {
+            // A refusal can also have no target — an unreadable manifest names no
+            // release. Reporting "nothing to check" and exiting 0 for the same
+            // build the migration gate refuses is the contradiction this branch
+            // was written to avoid, arrived at from the other side.
+            if ($assessment['blocked']) {
+                $this->error('Cannot check this release.');
+                $this->line('  '.$assessment['reason']);
+
+                return self::FAILURE;
+            }
+
             // Not a failure: a development checkout and a pre-manifest build both
             // land here, and neither has anything to answer for.
             $this->info('No requirements to check.');

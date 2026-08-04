@@ -671,3 +671,77 @@ test('an actionless refusal is preserved in command output', function (): void {
     expect($exit)->toBe(1)
         ->and($decoded['blocked'])->toBeTrue();
 });
+
+test('a pretend migration installs nothing and records nothing', function (): void {
+    // `--pretend` prints the SQL and runs none of it, exiting 0. Recorded as
+    // installed, the next REAL migration computes its span from the release it
+    // is about to install and skips that release's own pre-migration work.
+    bakeRelease(blockingDeclaration(), '0.2.0');
+    config()->set('wayfindr.release.version', '0.2.0');
+    config()->set('wayfindr.release.commit', 'bbb');
+
+    event(new CommandFinished('migrate', new ArrayInput(['--pretend' => true]), new NullOutput, 0));
+
+    expect(app(ReleaseState::class)->recordedVersion())->toBeNull();
+});
+
+test('a real migration still records', function (): void {
+    // The counterpart, so the guard above cannot be satisfied by never recording.
+    bakeRelease(['actions' => []], '0.2.0');
+    config()->set('wayfindr.release.version', '0.2.0');
+    config()->set('wayfindr.release.commit', 'bbb');
+
+    event(new CommandFinished('migrate', new ArrayInput([]), new NullOutput, 0));
+
+    expect(app(ReleaseState::class)->recordedVersion())->toBe('0.2.0');
+});
+
+test('a history entry that is not an object makes the history unreadable', function (): void {
+    // Valid JSON, invalid shape. Dropping the entry shortens the history rather
+    // than rejecting it, and the release that vanishes takes its before-pull and
+    // after-pull requirements with it.
+    $dir = storage_path('framework/testing/release-'.bin2hex(random_bytes(4)));
+    mkdir($dir, 0700, true);
+
+    file_put_contents($dir.'/release.json', json_encode(
+        ReleaseManifest::build(['actions' => []], '0.3.0', 'ccc'),
+    ));
+    file_put_contents($dir.'/history.json', json_encode([
+        'schema' => 1,
+        'releases' => [
+            ReleaseManifest::build(['actions' => []], '0.1.0', 'aaa'),
+            'not-an-object',
+        ],
+    ]));
+
+    config()->set('wayfindr.release.manifest_path', $dir.'/release.json');
+    config()->set('wayfindr.release.history_path', $dir.'/history.json');
+    config()->set('wayfindr.release.state_path', $dir.'/state.json');
+
+    $assessment = app(UpgradeGuard::class)->assess();
+
+    expect($assessment['blocked'])->toBeTrue()
+        ->and($assessment['reason'])->toContain('could not be read');
+});
+
+test('the human-readable command fails on an unreadable manifest', function (): void {
+    // An unreadable manifest names no release, so the target is null - and the
+    // no-target branch returned success before looking at `blocked`. Only --json
+    // saw the corrected value; the documented command still exited 0.
+    $dir = storage_path('framework/testing/release-'.bin2hex(random_bytes(4)));
+    mkdir($dir, 0700, true);
+    file_put_contents($dir.'/release.json', '{"schema":1,"version":"0.3.0","act');
+
+    config()->set('wayfindr.release.manifest_path', $dir.'/release.json');
+    config()->set('wayfindr.release.state_path', $dir.'/state.json');
+
+    expect(Artisan::call('wayfindr:upgrade-guard'))->toBe(1);
+});
+
+test('a development checkout still reports cleanly', function (): void {
+    // The no-target branch must stay a success for the case it was written for.
+    config()->set('wayfindr.release.manifest_path', '/nonexistent/release.json');
+    config()->set('wayfindr.release.manifest_fallback_path', '');
+
+    expect(Artisan::call('wayfindr:upgrade-guard'))->toBe(0);
+});

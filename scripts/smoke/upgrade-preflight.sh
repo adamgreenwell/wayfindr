@@ -302,5 +302,33 @@ check "a body with no actions key"      INVALID "$(manifest_body '{"version":"0.
 check "a body with no version key"      INVALID "$(manifest_body '{"actions":[]}')"
 check "a well-formed manifest passes"   OK      "$(manifest_body '{"schema":1,"version":"0.2.0","actions":[]}')"
 
+# The floor has to stop the PULL, not the container afterwards. A floor-bearing
+# release often declares no actions at all, so the preflight reported clear, the
+# pull replaced a working deployment with one that refuses to migrate, and the
+# operator was told to step through a release the running version could still
+# have reached.
+floor_check() {
+    local from="$1" floor="$2" target="${3:-0.4.0}"
+    WF_FROM="$from" WF_MIN="$floor" WF_TO="$target" "${PHP:-php}" -r '
+        require getenv("APP")."/app/Support/Version/SemanticVersion.php";
+        require getenv("APP")."/app/Support/Version/VersionComparator.php";
+        $from = getenv("WF_FROM") ?: null;
+        $floor = getenv("WF_MIN");
+        if (is_string($floor) && $from !== null) {
+            $rank = App\Support\Version\VersionComparator::compare($from, $floor);
+            if ($rank !== null && $rank < 0) { echo "REFUSE"; exit(0); }
+        }
+        echo "PROCEED";
+    '
+}
+
+echo
+echo "upgrade floor stops the pull:"
+check "below the floor refuses"                 REFUSE  "$(floor_check 0.1.0 0.2.0)"
+check "exactly at the floor proceeds"           PROCEED "$(floor_check 0.2.0 0.2.0)"
+check "above the floor proceeds"                PROCEED "$(floor_check 0.3.0 0.2.0)"
+check "an unknown start proceeds"               PROCEED "$(floor_check '' 0.2.0)"
+check "an unorderable start proceeds"           PROCEED "$(floor_check '0.1.0-dev+abc' 0.2.0)"
+
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

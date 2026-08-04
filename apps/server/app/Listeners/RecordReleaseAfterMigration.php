@@ -41,6 +41,18 @@ class RecordReleaseAfterMigration
             return;
         }
 
+        // `--pretend` prints the SQL and runs none of it, exiting 0. Recording it
+        // would mark the release installed when nothing was applied, and the next
+        // REAL migration would then compute its span from the release it is about
+        // to install — skipping that release's own pre-migration requirements.
+        //
+        // Checked against the raw tokens rather than getOption(), because not
+        // every guarded command defines the option and asking for an undefined
+        // one throws.
+        if ($event->input->hasParameterOption('--pretend')) {
+            return;
+        }
+
         $version = config('wayfindr.release.version');
 
         // Nothing to record on a development checkout: no identity means no

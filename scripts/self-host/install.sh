@@ -184,7 +184,7 @@ current_release() {
 }
 
 upgrade_preflight() {
-    local from to ack tags span manifest all_actions actions tag
+    local from to ack tags span manifest all_actions actions tag floor
 
     to="${IMAGE_TAG:-}"
 
@@ -373,6 +373,27 @@ upgrade_preflight() {
             $ack = array_map("trim", explode(",", (string) getenv("WF_ACK")));
             $target = getenv("WF_TO");
             $from = getenv("WF_FROM") ?: null;
+
+            // The floor stops the pull, not the container afterwards. An install
+            // below `minimum_upgrade_from` is refused by the new release the
+            // moment it starts - so without this the preflight reports clear
+            // (a floor-bearing release often declares no actions at all), the
+            // pull replaces a WORKING deployment with one that refuses to
+            // migrate, and the operator is told to step through a release while
+            // the version that could have done it is no longer running.
+            $floor = $m["minimum_upgrade_from"] ?? null;
+
+            if (is_string($floor) && ($m["version"] ?? null) === $target && $from !== null) {
+                $rank = App\Support\Version\VersionComparator::compare($from, $floor);
+
+                // Only a definite "below" refuses. An undecidable comparison is a
+                // development identity on one side, which is not evidence of an
+                // unsupported jump.
+                if ($rank !== null && $rank < 0) {
+                    printf("FLOOR|%s\n", $floor);
+                }
+            }
+
             foreach ($m["actions"] ?? [] as $a) {
                 $release = $a["release"] ?? "";
                 $key = $release . "/" . ($a["id"] ?? "");
@@ -416,6 +437,19 @@ upgrade_preflight() {
                 printf("%s|%s|%s|%s|%s\n", $stranded ? "STEP" : "DO",
                     $key, $a["phase"] ?? "", $a["summary"] ?? "", $a["detail"] ?? "");
             }')"
+
+        # Refused before anything is pulled, which is the whole point: the old
+        # release is still running and is the one that can still upgrade.
+        if printf '%s' "$actions" | grep -q '^FLOOR|'; then
+            floor="$(printf '%s' "$actions" | sed -n 's/^FLOOR|//p' | head -1)"
+            printf '\n\033[1;31mTHIS UPGRADE IS NOT SUPPORTED DIRECTLY\033[0m\n\n'
+            printf '  This install (%s) is older than %s allows to upgrade from.\n' "${from:-unknown}" "$to"
+            printf '  The oldest supported starting point is %s.\n\n' "$floor"
+            printf '  Upgrade to %s first, let it start, then run this again.\n' "$floor"
+            printf '  Acknowledgement cannot help: the migrations for this jump no longer ship.\n\n'
+            printf '  Nothing has been pulled or changed - the release you are running is intact.\n\n'
+            exit 78
+        fi
 
         if [ "$actions" = "INVALID" ]; then
             printf '\n\033[1;31mPREFLIGHT COULD NOT VERIFY THIS UPGRADE\033[0m\n\n'
