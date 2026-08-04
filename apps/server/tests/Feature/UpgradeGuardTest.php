@@ -321,8 +321,9 @@ test('an intermediate release after-start action survives the target being recor
     expect(app(UpgradeGuard::class)->assessAll())->toHaveCount(1);
 
     // The upgrade lands. Nothing was done about v0.2.0's action, so the marker
-    // must not advance past it.
-    $state->record('0.3.0', 'ccc', satisfiedThrough: null);
+    // must not advance past it - it stays at 0.1.0, which is what the recorder
+    // computes: below everything still owed.
+    $state->record('0.3.0', 'ccc', satisfiedThrough: '0.1.0');
 
     expect($state->recordedVersion())->toBe('0.3.0')
         ->and($state->satisfiedThrough())->toBe('0.1.0');
@@ -368,16 +369,45 @@ test('the recording listener advances the marker when nothing is owed', function
     expect($state->satisfiedThrough())->toBe('0.3.0');
 });
 
-test('recording preserves the marker when the caller does not advance it', function (): void {
-    // Dropping it on a later write would silently widen the span back to the
-    // recorded version - the exact collapse the field exists to prevent.
-    bakeRelease(['actions' => []], '0.3.0');
+test('the recorder keeps a marker that sits below everything owed', function (): void {
+    // Preserving the marker is the RECORDER's decision, not something record()
+    // does by coalescing a null - it needs the outstanding list to make it.
+    bakeRelease(['actions' => []], '0.4.0', history: [
+        ReleaseManifest::build(['actions' => []], '0.1.0', 'aaa'),
+        ReleaseManifest::build(blockingDeclaration('after-start'), '0.2.0', 'bbb'),
+        ReleaseManifest::build(['actions' => []], '0.4.0', 'abc123'),
+    ]);
+    config()->set('wayfindr.release.version', '0.4.0');
+    config()->set('wayfindr.release.commit', 'abc123');
 
     $state = app(ReleaseState::class);
-    $state->record('0.2.0', 'bbb', satisfiedThrough: '0.1.0');
-    $state->record('0.3.0', 'ccc');
+    $state->record('0.1.0', 'aaa', satisfiedThrough: '0.1.0');
 
+    event(new CommandFinished('migrate', new ArrayInput([]), new NullOutput, 0));
+
+    // 0.1.0 is below the 0.2.0 debt, so it is still the last clean release.
     expect($state->satisfiedThrough())->toBe('0.1.0');
+});
+
+test('the recorder clears a marker that sits at the debt it owes', function (): void {
+    // A build under the same VERSION adds an action, or a check regresses. The
+    // marker already sits AT that release, so preserving it drops the debt from
+    // the next upgrade's span - serving still blocks while this release is
+    // current, because the target is included explicitly, and then the next
+    // upgrade computes (0.2.0, target] and never sees it again.
+    bakeRelease(blockingDeclaration('after-start'), '0.2.0', history: [
+        ReleaseManifest::build(blockingDeclaration('after-start'), '0.2.0', 'abc123'),
+    ]);
+    config()->set('wayfindr.release.version', '0.2.0');
+    config()->set('wayfindr.release.commit', 'abc123');
+
+    $state = app(ReleaseState::class);
+    $state->record('0.2.0', 'abc123', satisfiedThrough: '0.2.0');
+
+    event(new CommandFinished('migrate', new ArrayInput([]), new NullOutput, 0));
+
+    expect($state->satisfiedThroughRecorded())->toBeTrue()
+        ->and($state->satisfiedThrough())->toBeNull();
 });
 
 test('a floor refusal stays blocked in machine-readable output', function (): void {

@@ -7,6 +7,7 @@ namespace App\Listeners;
 use App\Support\Release\ReleaseState;
 use App\Support\Release\UpgradeContext;
 use App\Support\Release\UpgradeGuard;
+use App\Support\Version\VersionComparator;
 use Illuminate\Console\Events\CommandFinished;
 use Throwable;
 
@@ -140,7 +141,7 @@ class RecordReleaseAfterMigration
         $recorded = $state->record(
             $version,
             $commit,
-            satisfiedThrough: $outstanding === [] ? $version : null,
+            satisfiedThrough: $this->cleanThrough($state, $version, $outstanding),
             freshInstall: $freshInstall,
         );
 
@@ -168,5 +169,57 @@ class RecordReleaseAfterMigration
         $output->writeln('  Until this is writable, later upgrades will be treated as starting from');
         $output->writeln('  an unknown release, and may refuse until you say where you are.');
         $output->writeln('');
+    }
+
+    /**
+     * The newest release this install owes nothing for.
+     *
+     * Three answers, and the middle one is the one that was missing:
+     *
+     * - nothing outstanding: the release just installed is clean
+     * - something outstanding, and the stored marker sits BELOW all of it: keep
+     *   the marker, because it is still the last release that owed nothing
+     * - anything else: unknown, so the whole published history stays in span
+     *
+     * The marker used to be preserved unconditionally when work was outstanding,
+     * which is wrong once it sits at or above the release carrying the debt — a
+     * later build under the same VERSION adding an action, or a check that
+     * regressed. Serving still blocked while that release was current, because
+     * the target is included explicitly; but the next upgrade computed
+     * (marker, target], the release carrying the debt fell outside it, and the
+     * debt was dropped without a word.
+     *
+     * @param  list<array<string, mixed>>  $outstanding
+     */
+    private function cleanThrough(ReleaseState $state, string $version, array $outstanding): ?string
+    {
+        if ($outstanding === []) {
+            return $version;
+        }
+
+        $marker = $state->satisfiedThrough();
+
+        if ($marker === null) {
+            return null;
+        }
+
+        foreach ($outstanding as $action) {
+            $release = $action['release'] ?? null;
+
+            if (! is_string($release)) {
+                return null;
+            }
+
+            $rank = VersionComparator::compare($marker, $release);
+
+            // Undecidable, or at/above something still owed: the marker can no
+            // longer be shown to sit below the debt, so the span must widen to
+            // everything rather than quietly exclude it.
+            if ($rank === null || $rank >= 0) {
+                return null;
+            }
+        }
+
+        return $marker;
     }
 }

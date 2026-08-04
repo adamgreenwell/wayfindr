@@ -135,6 +135,13 @@ final class ReleaseState
      * defaulting to `$version`: advancing it is a claim that nothing is
      * outstanding, and only the caller that just evaluated the requirements is
      * in a position to make it.
+     *
+     * What is passed is what is WRITTEN, including null. This used to coalesce a
+     * null back to the stored value as a convenience for "do not advance it", and
+     * that hid a case: when the stored marker already sits at or above a release
+     * whose work has since become outstanding, preserving it drops that debt from
+     * the next upgrade's span. Deciding between advance, keep and forget needs
+     * the outstanding list, so it belongs to the caller holding it.
      */
     /**
      * Whether the release on record was installed onto an empty database.
@@ -187,11 +194,6 @@ final class ReleaseState
         if (! is_dir($dir) && ! @mkdir($dir, 0700, true) && ! is_dir($dir)) {
             return false;
         }
-
-        // Preserved when the caller does not advance it. Losing it would silently
-        // widen the span back to the recorded version - which is the very
-        // collapse this field exists to prevent.
-        $satisfiedThrough ??= $this->satisfiedThrough();
 
         $written = @file_put_contents($path, json_encode([
             'version' => $version,
