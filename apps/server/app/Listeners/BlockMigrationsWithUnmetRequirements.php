@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Listeners;
 
+use App\Support\Release\UpgradeContext;
 use App\Support\Release\UpgradeGuard;
 use App\Support\Release\UpgradeRequirements;
 use Illuminate\Console\Events\CommandStarting;
@@ -46,9 +47,29 @@ class BlockMigrationsWithUnmetRequirements
      */
     private const GUARDED = ['migrate', 'migrate:fresh', 'migrate:refresh'];
 
+    /**
+     * Commands that tear the schema down and rebuild it, each running `migrate`
+     * themselves. Their own start is guarded; the nested run is not.
+     */
+    private const REBUILDING_COMMANDS = ['migrate:fresh', 'migrate:refresh'];
+
     public function handle(CommandStarting $event): void
     {
         if (! in_array($event->command, self::GUARDED, true)) {
+            return;
+        }
+
+        // The nested migration inside a rebuild is not a second upgrade.
+        //
+        // `migrate:fresh` and `migrate:refresh` guard their own start, then wipe
+        // or reset, then run `migrate` — which arrives here again with the schema
+        // already gone. A `state` check that passed against the old schema can
+        // now answer false or null, so the guard would refuse AFTER the database
+        // was destroyed, and the hard exit would skip the CommandFinished cleanup
+        // that clears the stale release record.
+        $outer = app(UpgradeContext::class)->outerCommand();
+
+        if ($outer !== $event->command && in_array($outer, self::REBUILDING_COMMANDS, true)) {
             return;
         }
 

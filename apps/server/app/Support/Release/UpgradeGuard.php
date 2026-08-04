@@ -198,6 +198,8 @@ final class UpgradeGuard
 
     private ?string $lastCommit = null;
 
+    private bool $lastAssessable = true;
+
     /**
      * The canonical release the last assessment was about, from the manifest.
      *
@@ -224,6 +226,25 @@ final class UpgradeGuard
     public function lastCommit(): ?string
     {
         return $this->lastCommit;
+    }
+
+    /**
+     * Whether the last assessment could be made at all.
+     *
+     * A refusal with no actions has two very different causes. The FLOOR is one:
+     * the release is running perfectly and simply cannot be upgraded to from
+     * here, so serving carries on. An unreadable manifest or history is the
+     * other: nothing is known about what this release owes, and an empty action
+     * list means "could not look", not "nothing outstanding".
+     *
+     * `assessAll()` returns only the action list, so those two were
+     * indistinguishable to the serving gate — which read the unreadable case as
+     * clear and served traffic that an unmet after-start action should have
+     * stopped.
+     */
+    public function lastAssessable(): bool
+    {
+        return $this->lastAssessable;
     }
 
     public function __construct(
@@ -260,10 +281,13 @@ final class UpgradeGuard
     {
         $this->lastTarget = null;
         $this->lastCommit = null;
+        $this->lastAssessable = true;
 
         try {
             $manifest = $this->read($this->manifestPath());
         } catch (Throwable) {
+            $this->lastAssessable = false;
+
             return [
                 'blocked' => true,
                 'reason' => 'the release manifest is present but could not be read',
@@ -301,6 +325,8 @@ final class UpgradeGuard
         // with the release, so repulling the image or the checkout replaces it —
         // and the alternative is migrating past requirements nobody could read.
         if ($history === null) {
+            $this->lastAssessable = false;
+
             return [
                 'blocked' => true,
                 'reason' => 'the published release history is missing or could not be read',

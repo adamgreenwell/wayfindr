@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Listeners\BlockMigrationsWithUnmetRequirements;
 use App\Listeners\ForgetReleaseAfterRollback;
 use App\Support\Backup\RestoreService;
 use App\Support\Release\CheckRegistry;
@@ -20,6 +21,25 @@ use Symfony\Component\Console\Output\BufferedOutput;
 use Symfony\Component\Console\Output\NullOutput;
 
 uses(RefreshDatabase::class);
+
+/*
+ * A WARNING about dispatching CommandStarting here.
+ *
+ * `BlockMigrationsWithUnmetRequirements` refuses by calling exit(), which it has
+ * to: the console kernel swallows exceptions and the entrypoint needs a
+ * distinguished code. In a test run that terminates the RUNNER — every test after
+ * it is silently never executed, and the summary still says "passed", because the
+ * tests that did run all passed.
+ *
+ * It cost 67 tests once, invisibly. So: never put a CommandStarting for a guarded
+ * command (`migrate`, `migrate:fresh`, `migrate:refresh`) on the bus in a test
+ * whose baked declaration blocks. Record the context directly, or call the
+ * listener under test yourself.
+ *
+ * If the totals ever look wrong, compare them: a run where
+ * `pest --list-tests | grep -c '^ - '` exceeds the reported test count means the
+ * process died partway.
+ */
 
 function bakeRelease(array $declaration, string $version, array $history = []): void
 {
@@ -1817,4 +1837,57 @@ test('a history of distinct releases is still readable', function (): void {
     config()->set('wayfindr.release.state_path', $dir.'/state.json');
 
     expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeFalse();
+});
+
+test('a nested migration inside a rebuild is not guarded again', function (): void {
+    // migrate:fresh guards its own start, wipes, then runs `migrate` - which
+    // arrives at the guard again with the schema already gone. A state check that
+    // passed against the old schema can now answer false, so the guard would
+    // refuse AFTER the database was destroyed, and the hard exit would skip the
+    // cleanup that clears the stale release record.
+    bakeRelease(blockingDeclaration('after-pull'), '0.2.0');
+
+    // The outer command is recorded directly rather than dispatched. Putting a
+    // CommandStarting for `migrate:fresh` on the bus reaches the guard for the
+    // OUTER command too, which refuses and calls exit() - terminating the test
+    // runner mid-suite and silently taking every later test with it.
+    app(UpgradeContext::class)->observeCommand('migrate:fresh');
+
+    // The nested run. Reaching the guard here would exit(78), so returning at all
+    // is the assertion.
+    app(BlockMigrationsWithUnmetRequirements::class)->handle(
+        new CommandStarting('migrate', new ArrayInput([]), new NullOutput),
+    );
+
+    expect(app(UpgradeContext::class)->outerCommand())->toBe('migrate:fresh');
+});
+
+test('an unreadable release history stops the serving gate', function (): void {
+    // An empty action list means "nothing outstanding" only when the release
+    // could be assessed. An unreadable history produces the same empty list from
+    // a very different situation - nothing is known about what is owed.
+    $dir = storage_path('framework/testing/release-'.bin2hex(random_bytes(4)));
+    mkdir($dir, 0700, true);
+
+    file_put_contents($dir.'/release.json', json_encode(
+        ReleaseManifest::build(['actions' => []], '0.3.0', 'ccc'),
+    ));
+    file_put_contents($dir.'/history.json', '{"schema":1,"releases":[{"ver');
+
+    config()->set('wayfindr.release.manifest_path', $dir.'/release.json');
+    config()->set('wayfindr.release.history_path', $dir.'/history.json');
+    config()->set('wayfindr.release.state_path', $dir.'/state.json');
+
+    $this->get('/')->assertStatus(503);
+});
+
+test('a floor refusal does not stop the serving gate', function (): void {
+    // The other actionless refusal, and the opposite answer: the release is
+    // running perfectly and simply cannot be upgraded to from here, so serving
+    // carries on. Conflating the two would take a working site down.
+    bakeRelease(['minimum_upgrade_from' => '0.2.0', 'actions' => []], '0.3.0');
+    app(ReleaseState::class)->record('0.1.0', 'aaa', satisfiedThrough: '0.1.0');
+
+    expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeTrue();
+    expect($this->get('/')->status())->not->toBe(503);
 });

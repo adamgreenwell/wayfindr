@@ -66,8 +66,10 @@ class RefuseServingWithUnmetRequirements
      */
     private function outstanding(): array
     {
+        $guard = app(UpgradeGuard::class);
+
         try {
-            $assessment = app(UpgradeGuard::class)->assessAll();
+            $assessment = $guard->assessAll();
         } catch (Throwable) {
             // Unassessable, which here means the database is unreachable. Serving
             // is not the place to enforce that: the request will fail on its own
@@ -75,6 +77,22 @@ class RefuseServingWithUnmetRequirements
             // middleware would take out `/up`-adjacent routes and any page that
             // does not. The migration gate is where this is actually enforced.
             return [];
+        }
+
+        // An empty list means "nothing outstanding" only when the release could
+        // actually be assessed. An unreadable manifest or history produces the
+        // same empty list from a very different situation — nothing is known
+        // about what this release owes — and serving on it is the fail-open this
+        // gate exists to prevent.
+        if (! $guard->lastAssessable()) {
+            return [[
+                'id' => 'release-declaration-unreadable',
+                'release' => 'unknown',
+                'phase' => 'after-start',
+                'summary' => 'This release cannot say what it requires.',
+                'detail' => 'Its declaration or history is missing or unreadable, so whether '
+                    .'anything is outstanding is unknown. Repull the image or the checkout.',
+            ]];
         }
 
         return array_values(array_filter(

@@ -312,26 +312,40 @@ await_web_start() {
             # there is the same mistake as reporting it over a stopped container.
             serving="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$local_url/" 2>/dev/null || true)"
 
-            if [ "$serving" = "503" ]; then
-                printf '\n\033[1;31mTHE RELEASE IS UP BUT WILL NOT SERVE\033[0m\n\n'
-                printf '  Migrations ran. Something the release declared must be done before it\n'
-                printf '  will answer requests, and it is refusing rather than serving half a\n'
-                printf '  service. What it asks for:\n\n'
-                curl -s --max-time 5 "$local_url/" 2>/dev/null | sed 's/^/    /' || true
-                printf '\n  Do that, then restart the stack. Nothing needs re-running here.\n\n'
-
-                return 1
-            fi
-
-            return 0
+            # Only a real answer counts. `/up` is database-independent by design,
+            # so a broken database or a failed boot shows up as a healthy `/up` in
+            # front of 500s - and treating anything-that-is-not-503 as success
+            # reported an upgrade complete over exactly that. 4xx is an answer
+            # (a login redirect, a 404 on `/`); 5xx and a failed request are not.
+            case "$serving" in
+                5*|000|'') : ;;
+                *) return 0 ;;
+            esac
         fi
 
         tries=$((tries + 1))
         sleep 2
     done
 
+    # Out of patience. A 503 that has persisted this long is the serving gate
+    # rather than a slow boot, and it carries the operator's instructions - so it
+    # is worth reading back rather than reporting as a generic failure.
+    serving="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$local_url/" 2>/dev/null || true)"
+
+    if [ "$serving" = "503" ]; then
+        printf '\n\033[1;31mTHE RELEASE IS UP BUT WILL NOT SERVE\033[0m\n\n'
+        printf '  Migrations ran. Something the release declared must be done before it\n'
+        printf '  will answer requests, and it is refusing rather than serving half a\n'
+        printf '  service. What it asks for:\n\n'
+        curl -s --max-time 5 "$local_url/" 2>/dev/null | sed 's/^/    /' || true
+        printf '\n  Do that, then restart the stack. Nothing needs re-running here.\n\n'
+
+        return 1
+    fi
+
     printf '\n\033[1;31mTHE NEW RELEASE DID NOT COME UP\033[0m\n\n'
-    printf '  Inspect: docker compose -f %s --env-file %s logs web\n\n' "$COMPOSE_FILE" "$ENV_FILE"
+    printf '  The container is running, but the application answered %s rather than\n' "${serving:-nothing}"
+    printf '  serving. Inspect: docker compose -f %s --env-file %s logs web\n\n' "$COMPOSE_FILE" "$ENV_FILE"
 
     return 1
 }
