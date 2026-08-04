@@ -377,36 +377,43 @@ check "an empty origin is not"              UNKNOWN "$(origin_usable '')"
 # development version the same way rather than refusing it.
 check "a development identity is usable"    USABLE  "$(origin_usable '0.2.0-dev+abc')"
 
-# The page count has to be OCCURRENCES, not lines. `grep -c` counts matching
-# lines, and nothing obliges the API to put one tag per line - a minified page of
-# a hundred reads as a page of one, ends pagination immediately, and drops every
-# older release along with any before-pull requirement in it.
-page_count() {
-    local style="$1" body i
-    body="$(mktemp)"
+# Tag pages are PARSED, not grepped. A 200 carrying HTML from a proxy, or a
+# truncated body, matches nothing - which reads as a short page, ends pagination,
+# and leaves the span with only the target. Counting occurrences fixed the
+# minified-response case but never asked whether the response was a tag list.
+tag_page() {
+    printf '%s' "$1" | "${PHP:-php}" -r '
+        $decoded = json_decode(stream_get_contents(STDIN), true);
+        if (! is_array($decoded) || array_is_list($decoded) === false) { echo "INVALID"; exit(0); }
+        $names = [];
+        foreach ($decoded as $entry) {
+            if (! is_array($entry)) { echo "INVALID"; exit(0); }
+            $name = $entry["name"] ?? null;
+            if (is_string($name)) { $names[] = $name; }
+        }
+        echo "COUNT:", count($decoded);
+    '
+}
 
-    if [ "$style" = minified ]; then
-        printf '[' > "$body"
-        i=0
-        while [ "$i" -lt 100 ]; do
-            [ "$i" -gt 0 ] && printf ',' >> "$body"
-            printf '{"name":"v0.0.%d"}' "$i" >> "$body"
-            i=$((i + 1))
-        done
-        printf ']' >> "$body"
-    else
-        i=0
-        while [ "$i" -lt 100 ]; do printf '  "name": "v0.0.%d",\n' "$i" >> "$body"; i=$((i + 1)); done
-    fi
-
-    grep -o '"name":' "$body" | wc -l | tr -d ' '
-    rm -f "$body"
+minified_page() {
+    "${PHP:-php}" -r '
+        $t = [];
+        for ($i = 0; $i < 100; $i++) { $t[] = ["name" => "v0.0.$i"]; }
+        echo json_encode($t);
+    '
 }
 
 echo
-echo "tag page counting:"
-check "a pretty-printed page counts 100" 100 "$(page_count pretty)"
-check "a minified page also counts 100"  100 "$(page_count minified)"
+echo "tag page parsing:"
+check "a pretty-printed page parses"      COUNT:2   "$(tag_page '[
+  {"name": "v0.1.0"},
+  {"name": "v0.2.0"}
+]')"
+check "a minified page of 100 parses"     COUNT:100 "$(tag_page "$(minified_page)")"
+check "an HTML error body is rejected"    INVALID   "$(tag_page '<html>502 Bad Gateway</html>')"
+check "a JSON object is not a tag list"   INVALID   "$(tag_page '{"message":"rate limited"}')"
+check "a truncated body is rejected"      INVALID   "$(tag_page '[{"name":"v0.1.0"},')"
+check "a non-object entry is rejected"    INVALID   "$(tag_page '[{"name":"v0.1.0"},"oops"]')"
 
 # The preflight runs inside the image being upgraded FROM, so it may only call an
 # API that image already had. `assertPublished()` was added by the release being
@@ -462,6 +469,46 @@ check "an untagged image names no release"    UNKNOWN "$(image_release ghcr.io/a
 # would read `5000/wayfindr` as one, and preflight a release that does not exist.
 check "a registry port is not a tag"          0.3.0   "$(image_release registry:5000/wayfindr:0.3.0)"
 check "a ported registry with no tag"         UNKNOWN "$(image_release registry:5000/wayfindr)"
+
+# Which image the preflight targets, mirroring pin_image()'s precedence. An
+# override persisted into .env by an earlier install survives the process
+# variable that put it there, so a later upgrade with nothing exported pulls the
+# custom image - while the preflight was evaluating the resolved release.
+effective_target() {
+    local exported="$1" persisted="$2" resolved="$3" effective
+
+    effective="$exported"
+
+    if [ -z "$effective" ]; then
+        case "$persisted" in
+            ghcr.io/adamgreenwell/wayfindr:*|'') : ;;
+            *) effective="$persisted" ;;
+        esac
+    fi
+
+    if [ -z "$effective" ]; then
+        printf '%s' "$resolved"
+        return 0
+    fi
+
+    local name to
+    name="${effective##*/}"
+    case "$name" in *:*) to="${name##*:}" ;; *) to="" ;; esac
+    to="${to#v}"
+
+    case "$to" in
+        ''|latest) printf 'SKIP' ;;
+        *) printf '%s' "$to" ;;
+    esac
+}
+
+echo
+echo "effective image selection:"
+check "an exported override wins"                 0.9.0 "$(effective_target ghcr.io/x/y:0.9.0 ghcr.io/adamgreenwell/wayfindr:0.1.0 0.2.0)"
+check "an official .env image uses the resolved"  0.2.0 "$(effective_target '' ghcr.io/adamgreenwell/wayfindr:0.1.0 0.2.0)"
+check "a persisted custom image is the target"    0.9.0 "$(effective_target '' ghcr.io/x/y:0.9.0 0.2.0)"
+check "a persisted custom :latest skips"          SKIP  "$(effective_target '' ghcr.io/x/y:latest 0.2.0)"
+check "no override falls back to the resolved"    0.2.0 "$(effective_target '' '' 0.2.0)"
 
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

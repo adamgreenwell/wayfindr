@@ -232,16 +232,37 @@ upgrade_preflight() {
 
     to="${IMAGE_TAG:-}"
 
-    # The pull follows WAYFINDR_IMAGE when it is set - pin_image() writes that in
-    # preference to the resolved tag - so the preflight has to evaluate the
-    # release that will actually be installed. Checking the one resolved from the
-    # releases API instead would clear an upgrade on the strength of a manifest
-    # belonging to a different image.
-    if [ -n "${WAYFINDR_IMAGE:-}" ]; then
+    # Whatever compose will ACTUALLY pull, mirroring pin_image()'s own precedence
+    # rather than guessing at it:
+    #
+    #   1. an exported WAYFINDR_IMAGE wins outright - pin_image() writes it
+    #   2. otherwise an OFFICIAL image already in .env is retagged to the resolved
+    #      release, so the resolved tag is the target
+    #   3. otherwise .env holds a custom image that pin_image() leaves alone, and
+    #      that is what gets pulled
+    #
+    # Case 3 is the one this missed: an override persisted into .env by an earlier
+    # install survives the process variable that put it there, so a later upgrade
+    # with nothing exported pulled the custom image while the preflight evaluated
+    # the resolved release. Reading .env unconditionally would be wrong in the
+    # other direction - case 2's .env still names the version being upgraded FROM.
+    local effective_image persisted
+    effective_image="${WAYFINDR_IMAGE:-}"
+
+    if [ -z "$effective_image" ]; then
+        persisted="$(grep -E '^WAYFINDR_IMAGE=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+
+        case "$persisted" in
+            ghcr.io/adamgreenwell/wayfindr:*|'') : ;;
+            *) effective_image="$persisted" ;;
+        esac
+    fi
+
+    if [ -n "$effective_image" ]; then
         # Split on the last colon AFTER the last slash, so a registry port
         # (registry:5000/wayfindr) is not mistaken for a tag.
         local image_name
-        image_name="${WAYFINDR_IMAGE##*/}"
+        image_name="${effective_image##*/}"
 
         case "$image_name" in
             *:*) to="${image_name##*:}" ;;
@@ -252,8 +273,8 @@ upgrade_preflight() {
 
         case "$to" in
             ''|latest)
-                say "Preflight skipped: WAYFINDR_IMAGE names no specific release."
-                printf '    %s\n' "$WAYFINDR_IMAGE"
+                say "Preflight skipped: the image override names no specific release."
+                printf '    %s\n' "$effective_image"
                 printf '    The release it will install enforces its own requirements when it\n'
                 printf '    starts, and refuses to migrate rather than proceeding silently.\n'
 
@@ -325,18 +346,46 @@ upgrade_preflight() {
             exit 78
         fi
 
-        # Every tag on the page, and only the release-shaped ones. The two counts
-        # differ deliberately: a full page of non-release tags still means there
-        # is another page to read.
+        # Parsed, not grepped. A 200 carrying HTML from a proxy, or a truncated
+        # body, matches nothing - which reads as a short page, ends pagination,
+        # and leaves the span with only the target. Counting occurrences fixed
+        # the minified-response case but still never asked whether the response
+        # was a tag list at all.
         #
-        # Counted as OCCURRENCES, not lines. `grep -c` counts matching lines, and
-        # nothing obliges the API to put one tag per line - a minified response
-        # puts all hundred on one, which reads as a page of 1, ends pagination
-        # immediately, and drops every older release along with any before-pull
-        # requirement in it.
-        page_count="$(grep -o '"name":' "$tags_body" | wc -l | tr -d ' ')"
+        # The two numbers differ deliberately: the page count is EVERY entry,
+        # because a full page of non-release tags still means there is another
+        # page to read, while only release-shaped names are collected.
+        page="$(printf '%s' "$(cat "$tags_body")" | php_in_current_image "" "" "" '
+            $decoded = json_decode(stream_get_contents(STDIN), true);
+
+            if (! is_array($decoded) || array_is_list($decoded) === false) {
+                echo "INVALID";
+                exit(0);
+            }
+
+            $names = [];
+
+            foreach ($decoded as $entry) {
+                if (! is_array($entry)) { echo "INVALID"; exit(0); }
+                $name = $entry["name"] ?? null;
+                if (is_string($name)) { $names[] = $name; }
+            }
+
+            echo "COUNT:", count($decoded), "\n", implode("\n", $names);
+        ')"
+
+        if [ "${page%%$'\n'*}" = "INVALID" ] || [ -z "$page" ]; then
+            rm -f "$tags_body"
+            printf '\n\033[1;31mPREFLIGHT COULD NOT VERIFY THIS UPGRADE\033[0m\n\n'
+            printf '  The release list came back unreadable.\n'
+            printf '  Refusing rather than treating an unparseable response as a short page.\n\n'
+            printf '  Nothing has been pulled or changed. Retry when the network settles.\n\n'
+            exit 78
+        fi
+
+        page_count="$(printf '%s' "$page" | sed -n 's/^COUNT://p' | head -1)"
         [ -n "$page_count" ] || page_count=0
-        tag_count="$(grep -o '"name": *"v[^"]*"' "$tags_body" | sed 's/.*"v/v/; s/"$//' || true)"
+        tag_count="$(printf '%s' "$page" | sed '1d' | grep -E '^v[0-9]' || true)"
 
         [ -n "$tag_count" ] && tags="${tags}${tag_count}
 "
