@@ -88,15 +88,17 @@ final class UpgradeRequirements
             return false;
         }
 
-        if ($release === $current) {
-            return true;
-        }
-
-        $rank = VersionComparator::compare($release, $current);
-
-        // At or below where the install got to. Unorderable stays false: nothing
-        // shows the install ever ran it.
-        return $rank !== null && $rank <= 0;
+        // EQUALITY ONLY. Version ordering does not prove traversal, because
+        // direct jumps are supported and normal: a restored 0.4 install that
+        // originally went 0.1 -> 0.4 never ran 0.2, and `0.2 <= 0.4` would have
+        // accepted an acknowledgement for 0.2 work it could never have done.
+        //
+        // The recorded release is the one piece of evidence that holds: it is
+        // what is installed, so its code was present. Anything older needs proof
+        // of traversal that nothing here has — `satisfied_through` is the only
+        // candidate and it is deliberately unknown after a restore, which is
+        // exactly the case that would be wrong.
+        return $release === $current;
     }
 
     /**

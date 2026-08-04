@@ -1965,12 +1965,20 @@ test('an action needing a release that is gone still blocks, acknowledged or not
         ->and(UpgradeRequirements::unacknowledgeable($action, '0.3.0', '0.2.0'))->toBeFalse()
         // An install that skipped 0.2.0 never had that code, so nothing it says
         // about the work can be true.
-        ->and(UpgradeRequirements::unacknowledgeable($action, '0.3.0', '0.1.0'))->toBeTrue();
+        ->and(UpgradeRequirements::unacknowledgeable($action, '0.3.0', '0.1.0'))->toBeTrue()
+        // And an install merely NEWER than the action's release proves nothing:
+        // it may have jumped straight past it.
+        ->and(UpgradeRequirements::unacknowledgeable($action, '0.5.0', '0.4.0'))->toBeTrue();
 });
 
-test('an action for a release the install has passed can be acknowledged', function (): void {
-    // Ran 0.2.0 on the way to 0.4.0, so the work was performable at the time.
-    expect(UpgradeRequirements::reached(['release' => '0.2.0'], '0.4.0'))->toBeTrue();
+test('being newer than a release is not evidence of having run it', function (): void {
+    // Direct jumps are supported and normal, so ordering proves nothing about
+    // traversal: a restored 0.4.0 install that originally went 0.1.0 -> 0.4.0
+    // never ran 0.2.0, and crediting it would drop work it could never have done.
+    expect(UpgradeRequirements::reached(['release' => '0.2.0'], '0.4.0'))->toBeFalse()
+        // The recorded release is the one thing that is evidence: it is installed,
+        // so its code was present.
+        ->and(UpgradeRequirements::reached(['release' => '0.2.0'], '0.2.0'))->toBeTrue();
 });
 
 test('an unrecorded origin cannot be acknowledged past', function (): void {
@@ -2039,4 +2047,31 @@ test('the refusal carries recovery for stranded work an acknowledgement could cl
     // the bug: reachable stranded work got a key and no explanation.
     expect($source)->toContain('UpgradeRequirements::stranded($action, $target)')
         ->and($source)->toContain('roll back to that release');
+});
+
+test('the command carries recovery for stranded work an acknowledgement could clear', function (): void {
+    // The same two-part message the listener gives. Fixing one and not the other
+    // is how this rule has drifted at every step, so both are asserted.
+    $source = file_get_contents(app_path('Console/Commands/UpgradeGuardCommand.php'));
+
+    $key = strpos($source, 'Acknowledge with:');
+    $recovery = strpos($source, 'Cannot be done now:');
+
+    expect($key)->not->toBeFalse()
+        ->and($recovery)->not->toBeFalse()
+        ->and($key)->toBeLessThan($recovery)
+        ->and($source)->toContain('roll back to that release');
+});
+
+test('the refusal footer speaks only for work no acknowledgement can clear', function (): void {
+    // The footer says the release was skipped and no acknowledgement substitutes.
+    // Counting every stranded action there told an operator holding a usable key
+    // exactly the opposite of the line above it.
+    $source = file_get_contents(app_path('Listeners/BlockMigrationsWithUnmetRequirements.php'));
+
+    expect($source)->toContain('$unacknowledgeable = true;')
+        ->and($source)->toContain('if ($unacknowledgeable) {')
+        // And the flag is set inside the branch that has no acknowledgement route.
+        ->and(strpos($source, '$unacknowledgeable = true;'))
+        ->toBeGreaterThan(strpos($source, 'Acknowledging will not clear this'));
 });

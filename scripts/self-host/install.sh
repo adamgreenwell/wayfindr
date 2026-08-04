@@ -1095,18 +1095,13 @@ upgrade_preflight() {
                 $stranded = $ownRelease;
                 $onlyNow = false;
 
-                if ($ownRelease && $recorded !== null) {
-                    $reached = $release === $recorded;
-
-                    if (! $reached) {
-                        $rank = App\Support\Version\VersionComparator::compare($release, $recorded);
-                        $reached = $rank !== null && $rank <= 0;
-                    }
-
-                    if ($reached) {
-                        $stranded = false;
-                        $onlyNow = true;
-                    }
+                // Equality only. Ordering does not prove the install ever RAN a
+                // release - direct jumps are supported - so a restored install
+                // recorded at 0.4 that originally went 0.1 to 0.4 must not be
+                // credited with having run 0.2.
+                if ($ownRelease && $recorded !== null && $release === $recorded) {
+                    $stranded = false;
+                    $onlyNow = true;
                 }
 
                 if (! $stranded && in_array($key, $ack, true)) { continue; }

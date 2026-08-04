@@ -1034,13 +1034,11 @@ classify() {
         $own = $release !== $target;
         $stranded = $own;
         $onlyNow = false;
-        if ($own && $recorded !== null) {
-            $reached = $release === $recorded;
-            if (! $reached) {
-                $rank = App\Support\Version\VersionComparator::compare($release, $recorded);
-                $reached = $rank !== null && $rank <= 0;
-            }
-            if ($reached) { $stranded = false; $onlyNow = true; }
+        // Equality only: ordering does not prove the install ever RAN a release,
+        // because direct jumps are supported.
+        if ($own && $recorded !== null && $release === $recorded) {
+            $stranded = false;
+            $onlyNow = true;
         }
         echo $stranded ? "STEP" : ($onlyNow ? "NOW" : "DO");
     '
@@ -1050,7 +1048,8 @@ echo
 echo "own-release work is classified three ways:"
 check "the release the install is on"  NOW  "$(classify 0.2.0 0.3.0 0.2.0)"
 check "a release it skipped over"      STEP "$(classify 0.2.0 0.3.0 0.1.0)"
-check "a release it has passed"        NOW  "$(classify 0.2.0 0.5.0 0.4.0)"
+# Newer is not proof of traversal: a direct 0.1.0 -> 0.4.0 jump never ran 0.2.0.
+check "merely newer than it"          STEP "$(classify 0.2.0 0.5.0 0.4.0)"
 check "the target itself"              DO   "$(classify 0.3.0 0.3.0 0.1.0)"
 check "no recorded origin"             STEP "$(classify 0.2.0 0.3.0 '')"
 check "an unorderable origin"          STEP "$(classify 0.2.0 0.3.0 '0.2.0-dev+abc')"

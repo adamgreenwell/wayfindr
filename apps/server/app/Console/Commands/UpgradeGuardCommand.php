@@ -142,10 +142,20 @@ class UpgradeGuardCommand extends Command
 
             $this->line(sprintf('    Blocks: %s', $blocksMigration ? 'migration' : 'serving'));
 
-            if (UpgradeRequirements::unacknowledgeable($action, $assessment['target'] ?? null, $assessment['from'] ?? null)) {
-                $this->line(sprintf('    Cannot be done on this jump: it needs %s, which this upgrade skips.',
+            // Recovery for EVERY stranded action, as the listener does. An
+            // operator who did not do the work before pulling cannot do it now —
+            // the code it needs is gone — and a key with no explanation leaves
+            // them without that fact.
+            if (UpgradeRequirements::stranded($action, $assessment['target'] ?? null)) {
+                $this->line(sprintf('    Cannot be done now: it needs %s, whose code this upgrade replaced.',
                     $action['release'] ?? 'an intermediate release'));
-                $this->line('    Upgrade to that release first, let it start, then continue.');
+
+                if (UpgradeRequirements::unacknowledgeable($action, $assessment['target'] ?? null, $assessment['from'] ?? null)) {
+                    $this->line('    Upgrade to that release first, let it start, then continue.');
+                } else {
+                    $this->line('    If you did it before upgrading, acknowledge it with the key above.');
+                    $this->line('    If not, roll back to that release, do it there, and upgrade again.');
+                }
             }
         }
 

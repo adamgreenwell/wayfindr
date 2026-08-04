@@ -133,7 +133,7 @@ class BlockMigrationsWithUnmetRequirements
             $output->writeln('  published so far is being checked. Some may already be done.');
         }
 
-        $stranded = false;
+        $unacknowledgeable = false;
 
         foreach ($assessment['actions'] as $action) {
             $output->writeln('');
@@ -175,18 +175,23 @@ class BlockMigrationsWithUnmetRequirements
                 if (UpgradeRequirements::unacknowledgeable($action, $target, $from)) {
                     $output->writeln('    Install that release first, let it start, then upgrade again.');
                     $output->writeln('    Acknowledging will not clear this: the work is unreachable, not undone.');
+
+                    // Only these reach the footer. Counting every stranded action
+                    // there told an operator holding a usable key that no
+                    // acknowledgement could substitute — two remedies in one
+                    // refusal, one of which sends them through a needless
+                    // rollback.
+                    $unacknowledgeable = true;
                 } else {
                     $output->writeln('    If you did it before upgrading, acknowledge it with the key above.');
                     $output->writeln('    If not, roll back to that release, do it there, and upgrade again.');
                 }
-
-                $stranded = true;
             }
         }
 
         $output->writeln('');
 
-        if ($stranded) {
+        if ($unacknowledgeable) {
             $output->writeln('  At least one step above belongs to a release this upgrade skips over.');
             $output->writeln('  Install that release first — no acknowledgement can substitute for it.');
             $output->writeln('');
