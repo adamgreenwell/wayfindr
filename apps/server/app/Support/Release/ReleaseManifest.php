@@ -428,10 +428,31 @@ final class ReleaseManifest
         // A development identity is allowed here, unlike in a bound: this is what
         // the release IS rather than a limit to compare against, and the guard
         // already treats an unorderable running version conservatively.
-        if (SemanticVersion::parse($manifest['version']) === null) {
+        $parsedVersion = SemanticVersion::parse($manifest['version']);
+
+        if ($parsedVersion === null) {
             throw new InvalidArgumentException(
                 'Release manifest version must be one this build can parse.'
             );
+        }
+
+        // And it must already be CANONICAL. `v0.3.0` parses, so it survived the
+        // check above — but `ReleaseState::recordedVersion()` canonicalises what
+        // it reads while the guard keeps the manifest's spelling as the target,
+        // so the two stop comparing equal. A genuinely fresh install then loses
+        // its exemption on the next request and starts returning 503 for
+        // upgrade-only work it never owed.
+        //
+        // `build()` canonicalises the version and every action's release stamp,
+        // so a manifest that is not canonical did not come from this builder.
+        // Rejecting it keeps one spelling in play everywhere rather than leaving
+        // each reader to normalise and hoping they agree.
+        if ($parsedVersion->canonical() !== $manifest['version']) {
+            throw new InvalidArgumentException(sprintf(
+                'Release manifest version must be canonical: "%s" should be "%s".',
+                $manifest['version'],
+                $parsedVersion->canonical(),
+            ));
         }
 
         // A string, and null is not one. `buildChanged()` compares the recorded

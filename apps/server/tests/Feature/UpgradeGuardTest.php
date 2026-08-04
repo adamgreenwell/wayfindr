@@ -1661,3 +1661,25 @@ test('the migration refusal does not offer a key it will not honour', function (
 
     expect($source)->toContain('Install that release first');
 });
+
+test('a non-canonical manifest version is rejected', function (): void {
+    // `v0.3.0` parses, so it survives the parseability check - but
+    // recordedVersion() canonicalises what it reads while the guard keeps the
+    // manifest's spelling as the target, so the two stop comparing equal and a
+    // fresh install loses its exemption on the next request.
+    $manifest = ReleaseManifest::build(['actions' => []], '0.3.0', 'ccc');
+    $manifest['version'] = 'v0.3.0';
+
+    expect(fn () => ReleaseManifest::assertPublished($manifest))
+        ->toThrow(InvalidArgumentException::class);
+});
+
+test('the builder canonicalises so its own output always passes', function (): void {
+    // build() takes the git tag verbatim from the release workflow, so this is
+    // the ordinary path rather than a corner: `v0.3.0` in, canonical out.
+    $manifest = ReleaseManifest::build(['actions' => []], 'v0.3.0', 'ccc');
+
+    expect($manifest['version'])->toBe('0.3.0')
+        ->and(fn () => ReleaseManifest::assertPublished($manifest))
+        ->not->toThrow(InvalidArgumentException::class);
+});
