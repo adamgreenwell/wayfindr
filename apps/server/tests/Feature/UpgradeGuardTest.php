@@ -1082,3 +1082,50 @@ test('a recorded install does not query the database to assess', function (): vo
 
     expect(app(UpgradeGuard::class)->assessAll())->toBe([]);
 });
+
+test('a malformed recorded version reads as no origin at all', function (): void {
+    // The floor refuses only a definite "below", so a mistyped version compares
+    // as null and lets a potentially unsupported migration through. Reporting no
+    // origin instead routes to the unverifiable-floor refusal, which is safe and
+    // clearable.
+    bakeRelease(['minimum_upgrade_from' => '0.2.0', 'actions' => []], '0.3.0');
+
+    file_put_contents(
+        (string) config('wayfindr.release.state_path'),
+        json_encode(['version' => '0.1.O', 'commit' => 'aaa']),
+    );
+
+    $assessment = app(UpgradeGuard::class)->assess();
+
+    expect(app(ReleaseState::class)->recordedVersion())->toBeNull()
+        ->and($assessment['blocked'])->toBeTrue()
+        ->and($assessment['reason'])->toContain('cannot be verified');
+});
+
+test('a recorded development identity is still a valid origin', function (): void {
+    // Unlike a declared origin, this is a record of what ran rather than an
+    // assertion made to clear a refusal - and the floor already treats a
+    // development version as no evidence of an unsupported jump.
+    bakeRelease(['minimum_upgrade_from' => '0.2.0', 'actions' => []], '0.3.0');
+
+    file_put_contents(
+        (string) config('wayfindr.release.state_path'),
+        json_encode(['version' => '0.2.5-dev+abc', 'commit' => 'aaa']),
+    );
+
+    expect(app(ReleaseState::class)->recordedVersion())->toBe('0.2.5-dev+abc')
+        ->and(app(UpgradeGuard::class)->assess()['blocked'])->toBeFalse();
+});
+
+test('a recorded version is canonicalised on read', function (): void {
+    // So a state file written by an older build, or edited by hand from a release
+    // page, compares like the manifests it is ranked against.
+    bakeRelease(['actions' => []], '0.3.0');
+
+    file_put_contents(
+        (string) config('wayfindr.release.state_path'),
+        json_encode(['version' => 'v0.2.4', 'commit' => 'aaa']),
+    );
+
+    expect(app(ReleaseState::class)->recordedVersion())->toBe('0.2.4');
+});

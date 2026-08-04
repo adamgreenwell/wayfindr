@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Release;
 
+use App\Support\Version\SemanticVersion;
 use Throwable;
 
 /**
@@ -31,7 +32,23 @@ final class ReleaseState
     {
         $value = $this->read()['version'] ?? null;
 
-        return is_string($value) && trim($value) !== '' ? $value : null;
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        // It has to parse, or it is not an origin. The floor refuses only a
+        // definite "below", so a malformed or mistyped version compares as null
+        // and lets a potentially unsupported migration through — where reporting
+        // no origin at all routes to the unverifiable-floor refusal, which is
+        // both safe and clearable.
+        //
+        // A DEVELOPMENT identity is kept, unlike a declared origin. This is a
+        // record of what ran, not an assertion made to clear a refusal, and the
+        // floor already treats a development version on either side as no
+        // evidence of an unsupported jump rather than as permission.
+        $parsed = SemanticVersion::parse(trim($value));
+
+        return $parsed?->canonical();
     }
 
     /** @return array<string, mixed> */

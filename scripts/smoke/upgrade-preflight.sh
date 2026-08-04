@@ -432,5 +432,36 @@ check "a capability probe exists"           1 "$(printf '%s' "$probe" | grep -c 
 check "it checks the manifest class"        1 "$(printf '%s' "$probe" | grep -c 'ReleaseManifest.php')"
 check "the preflight consults it"           1 "$(grep -c 'if ! preflight_supported' "$INSTALLER")"
 
+# The pull follows WAYFINDR_IMAGE when it is set, so the preflight has to target
+# THAT release rather than the one resolved from the releases API - otherwise an
+# upgrade is cleared on the strength of a manifest belonging to a different image.
+image_release() {
+    local img="$1" name to
+    name="${img##*/}"
+
+    case "$name" in
+        *:*) to="${name##*:}" ;;
+        *) to="" ;;
+    esac
+
+    to="${to#v}"
+
+    case "$to" in
+        ''|latest) printf 'UNKNOWN' ;;
+        *) printf '%s' "$to" ;;
+    esac
+}
+
+echo
+echo "override image names the release to preflight:"
+check "a pinned tag is the target"            0.2.0   "$(image_release ghcr.io/adamgreenwell/wayfindr:0.2.0)"
+check "a v-prefixed tag is canonicalised"     0.2.0   "$(image_release ghcr.io/adamgreenwell/wayfindr:v0.2.0)"
+check "latest names no release"               UNKNOWN "$(image_release ghcr.io/adamgreenwell/wayfindr:latest)"
+check "an untagged image names no release"    UNKNOWN "$(image_release ghcr.io/adamgreenwell/wayfindr)"
+# A registry port is not a tag. Splitting on the last colon in the WHOLE string
+# would read `5000/wayfindr` as one, and preflight a release that does not exist.
+check "a registry port is not a tag"          0.3.0   "$(image_release registry:5000/wayfindr:0.3.0)"
+check "a ported registry with no tag"         UNKNOWN "$(image_release registry:5000/wayfindr)"
+
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

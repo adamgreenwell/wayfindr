@@ -232,6 +232,36 @@ upgrade_preflight() {
 
     to="${IMAGE_TAG:-}"
 
+    # The pull follows WAYFINDR_IMAGE when it is set - pin_image() writes that in
+    # preference to the resolved tag - so the preflight has to evaluate the
+    # release that will actually be installed. Checking the one resolved from the
+    # releases API instead would clear an upgrade on the strength of a manifest
+    # belonging to a different image.
+    if [ -n "${WAYFINDR_IMAGE:-}" ]; then
+        # Split on the last colon AFTER the last slash, so a registry port
+        # (registry:5000/wayfindr) is not mistaken for a tag.
+        local image_name
+        image_name="${WAYFINDR_IMAGE##*/}"
+
+        case "$image_name" in
+            *:*) to="${image_name##*:}" ;;
+            *) to="" ;;
+        esac
+
+        to="${to#v}"
+
+        case "$to" in
+            ''|latest)
+                say "Preflight skipped: WAYFINDR_IMAGE names no specific release."
+                printf '    %s\n' "$WAYFINDR_IMAGE"
+                printf '    The release it will install enforces its own requirements when it\n'
+                printf '    starts, and refuses to migrate rather than proceeding silently.\n'
+
+                return 0
+                ;;
+        esac
+    fi
+
     if [ -z "$to" ]; then
         say "Preflight skipped: no resolved release to check against."
         return 0
