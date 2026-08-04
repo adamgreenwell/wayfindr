@@ -345,7 +345,27 @@ final class ReleaseManifest
             throw new InvalidArgumentException('Release manifest is not valid JSON.');
         }
 
-        $schema = $decoded['schema'] ?? null;
+        self::assertPublished($decoded);
+
+        return $decoded;
+    }
+
+    /**
+     * The same trust boundary as {@see decode()}, for a manifest that arrives
+     * already decoded.
+     *
+     * History entries are members of a larger document, so they never pass
+     * through `decode()` — but they are published manifests and are exactly as
+     * much a trust boundary. Accepting any array meant `{"version":"0.2.0"}`
+     * contributed no actions, and if that version matched the target it also
+     * stopped the real manifest being appended, so the target's own
+     * pre-migration requirements disappeared with it.
+     *
+     * @param  array<string, mixed>  $manifest
+     */
+    public static function assertPublished(array $manifest): void
+    {
+        $schema = $manifest['schema'] ?? null;
 
         if (! is_int($schema)) {
             throw new InvalidArgumentException('Release manifest declares no schema version.');
@@ -357,9 +377,7 @@ final class ReleaseManifest
             );
         }
 
-        self::validatePublished($decoded);
-
-        return $decoded;
+        self::validatePublished($manifest);
     }
 
     /**

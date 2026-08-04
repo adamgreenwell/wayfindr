@@ -72,6 +72,21 @@ step through an intermediate release. This is what lets an old migration path be
 retired without stranding anyone silently, and it is what bounds the history
 baked into the image.
 
+Checking it needs to know where the install is starting from, and an install
+predating `release-state.json` has nothing on record. That is refused rather than
+waved through — an unknown origin *may* be below the floor, and migrations whose
+path was retired are exactly what the floor exists to stop. It is cleared by
+establishing the origin, not by overriding the floor, either by upgrading to the
+floor release first (which records it) or by stating it:
+
+```dotenv
+WAYFINDR_UPGRADE_FROM=0.2.4
+```
+
+That value is only consulted when nothing is recorded, and it is read live, like
+an acknowledgement. Stating a version *below* the floor is still refused — it
+establishes where you are, it does not grant permission.
+
 ### `id`
 
 A lowercase slug, unique within the release. Operators type these by hand into

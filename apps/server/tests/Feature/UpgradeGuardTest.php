@@ -745,3 +745,93 @@ test('a development checkout still reports cleanly', function (): void {
 
     expect(Artisan::call('wayfindr:upgrade-guard'))->toBe(0);
 });
+
+test('a legacy install cannot skip a floor it cannot be checked against', function (): void {
+    // No recorded release means the origin is unknown, so the install MAY be
+    // below the floor - and "may be" is not permission to run migrations whose
+    // path was explicitly retired. Skipping the check because there is nothing
+    // to compare against is the fail-open reading of missing evidence.
+    bakeRelease(['minimum_upgrade_from' => '0.2.0', 'actions' => []], '0.3.0');
+
+    $assessment = app(UpgradeGuard::class)->assess();
+
+    expect($assessment['blocked'])->toBeTrue()
+        ->and($assessment['from'])->toBeNull()
+        ->and($assessment['floor'])->toBe('0.2.0')
+        ->and($assessment['reason'])->toContain('cannot be verified');
+});
+
+test('stating the origin clears an unverifiable floor', function (): void {
+    // The refusal has to be clearable by establishing the origin, or it strands
+    // every install predating the state file the first time a floor is declared.
+    bakeRelease(['minimum_upgrade_from' => '0.2.0', 'actions' => []], '0.3.0');
+
+    putenv('WAYFINDR_UPGRADE_FROM=0.2.4');
+
+    try {
+        expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeFalse();
+    } finally {
+        putenv('WAYFINDR_UPGRADE_FROM');
+    }
+});
+
+test('stating an origin below the floor is still refused', function (): void {
+    // It establishes the origin; it does not override the floor.
+    bakeRelease(['minimum_upgrade_from' => '0.2.0', 'actions' => []], '0.3.0');
+
+    putenv('WAYFINDR_UPGRADE_FROM=0.1.0');
+
+    try {
+        $assessment = app(UpgradeGuard::class)->assess();
+
+        expect($assessment['blocked'])->toBeTrue()
+            ->and($assessment['from'])->toBe('0.1.0');
+    } finally {
+        putenv('WAYFINDR_UPGRADE_FROM');
+    }
+});
+
+test('a fresh install is not refused by an unverifiable floor', function (): void {
+    // A brand-new install has not upgraded from anywhere, so there is no floor
+    // to verify. Refusing it would make a declared floor unable to be installed.
+    bakeRelease(['minimum_upgrade_from' => '0.2.0', 'actions' => []], '0.3.0');
+
+    app(UpgradeContext::class)->observeFreshInstall(true);
+
+    expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeFalse();
+});
+
+test('the command tells an unverifiable install how to clear it', function (): void {
+    // The two refusals sharing `floor` have different remedies. Printing "you are
+    // older than X allows" for the unverifiable case sends an operator who may be
+    // perfectly current off to reinstall an older release.
+    bakeRelease(['minimum_upgrade_from' => '0.2.0', 'actions' => []], '0.3.0');
+
+    expect(Artisan::call('wayfindr:upgrade-guard'))->toBe(1);
+    expect(Artisan::output())->toContain('WAYFINDR_UPGRADE_FROM');
+});
+
+test('a history entry that is not a published manifest is rejected', function (): void {
+    // Structurally an array, but not a manifest. It contributes no actions - and
+    // if its version matches the target it also makes historyContains() true,
+    // suppressing the real manifest and taking its requirements with it.
+    $dir = storage_path('framework/testing/release-'.bin2hex(random_bytes(4)));
+    mkdir($dir, 0700, true);
+
+    file_put_contents($dir.'/release.json', json_encode(
+        ReleaseManifest::build(blockingDeclaration(), '0.3.0', 'ccc'),
+    ));
+    file_put_contents($dir.'/history.json', json_encode([
+        'schema' => 1,
+        'releases' => [['version' => '0.3.0']],
+    ]));
+
+    config()->set('wayfindr.release.manifest_path', $dir.'/release.json');
+    config()->set('wayfindr.release.history_path', $dir.'/history.json');
+    config()->set('wayfindr.release.state_path', $dir.'/state.json');
+
+    $assessment = app(UpgradeGuard::class)->assess();
+
+    expect($assessment['blocked'])->toBeTrue()
+        ->and($assessment['reason'])->toContain('could not be read');
+});

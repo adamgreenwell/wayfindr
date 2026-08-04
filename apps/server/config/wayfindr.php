@@ -221,6 +221,13 @@ return [
         // blanket opt-out.
         'acknowledged_actions' => env('WAYFINDR_ACKNOWLEDGED_ACTIONS'),
 
+        // Where an install predating the state file states it is upgrading FROM.
+        // Only consulted when nothing is recorded, and only so the floor check
+        // has something to verify against — without it, an install whose origin
+        // cannot be established is refused, since "unknown" is not evidence the
+        // jump is supported.
+        'upgrade_from' => env('WAYFINDR_UPGRADE_FROM'),
+
         // Where this install records the release it last ran, so the next one
         // knows where the upgrade started. On the storage volume because
         // /etc/wayfindr is root-owned and the app runs unprivileged.

@@ -35,6 +35,8 @@ final class UpgradeGuard
 
     private const ACKNOWLEDGED_ENV = 'WAYFINDR_ACKNOWLEDGED_ACTIONS';
 
+    private const UPGRADE_FROM_ENV = 'WAYFINDR_UPGRADE_FROM';
+
     private function manifestPath(): string
     {
         return $this->resolvePath(
@@ -96,19 +98,50 @@ final class UpgradeGuard
      */
     private function acknowledged(): ?string
     {
-        $live = getenv(self::ACKNOWLEDGED_ENV);
+        return $this->live(self::ACKNOWLEDGED_ENV, 'wayfindr.release.acknowledged_actions');
+    }
+
+    /**
+     * The version an operator states this install is upgrading FROM.
+     *
+     * Only consulted when there is no recorded release — an install predating
+     * the state file. It is an attestation, in the same shape and read over the
+     * same channel as an acknowledgement, and it exists so that "we cannot
+     * establish where this install started" has an answer other than a refusal
+     * the operator cannot clear.
+     */
+    private function declaredOrigin(): ?string
+    {
+        $declared = $this->live(self::UPGRADE_FROM_ENV, 'wayfindr.release.upgrade_from');
+
+        return is_string($declared) && trim($declared) !== '' ? trim($declared) : null;
+    }
+
+    /**
+     * A value read as it is NOW: process environment, then the environment file,
+     * then config.
+     *
+     * Config comes last because on a host deployment it is served from
+     * `bootstrap/cache/config.php` and these are precisely the values an operator
+     * edits in response to a refusal — a guard that cannot be satisfied by doing
+     * what it asked is worse than no guard. It comes at all because a test or a
+     * tool may have set the value programmatically.
+     */
+    private function live(string $key, string $configKey): ?string
+    {
+        $live = getenv($key);
 
         if (is_string($live) && $live !== '') {
             return $live;
         }
 
-        $fromFile = $this->fromEnvironmentFile();
+        $fromFile = $this->fromEnvironmentFile($key);
 
         if ($fromFile !== null) {
             return $fromFile;
         }
 
-        $configured = config('wayfindr.release.acknowledged_actions');
+        $configured = config($configKey);
 
         return is_string($configured) ? $configured : null;
     }
@@ -119,7 +152,7 @@ final class UpgradeGuard
      * hand-rolled grep would differ from the parser on exactly the values people
      * quote because they contain something awkward.
      */
-    private function fromEnvironmentFile(): ?string
+    private function fromEnvironmentFile(string $key): ?string
     {
         $path = base_path('.env');
 
@@ -135,7 +168,7 @@ final class UpgradeGuard
             return null;
         }
 
-        $value = $values[self::ACKNOWLEDGED_ENV] ?? null;
+        $value = $values[$key] ?? null;
 
         return is_string($value) && $value !== '' ? $value : null;
     }
@@ -246,7 +279,10 @@ final class UpgradeGuard
             $history[] = $manifest;
         }
 
-        $recorded = $this->state->recordedVersion();
+        // An install predating the state file has no recorded release. The
+        // operator may state where it is instead, which is what keeps the floor
+        // check below from being a refusal they cannot clear.
+        $recorded = $this->state->recordedVersion() ?? $this->declaredOrigin();
         $existing = $this->hasExistingInstall();
         $legacy = $recorded === null && $existing;
 
@@ -280,6 +316,27 @@ final class UpgradeGuard
         // acknowledgement can make safe - there is no work the operator could do
         // to make the missing migrations exist.
         $floor = $manifest['minimum_upgrade_from'] ?? null;
+
+        if (is_string($floor) && $recorded === null && ! $fresh) {
+            // A legacy install with a floor in force. Its origin is unknown, so
+            // it MAY be below the floor — and "may be" is not permission to run
+            // migrations whose path was explicitly retired. Skipping the check
+            // because there is nothing to compare against is the fail-open
+            // reading of missing evidence.
+            //
+            // Clearable two ways, both of which establish the origin rather than
+            // override the floor: upgrade to the floor release first (which
+            // records state), or state the current version outright.
+            return [
+                'blocked' => true,
+                'reason' => 'this install has no recorded release, so the upgrade floor cannot be verified',
+                'actions' => [],
+                'from' => null,
+                'target' => $target,
+                'legacy' => true,
+                'floor' => $floor,
+            ];
+        }
 
         if (is_string($floor) && $recorded !== null) {
             $comparison = VersionComparator::compare($recorded, $floor);
@@ -422,6 +479,17 @@ final class UpgradeGuard
             // after-pull requirements with it. Valid JSON is not the same as a
             // history we can trust.
             if (! is_array($release)) {
+                return null;
+            }
+
+            // Validated as a published manifest, not merely as an array. An entry
+            // like `{"version":"0.2.0"}` is structurally an array and contributes
+            // no actions - and if its version matches the target it also makes
+            // historyContains() true, which suppresses the REAL target manifest
+            // being appended and takes its pre-migration requirements with it.
+            try {
+                ReleaseManifest::assertPublished($release);
+            } catch (Throwable) {
                 return null;
             }
 
