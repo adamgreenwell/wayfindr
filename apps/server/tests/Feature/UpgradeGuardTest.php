@@ -1015,3 +1015,70 @@ test('a state file predating the marker still falls back to the recorded release
     expect(app(ReleaseState::class)->satisfiedThroughRecorded())->toBeFalse()
         ->and(app(UpgradeGuard::class)->assessAll())->toBe([]);
 });
+
+test('the installed manifest wins over a stale history entry for its own version', function (): void {
+    // A source commit under the same VERSION, made after that release was
+    // appended to the committed history. The history entry declares nothing; the
+    // build being installed declares an after-pull action. Declining to append
+    // left the stale copy in the span, so the action was invisible - and
+    // re-including the target cannot help when the wrong COPY is selected.
+    bakeRelease(blockingDeclaration('after-pull'), '0.3.0', history: [
+        ReleaseManifest::build(['actions' => []], '0.1.0', 'aaa'),
+        ReleaseManifest::build(['actions' => []], '0.3.0', 'stale'),
+    ]);
+
+    app(ReleaseState::class)->record('0.1.0', 'aaa', satisfiedThrough: '0.1.0');
+
+    $assessment = app(UpgradeGuard::class)->assess();
+
+    expect($assessment['blocked'])->toBeTrue()
+        ->and(array_column($assessment['actions'], 'id'))->toContain('do-the-thing');
+});
+
+test('an unorderable floor makes the manifest unreadable', function (): void {
+    // A bound that cannot be ordered silently stops bounding: compare() returns
+    // null for it and the guard refuses only on a definite "below", so an install
+    // demonstrably older than the intended floor migrates anyway.
+    $dir = storage_path('framework/testing/release-'.bin2hex(random_bytes(4)));
+    mkdir($dir, 0700, true);
+
+    $manifest = ReleaseManifest::build(['actions' => []], '0.3.0', 'ccc');
+    $manifest['minimum_upgrade_from'] = 'not-a-version';
+    file_put_contents($dir.'/release.json', json_encode($manifest));
+
+    config()->set('wayfindr.release.manifest_path', $dir.'/release.json');
+    config()->set('wayfindr.release.state_path', $dir.'/state.json');
+
+    $assessment = app(UpgradeGuard::class)->assess();
+
+    expect($assessment['blocked'])->toBeTrue()
+        ->and($assessment['reason'])->toContain('could not be read');
+});
+
+test('a manifest with no floor is still readable', function (): void {
+    // Absent is legitimate - most releases retire nothing.
+    $dir = storage_path('framework/testing/release-'.bin2hex(random_bytes(4)));
+    mkdir($dir, 0700, true);
+
+    $manifest = ReleaseManifest::build(['actions' => []], '0.3.0', 'ccc');
+    unset($manifest['minimum_upgrade_from']);
+    file_put_contents($dir.'/release.json', json_encode($manifest));
+
+    config()->set('wayfindr.release.manifest_path', $dir.'/release.json');
+    config()->set('wayfindr.release.state_path', $dir.'/state.json');
+
+    expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeFalse();
+});
+
+test('a recorded install does not query the database to assess', function (): void {
+    // The serving middleware runs this on every non-health request. With a
+    // release on record neither $legacy nor $fresh can be affected, so the
+    // connection check, table lookup and existence query were pure overhead.
+    bakeRelease(['actions' => []], '0.2.0');
+    app(ReleaseState::class)->record('0.2.0', 'abc123', satisfiedThrough: '0.2.0');
+
+    DB::shouldReceive('connection')->never();
+    DB::shouldReceive('table')->never();
+
+    expect(app(UpgradeGuard::class)->assessAll())->toBe([]);
+});

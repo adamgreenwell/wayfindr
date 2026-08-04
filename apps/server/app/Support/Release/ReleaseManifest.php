@@ -378,6 +378,16 @@ final class ReleaseManifest
         }
 
         self::validatePublished($manifest);
+
+        // The floor is a BOUND, and a bound that cannot be ordered silently
+        // stops bounding: `compare()` returns null for it, and the guard
+        // deliberately refuses only on a definite "below" — so an install
+        // demonstrably older than the intended floor migrates anyway. `build()`
+        // has always checked this; reading a published manifest did not, which is
+        // the path a corrupt or hand-edited one arrives by.
+        if (array_key_exists('minimum_upgrade_from', $manifest) && $manifest['minimum_upgrade_from'] !== null) {
+            self::assertVersion($manifest['minimum_upgrade_from'], 'minimum_upgrade_from');
+        }
     }
 
     /**

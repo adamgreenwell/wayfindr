@@ -290,18 +290,33 @@ final class UpgradeGuard
             ];
         }
 
-        // The target's own declaration may not be in the baked history yet — a
-        // source build, or a release cut before the history step ran. Include it
-        // so an upgrade is never evaluated without the release it is upgrading TO.
-        if (! $this->historyContains($history, $target)) {
-            $history[] = $manifest;
-        }
+        // The manifest being installed is AUTHORITATIVE for its own version, so it
+        // replaces any history entry claiming that version rather than merely
+        // filling in when one is absent.
+        //
+        // A committed history entry for the target can be older than the build
+        // installing it — a source commit under the same `VERSION` made after
+        // that release was appended to the history. Declining to append left the
+        // stale entry in the span, so an action this build declares was invisible
+        // and the migration proceeded without it. Re-including the target does
+        // not help when what the span selects is the wrong copy.
+        $history = array_values(array_filter(
+            $history,
+            static fn (array $entry): bool => ($entry['version'] ?? null) !== $target,
+        ));
+
+        $history[] = $manifest;
 
         // An install predating the state file has no recorded release. The
         // operator may state where it is instead, which is what keeps the floor
         // check below from being a refusal they cannot clear.
         $recorded = $this->state->recordedVersion() ?? $this->declaredOrigin();
-        $existing = $this->hasExistingInstall();
+        // Asked only when it can change the answer. Both `$legacy` and `$fresh`
+        // require a null `$recorded`, so on any recorded install this was three
+        // database round trips — a connection check, a table lookup and an
+        // existence query — added by the serving middleware to every non-health
+        // HTTP request, to compute a value that could not affect the outcome.
+        $existing = $recorded === null ? $this->hasExistingInstall() : true;
         $legacy = $recorded === null && $existing;
 
         // No state file AND no prior schema: nothing to upgrade from. Left as a
