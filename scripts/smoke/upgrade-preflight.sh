@@ -848,5 +848,38 @@ check "a concrete image"      PROBE "$(installed_usable ghcr.io/adamgreenwell/wa
 check "an unset image"        SKIP  "$(installed_usable '')"
 check "an interpolated image" SKIP  "$(installed_usable '${REGISTRY}/wayfindr:0.1.0')"
 
+# An acknowledgement cannot settle a STRANDED action, and the preflight has to
+# agree with the artifact about that. Honouring the acknowledgement first made
+# the preflight report clear, pull, and hand over to an artifact that rejects the
+# same acknowledgement and exits 78 - a working install replaced by one that will
+# not start.
+settle() {
+    local release="$1" depends="$2" target="$3" acked="$4"
+    local stranded=NO
+
+    if [ "$release" != "$target" ]; then
+        case "$depends" in code|schema) stranded=YES ;; esac
+    fi
+
+    if [ "$stranded" = NO ] && [ "$acked" = YES ]; then
+        printf 'SETTLED'
+        return 0
+    fi
+
+    [ "$stranded" = YES ] && printf 'STEP' || printf 'DO'
+}
+
+echo
+echo "acknowledgement cannot reach a skipped release:"
+check "ordinary action, acknowledged"     SETTLED "$(settle 0.3.0 none   0.3.0 YES)"
+check "ordinary action, not acknowledged" DO      "$(settle 0.3.0 none   0.3.0 NO)"
+# The case this fixed: acknowledged, but belongs to a release being skipped and
+# needs that release's own code.
+check "stranded, acknowledged anyway"     STEP    "$(settle 0.2.0 code   0.3.0 YES)"
+check "stranded, not acknowledged"        STEP    "$(settle 0.2.0 schema 0.3.0 NO)"
+# An intermediate action needing nothing from its own release is reachable, so an
+# acknowledgement settles it as usual.
+check "intermediate needing nothing"      SETTLED "$(settle 0.2.0 none   0.3.0 YES)"
+
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

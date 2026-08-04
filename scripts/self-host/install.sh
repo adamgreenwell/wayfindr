@@ -912,7 +912,18 @@ upgrade_preflight() {
             foreach ($m["actions"] ?? [] as $a) {
                 $release = $a["release"] ?? "";
                 $key = $release . "/" . ($a["id"] ?? "");
-                if (in_array($key, $ack, true)) { continue; }
+
+                // Strandedness is decided BEFORE the acknowledgement is honoured,
+                // matching the artifact. An acknowledged stranded action dropped
+                // out here, the preflight reported clear, the image was pulled -
+                // and the artifact then rejected that same acknowledgement and
+                // exited 78, leaving a working install replaced by one that will
+                // not start. The two must agree about what an acknowledgement can
+                // settle, and neither lets it reach a release being skipped.
+                $stranded = $release !== $target
+                    && in_array($a["depends_on_release"] ?? "none", ["code", "schema"], true);
+
+                if (! $stranded && in_array($key, $ack, true)) { continue; }
 
                 // Applicability decides whether the action is for THIS upgrade
                 // at all, and skipping it made every action outstanding for
@@ -953,14 +964,6 @@ upgrade_preflight() {
                         if ($rank !== null && $rank < 0) { continue; }
                     }
                 }
-
-                // An action belonging to an INTERMEDIATE release that needs that
-                // release own code or schema cannot be performed at any point in
-                // a direct jump: before-pull has the old release, and both
-                // after-pull and after-start have the target. The only way to
-                // satisfy it is to stop at the release it belongs to.
-                $stranded = $release !== $target
-                    && in_array($a["depends_on_release"] ?? "none", ["code", "schema"], true);
 
                 // A `check` names a condition only the RELEASE implements, and
                 // this runs before that release is here - so the preflight

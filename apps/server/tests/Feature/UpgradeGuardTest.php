@@ -1642,3 +1642,22 @@ test('an acknowledgement still settles an ordinary action', function (): void {
         putenv('WAYFINDR_ACKNOWLEDGED_ACTIONS');
     }
 });
+
+test('the migration refusal does not offer a key it will not honour', function (): void {
+    // This is the refusal an operator meets on Forge, on a manual migration, or
+    // on any upgrade whose installer preflight was skipped. Printing an
+    // acknowledgement key beside a stranded action told them to do something that
+    // produces this identical refusal, and never mentioned the release they
+    // actually have to install.
+    $source = file_get_contents(app_path('Listeners/BlockMigrationsWithUnmetRequirements.php'));
+
+    $strandedBranch = strpos($source, 'UpgradeRequirements::stranded(');
+    $acknowledgeLine = strpos($source, 'Acknowledge with:');
+
+    expect($strandedBranch)->not->toBeFalse()
+        ->and($acknowledgeLine)->not->toBeFalse()
+        // The stranded branch continues before the key is printed.
+        ->and($strandedBranch)->toBeLessThan($acknowledgeLine);
+
+    expect($source)->toContain('Install that release first');
+});

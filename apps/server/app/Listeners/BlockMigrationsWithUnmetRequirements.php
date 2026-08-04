@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Listeners;
 
 use App\Support\Release\UpgradeGuard;
+use App\Support\Release\UpgradeRequirements;
 use Illuminate\Console\Events\CommandStarting;
 use Throwable;
 
@@ -111,6 +112,8 @@ class BlockMigrationsWithUnmetRequirements
             $output->writeln('  published so far is being checked. Some may already be done.');
         }
 
+        $stranded = false;
+
         foreach ($assessment['actions'] as $action) {
             $output->writeln('');
             $output->writeln(sprintf('  <comment>%s</comment> (from %s, %s)',
@@ -121,12 +124,41 @@ class BlockMigrationsWithUnmetRequirements
                 $output->writeln('    '.$action['detail']);
             }
 
+            // A stranded action gets instructions, not a key. Acknowledging one
+            // no longer settles it, so printing the key here told the operator to
+            // do something that produces this identical refusal — and never
+            // mentioned the intermediate release they actually have to install.
+            //
+            // This is the refusal an operator meets on Forge, on a manual
+            // migration, or on any upgrade whose installer preflight was skipped,
+            // so it has to carry the same guidance the command does rather than
+            // relying on them running the command as well.
+            if (UpgradeRequirements::stranded($action, $assessment['target'] ?? null)) {
+                $output->writeln(sprintf(
+                    '    <error>Cannot be done on this jump.</error> It needs %s, which this upgrade skips.',
+                    $action['release'] ?? 'an intermediate release',
+                ));
+                $output->writeln('    Install that release first, let it start, then upgrade again.');
+                $output->writeln('    Acknowledging will not clear this: the work is unreachable, not undone.');
+
+                $stranded = true;
+
+                continue;
+            }
+
             $output->writeln(sprintf('    Acknowledge with: %s/%s',
                 $action['release'] ?? '?', $action['id'] ?? '?'));
         }
 
         $output->writeln('');
-        $output->writeln('  Once done, set WAYFINDR_ACKNOWLEDGED_ACTIONS to the comma-separated');
+
+        if ($stranded) {
+            $output->writeln('  At least one step above belongs to a release this upgrade skips over.');
+            $output->writeln('  Install that release first — no acknowledgement can substitute for it.');
+            $output->writeln('');
+        }
+
+        $output->writeln('  For anything else, set WAYFINDR_ACKNOWLEDGED_ACTIONS to the comma-separated');
         $output->writeln('  list of the entries above and start again. Nothing has been changed.');
         $output->writeln('');
 
