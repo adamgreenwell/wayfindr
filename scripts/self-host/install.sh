@@ -148,27 +148,70 @@ pin_image() {
 # `compose run`, because Docker is already a hard requirement of this script
 # while jq, python and a host php are not. It runs against the image already on
 # disk, needs no network, and does not depend on the release being gated.
+# php_in_current_image <php-code> [NAME=VALUE]...
+#
+# Named rather than positional. This grew from three fixed slots to five as the
+# checks needed more context, and each addition meant every caller passing empty
+# strings for arguments it did not use - which is how a value ends up in the
+# wrong slot without anything complaining.
 php_in_current_image() {
-    compose run --rm --no-deps -T \
-        -e WF_FROM="${1:-}" -e WF_TO="${2:-}" -e WF_ACK="${3:-}" -e WF_ORIGIN_KNOWN="${5:-}" \
-        --entrypoint php web -r "$4" 2>/dev/null
+    local code="$1"
+    shift
+
+    local env_args=()
+
+    while [ "$#" -gt 0 ]; do
+        env_args+=(-e "$1")
+        shift
+    done
+
+    compose run --rm --no-deps -T ${env_args[@]+"${env_args[@]}"} \
+        --entrypoint php web -r "$code" 2>/dev/null
 }
 
 # The release the ARTIFACT will consider this install to be at, which is not what
 # the image tag says. It reads its own state file, and that is the value its floor
 # check uses - so a preflight that predicts a different one predicts the wrong
 # outcome.
-recorded_release() {
-    php_in_current_image "" "" "" '
+# Emits `<version>|<span-origin>|<span-known>`.
+#
+# TWO origins, because they answer different questions and the artifact keeps
+# them apart. `version` is where the install IS, used for the floor and for
+# deciding whether an action was newly traversed. `satisfied_through` is the last
+# release that owed nothing, and is where the SPAN starts - it can sit further
+# back when a previous upgrade left work outstanding.
+#
+# Reading the span from `version` skips the releases whose debt is still unpaid,
+# so an intermediate action that cannot be performed on a direct jump is not
+# recognised as stranded until after the release carrying it has been replaced.
+#
+# The tri-state on `satisfied_through` matches the artifact exactly: an ABSENT
+# key falls back to the recorded version, a written null means the origin is
+# unknown and the whole history is in span.
+release_state() {
+    php_in_current_image '
         $path = "/app/apps/server/storage/app/release-state.json";
 
         if (! is_file($path)) { exit(0); }
 
         $state = json_decode((string) file_get_contents($path), true);
 
-        if (is_array($state) && is_string($state["version"] ?? null)) {
-            echo $state["version"];
+        if (! is_array($state)) { exit(0); }
+
+        $version = is_string($state["version"] ?? null) ? $state["version"] : "";
+
+        if (! array_key_exists("satisfied_through", $state)) {
+            $span = $version;
+            $spanKnown = "1";
+        } elseif (is_string($state["satisfied_through"])) {
+            $span = $state["satisfied_through"];
+            $spanKnown = "1";
+        } else {
+            $span = "";
+            $spanKnown = "0";
         }
+
+        echo $version, "|", $span, "|", $spanKnown;
     '
 }
 
@@ -186,7 +229,7 @@ recorded_release() {
 # which is exactly why this is the good experience and not the guarantee.
 preflight_supported() {
     local answer
-    answer="$(php_in_current_image "" "" "" '
+    answer="$(php_in_current_image '
         $needed = [
             "/app/apps/server/app/Support/Version/SemanticVersion.php",
             "/app/apps/server/app/Support/Version/VersionComparator.php",
@@ -205,7 +248,7 @@ preflight_supported() {
 # told apart from one that never existed.
 manifest_expected() {
     local answer
-    answer="$(php_in_current_image "$1" "$MANIFEST_CONTRACT_FROM" "" '
+    answer="$(php_in_current_image '
         require "/app/apps/server/app/Support/Version/SemanticVersion.php";
         require "/app/apps/server/app/Support/Version/VersionComparator.php";
         $rank = App\Support\Version\VersionComparator::compare(getenv("WF_FROM"), getenv("WF_TO"));
@@ -213,7 +256,7 @@ manifest_expected() {
         // we can SHOW predate the contract; one we cannot place must not inherit
         // it, or an unparseable tag becomes a way to skip the check entirely.
         echo ($rank === null || $rank >= 0) ? "YES" : "NO";
-    ')"
+    ' "WF_FROM=$1" "WF_TO=$MANIFEST_CONTRACT_FROM")"
 
     [ "$answer" = "YES" ]
 }
@@ -235,7 +278,7 @@ current_release() {
     #
     # `latest` is the default for anyone who installed without pinning, so this
     # is the common case, not an edge one.
-    baked="$(php_in_current_image "" "" "" '
+    baked="$(php_in_current_image '
         $path = "/etc/wayfindr/release.json";
         if (! is_file($path)) { exit(0); }
         $m = json_decode((string) file_get_contents($path), true);
@@ -277,6 +320,26 @@ upgrade_preflight() {
     fi
 
     if [ -n "$effective_image" ]; then
+        # A tag only names a RELEASE when the image is ours. `fork:0.3.0` is
+        # version 0.3.0 of somebody else's build, and fetching Wayfindr's official
+        # 0.3.0 manifest for it checks a declaration the running code never made -
+        # so a before-pull action the fork declares goes unseen while an official
+        # one it does not declare is demanded.
+        #
+        # There is nowhere to fetch a fork's manifest from, so this skips. The
+        # fork's own artifact still refuses to migrate, which is the guarantee.
+        case "$effective_image" in
+            ghcr.io/adamgreenwell/wayfindr:*) : ;;
+            *)
+                say "Preflight skipped: the image is not an official Wayfindr build."
+                printf '    %s\n' "$effective_image"
+                printf '    Its release declarations are not published where this can read them.\n'
+                printf '    The image enforces its own requirements when it starts.\n'
+
+                return 0
+                ;;
+        esac
+
         # Split on the last colon AFTER the last slash, so a registry port
         # (registry:5000/wayfindr) is not mistaken for a tag.
         local image_name
@@ -328,20 +391,35 @@ upgrade_preflight() {
     # case 3 is one the artifact will refuse the moment it starts, whatever the
     # image tag says, so the preflight must refuse first - while the release that
     # is running is still the one running.
-    local origin_known
+    local origin_known state span_origin span_known
     origin_known=0
+    span_known=1
 
-    from="$(recorded_release)"
+    state="$(release_state)"
+    from="${state%%|*}"
+
+    if [ -n "$state" ]; then
+        span_origin="$(printf '%s' "$state" | cut -d'|' -f2)"
+        span_known="$(printf '%s' "$state" | cut -d'|' -f3)"
+    fi
+
     [ -n "$from" ] && origin_known=1
 
     if [ -z "$from" ]; then
         from="$(grep -E '^WAYFINDR_UPGRADE_FROM=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)"
         [ -n "$from" ] && origin_known=1
+        span_origin="$from"
     fi
 
     if [ -z "$from" ]; then
         from="$(current_release)"
+        span_origin="$from"
     fi
+
+    # An unknown span origin means the whole published history is in scope, which
+    # is what an empty WF_FROM already means to the span filter.
+    [ "$span_known" = "1" ] || span_origin=""
+    : "${span_origin:=}"
     ack="$(grep -E '^WAYFINDR_ACKNOWLEDGED_ACTIONS=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)"
 
     # A declaration describes its own release, so an upgrade must read EVERY
@@ -397,7 +475,7 @@ upgrade_preflight() {
         # The two numbers differ deliberately: the page count is EVERY entry,
         # because a full page of non-release tags still means there is another
         # page to read, while only release-shaped names are collected.
-        page_body="$(printf '%s' "$(cat "$tags_body")" | php_in_current_image "" "" "" '
+        page_body="$(printf '%s' "$(cat "$tags_body")" | php_in_current_image '
             $decoded = json_decode(stream_get_contents(STDIN), true);
 
             if (! is_array($decoded) || array_is_list($decoded) === false) {
@@ -452,7 +530,7 @@ upgrade_preflight() {
     rm -f "$tags_body"
     tags="$(printf '%s' "$tags" | grep -v '^$' || true)"
 
-    span="$(printf '%s\n' "$tags" | php_in_current_image "$from" "$to" "" '
+    span="$(printf '%s\n' "$tags" | php_in_current_image '
         require "/app/apps/server/app/Support/Version/SemanticVersion.php";
         require "/app/apps/server/app/Support/Version/VersionComparator.php";
         $from = getenv("WF_FROM") ?: null;
@@ -467,7 +545,7 @@ upgrade_preflight() {
                 if ($after !== null && $after <= 0) { continue; }
             }
             echo $tag, "\n";
-        }')"
+        }' "WF_FROM=$span_origin" "WF_TO=$to")"
 
     [ -n "$span" ] || span="v$to"
 
@@ -543,7 +621,7 @@ upgrade_preflight() {
 
         [ -n "$manifest" ] || continue
 
-        actions="$(printf '%s' "$manifest" | php_in_current_image "$from" "$to" "$ack" '
+        actions="$(printf '%s' "$manifest" | php_in_current_image '
             require "/app/apps/server/app/Support/Version/SemanticVersion.php";
             require "/app/apps/server/app/Support/Version/VersionComparator.php";
             require "/app/apps/server/app/Support/Release/ReleaseManifest.php";
@@ -570,6 +648,13 @@ upgrade_preflight() {
             $target = getenv("WF_TO");
             $from = getenv("WF_FROM") ?: null;
 
+            // Where the install IS, which is not where the span starts. The
+            // floor is measured from this, and so is the applicability of any
+            // action belonging to a release ABOVE it - those are newly traversed.
+            // Anything at or below it is debt retained from an earlier upgrade,
+            // whose applicability was settled by where THAT upgrade began.
+            $recorded = getenv("WF_RECORDED") ?: null;
+
             // An origin that does not parse is not an origin. A typo would
             // otherwise compare as null against the floor, and "no definite
             // answer" does not refuse - so the typo would clear the check it was
@@ -578,6 +663,10 @@ upgrade_preflight() {
             // recorded development version the same way.
             if ($from !== null && App\Support\Version\SemanticVersion::parse($from) === null) {
                 $from = null;
+            }
+
+            if ($recorded !== null && App\Support\Version\SemanticVersion::parse($recorded) === null) {
+                $recorded = null;
             }
 
             // The floor stops the pull, not the container afterwards. An install
@@ -601,7 +690,7 @@ upgrade_preflight() {
                 // against it.
                 $originKnown = getenv("WF_ORIGIN_KNOWN") === "1";
 
-                if ($from === null || ! $originKnown) {
+                if ($recorded === null || ! $originKnown) {
                     // A floor in force and no way to tell where this install
                     // started. The artifact refuses this same case - so pulling
                     // anyway replaces a WORKING service with a container that
@@ -609,7 +698,7 @@ upgrade_preflight() {
                     // prevent. Refuse here, while the old release is still up.
                     printf("FLOORUNKNOWN|%s\n", $floor);
                 } else {
-                    $rank = App\Support\Version\VersionComparator::compare($from, $floor);
+                    $rank = App\Support\Version\VersionComparator::compare($recorded, $floor);
 
                     // Only a definite "below" refuses. An undecidable comparison
                     // is a development identity on one side, which is not
@@ -640,11 +729,24 @@ upgrade_preflight() {
                 // the artifact evaluates it properly once it is up.
                 $applicability = $a["applicability"] ?? ["type" => "always"];
 
-                if (($applicability["type"] ?? "always") === "upgrade-from" && $from !== null) {
+                // Retained debt keeps the origin its own upgrade started from;
+                // anything above the recorded release is newly traversed and is
+                // measured from where the install is now. Sharing one origin
+                // fails open: an install running v3 that still owes v2 work would
+                // judge a v4 retirement of v3 state against the older origin,
+                // decide it never had that state, and drop the retirement.
+                $origin = $from;
+
+                if ($recorded !== null && $release !== "") {
+                    $above = App\Support\Version\VersionComparator::compare($release, $recorded);
+                    if ($above !== null && $above > 0) { $origin = $recorded; }
+                }
+
+                if (($applicability["type"] ?? "always") === "upgrade-from" && $origin !== null) {
                     $min = $applicability["min"] ?? null;
 
                     if (is_string($min)) {
-                        $rank = App\Support\Version\VersionComparator::compare($from, $min);
+                        $rank = App\Support\Version\VersionComparator::compare($origin, $min);
 
                         // Only a decided comparison may drop it. A null means one
                         // side is a development identity and does not order.
@@ -662,7 +764,8 @@ upgrade_preflight() {
 
                 printf("%s|%s|%s|%s|%s\n", $stranded ? "STEP" : "DO",
                     $key, $a["phase"] ?? "", $a["summary"] ?? "", $a["detail"] ?? "");
-            }' "$origin_known")"
+            }' "WF_FROM=$span_origin" "WF_TO=$to" "WF_ACK=$ack" \
+                "WF_ORIGIN_KNOWN=$origin_known" "WF_RECORDED=$from")"
 
         # Refused before anything is pulled, which is the whole point: the old
         # release is still running and is the one that can still upgrade.

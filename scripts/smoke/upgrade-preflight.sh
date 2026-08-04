@@ -553,5 +553,47 @@ check "the preflight body was found"     1 "$(printf '%s' "$preflight_body" | gr
 check "page is assigned only numerics"   0 "$(printf '%s' "$preflight_body" | grep -oE '^[[:space:]]*page=.*' | grep -vcE 'page=1$|page=\$\(\(page \+ 1\)\)$' || true)"
 check "the parsed response has its own"  1 "$(printf '%s' "$preflight_body" | grep -c 'page_body=')"
 
+# Two origins, kept apart exactly as the artifact keeps them. `version` is where
+# the install IS - the floor is measured from it. `satisfied_through` is the last
+# release that owed nothing, and is where the SPAN starts; it sits further back
+# when a previous upgrade left work outstanding, and reading the span from
+# `version` instead skips the releases whose debt is still unpaid.
+state_origins() {
+    printf '%s' "$1" | "${PHP:-php}" -r '
+        $state = json_decode(stream_get_contents(STDIN), true);
+        if (! is_array($state)) { echo "NONE"; exit(0); }
+        $version = is_string($state["version"] ?? null) ? $state["version"] : "";
+        if (! array_key_exists("satisfied_through", $state)) { $span = $version; $known = "1"; }
+        elseif (is_string($state["satisfied_through"])) { $span = $state["satisfied_through"]; $known = "1"; }
+        else { $span = ""; $known = "0"; }
+        echo $version, "|", $span, "|", $known;
+    '
+}
+
+echo
+echo "span origin is the debt origin, not the recorded release:"
+check "clean upgrade: both the same"        "0.2.0|0.2.0|1" "$(state_origins '{"version":"0.2.0","satisfied_through":"0.2.0"}')"
+# The case that matters: recorded at 0.2.0 but still owing work from 0.1.0, so
+# the span must reach back and include 0.2.0 itself.
+check "retained debt reaches further back"  "0.2.0|0.1.0|1" "$(state_origins '{"version":"0.2.0","satisfied_through":"0.1.0"}')"
+check "unknown debt origin takes the lot"   "0.2.0||0"      "$(state_origins '{"version":"0.2.0","satisfied_through":null}')"
+check "a state file predating the marker"   "0.2.0|0.2.0|1" "$(state_origins '{"version":"0.2.0"}')"
+
+# A tag names a RELEASE only when the image is ours. `fork:0.3.0` is version
+# 0.3.0 of somebody else's build, and fetching Wayfindr's official 0.3.0 manifest
+# for it checks a declaration the running code never made.
+official_image() {
+    case "$1" in
+        ghcr.io/adamgreenwell/wayfindr:*) printf 'OFFICIAL' ;;
+        *) printf 'FOREIGN' ;;
+    esac
+}
+
+echo
+echo "only an official image's tag names a release:"
+check "the official image"              OFFICIAL "$(official_image ghcr.io/adamgreenwell/wayfindr:0.3.0)"
+check "a versioned fork is foreign"     FOREIGN  "$(official_image registry.example/fork:0.3.0)"
+check "a local build is foreign"        FOREIGN  "$(official_image wayfindr-local:0.3.0)"
+
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
