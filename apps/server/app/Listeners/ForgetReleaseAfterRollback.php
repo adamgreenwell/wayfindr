@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Listeners;
 
 use App\Support\Release\ReleaseState;
+use App\Support\Release\UpgradeContext;
 use Illuminate\Console\Events\CommandFinished;
 
 /**
@@ -30,6 +31,18 @@ class ForgetReleaseAfterRollback
     public function handle(CommandFinished $event): void
     {
         if (! in_array($event->command, self::REWINDING_COMMANDS, true)) {
+            return;
+        }
+
+        // `migrate:refresh` runs `migrate:reset` and then a nested `migrate`, so
+        // the reset's own CommandFinished arrives here. Forgetting on it left the
+        // nested migration reading an empty ledger, classifying a long-standing
+        // install as fresh, and recording that exemption — which erases
+        // outstanding after-start work from the serving gate.
+        //
+        // The refresh ends by migrating, so the recorder writes an accurate
+        // record; nothing needs forgetting on that path.
+        if (app(UpgradeContext::class)->outerCommand() === 'migrate:refresh') {
             return;
         }
 

@@ -25,6 +25,8 @@ final class UpgradeContext
 {
     private ?bool $freshInstall = null;
 
+    private ?string $outerCommand = null;
+
     /**
      * Keep the earliest observation, discarding later ones.
      */
@@ -40,5 +42,28 @@ final class UpgradeContext
     public function wasFreshInstall(): ?bool
     {
         return $this->freshInstall;
+    }
+
+    /**
+     * The command the operator actually ran, as opposed to one it called.
+     *
+     * `migrate:refresh` runs `migrate:reset` and then a nested `migrate`, and
+     * each fires its own `CommandFinished` — so a listener keyed on the command
+     * name alone cannot tell a standalone reset, which should forget the recorded
+     * release, from the reset inside a refresh, which must not: forgetting there
+     * leaves the nested migrate reading an empty ledger, calling the install
+     * fresh, and recording an exemption that erases outstanding work.
+     *
+     * First observation wins, and the first `CommandStarting` in the process is
+     * the one the operator invoked.
+     */
+    public function observeCommand(string $command): void
+    {
+        $this->outerCommand ??= $command;
+    }
+
+    public function outerCommand(): ?string
+    {
+        return $this->outerCommand;
     }
 }

@@ -717,25 +717,27 @@ check "nothing"                     NO  "$(names_one_release '')"
 # all agree on the value. Keeping the quotes made an official image classify as
 # custom (so the preflight skipped), an acknowledgement never match the key it
 # was written for, and a declared origin fail to parse - all quietly.
+# The REAL env_value(), lifted out of install.sh rather than reimplemented.
+#
+# A reimplementation drifts: the previous version of this check did not know
+# about inline comments, so it passed while the shipped reader was wrong about
+# them. Extracting the function means the check cannot know something the code
+# does not.
 dotenv_read() {
-    local file key raw
+    local file script
     file="$(mktemp)"
+    script="$(mktemp)"
     printf '%s\n' "$1" > "$file"
-    key="$2"
 
-    raw="$(grep -E "^[[:space:]]*(export[[:space:]]+)?$key=" "$file" 2>/dev/null \
-        | head -1 \
-        | sed -E "s/^[[:space:]]*(export[[:space:]]+)?$key=//" || true)"
+    {
+        printf 'ENV_FILE="$1"\n'
+        awk '/^env_value\(\) \{/,/^\}/' "$INSTALLER"
+        printf 'env_value "$2"\n'
+    } > "$script"
 
-    raw="${raw%$'\r'}"
+    bash "$script" "$file" "$2"
 
-    case "$raw" in
-        \"*\") raw="${raw#\"}"; raw="${raw%\"}" ;;
-        \'*\') raw="${raw#\'}"; raw="${raw%\'}" ;;
-    esac
-
-    rm -f "$file"
-    printf '%s' "$raw"
+    rm -f "$file" "$script"
 }
 
 echo
@@ -746,6 +748,13 @@ check "a single-quoted value"  'ghcr.io/x/y:0.3.0'  "$(dotenv_read "WAYFINDR_IMA
 check "an exported value"      '0.2.4'              "$(dotenv_read 'export WAYFINDR_UPGRADE_FROM=0.2.4' WAYFINDR_UPGRADE_FROM)"
 check "a value with = in it"   'a/b,c/d'            "$(dotenv_read 'WAYFINDR_ACKNOWLEDGED_ACTIONS=a/b,c/d' WAYFINDR_ACKNOWLEDGED_ACTIONS)"
 check "an absent key"          ''                   "$(dotenv_read 'OTHER=1' WAYFINDR_IMAGE)"
+# Compose's documented syntax: an inline comment after a quoted value, and a
+# `#` preceded by whitespace in an unquoted one. A `#` with no space before it
+# is part of the value.
+check "a quoted inline comment" 'ghcr.io/x/y:0.3.0' "$(dotenv_read 'WAYFINDR_IMAGE="ghcr.io/x/y:0.3.0" # pinned' WAYFINDR_IMAGE)"
+check "a bare inline comment"   'ghcr.io/x/y:0.3.0' "$(dotenv_read 'WAYFINDR_IMAGE=ghcr.io/x/y:0.3.0 # pinned' WAYFINDR_IMAGE)"
+check "trailing whitespace"     'ghcr.io/x/y:0.3.0' "$(dotenv_read 'WAYFINDR_IMAGE=ghcr.io/x/y:0.3.0   ' WAYFINDR_IMAGE)"
+check "a hash inside the value" 'ghcr.io/x/y:0.3.0#z' "$(dotenv_read 'WAYFINDR_IMAGE=ghcr.io/x/y:0.3.0#z' WAYFINDR_IMAGE)"
 
 # And the official-image test has to run on the PARSED value, or a quoted
 # official image reads as a fork and the preflight skips the release it will pull.

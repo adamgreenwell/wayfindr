@@ -9,6 +9,7 @@ use App\Support\Release\ReleaseState;
 use App\Support\Release\UpgradeContext;
 use App\Support\Release\UpgradeGuard;
 use Illuminate\Console\Events\CommandFinished;
+use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -1423,4 +1424,33 @@ test('a rollback that cannot clear the state exits non-zero', function (): void 
     expect($message)->not->toBeFalse()
         ->and($terminate)->not->toBeFalse()
         ->and($terminate)->toBeGreaterThan($message);
+});
+
+test('migrate:refresh does not forget the release via its nested reset', function (): void {
+    // RefreshCommand runs migrate:reset and then a nested migrate, and the
+    // reset fires its own CommandFinished. Forgetting on it left the nested
+    // migration reading an empty ledger, calling a long-standing install fresh,
+    // and recording that exemption - which erases outstanding after-start work.
+    bakeRelease(['actions' => []], '0.3.0');
+    app(ReleaseState::class)->record('0.3.0', 'ccc', satisfiedThrough: '0.3.0');
+
+    // What the operator ran.
+    event(new CommandStarting('migrate:refresh', new ArrayInput([]), new NullOutput));
+
+    // What it runs internally.
+    event(new CommandFinished('migrate:reset', new ArrayInput([]), new NullOutput, 0));
+
+    expect(app(ReleaseState::class)->recordedVersion())->toBe('0.3.0');
+});
+
+test('a standalone reset still forgets', function (): void {
+    // The counterpart: without it, "skip during refresh" could be satisfied by
+    // never forgetting at all.
+    bakeRelease(['actions' => []], '0.3.0');
+    app(ReleaseState::class)->record('0.3.0', 'ccc', satisfiedThrough: '0.3.0');
+
+    event(new CommandStarting('migrate:reset', new ArrayInput([]), new NullOutput));
+    event(new CommandFinished('migrate:reset', new ArrayInput([]), new NullOutput, 0));
+
+    expect(app(ReleaseState::class)->recordedVersion())->toBeNull();
 });

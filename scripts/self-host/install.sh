@@ -71,11 +71,51 @@ env_value() {
     raw="${raw%$'\r'}"
 
     case "$raw" in
-        \"*\") raw="${raw#\"}"; raw="${raw%\"}" ;;
-        \'*\') raw="${raw#\'}"; raw="${raw%\'}" ;;
+        \"*)
+            # Quoted: the value is what is between the quotes, and anything after
+            # the closing one is an inline comment - documented Compose syntax,
+            # and left in it made an official image read as a fork.
+            raw="${raw#\"}"
+            raw="${raw%%\"*}"
+            ;;
+        \'*)
+            raw="${raw#\'}"
+            raw="${raw%%\'*}"
+            ;;
+        *)
+            # Unquoted: a `#` preceded by whitespace starts a comment, and
+            # trailing whitespace is not part of the value.
+            case "$raw" in
+                *[[:space:]]\#*) raw="${raw%%[[:space:]]\#*}" ;;
+            esac
+
+            # Written as a loop rather than the nested-expansion idiom, which
+            # is one layer of quoting away from silently doing nothing.
+            while :; do
+                case "$raw" in
+                    *[[:space:]]) raw="${raw%?}" ;;
+                    *) break ;;
+                esac
+            done
+            ;;
     esac
 
     printf '%s' "$raw"
+}
+
+# Whether a value depends on Compose's variable interpolation, which this cannot
+# resolve - it has no access to the environment Compose will assemble.
+#
+# Treated as unknown rather than guessed at, and said out loud. Left to fall
+# through, an interpolated image classified as a fork: the preflight skipped
+# silently and pin_image() declined to retag, so the upgrade restarted the old
+# image with nothing said. Rewriting the line would be worse still, since it
+# would destroy the interpolation the operator wrote.
+env_interpolated() {
+    case "$1" in
+        *'$'*) return 0 ;;
+        *) return 1 ;;
+    esac
 }
 
 # Whether the configured image is the official one, which is what makes its tag a
@@ -176,9 +216,17 @@ set_image() {
 pin_image() {
     # An operator-supplied WAYFINDR_IMAGE wins; otherwise a resolved release
     # tag pins the published image.
+    local configured
+    configured="$(env_value WAYFINDR_IMAGE)"
+
     if [ -n "${WAYFINDR_IMAGE:-}" ]; then
         set_image "$WAYFINDR_IMAGE"
-    elif [ -n "$IMAGE_TAG" ] && is_official_image "$(env_value WAYFINDR_IMAGE)"; then
+    elif [ -n "$IMAGE_TAG" ] && env_interpolated "$configured"; then
+        say "Leaving WAYFINDR_IMAGE alone: it uses variable interpolation."
+        printf '    %s\n' "$configured"
+        printf '    Rewriting it would replace the expression with a literal tag.\n'
+        printf '    Update it yourself to pin %s.\n' "$IMAGE_TAG"
+    elif [ -n "$IMAGE_TAG" ] && is_official_image "$configured"; then
         set_image "ghcr.io/adamgreenwell/wayfindr:$IMAGE_TAG"
     fi
 }
@@ -406,6 +454,15 @@ upgrade_preflight() {
         #
         # There is nowhere to fetch a fork's manifest from, so this skips. The
         # fork's own artifact still refuses to migrate, which is the guarantee.
+        if env_interpolated "$effective_image"; then
+            say "Preflight skipped: the image name uses variable interpolation."
+            printf '    %s\n' "$effective_image"
+            printf '    Which release that resolves to is Compose to decide, not this script.\n'
+            printf '    The release enforces its own requirements when it starts.\n'
+
+            return 0
+        fi
+
         if ! is_official_image "$effective_image"; then
             say "Preflight skipped: the image is not an official Wayfindr build."
             printf '    %s\n' "$effective_image"
