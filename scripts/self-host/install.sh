@@ -173,6 +173,30 @@ php_in_current_image() {
 # the image tag says. It reads its own state file, and that is the value its floor
 # check uses - so a preflight that predicts a different one predicts the wrong
 # outcome.
+# An operator-declared origin, held to the ARTIFACT's rule rather than the
+# looser one a recorded version gets.
+#
+# `declaredOrigin()` rejects a development identity: it parses but does not
+# order, so it can never be ranked against a floor, and accepting one would clear
+# the unknown-origin refusal without satisfying anything. Accepting it here while
+# the artifact rejects it is the worst split of the two - the installer pulls,
+# and the artifact then refuses on a release that is already installed.
+declared_origin() {
+    php_in_current_image '
+        require "/app/apps/server/app/Support/Version/SemanticVersion.php";
+
+        $raw = trim((string) getenv("WF_FROM"));
+
+        if ($raw === "") { exit(0); }
+
+        $parsed = App\Support\Version\SemanticVersion::parse($raw);
+
+        if ($parsed === null || $parsed->isDevelopment()) { exit(0); }
+
+        echo $parsed->canonical();
+    ' "WF_FROM=$1"
+}
+
 # Emits `<version>|<span-origin>|<span-known>`.
 #
 # TWO origins, because they answer different questions and the artifact keeps
@@ -406,9 +430,14 @@ upgrade_preflight() {
     [ -n "$from" ] && origin_known=1
 
     if [ -z "$from" ]; then
-        from="$(grep -E '^WAYFINDR_UPGRADE_FROM=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)"
-        [ -n "$from" ] && origin_known=1
-        span_origin="$from"
+        local declared
+        declared="$(grep -E '^WAYFINDR_UPGRADE_FROM=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+
+        if [ -n "$declared" ]; then
+            from="$(declared_origin "$declared")"
+            [ -n "$from" ] && origin_known=1
+            span_origin="$from"
+        fi
     fi
 
     if [ -z "$from" ]; then

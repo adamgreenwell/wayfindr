@@ -595,5 +595,31 @@ check "the official image"              OFFICIAL "$(official_image ghcr.io/adamg
 check "a versioned fork is foreign"     FOREIGN  "$(official_image registry.example/fork:0.3.0)"
 check "a local build is foreign"        FOREIGN  "$(official_image wayfindr-local:0.3.0)"
 
+# A DECLARED origin is held to the artifact's stricter rule, not the looser one a
+# recorded version gets. `declaredOrigin()` rejects a development identity - it
+# parses but does not order, so it can never be ranked against a floor, and
+# accepting one clears the unknown-origin refusal without satisfying anything.
+# Accepting it here while the artifact rejects it is the worst split of the two:
+# the installer pulls, then the artifact refuses on a release already installed.
+usable_declaration() {
+    WF_FROM="$1" "${PHP:-php}" -r '
+        require getenv("APP")."/app/Support/Version/SemanticVersion.php";
+        $raw = trim((string) getenv("WF_FROM"));
+        if ($raw === "") { echo "REJECTED"; exit(0); }
+        $p = App\Support\Version\SemanticVersion::parse($raw);
+        if ($p === null || $p->isDevelopment()) { echo "REJECTED"; exit(0); }
+        echo $p->canonical();
+    '
+}
+
+echo
+echo "declared origin follows the artifact's rule:"
+check "a release version is accepted"       0.2.4    "$(usable_declaration 0.2.4)"
+check "a v-prefix is canonicalised"         0.2.4    "$(usable_declaration v0.2.4)"
+check "a development identity is rejected"  REJECTED "$(usable_declaration '0.2.0-dev+abc')"
+check "a bare -dev is rejected"             REJECTED "$(usable_declaration '0.2.0-dev')"
+check "a typo is rejected"                  REJECTED "$(usable_declaration 0.2.O)"
+check "an empty declaration is rejected"    REJECTED "$(usable_declaration '')"
+
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

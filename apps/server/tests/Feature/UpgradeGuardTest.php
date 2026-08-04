@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Listeners\ForgetReleaseAfterRollback;
 use App\Support\Release\ReleaseManifest;
 use App\Support\Release\ReleaseState;
 use App\Support\Release\UpgradeContext;
@@ -1198,4 +1199,98 @@ test('a correctly attributed action is still accepted', function (): void {
     expect(fn () => ReleaseManifest::assertPublished(
         ReleaseManifest::build(blockingDeclaration(), '0.2.0', 'bbb'),
     ))->not->toThrow(InvalidArgumentException::class);
+});
+
+test('a no-op migration rerun does not clear the fresh marker', function (): void {
+    // Every container start runs migrate again, and an install with a release on
+    // record never re-observes freshness - the observation is only made when
+    // there is nothing recorded to read. Without carrying it, the flag survives
+    // exactly one restart and the serving gate then treats a brand-new install
+    // as an upgrade, refusing traffic for work it never owed.
+    bakeRelease(blockingDeclaration('after-start'), '0.2.0', history: [
+        ReleaseManifest::build(blockingDeclaration('after-start'), '0.2.0', 'abc123'),
+    ]);
+    config()->set('wayfindr.release.version', '0.2.0');
+    config()->set('wayfindr.release.commit', 'abc123');
+
+    // First start: fresh.
+    app(UpgradeContext::class)->observeFreshInstall(true);
+    event(new CommandFinished('migrate', new ArrayInput([]), new NullOutput, 0));
+
+    expect(app(ReleaseState::class)->wasFreshInstall())->toBeTrue();
+
+    // Second start: a fresh container, so a fresh context that observes nothing
+    // because a release is now on record.
+    app()->forgetInstance(UpgradeContext::class);
+    event(new CommandFinished('migrate', new ArrayInput([]), new NullOutput, 0));
+
+    expect(app(ReleaseState::class)->wasFreshInstall())->toBeTrue();
+    expect($this->get('/')->status())->not->toBe(503);
+});
+
+test('freshness does not carry to a different build', function (): void {
+    // Carried only for the SAME release and commit. A real upgrade is not fresh,
+    // and preserving it across one would exempt an install from work it owes.
+    bakeRelease(['actions' => []], '0.2.0');
+    config()->set('wayfindr.release.version', '0.2.0');
+    config()->set('wayfindr.release.commit', 'abc123');
+
+    app(ReleaseState::class)->record('0.2.0', 'older-commit', satisfiedThrough: '0.2.0', freshInstall: true);
+    app()->forgetInstance(UpgradeContext::class);
+
+    event(new CommandFinished('migrate', new ArrayInput([]), new NullOutput, 0));
+
+    expect(app(ReleaseState::class)->wasFreshInstall())->toBeFalse();
+});
+
+test('a rollback forgets which release is installed', function (): void {
+    // The state would otherwise claim a release whose migrations have just been
+    // undone, and a later upgrade measures its floor from that claim - so a
+    // rewound install could clear a floor it is now below.
+    bakeRelease(['actions' => []], '0.3.0');
+    app(ReleaseState::class)->record('0.3.0', 'ccc', satisfiedThrough: '0.3.0');
+
+    expect(app(ReleaseState::class)->recordedVersion())->toBe('0.3.0');
+
+    event(new CommandFinished('migrate:rollback', new ArrayInput([]), new NullOutput, 0));
+
+    expect(app(ReleaseState::class)->recordedVersion())->toBeNull();
+});
+
+test('a failed rollback changes nothing', function (): void {
+    // Nothing was rewound, so there is no disagreement to resolve.
+    bakeRelease(['actions' => []], '0.3.0');
+    app(ReleaseState::class)->record('0.3.0', 'ccc', satisfiedThrough: '0.3.0');
+
+    event(new CommandFinished('migrate:rollback', new ArrayInput([]), new NullOutput, 1));
+
+    expect(app(ReleaseState::class)->recordedVersion())->toBe('0.3.0');
+});
+
+test('migrate:refresh still records rather than forgetting', function (): void {
+    // It ends by migrating, so the recorder writes an accurate record - forgetting
+    // would be undone a moment later anyway.
+    bakeRelease(['actions' => []], '0.3.0');
+    config()->set('wayfindr.release.version', '0.3.0');
+    config()->set('wayfindr.release.commit', 'abc123');
+
+    event(new CommandFinished('migrate:refresh', new ArrayInput([]), new NullOutput, 0));
+
+    expect(app(ReleaseState::class)->recordedVersion())->toBe('0.3.0');
+});
+
+test('the rollback listener itself ignores migrate:refresh', function (): void {
+    // Dispatched straight at the listener rather than through the event, because
+    // both listeners handle CommandFinished and Laravel does not promise an
+    // order. Through the event this passes whenever the recorder happens to run
+    // second and rewrite what was removed - which is luck, not behaviour, and it
+    // hid the difference when this was checked by mutation.
+    bakeRelease(['actions' => []], '0.3.0');
+    app(ReleaseState::class)->record('0.3.0', 'ccc', satisfiedThrough: '0.3.0');
+
+    app(ForgetReleaseAfterRollback::class)->handle(
+        new CommandFinished('migrate:refresh', new ArrayInput([]), new NullOutput, 0),
+    );
+
+    expect(app(ReleaseState::class)->recordedVersion())->toBe('0.3.0');
 });

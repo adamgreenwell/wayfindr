@@ -113,14 +113,35 @@ class RecordReleaseAfterMigration
         // outstanding, which is later than strictly necessary and harmless: a
         // wider span re-evaluates actions that are already satisfied and finds
         // them satisfied.
-        $recorded = app(ReleaseState::class)->record(
+        $state = app(ReleaseState::class);
+        $commit = is_string($commit) && trim($commit) !== '' ? $commit : null;
+
+        // Observed before this command migrated anything. Recording it is what
+        // lets the serving gate — a different process, which never saw the empty
+        // database — agree that this install upgraded from nowhere.
+        $freshInstall = app(UpgradeContext::class)->wasFreshInstall() === true;
+
+        // And a no-op rerun must not clear it. Every container start runs
+        // `migrate` again, and an install with a release on record never
+        // re-observes freshness — the observation is only made when there is
+        // nothing recorded to read. Without this the flag survives exactly one
+        // restart, and the serving gate then treats a brand-new install as an
+        // upgrade and refuses traffic for work it never owed.
+        //
+        // Carried only for the SAME build. A different release or commit is a
+        // real upgrade, and freshness does not survive one.
+        if (! $freshInstall
+            && $state->wasFreshInstall()
+            && $state->recordedVersion() === $version
+            && $state->recordedCommit() === $commit) {
+            $freshInstall = true;
+        }
+
+        $recorded = $state->record(
             $version,
-            is_string($commit) && trim($commit) !== '' ? $commit : null,
+            $commit,
             satisfiedThrough: $outstanding === [] ? $version : null,
-            // Observed before this command migrated anything. Recording it is
-            // what lets the serving gate — a different process, which never saw
-            // the empty database — agree that this install upgraded from nowhere.
-            freshInstall: app(UpgradeContext::class)->wasFreshInstall() === true,
+            freshInstall: $freshInstall,
         );
 
         if ($recorded) {

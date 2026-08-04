@@ -149,6 +149,32 @@ final class ReleaseState
         return ($this->read()['fresh_install'] ?? null) === true;
     }
 
+    /**
+     * Forget which release this install is running.
+     *
+     * A rollback rewinds the schema and says nothing about the record, so the
+     * state goes on claiming a release whose migrations have just been undone.
+     * That claim is load-bearing: a later upgrade measures its floor and its span
+     * from it, so a rewound install can pass a `minimum_upgrade_from` it is now
+     * below and migrate on a path that has been retired.
+     *
+     * Forgetting is the honest answer, not guessing a version. What the schema
+     * corresponds to after an arbitrary number of steps is not knowable from
+     * here, and the guard already has a safe reading for "no record": treat it as
+     * a legacy install, refuse a floor it cannot verify, and let the operator say
+     * where they are.
+     */
+    public function forget(): bool
+    {
+        $path = $this->path();
+
+        if (! is_file($path)) {
+            return true;
+        }
+
+        return @unlink($path);
+    }
+
     public function record(
         string $version,
         ?string $commit,
