@@ -68,12 +68,20 @@ fi
 
 prepare_laravel_runtime_directories
 forge_php artisan storage:link || true
-forge_php artisan migrate --force
-# Write this release identity into the Forge environment file. Must run before
-# config:cache, which bakes the identity in.
+# Identity, declaration and config cache all precede `migrate`, because the
+# upgrade guard runs INSIDE migrate and reads all three (ADR 0013).
+#
+# Run them after it, as this script used to, and the guard decides this upgrade
+# from the PREVIOUS deploy's facts: `bootstrap/cache/config.php` still holds the
+# last release's identity, so it evaluates the wrong target, and still holds the
+# last release's acknowledgements, so anything the operator added in response to
+# a refusal is invisible to the retry.
 bash ../../deploy/forge/write-release-identity.sh
-
+bash ../../deploy/forge/write-release-manifest.sh
 forge_php artisan config:cache
+
+forge_php artisan migrate --force
+
 forge_php artisan route:cache
 forge_php artisan view:cache
 forge_php artisan queue:restart

@@ -203,10 +203,31 @@ upgrade_preflight() {
     all_actions=""
 
     for tag in $span; do
-        local status
-        manifest="$(curl -fsSL -w '\n%{http_code}' "https://github.com/adamgreenwell/wayfindr/releases/download/${tag}/release-manifest.json" 2>/dev/null || printf '\n000')"
-        status="$(printf '%s' "$manifest" | tail -1)"
-        manifest="$(printf '%s' "$manifest" | sed '$d')"
+        local status body
+        body="$(mktemp)"
+
+        # Deliberately no `-f`. With it, curl writes the `-w` format AND exits
+        # non-zero on an HTTP error, so the `|| printf '\n000'` fallback appended
+        # a SECOND status line: a real 404 arrived as "404\n000", `tail -1` read
+        # 000, and the 404 exemption below never ran. Every release with no
+        # manifest asset - which is every release cut before this contract, so
+        # every release that exists today - was read as a failure to reach the
+        # network and refused the upgrade outright.
+        #
+        # Without `-f`, curl exits 0 for any response it actually received and
+        # `-w` writes the real code. The body is only read when that code is 200,
+        # so an error page can never be parsed as a declaration. A genuine
+        # transport failure still writes 000 and is still refused.
+        status="$(curl -sSL -o "$body" -w '%{http_code}' "https://github.com/adamgreenwell/wayfindr/releases/download/${tag}/release-manifest.json" 2>/dev/null || true)"
+        [ -n "$status" ] || status="000"
+
+        if [ "$status" = "200" ]; then
+            manifest="$(cat "$body")"
+        else
+            manifest=""
+        fi
+
+        rm -f "$body"
 
         # A 404 means the release published no manifest - true of anything cut
         # before the contract existed, and not an error: it declared nothing.
@@ -228,14 +249,44 @@ upgrade_preflight() {
 
         [ -n "$manifest" ] || continue
 
-        actions="$(printf '%s' "$manifest" | php_in_current_image "" "$to" "$ack" '
+        actions="$(printf '%s' "$manifest" | php_in_current_image "$from" "$to" "$ack" '
+            require "/app/apps/server/app/Support/Version/SemanticVersion.php";
+            require "/app/apps/server/app/Support/Version/VersionComparator.php";
             $m = json_decode(stream_get_contents(STDIN), true);
             $ack = array_map("trim", explode(",", (string) getenv("WF_ACK")));
             $target = getenv("WF_TO");
+            $from = getenv("WF_FROM") ?: null;
             foreach ($m["actions"] ?? [] as $a) {
                 $release = $a["release"] ?? "";
                 $key = $release . "/" . ($a["id"] ?? "");
                 if (in_array($key, $ack, true)) { continue; }
+
+                // Applicability decides whether the action is for THIS upgrade
+                // at all, and skipping it made every action outstanding for
+                // everyone. A retirement is the case that shows it: an action
+                // undoing what an earlier release set up carries
+                // `upgrade-from.min`, and without this a direct jump from below
+                // that min is blocked on undoing something it never did - with
+                // no way to proceed but to acknowledge work that does not exist.
+                //
+                // `upgrade-from` is pure version comparison, so it is decided
+                // here. `state` needs a check only the running application
+                // implements, and this runs before that application exists, so
+                // it is left in scope: "cannot tell" must stay conservative, and
+                // the artifact evaluates it properly once it is up.
+                $applicability = $a["applicability"] ?? ["type" => "always"];
+
+                if (($applicability["type"] ?? "always") === "upgrade-from" && $from !== null) {
+                    $min = $applicability["min"] ?? null;
+
+                    if (is_string($min)) {
+                        $rank = App\Support\Version\VersionComparator::compare($from, $min);
+
+                        // Only a decided comparison may drop it. A null means one
+                        // side is a development identity and does not order.
+                        if ($rank !== null && $rank < 0) { continue; }
+                    }
+                }
 
                 // An action belonging to an INTERMEDIATE release that needs that
                 // release own code or schema cannot be performed at any point in

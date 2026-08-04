@@ -35,6 +35,11 @@ disagree:
   migrations run
 - **published as a release asset** — read by the installer preflight, which must
   evaluate releases it never pulls
+- **generated into the checkout** on a source deployment, by
+  `deploy/forge/write-release-manifest.sh` before `artisan migrate` — only the
+  image build writes `/etc/wayfindr`, so without this the guard would find no
+  declaration on a host install and enforce nothing at all. The history needs no
+  generating there: `releases/history.json` is committed.
 
 ## Authoring `release.json`
 
@@ -163,6 +168,13 @@ WAYFINDR_ACKNOWLEDGED_ACTIONS=0.2.0/backups-queue-worker
 
 Each entry is `<release>/<action-id>`, so an acknowledgement is specific to the
 action that required it and can never become a blanket opt-out.
+
+This one value is read live — from the process environment, then from `.env` —
+rather than through the config cache. You are setting it at the one moment a
+cached value would be wrong: the upgrade has just been refused, and you are
+adding what the refusal asked for and running it again. Reading the cache would
+refuse a second time, identically, and the only way forward would be clearing a
+cache nothing had mentioned.
 
 The release part is the **canonical** version — no leading `v`. The release
 workflow passes the git tag verbatim, so the same release would otherwise arrive

@@ -99,5 +99,68 @@ check "the hand-off replays captured arguments" 1 \
 check "arguments are captured before the parse loop" ok \
     "$(awk '/WAYFINDR_ORIGINAL_ARGS=/{c=NR} /while \[ "\$#" -gt 0 \]/{p=NR} END{print (c && p && c < p) ? "ok" : "WRONG ORDER"}' "$INSTALLER")"
 
+# How a manifest fetch is classified. `curl` is stubbed to reproduce exactly what
+# the real one writes and returns in each case, and the capture below is lifted
+# verbatim from install.sh.
+#
+# This is the regression that mattered: with `-f`, curl wrote the `-w` format AND
+# exited non-zero on an HTTP error, so a fallback `|| printf` appended a second
+# status. A 404 arrived as "404\n000", the last line won, and the exemption for
+# "this release published no manifest" never ran - which refused every upgrade,
+# because every release that exists today predates the contract.
+fetch_status() {
+    local scenario="$1" body status
+
+    curl() {
+        case "$scenario" in
+            ok)      printf '{"actions":[]}' > "$3"; printf '200' ;;
+            missing) printf 'Not Found'      > "$3"; printf '404'; return 22 ;;
+            down)    printf '000'; return 7 ;;
+        esac
+    }
+
+    body="$(mktemp)"
+    status="$(curl -sSL -o "$body" -w '%{http_code}' https://example.invalid 2>/dev/null || true)"
+    [ -n "$status" ] || status="000"
+    rm -f "$body"
+    unset -f curl
+
+    printf '%s' "$status"
+}
+
+echo
+echo "manifest fetch classification:"
+check "a published manifest reads 200"              200 "$(fetch_status ok)"
+check "a release with no manifest reads 404"        404 "$(fetch_status missing)"
+check "an unreachable network reads 000"            000 "$(fetch_status down)"
+
+# Applicability, the half of it the preflight can decide without the application.
+# Skipping this made every action outstanding for everyone: a retirement carrying
+# `upgrade-from.min` blocked a direct jump from below that min on undoing
+# something the install had never done.
+applies() {
+    local from="$1" min="$2"
+    WF_FROM="$from" WF_MIN="$min" "${PHP:-php}" -r '
+        require getenv("APP")."/app/Support/Version/SemanticVersion.php";
+        require getenv("APP")."/app/Support/Version/VersionComparator.php";
+        $from = getenv("WF_FROM") ?: null;
+        $min = getenv("WF_MIN");
+        $applies = true;
+        if ($from !== null && is_string($min)) {
+            $rank = App\Support\Version\VersionComparator::compare($from, $min);
+            if ($rank !== null && $rank < 0) { $applies = false; }
+        }
+        echo $applies ? "APPLIES" : "SKIPPED";
+    '
+}
+
+echo
+echo "upgrade-from applicability:"
+check "a start below the min never did it"      SKIPPED "$(applies 0.1.0 0.2.0)"
+check "a start at the min did"                  APPLIES "$(applies 0.2.0 0.2.0)"
+check "a start above the min did"               APPLIES "$(applies 0.3.0 0.2.0)"
+check "an unknown start stays conservative"     APPLIES "$(applies '' 0.2.0)"
+check "an unorderable start stays conservative" APPLIES "$(applies '0.2.0-dev+abc' 0.2.0)"
+
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

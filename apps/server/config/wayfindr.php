@@ -230,5 +230,17 @@ return [
         // operators have no reason to move them.
         'manifest_path' => env('WAYFINDR_RELEASE_MANIFEST_PATH', '/etc/wayfindr/release.json'),
         'history_path' => env('WAYFINDR_RELEASE_HISTORY_PATH', '/etc/wayfindr/release-history.json'),
+
+        // Where the same two files live in a source deployment, which has no
+        // /etc/wayfindr because only the image build writes there. Without these
+        // the guard finds no manifest on a host install and enforces nothing —
+        // silently, on exactly the deployments the installer preflight does not
+        // cover. The history is committed; the deploy generates the manifest.
+        //
+        // Set to an empty string to disable the fallback, which is what the test
+        // suite does so a fixture's absence is not quietly answered by the real
+        // repository files.
+        'manifest_fallback_path' => env('WAYFINDR_RELEASE_MANIFEST_FALLBACK', base_path('../../release-manifest.json')),
+        'history_fallback_path' => env('WAYFINDR_RELEASE_HISTORY_FALLBACK', base_path('../../releases/history.json')),
     ],
 ];

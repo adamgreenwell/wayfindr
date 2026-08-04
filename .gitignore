@@ -21,3 +21,11 @@ node_modules/
 /scratch/
 *.private.md
 *.local.md
+
+# Generated per build from release.json, never committed: the release workflow
+# writes it before publishing it as an asset, and the Forge deploy writes it for
+# the upgrade guard to read. It must be ignored rather than merely untracked —
+# the standard deploy path uses a persistent checkout, and an untracked file at
+# the root makes write-release-identity.sh see a dirty tree and record an
+# unverifiable identity on every deploy after the first.
+/release-manifest.json

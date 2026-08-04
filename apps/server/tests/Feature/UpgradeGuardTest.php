@@ -211,3 +211,79 @@ test('the floor refusal says acknowledgement cannot help', function (): void {
         ->expectsOutputToContain('oldest supported starting point is 0.5.0')
         ->assertFailed();
 });
+
+test('falls back to the source tree when nothing is baked at the image path', function (): void {
+    // The whole of the host installed base. Only the image build writes
+    // /etc/wayfindr, so a guard that looked there and nowhere else enforced
+    // nothing at all on Forge and on every git checkout - silently, which is the
+    // worst shape for it to fail in.
+    $dir = storage_path('framework/testing/release-'.bin2hex(random_bytes(4)));
+    mkdir($dir, 0700, true);
+
+    $manifest = ReleaseManifest::build(blockingDeclaration(), '0.2.0', 'abc123');
+    file_put_contents($dir.'/release.json', json_encode($manifest));
+    file_put_contents($dir.'/history.json', json_encode([
+        'schema' => 1,
+        'releases' => [$manifest],
+    ]));
+
+    config()->set('wayfindr.release.manifest_path', '/nonexistent/etc/release.json');
+    config()->set('wayfindr.release.history_path', '/nonexistent/etc/history.json');
+    config()->set('wayfindr.release.manifest_fallback_path', $dir.'/release.json');
+    config()->set('wayfindr.release.history_fallback_path', $dir.'/history.json');
+    config()->set('wayfindr.release.state_path', $dir.'/state.json');
+
+    expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeTrue();
+});
+
+test('prefers the baked manifest over the source tree when both exist', function (): void {
+    // A container carries both: the image bakes /etc/wayfindr AND ships the
+    // repository. The baked one is the release's own declaration and must win.
+    bakeRelease(blockingDeclaration(), '0.2.0');
+
+    $stale = storage_path('framework/testing/release-'.bin2hex(random_bytes(4)));
+    mkdir($stale, 0700, true);
+    file_put_contents($stale.'/release.json', json_encode(
+        ReleaseManifest::build(['actions' => []], '0.9.9', 'zzz'),
+    ));
+
+    config()->set('wayfindr.release.manifest_fallback_path', $stale.'/release.json');
+
+    $assessment = app(UpgradeGuard::class)->assess();
+
+    expect($assessment['blocked'])->toBeTrue()
+        ->and($assessment['target'])->toBe('0.2.0');
+});
+
+test('reads acknowledgements from the environment, not a stale config cache', function (): void {
+    // The moment this value matters is the retry: the operator has just been
+    // refused, has added the acknowledgement the refusal asked for, and is
+    // running migrate again. On a host deployment config() is still serving what
+    // was cached before they edited anything, so reading only config() would
+    // refuse a second time and leave them stuck behind a cache nobody mentioned.
+    bakeRelease(blockingDeclaration(), '0.2.0');
+    config()->set('wayfindr.release.acknowledged_actions', null);
+
+    putenv('WAYFINDR_ACKNOWLEDGED_ACTIONS=0.2.0/do-the-thing');
+
+    try {
+        expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeFalse();
+    } finally {
+        putenv('WAYFINDR_ACKNOWLEDGED_ACTIONS');
+    }
+});
+
+test('the live environment wins over a config value that disagrees', function (): void {
+    // Stale-beats-live is the exact failure: config() holding the pre-edit value
+    // must not mask the acknowledgement the operator just made.
+    bakeRelease(blockingDeclaration(), '0.2.0');
+    config()->set('wayfindr.release.acknowledged_actions', '0.1.0/something-else');
+
+    putenv('WAYFINDR_ACKNOWLEDGED_ACTIONS=0.2.0/do-the-thing');
+
+    try {
+        expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeFalse();
+    } finally {
+        putenv('WAYFINDR_ACKNOWLEDGED_ACTIONS');
+    }
+});

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\Release;
 
 use App\Support\Version\VersionComparator;
+use Dotenv\Dotenv;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -32,14 +33,111 @@ final class UpgradeGuard
 
     public const HISTORY_FILE = '/etc/wayfindr/release-history.json';
 
+    private const ACKNOWLEDGED_ENV = 'WAYFINDR_ACKNOWLEDGED_ACTIONS';
+
     private function manifestPath(): string
     {
-        return (string) config('wayfindr.release.manifest_path', self::MANIFEST_FILE);
+        return $this->resolvePath(
+            (string) config('wayfindr.release.manifest_path', self::MANIFEST_FILE),
+            config('wayfindr.release.manifest_fallback_path'),
+        );
     }
 
     private function historyPath(): string
     {
-        return (string) config('wayfindr.release.history_path', self::HISTORY_FILE);
+        return $this->resolvePath(
+            (string) config('wayfindr.release.history_path', self::HISTORY_FILE),
+            config('wayfindr.release.history_fallback_path'),
+        );
+    }
+
+    /**
+     * The baked path if it is there, otherwise the one the source tree carries.
+     *
+     * Only the image build writes /etc/wayfindr. A source deployment — Forge, or
+     * any git checkout — has neither file at that path, and a guard that finds no
+     * manifest enforces nothing: it would have been silently inert on every host
+     * install, which is the half of the installed base the installer preflight
+     * does not cover either.
+     *
+     * The checkout holds the same data. `releases/history.json` is committed with
+     * each release, and the deploy generates this release's manifest from
+     * `release.json` beside it.
+     *
+     * Resolved per call rather than in the config file, because a config-time
+     * `is_file()` would be frozen by `config:cache` at whatever was true when the
+     * cache was built.
+     */
+    private function resolvePath(string $primary, mixed $fallback): string
+    {
+        if (is_file($primary) || ! is_string($fallback) || $fallback === '') {
+            return $primary;
+        }
+
+        return is_file($fallback) ? $fallback : $primary;
+    }
+
+    /**
+     * The acknowledgements as they are RIGHT NOW, not as they were cached.
+     *
+     * This value is read at the one moment an operator is acting on it: the
+     * upgrade has just been refused, they have added the acknowledgement the
+     * refusal asked for, and they are running `migrate` again. On a host
+     * deployment `bootstrap/cache/config.php` is still serving the value from
+     * before they edited anything, so `config()` alone would refuse a second
+     * time, with the same message, and the only way forward would be clearing a
+     * cache nothing told them about. A guard that cannot be satisfied by doing
+     * what it asked is worse than no guard.
+     *
+     * The process environment comes first (containers pass it straight through),
+     * then the environment file (which is what the operator actually edited on a
+     * host), and only then config — which is still the right answer for a test
+     * or a tool that set it programmatically.
+     */
+    private function acknowledged(): ?string
+    {
+        $live = getenv(self::ACKNOWLEDGED_ENV);
+
+        if (is_string($live) && $live !== '') {
+            return $live;
+        }
+
+        $fromFile = $this->fromEnvironmentFile();
+
+        if ($fromFile !== null) {
+            return $fromFile;
+        }
+
+        $configured = config('wayfindr.release.acknowledged_actions');
+
+        return is_string($configured) ? $configured : null;
+    }
+
+    /**
+     * Parsed with the same library that loads `.env` normally, so quoting,
+     * escapes and interpolation behave identically to an uncached boot. A
+     * hand-rolled grep would differ from the parser on exactly the values people
+     * quote because they contain something awkward.
+     */
+    private function fromEnvironmentFile(): ?string
+    {
+        $path = base_path('.env');
+
+        if (! is_file($path) || ! is_readable($path)) {
+            return null;
+        }
+
+        try {
+            $values = Dotenv::createArrayBacked(dirname($path), basename($path))->safeLoad();
+        } catch (Throwable) {
+            // A malformed .env is not this guard's problem to report; the boot
+            // that follows will say so far more clearly.
+            return null;
+        }
+
+        $value = $values[self::ACKNOWLEDGED_ENV] ?? null;
+
+        return is_string($value) && $value !== '' ? $value : null;
     }
 
     /** @var list<array<string, mixed>> */
@@ -141,7 +239,7 @@ final class UpgradeGuard
             $history,
             $recorded,
             $target,
-            UpgradeRequirements::parseAcknowledged(config('wayfindr.release.acknowledged_actions')),
+            UpgradeRequirements::parseAcknowledged($this->acknowledged()),
             fn (string $name): ?bool => $this->checks->evaluate($name),
             freshInstall: $fresh,
             includeTarget: $includeTarget,
