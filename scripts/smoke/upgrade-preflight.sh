@@ -954,5 +954,27 @@ check "the wait was found"             1 "$(printf '%s' "$upgrade_tail" | grep -
 check "it exits 78 on a refusal"       1 "$(printf '%s' "$upgrade_tail" | grep -c 'exit 78')"
 check "success comes after the wait"   1 "$(printf '%s' "$upgrade_tail" | grep -c 'Upgrade complete')"
 
+# A manifest has to be the manifest for the tag it was fetched from. decode()
+# only asks whether the document is internally consistent, so an asset generated
+# for another release attaches and validates perfectly - and the floor check,
+# which fires only when the manifest names the target, then silently does not
+# run, and the pull replaces a working container with one whose own baked
+# manifest refuses the origin.
+manifest_matches_tag() {
+    WF_TAG="$1" WF_VERSION="$2" "${PHP:-php}" -r '
+        require getenv("APP")."/app/Support/Version/SemanticVersion.php";
+        $expected = App\Support\Version\SemanticVersion::parse((string) getenv("WF_TAG"));
+        $version = (string) getenv("WF_VERSION");
+        echo ($expected === null || $version !== $expected->canonical()) ? "MISMATCH" : "OK";
+    '
+}
+
+echo
+echo "a manifest must belong to the tag it came from:"
+check "tag and manifest agree"        OK       "$(manifest_matches_tag v0.3.0 0.3.0)"
+check "an unprefixed tag agrees too"  OK       "$(manifest_matches_tag 0.3.0 0.3.0)"
+check "a manifest for another release" MISMATCH "$(manifest_matches_tag v0.3.0 0.2.0)"
+check "a tag that is not a version"   MISMATCH "$(manifest_matches_tag not-a-tag 0.3.0)"
+
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

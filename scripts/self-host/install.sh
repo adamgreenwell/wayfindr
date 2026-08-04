@@ -962,6 +962,19 @@ upgrade_preflight() {
                 exit(0);
             }
 
+            // And it must be the manifest for THIS release. decode() only asks
+            // whether the document is internally consistent, so an asset
+            // generated for another release attaches and validates perfectly -
+            // and then the floor check, which fires only when the manifest names
+            // the target, silently does not run. The pull replaces a working
+            // container with one whose own baked manifest refuses the origin.
+            $expected = App\Support\Version\SemanticVersion::parse((string) getenv("WF_TAG"));
+
+            if ($expected === null || $m["version"] !== $expected->canonical()) {
+                echo "MISMATCH\n";
+                exit(0);
+            }
+
             $ack = array_map("trim", explode(",", (string) getenv("WF_ACK")));
             $target = getenv("WF_TO");
             $from = getenv("WF_FROM") ?: null;
@@ -1097,7 +1110,7 @@ upgrade_preflight() {
                     $key, $a["phase"] ?? "", $a["summary"] ?? "", $a["detail"] ?? "",
                     $unverifiable ? "CHECK" : "ATTEST");
             }' "WF_FROM=$span_origin" "WF_TO=$to" "WF_ACK=$ack" \
-                "WF_ORIGIN_KNOWN=$origin_known" "WF_RECORDED=$from")"
+                "WF_ORIGIN_KNOWN=$origin_known" "WF_RECORDED=$from" "WF_TAG=$tag")"
 
         # Refused before anything is pulled, which is the whole point: the old
         # release is still running and is the one that can still upgrade.
@@ -1121,6 +1134,15 @@ upgrade_preflight() {
             printf '  Upgrade to %s first, let it start, then run this again.\n' "$floor"
             printf '  Acknowledgement cannot help: the migrations for this jump no longer ship.\n\n'
             printf '  Nothing has been pulled or changed - the release you are running is intact.\n\n'
+            exit 78
+        fi
+
+        if [ "$actions" = "MISMATCH" ]; then
+            printf '\n\033[1;31mPREFLIGHT COULD NOT VERIFY THIS UPGRADE\033[0m\n\n'
+            printf '  The declaration published for %s is a declaration for a different\n' "$tag"
+            printf '  release. Refusing rather than checking one release against another.\n\n'
+            printf '  Nothing has been pulled or changed. Report this - the release is\n'
+            printf '  mispublished.\n\n'
             exit 78
         fi
 
