@@ -565,9 +565,15 @@ check "the parsed response has its own"  1 "$(printf '%s' "$preflight_body" | gr
 # `version` instead skips the releases whose debt is still unpaid.
 state_origins() {
     printf '%s' "$1" | "${PHP:-php}" -r '
+        require getenv("APP")."/app/Support/Version/SemanticVersion.php";
         $state = json_decode(stream_get_contents(STDIN), true);
         if (! is_array($state)) { echo "NONE"; exit(0); }
         $version = is_string($state["version"] ?? null) ? $state["version"] : "";
+        // Mirrors recordedVersion(): a malformed value is no origin at all, and
+        // the artifact then falls through to the declared one.
+        if ($version !== "") {
+            $version = App\Support\Version\SemanticVersion::parse($version)?->canonical() ?? "";
+        }
         if (! array_key_exists("satisfied_through", $state)) { $span = $version; $known = "1"; }
         elseif (is_string($state["satisfied_through"])) { $span = $state["satisfied_through"]; $known = "1"; }
         else { $span = ""; $known = "0"; }
@@ -583,6 +589,10 @@ check "clean upgrade: both the same"        "0.2.0|0.2.0|1" "$(state_origins '{"
 check "retained debt reaches further back"  "0.2.0|0.1.0|1" "$(state_origins '{"version":"0.2.0","satisfied_through":"0.1.0"}')"
 check "unknown debt origin takes the lot"   "0.2.0||0"      "$(state_origins '{"version":"0.2.0","satisfied_through":null}')"
 check "a state file predating the marker"   "0.2.0|0.2.0|1" "$(state_origins '{"version":"0.2.0"}')"
+check "a v-prefix is canonicalised"        "0.2.4|0.2.4|1" "$(state_origins '{"version":"v0.2.4"}')"
+# A malformed recorded version is no origin, so the declared one is read instead
+# - the artifact's `recordedVersion() ?? declaredOrigin()` in the same order.
+check "a malformed version is no origin"   "||1"           "$(state_origins '{"version":"0.1.O"}')"
 
 # A tag names a RELEASE only when the image is ours. `fork:0.3.0` is version
 # 0.3.0 of somebody else's build, and fetching Wayfindr's official 0.3.0 manifest

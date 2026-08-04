@@ -269,6 +269,8 @@ declared_origin() {
 # unknown and the whole history is in span.
 release_state() {
     php_in_current_image '
+        require "/app/apps/server/app/Support/Version/SemanticVersion.php";
+
         // The path the APP resolves, not the default alone. An operator who set
         // WAYFINDR_RELEASE_STATE_PATH has a state file the artifact reads and
         // this would not see - reporting no record for an install that has one,
@@ -283,6 +285,15 @@ release_state() {
         if (! is_array($state)) { exit(0); }
 
         $version = is_string($state["version"] ?? null) ? $state["version"] : "";
+
+        // Parsed and canonicalised, exactly as recordedVersion() does. A
+        // malformed value is no origin at all to the artifact, which then falls
+        // through to the declared one - so keeping it raw here meant the
+        // preflight held a version the artifact discards AND never read the
+        // declaration that would have replaced it.
+        if ($version !== "") {
+            $version = App\Support\Version\SemanticVersion::parse($version)?->canonical() ?? "";
+        }
 
         if (! array_key_exists("satisfied_through", $state)) {
             $span = $version;

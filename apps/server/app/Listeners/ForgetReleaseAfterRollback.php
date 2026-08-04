@@ -51,9 +51,20 @@ class ForgetReleaseAfterRollback
         $output = $event->output;
         $output->writeln('');
         $output->writeln('<error>Could not clear the recorded release after rolling back.</error>');
-        $output->writeln('  The upgrade guard still believes the previous release is installed,');
-        $output->writeln('  so a later upgrade may not check its floor correctly.');
+        $output->writeln('  The schema has been rewound, but the upgrade guard still believes the');
+        $output->writeln('  previous release is installed — so a later upgrade may clear a floor');
+        $output->writeln('  this schema is now below, or skip requirements it still needs.');
         $output->writeln(sprintf('  Remove this file by hand: %s', (string) config('wayfindr.release.state_path')));
         $output->writeln('');
+
+        // Non-zero, overriding the command's own success. The rollback did what
+        // it was asked; the install is nonetheless in a state where the next
+        // upgrade will be evaluated against a release that is no longer here, and
+        // automation reading only the exit code would carry straight on into it.
+        //
+        // exit() rather than an exception: this runs on CommandFinished, after
+        // the exit code is settled, and the console kernel would turn a throw
+        // into the same 1 with a stack trace over the message above.
+        exit(1);
     }
 }

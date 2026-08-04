@@ -1409,3 +1409,18 @@ test('a restore that can update the record does not throw', function (): void {
 
     expect(app(ReleaseState::class)->recordedVersion())->toBe('0.2.0');
 });
+
+test('a rollback that cannot clear the state exits non-zero', function (): void {
+    // A source check, like the restore ordering one. exit() cannot be exercised
+    // in-process without killing the test run, and what the fix IS is that the
+    // failure path terminates non-zero rather than printing and returning - so
+    // the assertion is that the terminate follows the message.
+    $source = file_get_contents(app_path('Listeners/ForgetReleaseAfterRollback.php'));
+
+    $message = strpos($source, 'Could not clear the recorded release');
+    $terminate = strpos($source, 'exit(1);');
+
+    expect($message)->not->toBeFalse()
+        ->and($terminate)->not->toBeFalse()
+        ->and($terminate)->toBeGreaterThan($message);
+});
