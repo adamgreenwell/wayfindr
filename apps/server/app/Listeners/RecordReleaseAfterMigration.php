@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Listeners;
 
 use App\Support\Release\ReleaseState;
+use App\Support\Release\UpgradeContext;
 use App\Support\Release\UpgradeGuard;
 use Illuminate\Console\Events\CommandFinished;
 
@@ -72,6 +73,10 @@ class RecordReleaseAfterMigration
             $version,
             is_string($commit) && trim($commit) !== '' ? $commit : null,
             satisfiedThrough: $outstanding === [] ? $version : null,
+            // Observed before this command migrated anything. Recording it is
+            // what lets the serving gate — a different process, which never saw
+            // the empty database — agree that this install upgraded from nowhere.
+            freshInstall: app(UpgradeContext::class)->wasFreshInstall() === true,
         );
     }
 }

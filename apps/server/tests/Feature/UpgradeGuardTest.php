@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Support\Release\ReleaseManifest;
 use App\Support\Release\ReleaseState;
+use App\Support\Release\UpgradeContext;
 use App\Support\Release\UpgradeGuard;
 use Illuminate\Console\Events\CommandFinished;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -452,4 +453,66 @@ test('retained debt keeps the origin its own upgrade started from', function ():
 
     expect(array_column(app(UpgradeGuard::class)->assessAll(), 'id'))
         ->not->toContain('only-for-recent-starts');
+});
+
+test('a fresh install stays fresh across the migration that populates the table', function (): void {
+    // Freshness is read off the migrations table, and the first thing `migrate`
+    // does is populate it - so the SAME install reads fresh before and legacy
+    // after. The post-migration reassessment would hand a brand-new install the
+    // target's after-start action and the serving gate would 503 it on day one.
+    bakeRelease(blockingDeclaration('after-start'), '0.2.0', history: [
+        ReleaseManifest::build(blockingDeclaration('after-start'), '0.2.0', 'bbb'),
+    ]);
+    config()->set('wayfindr.release.version', '0.2.0');
+    config()->set('wayfindr.release.commit', 'bbb');
+
+    // Observed while the database is still empty, exactly as the blocking
+    // listener does on CommandStarting.
+    app(UpgradeContext::class)->observeFreshInstall(true);
+
+    event(new CommandFinished('migrate', new ArrayInput([]), new NullOutput, 0));
+
+    $state = app(ReleaseState::class);
+
+    expect($state->recordedVersion())->toBe('0.2.0')
+        ->and($state->wasFreshInstall())->toBeTrue()
+        ->and(app(UpgradeGuard::class)->assessAll())->toBe([])
+        // The marker must advance too. Left null because the post-migration
+        // reassessment saw work outstanding, the NEXT upgrade would start from an
+        // unknown point and take the legacy path - handing a install that has
+        // never upgraded the whole published history.
+        ->and($state->satisfiedThrough())->toBe('0.2.0');
+
+    expect($this->get('/')->status())->not->toBe(503);
+});
+
+test('the fresh exemption does not survive a later upgrade', function (): void {
+    // Fresh at 0.2.0 is not fresh at 0.3.0. Persisting the flag without scoping
+    // it to the release it was recorded at would exempt every future upgrade.
+    bakeRelease(blockingDeclaration('after-start'), '0.3.0', history: [
+        ReleaseManifest::build(['actions' => []], '0.2.0', 'bbb'),
+        ReleaseManifest::build(blockingDeclaration('after-start'), '0.3.0', 'ccc'),
+    ]);
+
+    app(ReleaseState::class)->record('0.2.0', 'bbb', satisfiedThrough: '0.2.0', freshInstall: true);
+
+    // Target is 0.3.0; the install was fresh at 0.2.0, so it must be evaluated.
+    expect(app(UpgradeGuard::class)->assessAll())->toHaveCount(1);
+});
+
+test('a legacy install is still handed its history', function (): void {
+    // The exemption must not leak to installs that genuinely upgraded: an empty
+    // context observation is not evidence of freshness.
+    bakeRelease(blockingDeclaration('after-start'), '0.2.0', history: [
+        ReleaseManifest::build(blockingDeclaration('after-start'), '0.2.0', 'bbb'),
+    ]);
+    config()->set('wayfindr.release.version', '0.2.0');
+    config()->set('wayfindr.release.commit', 'bbb');
+
+    app(UpgradeContext::class)->observeFreshInstall(false);
+
+    event(new CommandFinished('migrate', new ArrayInput([]), new NullOutput, 0));
+
+    expect(app(ReleaseState::class)->wasFreshInstall())->toBeFalse();
+    $this->get('/')->assertStatus(503);
 });

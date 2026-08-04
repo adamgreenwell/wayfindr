@@ -146,6 +146,7 @@ final class UpgradeGuard
     public function __construct(
         private readonly ReleaseState $state,
         private readonly CheckRegistry $checks,
+        private readonly UpgradeContext $context,
     ) {}
 
     /**
@@ -207,6 +208,24 @@ final class UpgradeGuard
         // history, so a brand-new install of a later image would be handed
         // upgrade-only work from releases it never ran.
         $fresh = $recorded === null && ! $existing;
+
+        // Migrating destroys the evidence for that reading: the first thing
+        // `migrate` does is populate the migrations table, so the SAME install
+        // reads fresh before and legacy after. Anything assessing post-migration
+        // — the recorder, which must decide whether this install owes anything —
+        // has to be told what was true beforehand.
+        if ($recorded === null) {
+            $this->context->observeFreshInstall($fresh);
+            $fresh = $this->context->wasFreshInstall() ?? $fresh;
+        }
+
+        // And once recorded, the reading has to survive into the serving gate,
+        // which runs in a different process entirely. Scoped to the exact release
+        // it was recorded at: an install that was fresh at 0.2.0 is not fresh
+        // when it later upgrades to 0.3.0, and must be evaluated normally then.
+        if (! $fresh && $recorded !== null && $recorded === $target && $this->state->wasFreshInstall()) {
+            $fresh = true;
+        }
 
         // The floor: releases below it cannot upgrade directly, because the
         // migration path that would carry them has been retired. This is checked

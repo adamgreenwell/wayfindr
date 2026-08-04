@@ -280,7 +280,7 @@ upgrade_preflight() {
     all_actions=""
 
     for tag in $span; do
-        local status body
+        local status body curl_exit
         body="$(mktemp)"
 
         # Deliberately no `-f`. With it, curl writes the `-w` format AND exits
@@ -295,8 +295,13 @@ upgrade_preflight() {
         # `-w` writes the real code. The body is only read when that code is 200,
         # so an error page can never be parsed as a declaration. A genuine
         # transport failure still writes 000 and is still refused.
-        status="$(curl -sSL -o "$body" -w '%{http_code}' "https://github.com/adamgreenwell/wayfindr/releases/download/${tag}/release-manifest.json" 2>/dev/null || true)"
+        # curl's OWN exit status matters as well as the HTTP code. A transfer
+        # that dies partway still reports the 200 it received in the headers, so
+        # the code alone would wave through a half-downloaded declaration.
+        curl_exit=0
+        status="$(curl -sSL -o "$body" -w '%{http_code}' "https://github.com/adamgreenwell/wayfindr/releases/download/${tag}/release-manifest.json" 2>/dev/null)" || curl_exit=$?
         [ -n "$status" ] || status="000"
+        [ "$curl_exit" -eq 0 ] || status="000"
 
         if [ "$status" = "200" ]; then
             manifest="$(cat "$body")"
@@ -348,6 +353,16 @@ upgrade_preflight() {
             require "/app/apps/server/app/Support/Version/SemanticVersion.php";
             require "/app/apps/server/app/Support/Version/VersionComparator.php";
             $m = json_decode(stream_get_contents(STDIN), true);
+
+            // A body that is not a manifest must never be read as one that
+            // declares nothing. `?? []` did exactly that: malformed or truncated
+            // JSON decoded to null, the action loop ran over an empty list, and a
+            // before-pull requirement was skipped on the way to pulling the image.
+            if (! is_array($m) || ! is_string($m["version"] ?? null) || ! is_array($m["actions"] ?? null)) {
+                echo "INVALID\n";
+                exit(0);
+            }
+
             $ack = array_map("trim", explode(",", (string) getenv("WF_ACK")));
             $target = getenv("WF_TO");
             $from = getenv("WF_FROM") ?: null;
@@ -394,6 +409,14 @@ upgrade_preflight() {
                 printf("%s|%s|%s|%s|%s\n", $stranded ? "STEP" : "DO",
                     $key, $a["phase"] ?? "", $a["summary"] ?? "", $a["detail"] ?? "");
             }')"
+
+        if [ "$actions" = "INVALID" ]; then
+            printf '\n\033[1;31mPREFLIGHT COULD NOT VERIFY THIS UPGRADE\033[0m\n\n'
+            printf '  The declaration for %s came back unreadable.\n' "$tag"
+            printf '  Refusing rather than treating an unparseable response as "requires nothing".\n\n'
+            printf '  Nothing has been pulled or changed. Retry when the network settles.\n\n'
+            exit 78
+        fi
 
         [ -n "$actions" ] && all_actions="${all_actions}${actions}
 "

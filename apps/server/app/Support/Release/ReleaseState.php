@@ -90,8 +90,25 @@ final class ReleaseState
      * outstanding, and only the caller that just evaluated the requirements is
      * in a position to make it.
      */
-    public function record(string $version, ?string $commit, ?string $satisfiedThrough = null): bool
+    /**
+     * Whether the release on record was installed onto an empty database.
+     *
+     * The migrations table is the evidence, and migrating populates it — so this
+     * question is unanswerable by the time the serving gate asks it, in a process
+     * that never saw the install happen. Recorded once, at the only moment it can
+     * still be observed.
+     */
+    public function wasFreshInstall(): bool
     {
+        return ($this->read()['fresh_install'] ?? null) === true;
+    }
+
+    public function record(
+        string $version,
+        ?string $commit,
+        ?string $satisfiedThrough = null,
+        bool $freshInstall = false,
+    ): bool {
         $path = $this->path();
         $dir = dirname($path);
 
@@ -108,6 +125,7 @@ final class ReleaseState
             'version' => $version,
             'commit' => $commit,
             'satisfied_through' => $satisfiedThrough,
+            'fresh_install' => $freshInstall,
             'recorded_at' => gmdate('c'),
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
 

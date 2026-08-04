@@ -271,5 +271,29 @@ check "it propagates the refusal code"      1 "$(printf '%s' "$refusal_block" | 
 # fail on the message rather than on a call.
 check "it does not bring the site back up"  0 "$(printf '%s' "$refusal_block" | grep -c 'forge_php artisan up')"
 
+# A 200 body that is not a manifest must not be read as one declaring nothing.
+# `?? []` did exactly that: malformed or truncated JSON decoded to null, the
+# action loop ran over an empty list, and a before-pull requirement was skipped
+# on the way to pulling the image. A partial transfer produces precisely this -
+# curl reports the 200 it saw in the headers and dies mid-body.
+manifest_body() {
+    printf '%s' "$1" | "${PHP:-php}" -r '
+        $m = json_decode(stream_get_contents(STDIN), true);
+        if (! is_array($m) || ! is_string($m["version"] ?? null) || ! is_array($m["actions"] ?? null)) {
+            echo "INVALID"; exit(0);
+        }
+        echo "OK";
+    '
+}
+
+echo
+echo "manifest body validation:"
+check "a truncated body is rejected"    INVALID "$(manifest_body '{"version":"0.2.0","act')"
+check "an HTML error page is rejected"  INVALID "$(manifest_body '<html>Not Found</html>')"
+check "an empty body is rejected"       INVALID "$(manifest_body '')"
+check "a body with no actions key"      INVALID "$(manifest_body '{"version":"0.2.0"}')"
+check "a body with no version key"      INVALID "$(manifest_body '{"actions":[]}')"
+check "a well-formed manifest passes"   OK      "$(manifest_body '{"schema":1,"version":"0.2.0","actions":[]}')"
+
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

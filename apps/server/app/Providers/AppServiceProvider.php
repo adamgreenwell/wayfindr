@@ -10,6 +10,7 @@ use App\Support\Backup\DatabaseDumper;
 use App\Support\Backup\DatabaseRestorer;
 use App\Support\Backup\PostgresDatabaseDumper;
 use App\Support\Backup\PostgresDatabaseRestorer;
+use App\Support\Release\UpgradeContext;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -25,6 +26,13 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // One observation of pre-migration state per process. The guard records
+        // whether the database was empty on `CommandStarting`, and the recorder
+        // reads it back on `CommandFinished` — migrating between those two points
+        // is precisely what destroys the evidence, so a per-resolution instance
+        // would hand the recorder a reading taken after the fact.
+        $this->app->singleton(UpgradeContext::class);
+
         // Backups dump Postgres with pg_dump and restore with psql; tests bind
         // fakes so archive assembly and restore logic run without a live server.
         $this->app->bind(DatabaseDumper::class, PostgresDatabaseDumper::class);
