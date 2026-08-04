@@ -47,6 +47,61 @@ final class UpgradeRequirements
     }
 
     /**
+     * Whether nothing the operator can say will settle this action.
+     *
+     * The question the messages need: an action that is stranded AND belongs to a
+     * release the install never ran is one where offering an acknowledgement key
+     * would be documenting a bypass. Anything else — reachable, or not stranded —
+     * is clearable by acknowledging it, and the message should say so.
+     */
+    public static function unacknowledgeable(array $action, ?string $target, ?string $current): bool
+    {
+        return self::stranded($action, $target) && ! self::reached($action, $current);
+    }
+
+    /**
+     * Whether an ACKNOWLEDGEMENT of a stranded action is credible.
+     *
+     * These are two different questions and conflating them is how the guard got
+     * this wrong twice, in opposite directions.
+     *
+     * "Stranded" asks whether the work can be performed on this jump, and it is
+     * answered by the code that is present — which, everywhere the artifact runs,
+     * is the TARGET's, because the pull has already happened. A `0.2.0` action
+     * needing `0.2.0` code cannot be done once `0.3.0` is installed, whatever the
+     * install used to be running.
+     *
+     * This asks something narrower: could the operator credibly have done it
+     * ALREADY? Yes, if the install actually ran that release — the code was there
+     * before the pull, and the attestation is about the past. No, if the upgrade
+     * skipped it, because the operator never had that code at all and no
+     * attestation about it can be true.
+     *
+     * So an unacknowledged prior-release action still blocks, and an acknowledged
+     * one settles.
+     */
+    public static function reached(array $action, ?string $current): bool
+    {
+        $release = $action['release'] ?? null;
+
+        if ($current === null || ! is_string($release)) {
+            return false;
+        }
+
+        // EQUALITY ONLY. Version ordering does not prove traversal, because
+        // direct jumps are supported and normal: a restored 0.4 install that
+        // originally went 0.1 -> 0.4 never ran 0.2, and `0.2 <= 0.4` would have
+        // accepted an acknowledgement for 0.2 work it could never have done.
+        //
+        // The recorded release is the one piece of evidence that holds: it is
+        // what is installed, so its code was present. Anything older needs proof
+        // of traversal that nothing here has — `satisfied_through` is the only
+        // candidate and it is deliberately unknown after a restore, which is
+        // exactly the case that would be wrong.
+        return $release === $current;
+    }
+
+    /**
      * Collect the actions in `(from, target]` that are still outstanding.
      *
      * `$from` is null for an upgrade whose starting point cannot be recovered —
@@ -92,19 +147,21 @@ final class UpgradeRequirements
 
                 $settled = self::settled($action, $acknowledged, $evaluateCheck);
 
-                // An acknowledgement cannot settle a STRANDED action.
+                // An acknowledgement cannot settle a stranded action belonging to
+                // a release this upgrade SKIPPED: the operator never had that
+                // code, so no attestation about it can be true, and the refusal
+                // printing a key beside every action would otherwise document the
+                // bypass it is warning against.
                 //
-                // It belongs to a release this jump skips past and needs that
-                // release's own code or schema, so attesting that it was done
-                // does not make it possible. And the refusal prints an
-                // acknowledgement key beside every action — so an operator
-                // following the guidance would bypass the intermediate step the
-                // very same message is telling them to take.
+                // It CAN settle one belonging to a release the install actually
+                // ran. The code was there before the pull, so the work was
+                // performable then and the attestation is about the past.
                 //
-                // A machine check is different: if it answers true then the thing
-                // exists, whatever route it took to get there.
+                // A machine check is different again: if it answers true then the
+                // thing exists, whatever route it took to get there.
                 $bypassed = $settled['by'] === 'acknowledged'
-                    && self::stranded($action, $target);
+                    && self::stranded($action, $target)
+                    && ! self::reached($action, $traversedFrom);
 
                 if ($settled['satisfied'] && ! $bypassed) {
                     continue;

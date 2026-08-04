@@ -1074,8 +1074,35 @@ upgrade_preflight() {
                 // exited 78, leaving a working install replaced by one that will
                 // not start. The two must agree about what an acknowledgement can
                 // settle, and neither lets it reach a release being skipped.
-                $stranded = $release !== $target
+                // Three answers, not two.
+                //
+                // An action needing its own release code, where that release is
+                // not the target, cannot be performed once the pull replaces the
+                // code. What differs is whether the install can still do it NOW:
+                //
+                //   STEP - it never ran that release, so the only route is to
+                //          stop at the release itself
+                //   NOW  - it ran that release and the code is still here, so
+                //          the work is possible until the moment we pull
+                //   DO   - nothing special: performable after the upgrade
+                //
+                // NOW must stop the pull. Reclassifying it as an ordinary DO put
+                // it in the "later" list, the preflight reported success, and the
+                // pull then removed the only code that could have done it.
+                $ownRelease = $release !== $target
                     && in_array($a["depends_on_release"] ?? "none", ["code", "schema"], true);
+
+                $stranded = $ownRelease;
+                $onlyNow = false;
+
+                // Equality only. Ordering does not prove the install ever RAN a
+                // release - direct jumps are supported - so a restored install
+                // recorded at 0.4 that originally went 0.1 to 0.4 must not be
+                // credited with having run 0.2.
+                if ($ownRelease && $recorded !== null && $release === $recorded) {
+                    $stranded = false;
+                    $onlyNow = true;
+                }
 
                 if (! $stranded && in_array($key, $ack, true)) { continue; }
 
@@ -1135,7 +1162,7 @@ upgrade_preflight() {
                 // pipe-delimited, newline-separated protocol. Raw, an
                 // instruction could truncate itself at the first pipe or forge
                 // an entire extra action at the first newline.
-                printf("%s|%s|%s|%s|%s|%s\n", $stranded ? "STEP" : "DO",
+                printf("%s|%s|%s|%s|%s|%s\n", $stranded ? "STEP" : ($onlyNow ? "NOW" : "DO"),
                     $key, $a["phase"] ?? "",
                     base64_encode((string) ($a["summary"] ?? "")),
                     base64_encode((string) ($a["detail"] ?? "")),
@@ -1196,7 +1223,7 @@ upgrade_preflight() {
         return 0
     fi
 
-    local stranded blocking later
+    local stranded blocking later onlynow
     stranded="$(printf '%s\n' "$all_actions" | grep '^STEP|' || true)"
 
     # Only `before-pull` may stop the pull. An `after-pull` action needs the new
@@ -1204,10 +1231,18 @@ upgrade_preflight() {
     # refusing to pull because of them would make them permanently unsatisfiable.
     # The artifact enforces those itself once the code is there: after-pull blocks
     # the migration, after-start gates serving.
-    blocking="$(printf '%s\n' "$all_actions" | grep -E '^(STEP|DO)\|[^|]*\|before-pull\|' || true)"
+    blocking="$(printf '%s\n' "$all_actions" | grep -E '^(STEP|DO|NOW)\|[^|]*\|before-pull\|' || true)"
+
+    # `NOW` is work the install can still do because the release it belongs to is
+    # the one running - and cannot do afterwards, because the pull replaces that
+    # code. Letting it through as "later" was the same silent progression a
+    # before-pull action is stopped for.
+    onlynow="$(printf '%s\n' "$all_actions" | grep '^NOW|' || true)"
+
     blocking="$(printf '%s\n' "$blocking
-$stranded" | grep -v '^$' | sort -u || true)"
-    later="$(printf '%s\n' "$all_actions" | grep -vE '^(STEP|DO)\|[^|]*\|before-pull\|' | grep -v '^STEP|' || true)"
+$stranded
+$onlynow" | grep -v '^$' | sort -u || true)"
+    later="$(printf '%s\n' "$all_actions" | grep -vE '^(STEP|DO|NOW)\|[^|]*\|before-pull\|' | grep -v '^STEP|' | grep -v '^NOW|' || true)"
 
     if [ -z "$blocking" ]; then
         say "Preflight: nothing to do before pulling."
@@ -1239,6 +1274,20 @@ $stranded" | grep -v '^$' | sort -u || true)"
         printf '%s\n' "$stranded" | while IFS='|' read -r _ key phase summary detail verification; do
             [ -n "$key" ] || continue
             printf '  \033[1;31m%s\033[0m (%s, must run on its own release)\n    %s\n' "$key" "$phase" "$(unprose "$summary")"
+            [ -n "$detail" ] && printf '    %s\n' "$(unprose "$detail")"
+            printf '\n'
+        done
+    fi
+
+    if [ -n "$onlynow" ]; then
+        printf '  \033[1;33mDo these before upgrading.\033[0m They belong to the release you are\n'
+        printf '  running and need its code, which the pull replaces - so this is the last\n'
+        printf '  moment they can be done. If you have already done them, acknowledge them\n'
+        printf '  and run this again.\n\n'
+
+        printf '%s\n' "$onlynow" | while IFS='|' read -r _ key phase summary detail verification; do
+            [ -n "$key" ] || continue
+            printf '  \033[1;33m%s\033[0m (%s, do it before pulling)\n    %s\n' "$key" "$phase" "$(unprose "$summary")"
             [ -n "$detail" ] && printf '    %s\n' "$(unprose "$detail")"
             printf '\n'
         done

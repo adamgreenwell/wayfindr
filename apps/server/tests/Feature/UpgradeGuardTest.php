@@ -10,6 +10,7 @@ use App\Support\Release\ReleaseManifest;
 use App\Support\Release\ReleaseState;
 use App\Support\Release\UpgradeContext;
 use App\Support\Release\UpgradeGuard;
+use App\Support\Release\UpgradeRequirements;
 use Illuminate\Console\Events\CommandFinished;
 use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -1701,7 +1702,7 @@ test('the migration refusal does not offer a key it will not honour', function (
     // actually have to install.
     $source = file_get_contents(app_path('Listeners/BlockMigrationsWithUnmetRequirements.php'));
 
-    $strandedBranch = strpos($source, 'UpgradeRequirements::stranded(');
+    $strandedBranch = strpos($source, 'UpgradeRequirements::unacknowledgeable(');
     $acknowledgeLine = strpos($source, 'Acknowledge with:');
 
     expect($strandedBranch)->not->toBeFalse()
@@ -1890,4 +1891,187 @@ test('a floor refusal does not stop the serving gate', function (): void {
 
     expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeTrue();
     expect($this->get('/')->status())->not->toBe(503);
+});
+
+test('an action for the release the install is on can be acknowledged', function (): void {
+    // The install is ON 0.2.0 and carries a retained 0.2.0 action, because an
+    // older marker kept it in span. That work is performable - 0.2.0's code is
+    // what is running right now - so an acknowledgement is credible. Stranding it
+    // refused the work AND rejected the acknowledgement, and told the operator to
+    // install a release they were already running.
+    $needsOwnCode = ['actions' => [[
+        'id' => 'needs-its-own-code',
+        'summary' => 'Needs 0.2.0 code.',
+        'detail' => 'php artisan something',
+        'phase' => 'after-start',
+        'depends_on_release' => 'code',
+        'applicability' => ['type' => 'always'],
+        'verification' => ['type' => 'attest'],
+    ]]];
+
+    bakeRelease(['actions' => []], '0.3.0', history: [
+        ReleaseManifest::build($needsOwnCode, '0.2.0', 'bbb'),
+        ReleaseManifest::build(['actions' => []], '0.3.0', 'abc123'),
+    ]);
+
+    // Recorded at 0.2.0, with the marker further back so the action stays in span.
+    app(ReleaseState::class)->record('0.2.0', 'bbb', satisfiedThrough: '0.1.0');
+    putenv('WAYFINDR_ACKNOWLEDGED_ACTIONS=0.2.0/needs-its-own-code');
+
+    try {
+        expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeFalse();
+    } finally {
+        putenv('WAYFINDR_ACKNOWLEDGED_ACTIONS');
+    }
+});
+
+test('an action for a release the install skipped is still stranded', function (): void {
+    // The regression guard: 0.1.0 never ran 0.2.0, so it never had that code and
+    // no attestation about it is credible.
+    $needsOwnCode = ['actions' => [[
+        'id' => 'needs-its-own-code',
+        'summary' => 'Needs 0.2.0 code.',
+        'detail' => 'php artisan something',
+        'phase' => 'after-start',
+        'depends_on_release' => 'code',
+        'applicability' => ['type' => 'always'],
+        'verification' => ['type' => 'attest'],
+    ]]];
+
+    bakeRelease(['actions' => []], '0.3.0', history: [
+        ReleaseManifest::build($needsOwnCode, '0.2.0', 'bbb'),
+        ReleaseManifest::build(['actions' => []], '0.3.0', 'abc123'),
+    ]);
+
+    app(ReleaseState::class)->record('0.1.0', 'aaa', satisfiedThrough: '0.1.0');
+    putenv('WAYFINDR_ACKNOWLEDGED_ACTIONS=0.2.0/needs-its-own-code');
+
+    try {
+        expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeTrue();
+    } finally {
+        putenv('WAYFINDR_ACKNOWLEDGED_ACTIONS');
+    }
+});
+
+test('an action needing a release that is gone still blocks, acknowledged or not', function (): void {
+    // The two questions kept apart. `stranded` asks whether the work can be done
+    // NOW - and after the pull the target's code has replaced everything, so a
+    // 0.2.0 action needing 0.2.0 code cannot be, whatever the install used to run.
+    $action = ['release' => '0.2.0', 'depends_on_release' => 'code'];
+
+    expect(UpgradeRequirements::stranded($action, '0.3.0'))->toBeTrue()
+        // But an acknowledgement is about the PAST, and an install that ran 0.2.0
+        // could have done it before the pull - so saying so settles it.
+        ->and(UpgradeRequirements::unacknowledgeable($action, '0.3.0', '0.2.0'))->toBeFalse()
+        // An install that skipped 0.2.0 never had that code, so nothing it says
+        // about the work can be true.
+        ->and(UpgradeRequirements::unacknowledgeable($action, '0.3.0', '0.1.0'))->toBeTrue()
+        // And an install merely NEWER than the action's release proves nothing:
+        // it may have jumped straight past it.
+        ->and(UpgradeRequirements::unacknowledgeable($action, '0.5.0', '0.4.0'))->toBeTrue();
+});
+
+test('being newer than a release is not evidence of having run it', function (): void {
+    // Direct jumps are supported and normal, so ordering proves nothing about
+    // traversal: a restored 0.4.0 install that originally went 0.1.0 -> 0.4.0
+    // never ran 0.2.0, and crediting it would drop work it could never have done.
+    expect(UpgradeRequirements::reached(['release' => '0.2.0'], '0.4.0'))->toBeFalse()
+        // The recorded release is the one thing that is evidence: it is installed,
+        // so its code was present.
+        ->and(UpgradeRequirements::reached(['release' => '0.2.0'], '0.2.0'))->toBeTrue();
+});
+
+test('an unrecorded origin cannot be acknowledged past', function (): void {
+    // Nothing says the install ever ran it, and the recovery - stop at that
+    // release - is real, so this stays the conservative answer.
+    expect(UpgradeRequirements::unacknowledgeable(
+        ['release' => '0.2.0', 'depends_on_release' => 'code'], '0.3.0', null,
+    ))->toBeTrue();
+});
+
+test('an unorderable origin cannot be acknowledged past', function (): void {
+    // A development identity does not order, so nothing shows the install ever
+    // reached 0.2.0. "Cannot tell" keeps the conservative answer here because the
+    // recovery is real - stop at that release - rather than a dead end.
+    expect(UpgradeRequirements::unacknowledgeable(
+        ['release' => '0.2.0', 'depends_on_release' => 'code'], '0.3.0', '0.2.0-dev+abc',
+    ))->toBeTrue();
+});
+
+test('an unacknowledged prior-release action still blocks migration', function (): void {
+    // The case that made the first version of this fix wrong. The install ran
+    // 0.2.0, so an acknowledgement WOULD settle the action - but there is none,
+    // and after the pull 0.2.0's code is gone. Letting it through migration on
+    // reachability alone would migrate, then gate serving forever on work that
+    // can no longer be performed.
+    $needsOwnCode = ['actions' => [[
+        'id' => 'needs-its-own-code',
+        'summary' => 'Needs 0.2.0 code.',
+        'detail' => 'php artisan something',
+        'phase' => 'after-start',
+        'depends_on_release' => 'code',
+        'applicability' => ['type' => 'always'],
+        'verification' => ['type' => 'attest'],
+    ]]];
+
+    bakeRelease(['actions' => []], '0.3.0', history: [
+        ReleaseManifest::build($needsOwnCode, '0.2.0', 'bbb'),
+        ReleaseManifest::build(['actions' => []], '0.3.0', 'abc123'),
+    ]);
+
+    app(ReleaseState::class)->record('0.2.0', 'bbb', satisfiedThrough: '0.1.0');
+
+    $assessment = app(UpgradeGuard::class)->assess();
+
+    expect($assessment['blocked'])->toBeTrue()
+        ->and(array_column($assessment['actions'], 'id'))->toContain('needs-its-own-code');
+});
+
+test('the refusal carries recovery for stranded work an acknowledgement could clear', function (): void {
+    // An operator who did the work before upgrading only needs the key. One who
+    // did not cannot do it now either - the code it needs was replaced by the
+    // pull - so a key on its own leaves them with an instruction they cannot
+    // follow. Both readers are in this message.
+    $source = file_get_contents(app_path('Listeners/BlockMigrationsWithUnmetRequirements.php'));
+
+    $key = strpos($source, 'Acknowledge with:');
+    $recovery = strpos($source, 'Cannot be done now.');
+
+    expect($key)->not->toBeFalse()
+        ->and($recovery)->not->toBeFalse()
+        // The key is printed first, so "the key above" in the recovery refers to
+        // something the operator has actually seen.
+        ->and($key)->toBeLessThan($recovery);
+
+    // The recovery is gated on stranded(), not on acknowledgeability - that was
+    // the bug: reachable stranded work got a key and no explanation.
+    expect($source)->toContain('UpgradeRequirements::stranded($action, $target)')
+        ->and($source)->toContain('roll back to that release');
+});
+
+test('the command carries recovery for stranded work an acknowledgement could clear', function (): void {
+    // The same two-part message the listener gives. Fixing one and not the other
+    // is how this rule has drifted at every step, so both are asserted.
+    $source = file_get_contents(app_path('Console/Commands/UpgradeGuardCommand.php'));
+
+    $key = strpos($source, 'Acknowledge with:');
+    $recovery = strpos($source, 'Cannot be done now:');
+
+    expect($key)->not->toBeFalse()
+        ->and($recovery)->not->toBeFalse()
+        ->and($key)->toBeLessThan($recovery)
+        ->and($source)->toContain('roll back to that release');
+});
+
+test('the refusal footer speaks only for work no acknowledgement can clear', function (): void {
+    // The footer says the release was skipped and no acknowledgement substitutes.
+    // Counting every stranded action there told an operator holding a usable key
+    // exactly the opposite of the line above it.
+    $source = file_get_contents(app_path('Listeners/BlockMigrationsWithUnmetRequirements.php'));
+
+    expect($source)->toContain('$unacknowledgeable = true;')
+        ->and($source)->toContain('if ($unacknowledgeable) {')
+        // And the flag is set inside the branch that has no acknowledgement route.
+        ->and(strpos($source, '$unacknowledgeable = true;'))
+        ->toBeGreaterThan(strpos($source, 'Acknowledging will not clear this'));
 });

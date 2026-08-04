@@ -1016,5 +1016,52 @@ Then restart.' "$(unprose_smoke "$hostile")"
 check "the record stays one line"  1 "$(printf 'DO|k|before-pull|%s|%s|ATTEST\n' "$hostile" "$hostile" | wc -l | tr -d ' ')"
 check "fields parse correctly"     'DO/k/before-pull/ATTEST' "$(printf 'DO|k|before-pull|%s|%s|ATTEST\n' "$hostile" "$hostile" | while IFS='|' read -r t k p _ _ v; do printf '%s/%s/%s/%s' "$t" "$k" "$p" "$v"; done)"
 
+# Three answers, not two. Work needing the CURRENT release code is performable
+# right now and impossible after the pull - so it must stop the pull, not join
+# the "you can do this later" list. Reclassifying it as an ordinary DO let the
+# preflight report success and then remove the only code that could do it.
+#
+#   STEP - never ran that release; the only route is to stop at it
+#   NOW  - ran it, and the code is still here, so it is possible until we pull
+#   DO   - nothing special; performable after the upgrade
+classify() {
+    WF_R="$1" WF_T="$2" WF_C="$3" "${PHP:-php}" -r '
+        require getenv("APP")."/app/Support/Version/SemanticVersion.php";
+        require getenv("APP")."/app/Support/Version/VersionComparator.php";
+        $release = getenv("WF_R");
+        $target = getenv("WF_T");
+        $recorded = getenv("WF_C") ?: null;
+        $own = $release !== $target;
+        $stranded = $own;
+        $onlyNow = false;
+        // Equality only: ordering does not prove the install ever RAN a release,
+        // because direct jumps are supported.
+        if ($own && $recorded !== null && $release === $recorded) {
+            $stranded = false;
+            $onlyNow = true;
+        }
+        echo $stranded ? "STEP" : ($onlyNow ? "NOW" : "DO");
+    '
+}
+
+echo
+echo "own-release work is classified three ways:"
+check "the release the install is on"  NOW  "$(classify 0.2.0 0.3.0 0.2.0)"
+check "a release it skipped over"      STEP "$(classify 0.2.0 0.3.0 0.1.0)"
+# Newer is not proof of traversal: a direct 0.1.0 -> 0.4.0 jump never ran 0.2.0.
+check "merely newer than it"          STEP "$(classify 0.2.0 0.5.0 0.4.0)"
+check "the target itself"              DO   "$(classify 0.3.0 0.3.0 0.1.0)"
+check "no recorded origin"             STEP "$(classify 0.2.0 0.3.0 '')"
+check "an unorderable origin"          STEP "$(classify 0.2.0 0.3.0 '0.2.0-dev+abc')"
+
+# And NOW has to reach the blocking set rather than the later set.
+preflight_body="$(awk '/^upgrade_preflight\(\) \{/,/^\}/' "$INSTALLER")"
+
+echo
+echo "work that is only possible now stops the pull:"
+check "NOW is collected"           yes "$(printf '%s' "$preflight_body" | grep -q "grep '\^NOW|'" && echo yes || echo no)"
+check "NOW joins blocking"         yes "$(printf '%s' "$preflight_body" | grep -q 'onlynow' && echo yes || echo no)"
+check "NOW is excluded from later" yes "$(printf '%s' "$preflight_body" | grep -q "grep -v '\^NOW|'" && echo yes || echo no)"
+
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
