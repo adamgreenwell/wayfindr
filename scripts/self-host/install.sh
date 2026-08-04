@@ -1074,8 +1074,28 @@ upgrade_preflight() {
                 // exited 78, leaving a working install replaced by one that will
                 // not start. The two must agree about what an acknowledgement can
                 // settle, and neither lets it reach a release being skipped.
+                // Stranded means the install SKIPPED that release, not merely
+                // that it differs from the target. The release the install is
+                // sitting on is performable - its code is what is running right
+                // now - so stranding it refused work the operator could do and
+                // told them to install a release they already had.
                 $stranded = $release !== $target
                     && in_array($a["depends_on_release"] ?? "none", ["code", "schema"], true);
+
+                if ($stranded && $recorded !== null) {
+                    if ($release === $recorded) {
+                        $stranded = false;
+                    } else {
+                        $reached = App\Support\Version\VersionComparator::compare($release, $recorded);
+
+                        // At or below where the install has reached: it ran that
+                        // release, so an attestation is credible. Above it, or
+                        // unorderable, it never had that code.
+                        if ($reached !== null && $reached <= 0) {
+                            $stranded = false;
+                        }
+                    }
+                }
 
                 if (! $stranded && in_array($key, $ack, true)) { continue; }
 

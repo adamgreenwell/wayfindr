@@ -122,7 +122,7 @@ class UpgradeGuardCommand extends Command
             // settles it, and printing the key beside instructions to step
             // through the release was the contradiction that made the bypass
             // look like the documented route.
-            if (! UpgradeRequirements::stranded($action, $assessment['target'] ?? null)) {
+            if (! UpgradeRequirements::stranded($action, $assessment['target'] ?? null, $assessment['from'] ?? null)) {
                 $this->line(sprintf('    Acknowledge with: %s/%s',
                     $action['release'] ?? '?', $action['id'] ?? '?'));
             }
@@ -134,11 +134,11 @@ class UpgradeGuardCommand extends Command
             // the migration is what stopped.
             $blocksMigration = in_array(
                 $action['phase'] ?? '', UpgradeRequirements::BLOCKS_MIGRATION, true,
-            ) || UpgradeRequirements::stranded($action, $assessment['target'] ?? null);
+            ) || UpgradeRequirements::stranded($action, $assessment['target'] ?? null, $assessment['from'] ?? null);
 
             $this->line(sprintf('    Blocks: %s', $blocksMigration ? 'migration' : 'serving'));
 
-            if (UpgradeRequirements::stranded($action, $assessment['target'] ?? null)) {
+            if (UpgradeRequirements::stranded($action, $assessment['target'] ?? null, $assessment['from'] ?? null)) {
                 $this->line(sprintf('    Cannot be done on this jump: it needs %s, which this upgrade skips.',
                     $action['release'] ?? 'an intermediate release'));
                 $this->line('    Upgrade to that release first, let it start, then continue.');

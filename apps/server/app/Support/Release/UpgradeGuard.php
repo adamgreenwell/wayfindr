@@ -518,7 +518,7 @@ final class UpgradeGuard
             $outstanding,
             static fn (array $a): bool => in_array(
                 $a['phase'] ?? '', UpgradeRequirements::BLOCKS_MIGRATION, true,
-            ) || UpgradeRequirements::stranded($a, $target),
+            ) || UpgradeRequirements::stranded($a, $target, $recorded),
         ));
 
         return [

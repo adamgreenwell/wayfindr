@@ -1016,5 +1016,38 @@ Then restart.' "$(unprose_smoke "$hostile")"
 check "the record stays one line"  1 "$(printf 'DO|k|before-pull|%s|%s|ATTEST\n' "$hostile" "$hostile" | wc -l | tr -d ' ')"
 check "fields parse correctly"     'DO/k/before-pull/ATTEST' "$(printf 'DO|k|before-pull|%s|%s|ATTEST\n' "$hostile" "$hostile" | while IFS='|' read -r t k p _ _ v; do printf '%s/%s/%s/%s' "$t" "$k" "$p" "$v"; done)"
 
+# Stranded means the install SKIPPED that release, not merely that it differs
+# from the target. The release the install is sitting on is performable - its
+# code is what is running right now - so stranding it refused work the operator
+# could do, rejected the acknowledgement for it, and told them to install a
+# release they already had.
+stranded_for() {
+    WF_R="$1" WF_T="$2" WF_C="$3" "${PHP:-php}" -r '
+        require getenv("APP")."/app/Support/Version/SemanticVersion.php";
+        require getenv("APP")."/app/Support/Version/VersionComparator.php";
+        $release = getenv("WF_R");
+        $target = getenv("WF_T");
+        $recorded = getenv("WF_C") ?: null;
+        $stranded = $release !== $target;
+        if ($stranded && $recorded !== null) {
+            if ($release === $recorded) { $stranded = false; }
+            else {
+                $reached = App\Support\Version\VersionComparator::compare($release, $recorded);
+                if ($reached !== null && $reached <= 0) { $stranded = false; }
+            }
+        }
+        echo $stranded ? "STEP" : "DO";
+    '
+}
+
+echo
+echo "stranded means skipped, not merely different:"
+check "the release the install is on"   DO   "$(stranded_for 0.2.0 0.3.0 0.2.0)"
+check "a release it skipped over"       STEP "$(stranded_for 0.2.0 0.3.0 0.1.0)"
+check "a release it has passed"         DO   "$(stranded_for 0.2.0 0.5.0 0.4.0)"
+check "the target itself"               DO   "$(stranded_for 0.3.0 0.3.0 0.1.0)"
+check "no recorded origin"              STEP "$(stranded_for 0.2.0 0.3.0 '')"
+check "an unorderable origin"           STEP "$(stranded_for 0.2.0 0.3.0 '0.2.0-dev+abc')"
+
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

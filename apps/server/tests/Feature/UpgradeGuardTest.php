@@ -10,6 +10,7 @@ use App\Support\Release\ReleaseManifest;
 use App\Support\Release\ReleaseState;
 use App\Support\Release\UpgradeContext;
 use App\Support\Release\UpgradeGuard;
+use App\Support\Release\UpgradeRequirements;
 use Illuminate\Console\Events\CommandFinished;
 use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -1890,4 +1891,89 @@ test('a floor refusal does not stop the serving gate', function (): void {
 
     expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeTrue();
     expect($this->get('/')->status())->not->toBe(503);
+});
+
+test('an action for the release the install is on can be acknowledged', function (): void {
+    // The install is ON 0.2.0 and carries a retained 0.2.0 action, because an
+    // older marker kept it in span. That work is performable - 0.2.0's code is
+    // what is running right now - so an acknowledgement is credible. Stranding it
+    // refused the work AND rejected the acknowledgement, and told the operator to
+    // install a release they were already running.
+    $needsOwnCode = ['actions' => [[
+        'id' => 'needs-its-own-code',
+        'summary' => 'Needs 0.2.0 code.',
+        'detail' => 'php artisan something',
+        'phase' => 'after-start',
+        'depends_on_release' => 'code',
+        'applicability' => ['type' => 'always'],
+        'verification' => ['type' => 'attest'],
+    ]]];
+
+    bakeRelease(['actions' => []], '0.3.0', history: [
+        ReleaseManifest::build($needsOwnCode, '0.2.0', 'bbb'),
+        ReleaseManifest::build(['actions' => []], '0.3.0', 'abc123'),
+    ]);
+
+    // Recorded at 0.2.0, with the marker further back so the action stays in span.
+    app(ReleaseState::class)->record('0.2.0', 'bbb', satisfiedThrough: '0.1.0');
+    putenv('WAYFINDR_ACKNOWLEDGED_ACTIONS=0.2.0/needs-its-own-code');
+
+    try {
+        expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeFalse();
+    } finally {
+        putenv('WAYFINDR_ACKNOWLEDGED_ACTIONS');
+    }
+});
+
+test('an action for a release the install skipped is still stranded', function (): void {
+    // The regression guard: 0.1.0 never ran 0.2.0, so it never had that code and
+    // no attestation about it is credible.
+    $needsOwnCode = ['actions' => [[
+        'id' => 'needs-its-own-code',
+        'summary' => 'Needs 0.2.0 code.',
+        'detail' => 'php artisan something',
+        'phase' => 'after-start',
+        'depends_on_release' => 'code',
+        'applicability' => ['type' => 'always'],
+        'verification' => ['type' => 'attest'],
+    ]]];
+
+    bakeRelease(['actions' => []], '0.3.0', history: [
+        ReleaseManifest::build($needsOwnCode, '0.2.0', 'bbb'),
+        ReleaseManifest::build(['actions' => []], '0.3.0', 'abc123'),
+    ]);
+
+    app(ReleaseState::class)->record('0.1.0', 'aaa', satisfiedThrough: '0.1.0');
+    putenv('WAYFINDR_ACKNOWLEDGED_ACTIONS=0.2.0/needs-its-own-code');
+
+    try {
+        expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeTrue();
+    } finally {
+        putenv('WAYFINDR_ACKNOWLEDGED_ACTIONS');
+    }
+});
+
+test('an action for a release the install has passed is reachable', function (): void {
+    // Ran 0.2.0 on the way to 0.4.0, so the work was performable at the time and
+    // the attestation stands.
+    expect(UpgradeRequirements::stranded(
+        ['release' => '0.2.0', 'depends_on_release' => 'code'], '0.5.0', '0.4.0',
+    ))->toBeFalse();
+});
+
+test('an unrecorded origin leaves an intermediate action stranded', function (): void {
+    // Nothing says the install ever ran it, and the recovery - stop at that
+    // release - is real, so this stays the conservative answer.
+    expect(UpgradeRequirements::stranded(
+        ['release' => '0.2.0', 'depends_on_release' => 'code'], '0.3.0', null,
+    ))->toBeTrue();
+});
+
+test('an unorderable origin leaves an intermediate action stranded', function (): void {
+    // A development identity does not order, so nothing shows the install ever
+    // reached 0.2.0. "Cannot tell" keeps the conservative answer here because the
+    // recovery is real - stop at that release - rather than a dead end.
+    expect(UpgradeRequirements::stranded(
+        ['release' => '0.2.0', 'depends_on_release' => 'code'], '0.3.0', '0.2.0-dev+abc',
+    ))->toBeTrue();
 });

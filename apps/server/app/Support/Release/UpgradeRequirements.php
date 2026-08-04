@@ -39,11 +39,51 @@ final class UpgradeRequirements
      * facing a requirement that cannot be met at all. Refusing first leaves the
      * previous release running and the operator able to step through.
      */
-    public static function stranded(array $action, ?string $target): bool
+    public static function stranded(array $action, ?string $target, ?string $current = null): bool
     {
-        return $target !== null
-            && ($action['release'] ?? null) !== $target
-            && in_array($action['depends_on_release'] ?? 'none', ['code', 'schema'], true);
+        if ($target === null) {
+            return false;
+        }
+
+        $release = $action['release'] ?? null;
+
+        if (! is_string($release) || $release === $target) {
+            return false;
+        }
+
+        if (! in_array($action['depends_on_release'] ?? 'none', ['code', 'schema'], true)) {
+            return false;
+        }
+
+        // A release the install has RUN is not one it skipped.
+        //
+        // This used to strand anything whose release was not the target, which
+        // catches an intermediate the upgrade jumps over — and also caught the
+        // release the install is sitting on. That work is performable: its code
+        // and schema are what is running right now, before the pull. So an
+        // install on 0.2.0 carrying a retained 0.2.0 action could do the work,
+        // acknowledge it, and still be refused by both gates with no way to
+        // clear it — and told to install a release it was already running.
+        //
+        // Equality first, so the ordinary case needs no comparison at all, then
+        // precedence for anything the install has passed.
+        if ($current !== null && $release === $current) {
+            return false;
+        }
+
+        if ($current !== null) {
+            $rank = VersionComparator::compare($release, $current);
+
+            // At or below where the install has reached: it ran that release, so
+            // an attestation that the work was done is credible. Above it, or
+            // unorderable, the install never had that code and the only route is
+            // to stop at the release itself.
+            if ($rank !== null && $rank <= 0) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -104,7 +144,7 @@ final class UpgradeRequirements
                 // A machine check is different: if it answers true then the thing
                 // exists, whatever route it took to get there.
                 $bypassed = $settled['by'] === 'acknowledged'
-                    && self::stranded($action, $target);
+                    && self::stranded($action, $target, $traversedFrom);
 
                 if ($settled['satisfied'] && ! $bypassed) {
                     continue;
