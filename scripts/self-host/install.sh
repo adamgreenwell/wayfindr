@@ -158,18 +158,28 @@ resolve_release() {
     fi
 }
 
+# Rewrite WAYFINDR_IMAGE, matching every spelling env_value() accepts.
+#
+# The reader takes leading whitespace, an `export` prefix and quoting; a
+# substitution anchored on a bare column-zero assignment does not. A file using
+# any other spelling therefore classified as official, was evaluated against the
+# newly resolved release, and was never retagged - so Compose went on pulling the
+# old tag and the upgrade silently restarted the previous image.
+#
+# The prefix is captured and put back rather than normalised away, because an
+# `export` there may be load-bearing for whatever else sources this file.
+set_image() {
+    sed -i.bak -E "s#^([[:space:]]*(export[[:space:]]+)?)WAYFINDR_IMAGE=.*#\1WAYFINDR_IMAGE=$1#" "$ENV_FILE"
+    rm -f "$ENV_FILE.bak"
+}
+
 pin_image() {
     # An operator-supplied WAYFINDR_IMAGE wins; otherwise a resolved release
     # tag pins the published image.
     if [ -n "${WAYFINDR_IMAGE:-}" ]; then
-        sed -i.bak "s#^WAYFINDR_IMAGE=.*#WAYFINDR_IMAGE=$WAYFINDR_IMAGE#" "$ENV_FILE"
-        rm -f "$ENV_FILE.bak"
+        set_image "$WAYFINDR_IMAGE"
     elif [ -n "$IMAGE_TAG" ] && is_official_image "$(env_value WAYFINDR_IMAGE)"; then
-        # The whole line, not a prefix match: a quoted value is official all the
-        # same, and a pattern anchored on the unquoted form left it untouched -
-        # so the upgrade retagged nothing and pulled whatever was already there.
-        sed -i.bak "s#^WAYFINDR_IMAGE=.*#WAYFINDR_IMAGE=ghcr.io/adamgreenwell/wayfindr:$IMAGE_TAG#" "$ENV_FILE"
-        rm -f "$ENV_FILE.bak"
+        set_image "ghcr.io/adamgreenwell/wayfindr:$IMAGE_TAG"
     fi
 }
 
@@ -636,7 +646,13 @@ upgrade_preflight() {
             echo $tag, "\n";
         }' "WF_FROM=$span_origin" "WF_TO=$to")"
 
-    [ -n "$span" ] || span="v$to"
+    # The target is ALWAYS in its own span, appended rather than substituted for
+    # an empty one. A tag list that does not contain it - deleted after release,
+    # or the releases endpoint updating ahead of the tags listing - produced a
+    # nonempty span of OLDER releases, which suppressed this fallback entirely:
+    # the target's own manifest was never fetched, so its floor and its
+    # before-pull actions went unread before it was pulled and started.
+    span="$(printf '%s\nv%s\n' "$span" "$to" | grep -v '^$' | sort -u || true)"
 
     all_actions=""
 

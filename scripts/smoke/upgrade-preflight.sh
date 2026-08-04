@@ -762,5 +762,43 @@ check "unquoted official"  OFFICIAL "$(official "$(dotenv_read 'WAYFINDR_IMAGE=g
 check "quoted official"    OFFICIAL "$(official "$(dotenv_read 'WAYFINDR_IMAGE="ghcr.io/adamgreenwell/wayfindr:latest"' WAYFINDR_IMAGE)")"
 check "quoted fork"        FOREIGN  "$(official "$(dotenv_read 'WAYFINDR_IMAGE="registry.example/fork:0.3.0"' WAYFINDR_IMAGE)")"
 
+# The target is always in its own span. Adding it only when the span came back
+# empty meant a tag list that does not contain it - deleted after release, or the
+# releases endpoint updating ahead of the tags listing - produced a nonempty span
+# of OLDER releases and never fetched the target's own manifest, so its floor and
+# before-pull actions went unread before it was pulled.
+span_with_target() {
+    printf '%s\nv%s\n' "$1" "$2" | grep -v '^$' | sort -u | tr '\n' ' ' | sed 's/ $//'
+}
+
+echo
+echo "the target is always in its own span:"
+check "already present, not duplicated" "v0.1.0 v0.2.0" "$(span_with_target 'v0.1.0
+v0.2.0' 0.2.0)"
+check "absent from the tag list"        "v0.1.0 v0.2.0" "$(span_with_target 'v0.1.0' 0.2.0)"
+check "an empty span"                   "v0.2.0"        "$(span_with_target '' 0.2.0)"
+
+# And the retag has to match every spelling the reader accepts, or a file the
+# preflight classified as official is evaluated against the new release and then
+# never retagged - so Compose pulls the old tag and the upgrade silently restarts
+# the previous image.
+retag() {
+    local file
+    file="$(mktemp)"
+    printf '%s\n' "$1" > "$file"
+    sed -i.bak -E "s#^([[:space:]]*(export[[:space:]]+)?)WAYFINDR_IMAGE=.*#\1WAYFINDR_IMAGE=NEW#" "$file"
+    rm -f "$file.bak"
+    cat "$file"
+    rm -f "$file"
+}
+
+echo
+echo "every accepted spelling is retagged:"
+check "a bare assignment"      'WAYFINDR_IMAGE=NEW'          "$(retag 'WAYFINDR_IMAGE=ghcr.io/adamgreenwell/wayfindr:0.1.0')"
+check "an export prefix"       'export WAYFINDR_IMAGE=NEW'   "$(retag 'export WAYFINDR_IMAGE=ghcr.io/adamgreenwell/wayfindr:0.1.0')"
+check "leading whitespace"     '  WAYFINDR_IMAGE=NEW'        "$(retag '  WAYFINDR_IMAGE=ghcr.io/adamgreenwell/wayfindr:0.1.0')"
+check "a quoted value"         'WAYFINDR_IMAGE=NEW'          "$(retag 'WAYFINDR_IMAGE="ghcr.io/adamgreenwell/wayfindr:0.1.0"')"
+check "an unrelated key"       'OTHER=1'                     "$(retag 'OTHER=1')"
+
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
