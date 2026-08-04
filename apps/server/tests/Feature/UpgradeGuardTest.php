@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Listeners\ForgetReleaseAfterRollback;
+use App\Support\Backup\RestoreService;
 use App\Support\Release\ReleaseManifest;
 use App\Support\Release\ReleaseState;
 use App\Support\Release\UpgradeContext;
@@ -1310,4 +1311,35 @@ test('the rollback listener itself ignores migrate:refresh', function (): void {
     );
 
     expect(app(ReleaseState::class)->recordedVersion())->toBe('0.3.0');
+});
+
+test('a restore points the release state at the archive', function (): void {
+    // The state lives on the volume, not inside the dump, so it survives the
+    // database being replaced and goes on claiming the release that was running.
+    // The documented next step is `migrate --force`, which would then measure its
+    // floor and its span from a version this schema is not at.
+    bakeRelease(['actions' => []], '0.5.0');
+    $state = app(ReleaseState::class);
+    $state->record('0.5.0', 'current', satisfiedThrough: '0.5.0');
+
+    app(RestoreService::class)->recordRestoredRelease('0.2.0', 'archived');
+
+    expect($state->recordedVersion())->toBe('0.2.0')
+        ->and($state->recordedCommit())->toBe('archived')
+        // Unknown on purpose: what this restored database still owed is recorded
+        // nowhere, so the whole published history goes back into scope.
+        ->and($state->satisfiedThroughRecorded())->toBeTrue()
+        ->and($state->satisfiedThrough())->toBeNull();
+});
+
+test('a restore from an archive that cannot say what it is forgets', function (): void {
+    // Guessing a version here would be inventing evidence. Forgetting routes to
+    // the unverifiable-floor refusal, which is safe and clearable.
+    bakeRelease(['actions' => []], '0.5.0');
+    $state = app(ReleaseState::class);
+    $state->record('0.5.0', 'current', satisfiedThrough: '0.5.0');
+
+    app(RestoreService::class)->recordRestoredRelease('unknown', null);
+
+    expect($state->recordedVersion())->toBeNull();
 });

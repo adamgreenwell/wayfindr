@@ -681,5 +681,27 @@ state_path() {
 check "the default when unset"   /app/apps/server/storage/app/release-state.json "$(state_path '')"
 check "a configured override"    /srv/wayfindr/state.json                        "$(state_path /srv/wayfindr/state.json)"
 
+# A floating alias is not a release. The image workflow publishes
+# `{{major}}.{{minor}}` and `latest` alongside the full version, so `0.3` is a
+# real published tag that names whatever 0.3.x was built last - and it parses as
+# no version at all, so the span comparisons go undecidable and the target
+# manifest's canonical `0.3.0` never equals it, skipping its floor entirely.
+names_one_release() {
+    WF_TO="$1" "${PHP:-php}" -r '
+        require getenv("APP")."/app/Support/Version/SemanticVersion.php";
+        $raw = trim((string) getenv("WF_TO"));
+        echo App\Support\Version\SemanticVersion::parse($raw) === null ? "NO" : "YES";
+    '
+}
+
+echo
+echo "only a full version names one release:"
+check "a full version"              YES "$(names_one_release 0.3.0)"
+check "a v-prefixed full version"   YES "$(names_one_release v0.3.0)"
+check "a prerelease"                YES "$(names_one_release 0.3.0-alpha.1)"
+check "a major.minor alias"         NO  "$(names_one_release 0.3)"
+check "latest"                      NO  "$(names_one_release latest)"
+check "nothing"                     NO  "$(names_one_release '')"
+
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

@@ -4,6 +4,7 @@ namespace App\Support\Backup;
 
 use App\Models\ConversationMessageAttachment;
 use App\Support\Attachments\AttachmentStorage;
+use App\Support\Release\ReleaseState;
 use App\Support\Settings\OperatorSettings;
 use App\Support\Version\SemanticVersion;
 use App\Support\Version\VersionComparator;
@@ -180,6 +181,15 @@ class RestoreService
                 $attachments['unconfigured'],
             );
 
+            // The database has just been replaced with an older one, and the
+            // release state lives on the volume rather than inside the dump — so
+            // it goes on claiming the release that was running. The documented
+            // next step is `artisan migrate --force`, which would then measure
+            // its floor and its span from a version this schema is not at:
+            // skipping intermediate requirements, or clearing a floor the
+            // restored ledger is now below.
+            $this->recordRestoredRelease($archiveVersion, $manifest['wayfindr_commit'] ?? null);
+
             return [
                 'manifest' => $manifest,
                 'archive_version' => $archiveVersion,
@@ -197,6 +207,44 @@ class RestoreService
         } finally {
             $this->removeDir($work);
         }
+    }
+
+    /**
+     * Point the release state at what was just restored.
+     *
+     * `satisfied_through` is deliberately left unknown rather than carried over.
+     * What this restored database still owed is recorded nowhere — the archive
+     * predates whatever the running install had done about it — so the whole
+     * published history goes back into scope, which is the conservative reading
+     * and the one the guard already has a name for.
+     *
+     * An archive that cannot say what it is gets forgotten instead. That routes
+     * to the unverifiable-floor refusal: safe, and clearable by stating the
+     * version rather than by guessing one here.
+     *
+     * Public so it can be exercised directly. Reaching it through restore()
+     * means standing up a full archive and a live database, which tests the
+     * extraction rather than the decision this makes.
+     */
+    public function recordRestoredRelease(string $archiveVersion, mixed $archiveCommit): void
+    {
+        $state = app(ReleaseState::class);
+
+        // Cleared first so the write cannot inherit the previous install's
+        // marker — `record()` preserves it when not given one, which is right
+        // for an upgrade and wrong for a database that has been replaced.
+        $state->forget();
+
+        $parsed = SemanticVersion::parse($archiveVersion);
+
+        if ($parsed === null) {
+            return;
+        }
+
+        $state->record(
+            $parsed->canonical(),
+            is_string($archiveCommit) && trim($archiveCommit) !== '' ? $archiveCommit : null,
+        );
     }
 
     /**

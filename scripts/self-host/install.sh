@@ -173,6 +173,24 @@ php_in_current_image() {
 # the image tag says. It reads its own state file, and that is the value its floor
 # check uses - so a preflight that predicts a different one predicts the wrong
 # outcome.
+# Whether a tag names one specific release, rather than a moving alias.
+#
+# The image workflow publishes `{{major}}.{{minor}}` and `latest` alongside the
+# full version, so `0.3` is a real published tag - and it parses as no version at
+# all. Left through, the span comparisons go undecidable and the target
+# manifest's canonical `0.3.0` never equals it, so its floor is never checked and
+# the pull proceeds against a release the preflight has not read.
+names_one_release() {
+    local answer
+    answer="$(php_in_current_image '
+        require "/app/apps/server/app/Support/Version/SemanticVersion.php";
+        $raw = trim((string) getenv("WF_TO"));
+        echo App\Support\Version\SemanticVersion::parse($raw) === null ? "NO" : "YES";
+    ' "WF_TO=$1")"
+
+    [ "$answer" = "YES" ]
+}
+
 # An operator-declared origin, held to the ARTIFACT's rule rather than the
 # looser one a recorded version gets.
 #
@@ -369,6 +387,17 @@ upgrade_preflight() {
 
     if [ -z "$to" ]; then
         say "Preflight skipped: no resolved release to check against."
+        return 0
+    fi
+
+    # Checked wherever the tag came from, override or resolved release, because
+    # `--ref v0.3` reaches the same place by a different road.
+    if ! names_one_release "$to"; then
+        say "Preflight skipped: \"$to\" names no one release."
+        printf '    Floating tags move, so there is no single declaration to read.\n'
+        printf '    Pin a full version to have this checked before pulling.\n'
+        printf '    The release enforces its own requirements when it starts.\n'
+
         return 0
     fi
 
