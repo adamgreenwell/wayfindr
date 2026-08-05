@@ -1313,13 +1313,28 @@ $onlynow" | grep -v '^$' | sort -u || true)"
 
     printf '  Nothing has been pulled or changed.\n'
 
+    # Both statements can be true at once, so neither may speak for "the steps
+    # above" as a whole. A refusal carrying a skipped-release step AND work the
+    # install can still do was telling the operator that acknowledging would not
+    # help - while the section directly above it told them to acknowledge - which
+    # sends someone holding a usable key through a rollback they do not need.
+    #
+    # Each is scoped by the label its own section printed.
+    local acknowledgeable
+    acknowledgeable="$(printf '%s\n' "$all_actions" | grep -E '^(DO|NOW)\|' || true)"
+
     if [ -n "$stranded" ]; then
-        printf '  Acknowledging will not help with the steps above: they are unreachable\n'
-        printf '  from this jump, not merely undone.\n\n'
-    else
-        printf '  Do the work, then add the entries above to WAYFINDR_ACKNOWLEDGED_ACTIONS\n'
-        printf '  in %s and run this again.\n\n' "$ENV_FILE"
+        printf '  The steps marked "must run on its own release" cannot be acknowledged:\n'
+        printf '  they are unreachable from this jump, not merely undone.\n'
     fi
+
+    if [ -n "$acknowledgeable" ]; then
+        [ -n "$stranded" ] && printf '\n  For the rest:\n'
+        printf '  Do the work, then add its entry to WAYFINDR_ACKNOWLEDGED_ACTIONS in\n'
+        printf '  %s and run this again.\n' "$ENV_FILE"
+    fi
+
+    printf '\n'
 
     exit 78
 }
