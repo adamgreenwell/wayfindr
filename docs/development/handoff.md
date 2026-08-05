@@ -1,6 +1,6 @@
 # Engineering Handoff & Roadmap
 
-*Living document — last updated July 21, 2026. For an agent (or engineer) picking up
+*Living document — last updated August 5, 2026. For an agent (or engineer) picking up
 Wayfindr development. Read this, then `docs/product/roadmap.md` and
 `docs/self-hosting/` for depth.*
 
@@ -111,10 +111,42 @@ real one-liner on an empty directory resolved and pinned the alpha, pulled
 from the public registry, booted healthy, and served `/setup` and
 `/widget.js`.
 
+**Operators configure Wayfindr in a browser, not a text editor (ADR 0011,
+July 28).** `/operator` now carries mail, attachment storage, malware scanning,
+and backups as GUI settings stored in the database, overriding env with no
+restart, plus a guided onboarding checklist as the landing page after `/setup`.
+The architecture fork the owner resolved is worth knowing: **DB-backed settings
+that override env**, not a GUI that rewrites `.env`. Backups got the full
+treatment — destination, retention, per-install prefix, run-on-demand, run
+history, and a confirmed in-GUI restore gated on a durability preflight that
+names the specific unmet prerequisite instead of failing vaguely. Live on stage,
+including a GUI-triggered backup completing end to end to real S3.
+
+**Releases now declare what they require of an operator, and the artifact
+enforces it (ADR 0012 + ADR 0013, August 3–5).** Versioning is SemVer where
+"major" means *the operator must do something beyond pulling the image* — pre-1.0
+the minor slot carries that role. Every install has a real release identity
+(`0.2.0-dev+<sha>` for source builds, baked for official images), versions
+compare in order rather than only for equality, and a release publishes a
+manifest naming each required action, its phase, and whether it is machine-
+checkable or must be attested. An install with unmet requirements **refuses to
+migrate** (exits before touching the schema, so the previous image still runs) or
+**refuses to serve** while keeping `/up` answering, depending on the phase. The
+finding that shaped it: enforcement cannot live in the installer, because an
+operator upgrading from an older release runs *their* installer, which has no
+preflight and cannot be given one — so the guarantee has to live in the artifact
+the upgrade actually fetches.
+
+**`v0.1.0` is released (August 5)** — the first stable release, and the first to
+publish a manifest. See §8.
+
 **Epics closed this cycle**: #4 (Chat UX Polish), #5 (Cobrowse Transport
 Discipline), #490 (Cobrowse Observe-Mode Fidelity), attachments (ADR 0007),
 agent UI density (#602–#605), break-glass (ADR 0008, #606–#611), unattended
-alerts (#613), self-hosting packaging + first release (#614–#616).
+alerts (#613), self-hosting packaging + first release (#614–#616), operator
+settings + guided onboarding (ADR 0011, #627–#634), backup remote-push
+(ADR 0010, #623/#624), external issue integrations (#22), platform versioning +
+upgrade enforcement (ADR 0012/0013, #635–#649).
 
 **Issue housekeeping is current.** #564 (launch proof) was reconciled and
 closed. #22's comment relay shipped and was live-validated; the issue remains
@@ -262,13 +294,27 @@ recommended against as specced).
 
 Ordered by real dogfood value and dependency, not feature novelty.
 
-1. **Operate the alpha.** Two feedback channels now exist: the dogfood
-   instance on stage and whoever runs the one-liner in the wild. Watch GitHub
-   issues from self-hosters, keep release notes honest, and cut `alpha.N`
-   tags freely — the upgrade path is one command and installs pin to
-   releases, so shipping small is cheap. The first stable `v0.1.0` should wait
-   until someone other than the owner has run an install and an upgrade
-   successfully.
+1. **Operate `v0.1.0`.** Two feedback channels exist: the dogfood instance on
+   stage and whoever runs the one-liner in the wild. Watch GitHub issues from
+   self-hosters, keep release notes honest, and cut releases freely — the upgrade
+   path is one command and installs pin to releases, so shipping small is cheap.
+
+   **Note a deliberate divergence from this document's earlier plan.** It said
+   the first stable `v0.1.0` should wait until someone other than the owner had
+   run an install *and an upgrade* successfully. That did not happen, and `0.1.0`
+   was cut anyway on August 5. The reasoning: two complete epics (ADR 0011,
+   ADR 0012/0013) had been sitting unreleased for two weeks, and the upgrade
+   guard could not be exercised on the path that matters — a real published
+   manifest, read by the installer preflight off a real release — until a release
+   published one. Alphas 1–3 predate the manifest format entirely. `0.1.0` was
+   also the safest possible first exercise, since ADR 0013 requires the first
+   enforcing release to declare nothing.
+
+   **So the unmet condition is still unmet, and it still matters**: no one but
+   the owner has run an install or an upgrade. The next genuinely new evidence is
+   a *third-party upgrade across a release boundary* — `0.1.0 → 0.2.0` — which is
+   the first time the guard, the preflight, and `minimum_upgrade_from` all run
+   against a stranger's install rather than a fixture.
 
 2. **Operate the real dogfood loop.** Route Wayfindr support through Wayfindr,
    keep synthetic smoke records distinguishable from real work, and let actual
@@ -382,3 +428,47 @@ Ordered by real dogfood value and dependency, not feature novelty.
 - Next: **operate the alpha** (§6.1) — dogfood on stage, watch for the first
   external self-hoster, cut `alpha.N` tags freely, and hold `v0.1.0` stable
   until an install + upgrade has succeeded in hands other than the owner's.
+  *(Superseded — see §9. `v0.1.0` was cut on August 5 without that condition
+  being met, deliberately and for stated reasons.)*
+
+---
+
+## 9. End-of-session snapshot — August 5, 2026 (v0.1.0 release day)
+
+- **`v0.1.0` is published** — the first *stable* release and the first to carry
+  a release manifest. Multi-arch image on GHCR (`0.1.0`, `0.1`, `latest`),
+  `release-manifest.json` attached to the GitHub Release, built from `121e62a`.
+- **`releases/latest` resolves for the first time.** Every prior release was
+  prerelease-marked, so that endpoint 404'd and installs reached the tag through
+  the installer's tags-API fallback. New installs now take the primary path.
+- **Clean-room validated against the published artifacts**: the real one-liner,
+  fetched fresh from `main`, in an empty directory — resolve → pin `v0.1.0` →
+  pull from the public registry → boot → healthy in 10s → `/setup` and
+  `/widget.js` both 200. The compose stack now brings up the `backup-queue`
+  worker itself, so the operator action in the changelog applies to host-managed
+  installs (Forge and similar), not to compose.
+- **The guard ran for real and recorded the right thing.** The image bakes
+  `v0.1.0` (the tag verbatim), and the install recorded
+  `{"version": "0.1.0", "satisfied_through": "0.1.0", "fresh_install": true}` —
+  canonicalised, and correctly classified as a fresh install rather than an
+  upgrade. Worth knowing: **the `v` prefix survives into `/etc/wayfindr/version`
+  and is canonicalised at every comparison point**, not at the source. That is
+  deliberate (`ReleaseManifest::build`, `ReleaseState::recordedVersion`,
+  `UpgradeGuard::declaredOrigin`), and `ReleaseManifestTest` pins it. Anything
+  new that compares versions must canonicalise too — raw `ReleaseIdentity::version()`
+  is a display string, not a comparison key.
+- Full server suite at the release commit: **1,620 tests / 9,198 assertions**,
+  1,620 collected and 1,620 executed (the counts are compared deliberately — an
+  `exit()` reachable from a test kills the runner and silently shrinks the run).
+- **Stage re-validated the same day at `7304c57`**: all four operator settings
+  surfaces, a GUI-triggered backup completing to real S3 in ~44s, ClamAV
+  reachability probe green, readiness 13/0/2.
+- **What is still unproven**: nobody outside the owner has run an install *or*
+  an upgrade. The clean room proves the artifacts are coherent; it does not prove
+  the upgrade path across a release boundary, because `0.1.0` is the first
+  release with a manifest and there is nothing above it yet. The first genuinely
+  new evidence is `0.1.0 → 0.2.0` (see §6.1).
+- Next: cut `0.2.0` when there is something to put in it, and use it to exercise
+  the guard's first *declared* requirement — the backups-queue-consumer check,
+  which `release.json`'s `_bootstrap` note describes and which is the reason that
+  requirement is still changelog prose rather than an enforced action.
