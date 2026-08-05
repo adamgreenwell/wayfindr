@@ -53,14 +53,24 @@ class QueueConsumerHeartbeat
     private const KEY_PREFIX = 'wayfindr:queue-consumer:';
 
     /**
-     * How long a recorded sighting stays readable.
+     * The shortest a recorded sighting stays readable.
      *
-     * This is the storage lifetime, not the freshness rule — callers decide how
-     * recent is recent enough by passing a window to `seenWithin()`. It only has
-     * to outlive the longest window any caller uses, so the retention is
-     * deliberately generous.
+     * Storage lifetime, not the freshness rule — callers decide how recent is
+     * recent enough via `seenWithin()`. It only has to OUTLIVE the window being
+     * asked about, which is why the effective retention is derived from that
+     * window rather than fixed here: `retry_after` is operator-configurable
+     * (`BACKUP_QUEUE_RETRY_AFTER`, `WAYFINDR_BACKUP_JOB_TIMEOUT`) and a very
+     * large backup can legitimately push it past a day. Expiring the sighting
+     * before the window closed would report "no worker" for a worker that is
+     * still mid-backup.
      */
-    private const RETENTION_SECONDS = 86400;
+    private const RETENTION_FLOOR_SECONDS = 86400;
+
+    /**
+     * The freshness window when a connection names no usable `retry_after`.
+     * An hour matches the default backup job timeout.
+     */
+    private const DEFAULT_WINDOW_SECONDS = 3600;
 
     /**
      * The last moment each queue was written, per process.
@@ -97,6 +107,31 @@ class QueueConsumerHeartbeat
         } catch (Throwable) {
             // Recording is best-effort; the worker's job is to work.
         }
+    }
+
+    /**
+     * How long a worker on this connection may go unseen and still count.
+     *
+     * ONE definition, deliberately. The guard's check and the backups page both
+     * ask this question, and a page applying a different freshness rule from the
+     * check would tell the operator everything was fine while the check recorded
+     * the requirement as unmet — or the reverse.
+     *
+     * A worker announces itself as it loops and as each job starts, but not
+     * during a job, and the backups worker runs with `--timeout=3600`, so one
+     * legitimate backup can occupy it for an hour in silence. `retry_after` is
+     * already this install's answer to "the longest a job may hold the worker
+     * before the queue gives up on it", so it is the bound that is true by
+     * construction rather than a number chosen to feel safe.
+     */
+    public function windowSecondsFor(string $connection): int
+    {
+        /** @var mixed $retryAfter */
+        $retryAfter = config("queue.connections.{$connection}.retry_after");
+
+        $window = is_numeric($retryAfter) ? (int) $retryAfter : 0;
+
+        return $window > 0 ? $window : self::DEFAULT_WINDOW_SECONDS;
     }
 
     /** A worker was seen; `at` carries when. */
@@ -233,11 +268,24 @@ class QueueConsumerHeartbeat
             return;
         }
 
-        Cache::put($key, CarbonImmutable::now()->getTimestamp(), self::RETENTION_SECONDS);
+        Cache::put($key, CarbonImmutable::now()->getTimestamp(), $this->retentionFor($connection));
 
         // Only after a successful write, so a throwing cache retries next loop
         // instead of being throttled out for the next throttle window.
         $this->lastWriteAt[$key] = $now;
+    }
+
+    /**
+     * How long to keep a sighting readable on this connection.
+     *
+     * Must outlive the window anyone asks about, or the answer flips to "no
+     * worker" purely because the record expired. Doubling the window leaves
+     * room for a caller asking about exactly it, and the floor keeps ordinary
+     * connections on a full day rather than a window-sized sliver.
+     */
+    private function retentionFor(string $connection): int
+    {
+        return max(self::RETENTION_FLOOR_SECONDS, $this->windowSecondsFor($connection) * 2);
     }
 
     /**

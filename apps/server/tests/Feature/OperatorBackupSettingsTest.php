@@ -1361,3 +1361,39 @@ test('the backups page does not claim "no worker" when the heartbeat is unreadab
         ->assertDontSee('No worker has been seen on the backups queue.')
         ->assertSee('Cannot tell');
 });
+
+test('the backups page warns when the worker sighting has gone stale', function (): void {
+    // A worker that ran once and stopped leaves a readable record. Treating
+    // ever-seen as healthy would stay silent while "Run a backup now" queued
+    // jobs nothing would pick up -- the exact failure the notice prevents.
+    config()->set('cache.default', 'file');
+    config()->set('queue.connections.backups.retry_after', 3900);
+    Cache::store('file')->clear();
+
+    app(QueueConsumerHeartbeat::class)->record('backups', 'backups');
+
+    $this->travel(3)->hours();
+
+    $this->actingAs(backupOperator())
+        ->get(route('operator.settings.backups.edit'))
+        ->assertOk()
+        ->assertSee('No worker has been seen on the backups queue since');
+
+    $this->travelBack();
+});
+
+test('the remediation command names the configured backup queue', function (): void {
+    // BACKUP_QUEUE can move the backups queue off its default. A hard-coded
+    // --queue=backups would tell that operator to drain a queue nothing
+    // dispatches to, leaving backups queued forever after they did as told.
+    config()->set('cache.default', 'file');
+    config()->set('queue.connections.backups.queue', 'wayfindr-backups');
+    config()->set('wayfindr.backup.job_timeout', 7200);
+    Cache::store('file')->clear();
+
+    $this->actingAs(backupOperator())
+        ->get(route('operator.settings.backups.edit'))
+        ->assertOk()
+        ->assertSee('--queue=wayfindr-backups', escape: false)
+        ->assertSee('--timeout=7200', escape: false);
+});

@@ -28,20 +28,31 @@
             </form>
         </div>
 
-        @if ($worker['state'] === \App\Support\Queue\QueueConsumerHeartbeat::NONE)
-            {{-- Only shown when the absence is real. If the cache cannot carry a
+        @if ($worker['state'] === \App\Support\Queue\QueueConsumerHeartbeat::NONE || $worker['stale'])
+            {{-- Shown only when the absence is real. If the cache cannot carry a
                  signal between processes, or could not be read at all, a worker
                  could be running perfectly and still be invisible here — so the
                  state is checked rather than the timestamp, and saying "none"
-                 stays a fact rather than a guess. --}}
+                 stays a fact rather than a guess.
+
+                 A stale sighting counts as absent: a worker that ran once and
+                 stopped leaves its record readable, and treating ever-seen as
+                 healthy would stay silent while "Run a backup now" queued jobs
+                 nothing would pick up. --}}
             <div class="notice-copy notice-copy-bordered">
-                <p><strong>No worker has been seen on the backups queue.</strong>
-                Queuing a backup will record a run that stays at <em>Running</em>
+                @if ($worker['stale'])
+                    <p><strong>No worker has been seen on the backups queue since
+                    {{ $worker['at']?->diffForHumans() }}.</strong> One was running
+                    before, so it has most likely stopped.</p>
+                @else
+                    <p><strong>No worker has been seen on the backups queue.</strong></p>
+                @endif
+                <p>Queuing a backup will record a run that stays at <em>Running</em>
                 indefinitely, because nothing will pick it up. Scheduled backups
                 are unaffected.</p>
                 <p>Compose stacks run this worker automatically. On Forge or any
                 host-managed install, add a second worker:</p>
-                <pre><code>php artisan queue:work backups --queue=backups --sleep=5 --tries=1 --timeout=3600</code></pre>
+                <pre><code>php artisan queue:work backups --queue={{ $worker['queue'] }} --sleep=5 --tries=1 --timeout={{ $worker['timeout'] }}</code></pre>
             </div>
         @endif
 
@@ -52,7 +63,7 @@
                     <span class="meta-value">
                         @switch($worker['state'])
                             @case(\App\Support\Queue\QueueConsumerHeartbeat::SEEN)
-                                Seen {{ $worker['at']?->diffForHumans() }}
+                                {{ $worker['stale'] ? 'Last seen' : 'Seen' }} {{ $worker['at']?->diffForHumans() }}
                                 @break
                             @case(\App\Support\Queue\QueueConsumerHeartbeat::NONE)
                                 None seen

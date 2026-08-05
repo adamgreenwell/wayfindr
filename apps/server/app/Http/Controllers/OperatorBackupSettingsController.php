@@ -675,17 +675,42 @@ class OperatorBackupSettingsController extends Controller
      * Collapsing those would put a confident "no worker" in front of an operator
      * whose worker is fine.
      *
-     * @return array{state: string, at: ?CarbonImmutable}
+     * `stale` applies the CHECK's freshness window, not a separate one. A worker
+     * seen once and then stopped stays readable until its record expires, so
+     * ever-seen-versus-never-seen would suppress the warning for a worker that
+     * died hours ago — and "Run a backup now" would still queue a job with no
+     * consumer, the exact failure the warning exists to prevent.
+     *
+     * `queue` is the CONFIGURED queue name, because the remediation command is
+     * built from it. `BACKUP_QUEUE` can move the backups queue off its default,
+     * and a hard-coded `--queue=backups` would tell that operator to start a
+     * worker draining a queue nothing dispatches to — leaving backups queued
+     * forever after they did exactly as they were told.
+     *
+     * @return array{state: string, at: ?CarbonImmutable, stale: bool, queue: string, timeout: int}
      */
     private function workerObservation(): array
     {
-        /** @var mixed $queue */
-        $queue = config('queue.connections.backups.queue');
+        $heartbeat = app(QueueConsumerHeartbeat::class);
 
-        return app(QueueConsumerHeartbeat::class)->observe(
-            'backups',
-            is_string($queue) ? $queue : null,
-        );
+        /** @var mixed $configured */
+        $configured = config('queue.connections.backups.queue');
+        $queue = is_string($configured) && trim($configured) !== '' ? trim($configured) : 'backups';
+
+        $observation = $heartbeat->observe('backups', $queue);
+        $at = $observation['at'];
+
+        /** @var mixed $timeout */
+        $timeout = config('wayfindr.backup.job_timeout');
+
+        return [
+            'state' => $observation['state'],
+            'at' => $at,
+            'stale' => $at !== null && $at->getTimestamp()
+                < CarbonImmutable::now()->getTimestamp() - $heartbeat->windowSecondsFor('backups'),
+            'queue' => $queue,
+            'timeout' => is_numeric($timeout) && (int) $timeout > 0 ? (int) $timeout : 3600,
+        ];
     }
 
     private function restoreStatus(): ?array

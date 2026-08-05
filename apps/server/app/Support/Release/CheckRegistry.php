@@ -47,46 +47,21 @@ final class CheckRegistry
                 /** @var mixed $queue */
                 $queue = $connection['queue'] ?? null;
 
-                return app(QueueConsumerHeartbeat::class)->seenWithin(
+                $heartbeat = app(QueueConsumerHeartbeat::class);
+
+                return $heartbeat->seenWithin(
                     'backups',
                     is_string($queue) ? $queue : null,
-                    self::backupsWindowSeconds($connection),
+                    // The window lives on the heartbeat so the backups page
+                    // applies the same freshness rule. Two copies would let the
+                    // page call a worker healthy while the check called the
+                    // requirement unmet.
+                    $heartbeat->windowSecondsFor('backups'),
                 );
             } catch (Throwable) {
                 return null;
             }
         });
-    }
-
-    /**
-     * How long a backups worker may go unseen and still count as present.
-     *
-     * A worker announces itself as it loops and as each job starts, but not
-     * during a job — and the backups worker runs with `--timeout=3600`, so one
-     * legitimate backup can occupy it for an hour in silence. Asking "seen in
-     * the last minute" would therefore report "no worker" most reliably while a
-     * backup was actually running.
-     *
-     * `retry_after` is already this install's answer to "the longest a job may
-     * hold the worker before the queue gives up on it", so it is the bound that
-     * is true by construction rather than a number chosen to feel safe. The
-     * consequence — a worker stopped an hour ago still reads as present — is
-     * the right way round for this question. The check asks whether the operator
-     * set the worker up, not whether it is alive this instant; the backups page
-     * shows the actual last-seen time for that.
-     *
-     * @param  array<mixed>  $connection
-     */
-    private static function backupsWindowSeconds(array $connection): int
-    {
-        /** @var mixed $retryAfter */
-        $retryAfter = $connection['retry_after'] ?? null;
-
-        $window = is_numeric($retryAfter) ? (int) $retryAfter : 0;
-
-        // A connection with no usable retry_after still needs a bound. An hour
-        // matches the default backup job timeout.
-        return $window > 0 ? $window : 3600;
     }
 
     /**

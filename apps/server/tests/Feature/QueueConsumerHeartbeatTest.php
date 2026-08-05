@@ -194,3 +194,30 @@ describe('the backups-queue-consumer check', function (): void {
         CarbonImmutable::setTestNow();
     });
 });
+
+it('keeps a sighting readable for longer than the window asked about', function (): void {
+    // A very large backup can push retry_after past a day via
+    // BACKUP_QUEUE_RETRY_AFTER / WAYFINDR_BACKUP_JOB_TIMEOUT. A fixed 24h
+    // retention would expire the sighting while the worker was still legally
+    // mid-job, reporting "no worker" for a worker that is right there.
+    config()->set('queue.connections.backups.retry_after', 172800); // 48h
+
+    $heartbeat = new QueueConsumerHeartbeat;
+    $heartbeat->record('backups', 'backups');
+
+    CarbonImmutable::setTestNow(CarbonImmutable::now()->addHours(30));
+
+    expect($heartbeat->seenWithin('backups', 'backups', 172800))->toBeTrue();
+
+    CarbonImmutable::setTestNow();
+});
+
+it('derives the freshness window from the connection, for every caller', function (): void {
+    // One definition. A page applying a different rule from the check would
+    // call a worker healthy while the check called the requirement unmet.
+    config()->set('queue.connections.backups.retry_after', 3900);
+    expect((new QueueConsumerHeartbeat)->windowSecondsFor('backups'))->toBe(3900);
+
+    config()->set('queue.connections.backups.retry_after', null);
+    expect((new QueueConsumerHeartbeat)->windowSecondsFor('backups'))->toBe(3600);
+});
