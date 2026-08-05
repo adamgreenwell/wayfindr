@@ -221,3 +221,48 @@ it('derives the freshness window from the connection, for every caller', functio
     config()->set('queue.connections.backups.retry_after', null);
     expect((new QueueConsumerHeartbeat)->windowSecondsFor('backups'))->toBe(3600);
 });
+
+it('writes and reads the pinned member of a failover chain', function (): void {
+    config()->set('cache.default', 'failover');
+    config()->set('cache.stores.failover', ['driver' => 'failover', 'stores' => ['file', 'array']]);
+    Cache::store('file')->clear();
+
+    $heartbeat = new QueueConsumerHeartbeat;
+    $heartbeat->record('backups', 'backups');
+
+    // Landed in the shared member specifically, not wherever the chain went.
+    expect(Cache::store('file')->get('wayfindr:queue-consumer:backups:backups'))->not->toBeNull()
+        ->and($heartbeat->seenWithin('backups', 'backups', 60))->toBeTrue();
+});
+
+it('does not silently fall through to the array member when the shared one is down', function (): void {
+    // The failure this prevents. Laravel's failover store uses the first member
+    // whose operation SUCCEEDS -- it does not write through the chain -- and
+    // this repo's chain ends in `array`. Going through the facade, a worker
+    // with the shared member down writes its sighting into its OWN
+    // process-local array, the web process reads an empty one, and the page
+    // confidently tells the operator to add a worker that is running fine.
+    //
+    // Pinned to the shared member, the write and the read both fail instead,
+    // which is UNKNOWN -- the truth. The array fallback is never mistaken for
+    // a channel between processes.
+    config()->set('cache.default', 'failover');
+    config()->set('cache.stores.failover', ['driver' => 'failover', 'stores' => ['redis', 'array']]);
+    config()->set('cache.stores.redis', ['driver' => 'redis', 'connection' => 'nonexistent-connection']);
+
+    $heartbeat = new QueueConsumerHeartbeat;
+    $heartbeat->record('backups', 'backups');
+
+    expect($heartbeat->observe('backups', 'backups')['state'])->toBe(QueueConsumerHeartbeat::UNKNOWN)
+        ->and($heartbeat->seenWithin('backups', 'backups', 60))->toBeNull();
+});
+
+it('cannot observe when every failover member is process-local', function (): void {
+    config()->set('cache.default', 'failover');
+    config()->set('cache.stores.failover', ['driver' => 'failover', 'stores' => ['array', 'null']]);
+
+    $heartbeat = new QueueConsumerHeartbeat;
+
+    expect($heartbeat->canObserve())->toBeFalse()
+        ->and($heartbeat->observe('backups', 'backups')['state'])->toBe(QueueConsumerHeartbeat::UNKNOWN);
+});

@@ -161,16 +161,19 @@ class QueueConsumerHeartbeat
      */
     public function observe(string $connection, ?string $queue): array
     {
-        if (! $this->canObserve()) {
+        $store = $this->targetStore();
+
+        if ($store === null) {
             return ['state' => self::UNKNOWN, 'at' => null];
         }
 
         try {
             $latest = null;
+            $cache = Cache::store($store);
 
             foreach ($this->queueNames($connection, $queue) as $name) {
                 /** @var mixed $stamp */
-                $stamp = Cache::get($this->key($connection, $name));
+                $stamp = $cache->get($this->key($connection, $name));
 
                 if (! is_int($stamp) && ! (is_string($stamp) && ctype_digit($stamp))) {
                     continue;
@@ -232,25 +235,43 @@ class QueueConsumerHeartbeat
      */
     public function canObserve(): bool
     {
+        return $this->targetStore() !== null;
+    }
+
+    /**
+     * The concrete store this heartbeat reads and writes, or null if none can
+     * carry a signal between processes.
+     *
+     * Named explicitly rather than left to `cache.default`, because a failover
+     * chain would otherwise make the answer depend on which member happened to
+     * serve each call. Laravel's failover store uses the first member whose
+     * operation SUCCEEDS — it does not write through the chain — and this
+     * repo's chain ends in `array`. So with the shared member down, the worker
+     * would write a sighting into its own process-local array while the web
+     * process read an empty one, and report a confident "no worker" for a
+     * worker that is running fine.
+     *
+     * Pinning to one member removes the ambiguity in both directions: while it
+     * is up, both processes agree; when it is down, the read throws and the
+     * answer is UNKNOWN, which is the truth.
+     */
+    private function targetStore(): ?string
+    {
         try {
             $default = (string) config('cache.default', 'file');
 
             foreach ($this->storeMembers($default) as $name) {
                 /** @var mixed $driver */
                 $driver = config("cache.stores.{$name}.driver");
-                $driver = is_string($driver) ? $driver : null;
 
-                // One shareable member is enough: a failover chain writes
-                // through to whichever store is up, and a chain containing a
-                // real backing store can carry the signal.
-                if (! in_array($driver, self::UNSHAREABLE_DRIVERS, true)) {
-                    return true;
+                if (! in_array(is_string($driver) ? $driver : null, self::UNSHAREABLE_DRIVERS, true)) {
+                    return $name;
                 }
             }
 
-            return false;
+            return null;
         } catch (Throwable) {
-            return false;
+            return null;
         }
     }
 
@@ -263,12 +284,19 @@ class QueueConsumerHeartbeat
             return;
         }
 
-        if (! $this->canObserve()) {
+        $store = $this->targetStore();
+
+        if ($store === null) {
             // Nothing could read it back. Skip the write rather than spend it.
             return;
         }
 
-        Cache::put($key, CarbonImmutable::now()->getTimestamp(), $this->retentionFor($connection));
+        // The same pinned store the reader will consult — see targetStore().
+        Cache::store($store)->put(
+            $key,
+            CarbonImmutable::now()->getTimestamp(),
+            $this->retentionFor($connection),
+        );
 
         // Only after a successful write, so a throwing cache retries next loop
         // instead of being throttled out for the next throttle window.
