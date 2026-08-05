@@ -30,6 +30,13 @@ missed while skimming.
 
 ## [Unreleased]
 
+*Nothing yet.*
+
+## [0.1.0] - 2026-08-05
+
+The first stable release. `v0.1.0-alpha.1` through `v0.1.0-alpha.3` were
+prereleases of this same version; everything below landed after `alpha.3`.
+
 **⚠ Requires operator action.** Running backups from the operator GUI needs a
 **second queue worker** on the dedicated `backups` connection. Without it the
 "Run a backup now" button queues jobs nothing will ever process, and the run sits
@@ -40,6 +47,18 @@ at *Running* indefinitely. Scheduled backups are unaffected.
 # On Forge or any host-managed setup, add a second worker:
 php artisan queue:work backups --queue=backups --sleep=5 --tries=1 --timeout=3600
 ```
+
+One thing to expect if you check both: this release's *machine-readable* manifest
+declares no required actions, so the upgrade guard below will not stop you and
+the installer will not warn you. That is deliberate rather than a contradiction.
+The guard can only enforce what it can evaluate, and a "does the backups queue
+have a consumer" check does not exist yet. Declaring it as an operator
+attestation instead would make every operator acknowledge it by hand — a weaker
+signal than this paragraph, since an attestation proves only that someone typed
+something. The requirement is real; this release states it rather than enforces
+it. It is also why the first enforcing release deliberately requires nothing of
+its own: a release that refused traffic the moment it landed would punish
+installs that were already doing the right thing.
 
 ### Added
 
@@ -57,7 +76,38 @@ php artisan queue:work backups --queue=backups --sleep=5 --tries=1 --timeout=360
   worker described above; without it those runs never start. The in-GUI restore
   additionally requires a Redis-backed queue, cache, and maintenance state — where
   that is not met, the page explains why and points to the CLI (ADR 0011).
-
+- Releases can now declare what they require of an operator, and the install
+  enforces the declaration (ADR 0013). A release publishes a manifest naming each
+  required action, when it has to happen relative to the upgrade, and whether the
+  platform can verify it or the operator has to attest to it.
+- **An install with unmet requirements refuses to migrate.** `migrate` stops
+  before touching the schema, names the release, the action, and the exact
+  command, and exits non-zero — so the previous image is still runnable and the
+  recovery is to complete the action or restart the old tag. Requirements that
+  can only be carried out once the new code is live gate **serving** instead: the
+  app starts, keeps answering `/up` so health checks and load balancers behave,
+  and refuses other traffic until they are met. Blocking migration on those would
+  withhold the very state they need and could never be satisfied.
+- Enforcement lives in the artifact, not the installer. An operator upgrading
+  from an older release runs *their* installer, which has no preflight and cannot
+  be given one — so a guarantee that lived there would not bind the upgrades that
+  need it most.
+- `install.sh` additionally refuses **before pulling** when it can read the target
+  release's manifest. Some actions have to be performed while the old release is
+  still live, and that is the only moment they can still be honoured; afterwards
+  the artifact can report the problem but not give the moment back.
+- A release can declare the oldest version it will upgrade from, and refuse a
+  jump that skips a release whose required action cannot be performed after the
+  fact.
+- Attested actions are acknowledged one at a time, naming the release and the
+  action — `WAYFINDR_ACKNOWLEDGED_ACTIONS=0.2.0/backups-worker` — so an
+  acknowledgement can never become a blanket opt-out. It lives in the environment
+  because the guard runs before migration, when the schema is still the old
+  release's.
+- Versions now compare in order rather than only for equality, so guidance that
+  depends on which install is newer — restore's schema-skew warning most of all —
+  can say which way the mismatch runs instead of hedging both directions
+  (ADR 0012).
 - Every install now carries a release identity — official images bake theirs at
   build time, source builds derive one from the `VERSION` file, and `WAYFINDR_VERSION`
   and `WAYFINDR_COMMIT` override both. Backup archives record the version and the
@@ -81,10 +131,14 @@ php artisan queue:work backups --queue=backups --sleep=5 --tries=1 --timeout=360
   keeps the site in maintenance for the operator to check.
 - The Forge identity snippet no longer aborts untagged deploys, replaces the
   `.env` symlink with a detached copy, or reports every clean zero-downtime
-  release as a modified tree. This only affects operators tracking `main` who
-  copied the snippet before this release — no published release contained it. If
-  a deploy warns that `.env` is a regular file, follow *Repairing a detached
-  environment file* in the Forge guide.
+  release as a modified tree. It also now *adds* the identity keys when `.env`
+  lacks them, rather than substituting into lines that are not there and silently
+  leaving the identity on its fallback; and it stays ASCII, because the snippet is
+  pasted into a browser editor and a mangled character inside a quoted string
+  ends the string early and fails the deploy somewhere else entirely. This only
+  affects operators tracking `main` who copied the snippet before this release —
+  no published release contained it. If a deploy warns that `.env` is a regular
+  file, follow *Repairing a detached environment file* in the Forge guide.
 
 ---
 
@@ -93,5 +147,5 @@ Releases before this changelog — `v0.1.0-alpha.1` through `v0.1.0-alpha.3`
 builds, and their history lives in the git tags and commit log. This changelog
 starts fresh rather than backfilling entries after the fact; the gap is
 deliberate, not an absence of changes. Everything merged *after* `alpha.3` is
-recorded under **Unreleased** above, so an operator upgrading from it still gets
-the full picture.
+recorded under **0.1.0** above, so an operator upgrading from it still gets the
+full picture.
