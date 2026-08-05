@@ -1335,3 +1335,29 @@ test('the backups page says "cannot tell" rather than claiming no worker', funct
         ->assertOk()
         ->assertDontSee('No worker has been seen on the backups queue.');
 });
+
+test('the backups page does not claim "no worker" when the heartbeat is unreadable', function (): void {
+    // A configured-but-unreachable cache must not produce a confident "add a
+    // worker" for an operator whose worker is running fine.
+    //
+    // The unreadable state is injected rather than produced by pointing the
+    // cache at a dead server: OperatorSettings reads the cache too, so a broken
+    // store 500s this page long before the worker panel renders. That is a real
+    // (and separate) fragility, but it makes the global approach test the error
+    // page instead of this branch.
+    app()->instance(QueueConsumerHeartbeat::class, new class extends QueueConsumerHeartbeat
+    {
+        public function observe(string $connection, ?string $queue): array
+        {
+            return ['state' => self::UNKNOWN, 'at' => null];
+        }
+    });
+
+    BackupRun::query()->create(['status' => BackupRun::STATUS_SUCCEEDED, 'started_at' => now()]);
+
+    $this->actingAs(backupOperator())
+        ->get(route('operator.settings.backups.edit'))
+        ->assertOk()
+        ->assertDontSee('No worker has been seen on the backups queue.')
+        ->assertSee('Cannot tell');
+});

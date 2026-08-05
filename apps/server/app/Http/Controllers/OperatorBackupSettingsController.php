@@ -78,8 +78,7 @@ class OperatorBackupSettingsController extends Controller
             // the only symptom is a run that says "Running" forever — so the
             // page says so up front rather than leaving the operator to infer it
             // from a backup that never finishes.
-            'workerLastSeenAt' => $this->workerLastSeenAt(),
-            'workerObservable' => app(QueueConsumerHeartbeat::class)->canObserve(),
+            'worker' => $this->workerObservation(),
             // The restore outcome lives in the cache (a restore wipes the DB), so
             // the operator sees it here after the restore logs them out and they
             // log back in.
@@ -663,21 +662,27 @@ class OperatorBackupSettingsController extends Controller
      * @return array<string, mixed>|null
      */
     /**
-     * When a worker was last seen consuming the backups queue.
+     * What can be said about a worker on the backups queue.
      *
-     * Deliberately a timestamp rather than a yes/no. The upgrade guard's check
-     * uses a window wide enough to span one legal backup job (an hour), which is
-     * the right bound for "did the operator set the worker up" but far too loose
+     * Carries the last-seen time rather than a yes/no, because the guard's check
+     * uses a window wide enough to span one legal backup job (an hour). That is
+     * the right bound for "did the operator set the worker up" and far too loose
      * for a human reading a page — "seen 55 minutes ago" and "seen 3 seconds
-     * ago" both satisfy the check, and only one of them means the worker is
-     * running now. Showing the time lets the operator judge.
+     * ago" both satisfy the check, and only one means the worker is running now.
+     *
+     * The state comes through unflattened so the page can distinguish "nothing
+     * is consuming this queue" from "the cache is down and nothing can be told".
+     * Collapsing those would put a confident "no worker" in front of an operator
+     * whose worker is fine.
+     *
+     * @return array{state: string, at: ?CarbonImmutable}
      */
-    private function workerLastSeenAt(): ?CarbonImmutable
+    private function workerObservation(): array
     {
         /** @var mixed $queue */
         $queue = config('queue.connections.backups.queue');
 
-        return app(QueueConsumerHeartbeat::class)->lastSeenAt(
+        return app(QueueConsumerHeartbeat::class)->observe(
             'backups',
             is_string($queue) ? $queue : null,
         );

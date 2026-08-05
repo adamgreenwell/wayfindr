@@ -28,11 +28,12 @@
             </form>
         </div>
 
-        @if ($workerObservable && ! $workerLastSeenAt)
-            {{-- Only shown when the absence is real. If the cache store cannot
-                 carry a signal between processes, a worker could be running
-                 perfectly and still be invisible here, so saying "none" would
-                 be a guess presented as a fact. --}}
+        @if ($worker['state'] === \App\Support\Queue\QueueConsumerHeartbeat::NONE)
+            {{-- Only shown when the absence is real. If the cache cannot carry a
+                 signal between processes, or could not be read at all, a worker
+                 could be running perfectly and still be invisible here — so the
+                 state is checked rather than the timestamp, and saying "none"
+                 stays a fact rather than a guess. --}}
             <div class="notice-copy notice-copy-bordered">
                 <p><strong>No worker has been seen on the backups queue.</strong>
                 Queuing a backup will record a run that stays at <em>Running</em>
@@ -49,13 +50,16 @@
                 <div class="meta-item">
                     <span class="meta-label">Queue worker</span>
                     <span class="meta-value">
-                        @if (! $workerObservable)
-                            Cannot tell
-                        @elseif ($workerLastSeenAt)
-                            Seen {{ $workerLastSeenAt->diffForHumans() }}
-                        @else
-                            None seen
-                        @endif
+                        @switch($worker['state'])
+                            @case(\App\Support\Queue\QueueConsumerHeartbeat::SEEN)
+                                Seen {{ $worker['at']?->diffForHumans() }}
+                                @break
+                            @case(\App\Support\Queue\QueueConsumerHeartbeat::NONE)
+                                None seen
+                                @break
+                            @default
+                                Cannot tell
+                        @endswitch
                     </span>
                 </div>
                 <div class="meta-item">

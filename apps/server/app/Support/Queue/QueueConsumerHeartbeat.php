@@ -99,39 +99,41 @@ class QueueConsumerHeartbeat
         }
     }
 
+    /** A worker was seen; `at` carries when. */
+    public const SEEN = 'seen';
+
+    /** The store was read successfully and holds no sighting. */
+    public const NONE = 'none';
+
+    /** The store could not be consulted, so nothing at all was demonstrated. */
+    public const UNKNOWN = 'unknown';
+
     /**
-     * Was a worker observed on this queue within the last `$seconds`?
+     * What this install can actually say about a worker on this queue.
      *
-     * Returns null when the signal cannot travel between processes here, which
-     * is not the same as no worker and must not be reported as one.
+     * The three states exist because two different failures both produce "no
+     * timestamp", and conflating them blames the operator for the wrong thing:
+     *
+     * - the store cannot carry the signal, or could not be read at all → UNKNOWN
+     * - the store answered, and holds nothing → NONE
+     *
+     * A configured-but-unreachable Redis is the case that makes this matter.
+     * Deciding from configuration alone would call that NONE, and tell an
+     * operator to add a backups worker they are already running, when the only
+     * demonstrated problem is that the cache is down.
+     *
+     * @return array{state: self::SEEN|self::NONE|self::UNKNOWN, at: ?CarbonImmutable}
      */
-    public function seenWithin(string $connection, ?string $queue, int $seconds): ?bool
-    {
-        $seenAt = $this->lastSeenAt($connection, $queue);
-
-        if ($seenAt === null) {
-            return $this->canObserve() ? false : null;
-        }
-
-        return $seenAt->getTimestamp() >= CarbonImmutable::now()->getTimestamp() - $seconds;
-    }
-
-    /**
-     * When a worker was last observed on this queue, or null if never (or if
-     * this install cannot carry the signal — call `canObserve()` to tell those
-     * apart).
-     */
-    public function lastSeenAt(string $connection, ?string $queue): ?CarbonImmutable
+    public function observe(string $connection, ?string $queue): array
     {
         if (! $this->canObserve()) {
-            return null;
+            return ['state' => self::UNKNOWN, 'at' => null];
         }
 
         try {
-            $names = $this->queueNames($connection, $queue);
             $latest = null;
 
-            foreach ($names as $name) {
+            foreach ($this->queueNames($connection, $queue) as $name) {
                 /** @var mixed $stamp */
                 $stamp = Cache::get($this->key($connection, $name));
 
@@ -145,12 +147,49 @@ class QueueConsumerHeartbeat
                     $latest = $seen;
                 }
             }
-
-            return $latest;
         } catch (Throwable) {
-            // An unreachable cache has not demonstrated the absence of a worker.
+            // The read itself failed. An unreachable cache has not demonstrated
+            // the absence of a worker, and must not be reported as one.
+            return ['state' => self::UNKNOWN, 'at' => null];
+        }
+
+        return $latest === null
+            ? ['state' => self::NONE, 'at' => null]
+            : ['state' => self::SEEN, 'at' => $latest];
+    }
+
+    /**
+     * Was a worker observed on this queue within the last `$seconds`?
+     *
+     * Null whenever the question could not be answered — the signal cannot
+     * travel between processes here, or the store could not be read. Neither is
+     * the same as no worker.
+     */
+    public function seenWithin(string $connection, ?string $queue, int $seconds): ?bool
+    {
+        $observation = $this->observe($connection, $queue);
+
+        if ($observation['state'] === self::UNKNOWN) {
             return null;
         }
+
+        $seenAt = $observation['at'];
+
+        if ($seenAt === null) {
+            return false;
+        }
+
+        return $seenAt->getTimestamp() >= CarbonImmutable::now()->getTimestamp() - $seconds;
+    }
+
+    /**
+     * When a worker was last observed, or null if never — and also null when the
+     * question is unanswerable. Callers that must tell those apart should use
+     * `observe()`, which is why the backups page does.
+     */
+    public function lastSeenAt(string $connection, ?string $queue): ?CarbonImmutable
+    {
+        return $this->observe($connection, $queue)['at'];
     }
 
     /**

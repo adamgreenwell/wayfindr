@@ -51,6 +51,34 @@ it('reports null when a sighting could never travel between processes', function
         ->and($heartbeat->seenWithin('backups', 'backups', 60))->toBeNull();
 });
 
+it('reports null when a shareable store cannot actually be read', function (): void {
+    // The gap this closes: canObserve() reads CONFIGURATION, so a Redis that is
+    // configured but down looked shareable, the caught read error produced no
+    // timestamp, and that was reported as "no worker" — telling an operator to
+    // add a backups worker they are already running, when the only demonstrated
+    // problem is that the cache is down.
+    config()->set('cache.default', 'redis');
+    config()->set('cache.stores.redis', ['driver' => 'redis', 'connection' => 'nonexistent-connection']);
+
+    $heartbeat = new QueueConsumerHeartbeat;
+
+    expect($heartbeat->canObserve())->toBeTrue()
+        ->and($heartbeat->observe('backups', 'backups')['state'])
+        ->toBe(QueueConsumerHeartbeat::UNKNOWN)
+        ->and($heartbeat->seenWithin('backups', 'backups', 60))->toBeNull();
+});
+
+it('separates "read fine, nothing there" from "could not read"', function (): void {
+    $heartbeat = new QueueConsumerHeartbeat;
+
+    // The file store is reachable and empty: a real negative.
+    expect($heartbeat->observe('backups', 'backups')['state'])->toBe(QueueConsumerHeartbeat::NONE);
+
+    $heartbeat->record('backups', 'backups');
+
+    expect($heartbeat->observe('backups', 'backups')['state'])->toBe(QueueConsumerHeartbeat::SEEN);
+});
+
 it('does not count a sighting older than the window', function (): void {
     $heartbeat = new QueueConsumerHeartbeat;
 
