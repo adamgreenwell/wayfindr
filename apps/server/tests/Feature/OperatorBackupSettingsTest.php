@@ -16,6 +16,7 @@ use App\Support\Backup\BackupRunner;
 use App\Support\Backup\BackupService;
 use App\Support\Backup\PostgresDatabaseDumper;
 use App\Support\Backup\RestoreService;
+use App\Support\Queue\QueueConsumerHeartbeat;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Cache\Repository;
@@ -1296,4 +1297,103 @@ test('the backups settings page shows the latest restore status', function (): v
         ->assertOk()
         ->assertSee('Last restore: succeeded')
         ->assertSee('Operator Jane');
+});
+
+test('the backups page warns when nothing is consuming the queue', function (): void {
+    // The failure this replaces: the only symptom of a missing worker was a run
+    // stuck at "Running" forever, with nothing on the page saying why.
+    config()->set('cache.default', 'file');
+    Cache::store('file')->clear();
+
+    $this->actingAs(backupOperator())
+        ->get(route('operator.settings.backups.edit'))
+        ->assertOk()
+        ->assertSee('No worker has been seen on the backups queue.')
+        ->assertSee('queue:work backups --queue=backups', escape: false);
+});
+
+test('the backups page drops the warning once a worker announces itself', function (): void {
+    config()->set('cache.default', 'file');
+    Cache::store('file')->clear();
+
+    app(QueueConsumerHeartbeat::class)->record('backups', 'backups');
+
+    $this->actingAs(backupOperator())
+        ->get(route('operator.settings.backups.edit'))
+        ->assertOk()
+        ->assertDontSee('No worker has been seen on the backups queue.');
+});
+
+test('the backups page says "cannot tell" rather than claiming no worker', function (): void {
+    // An array store cannot carry a sighting between processes, so a worker
+    // could be running perfectly and still be invisible. Reporting "none" would
+    // present a guess as a fact and send the operator chasing a live worker.
+    config()->set('cache.default', 'array');
+
+    $this->actingAs(backupOperator())
+        ->get(route('operator.settings.backups.edit'))
+        ->assertOk()
+        ->assertDontSee('No worker has been seen on the backups queue.');
+});
+
+test('the backups page does not claim "no worker" when the heartbeat is unreadable', function (): void {
+    // A configured-but-unreachable cache must not produce a confident "add a
+    // worker" for an operator whose worker is running fine.
+    //
+    // The unreadable state is injected rather than produced by pointing the
+    // cache at a dead server: OperatorSettings reads the cache too, so a broken
+    // store 500s this page long before the worker panel renders. That is a real
+    // (and separate) fragility, but it makes the global approach test the error
+    // page instead of this branch.
+    app()->instance(QueueConsumerHeartbeat::class, new class extends QueueConsumerHeartbeat
+    {
+        public function observe(string $connection, ?string $queue): array
+        {
+            return ['state' => self::UNKNOWN, 'at' => null];
+        }
+    });
+
+    BackupRun::query()->create(['status' => BackupRun::STATUS_SUCCEEDED, 'started_at' => now()]);
+
+    $this->actingAs(backupOperator())
+        ->get(route('operator.settings.backups.edit'))
+        ->assertOk()
+        ->assertDontSee('No worker has been seen on the backups queue.')
+        ->assertSee('Cannot tell');
+});
+
+test('the backups page warns when the worker sighting has gone stale', function (): void {
+    // A worker that ran once and stopped leaves a readable record. Treating
+    // ever-seen as healthy would stay silent while "Run a backup now" queued
+    // jobs nothing would pick up -- the exact failure the notice prevents.
+    config()->set('cache.default', 'file');
+    config()->set('queue.connections.backups.retry_after', 3900);
+    Cache::store('file')->clear();
+
+    app(QueueConsumerHeartbeat::class)->record('backups', 'backups');
+
+    $this->travel(3)->hours();
+
+    $this->actingAs(backupOperator())
+        ->get(route('operator.settings.backups.edit'))
+        ->assertOk()
+        ->assertSee('No worker has been seen on the backups queue since');
+
+    $this->travelBack();
+});
+
+test('the remediation command names the configured backup queue', function (): void {
+    // BACKUP_QUEUE can move the backups queue off its default. A hard-coded
+    // --queue=backups would tell that operator to drain a queue nothing
+    // dispatches to, leaving backups queued forever after they did as told.
+    config()->set('cache.default', 'file');
+    config()->set('queue.connections.backups.queue', 'wayfindr-backups');
+    config()->set('wayfindr.backup.job_timeout', 7200);
+    Cache::store('file')->clear();
+
+    $this->actingAs(backupOperator())
+        ->get(route('operator.settings.backups.edit'))
+        ->assertOk()
+        ->assertSee('--queue=wayfindr-backups', escape: false)
+        ->assertSee('--timeout=7200', escape: false);
 });

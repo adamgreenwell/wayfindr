@@ -291,6 +291,32 @@ have it, and the artifact guard is the guarantee for everyone else.
   When changing the guard, the checklist is: which origin does this read, what
   does it do when that origin is unknown, and does the preflight now disagree?
 
+- **The only response this record defines is refusal, and some requirements are
+  worth reporting without being worth an outage.** Phases say *when* an action
+  can be performed, not how hard the answer should be, so declaring an action is
+  a choice between halting the migration and refusing traffic. Nothing lighter
+  exists.
+
+  The first requirement to meet this was the backups queue worker. Its check
+  (`backups-queue-consumer`) was built and works, and it was still deliberately
+  left undeclared: the only phase it could take is `after-start`, so an install
+  without a backups worker would have refused *all* traffic — the support
+  platform down because a backup worker was missing, on host-managed installs
+  only, whose operator would then have to edit `.env` and restart with their
+  site already down. The requirement is real, but the response available was not
+  proportionate to it.
+
+  It is reported where the operator actually meets it instead — the backups page
+  names the missing worker and what to run. That is the pattern to follow while
+  this gap stands: **a check may exist, and be useful, without its action being
+  declared.** The declaration is a separate decision about blast radius, not an
+  automatic consequence of the check becoming possible.
+
+  If a third response is ever added — advisory, say: surfaced on the operator
+  console and in the upgrade output, never blocking — this requirement is its
+  first candidate, and the `_bootstrap` note in `release.json` records why it is
+  waiting.
+
 ## Delivery slices
 
 1. **Release manifest** — the declaration format and builder, generated at build,

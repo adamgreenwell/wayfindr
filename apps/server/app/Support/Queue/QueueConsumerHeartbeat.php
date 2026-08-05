@@ -1,0 +1,362 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Support\Queue;
+
+use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Cache;
+use Throwable;
+
+/**
+ * Evidence that a worker is consuming a given queue (ADR 0013).
+ *
+ * Laravel's queue drivers keep no consumer registry — there is nothing to ask
+ * "is anyone working this queue". Queue depth cannot stand in for it either: an
+ * empty queue looks identical whether a worker is draining it or no worker
+ * exists and nothing has been enqueued. So the worker says so itself, and this
+ * records what it said.
+ *
+ * The answers are deliberately three-valued, because the difference between
+ * "no worker" and "no way to tell" is the whole point of a machine check:
+ *
+ *   true  — a worker was observed within the window
+ *   false — the channel works, and nothing was observed
+ *   null  — this install cannot carry the signal at all
+ *
+ * Null arises when the cache store cannot be seen by another process. The web
+ * process asks the question; the worker is a different process, usually a
+ * different container. An `array` store answers only within one request and a
+ * `null` store answers nothing, so a heartbeat written through either is
+ * invisible to the reader — and reporting "no worker" on that basis would
+ * blame the operator for a limitation of their cache configuration.
+ *
+ * Every other store (redis, memcached, database, file) is treated as shared.
+ * That is right for the installs that exist: compose mounts one
+ * `wayfindr-storage` volume across web and every worker, and a host-managed
+ * install runs them on one filesystem. A multi-server install with an unshared
+ * `file` cache would read as "no worker" — but such an install has already
+ * broken cached config, locks, and rate limiters, which the readiness cache
+ * check reports separately and far more loudly.
+ */
+class QueueConsumerHeartbeat
+{
+    /**
+     * Stores that cannot carry a signal from one process to another.
+     *
+     * `null` covers a store whose driver is absent from config entirely, which
+     * is unresolvable rather than non-persistent — either way it cannot be read
+     * back by anyone else.
+     */
+    private const UNSHAREABLE_DRIVERS = ['array', 'null', null];
+
+    private const KEY_PREFIX = 'wayfindr:queue-consumer:';
+
+    /**
+     * The shortest a recorded sighting stays readable.
+     *
+     * Storage lifetime, not the freshness rule — callers decide how recent is
+     * recent enough via `seenWithin()`. It only has to OUTLIVE the window being
+     * asked about, which is why the effective retention is derived from that
+     * window rather than fixed here: `retry_after` is operator-configurable
+     * (`BACKUP_QUEUE_RETRY_AFTER`, `WAYFINDR_BACKUP_JOB_TIMEOUT`) and a very
+     * large backup can legitimately push it past a day. Expiring the sighting
+     * before the window closed would report "no worker" for a worker that is
+     * still mid-backup.
+     */
+    private const RETENTION_FLOOR_SECONDS = 86400;
+
+    /**
+     * The freshness window when a connection names no usable `retry_after`.
+     * An hour matches the default backup job timeout.
+     */
+    private const DEFAULT_WINDOW_SECONDS = 3600;
+
+    /**
+     * The last moment each queue was written, per process.
+     *
+     * `Looping` fires on every poll of the worker loop, which for an idle worker
+     * is once per `--sleep` and for a busy one is between every job. Writing on
+     * each would be a pointless amount of cache traffic to answer a question
+     * nobody asks more than once a request.
+     *
+     * @var array<string, float>
+     */
+    private array $lastWriteAt = [];
+
+    public function __construct(private readonly int $throttleSeconds = 15) {}
+
+    /**
+     * Record that a worker is consuming this queue, now.
+     *
+     * `$queue` may be a comma-separated list, because that is what
+     * `queue:work --queue=a,b` passes through to the worker loop. Each is
+     * recorded: a worker draining `a,backups` is genuinely consuming `backups`,
+     * and recording the raw string would file it under a queue of that name
+     * which nothing will ever ask about.
+     *
+     * Never throws. This runs inside the worker loop, and a cache blip must not
+     * take down a worker to protect a diagnostic.
+     */
+    public function record(string $connection, ?string $queue): void
+    {
+        try {
+            foreach ($this->queueNames($connection, $queue) as $name) {
+                $this->recordOne($connection, $name);
+            }
+        } catch (Throwable) {
+            // Recording is best-effort; the worker's job is to work.
+        }
+    }
+
+    /**
+     * How long a worker on this connection may go unseen and still count.
+     *
+     * ONE definition, deliberately. The guard's check and the backups page both
+     * ask this question, and a page applying a different freshness rule from the
+     * check would tell the operator everything was fine while the check recorded
+     * the requirement as unmet — or the reverse.
+     *
+     * A worker announces itself as it loops and as each job starts, but not
+     * during a job, and the backups worker runs with `--timeout=3600`, so one
+     * legitimate backup can occupy it for an hour in silence. `retry_after` is
+     * already this install's answer to "the longest a job may hold the worker
+     * before the queue gives up on it", so it is the bound that is true by
+     * construction rather than a number chosen to feel safe.
+     */
+    public function windowSecondsFor(string $connection): int
+    {
+        /** @var mixed $retryAfter */
+        $retryAfter = config("queue.connections.{$connection}.retry_after");
+
+        $window = is_numeric($retryAfter) ? (int) $retryAfter : 0;
+
+        return $window > 0 ? $window : self::DEFAULT_WINDOW_SECONDS;
+    }
+
+    /** A worker was seen; `at` carries when. */
+    public const SEEN = 'seen';
+
+    /** The store was read successfully and holds no sighting. */
+    public const NONE = 'none';
+
+    /** The store could not be consulted, so nothing at all was demonstrated. */
+    public const UNKNOWN = 'unknown';
+
+    /**
+     * What this install can actually say about a worker on this queue.
+     *
+     * The three states exist because two different failures both produce "no
+     * timestamp", and conflating them blames the operator for the wrong thing:
+     *
+     * - the store cannot carry the signal, or could not be read at all → UNKNOWN
+     * - the store answered, and holds nothing → NONE
+     *
+     * A configured-but-unreachable Redis is the case that makes this matter.
+     * Deciding from configuration alone would call that NONE, and tell an
+     * operator to add a backups worker they are already running, when the only
+     * demonstrated problem is that the cache is down.
+     *
+     * @return array{state: self::SEEN|self::NONE|self::UNKNOWN, at: ?CarbonImmutable}
+     */
+    public function observe(string $connection, ?string $queue): array
+    {
+        $store = $this->targetStore();
+
+        if ($store === null) {
+            return ['state' => self::UNKNOWN, 'at' => null];
+        }
+
+        try {
+            $latest = null;
+            $cache = Cache::store($store);
+
+            foreach ($this->queueNames($connection, $queue) as $name) {
+                /** @var mixed $stamp */
+                $stamp = $cache->get($this->key($connection, $name));
+
+                if (! is_int($stamp) && ! (is_string($stamp) && ctype_digit($stamp))) {
+                    continue;
+                }
+
+                $seen = CarbonImmutable::createFromTimestampUTC((int) $stamp);
+
+                if ($latest === null || $seen->greaterThan($latest)) {
+                    $latest = $seen;
+                }
+            }
+        } catch (Throwable) {
+            // The read itself failed. An unreachable cache has not demonstrated
+            // the absence of a worker, and must not be reported as one.
+            return ['state' => self::UNKNOWN, 'at' => null];
+        }
+
+        return $latest === null
+            ? ['state' => self::NONE, 'at' => null]
+            : ['state' => self::SEEN, 'at' => $latest];
+    }
+
+    /**
+     * Was a worker observed on this queue within the last `$seconds`?
+     *
+     * Null whenever the question could not be answered — the signal cannot
+     * travel between processes here, or the store could not be read. Neither is
+     * the same as no worker.
+     */
+    public function seenWithin(string $connection, ?string $queue, int $seconds): ?bool
+    {
+        $observation = $this->observe($connection, $queue);
+
+        if ($observation['state'] === self::UNKNOWN) {
+            return null;
+        }
+
+        $seenAt = $observation['at'];
+
+        if ($seenAt === null) {
+            return false;
+        }
+
+        return $seenAt->getTimestamp() >= CarbonImmutable::now()->getTimestamp() - $seconds;
+    }
+
+    /**
+     * When a worker was last observed, or null if never — and also null when the
+     * question is unanswerable. Callers that must tell those apart should use
+     * `observe()`, which is why the backups page does.
+     */
+    public function lastSeenAt(string $connection, ?string $queue): ?CarbonImmutable
+    {
+        return $this->observe($connection, $queue)['at'];
+    }
+
+    /**
+     * Whether a sighting written by another process could be read back here.
+     */
+    public function canObserve(): bool
+    {
+        return $this->targetStore() !== null;
+    }
+
+    /**
+     * The concrete store this heartbeat reads and writes, or null if none can
+     * carry a signal between processes.
+     *
+     * Named explicitly rather than left to `cache.default`, because a failover
+     * chain would otherwise make the answer depend on which member happened to
+     * serve each call. Laravel's failover store uses the first member whose
+     * operation SUCCEEDS — it does not write through the chain — and this
+     * repo's chain ends in `array`. So with the shared member down, the worker
+     * would write a sighting into its own process-local array while the web
+     * process read an empty one, and report a confident "no worker" for a
+     * worker that is running fine.
+     *
+     * Pinning to one member removes the ambiguity in both directions: while it
+     * is up, both processes agree; when it is down, the read throws and the
+     * answer is UNKNOWN, which is the truth.
+     */
+    private function targetStore(): ?string
+    {
+        try {
+            $default = (string) config('cache.default', 'file');
+
+            foreach ($this->storeMembers($default) as $name) {
+                /** @var mixed $driver */
+                $driver = config("cache.stores.{$name}.driver");
+
+                if (! in_array(is_string($driver) ? $driver : null, self::UNSHAREABLE_DRIVERS, true)) {
+                    return $name;
+                }
+            }
+
+            return null;
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    private function recordOne(string $connection, string $queue): void
+    {
+        $key = $this->key($connection, $queue);
+        $now = microtime(true);
+
+        if (isset($this->lastWriteAt[$key]) && $now - $this->lastWriteAt[$key] < $this->throttleSeconds) {
+            return;
+        }
+
+        $store = $this->targetStore();
+
+        if ($store === null) {
+            // Nothing could read it back. Skip the write rather than spend it.
+            return;
+        }
+
+        // The same pinned store the reader will consult — see targetStore().
+        Cache::store($store)->put(
+            $key,
+            CarbonImmutable::now()->getTimestamp(),
+            $this->retentionFor($connection),
+        );
+
+        // Only after a successful write, so a throwing cache retries next loop
+        // instead of being throttled out for the next throttle window.
+        $this->lastWriteAt[$key] = $now;
+    }
+
+    /**
+     * How long to keep a sighting readable on this connection.
+     *
+     * Must outlive the window anyone asks about, or the answer flips to "no
+     * worker" purely because the record expired. Doubling the window leaves
+     * room for a caller asking about exactly it, and the floor keeps ordinary
+     * connections on a full day rather than a window-sized sliver.
+     */
+    private function retentionFor(string $connection): int
+    {
+        return max(self::RETENTION_FLOOR_SECONDS, $this->windowSecondsFor($connection) * 2);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function queueNames(string $connection, ?string $queue): array
+    {
+        $raw = $queue ?? '';
+
+        if (trim($raw) === '') {
+            /** @var mixed $configured */
+            $configured = config("queue.connections.{$connection}.queue", 'default');
+            $raw = is_string($configured) ? $configured : 'default';
+        }
+
+        $names = array_values(array_filter(
+            array_map('trim', explode(',', $raw)),
+            static fn (string $name): bool => $name !== '',
+        ));
+
+        return $names === [] ? ['default'] : $names;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function storeMembers(string $default): array
+    {
+        /** @var mixed $driver */
+        $driver = config("cache.stores.{$default}.driver");
+
+        if ($driver !== 'failover') {
+            return [$default];
+        }
+
+        /** @var mixed $members */
+        $members = config("cache.stores.{$default}.stores", []);
+
+        return array_values(array_filter((array) $members, 'is_string'));
+    }
+
+    private function key(string $connection, string $queue): string
+    {
+        return self::KEY_PREFIX.$connection.':'.$queue;
+    }
+}

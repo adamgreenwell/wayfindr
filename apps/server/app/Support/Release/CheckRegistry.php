@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Release;
 
+use App\Support\Queue\QueueConsumerHeartbeat;
 use Throwable;
 
 /**
@@ -30,18 +31,33 @@ final class CheckRegistry
     {
         $this->register('backups-queue-consumer', function (): ?bool {
             // Declared by the backups GUI release: a worker must be consuming the
-            // dedicated `backups` connection, or a queued backup never starts.
+            // dedicated `backups` connection, or a queued backup never starts —
+            // the run sits at "Running" forever and nothing says why.
             try {
+                /** @var mixed $connection */
                 $connection = config('queue.connections.backups');
 
                 if (! is_array($connection)) {
+                    // No such connection. The declaration is asking about
+                    // something this install does not have, which is a question
+                    // this check cannot answer rather than a failure.
                     return null;
                 }
 
-                // Runtime evidence for this arrives with the worker heartbeat in
-                // slice 3; until then the configuration is all that can be seen,
-                // so it reports "cannot evaluate" rather than a false pass.
-                return null;
+                /** @var mixed $queue */
+                $queue = $connection['queue'] ?? null;
+
+                $heartbeat = app(QueueConsumerHeartbeat::class);
+
+                return $heartbeat->seenWithin(
+                    'backups',
+                    is_string($queue) ? $queue : null,
+                    // The window lives on the heartbeat so the backups page
+                    // applies the same freshness rule. Two copies would let the
+                    // page call a worker healthy while the check called the
+                    // requirement unmet.
+                    $heartbeat->windowSecondsFor('backups'),
+                );
             } catch (Throwable) {
                 return null;
             }

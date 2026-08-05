@@ -8,7 +8,9 @@ use App\Models\AuditEvent;
 use App\Models\BackupRun;
 use App\Support\Backup\BackupService;
 use App\Support\Backup\RestoreService;
+use App\Support\Queue\QueueConsumerHeartbeat;
 use App\Support\Settings\OperatorSettings;
+use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -71,6 +73,12 @@ class OperatorBackupSettingsController extends Controller
             // otherwise two runs triggered in the same second could show the
             // older one's status right after the operator queues a new backup.
             'latestRun' => BackupRun::query()->latest('started_at')->latest('id')->first(),
+            // Whether anything is actually consuming the backups queue. Without
+            // a worker the button below queues a job nothing will ever run, and
+            // the only symptom is a run that says "Running" forever — so the
+            // page says so up front rather than leaving the operator to infer it
+            // from a backup that never finishes.
+            'worker' => $this->workerObservation(),
             // The restore outcome lives in the cache (a restore wipes the DB), so
             // the operator sees it here after the restore logs them out and they
             // log back in.
@@ -653,6 +661,58 @@ class OperatorBackupSettingsController extends Controller
      *
      * @return array<string, mixed>|null
      */
+    /**
+     * What can be said about a worker on the backups queue.
+     *
+     * Carries the last-seen time rather than a yes/no, because the guard's check
+     * uses a window wide enough to span one legal backup job (an hour). That is
+     * the right bound for "did the operator set the worker up" and far too loose
+     * for a human reading a page — "seen 55 minutes ago" and "seen 3 seconds
+     * ago" both satisfy the check, and only one means the worker is running now.
+     *
+     * The state comes through unflattened so the page can distinguish "nothing
+     * is consuming this queue" from "the cache is down and nothing can be told".
+     * Collapsing those would put a confident "no worker" in front of an operator
+     * whose worker is fine.
+     *
+     * `stale` applies the CHECK's freshness window, not a separate one. A worker
+     * seen once and then stopped stays readable until its record expires, so
+     * ever-seen-versus-never-seen would suppress the warning for a worker that
+     * died hours ago — and "Run a backup now" would still queue a job with no
+     * consumer, the exact failure the warning exists to prevent.
+     *
+     * `queue` is the CONFIGURED queue name, because the remediation command is
+     * built from it. `BACKUP_QUEUE` can move the backups queue off its default,
+     * and a hard-coded `--queue=backups` would tell that operator to start a
+     * worker draining a queue nothing dispatches to — leaving backups queued
+     * forever after they did exactly as they were told.
+     *
+     * @return array{state: string, at: ?CarbonImmutable, stale: bool, queue: string, timeout: int}
+     */
+    private function workerObservation(): array
+    {
+        $heartbeat = app(QueueConsumerHeartbeat::class);
+
+        /** @var mixed $configured */
+        $configured = config('queue.connections.backups.queue');
+        $queue = is_string($configured) && trim($configured) !== '' ? trim($configured) : 'backups';
+
+        $observation = $heartbeat->observe('backups', $queue);
+        $at = $observation['at'];
+
+        /** @var mixed $timeout */
+        $timeout = config('wayfindr.backup.job_timeout');
+
+        return [
+            'state' => $observation['state'],
+            'at' => $at,
+            'stale' => $at !== null && $at->getTimestamp()
+                < CarbonImmutable::now()->getTimestamp() - $heartbeat->windowSecondsFor('backups'),
+            'queue' => $queue,
+            'timeout' => is_numeric($timeout) && (int) $timeout > 0 ? (int) $timeout : 3600,
+        ];
+    }
+
     private function restoreStatus(): ?array
     {
         try {
