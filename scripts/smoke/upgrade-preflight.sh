@@ -1063,5 +1063,50 @@ check "NOW is collected"           yes "$(printf '%s' "$preflight_body" | grep -
 check "NOW joins blocking"         yes "$(printf '%s' "$preflight_body" | grep -q 'onlynow' && echo yes || echo no)"
 check "NOW is excluded from later" yes "$(printf '%s' "$preflight_body" | grep -q "grep -v '\^NOW|'" && echo yes || echo no)"
 
+# The refusal footer must not speak for "the steps above" as a whole. A refusal
+# carrying BOTH a skipped-release step and work the install can still do was
+# telling the operator that acknowledging would not help - directly under a
+# section telling them to acknowledge - which sends someone holding a usable key
+# through a rollback they do not need.
+footer_for() {
+    local stranded="$1" all_actions="$2" acknowledgeable out=""
+
+    acknowledgeable="$(printf '%s\n' "$all_actions" | grep -E '^(DO|NOW)\|' || true)"
+
+    [ -n "$stranded" ] && out="cannot-acknowledge"
+
+    if [ -n "$acknowledgeable" ]; then
+        [ -n "$out" ] && out="$out+"
+        out="${out}do-the-work"
+    fi
+
+    printf '%s' "${out:-none}"
+}
+
+step='STEP|a|after-start|s|d|ATTEST'
+now='NOW|b|after-start|s|d|ATTEST'
+
+echo
+echo "the refusal footer is scoped to what it describes:"
+check "a skipped release alone"   cannot-acknowledge            "$(footer_for "$step" "$step")"
+check "work it can still do"      do-the-work                   "$(footer_for '' "$now")"
+# The case this fixed: both remedies apply, to different steps.
+check "both, both remedies"       cannot-acknowledge+do-the-work "$(footer_for "$step" "$step
+$now")"
+
+# Bound to the real file: two independent conditions, not one if/else that lets
+# either statement claim everything above it.
+#
+# Anchored on the LAST "Nothing has been pulled" inside upgrade_preflight - the
+# phrase introduces ten different refusals in this script, and a plain range
+# match spanned all of them.
+refusal_tail="$(awk '/^upgrade_preflight\(\) \{/,/^\}/' "$INSTALLER"     | awk '/Nothing has been pulled or changed/{n=NR} {a[NR]=$0} END{for (i=n; i<=NR; i++) print a[i]}')"
+
+echo
+echo "and says so with independent conditions:"
+check "the footer was found"      1 "$(printf '%s' "$refusal_tail" | grep -c 'Nothing has been pulled')"
+check "no else branch"            0 "$(printf '%s' "$refusal_tail" | grep -c '^    else$')"
+check "it scopes by the label"    1 "$(printf '%s' "$refusal_tail" | grep -c 'must run on its own release')"
+
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
