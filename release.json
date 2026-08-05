@@ -1,24 +1,28 @@
 {
-  "_comment": [
-    "What the release being prepared requires of an operator (ADR 0012, ADR 0013).",
-    "Authored by hand, like the CHANGELOG's Unreleased section; version and commit",
-    "are NOT here because they are derived at build time from the release identity.",
-    "`requires_operator_action` is derived too, from whether `actions` is empty.",
-    "See docs/self-hosting/release-manifest.md for the field reference."
-  ],
-  "_bootstrap": [
-    "Deliberately empty for the release that introduces the upgrade guard.",
-    "ADR 0013: the first enforcing release must require nothing itself, or it",
-    "refuses traffic on every install the moment it lands - including installs",
-    "that were already doing the right thing. The backups-queue-worker",
-    "requirement has not gone away; it stays in the CHANGELOG as an operator",
-    "action, and can be declared here in a LATER release once the",
-    "backups-queue-consumer check can actually evaluate it. Declaring a check",
-    "that always answers 'cannot tell' would force every operator to attest,",
-    "which is weaker than the note it replaced.",
-    "tests/Feature/BootstrapSelfEnforcementTest.php fails if this is re-declared",
-    "without the check being implementable."
-  ],
-  "minimum_upgrade_from": "0.1.0-alpha.1",
-  "actions": []
+    "_comment": [
+        "What the release being prepared requires of an operator (ADR 0012, ADR 0013).",
+        "Authored by hand, like the CHANGELOG's Unreleased section; version and commit",
+        "are NOT here because they are derived at build time from the release identity.",
+        "`requires_operator_action` is derived too, from whether `actions` is empty.",
+        "See docs/self-hosting/release-manifest.md for the field reference."
+    ],
+    "_bootstrap": [
+        "The bootstrap constraint is DISCHARGED: 0.1.0 shipped the guard declaring",
+        "nothing, as ADR 0013 requires of the first enforcing release - one that",
+        "refused traffic the moment it landed would punish installs already doing",
+        "the right thing. Later releases MAY declare actions.",
+        "Still outstanding: the backups-queue-worker requirement lives in the",
+        "CHANGELOG as prose, not here, because the backups-queue-consumer check",
+        "does not exist yet. Declaring it as an attestation instead would make",
+        "every operator acknowledge by hand something the platform could check -",
+        "weaker than the note, since an attestation proves only that someone typed",
+        "something. Implement the check, then declare it.",
+        "NOTE: tests/Feature/BootstrapSelfEnforcementTest.php still asserts that",
+        "NOTHING here gates serving. That was the bootstrap invariant; now that",
+        "0.1.0 has shipped it is a tripwire, not a law. The first legitimate",
+        "after-start action will fail it, and that test should be reconsidered at",
+        "that point rather than the action being weakened to satisfy it."
+    ],
+    "minimum_upgrade_from": "0.1.0-alpha.1",
+    "actions": []
 }
