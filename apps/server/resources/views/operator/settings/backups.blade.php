@@ -28,8 +28,36 @@
             </form>
         </div>
 
+        @if ($workerObservable && ! $workerLastSeenAt)
+            {{-- Only shown when the absence is real. If the cache store cannot
+                 carry a signal between processes, a worker could be running
+                 perfectly and still be invisible here, so saying "none" would
+                 be a guess presented as a fact. --}}
+            <div class="notice-copy notice-copy-bordered">
+                <p><strong>No worker has been seen on the backups queue.</strong>
+                Queuing a backup will record a run that stays at <em>Running</em>
+                indefinitely, because nothing will pick it up. Scheduled backups
+                are unaffected.</p>
+                <p>Compose stacks run this worker automatically. On Forge or any
+                host-managed install, add a second worker:</p>
+                <pre><code>php artisan queue:work backups --queue=backups --sleep=5 --tries=1 --timeout=3600</code></pre>
+            </div>
+        @endif
+
         @if ($latestRun)
             <div class="meta-grid readiness-summary-grid">
+                <div class="meta-item">
+                    <span class="meta-label">Queue worker</span>
+                    <span class="meta-value">
+                        @if (! $workerObservable)
+                            Cannot tell
+                        @elseif ($workerLastSeenAt)
+                            Seen {{ $workerLastSeenAt->diffForHumans() }}
+                        @else
+                            None seen
+                        @endif
+                    </span>
+                </div>
                 <div class="meta-item">
                     <span class="meta-label">Latest run</span>
                     <span class="meta-value">

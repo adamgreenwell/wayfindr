@@ -16,6 +16,7 @@ use App\Support\Backup\BackupRunner;
 use App\Support\Backup\BackupService;
 use App\Support\Backup\PostgresDatabaseDumper;
 use App\Support\Backup\RestoreService;
+use App\Support\Queue\QueueConsumerHeartbeat;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Cache\Repository;
@@ -1296,4 +1297,41 @@ test('the backups settings page shows the latest restore status', function (): v
         ->assertOk()
         ->assertSee('Last restore: succeeded')
         ->assertSee('Operator Jane');
+});
+
+test('the backups page warns when nothing is consuming the queue', function (): void {
+    // The failure this replaces: the only symptom of a missing worker was a run
+    // stuck at "Running" forever, with nothing on the page saying why.
+    config()->set('cache.default', 'file');
+    Cache::store('file')->clear();
+
+    $this->actingAs(backupOperator())
+        ->get(route('operator.settings.backups.edit'))
+        ->assertOk()
+        ->assertSee('No worker has been seen on the backups queue.')
+        ->assertSee('queue:work backups --queue=backups', escape: false);
+});
+
+test('the backups page drops the warning once a worker announces itself', function (): void {
+    config()->set('cache.default', 'file');
+    Cache::store('file')->clear();
+
+    app(QueueConsumerHeartbeat::class)->record('backups', 'backups');
+
+    $this->actingAs(backupOperator())
+        ->get(route('operator.settings.backups.edit'))
+        ->assertOk()
+        ->assertDontSee('No worker has been seen on the backups queue.');
+});
+
+test('the backups page says "cannot tell" rather than claiming no worker', function (): void {
+    // An array store cannot carry a sighting between processes, so a worker
+    // could be running perfectly and still be invisible. Reporting "none" would
+    // present a guess as a fact and send the operator chasing a live worker.
+    config()->set('cache.default', 'array');
+
+    $this->actingAs(backupOperator())
+        ->get(route('operator.settings.backups.edit'))
+        ->assertOk()
+        ->assertDontSee('No worker has been seen on the backups queue.');
 });

@@ -8,7 +8,9 @@ use App\Models\AuditEvent;
 use App\Models\BackupRun;
 use App\Support\Backup\BackupService;
 use App\Support\Backup\RestoreService;
+use App\Support\Queue\QueueConsumerHeartbeat;
 use App\Support\Settings\OperatorSettings;
+use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -71,6 +73,13 @@ class OperatorBackupSettingsController extends Controller
             // otherwise two runs triggered in the same second could show the
             // older one's status right after the operator queues a new backup.
             'latestRun' => BackupRun::query()->latest('started_at')->latest('id')->first(),
+            // Whether anything is actually consuming the backups queue. Without
+            // a worker the button below queues a job nothing will ever run, and
+            // the only symptom is a run that says "Running" forever — so the
+            // page says so up front rather than leaving the operator to infer it
+            // from a backup that never finishes.
+            'workerLastSeenAt' => $this->workerLastSeenAt(),
+            'workerObservable' => app(QueueConsumerHeartbeat::class)->canObserve(),
             // The restore outcome lives in the cache (a restore wipes the DB), so
             // the operator sees it here after the restore logs them out and they
             // log back in.
@@ -653,6 +662,27 @@ class OperatorBackupSettingsController extends Controller
      *
      * @return array<string, mixed>|null
      */
+    /**
+     * When a worker was last seen consuming the backups queue.
+     *
+     * Deliberately a timestamp rather than a yes/no. The upgrade guard's check
+     * uses a window wide enough to span one legal backup job (an hour), which is
+     * the right bound for "did the operator set the worker up" but far too loose
+     * for a human reading a page — "seen 55 minutes ago" and "seen 3 seconds
+     * ago" both satisfy the check, and only one of them means the worker is
+     * running now. Showing the time lets the operator judge.
+     */
+    private function workerLastSeenAt(): ?CarbonImmutable
+    {
+        /** @var mixed $queue */
+        $queue = config('queue.connections.backups.queue');
+
+        return app(QueueConsumerHeartbeat::class)->lastSeenAt(
+            'backups',
+            is_string($queue) ? $queue : null,
+        );
+    }
+
     private function restoreStatus(): ?array
     {
         try {
