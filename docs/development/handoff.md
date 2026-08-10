@@ -541,3 +541,54 @@ declare a real requirement** and exercise the guard end to end.
 Anything added to this area — an advisory severity, a new phase, a third message
 site — should extend `ActionDisposition` and `ActionAdvice` rather than re-derive
 the rule.
+
+---
+
+## 11. `v0.2.0` released, and the upgrade path is proven — August 10, 2026
+
+**`v0.2.0` is published** (release commit `564afa0`): stable, `release-manifest.json`
+attached, `releases/latest` resolving to it, images `0.2.0` / `0.2` / `latest` on
+GHCR. It declares nothing, deliberately — the point was to exercise the mechanism
+on a release where being wrong costs nothing.
+
+**The first cross-release-boundary upgrade has been run end to end.** A clean room
+installed `0.1.0` using **0.1.0's own installer** (`--ref v0.1.0` pins stack files
+and image; there is no `--version` flag), then ran `--upgrade`:
+
+```
+==> Handing off to the refreshed installer.                    <- the ADR 0013 re-exec, live
+==> Preflight: nothing outstanding between 0.1.0 and 0.2.0.    <- read the published manifest
+==> Upgrade complete.
+```
+
+Afterwards the install records
+`{"version": "0.2.0", "satisfied_through": "0.2.0", "fresh_install": false}`.
+**`fresh_install: false` is the new evidence** — every previous validation could
+only ever produce `true`, because there was nothing above `0.1.0` to upgrade to.
+
+**What is still unproven is now narrower**: the path works, but nobody outside the
+owner has walked it.
+
+**A real bug came out of the negative test, not the happy path.** Deleting the
+release state file to check the guard could still *refuse* produced exit 78
+correctly, with the wrong message: a perfectly current `0.2.0` install was told it
+was *"older than 0.2.0 allows to upgrade directly"* and sent to reinstall
+`0.1.0-alpha.1`. `minimum_upgrade_from` yields **two** refusals through one field —
+*below the floor* (step through; no acknowledgement helps) and *floor unverifiable*
+(the remedy is to state where you are, with `WAYFINDR_UPGRADE_FROM`). The report
+command distinguished them and carried a comment describing the hazard; its twin,
+the migration refusal, did not — and the twin is the one operators actually meet.
+`FloorAdvice` now answers it once for both (PR #652).
+
+**Three drifted twins surfaced in this one cycle**: the action-message pair (#651),
+the smoke script's hand-copied partition (which predated the `NOW` classification
+and answered `PROCEED` where the installer answers `BLOCK`, while its own comment
+claimed it "cannot drift"), and the floor pair (#652). The standing rule for this
+area is now **extract, never copy — and when fixing a message, go looking for its
+twin.**
+
+**Next**: `0.3.0` is the first release that can legitimately declare an operator
+action (pre-1.0, RELEASING.md puts any action-bearing release on a minor bump). The
+`backups-queue-consumer` check exists and works; declaring it still waits on a
+third, non-blocking *advisory* severity, per ADR 0013 and `release.json`'s
+`_bootstrap` note.
