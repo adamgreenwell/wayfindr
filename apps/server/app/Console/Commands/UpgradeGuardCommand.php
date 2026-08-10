@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Support\Release\ActionAdvice;
+use App\Support\Release\FloorAdvice;
 use App\Support\Release\UpgradeGuard;
 use Illuminate\Console\Command;
 use Throwable;
@@ -75,27 +76,23 @@ class UpgradeGuardCommand extends Command
         }
 
         if (($assessment['floor'] ?? null) !== null) {
-            // Two different refusals share this field. One is "you are demonstrably
-            // below the floor"; the other is "nothing records where you are, so the
-            // floor cannot be checked". They have different remedies, and printing
-            // the first for the second sends an operator who may be perfectly
-            // current off to reinstall an older release.
-            if ($assessment['from'] === null) {
-                $this->error('  This install has no recorded release, so the upgrade floor cannot be verified.');
-                $this->line(sprintf('  %s only supports upgrading from %s or later.',
-                    $assessment['target'] ?? 'This release', $assessment['floor']));
-                $this->line('  Either upgrade to that release first, which records where you are,');
-                $this->line('  or state the version you are on:');
-                $this->line(sprintf('    WAYFINDR_UPGRADE_FROM=%s', $assessment['floor']));
+            // Two different refusals share this field, and they have different
+            // remedies — see FloorAdvice. Both this command and the migration
+            // refusal render its lines, because the distinction was made here
+            // and not in its twin, which is the message an operator actually
+            // meets during an upgrade.
+            $advice = FloorAdvice::for(
+                $assessment['from'] ?? null,
+                $assessment['target'] ?? null,
+                (string) $assessment['floor'],
+            );
 
-                return self::FAILURE;
+            $lines = $advice->lines;
+            $this->error('  '.array_shift($lines));
+
+            foreach ($lines as $line) {
+                $this->line('  '.$line);
             }
-
-            $this->error(sprintf('  This install (%s) is older than %s allows to upgrade directly.',
-                $assessment['from'], $assessment['target'] ?? 'this release'));
-            $this->line(sprintf('  The oldest supported starting point is %s.', $assessment['floor']));
-            $this->line('  Upgrade to that release first, let it start, then upgrade again.');
-            $this->line('  Acknowledgement cannot help: the migrations for this jump no longer ship.');
 
             return self::FAILURE;
         }

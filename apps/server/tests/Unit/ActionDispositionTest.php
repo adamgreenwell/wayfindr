@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Support\Release\ActionAdvice;
 use App\Support\Release\ActionDisposition;
+use App\Support\Release\FloorAdvice;
 use App\Support\Release\UpgradeRequirements;
 
 /**
@@ -140,4 +141,50 @@ test('unreachable advice renders no key at all', function (): void {
     $lines = ActionAdvice::for(declaredAction('0.2.0'), '0.3.0', '0.1.0')->lines();
 
     expect(implode("\n", $lines))->not->toContain('Acknowledge with:');
+});
+
+/**
+ * The floor's two refusals.
+ *
+ * `minimum_upgrade_from` produces "you are demonstrably below it" and "nothing
+ * records where you are, so it cannot be checked". They share one field and have
+ * different remedies, and the distinction was made in the report command and NOT
+ * in the migration refusal — which is the one an operator actually meets. A live
+ * 0.2.0 install whose state file was missing was told it was "older than 0.2.0
+ * allows" and sent to reinstall 0.1.0-alpha.1.
+ */
+test('an unverifiable floor is a question, not an accusation', function (): void {
+    $advice = FloorAdvice::for(null, '0.2.0', '0.1.0-alpha.1');
+    $text = implode("\n", $advice->lines);
+
+    expect($advice->verifiable)->toBeFalse()
+        ->and($text)->toContain('cannot be verified')
+        // The escape hatch is the whole point of this branch.
+        ->and($text)->toContain('WAYFINDR_UPGRADE_FROM=0.1.0-alpha.1')
+        // And it must NOT claim the install is old, because it may be current.
+        ->and($text)->not->toContain('is older than')
+        ->and($text)->not->toContain('unknown');
+});
+
+test('a demonstrably old install is told to step, with no false hope', function (): void {
+    $advice = FloorAdvice::for('0.0.9', '0.2.0', '0.1.0-alpha.1');
+    $text = implode("\n", $advice->lines);
+
+    expect($advice->verifiable)->toBeTrue()
+        ->and($text)->toContain('This install (0.0.9) is older than 0.2.0')
+        ->and($text)->toContain('The oldest supported starting point is 0.1.0-alpha.1.')
+        // No acknowledgement can make this jump safe: the migrations are gone.
+        ->and($text)->toContain('Acknowledgement cannot help')
+        // Offering the override here would be advice that cannot work.
+        ->and($text)->not->toContain('WAYFINDR_UPGRADE_FROM');
+});
+
+test('the floor refusal never renders a null origin as a version', function (): void {
+    // The listener printed `$from ?? 'unknown'` into "This install (%s) is older
+    // than ...", so an install with no record was described as an old one.
+    foreach ([null, '0.0.9'] as $from) {
+        foreach (FloorAdvice::for($from, '0.2.0', '0.1.0-alpha.1')->lines as $line) {
+            expect($line)->not->toContain('(unknown)');
+        }
+    }
 });

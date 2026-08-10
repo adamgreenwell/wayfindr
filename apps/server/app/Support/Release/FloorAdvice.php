@@ -1,0 +1,70 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Support\Release;
+
+/**
+ * What an operator is told when the upgrade floor refuses them.
+ *
+ * `minimum_upgrade_from` produces TWO refusals that share one field, and they
+ * have different remedies:
+ *
+ * - **Below the floor.** The install's origin is known and demonstrably older
+ *   than the target allows. The only way forward is to upgrade in steps; no
+ *   acknowledgement can make the jump safe, because the migrations that would
+ *   carry it no longer ship.
+ * - **Floor unverifiable.** Nothing records where the install is, so it *may* be
+ *   below the floor — and "may be" is not permission to run. But the install may
+ *   equally be perfectly current, so the remedy is to say where it is.
+ *
+ * Printing the first for the second sends an operator who is already current off
+ * to reinstall an ancient release. That is not hypothetical: the report command
+ * distinguished the two while the migration refusal did not, so a live 0.2.0
+ * install whose state file was missing was told it was "older than 0.2.0 allows"
+ * and never shown `WAYFINDR_UPGRADE_FROM`. The refusal an operator actually
+ * meets during an upgrade is the migration one, so it had the wrong half.
+ *
+ * Both sites now render these lines, for the same reason ActionAdvice exists:
+ * this rule has twins, and every previous fix landed in one of them.
+ */
+final readonly class FloorAdvice
+{
+    /**
+     * @param  list<string>  $lines
+     */
+    public function __construct(
+        public bool $verifiable,
+        public array $lines,
+    ) {}
+
+    /**
+     * @param  ?string  $from  the recorded origin, or null when nothing records it
+     * @param  ?string  $target  the release being upgraded to
+     * @param  string  $floor  `minimum_upgrade_from`
+     */
+    public static function for(?string $from, ?string $target, string $floor): self
+    {
+        $release = $target ?? 'this release';
+
+        if ($from === null) {
+            // Not an accusation — a question the install cannot answer about
+            // itself. The escape hatch is the whole point of this branch: an
+            // operator who knows where they are can say so and proceed.
+            return new self(false, [
+                'This install has no recorded release, so the upgrade floor cannot be verified.',
+                sprintf('%s only supports upgrading from %s or later.', $release, $floor),
+                'Either upgrade to that release first, which records where you are,',
+                'or state the version you are on:',
+                sprintf('  WAYFINDR_UPGRADE_FROM=%s', $floor),
+            ]);
+        }
+
+        return new self(true, [
+            sprintf('This install (%s) is older than %s allows to upgrade directly.', $from, $release),
+            sprintf('The oldest supported starting point is %s.', $floor),
+            'Upgrade to that release first, let it start, then upgrade again.',
+            'Acknowledgement cannot help here: the migrations for this jump no longer ship.',
+        ]);
+    }
+}
