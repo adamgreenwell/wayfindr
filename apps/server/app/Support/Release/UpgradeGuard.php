@@ -506,19 +506,24 @@ final class UpgradeGuard
         // unmet after-start action needs the migrated schema to be performed at
         // all, so blocking migration on it could never be satisfied.
         //
-        // Except when it is STRANDED. An action belonging to a release this jump
-        // skips past, needing that release's own code or schema, cannot be
-        // performed at any phase — so letting a stranded after-start action
-        // through migration only to gate serving leaves the install migrated,
-        // refusing traffic, and holding a requirement with no way to satisfy it.
-        // The installer preflight already refuses these; every other path here
-        // (the container entrypoint, both Forge scripts, a manual migrate) had no
-        // such check.
+        // Except when the action needs a release the pull replaced. That work
+        // cannot be performed at any phase — so letting such an after-start
+        // action through migration only to gate serving leaves the install
+        // migrated, refusing traffic, and holding a requirement with no way to
+        // satisfy it. The installer preflight already refuses these; every other
+        // path here (the container entrypoint, both Forge scripts, a manual
+        // migrate) had no such check.
+        //
+        // Both halves of that rule now live in ActionDisposition::blocksMigration()
+        // so this filter and the two operator messages cannot disagree about
+        // which actions stop the schema change. This line previously passed a
+        // THIRD argument to the two-parameter stranded(), which PHP silently
+        // discarded — harmless, but it read as though the filter weighed the
+        // current release when it never did (#647).
         $blocking = array_values(array_filter(
             $outstanding,
-            static fn (array $a): bool => in_array(
-                $a['phase'] ?? '', UpgradeRequirements::BLOCKS_MIGRATION, true,
-            ) || UpgradeRequirements::stranded($a, $target, $recorded),
+            static fn (array $a): bool => UpgradeRequirements::disposition($a, $target, $recorded)
+                ->blocksMigration(is_string($a['phase'] ?? null) ? $a['phase'] : ''),
         ));
 
         return [

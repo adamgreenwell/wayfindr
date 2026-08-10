@@ -47,16 +47,51 @@ final class UpgradeRequirements
     }
 
     /**
+     * What this upgrade can still do about the action — the single answer every
+     * other site derives its behaviour from.
+     *
+     * This is the consolidation #647 asked for. The same three states were
+     * already being computed in six places from two overlapping booleans, and
+     * `stranded` meant different things in two of them: the installer's local
+     * variable is cleared for the middle case while `stranded()` below is not.
+     * Everything that needs to know now asks here.
+     *
+     * The two questions underneath must stay apart, and conflating them is how
+     * the guard got this wrong twice in opposite directions:
+     *
+     * - `stranded()` asks whether the work can be performed on this jump, and is
+     *   answered by the code PRESENT — always the target's, because the pull has
+     *   happened.
+     * - `reached()` asks whether the operator could credibly have done it
+     *   already, and is answered by where the install has actually been.
+     */
+    public static function disposition(array $action, ?string $target, ?string $current): ActionDisposition
+    {
+        if (! self::stranded($action, $target)) {
+            return ActionDisposition::Performable;
+        }
+
+        // The action's own release is the one running, so its code is here until
+        // the pull. The work is possible now, and an acknowledgement afterwards
+        // is a claim about the past that could be true.
+        if (self::reached($action, $current)) {
+            return ActionDisposition::PerformableNow;
+        }
+
+        return ActionDisposition::Unreachable;
+    }
+
+    /**
      * Whether nothing the operator can say will settle this action.
      *
-     * The question the messages need: an action that is stranded AND belongs to a
-     * release the install never ran is one where offering an acknowledgement key
-     * would be documenting a bypass. Anything else — reachable, or not stranded —
-     * is clearable by acknowledging it, and the message should say so.
+     * Retained as the narrow question some callers genuinely want; it is now
+     * derived from `disposition()` so it cannot drift from it. Prefer
+     * `ActionAdvice::for()` at any site that also has to say something about the
+     * action — the two travelled separately for four releases and disagreed.
      */
     public static function unacknowledgeable(array $action, ?string $target, ?string $current): bool
     {
-        return self::stranded($action, $target) && ! self::reached($action, $current);
+        return ! self::disposition($action, $target, $current)->acknowledgeable();
     }
 
     /**
@@ -147,11 +182,11 @@ final class UpgradeRequirements
 
                 $settled = self::settled($action, $acknowledged, $evaluateCheck);
 
-                // An acknowledgement cannot settle a stranded action belonging to
-                // a release this upgrade SKIPPED: the operator never had that
-                // code, so no attestation about it can be true, and the refusal
-                // printing a key beside every action would otherwise document the
-                // bypass it is warning against.
+                // An acknowledgement cannot settle an UNREACHABLE action: the
+                // operator never had that release's code, so no attestation about
+                // it can be true, and the refusal printing a key beside every
+                // action would otherwise document the bypass it is warning
+                // against.
                 //
                 // It CAN settle one belonging to a release the install actually
                 // ran. The code was there before the pull, so the work was
@@ -159,9 +194,13 @@ final class UpgradeRequirements
                 //
                 // A machine check is different again: if it answers true then the
                 // thing exists, whatever route it took to get there.
+                //
+                // Asked through disposition() so the settlement and the messages
+                // cannot disagree about what an acknowledgement is worth — they
+                // did, twice, and each time the preflight said "clear" while the
+                // artifact refused the same acknowledgement and exited 78.
                 $bypassed = $settled['by'] === 'acknowledged'
-                    && self::stranded($action, $target)
-                    && ! self::reached($action, $traversedFrom);
+                    && ! self::disposition($action, $target, $traversedFrom)->acknowledgeable();
 
                 if ($settled['satisfied'] && ! $bypassed) {
                     continue;

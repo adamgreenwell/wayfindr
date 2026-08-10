@@ -41,6 +41,61 @@ The guard has its own fixture test:
 make public-info-test
 ```
 
+## Self-Hosting Tests
+
+The installer is shipped code — operators pipe it into `bash` — so it has its own
+suite. Run all of it from the root:
+
+```bash
+make self-host-test
+```
+
+Docker is required, because two of these compare against Docker Compose's own
+behaviour rather than against an assumption about it.
+
+| Script | What it holds down |
+| --- | --- |
+| `test-self-host-env-generator.sh` | The generated environment file: secret shapes, URL-derived values, refusal to overwrite. |
+| `test-self-host-compose-template.sh` | The compose stack renders and wires services as intended. |
+| `test-self-host-env-value.sh` | `install.sh`'s dotenv reading agrees with Compose's, across every spelling an operator might write. |
+| `test-self-host-classification.sh` | The installer preflight and the artifact guard classify actions identically. |
+
+### Why the last two are differential tests
+
+[ADR 0013](../decisions/0013-upgrade-preflight-and-release-requirements.md)
+records that the installer preflight is a *second implementation* of the upgrade
+guard's decision, in another language, running a version behind — and that a
+divergence is silent by construction: the preflight reports "clear", the operator
+pulls, and the artifact refuses on a release that is now already installed.
+`install.sh` also parses the environment file itself, which diverged from what
+actually consumes it five separate times.
+
+Neither duplicate can simply be deleted:
+
+- The preflight runs **inside the image being upgraded from**, so it cannot call a
+  helper that the release being installed introduced.
+- `php_in_current_image()` needs `INSTALLED_IMAGE`, which comes from
+  `env_value WAYFINDR_IMAGE` — you cannot shell out to the artifact to learn
+  *which* artifact to shell out to.
+
+So the rule is **pin, don't merge**: each script lifts the real function out of
+`install.sh` and runs it against the same fixtures as the authority it has to
+agree with. `install.sh` gains nothing for this — no probe, no hook, no test-only
+branch — which keeps the file operators download as lean as it was.
+
+Both scripts assert the *expected* value as well as the agreement, so that two
+implementations drifting the same direction together is still caught.
+
+If you change `UpgradeGuard`, `UpgradeRequirements`, `ActionDisposition`, or the
+preflight block in `install.sh`, run `make self-host-test` before opening the PR.
+
+### If extraction breaks
+
+Each script lifts code from `install.sh` by matching markers rather than line
+numbers, and fails loudly when a marker stops matching. That failure means the
+installer was restructured, not that the guard is wrong — re-point the marker in
+the test script rather than working around it.
+
 Browser-level Pest tests are intentionally not enabled yet. When Wayfindr needs
 full browser coverage for the dashboard or embedded widget, add Pest's browser
 plugin as its own slice so the Playwright dependencies and CI expectations are

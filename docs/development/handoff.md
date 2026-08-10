@@ -1,6 +1,6 @@
 # Engineering Handoff & Roadmap
 
-*Living document — last updated August 5, 2026. For an agent (or engineer) picking up
+*Living document — last updated August 10, 2026. For an agent (or engineer) picking up
 Wayfindr development. Read this, then `docs/product/roadmap.md` and
 `docs/self-hosting/` for depth.*
 
@@ -472,3 +472,72 @@ Ordered by real dogfood value and dependency, not feature novelty.
   the guard's first *declared* requirement — the backups-queue-consumer check,
   which `release.json`'s `_bootstrap` note describes and which is the reason that
   requirement is still changelog prose rather than an enforced action.
+
+---
+
+## 10. Session snapshot — August 10, 2026 (upgrade-guard debt paid)
+
+**#647's structural debt is paid (PR #651).** The rule that had to be agreed by
+six sites now has one name and one voice:
+`App\Support\Release\ActionDisposition` (the three states) and `ActionAdvice`
+(what the operator is told). Both message sites render one ordered list, so their
+agreement is structural rather than a convention each file remembers.
+
+**The find that explained the churn**: the three states existed in both
+implementations all along — only their *names* differed, and one name meant two
+things. `install.sh` clears its local `$stranded` for the middle case (so it
+means *unacknowledgeable*); `UpgradeRequirements::stranded()` stays true there.
+
+| Installer | PHP before | Meaning |
+|---|---|---|
+| `DO` | `!stranded()` | performable after the upgrade |
+| `NOW` | `stranded() && reached()` | own release still running — possible until the pull |
+| `STEP` | `stranded() && !reached()` | release skipped past — unreachable |
+
+The enum's **values are the installer's codes**, so the two can be compared
+directly rather than through a translation layer anyone has to maintain.
+
+**The rule that replaced "delete the duplicate": pin, don't merge.** #647
+proposed having the installer call the artifact's helpers. Neither duplicate can
+actually be deleted:
+
+- the preflight runs **inside the image being upgraded from**, so it cannot call
+  a helper the release being installed introduced;
+- `php_in_current_image()` needs `INSTALLED_IMAGE`, which comes from
+  `env_value WAYFINDR_IMAGE` — **you cannot shell out to the artifact to learn
+  which artifact to shell out to**. Only two of six `env_value` call sites run
+  after the image is known, so delegating would leave *two* parsers where there
+  is one, with the most consequential key still on the bash side.
+
+So two differential tests lift the real functions out of `install.sh` and run
+them against the authority they must match. **`install.sh` is byte-for-byte
+unchanged** — no probe, no hook, no test-only branch. `make self-host-test` runs
+them alongside the two pre-existing self-host scripts, which were undocumented
+until now; see `testing.md`.
+
+**Compose is the oracle for the dotenv half, not phpdotenv** — the file is
+Compose's `--env-file`, and phpdotenv *rejects* the `export` spelling outright
+with a fatal, while both Compose and `install.sh` accept it.
+
+**Also fixed**: `UpgradeGuard` passed a third argument to the two-parameter
+`stranded()`, which PHP silently discarded — behaviour was correct, but it read
+as though the migration-blocking filter weighed the current release when it never
+did. And the CHANGELOG had drifted again exactly as at the 0.1.0 cut: `#650`'s
+operator-visible change (the backups page reporting worker presence) had no entry.
+
+Suite 1,661/1,661, collected == executed. Both harnesses mutation-checked against
+the real historical bugs from #648.
+
+**Where the release sequencing stands** (owner's call, unchanged by this work):
+`0.1.0` and `0.2.0` are stepping stones to a fully validated install/upgrade
+process — there are no known third-party installs, so compatibility shims for
+`0.1.0`-origin upgrades are deliberately *not* being built. Note that
+RELEASING.md's own rule means a **patch** release cannot carry a declared
+operator action pre-1.0, so the sequence is: `0.1.0 → 0.2.0` tests the plumbing
+(manifest published, span read, floor honoured, nothing declared), `0.2.1` is the
+recovery vehicle if something breaks, and **`0.3.0` is the first release that can
+declare a real requirement** and exercise the guard end to end.
+
+Anything added to this area — an advisory severity, a new phase, a third message
+site — should extend `ActionDisposition` and `ActionAdvice` rather than re-derive
+the rule.

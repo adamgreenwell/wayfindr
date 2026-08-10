@@ -291,6 +291,38 @@ have it, and the artifact guard is the guarantee for everyone else.
   When changing the guard, the checklist is: which origin does this read, what
   does it do when that origin is unknown, and does the preflight now disagree?
 
+  **The divergence is now held down by test rather than by attention.**
+  `scripts/test-self-host-classification.sh` lifts the preflight's classification
+  block out of `install.sh` verbatim and runs it against the same fixtures as
+  `UpgradeRequirements::disposition()`, failing if the two ever answer
+  differently. `scripts/test-self-host-env-value.sh` does the same for the
+  installer's dotenv reading, against Docker Compose — the parser that actually
+  resolves the image being pulled. Both are wired into `make self-host-test`.
+
+  This does not remove the duplicate; it makes disagreement loud. Deleting the
+  duplicate remains unavailable for the reason above, and for a second one worth
+  recording: `php_in_current_image()` needs `INSTALLED_IMAGE`, which comes from
+  `env_value WAYFINDR_IMAGE`, so the installer cannot shell out to the artifact
+  to learn *which* artifact to shell out to. Of six `env_value` call sites only
+  two run after the image is known, so delegating would leave two parsers where
+  there is one — with the most consequential key still on the bash side.
+
+- **One rule, six sites, is itself the hazard.** Whether an action can still be
+  performed, whether an acknowledgement settles it, and what the operator should
+  be told had to be agreed by the predicate, the settlement in `outstanding()`,
+  the blocking filter in `UpgradeGuard`, the installer's partition, and two
+  operator-facing messages. Nearly every round of #648 fixed a subset and left
+  another, twice fixing a message in one file and not its twin.
+
+  The three states now have one name each — `App\Support\Release\ActionDisposition`,
+  whose enum values are the installer's own `STEP`/`NOW`/`DO` so the two can be
+  compared directly — and everything a site needs to *say* comes from
+  `ActionAdvice`, which both messages render verbatim. That makes their ordering
+  a structural property rather than a convention each file has to remember.
+
+  Anything added here — an advisory severity, a new phase, a third message site —
+  should extend those two classes rather than re-derive the rule.
+
 - **The only response this record defines is refusal, and some requirements are
   worth reporting without being worth an outage.** Phases say *when* an action
   can be performed, not how hard the answer should be, so declaring an action is
