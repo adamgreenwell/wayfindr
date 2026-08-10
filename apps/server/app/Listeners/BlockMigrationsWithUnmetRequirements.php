@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Listeners;
 
 use App\Support\Release\ActionAdvice;
+use App\Support\Release\FloorAdvice;
 use App\Support\Release\UpgradeContext;
 use App\Support\Release\UpgradeGuard;
 use Illuminate\Console\Events\CommandStarting;
@@ -102,21 +103,29 @@ class BlockMigrationsWithUnmetRequirements
         $output->writeln('  <error> UPGRADE BLOCKED </error>');
         $output->writeln('');
 
-        // A floor refusal is not a to-do list. The migrations that would carry
-        // this install forward have been retired, so there is nothing the
-        // operator can do here except upgrade in steps - saying "acknowledge
-        // these" would be advice that cannot work.
+        // A floor refusal is not a to-do list, and it is not one refusal either.
+        // "You are demonstrably below the floor" and "nothing records where you
+        // are, so the floor cannot be checked" share this field and have
+        // different remedies — the second one's remedy is to SAY where you are.
+        //
+        // This branch used to print the first for both, so a live install that
+        // was perfectly current but had lost its state file was told it was
+        // "older than 0.2.0 allows" and sent off to reinstall an ancient
+        // release, with no mention of WAYFINDR_UPGRADE_FROM. The report command
+        // had distinguished them all along; its twin had not.
         if (($assessment['floor'] ?? null) !== null) {
-            $output->writeln(sprintf(
-                '  This install (%s) is older than %s allows to upgrade directly.',
-                $assessment['from'] ?? 'unknown', $assessment['target'] ?? 'this release',
-            ));
+            $advice = FloorAdvice::for(
+                $assessment['from'] ?? null,
+                $assessment['target'] ?? null,
+                (string) $assessment['floor'],
+            );
+
+            foreach ($advice->lines as $line) {
+                $output->writeln('  '.$line);
+            }
+
             $output->writeln('');
-            $output->writeln(sprintf('  The oldest supported starting point is %s.', $assessment['floor']));
-            $output->writeln('  Upgrade to that release first, let it start, then upgrade again.');
-            $output->writeln('');
-            $output->writeln('  Nothing has been changed. Acknowledgement cannot help here: the');
-            $output->writeln('  migrations for this jump no longer ship.');
+            $output->writeln('  Nothing has been changed.');
             $output->writeln('');
 
             exit(UpgradeGuard::EXIT_BLOCKED);
