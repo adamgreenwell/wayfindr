@@ -30,7 +30,16 @@ missed while skimming.
 
 ## [Unreleased]
 
+*Nothing yet.*
+
+## [0.2.0] - 2026-08-10
+
 **No operator action required.** Pull, restart, and migrations run themselves.
+
+This is the first release you can upgrade *to* across a release boundary with a
+published manifest on both sides, so it is also the first real exercise of the
+upgrade guard added in 0.1.0. It deliberately declares nothing: the point is to
+prove the mechanism on a release where being wrong costs nothing.
 
 ### Added
 
