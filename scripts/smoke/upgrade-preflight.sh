@@ -26,14 +26,33 @@ check() {
     fi
 }
 
-# The partition the preflight applies, lifted verbatim from install.sh so the
-# test cannot drift from the implementation it is checking.
+# The partition the preflight applies, LIFTED from install.sh rather than copied
+# into it.
+#
+# It used to be a hand-copy carrying the same claim, and the claim was false: the
+# copy predated the NOW classification (#648) and answered PROCEED for every NOW
+# action while the installer answered BLOCK — including `NOW` + `before-pull`.
+# A stale copy of a rule is worse than no test of it, because it reports
+# agreement it has not checked. Extraction is the only version of "cannot drift"
+# that is true.
+PARTITION_FRAGMENT="$(mktemp)"
+trap 'rm -f "$PARTITION_FRAGMENT"' EXIT
+
+awk '
+    /^    local stranded blocking later onlynow$/ { capture = 1 }
+    capture { print }
+    capture && /^    later=/ { exit }
+' "$INSTALLER" > "$PARTITION_FRAGMENT"
+
+# A failed extraction produces an empty fragment, and every check below would
+# then pass against nothing at all.
+grep -q 'onlynow=' "$PARTITION_FRAGMENT" \
+    || { echo "Could not lift the partition from install.sh (markers moved?)" >&2; exit 1; }
+
 partition() {
-    local all_actions="$1" stranded blocking
-    stranded="$(printf '%s\n' "$all_actions" | grep '^STEP|' || true)"
-    blocking="$(printf '%s\n' "$all_actions" | grep -E '^(STEP|DO)\|[^|]*\|before-pull\|' || true)"
-    blocking="$(printf '%s\n' "$blocking
-$stranded" | grep -v '^$' | sort -u || true)"
+    local all_actions="$1"
+    # shellcheck source=/dev/null
+    . "$PARTITION_FRAGMENT"
     [ -n "$blocking" ] && printf 'BLOCK' || printf 'PROCEED'
 }
 
@@ -45,6 +64,14 @@ check "a stranded intermediate stops it regardless"   BLOCK   "$(partition 'STEP
 check "mixed: any blocker wins"                       BLOCK   "$(partition 'DO|0.3.0/e|after-start|s|d
 DO|0.3.0/f|before-pull|s|d')"
 check "nothing outstanding proceeds"                  PROCEED "$(partition '')"
+
+# The NOW cases the previous hand-copy could not see. Work belonging to the
+# release the install is RUNNING is performable until the pull and not after it,
+# so it stops the pull whatever its phase — the same silent progression a
+# before-pull action is stopped for.
+check "NOW stops the pull despite after-start"        BLOCK   "$(partition 'NOW|0.2.0/g|after-start|s|d')"
+check "NOW stops the pull despite after-pull"         BLOCK   "$(partition 'NOW|0.2.0/h|after-pull|s|d')"
+check "NOW stops the pull on before-pull"             BLOCK   "$(partition 'NOW|0.2.0/i|before-pull|s|d')"
 
 # The span rule, run through the same comparator the installer uses.
 span() {
