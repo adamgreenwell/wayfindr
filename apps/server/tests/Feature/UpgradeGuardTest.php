@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Listeners\BlockMigrationsWithUnmetRequirements;
 use App\Listeners\ForgetReleaseAfterRollback;
 use App\Support\Backup\RestoreService;
+use App\Support\Release\ActionAdvice;
 use App\Support\Release\CheckRegistry;
 use App\Support\Release\ReleaseManifest;
 use App\Support\Release\ReleaseState;
@@ -1697,20 +1698,26 @@ test('an acknowledgement still settles an ordinary action', function (): void {
 test('the migration refusal does not offer a key it will not honour', function (): void {
     // This is the refusal an operator meets on Forge, on a manual migration, or
     // on any upgrade whose installer preflight was skipped. Printing an
-    // acknowledgement key beside a stranded action told them to do something that
+    // acknowledgement key beside unreachable work told them to do something that
     // produces this identical refusal, and never mentioned the release they
     // actually have to install.
-    $source = file_get_contents(app_path('Listeners/BlockMigrationsWithUnmetRequirements.php'));
+    //
+    // Asserted against the rendered advice rather than the listener's source
+    // text. The listener refuses by calling exit(), which in a test run kills the
+    // RUNNER (see the hazard note at the head of this file), so its output cannot
+    // be captured directly — but it now renders exactly ActionAdvice::lines(),
+    // which can.
+    $skipped = ['release' => '0.2.0', 'id' => 'reindex', 'depends_on_release' => 'code'];
 
-    $strandedBranch = strpos($source, 'UpgradeRequirements::unacknowledgeable(');
-    $acknowledgeLine = strpos($source, 'Acknowledge with:');
+    $advice = ActionAdvice::for($skipped, '0.3.0', '0.1.0');
 
-    expect($strandedBranch)->not->toBeFalse()
-        ->and($acknowledgeLine)->not->toBeFalse()
-        // The stranded branch continues before the key is printed.
-        ->and($strandedBranch)->toBeLessThan($acknowledgeLine);
+    expect($advice->acknowledgeKey)->toBeNull()
+        ->and($advice->lines())->not->toContain('Acknowledge with: 0.2.0/reindex');
 
-    expect($source)->toContain('Install that release first');
+    // And it names the release they have to install instead.
+    expect(implode("\n", $advice->lines()))
+        ->toContain('Install that release first')
+        ->toContain('Acknowledging will not clear this');
 });
 
 test('a non-canonical manifest version is rejected', function (): void {
@@ -2027,51 +2034,86 @@ test('an unacknowledged prior-release action still blocks migration', function (
         ->and(array_column($assessment['actions'], 'id'))->toContain('needs-its-own-code');
 });
 
-test('the refusal carries recovery for stranded work an acknowledgement could clear', function (): void {
+test('the refusal carries recovery for work an acknowledgement could clear', function (): void {
     // An operator who did the work before upgrading only needs the key. One who
     // did not cannot do it now either - the code it needs was replaced by the
     // pull - so a key on its own leaves them with an instruction they cannot
     // follow. Both readers are in this message.
-    $source = file_get_contents(app_path('Listeners/BlockMigrationsWithUnmetRequirements.php'));
+    $ranIt = ['release' => '0.2.0', 'id' => 'reindex', 'depends_on_release' => 'code'];
 
-    $key = strpos($source, 'Acknowledge with:');
-    $recovery = strpos($source, 'Cannot be done now.');
+    $advice = ActionAdvice::for($ranIt, '0.3.0', '0.2.0');
+    $lines = $advice->lines();
 
-    expect($key)->not->toBeFalse()
-        ->and($recovery)->not->toBeFalse()
-        // The key is printed first, so "the key above" in the recovery refers to
-        // something the operator has actually seen.
-        ->and($key)->toBeLessThan($recovery);
+    // The key is offered - the install ran 0.2.0, so the attestation can be true.
+    expect($advice->acknowledgeKey)->toBe('0.2.0/reindex');
 
-    // The recovery is gated on stranded(), not on acknowledgeability - that was
-    // the bug: reachable stranded work got a key and no explanation.
-    expect($source)->toContain('UpgradeRequirements::stranded($action, $target)')
-        ->and($source)->toContain('roll back to that release');
+    // AND the explanation comes with it. The recovery follows from needing its
+    // own release, not from acknowledgeability - that was the bug: reachable
+    // out-of-reach work got a key and no explanation.
+    expect(implode("\n", $lines))
+        ->toContain('Cannot be done now.')
+        ->toContain('roll back to that release');
+
+    // The key is printed first, so "the key above" in the recovery refers to
+    // something the operator has actually seen. This is now a property of the
+    // one ordered list both sites render, not a convention each file remembers.
+    expect(array_search('Acknowledge with: 0.2.0/reindex', $lines, true))
+        ->toBeLessThan(array_search('If not, roll back to that release, do it there, and upgrade again.', $lines, true));
 });
 
-test('the command carries recovery for stranded work an acknowledgement could clear', function (): void {
-    // The same two-part message the listener gives. Fixing one and not the other
-    // is how this rule has drifted at every step, so both are asserted.
-    $source = file_get_contents(app_path('Console/Commands/UpgradeGuardCommand.php'));
+test('the command renders the same advice as the migration refusal', function (): void {
+    // Fixing one message and not its twin is how this rule drifted at every step
+    // of #648, so the two are pinned to one list rather than asserted separately.
+    $needsOwnCode = ['actions' => [[
+        'id' => 'reindex',
+        'summary' => 'Reindex conversations.',
+        'detail' => 'php artisan wayfindr:reindex',
+        'phase' => 'after-start',
+        'depends_on_release' => 'code',
+        'applicability' => ['type' => 'always'],
+        'verification' => ['type' => 'attest'],
+    ]]];
 
-    $key = strpos($source, 'Acknowledge with:');
-    $recovery = strpos($source, 'Cannot be done now:');
+    bakeRelease(['actions' => []], '0.3.0', history: [
+        ReleaseManifest::build($needsOwnCode, '0.2.0', 'bbb'),
+        ReleaseManifest::build(['actions' => []], '0.3.0', 'abc123'),
+    ]);
 
-    expect($key)->not->toBeFalse()
-        ->and($recovery)->not->toBeFalse()
-        ->and($key)->toBeLessThan($recovery)
-        ->and($source)->toContain('roll back to that release');
+    app(ReleaseState::class)->record('0.2.0', 'bbb', satisfiedThrough: '0.1.0');
+
+    // Every advice line the shared helper produces reaches the operator.
+    $expected = ActionAdvice::for(
+        ['release' => '0.2.0', 'id' => 'reindex', 'depends_on_release' => 'code'],
+        '0.3.0',
+        '0.2.0',
+    )->lines();
+
+    $command = $this->artisan('wayfindr:upgrade-guard')->assertFailed();
+
+    foreach ($expected as $line) {
+        // Style tags are consumed by the renderer, so compare on the prose.
+        $command->expectsOutputToContain(strip_tags($line));
+    }
+
+    // An action needing a release the pull replaced blocks MIGRATION whatever its
+    // declared phase, so the label must not read "serving" here.
+    $command->expectsOutputToContain('Blocks: migration');
+
+    $command->run();
 });
 
 test('the refusal footer speaks only for work no acknowledgement can clear', function (): void {
     // The footer says the release was skipped and no acknowledgement substitutes.
-    // Counting every stranded action there told an operator holding a usable key
-    // exactly the opposite of the line above it.
-    $source = file_get_contents(app_path('Listeners/BlockMigrationsWithUnmetRequirements.php'));
+    // Counting every out-of-reach action there told an operator holding a usable
+    // key exactly the opposite of the line above it (#649).
+    $action = ['release' => '0.2.0', 'id' => 'reindex', 'depends_on_release' => 'code'];
 
-    expect($source)->toContain('$unacknowledgeable = true;')
-        ->and($source)->toContain('if ($unacknowledgeable) {')
-        // And the flag is set inside the branch that has no acknowledgement route.
-        ->and(strpos($source, '$unacknowledgeable = true;'))
-        ->toBeGreaterThan(strpos($source, 'Acknowledging will not clear this'));
+    // Ran 0.2.0: the key works, so the footer must not speak for it.
+    expect(ActionAdvice::for($action, '0.3.0', '0.2.0')->countsTowardFooter())->toBeFalse()
+        // Skipped 0.2.0: no key can settle it, so the footer does.
+        ->and(ActionAdvice::for($action, '0.3.0', '0.1.0')->countsTowardFooter())->toBeTrue()
+        // And an ordinary action never reaches it.
+        ->and(ActionAdvice::for(
+            ['release' => '0.3.0', 'id' => 'thing'], '0.3.0', '0.2.0',
+        )->countsTowardFooter())->toBeFalse();
 });

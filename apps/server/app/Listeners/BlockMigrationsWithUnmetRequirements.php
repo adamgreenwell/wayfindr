@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Listeners;
 
+use App\Support\Release\ActionAdvice;
 use App\Support\Release\UpgradeContext;
 use App\Support\Release\UpgradeGuard;
-use App\Support\Release\UpgradeRequirements;
 use Illuminate\Console\Events\CommandStarting;
 use Throwable;
 
@@ -145,48 +145,27 @@ class BlockMigrationsWithUnmetRequirements
                 $output->writeln('    '.$action['detail']);
             }
 
-            $target = $assessment['target'] ?? null;
-            $from = $assessment['from'] ?? null;
-
-            // The key comes first, and only when saying so would actually settle
-            // the action. Offering it for work belonging to a release the upgrade
-            // SKIPPED would document the bypass this refusal exists to prevent.
-            if (! UpgradeRequirements::unacknowledgeable($action, $target, $from)) {
-                $output->writeln(sprintf('    Acknowledge with: %s/%s',
-                    $action['release'] ?? '?', $action['id'] ?? '?'));
-            }
-
-            // Then the recovery, for EVERY stranded action rather than only the
-            // ones no acknowledgement can clear. An operator who has not done the
-            // work cannot do it now either — the code it needs was replaced by
-            // the pull — so a key on its own leaves them with an instruction they
-            // cannot follow.
+            // What to say is decided in one place, shared with the report command.
+            // Both messages are the same advice in different styling, and while
+            // each derived its own the two drifted at nearly every step — the
+            // footer contradicting the section above it (#649) was the last of
+            // them.
             //
             // This is the refusal an operator meets on Forge, on a manual
             // migration, or on any upgrade whose preflight was skipped, so it has
             // to carry the guidance itself rather than assume they also run the
             // command.
-            if (UpgradeRequirements::stranded($action, $target)) {
-                $output->writeln(sprintf(
-                    '    <error>Cannot be done now.</error> It needs %s, whose code this upgrade replaced.',
-                    $action['release'] ?? 'an intermediate release',
-                ));
+            $advice = ActionAdvice::for($action, $assessment['target'] ?? null, $assessment['from'] ?? null);
 
-                if (UpgradeRequirements::unacknowledgeable($action, $target, $from)) {
-                    $output->writeln('    Install that release first, let it start, then upgrade again.');
-                    $output->writeln('    Acknowledging will not clear this: the work is unreachable, not undone.');
-
-                    // Only these reach the footer. Counting every stranded action
-                    // there told an operator holding a usable key that no
-                    // acknowledgement could substitute — two remedies in one
-                    // refusal, one of which sends them through a needless
-                    // rollback.
-                    $unacknowledgeable = true;
-                } else {
-                    $output->writeln('    If you did it before upgrading, acknowledge it with the key above.');
-                    $output->writeln('    If not, roll back to that release, do it there, and upgrade again.');
-                }
+            foreach ($advice->lines() as $line) {
+                $output->writeln('    '.$line);
             }
+
+            // Only unreachable work reaches the footer. Counting every
+            // out-of-reach action there told an operator holding a usable key
+            // that no acknowledgement could substitute — two remedies in one
+            // refusal, one of which sends them through a needless rollback.
+            $unacknowledgeable = $unacknowledgeable || $advice->countsTowardFooter();
         }
 
         $output->writeln('');

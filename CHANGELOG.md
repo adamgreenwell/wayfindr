@@ -30,7 +30,30 @@ missed while skimming.
 
 ## [Unreleased]
 
-*Nothing yet.*
+**No operator action required.** Pull, restart, and migrations run themselves.
+
+### Added
+
+- The backups page now reports whether a queue worker has actually been seen on
+  the `backups` queue, instead of leaving you to find out when a run sits at
+  *Running* forever. It names the missing worker and prints the exact command for
+  your install's configured queue and timeout. Where the platform genuinely
+  cannot tell — a cache driver that cannot carry a sighting between processes —
+  it says so rather than blaming the configuration.
+
+### Fixed
+
+- The upgrade guard and the installer preflight can no longer disagree about what
+  an upgrade owes you. The two are separate implementations in different
+  languages (the preflight has to answer *before* the image is pulled, so it
+  cannot ask the artifact), and they had drifted repeatedly — the preflight
+  reporting "clear", the pull going ahead, and the new release then refusing to
+  start. They now share one classification, and a test fails if the two ever
+  answer differently.
+- Upgrade refusal messages no longer contradict themselves. The report command
+  and the migration refusal render one shared set of instructions, so an action
+  you can still clear by acknowledging it is never also described as one that
+  needs a rollback.
 
 ## [0.1.0] - 2026-08-05
 
