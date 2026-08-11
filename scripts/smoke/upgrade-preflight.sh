@@ -1144,9 +1144,6 @@ check "the footer was found"      1 "$(printf '%s' "$refusal_tail" | grep -c 'No
 check "no else branch"            0 "$(printf '%s' "$refusal_tail" | grep -c '^    else$')"
 check "it scopes by the label"    1 "$(printf '%s' "$refusal_tail" | grep -c 'must run on its own release')"
 
-printf '\n  %d passed, %d failed\n' "$pass" "$fail"
-[ "$fail" -eq 0 ]
-
 echo
 echo "floor refusal must not dictate its own bypass:"
 
@@ -1168,3 +1165,6 @@ check "artifact offers a placeholder, not the floor" \
     "ok" \
     "$(grep -A1 'WAYFINDR_UPGRADE_FROM=' "$APP/app/Support/Release/FloorAdvice.php" \
         | grep -q 'WAYFINDR_UPGRADE_FROM=<' && echo ok || echo prefills)"
+
+printf '\n  %d passed, %d failed\n' "$pass" "$fail"
+[ "$fail" -eq 0 ]
