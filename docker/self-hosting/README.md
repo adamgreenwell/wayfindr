@@ -60,6 +60,12 @@ healthy, visit `/setup` on the configured `APP_URL` to create the first
 operator/account owner. To build from source instead of pulling the
 published image, add the build overlay:
 
+The shared `wayfindr-storage` volume is mounted with Docker's `nocopy`
+option. Every app service can be created in parallel on first boot, so the
+stack lets the entrypoint create Laravel's storage directories instead of
+asking Docker to copy the image's bundled storage tree into the named
+volume.
+
 ```bash
 docker compose -f docker/self-hosting/compose.yml \
   -f docker/self-hosting/compose.build.yml \
