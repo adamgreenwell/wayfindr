@@ -92,6 +92,22 @@ missed while skimming.
 
 ### Fixed
 
+- **The upgrade-floor refusal no longer tells you how to defeat it.** When an
+  install has no recorded release, that refusal offers `WAYFINDR_UPGRADE_FROM` so
+  you can state where you are — and it used to suggest setting it to the floor
+  version itself. Since that value is trusted as your stated origin, following
+  the suggestion cleared the very check being explained: an install genuinely too
+  old to upgrade directly would migrate on a path whose migrations no longer
+  ship. It now asks for the release you upgraded *from*, and says plainly that
+  stating a version below the floor is still refused.
+- **A current install is no longer told it is too old.** `minimum_upgrade_from`
+  produces two different refusals — *you are demonstrably below the floor* and
+  *nothing records where you are, so it cannot be checked* — and the refusal you
+  meet during a migration printed the first for both. An install that was
+  perfectly up to date but had lost its release-state file was told it was "older
+  than this release allows" and sent off to reinstall an ancient version, with no
+  mention of the override that would have cleared it in a line. The two are now
+  distinguished wherever they are reported.
 - The Compose stack's backup worker now follows `BACKUP_QUEUE`. It ran with a
   hard-coded `--queue=backups` while the application dispatched to whatever
   `BACKUP_QUEUE` named, so an operator who changed it had a worker draining a
