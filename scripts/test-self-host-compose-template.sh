@@ -166,8 +166,38 @@ def assert_storage_volume_nocopy(service):
 # Several app services share the Laravel storage volume and may be created in
 # parallel on first boot. Docker must not try to pre-populate that named volume
 # from the image; the entrypoint creates the expected tree idempotently.
-for service in ("web", "queue", "backup-queue", "scheduler", "reverb"):
+for service in ("storage-init", "web", "queue", "backup-queue", "scheduler", "reverb"):
     assert_storage_volume_nocopy(service)
+
+storage_init = config["services"].get("storage-init") or {}
+if storage_init.get("user") != "0:0":
+    raise SystemExit("storage-init must run as root so it can own an empty Docker volume")
+
+if storage_init.get("restart") != "no":
+    raise SystemExit("storage-init should be a one-shot service, not a daemon")
+
+healthcheck = storage_init.get("healthcheck") or {}
+if not healthcheck.get("disable"):
+    raise SystemExit("storage-init should not inherit the application image healthcheck")
+
+entrypoint = storage_init.get("entrypoint") or []
+if entrypoint[:2] != ["sh", "-c"] or len(entrypoint) < 3:
+    raise SystemExit(f"storage-init must run one shell script through sh -c; got {entrypoint!r}")
+
+command = "\n".join(str(value) for value in entrypoint[2:])
+for expected in ("storage/app/public", "storage/app/private/attachments", "chown 1000:1000"):
+    if expected not in command:
+        raise SystemExit(f"storage-init script is missing {expected!r}")
+
+
+def assert_waits_for_storage_init(service):
+    dependency = (config["services"][service].get("depends_on") or {}).get("storage-init") or {}
+    if dependency.get("condition") != "service_completed_successfully":
+        raise SystemExit(f"{service} should wait for storage-init to complete successfully")
+
+
+for service in ("web", "reverb"):
+    assert_waits_for_storage_init(service)
 
 # Split horizon: the server posts events to the reverb service, browsers get
 # the public client values from the env file.

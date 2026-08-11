@@ -62,9 +62,10 @@ published image, add the build overlay:
 
 The shared `wayfindr-storage` volume is mounted with Docker's `nocopy`
 option. Every app service can be created in parallel on first boot, so the
-stack lets the entrypoint create Laravel's storage directories instead of
-asking Docker to copy the image's bundled storage tree into the named
-volume.
+stack does not ask Docker to copy the image's bundled storage tree into the
+named volume. A one-shot `storage-init` service creates the Laravel storage
+directories as root, hands them to the non-root `wayfindr` user, and then exits
+before the app services start.
 
 ```bash
 docker compose -f docker/self-hosting/compose.yml \
