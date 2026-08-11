@@ -214,6 +214,68 @@ final class UpgradeRequirements
     }
 
     /**
+     * Collect the advisory notices in `(from, target]` that are still unmet.
+     *
+     * Notices are ADR 0013's third response: reported wherever an operator meets
+     * them, never blocking. They share this class's span and applicability rules
+     * — the same "which releases does this upgrade traverse, and does this apply
+     * to an install starting there" questions — and none of its blocking
+     * machinery, because there is no blocking to do.
+     *
+     * Three differences from `outstanding()`, each following from never blocking:
+     *
+     * - No disposition. Strandedness decides whether something can block; a
+     *   notice cannot, and advisory work must be performable at any time anyway
+     *   (see `ReleaseManifest::validateNotices`).
+     * - The target's notices are ALWAYS in scope. An action's are held back until
+     *   the release is recorded, because an action is about the upgrade; a notice
+     *   is about the install's ongoing state, and the running release's advice
+     *   applies while it is running.
+     * - An acknowledgement settles one outright. There is no bypass to guard
+     *   against when nothing was being blocked.
+     *
+     * @param  list<array<string, mixed>>  $history  published manifests, any order
+     * @param  list<string>  $acknowledged  `<release>/<id>` entries
+     * @param  callable(string): ?bool  $evaluateCheck
+     * @return list<array<string, mixed>> unmet notices, each with `satisfied_by`
+     */
+    public static function outstandingNotices(
+        array $history,
+        ?string $from,
+        string $target,
+        array $acknowledged,
+        callable $evaluateCheck,
+        bool $freshInstall = false,
+    ): array {
+        $outstanding = [];
+
+        // A fresh install skips upgrade-only ACTIONS because it never made the
+        // upgrade. Notices are different: they describe how this release wants to
+        // be run, and a fresh install runs it. Suppressing them here would hide
+        // the missing-backups-worker advice from precisely the installs most
+        // likely to be missing one.
+        $origin = $freshInstall ? $target : $from;
+
+        foreach (self::span($history, $origin, $target, includeTarget: true) as $manifest) {
+            foreach ($manifest['notices'] ?? [] as $notice) {
+                if (! self::applies($notice, $origin, $evaluateCheck)) {
+                    continue;
+                }
+
+                $settled = self::settled($notice, $acknowledged, $evaluateCheck);
+
+                if ($settled['satisfied']) {
+                    continue;
+                }
+
+                $outstanding[] = $notice + ['satisfied_by' => $settled['by']];
+            }
+        }
+
+        return $outstanding;
+    }
+
+    /**
      * The manifests an upgrade actually traverses: everything after the starting
      * version, up to and including the target.
      *

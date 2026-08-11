@@ -70,14 +70,37 @@ final class ReleaseManifest
             $actions,
         );
 
-        return [
+        /** @var list<array<string, mixed>> $notices */
+        $notices = array_map(self::withoutComments(...), $declaration['notices'] ?? []);
+
+        $notices = array_map(
+            static fn (array $notice): array => ['release' => $version] + $notice,
+            $notices,
+        );
+
+        $manifest = [
             'schema' => self::SCHEMA,
             'version' => $version,
             'commit' => $commit,
+            // Derived from ACTIONS ALONE. A notice never blocks, so a release
+            // carrying only notices is safe to take unattended — which is exactly
+            // what this flag answers. Counting notices here would put the
+            // changelog's loudest heading on releases that do not need it, and
+            // an operator who learns the heading overstates will stop reading it.
             'requires_operator_action' => $actions !== [],
             'minimum_upgrade_from' => $declaration['minimum_upgrade_from'] ?? null,
             'actions' => array_values($actions),
         ];
+
+        // Emitted only when there are any, and at the END of the document, so a
+        // manifest from a release that declares no notices is byte-identical to
+        // one built before this key existed. Every published manifest so far is
+        // still reproducible from its declaration.
+        if ($notices !== []) {
+            $manifest['notices'] = array_values($notices);
+        }
+
+        return $manifest;
     }
 
     /**
@@ -89,7 +112,7 @@ final class ReleaseManifest
     {
         $declaration = self::withoutComments($declaration);
 
-        $unknown = array_diff(array_keys($declaration), ['minimum_upgrade_from', 'actions']);
+        $unknown = array_diff(array_keys($declaration), ['minimum_upgrade_from', 'actions', 'notices']);
 
         if ($unknown !== []) {
             throw new InvalidArgumentException(
@@ -126,6 +149,110 @@ final class ReleaseManifest
             }
 
             $seen[$id] = true;
+        }
+
+        // The two lists share ONE acknowledgement namespace (`<release>/<id>`),
+        // so ids must be unique across both, not merely within each. A notice
+        // sharing an id with an action would let acknowledging the advisory
+        // settle the blocking requirement silently.
+        self::validateNotices($declaration['notices'] ?? [], $seen);
+    }
+
+    /**
+     * Advisory requirements: reported wherever an operator will meet them, never
+     * blocking anything (ADR 0013).
+     *
+     * They are a SEPARATE LIST rather than a severity on an action, and the
+     * reason is structural. An advisory has to be honoured at three independent
+     * gates — the migration filter, the serving filter, and the installer's
+     * partition — and a severity flag means each one must remember to check it.
+     * A gate that forgets turns an advisory into an outage, which is the exact
+     * failure the severity exists to prevent. The gates read `actions`; they
+     * cannot see this list at all.
+     *
+     * It is also the only shape that is backward compatible. Older readers
+     * ignore an unknown top-level key, so a release carrying notices upgrades
+     * cleanly from every release that predates them — verified against 0.2.0's
+     * shipped reader. A severity flag inside `actions` would instead be read by
+     * older code that has no concept of it and treated as required, so a
+     * `before-pull` advisory would have made the OLD installer refuse the pull.
+     *
+     * @param  mixed  $notices
+     * @param  array<string, bool>  $seen  action ids already claimed in this release
+     *
+     * @throws InvalidArgumentException
+     */
+    private static function validateNotices($notices, array $seen = []): void
+    {
+        if (! is_array($notices)) {
+            throw new InvalidArgumentException('"notices" must be a list.');
+        }
+
+        foreach ($notices as $index => $notice) {
+            if (! is_array($notice)) {
+                throw new InvalidArgumentException("Notice #{$index} must be an object.");
+            }
+
+            $notice = self::withoutComments($notice);
+
+            foreach (['id', 'summary', 'detail', 'applicability', 'verification'] as $required) {
+                if (! isset($notice[$required])) {
+                    throw new InvalidArgumentException("Notice #{$index} is missing \"{$required}\".");
+                }
+            }
+
+            self::assertCheckName($notice['id'], "Notice #{$index} id");
+
+            foreach (['summary', 'detail'] as $prose) {
+                if (! is_string($notice[$prose]) || trim($notice[$prose]) === '') {
+                    throw new InvalidArgumentException("Notice \"{$notice['id']}\" {$prose} must be text.");
+                }
+            }
+
+            // No `phase` and no `depends_on_release`, and both omissions are the
+            // point rather than an oversight.
+            //
+            // A phase says WHEN work can be performed, which only matters because
+            // it decides when the response fires. A notice has no response to
+            // time, so a phase on one would be a field nothing reads.
+            //
+            // `depends_on_release` decides strandedness, which decides blocking.
+            // A notice cannot block, so the field has nothing to decide — and the
+            // rule it implies is worth stating: work that can only be performed
+            // on a release the upgrade passes is not advisory. Either it matters
+            // enough to stop the upgrade, in which case declare an action, or it
+            // does not, in which case telling an operator to do something they
+            // can no longer do is noise. **Advisory work must be performable at
+            // any time.**
+            $unknown = array_diff(
+                array_keys($notice),
+                ['id', 'summary', 'detail', 'applicability', 'verification', 'release'],
+            );
+
+            if ($unknown !== []) {
+                throw new InvalidArgumentException(sprintf(
+                    'Notice "%s" has unknown key(s): %s. A notice takes no phase and no '
+                    .'depends_on_release — it never blocks, so there is nothing to time or to strand.',
+                    $notice['id'],
+                    implode(', ', $unknown),
+                ));
+            }
+
+            self::validateApplicability($notice['applicability'], $notice['id']);
+            self::validateVerification($notice['verification'], $notice['id']);
+
+            // Unique for the same reason actions are: an acknowledgement is keyed
+            // `<release>/<id>`, and the two lists share that namespace — so this
+            // collides against action ids as well as against other notices.
+            if (isset($seen[$notice['id']])) {
+                throw new InvalidArgumentException(sprintf(
+                    'Duplicate id "%s". Actions and notices share one acknowledgement '
+                    .'namespace, so an id used by either cannot be reused by the other.',
+                    $notice['id'],
+                ));
+            }
+
+            $seen[$notice['id']] = true;
         }
     }
 
@@ -530,10 +657,44 @@ final class ReleaseManifest
         // The flag is derived at build time. If a published manifest disagrees
         // with its own action list, something rewrote one without the other, and
         // the disagreement is only dangerous in one direction.
+        //
+        // NOTICES ARE DELIBERATELY NOT COUNTED HERE, matching build(). A release
+        // carrying only notices is safe to take unattended, which is what this
+        // flag says.
         if ($manifest['requires_operator_action'] !== ($manifest['actions'] !== [])) {
             throw new InvalidArgumentException(
                 'Release manifest requires_operator_action contradicts its action list.'
             );
+        }
+
+        // Optional, because every manifest published before this key existed has
+        // none — and because a release that declares no notices omits it, so old
+        // manifests stay byte-reproducible.
+        if (array_key_exists('notices', $manifest)) {
+            self::validateNotices($manifest['notices'], $seen);
+
+            if (! is_array($manifest['notices'])) {
+                throw new InvalidArgumentException('Release manifest "notices" must be a list.');
+            }
+
+            foreach ($manifest['notices'] as $index => $notice) {
+                // Attributed to THIS release, as actions are. A span is read as
+                // one list, so a notice that has lost its release cannot be
+                // ordered — and one claiming a different release would be
+                // reported against the wrong upgrade.
+                if (! isset($notice['release']) || ! is_string($notice['release'])) {
+                    throw new InvalidArgumentException(
+                        "Published notice #{$index} does not say which release it belongs to."
+                    );
+                }
+
+                if ($notice['release'] !== $manifest['version']) {
+                    throw new InvalidArgumentException(
+                        "Published notice #{$index} claims release \"{$notice['release']}\" "
+                        ."in the manifest for \"{$manifest['version']}\"."
+                    );
+                }
+            }
         }
     }
 }

@@ -145,6 +145,24 @@ fi
 
 unprose() { printf '%s' "$1" | $B64_DECODE 2>/dev/null || printf '%s' "$1"; }
 
+# Advisory notices from the releases this upgrade traverses (ADR 0013).
+#
+# Printed and never acted on. It takes no exit path and returns nothing, so no
+# caller can accidentally make advice block a pull - the separation is in the
+# shape of the function, not in a flag every caller has to respect.
+report_notices() {
+    [ -n "$1" ] || return 0
+
+    printf '\n  \033[1;36mThis release advises:\033[0m\n'
+    printf '%s\n' "$1" | while IFS='|' read -r _ key summary detail; do
+        [ -n "$key" ] || continue
+        printf '    %s - %s\n' "$key" "$(unprose "$summary")"
+        [ -n "$detail" ] && printf '      %s\n' "$(unprose "$detail")"
+    done
+    printf '\n  Nothing here blocks the upgrade. Once it is running,\n'
+    printf '  `wayfindr:upgrade-guard` reports which of these still apply.\n\n'
+}
+
 say() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
@@ -1167,6 +1185,26 @@ upgrade_preflight() {
                     base64_encode((string) ($a["summary"] ?? "")),
                     base64_encode((string) ($a["detail"] ?? "")),
                     $unverifiable ? "CHECK" : "ATTEST");
+            }
+
+            // Advisory notices (ADR 0013). Emitted on their own prefix and
+            // stripped out of the action list before the partition ever sees
+            // them, so nothing here can turn advice into a refusal.
+            //
+            // Deliberately unevaluated: a notice is usually verified by a `check`
+            // that only the release being installed implements, and this runs
+            // before that release is here. So these are printed as what the
+            // release ADVISES rather than as what this install is missing, and
+            // the artifact reports the live answer once it is up.
+            //
+            // A release that declares none omits the key entirely, and every
+            // release published before notices existed has no key at all - so
+            // the null coalesce is the normal path, not an edge case.
+            foreach ($m["notices"] ?? [] as $n) {
+                printf("NOTICE|%s|%s|%s\n",
+                    ($n["release"] ?? "") . "/" . ($n["id"] ?? ""),
+                    base64_encode((string) ($n["summary"] ?? "")),
+                    base64_encode((string) ($n["detail"] ?? "")));
             }' "WF_FROM=$span_origin" "WF_TO=$to" "WF_ACK=$ack" \
                 "WF_ORIGIN_KNOWN=$origin_known" "WF_RECORDED=$from" "WF_TAG=$tag")"
 
@@ -1218,8 +1256,18 @@ upgrade_preflight() {
 
     all_actions="$(printf '%s' "$all_actions" | grep -v '^$' || true)"
 
+    # Advisory notices are separated out HERE, before anything partitions the
+    # list, so no downstream grep can accidentally treat one as work that blocks.
+    # Without this they would survive the `later` filter's three greps and be
+    # reported as post-upgrade requirements, which is exactly the overstatement
+    # the advisory channel exists to avoid.
+    local all_notices
+    all_notices="$(printf '%s\n' "$all_actions" | grep '^NOTICE|' || true)"
+    all_actions="$(printf '%s\n' "$all_actions" | grep -v '^NOTICE|' || true)"
+
     if [ -z "$all_actions" ]; then
         say "Preflight: nothing outstanding between ${from:-unknown} and $to."
+        report_notices "$all_notices"
         return 0
     fi
 
@@ -1256,6 +1304,10 @@ $onlynow" | grep -v '^$' | sort -u || true)"
             printf '\n  The release enforces these itself: it refuses to migrate or to serve\n'
             printf '  until they are done or acknowledged.\n\n'
         fi
+
+        # After the enforced list, so the two are never confused: everything
+        # above this line will stop the release; nothing below it will.
+        report_notices "$all_notices"
 
         return 0
     fi

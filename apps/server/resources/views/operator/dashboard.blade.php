@@ -73,6 +73,45 @@
         </div>
     </section>
 
+    @if (! empty($releaseNotices))
+        <section class="section" aria-labelledby="release-notices-heading">
+            <div class="section-header">
+                <div>
+                    <h2 id="release-notices-heading">This release advises</h2>
+                    <p class="lede">
+                        Recommended for this install. None of these blocks migrations or
+                        serving &mdash; the install is running normally.
+                    </p>
+                </div>
+                <span class="pill">{{ count($releaseNotices) }} advisory</span>
+            </div>
+
+            <div class="management-list">
+                @foreach ($releaseNotices as $notice)
+                    <div class="management-link" style="cursor: default;">
+                        <span>
+                            <strong>{{ $notice['summary'] ?? '' }}</strong>
+                            @if (($notice['detail'] ?? '') !== '')
+                                <span class="lede">{{ $notice['detail'] }}</span>
+                            @endif
+                            @if (($notice['satisfied_by'] ?? null) === 'unevaluable')
+                                {{-- "Cannot tell" and "not done" are different facts, and an
+                                     operator acting on the wrong one wastes their time. --}}
+                                <span class="lede">
+                                    This install cannot check this automatically, so it may already be done.
+                                </span>
+                            @endif
+                            <span class="lede">
+                                Silence with <code>{{ ($notice['release'] ?? '?') }}/{{ ($notice['id'] ?? '?') }}</code>
+                                in <code>WAYFINDR_ACKNOWLEDGED_ACTIONS</code>.
+                            </span>
+                        </span>
+                    </div>
+                @endforeach
+            </div>
+        </section>
+    @endif
+
     <section class="section" aria-labelledby="system-identity-heading">
         <div class="section-header">
             <div>

@@ -41,6 +41,13 @@ class UpgradeGuardCommand extends Command
         // actionless refusal was added, so the count only ever adds now.
         $assessment['blocked'] = $assessment['blocked'] || $all !== [];
 
+        // Advisory, so it is reported ALONGSIDE `blocked` and never folded into
+        // it. Automation reading the exit code must not learn to treat advice as
+        // failure — that would make the advisory channel as costly as a refusal,
+        // which is the whole thing it exists to avoid.
+        $notices = $guard->notices();
+        $assessment['notices'] = $notices;
+
         if ($this->option('json')) {
             $this->line((string) json_encode($assessment, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 
@@ -99,6 +106,7 @@ class UpgradeGuardCommand extends Command
 
         if (! $assessment['blocked']) {
             $this->info('  Nothing outstanding — migrations may run.');
+            $this->reportNotices($notices);
 
             return self::SUCCESS;
         }
@@ -142,6 +150,50 @@ class UpgradeGuardCommand extends Command
         $this->line('  Set WAYFINDR_ACKNOWLEDGED_ACTIONS to the comma-separated entries above');
         $this->line('  once the work is done.');
 
+        $this->reportNotices($notices);
+
         return self::FAILURE;
+    }
+
+    /**
+     * Advisory notices, reported on both paths and affecting neither.
+     *
+     * Printed after the requirements so the blocking answer stays the headline —
+     * an operator meeting a refusal needs to read the refusal, and advice mixed
+     * into it competes for the attention the refusal needs.
+     *
+     * @param  list<array<string, mixed>>  $notices
+     */
+    private function reportNotices(array $notices): void
+    {
+        if ($notices === []) {
+            return;
+        }
+
+        $this->line('');
+        $this->warn(sprintf('  %d advisory notice(s) — nothing is blocked:', count($notices)));
+
+        foreach ($notices as $notice) {
+            $this->line('');
+            $this->line(sprintf('  %s (from %s)', $notice['id'] ?? '?', $notice['release'] ?? '?'));
+            $this->line('    '.($notice['summary'] ?? ''));
+
+            if (($notice['detail'] ?? '') !== '') {
+                $this->line('    '.$notice['detail']);
+            }
+
+            // Said out loud, because "cannot tell" and "not done" are different
+            // facts and an operator acting on the wrong one wastes their time.
+            if (($notice['satisfied_by'] ?? null) === 'unevaluable') {
+                $this->line('    (This install cannot evaluate the check, so this may already be done.)');
+            }
+
+            $this->line(sprintf('    Silence with: %s/%s',
+                $notice['release'] ?? '?', $notice['id'] ?? '?'));
+        }
+
+        $this->line('');
+        $this->line('  These do not block migrations or serving. Add an entry to');
+        $this->line('  WAYFINDR_ACKNOWLEDGED_ACTIONS to stop being told about one.');
     }
 }
