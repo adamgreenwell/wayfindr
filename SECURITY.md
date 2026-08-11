@@ -14,21 +14,15 @@ public release.
 security or privacy vulnerabilities.** Public reports can put self-hosters at
 risk before a fix is available.
 
-Report privately using one of these paths:
+Report privately through
+[GitHub private vulnerability reporting](https://github.com/adamgreenwell/wayfindr/security/advisories/new).
+This opens a private advisory that only the reporter and repository
+maintainers can access while the report is investigated.
 
-1. **GitHub private vulnerability reporting (preferred).** On the repository's
-   **Security** tab, choose **Report a vulnerability** to open a private
-   advisory with the maintainers.
-2. **Email.** Send details to `SECURITY-CONTACT-TODO@wayfindr.example`.
-
-> Maintainer note: replace the placeholder address above with a real, monitored
-> security contact (for example a dedicated alias or your own monitored
-> mailbox) before making the repository public, and enable GitHub private
-> vulnerability reporting in the repository's security settings.
-
-If you cannot use either path, open a public issue that only asks for a security
-contact. Do not include exploit details, affected URLs, credentials, logs, or
-reproduction steps in a public issue.
+Wayfindr does not currently publish a separate security email address. If you
+cannot use GitHub private vulnerability reporting, open a public issue that only
+asks for a security contact. Do not include exploit details, affected URLs,
+credentials, logs, or reproduction steps in a public issue.
 
 ### What to Include
 

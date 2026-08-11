@@ -1,6 +1,5 @@
-# Builds and publishes the official self-hosting image. This is the ONLY CI
-# in the repository, and it deliberately runs on version tags alone — tests
-# and review happen through the PR loop, not here.
+# Builds and publishes the official self-hosting image. This stays separate from
+# pull-request validation because tag pushes publish external artifacts.
 
 name: Release image
 
@@ -18,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out the tagged ref
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up QEMU (arm64 builds)
         uses: docker/setup-qemu-action@v3
