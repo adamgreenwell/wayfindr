@@ -55,6 +55,7 @@ behaviour rather than against an assumption about it.
 
 | Script | What it holds down |
 | --- | --- |
+| `test-php-version-contract.sh` | Composer, the self-hosting image, generated environment, and operator docs all declare PHP 8.4. |
 | `test-self-host-env-generator.sh` | The generated environment file: secret shapes, URL-derived values, refusal to overwrite. |
 | `test-self-host-compose-template.sh` | The compose stack renders and wires services as intended. |
 | `test-self-host-env-value.sh` | `install.sh`'s dotenv reading agrees with Compose's, across every spelling an operator might write. |
