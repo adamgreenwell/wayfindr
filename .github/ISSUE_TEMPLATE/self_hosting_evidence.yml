@@ -1,0 +1,69 @@
+name: Self-hosting evidence
+description: Record clean install, upgrade, backup, restore, rollback, or reboot evidence.
+title: "[Evidence]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for public-safe evidence from disposable VMs or hosted public-artifact runs.
+
+        The full evidence contract lives in docs/self-hosting/disposable-vm-evidence.md.
+  - type: dropdown
+    id: scenario
+    attributes:
+      label: Scenario
+      options:
+        - Clean install
+        - Upgrade
+        - Backup and restore
+        - Rollback or retry
+        - Reboot reverify
+        - Release-readiness audit
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: baseline
+    attributes:
+      label: Baseline
+      description: Include sanitized OS, artifact source, version, image tag or digest, and install path.
+      placeholder: |
+        - VM or runner:
+        - OS:
+        - Wayfindr version:
+        - Image tag/digest:
+        - Installer or release URL:
+    validations:
+      required: true
+  - type: textarea
+    id: commands
+    attributes:
+      label: Commands or workflow
+      description: Include enough detail that a second VM could repeat the run. Redact secrets.
+    validations:
+      required: true
+  - type: textarea
+    id: results
+    attributes:
+      label: Results
+      description: Summarize pass/fail status for web, database, Redis, queue, scheduler, Reverb, support-loop smoke, backup/restore, rollback, and reboot checks as applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: findings
+    attributes:
+      label: Findings or follow-ups
+      description: List reproducible failures, skipped checks, and clear boundaries.
+  - type: checkboxes
+    id: evidence-boundary
+    attributes:
+      label: Evidence boundary
+      options:
+        - label: I used synthetic data only.
+          required: true
+        - label: I redacted secrets, credentials, hostnames/IPs that should not be public, and real support data.
+          required: true
+        - label: I noted what this evidence does not prove.
+          required: true

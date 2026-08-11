@@ -1,0 +1,49 @@
+name: Feature request
+description: Propose a focused product, operator, integration, or self-hosting improvement.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Wayfindr is pre-alpha, so small, evidence-backed requests are easier to evaluate than broad wishlists.
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: What should be true when this is done?
+      placeholder: A self-hoster/operator/agent can ...
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or opportunity
+      description: What pain does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Proposed scope
+      description: List the smallest useful slice and anything intentionally out of scope.
+      placeholder: |
+        In scope:
+        - ...
+
+        Out of scope:
+        - ...
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence or examples
+      description: Link public issues, docs, synthetic examples, or sanitized operator observations.
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Boundaries
+      options:
+        - label: This request avoids secrets, real support data, and private infrastructure details.
+          required: true
+        - label: I have noted any security, privacy, migration, or operational impact I can see.

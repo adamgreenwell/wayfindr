@@ -1,0 +1,68 @@
+name: Bug report
+description: Report a reproducible product, code, or documentation defect.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Wayfindr.
+
+        Please use synthetic data in public reports. Security or privacy vulnerabilities should not be filed here; use GitHub private vulnerability reporting instead.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong?
+      placeholder: Briefly describe the defect and why it matters.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Use public artifacts, repo paths, or synthetic examples whenever possible.
+      placeholder: |
+        1. Start from ...
+        2. Run ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: What should have happened?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      placeholder: What happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include only public-safe, sanitized details.
+      placeholder: |
+        - Wayfindr version or commit:
+        - Install path: local / Compose / Forge / other
+        - PHP:
+        - Node:
+        - Browser:
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Paste sanitized logs, screenshots, run URLs, or exact command output. Redact secrets and real support data.
+  - type: checkboxes
+    id: public-boundary
+    attributes:
+      label: Public information check
+      options:
+        - label: I have removed secrets, credentials, real visitor data, and private infrastructure details.
+          required: true

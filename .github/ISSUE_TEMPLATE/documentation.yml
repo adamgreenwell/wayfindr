@@ -1,0 +1,35 @@
+name: Documentation update
+description: Report missing, stale, confusing, or incorrect documentation.
+title: "[Docs]: "
+labels:
+  - documentation
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Documentation is part of the product contract. Please keep reports public-safe and synthetic.
+  - type: input
+    id: page
+    attributes:
+      label: Page or file
+      placeholder: docs/self-hosting/install.md, docs/wiki/Quick-Start.md, README.md, ...
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What needs to change?
+      placeholder: Describe what is missing, stale, ambiguous, or incorrect.
+    validations:
+      required: true
+  - type: textarea
+    id: suggested
+    attributes:
+      label: Suggested wording or evidence
+      description: Optional, but exact replacement text or sanitized evidence helps.
+  - type: checkboxes
+    id: wiki-source
+    attributes:
+      label: Wiki source
+      options:
+        - label: If this affects the GitHub Wiki, I checked whether the source under docs/wiki also needs to change.
