@@ -1201,8 +1201,24 @@ upgrade_preflight() {
             // release published before notices existed has no key at all - so
             // the null coalesce is the normal path, not an edge case.
             foreach ($m["notices"] ?? [] as $n) {
-                printf("NOTICE|%s|%s|%s\n",
-                    ($n["release"] ?? "") . "/" . ($n["id"] ?? ""),
+                $key = ($n["release"] ?? "") . "/" . ($n["id"] ?? "");
+
+                // An acknowledgement silences a notice HERE too. The documented
+                // way to stop being told about one is to add its key to
+                // WAYFINDR_ACKNOWLEDGED_ACTIONS, and an operator who did that
+                // was still told during preflight - so the promise the docs make
+                // was false on one of the three surfaces. The list is already
+                // parsed for actions; it just was not consulted.
+                if (in_array($key, $ack, true)) { continue; }
+
+                // Only the TARGET release advises. The artifact evaluates
+                // notices against the running release alone - a notice is about
+                // how this release wants to be operated, not work owed by the
+                // hop - so reporting notices from an intermediate release here would
+                // promise advice the install will never repeat.
+                if (($m["version"] ?? null) !== $target) { continue; }
+
+                printf("NOTICE|%s|%s|%s\n", $key,
                     base64_encode((string) ($n["summary"] ?? "")),
                     base64_encode((string) ($n["detail"] ?? "")));
             }' "WF_FROM=$span_origin" "WF_TO=$to" "WF_ACK=$ack" \

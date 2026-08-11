@@ -548,17 +548,17 @@ final class UpgradeGuard
 
         $this->lastOutstanding = $outstanding;
 
-        // Advisory notices, from the same history, origin and freshness reading
-        // the actions were evaluated against. Computed here so there is one
-        // resolution of all four, and stashed rather than returned so that
-        // nothing which gates ever receives them.
+        // Advisory notices, read from THIS release's manifest alone — not the
+        // span the actions were evaluated over. A notice is advice about the
+        // release now running, not work owed by a particular hop, so neither the
+        // origin nor the freshness reading applies to it.
+        //
+        // Stashed rather than returned so that nothing which gates ever receives
+        // them.
         $this->lastNotices = UpgradeRequirements::outstandingNotices(
-            $history,
-            $from,
-            $target,
+            $manifest,
             UpgradeRequirements::parseAcknowledged($this->acknowledged()),
             fn (string $name): ?bool => $this->checks->evaluate($name),
-            freshInstall: $fresh,
         );
 
         // Only the phases that must precede the schema change may block it. An
