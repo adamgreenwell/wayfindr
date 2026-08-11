@@ -399,7 +399,10 @@ if [[ "$ticket_code" != "200" ]]; then
     exit 1
 fi
 
-assert_contains "$ticket_page" "Support artifacts" "ticket detail"
+# The ticket detail layout has grown over time; use the stable structural
+# landmark that proves the current ticket workspace rendered instead of older
+# feature copy that may move between tabs.
+assert_contains "$ticket_page" "Ticket brief" "ticket detail"
 assert_contains "$ticket_page" "$support_code" "ticket detail"
 
 echo "Support-loop smoke passed."
