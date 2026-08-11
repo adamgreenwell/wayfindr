@@ -56,9 +56,23 @@ missed while skimming.
   ```
 
   This is the same requirement 0.1.0 described in prose. It is now checked
-  against a real worker heartbeat, so **on a running install you are only told if
-  a worker genuinely has not been seen** — if you already run one, the operator
-  console and `wayfindr:upgrade-guard` say nothing.
+  against a real worker heartbeat, and the check has **three** answers rather
+  than two:
+
+  - **A worker has been seen** — nothing is reported. If you already run one you
+    will not hear about this at all.
+  - **No worker has been seen** — the advice appears, which is the case it exists
+    for.
+  - **This install cannot tell** — the advice appears *and says so*. A worker
+    records its heartbeat in the cache, so an `array` or `null` cache driver
+    cannot carry that sighting from the worker process to the web process. Rather
+    than guess, it reports that it could not check; you may well already have a
+    worker running.
+
+  That third answer is deliberate. Reporting "no worker" because of a cache
+  driver would blame you for a configuration that is none of this check's
+  business, and treating "cannot tell" as a pass would hide a genuinely missing
+  worker.
 
   The installer is the exception, and deliberately so: it prints this advice
   while upgrading whether or not you need it, because it runs *before* the
