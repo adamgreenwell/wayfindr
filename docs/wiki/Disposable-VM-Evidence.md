@@ -47,6 +47,22 @@ claim, record it as partial and keep the issue open.
   verified healthy services, ran migrations, completed the support loop, took
   and restored a backup, completed the support loop again after restore, and
   restarted the stack.
+- August 11, 2026:
+  [`upgrade-v0.2.0-latest-custom-backup-queue` passed](https://github.com/adamgreenwell/wayfindr/actions/runs/31535924025).
+  The run started from `v0.2.0`, set `BACKUP_QUEUE=evidence-backups`, upgraded
+  to `v0.3.2`, verified the support loop before and after upgrade, observed the
+  backups-queue advisory during upgrade guidance, confirmed the advisory retired
+  after the worker was observed, and completed backup/restore plus post-restore
+  smoke checks.
+- August 11, 2026:
+  [`upgrade-v0.1.0-latest` passed](https://github.com/adamgreenwell/wayfindr/actions/runs/31536143352).
+  The run upgraded directly from `v0.1.0` to `v0.3.2`, then completed runtime,
+  support-loop, backup/restore, post-restore smoke, and restart checks.
+- August 11, 2026:
+  [`upgrade-v0.1.0-v0.2.0-latest` passed](https://github.com/adamgreenwell/wayfindr/actions/runs/31536145475).
+  The run upgraded from `v0.1.0` to `v0.2.0`, then to `v0.3.2`, with runtime
+  verification and support-loop smoke after each upgrade, followed by
+  backup/restore, post-restore smoke, and restart checks.
 - This is still hosted-runner evidence. Use it as partial proof for the clean
   install and local backup/restore path, not as proof of a bare-metal VM reboot,
   rollback drill, DNS/TLS, mail delivery, offsite backups, or production restore

@@ -31,6 +31,11 @@ artifact you intend to run.
   [run 31535388323](https://github.com/adamgreenwell/wayfindr/actions/runs/31535388323).
   The resolved container image digest was
   `sha256:3fe112ca3d3f83efb1f4d00c401b8bf43cc706ec5bfddb05244be01b2fd8e660`.
+- Published upgrade paths also have passing hosted evidence:
+  [`v0.2.0 → v0.3.2` with custom `BACKUP_QUEUE`](https://github.com/adamgreenwell/wayfindr/actions/runs/31535924025),
+  [`v0.1.0 → v0.3.2`](https://github.com/adamgreenwell/wayfindr/actions/runs/31536143352),
+  and
+  [`v0.1.0 → v0.2.0 → v0.3.2`](https://github.com/adamgreenwell/wayfindr/actions/runs/31536145475).
 - Treat that as partial operational evidence. Before adopting it on a persistent
   host, still run your own disposable VM reboot, upgrade, rollback, DNS/TLS,
   mail, offsite-backup, and restore checks.
