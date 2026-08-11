@@ -38,6 +38,10 @@ Laravel-native hosting, or the
 mapping Wayfindr to another VPS, Docker, Coolify-style, or Laravel-capable
 host.
 
+The [GitHub Wiki](https://github.com/adamgreenwell/wayfindr/wiki) provides a
+guided operator map. Detailed contracts remain in this repository, and the
+reviewed Wiki sources live under `docs/wiki/`.
+
 ## Repository Layout
 
 ```text
@@ -61,6 +65,7 @@ docs/
   privacy/             Data responsibility, inventory, and cobrowse boundaries
   product/             Product principles, editions, roadmap
   self-hosting/        Installation and operations docs
+  wiki/                Reviewable source for the operator-facing GitHub Wiki
 docker/                Local and self-hosting templates
 ```
 
