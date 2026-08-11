@@ -79,6 +79,11 @@ Available scenarios:
   installer and image, sets a custom `BACKUP_QUEUE`, upgrades to the latest
   release, verifies support-loop survival, and proves the backup-worker advisory
   retires once the upgraded worker is observed.
+- `recovery-v0.2.0-latest-skew-restore` — starts from `v0.2.0`, takes a real
+  backup archive, upgrades to the latest release, restores the older archive
+  into the upgraded runtime, asserts the version-skew warning, runs migrations,
+  and proves the recovered support loop before continuing through the normal
+  backup/restore and restart checks.
 - `upgrade-v0.1.0-latest` — starts from `v0.1.0` and upgrades directly to the
   latest release.
 - `upgrade-v0.1.0-v0.2.0-latest` — starts from `v0.1.0`, steps through `v0.2.0`,

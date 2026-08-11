@@ -29,8 +29,9 @@ scenario checklists, redaction rules, and report template.
 The repository has a manual
 [Disposable VM evidence workflow](https://github.com/adamgreenwell/wayfindr/actions/workflows/disposable-vm-evidence.yml)
 for fresh GitHub-hosted Ubuntu 24.04 x64 runs. Use it to collect repeatable
-public-artifact evidence for clean install and supported upgrade scenarios, then
-copy the sanitized result summary into the relevant issue.
+public-artifact evidence for clean install, supported upgrade, and recovery
+skew-restore scenarios, then copy the sanitized result summary into the relevant
+issue.
 
 That workflow is helpful but deliberately bounded: it does not replace a
 bare-metal VM reboot, rollback drill, real DNS/TLS, mail delivery, offsite
