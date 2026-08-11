@@ -114,6 +114,14 @@ Other properties worth knowing:
 - **A notice is reported to fresh installs too.** An action is upgrade work, so a
   fresh install is exempt; a notice describes how the release wants to be *run*,
   and a fresh install runs it.
+- **Notices carry over between releases; actions do not.** The post-release reset
+  (`--reset-declaration`) empties `actions` and leaves `notices` alone, because
+  standing advice is as true next release as it is this one — clearing it would
+  make a real requirement vanish the moment a release shipped without re-adding
+  it. Removing a notice is a deliberate edit. A carried-over notice is re-stamped
+  with the new version, so its acknowledgement key changes; that only reaches an
+  operator who acknowledged *instead of* doing the work, since a checked notice
+  retires itself for everyone who did it.
 
 #### Why a separate list rather than a severity flag
 

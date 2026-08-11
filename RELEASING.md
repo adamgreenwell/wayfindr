@@ -98,6 +98,19 @@ printf '0.3.0\n' > VERSION
 # artifacts are built from it. Without this the next release rebuilds the same
 # actions under its own version, and an operator who already acknowledged
 # 0.2.0/thing is asked again for 0.3.0/thing - work they have demonstrably done.
+#
+# NOTICES ARE DELIBERATELY NOT CLEARED. An action is one-time upgrade work, so
+# repeating it is wrong. A notice is standing advice about how the release wants
+# to be RUN - "have a backups worker" is as true next release as it is this one -
+# so clearing it would make real advice vanish silently the moment a release
+# shipped without re-adding it. Removing a notice is a deliberate edit.
+#
+# The cost is that a surviving notice is re-stamped with the new version, so its
+# acknowledgement key changes (0.3.0/x becomes 0.4.0/x). That only reaches an
+# operator who acknowledged INSTEAD of doing the work: a `check`-verified notice
+# retires itself, so anyone who actually did it is never asked again. Being
+# reminded once per release of a requirement you chose to skip is the intended
+# outcome, not a bug to design around.
 php scripts/release/build-manifest.php --version=0.3.0 --reset-declaration >/dev/null
 
 git add VERSION release.json
