@@ -36,6 +36,20 @@ evidence for:
 Use [Disposable VM Evidence](Disposable-VM-Evidence) when recording those runs.
 Treat dated stage or fork observations as context, not current runtime proof.
 
+## Current Evidence Snapshot
+
+As of August 11, 2026, the hosted public-artifact workflow has a passing
+`clean-install-latest` run for `v0.3.2`:
+[run 31535388323](https://github.com/adamgreenwell/wayfindr/actions/runs/31535388323).
+That run proves a fresh GitHub-hosted Ubuntu runner can install the public
+release artifact, boot the Compose stack, run migrations, complete the support
+loop, take and restore a backup, repeat the support loop after restore, and
+restart the stack.
+
+It remains partial evidence. It does not close the bare-metal disposable VM
+reboot, rollback, real DNS/TLS, mail delivery, offsite backup, or production
+restore posture checks.
+
 ## Parked or Demand-Gated
 
 - External tracker labels, assignees, priorities, richer inbound comments, and

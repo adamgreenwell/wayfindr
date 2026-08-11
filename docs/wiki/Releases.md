@@ -24,6 +24,17 @@ Before adopting a release, follow [Upgrading](Upgrading), take a backup, keep a
 rollback target, and record clean-install or upgrade evidence from the same
 artifact you intend to run.
 
+## Current Release Evidence
+
+- `v0.3.2` has passing hosted public-artifact clean-install evidence from
+  August 11, 2026:
+  [run 31535388323](https://github.com/adamgreenwell/wayfindr/actions/runs/31535388323).
+  The resolved container image digest was
+  `sha256:3fe112ca3d3f83efb1f4d00c401b8bf43cc706ec5bfddb05244be01b2fd8e660`.
+- Treat that as partial operational evidence. Before adopting it on a persistent
+  host, still run your own disposable VM reboot, upgrade, rollback, DNS/TLS,
+  mail, offsite-backup, and restore checks.
+
 The versioning and enforcement contract is documented in the
 [platform versioning ADR](https://github.com/adamgreenwell/wayfindr/blob/main/docs/decisions/0012-platform-versioning.md)
 and [release manifest guide](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/release-manifest.md).
