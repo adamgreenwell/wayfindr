@@ -58,9 +58,11 @@ needs repeatable self-hosting evidence and deliberately demand-gated polish.
   [MVP Dogfood Readiness](mvp-dogfood-readiness.md) after deploys, and let real
   conversations select the next narrow product slice.
 - External integration polish: live GitHub issue creation, inbound state,
-  comment relay, and echo suppression are proven. Use continued traffic to
-  decide whether labels, assignee, priority mapping, richer inbound-comment
-  presentation, or assigned-agent notifications justify their complexity.
+  comment relay, and echo suppression are proven. Richer labels, assignee,
+  priority mapping, inbound-comment presentation, and assigned-agent
+  notifications are parked in
+  [External Ticket Integrations](external-ticket-integrations.md) until real
+  traffic proves a specific need.
 - Ticket workflow comfort: smoother transitions between conversation, ticket,
   visitor, and support-code context; clearer “what needs attention” cues; and
   less page-hopping for common agent moves.
@@ -81,10 +83,16 @@ stable.
 
 - Richer external field mapping only after real provider traffic establishes
   which fields, directions, and conflict rules are useful. Native Bitbucket
-  Issues remain deferred to demonstrated operator demand.
+  Issues remain deferred to demonstrated operator demand. Track this in the
+  product docs, not as an evergreen open issue, until a real operator need
+  appears.
 - Richer inbound-comment presentation and assigned-agent notifications only if
   continued live use demonstrates that the base internal-note relay is too
   quiet or too plain.
+- Literal incremental DOM patching inside the cobrowse replay iframe should not
+  proceed while the preview depends on a bare sandbox, no scripts, and server-
+  sanitized `srcdoc` swaps. Revisit only if dogfood telemetry shows full-preview
+  swaps are a real performance problem and an ADR accepts the security tradeoff.
 - Direct ticket attachments, internal-note attachments, office-document opt-ins,
   pre-signed attachment URLs, and broader attachment workflows only if
   conversation-message attachments prove the demand and operator controls.

@@ -39,12 +39,16 @@ Treat dated stage or fork observations as context, not current runtime proof.
 ## Parked or Demand-Gated
 
 - External tracker labels, assignees, priorities, richer inbound comments, and
-  assigned-agent notifications wait for real support traffic to prove demand.
+  assigned-agent notifications are documented parking-lot items, not active
+  open issues. Reopen a narrow issue only when real support traffic identifies
+  the provider, field direction, conflict policy, and operator pain.
 - Direct ticket attachments, internal-note attachments, office-document opt-ins,
   and pre-signed attachment URLs wait for message attachments to prove the next
   shape.
-- Live in-place cobrowse replay should not proceed as originally imagined if it
-  weakens the inert preview boundary.
+- Live cobrowse replay is already handled through server-sanitized preview
+  swaps. Literal incremental DOM patching inside the iframe should not proceed
+  while it weakens the bare-sandbox, no-script, observe-only boundary; revisit
+  only with measured dogfood pressure and a new architecture decision.
 - Broader automation, host SDK polish, and AI-assistive features come after the
   operator loop is boring.
 

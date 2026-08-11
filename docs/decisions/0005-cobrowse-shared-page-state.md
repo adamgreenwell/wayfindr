@@ -28,6 +28,7 @@ Shared page state gives Wayfindr better defaults for:
 - Initial snapshots are sanitized in the visitor browser with explicit mask selectors and sensitive-field inference, then shown to agents as safe preview text plus an inert replay preview before richer observe mode exists.
 - Mutation batches are compact and capped so small self-hosted installs can observe change pressure while the agent preview applies the safe mutation types it understands.
 - Agents receive live Reverb notices when cobrowse page state, snapshots, or mutation batches arrive, then refresh the inert preview when they are ready.
+- The supported live replay path is a server-sanitized preview refresh into the inert iframe, not client-side mutation patching inside the iframe. Literal incremental DOM patching would require relaxing the preview sandbox or running patching code in the preview document, so it is parked unless measured dogfood pressure justifies a new architecture decision.
 - Transport telemetry is first-class so hosts can see latency, payload size, reconnects, and dropped updates before tuning infrastructure.
 - Resync and transport audit events stay metadata-only. They may record request IDs, outcomes, reasons, timestamps, and safe counters, but never raw snapshot HTML, page text, mutation payloads, or visitor-entered content.
 - Reverb can carry early cobrowse events while traffic is modest.
