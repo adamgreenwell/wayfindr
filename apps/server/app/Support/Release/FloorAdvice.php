@@ -51,12 +51,28 @@ final readonly class FloorAdvice
             // Not an accusation — a question the install cannot answer about
             // itself. The escape hatch is the whole point of this branch: an
             // operator who knows where they are can say so and proceed.
+            //
+            // THE VALUE IS A PLACEHOLDER, NEVER THE FLOOR. Printing the floor
+            // here handed the operator the one value that defeats the check they
+            // are being asked to satisfy: `declaredOrigin()` trusts what they
+            // state, and an asserted origin equal to the floor compares as "not
+            // below", so an install genuinely older than the floor migrates on a
+            // path whose migrations no longer ship. The whole point of the floor
+            // is to stop exactly that jump, and the refusal message was
+            // dictating the bypass.
+            //
+            // The operator must supply the version they are actually on, which
+            // is the only value that makes this an origin rather than an
+            // override — and if that version really is below the floor, the
+            // refusal stands, which is the honest outcome.
             return new self(false, [
                 'This install has no recorded release, so the upgrade floor cannot be verified.',
                 sprintf('%s only supports upgrading from %s or later.', $release, $floor),
                 'Either upgrade to that release first, which records where you are,',
-                'or state the version you are on:',
-                sprintf('  WAYFINDR_UPGRADE_FROM=%s', $floor),
+                'or state the version you are actually running:',
+                '  WAYFINDR_UPGRADE_FROM=<the version this install is on>',
+                sprintf('Stating a version below %s is still refused — this establishes', $floor),
+                'where you are, it does not grant permission.',
             ]);
         }
 
