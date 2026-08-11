@@ -2,7 +2,7 @@
 
 This roadmap is directional and should not include private business strategy.
 
-As of August 11, 2026, the latest public release is `v0.3.1`, and the next
+As of August 11, 2026, the latest public release is `v0.3.2`, and the next
 development line is `0.4.0`.
 
 ## Current Alpha Spine

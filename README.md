@@ -106,7 +106,7 @@ Start with [data-responsibility.md](docs/privacy/data-responsibility.md), the
 
 ## Status
 
-Pre-alpha. The latest public release is `v0.3.1` (August 11, 2026), and the
+Pre-alpha. The latest public release is `v0.3.2` (August 11, 2026), and the
 next development line is `0.4.0`. Wayfindr now has a usable internal alpha spine
 for the first support loop and a review-gated self-hosting path, but
 release-readiness claims are still being proven on disposable VMs before the
