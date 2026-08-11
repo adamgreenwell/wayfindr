@@ -65,14 +65,24 @@ final readonly class FloorAdvice
             // is the only value that makes this an origin rather than an
             // override — and if that version really is below the floor, the
             // refusal stands, which is the honest outcome.
+            // AND IT MUST ASK FOR THE PRE-UPGRADE VERSION, EXPLICITLY.
+            //
+            // The migration guard emits this AFTER the pull, so "the version
+            // this install is on" is read as the release being installed — and
+            // entering the target compares at-or-above the floor, recreating the
+            // same bypass by a different route. The prompt has to name the
+            // release the operator upgraded FROM, and say that it is not the one
+            // being installed, because the only reader who needs this message is
+            // standing in front of a container that has already been replaced.
             return new self(false, [
                 'This install has no recorded release, so the upgrade floor cannot be verified.',
                 sprintf('%s only supports upgrading from %s or later.', $release, $floor),
                 'Either upgrade to that release first, which records where you are,',
-                'or state the version you are actually running:',
-                '  WAYFINDR_UPGRADE_FROM=<the version this install is on>',
+                'or state the release you are upgrading FROM — the one that was',
+                sprintf('running before this pull, not %s:', $release),
+                '  WAYFINDR_UPGRADE_FROM=<the release you upgraded from>',
                 sprintf('Stating a version below %s is still refused — this establishes', $floor),
-                'where you are, it does not grant permission.',
+                'where you started, it does not grant permission.',
             ]);
         }
 

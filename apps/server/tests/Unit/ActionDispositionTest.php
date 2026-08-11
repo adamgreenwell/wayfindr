@@ -211,4 +211,11 @@ test('the floor refusal never hands the operator the value that defeats it', fun
     // It still tells them how to clear it, and what will not clear it.
     expect($text)->toContain('WAYFINDR_UPGRADE_FROM=')
         ->toContain('below 0.2.0 is still refused');
+
+    // And it must ask for the PRE-UPGRADE version. This message is emitted by
+    // the migration guard AFTER the pull, so "the version you are on" reads as
+    // the target — and entering the target clears the floor exactly as the old
+    // prefill did. The prompt has to disown the target by name.
+    expect($text)->toContain('upgrading FROM')
+        ->toContain('not 0.3.0');
 });
