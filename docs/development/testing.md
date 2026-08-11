@@ -104,6 +104,15 @@ clear. The smoke scripts may still use an ephemeral Playwright install for
 runtime checks; that is separate from adding browser tests to the automated
 suite.
 
+## Disposable VM Evidence
+
+When a release-readiness issue needs clean install, upgrade, backup/restore,
+rollback, or reboot proof, use the
+[disposable VM evidence contract](../self-hosting/disposable-vm-evidence.md).
+It defines the minimum VM matrix, public-artifact rules, redaction rules, and
+report template so self-hosting claims stay repeatable instead of becoming
+one-off notes from a lucky VM.
+
 ## Wiki Documentation
 
 Run the Wiki navigation and authority-link check from the repository root:

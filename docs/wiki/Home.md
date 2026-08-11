@@ -8,7 +8,8 @@ an actively managed system rather than a set-and-forget appliance.
 ## Start Here
 
 - Evaluating Wayfindr or standing up a disposable VM? Start with
-  [Quick Start](Quick-Start).
+  [Quick Start](Quick-Start) and
+  [Disposable VM Evidence](Disposable-VM-Evidence).
 - Choosing a deployment shape? Read [Installation](Installation) and
   [Runtime and Operations](Runtime-and-Operations).
 - Already running it? Read [Upgrading](Upgrading) before pulling a new release.
@@ -22,6 +23,7 @@ an actively managed system rather than a set-and-forget appliance.
 - [Installation](Installation)
 - [Upgrading](Upgrading)
 - [Runtime and Operations](Runtime-and-Operations)
+- [Disposable VM Evidence](Disposable-VM-Evidence)
 - [Backup, Restore, and Rollback](Backup-Restore-and-Rollback)
 - [Security and Privacy](Security-and-Privacy)
 - [Operator Runbook](Operator-Runbook)
