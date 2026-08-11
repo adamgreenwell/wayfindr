@@ -2,10 +2,10 @@
 
 [Back to Home](Home)
 
-Wayfindr is pre-alpha. As of August 11, 2026, the repository is on the `0.4.0`
-development line and the latest public release is `v0.3.0`. The core support
-loop exists, and the current cycle is about proving that self-hosting and
-upgrades are repeatable from public artifacts.
+Wayfindr is pre-alpha. As of August 11, 2026, the latest public release is
+`v0.3.1`, and the next development line is `0.4.0`. The core support loop
+exists, and the current cycle is about proving that self-hosting and upgrades
+are repeatable from public artifacts.
 
 ## Shipped Spine
 
