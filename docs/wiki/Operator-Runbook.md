@@ -30,7 +30,9 @@ authoritative self-hosting docs.
 
 Provision a clean disposable VM, install the previous release when testing an
 upgrade, restore a real-shaped synthetic backup, upgrade, reboot, and repeat the
-support-loop smoke. Record commands, versions, timestamps, and any repair made.
+support-loop smoke. Use `scripts/smoke/public-artifact-reverify.sh` after
+reboot when the VM was installed with a persistent evidence target directory.
+Record commands, versions, timestamps, and any repair made.
 
 Use the full
 [runtime contract](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/runtime-requirements.md)
