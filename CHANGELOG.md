@@ -30,7 +30,35 @@ missed while skimming.
 
 ## [Unreleased]
 
-*Nothing yet.*
+**No operator action required.** Pull, restart, and migrations run themselves.
+
+### Added
+
+- Releases can now carry **advisory notices** — things worth telling you about
+  that are not worth stopping your upgrade over. They appear on the operator
+  console, in `wayfindr:upgrade-guard`, and in the installer's upgrade output,
+  and they block nothing. Where a notice can be checked automatically it
+  disappears on its own once the thing is done.
+- The first one: **run a queue worker on the `backups` connection**. Without it,
+  "Run a backup now" queues a job nothing will process and the run sits at
+  *Running* indefinitely. Scheduled backups are unaffected. Compose stacks
+  already run this worker and will see nothing; host-managed installs (Forge and
+  similar) need:
+
+  ```bash
+  php artisan queue:work backups --queue=backups --sleep=5 --tries=1 --timeout=3600
+  ```
+
+  This is the same requirement 0.1.0 described in prose. It is now checked
+  against a real worker heartbeat, so if you already run one you will not be told
+  anything. To silence it without running a worker, add
+  `<release>/backups-queue-consumer` to `WAYFINDR_ACKNOWLEDGED_ACTIONS`.
+
+  Worth being explicit about why this is advisory rather than enforced: the only
+  way to enforce it would have been to refuse traffic, and taking a whole support
+  platform down because a *backup* worker was missing is not a proportionate
+  answer. A release that can only shout or stay silent will eventually shout at
+  the wrong time.
 
 ## [0.2.0] - 2026-08-10
 
