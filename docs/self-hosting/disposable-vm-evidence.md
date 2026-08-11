@@ -92,11 +92,39 @@ Available scenarios:
   then upgrades to the latest release.
 
 The workflow uses `scripts/smoke/public-artifact-install.sh`, which can also run
-on a disposable VM:
+on a disposable VM. For a reboot-capable VM run, use a persistent target
+directory and explicit synthetic credentials so the after-reboot smoke can sign
+back in:
 
 ```bash
+sudo mkdir -p /opt/wayfindr-evidence
+sudo chown "$USER":"$USER" /opt/wayfindr-evidence
+
+export WAYFINDR_EVIDENCE_TARGET_DIR=/opt/wayfindr-evidence
+export WAYFINDR_EVIDENCE_PROJECT=wayfindr-evidence-clean-01
+export WAYFINDR_EVIDENCE_APP_URL=http://203.0.113.10
+export WAYFINDR_EVIDENCE_AGENT_EMAIL=agent+vm-clean-01@example.test
+export WAYFINDR_EVIDENCE_AGENT_PASSWORD="$(openssl rand -hex 24)"
+export WAYFINDR_EVIDENCE_SITE_PUBLIC_KEY=site_vm_clean_01
+export WAYFINDR_EVIDENCE_KEEP=1
+
 WAYFINDR_EVIDENCE_SCENARIO=clean-install-latest \
   scripts/smoke/public-artifact-install.sh
+```
+
+After rebooting and reconnecting to that same VM, run the non-destructive
+reverify harness against the persistent install:
+
+```bash
+export WAYFINDR_EVIDENCE_TARGET_DIR=/opt/wayfindr-evidence
+export WAYFINDR_EVIDENCE_PROJECT=wayfindr-evidence-clean-01
+export WAYFINDR_EVIDENCE_APP_URL=http://203.0.113.10
+export WAYFINDR_EVIDENCE_AGENT_EMAIL=agent+vm-clean-01@example.test
+export WAYFINDR_EVIDENCE_AGENT_PASSWORD="<same synthetic password>"
+export WAYFINDR_EVIDENCE_SITE_PUBLIC_KEY=site_vm_clean_01
+export WAYFINDR_EVIDENCE_REQUIRE_SUPPORT_LOOP=1
+
+scripts/smoke/public-artifact-reverify.sh
 ```
 
 Use the workflow log as evidence only for what it actually proves. A GitHub
@@ -254,10 +282,14 @@ After reconnecting:
 
 ```bash
 date -Is
-docker compose --env-file .env -f compose.yml ps
-curl -fsS https://support.example.invalid/up
-docker compose --env-file .env -f compose.yml exec -T web php artisan queue:failed
-docker compose --env-file .env -f compose.yml exec -T web php artisan schedule:list
+export WAYFINDR_EVIDENCE_TARGET_DIR=/opt/wayfindr-evidence
+export WAYFINDR_EVIDENCE_PROJECT=wayfindr-evidence-clean-01
+export WAYFINDR_EVIDENCE_APP_URL=https://support.example.invalid
+export WAYFINDR_EVIDENCE_AGENT_EMAIL=agent+vm-clean-01@example.test
+export WAYFINDR_EVIDENCE_AGENT_PASSWORD="<same synthetic password>"
+export WAYFINDR_EVIDENCE_SITE_PUBLIC_KEY=site_vm_clean_01
+export WAYFINDR_EVIDENCE_REQUIRE_SUPPORT_LOOP=1
+scripts/smoke/public-artifact-reverify.sh
 ```
 
 The report should state whether services restarted automatically and whether any

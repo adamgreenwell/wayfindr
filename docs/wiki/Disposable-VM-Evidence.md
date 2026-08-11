@@ -36,6 +36,12 @@ issue. The hosted recovery path uses
 backup archive, synthetic older manifest identity, forced restore, migration,
 and post-restore support-loop proof.
 
+For a real disposable VM reboot check, run the evidence installer with a
+persistent `WAYFINDR_EVIDENCE_TARGET_DIR`, fixed synthetic credentials, and
+`WAYFINDR_EVIDENCE_KEEP=1`; reboot the VM; then run
+`scripts/smoke/public-artifact-reverify.sh` with the same target directory,
+project name, app URL, site key, and synthetic agent credentials.
+
 That workflow is helpful but deliberately bounded: it does not replace a
 bare-metal VM reboot, rollback drill, real DNS/TLS, mail delivery, offsite
 backup, or production restore posture. If the workflow proves only part of a
