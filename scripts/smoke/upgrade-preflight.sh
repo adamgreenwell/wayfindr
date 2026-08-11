@@ -73,6 +73,15 @@ check "NOW stops the pull despite after-start"        BLOCK   "$(partition 'NOW|
 check "NOW stops the pull despite after-pull"         BLOCK   "$(partition 'NOW|0.2.0/h|after-pull|s|d')"
 check "NOW stops the pull on before-pull"             BLOCK   "$(partition 'NOW|0.2.0/i|before-pull|s|d')"
 
+# Advisory notices are stripped out of the list before it ever reaches the
+# partition. This asserts the second line of defence: even if that strip failed,
+# nothing here can read a NOTICE as work that blocks. The advisory channel is
+# only safe if BOTH are true, because the whole point is that no single site has
+# to remember.
+check "a leaked notice still does not block"          PROCEED "$(partition 'NOTICE|0.3.0/backups-queue-consumer|s|d')"
+check "a leaked notice does not rescue a real blocker" BLOCK  "$(partition 'NOTICE|0.3.0/x|s|d
+DO|0.3.0/y|before-pull|s|d')"
+
 # The span rule, run through the same comparator the installer uses.
 span() {
     local from="$1" to="$2"

@@ -344,10 +344,41 @@ have it, and the artifact guard is the guarantee for everyone else.
   declared.** The declaration is a separate decision about blast radius, not an
   automatic consequence of the check becoming possible.
 
-  If a third response is ever added — advisory, say: surfaced on the operator
-  console and in the upgrade output, never blocking — this requirement is its
-  first candidate, and the `_bootstrap` note in `release.json` records why it is
-  waiting.
+  **The third response now exists.** Advisory requirements are declared under a
+  separate top-level `notices` list, reported on the operator console, in
+  `wayfindr:upgrade-guard`, and in the installer's upgrade output, and they block
+  nothing. `requires_operator_action` counts actions only, so a notice-only
+  release stays honestly marked as safe to take unattended.
+
+  **It is a separate list rather than a severity on an action, and that is the
+  load-bearing decision.** An advisory has to be honoured at three independent
+  gates — the migration filter, the serving filter, the installer's partition —
+  and a severity flag means each must remember to check it. A gate that forgets
+  turns advice into an outage, which is precisely what the advisory response
+  exists to prevent. This record already documents one rule needing six sites to
+  agree and drifting at nearly every step; a second such rule, whose failure mode
+  is refusing all traffic, was not worth authoring. The gates read `actions` and
+  cannot see `notices`.
+
+  It is also the only shape that is backward compatible. Older readers ignore an
+  unknown top-level key — verified against 0.2.0's shipped reader — so a release
+  carrying notices upgrades cleanly from every release predating them, with no
+  schema bump (a bump would make older images reject the manifest outright). A
+  severity flag inside `actions` would be read by older code with no concept of
+  it and treated as required, so a `before-pull` advisory would have made the
+  *old* installer refuse the pull.
+
+  Two constraints fall out, both recorded in
+  `docs/self-hosting/release-manifest.md`:
+
+  - A notice takes **no `phase` and no `depends_on_release`**. A phase times a
+    response it does not have; `depends_on_release` decides strandedness, which
+    decides blocking.
+  - Therefore **advisory work must be performable at any time**. Work that can
+    only be done on a release the upgrade passes is not advisory — either it
+    stops the upgrade, or telling an operator to do it is noise.
+
+  The backups queue worker is this response's first user.
 
 ## Delivery slices
 

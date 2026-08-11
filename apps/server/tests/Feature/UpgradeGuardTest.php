@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Listeners\BlockMigrationsWithUnmetRequirements;
 use App\Listeners\ForgetReleaseAfterRollback;
+use App\Models\User;
 use App\Support\Backup\RestoreService;
 use App\Support\Release\ActionAdvice;
 use App\Support\Release\CheckRegistry;
@@ -2116,4 +2117,210 @@ test('the refusal footer speaks only for work no acknowledgement can clear', fun
         ->and(ActionAdvice::for(
             ['release' => '0.3.0', 'id' => 'thing'], '0.3.0', '0.2.0',
         )->countsTowardFooter())->toBeFalse();
+});
+
+/*
+|--------------------------------------------------------------------------
+| Advisory notices (ADR 0013)
+|--------------------------------------------------------------------------
+|
+| The third response: reported wherever an operator meets them, never blocking.
+| They are a separate list rather than a severity on an action so that the three
+| gates — migration, serving, installer preflight — physically cannot see them.
+| These tests exist to keep that separation true.
+|
+*/
+
+function noticeDeclaration(array $overrides = []): array
+{
+    return ['actions' => [], 'notices' => [array_merge([
+        'id' => 'backups-queue-consumer',
+        'summary' => 'Run a worker on the backups queue.',
+        'detail' => 'php artisan queue:work backups --queue=backups',
+        'applicability' => ['type' => 'always'],
+        'verification' => ['type' => 'attest'],
+    ], $overrides)]];
+}
+
+test('a notice is reported but blocks nothing', function (): void {
+    bakeRelease(noticeDeclaration(), '0.3.0');
+
+    $guard = app(UpgradeGuard::class);
+
+    expect(array_column($guard->notices(), 'id'))->toBe(['backups-queue-consumer'])
+        // The migration gate does not see it.
+        ->and($guard->assess()['blocked'])->toBeFalse()
+        // Neither does the serving gate.
+        ->and($guard->assessAll())->toBeEmpty();
+});
+
+test('a notice-only release is safe to take unattended', function (): void {
+    // `requires_operator_action` answers "is pulling enough?". For a notice it
+    // is, so counting notices here would put the changelog's loudest heading on
+    // releases that do not need it.
+    $manifest = ReleaseManifest::build(noticeDeclaration(), '0.3.0', 'abc');
+
+    expect($manifest['requires_operator_action'])->toBeFalse()
+        ->and($manifest['notices'])->toHaveCount(1);
+});
+
+test('the serving gate never refuses traffic over a notice', function (): void {
+    // The property the whole design turns on, asserted end to end through the
+    // real middleware rather than through the guard it consults.
+    bakeRelease(noticeDeclaration(), '0.3.0');
+
+    // 503 is what the gate returns when it refuses. Asserting "not 503" rather
+    // than a specific success code keeps this about the gate rather than about
+    // whatever these routes happen to do (a redirect is still being served).
+    $this->get('/up')->assertOk();
+    expect($this->get('/login')->status())->not->toBe(503);
+    expect($this->get('/')->status())->not->toBe(503);
+});
+
+test('the serving gate DOES refuse an equivalent action, proving the test above', function (): void {
+    // The control. Without it, "notices do not 503" would pass just as well if
+    // the serving gate had stopped refusing anything at all.
+    bakeRelease(blockingDeclaration('after-start'), '0.3.0');
+
+    expect($this->get('/login')->status())->toBe(503);
+});
+
+test('an unmet notice does not fail the guard command', function (): void {
+    // Automation reads the exit code. If advice failed it, the advisory channel
+    // would cost exactly what a refusal costs, which defeats its purpose.
+    bakeRelease(noticeDeclaration(), '0.3.0');
+
+    expect(Artisan::call('wayfindr:upgrade-guard'))->toBe(0);
+    expect(Artisan::output())
+        ->toContain('advisory notice')
+        ->toContain('Run a worker on the backups queue.')
+        ->toContain('nothing is blocked');
+});
+
+test('a satisfied check retires its notice without an acknowledgement', function (): void {
+    // The good case, and why `check` is preferred over `attest` for notices:
+    // the advice stops when the thing is actually done.
+    bakeRelease(noticeDeclaration([
+        'verification' => ['type' => 'check', 'check' => 'backups-queue-consumer'],
+    ]), '0.3.0');
+
+    app(CheckRegistry::class)->register('backups-queue-consumer', fn (): ?bool => true);
+
+    expect(app(UpgradeGuard::class)->notices())->toBeEmpty();
+});
+
+test('a failing check keeps its notice, and cannot tell is not a pass', function (): void {
+    bakeRelease(noticeDeclaration([
+        'verification' => ['type' => 'check', 'check' => 'backups-queue-consumer'],
+    ]), '0.3.0');
+
+    app(CheckRegistry::class)->register('backups-queue-consumer', fn (): ?bool => false);
+    expect(app(UpgradeGuard::class)->notices())->toHaveCount(1);
+
+    // Null is "cannot evaluate", which must not silently retire the advice.
+    app(CheckRegistry::class)->register('backups-queue-consumer', fn (): ?bool => null);
+    $notices = app(UpgradeGuard::class)->notices();
+
+    expect($notices)->toHaveCount(1)
+        ->and($notices[0]['satisfied_by'])->toBe('unevaluable');
+});
+
+test('an acknowledgement silences a notice', function (): void {
+    bakeRelease(noticeDeclaration(), '0.3.0');
+
+    putenv('WAYFINDR_ACKNOWLEDGED_ACTIONS=0.3.0/backups-queue-consumer');
+
+    try {
+        expect(app(UpgradeGuard::class)->notices())->toBeEmpty();
+    } finally {
+        putenv('WAYFINDR_ACKNOWLEDGED_ACTIONS');
+    }
+});
+
+test('a fresh install still gets the running release advice', function (): void {
+    // Actions are upgrade work, so a fresh install is exempt. A notice describes
+    // how the release wants to be RUN, and a fresh install runs it — suppressing
+    // it would hide the missing-worker advice from the installs most likely to be
+    // missing one.
+    bakeRelease(noticeDeclaration(), '0.3.0');
+
+    app(UpgradeContext::class)->observeFreshInstall(true);
+
+    expect(app(UpgradeGuard::class)->notices())->toHaveCount(1);
+});
+
+test('notices from a skipped release are still reported', function (): void {
+    // Advisory work must be performable at any time (a notice takes no
+    // depends_on_release), so a release the upgrade jumped past has advice that
+    // is still actionable today.
+    bakeRelease(['actions' => []], '0.4.0', history: [
+        ReleaseManifest::build(noticeDeclaration(), '0.3.0', 'bbb'),
+        ReleaseManifest::build(['actions' => []], '0.4.0', 'abc123'),
+    ]);
+
+    app(ReleaseState::class)->record('0.2.0', 'aaa', satisfiedThrough: '0.2.0');
+
+    expect(array_column(app(UpgradeGuard::class)->notices(), 'id'))
+        ->toBe(['backups-queue-consumer']);
+});
+
+test('a notice takes no phase and no depends_on_release', function (): void {
+    // Both would be fields nothing reads: a phase times a response a notice does
+    // not have, and depends_on_release decides strandedness, which decides
+    // blocking. Rejecting them keeps the declaration honest about what advisory
+    // means — work performable at any time.
+    foreach (['phase' => 'after-start', 'depends_on_release' => 'code'] as $key => $value) {
+        expect(fn () => ReleaseManifest::build(noticeDeclaration([$key => $value]), '0.3.0', 'abc'))
+            ->toThrow(InvalidArgumentException::class);
+    }
+});
+
+test('an action and a notice cannot share an id', function (): void {
+    // They share one acknowledgement namespace, so acknowledging the advisory
+    // would otherwise settle the blocking requirement silently.
+    $declaration = blockingDeclaration();
+    $declaration['notices'] = noticeDeclaration(['id' => 'do-the-thing'])['notices'];
+
+    expect(fn () => ReleaseManifest::build($declaration, '0.3.0', 'abc'))
+        ->toThrow(InvalidArgumentException::class);
+});
+
+test('a release declaring no notices publishes no notices key', function (): void {
+    // So every manifest published before this key existed stays byte-reproducible
+    // from its declaration.
+    expect(ReleaseManifest::build(['actions' => []], '0.3.0', 'abc'))
+        ->not->toHaveKey('notices');
+});
+
+test('a published notice must belong to its own manifest', function (): void {
+    $manifest = ReleaseManifest::build(noticeDeclaration(), '0.3.0', 'abc');
+    $manifest['notices'][0]['release'] = '0.2.0';
+
+    expect(fn () => ReleaseManifest::assertPublished($manifest))
+        ->toThrow(InvalidArgumentException::class);
+});
+
+test('the operator console surfaces an unmet notice', function (): void {
+    // The console half of ADR 0013's "reported where the operator meets it".
+    bakeRelease(noticeDeclaration(), '0.3.0');
+
+    $operator = User::factory()->create(['platform_role' => 'operator']);
+
+    $this->actingAs($operator)->get('/operator')
+        ->assertOk()
+        ->assertSee('This release advises')
+        ->assertSee('Run a worker on the backups queue.')
+        // And says plainly that nothing is broken, or an operator reads advice
+        // as an incident.
+        ->assertSee('None of these blocks migrations');
+});
+
+test('the operator console shows no advisory panel when there are none', function (): void {
+    bakeRelease(['actions' => []], '0.3.0');
+
+    $operator = User::factory()->create(['platform_role' => 'operator']);
+
+    $this->actingAs($operator)->get('/operator')
+        ->assertOk()
+        ->assertDontSee('This release advises');
 });

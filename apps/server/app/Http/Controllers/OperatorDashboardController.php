@@ -6,6 +6,7 @@ use App\Models\AuditEvent;
 use App\Models\User;
 use App\Support\OperatorReadiness;
 use App\Support\OperatorSystemIdentity;
+use App\Support\Release\UpgradeGuard;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -17,6 +18,7 @@ class OperatorDashboardController extends Controller
         Request $request,
         OperatorReadiness $readiness,
         OperatorSystemIdentity $systemIdentity,
+        UpgradeGuard $guard,
     ): View {
         return view('operator.dashboard', [
             'operator' => $request->user(),
@@ -24,6 +26,12 @@ class OperatorDashboardController extends Controller
             'operatorActivityTotal' => $this->operatorActivityTotal(),
             'readiness' => $readiness->summary(),
             'systemIdentity' => $systemIdentity->summary(),
+            // Advisory notices (ADR 0013). This is the console half of "reported
+            // where the operator meets it" — the other half is the upgrade
+            // output. `notices()` swallows an unreadable declaration and returns
+            // an empty list, so a broken manifest cannot take the console down;
+            // the readiness panel and the serving gate are what react to that.
+            'releaseNotices' => $guard->notices(),
         ]);
     }
 

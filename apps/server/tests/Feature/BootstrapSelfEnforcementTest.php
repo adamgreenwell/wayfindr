@@ -12,8 +12,16 @@ uses(RefreshDatabase::class);
 test('the shipped release.json does not gate serving on its own release', function (): void {
     // The bootstrap constraint from ADR 0013: the release that first carries the
     // guard must require nothing, or it refuses traffic on every install the
-    // moment it lands. This test is the guard against re-declaring an action
-    // without thinking about that.
+    // moment it lands. 0.1.0 discharged that, so this is now a tripwire rather
+    // than a law — it exists so that declaring something which refuses traffic is
+    // a deliberate act, not a side effect.
+    //
+    // It asks the real question — does this actually gate serving — rather than
+    // proxying through the phase. Those answered the same thing until advisory
+    // NOTICES existed; now a notice is reported and never gates, so a phase-based
+    // filter would trip on advice that cannot refuse anything. Advisory work is
+    // declared under `notices`, which the serving gate never reads, so it is
+    // correctly invisible here.
     $declaration = json_decode((string) file_get_contents(base_path('../../release.json')), true);
 
     $manifest = ReleaseManifest::build($declaration, '0.2.0', 'abc');
@@ -27,14 +35,29 @@ test('the shipped release.json does not gate serving on its own release', functi
     config()->set('wayfindr.release.history_path', $dir.'/history.json');
     config()->set('wayfindr.release.state_path', $dir.'/state.json');
 
-    $outstanding = app(UpgradeGuard::class)->assessAll();
+    $guard = app(UpgradeGuard::class);
 
     $gatesServing = array_filter(
-        $outstanding,
+        $guard->assessAll(),
         static fn (array $a): bool => in_array($a['phase'] ?? '', UpgradeRequirements::BLOCKS_SERVING, true),
     );
 
     expect($gatesServing)->toBeEmpty(
-        'release.json declares an action that would refuse traffic on the release introducing the guard',
+        'release.json declares an action that would refuse traffic. If that is intended, say so '
+        .'deliberately — and consider whether it belongs under "notices" instead, which reports '
+        .'without refusing.',
     );
+
+    // The other half of the tripwire, and the reason it is not simply "actions is
+    // empty": notices are allowed to be non-empty, and MUST stay out of the
+    // gates. If a notice ever reaches the serving list, the separation that makes
+    // advisories safe has broken.
+    $noticeIds = array_column($guard->notices(), 'id');
+
+    foreach (array_column($guard->assessAll(), 'id') as $gated) {
+        expect($noticeIds)->not->toContain(
+            $gated,
+            "\"{$gated}\" is declared as a notice but reached the gating list — advisory work must never gate.",
+        );
+    }
 });

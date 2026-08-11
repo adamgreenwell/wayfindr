@@ -65,6 +65,70 @@ Keys beginning with `_` are treated as comments and stripped before publication.
 An empty `actions` list is the normal case and means the release is safe to take
 unattended.
 
+### `notices` — advice that never blocks
+
+Some requirements are worth telling an operator about without being worth an
+outage. A **notice** is reported wherever an operator will meet it — the operator
+console, `wayfindr:upgrade-guard`, and the installer's upgrade output — and stops
+nothing.
+
+```json
+{
+  "minimum_upgrade_from": "0.1.0-alpha.1",
+  "actions": [],
+  "notices": [
+    {
+      "id": "backups-queue-consumer",
+      "summary": "Run a worker on the backups queue.",
+      "detail": "php artisan queue:work backups --queue=backups --sleep=5 --tries=1 --timeout=3600",
+      "applicability": { "type": "always" },
+      "verification": { "type": "check", "check": "backups-queue-consumer" }
+    }
+  ]
+}
+```
+
+**A notice takes no `phase` and no `depends_on_release`**, and both omissions
+follow from the same fact. A phase says *when* work can be performed, which only
+matters because it decides when a response fires — a notice has no response to
+time. `depends_on_release` decides strandedness, which decides blocking — a
+notice cannot block.
+
+That implies the rule for choosing between the two lists:
+
+> **Advisory work must be performable at any time.** If something can only be
+> done on a release the upgrade passes, it is not advisory: either it matters
+> enough to stop the upgrade — declare an `action` — or it does not, and telling
+> an operator to do something they can no longer do is noise.
+
+Other properties worth knowing:
+
+- **`requires_operator_action` counts actions only.** A release carrying nothing
+  but notices is safe to take unattended, which is exactly what that flag
+  answers. Its changelog entry should say *No operator action required*.
+- **Prefer `check` over `attest`.** A checked notice retires itself when the
+  thing is actually done. An attested one can only be silenced by hand.
+- **Silencing is the same mechanism as acknowledging.** Add `<release>/<id>` to
+  `WAYFINDR_ACKNOWLEDGED_ACTIONS`. Ids are unique across actions *and* notices in
+  a release, because they share that namespace.
+- **A notice is reported to fresh installs too.** An action is upgrade work, so a
+  fresh install is exempt; a notice describes how the release wants to be *run*,
+  and a fresh install runs it.
+
+#### Why a separate list rather than a severity flag
+
+An advisory has to be honoured at three independent gates — the migration filter,
+the serving filter, and the installer's partition. A `severity` field would mean
+each one has to *remember* to check it, and a gate that forgets turns advice into
+an outage: the exact failure the advisory response exists to prevent. The gates
+read `actions`; they cannot see `notices` at all.
+
+It is also the only shape that is backward compatible. Older readers ignore an
+unknown top-level key, so a release carrying notices upgrades cleanly from every
+release that predates them. A severity flag inside `actions` would instead be
+read by older code with no concept of it and treated as required — so a
+`before-pull` advisory would make the *old* installer refuse the pull.
+
 ### `minimum_upgrade_from`
 
 The oldest version that may upgrade **directly** to this one. Older installs must

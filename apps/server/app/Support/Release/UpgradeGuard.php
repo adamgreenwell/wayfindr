@@ -194,6 +194,15 @@ final class UpgradeGuard
     /** @var list<array<string, mixed>> */
     private array $lastOutstanding = [];
 
+    /**
+     * Advisory notices from the last assessment. Reset on every `assess()` so a
+     * later refusal that returns early cannot serve advice computed for an
+     * earlier, different reading.
+     *
+     * @var list<array<string, mixed>>
+     */
+    private array $lastNotices = [];
+
     private ?string $lastTarget = null;
 
     private ?string $lastCommit = null;
@@ -273,6 +282,39 @@ final class UpgradeGuard
     }
 
     /**
+     * Advisory notices this install has not met (ADR 0013).
+     *
+     * Called by the surfaces that REPORT and by nothing that gates. `assess()`'s
+     * blocking filter and the serving middleware never read this list, which is
+     * what makes an advisory structurally incapable of causing an outage: there
+     * is no severity filter for a future edit to forget.
+     *
+     * Computed inside `assess()` rather than here, because resolving the
+     * manifest, the history, the origin and the freshness reading is subtle
+     * enough that a second copy would be a fourth implementation of it. An
+     * assessment that returns early — unreadable manifest, floor refusal —
+     * leaves this empty, which is the right answer: an upgrade that is refused
+     * outright has no advice worth giving.
+     *
+     * Returns an empty list rather than throwing when the release cannot be
+     * assessed at all. Advice is not worth failing a request over, and the
+     * surfaces that must react to an unreadable declaration already do
+     * (`lastAssessable()`).
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function notices(): array
+    {
+        try {
+            $this->assess(includeTarget: true);
+        } catch (Throwable) {
+            return [];
+        }
+
+        return $this->lastNotices;
+    }
+
+    /**
      * What this upgrade still owes before it may migrate.
      *
      * @return array{blocked: bool, reason: string, actions: list<array<string, mixed>>, from: ?string, target: ?string, legacy: bool, floor: ?string}
@@ -281,6 +323,10 @@ final class UpgradeGuard
     {
         $this->lastTarget = null;
         $this->lastCommit = null;
+        // Cleared here, not merely overwritten at the end: every early return
+        // below would otherwise leave the previous assessment's advice in place,
+        // and a floor refusal would report notices computed for a different span.
+        $this->lastNotices = [];
         $this->lastAssessable = true;
 
         try {
@@ -501,6 +547,19 @@ final class UpgradeGuard
         );
 
         $this->lastOutstanding = $outstanding;
+
+        // Advisory notices, from the same history, origin and freshness reading
+        // the actions were evaluated against. Computed here so there is one
+        // resolution of all four, and stashed rather than returned so that
+        // nothing which gates ever receives them.
+        $this->lastNotices = UpgradeRequirements::outstandingNotices(
+            $history,
+            $from,
+            $target,
+            UpgradeRequirements::parseAcknowledged($this->acknowledged()),
+            fn (string $name): ?bool => $this->checks->evaluate($name),
+            freshInstall: $fresh,
+        );
 
         // Only the phases that must precede the schema change may block it. An
         // unmet after-start action needs the migrated schema to be performed at
