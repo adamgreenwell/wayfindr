@@ -21,7 +21,7 @@ MODE="${WAYFINDR_EVIDENCE_MODE:-}"
 INSTALL_REF="${WAYFINDR_EVIDENCE_INSTALL_REF:-}"
 INSTALLER_REF="${WAYFINDR_EVIDENCE_INSTALLER_REF:-}"
 UPGRADE_CHAIN="${WAYFINDR_EVIDENCE_UPGRADE_CHAIN:-}"
-SKEW_RESTORE_AFTER_UPGRADE="${WAYFINDR_EVIDENCE_SKEW_RESTORE_AFTER_UPGRADE:-0}"
+SYNTHETIC_SKEW_RESTORE="${WAYFINDR_EVIDENCE_SYNTHETIC_SKEW_RESTORE:-0}"
 LAST_BACKUP_ARCHIVE=""
 SKEW_RESTORE_ARCHIVE=""
 SKEW_RESTORE_MARKER=""
@@ -39,12 +39,11 @@ case "$SCENARIO" in
         UPGRADE_CHAIN="${UPGRADE_CHAIN:-latest}"
         BACKUP_QUEUE_OVERRIDE="${BACKUP_QUEUE_OVERRIDE:-evidence-backups}"
         ;;
-    recovery-v0.2.0-latest-skew-restore)
-        MODE="${MODE:-upgrade}"
-        INSTALL_REF="${INSTALL_REF:-v0.2.0}"
-        INSTALLER_REF="${INSTALLER_REF:-$INSTALL_REF}"
-        UPGRADE_CHAIN="${UPGRADE_CHAIN:-latest}"
-        SKEW_RESTORE_AFTER_UPGRADE="${WAYFINDR_EVIDENCE_SKEW_RESTORE_AFTER_UPGRADE:-1}"
+    recovery-latest-synthetic-skew-restore)
+        MODE="${MODE:-clean}"
+        INSTALL_REF="${INSTALL_REF:-}"
+        INSTALLER_REF="${INSTALLER_REF:-main}"
+        SYNTHETIC_SKEW_RESTORE="${WAYFINDR_EVIDENCE_SYNTHETIC_SKEW_RESTORE:-1}"
         ;;
     upgrade-v0.1.0-latest)
         MODE="${MODE:-upgrade}"
@@ -64,7 +63,7 @@ case "$SCENARIO" in
         ;;
     *)
         echo "Unknown WAYFINDR_EVIDENCE_SCENARIO: $SCENARIO" >&2
-        echo "Use clean-install-latest, upgrade-v0.2.0-latest-custom-backup-queue, recovery-v0.2.0-latest-skew-restore, upgrade-v0.1.0-latest, upgrade-v0.1.0-v0.2.0-latest, or custom." >&2
+        echo "Use clean-install-latest, upgrade-v0.2.0-latest-custom-backup-queue, recovery-latest-synthetic-skew-restore, upgrade-v0.1.0-latest, upgrade-v0.1.0-v0.2.0-latest, or custom." >&2
         exit 1
         ;;
 esac
@@ -327,15 +326,52 @@ create_backup_archive() {
     LAST_BACKUP_ARCHIVE="$archive"
 }
 
-prepare_version_skew_restore_archive() {
+make_synthetic_skew_archive() {
+    local source_archive="$1"
+    local target_archive="$2"
+    local synthetic_version="$3"
+    local synthetic_commit="$4"
+
+    echo "Rewriting a copy of the backup manifest to simulate version skew."
+    compose_exec sh -c "set -e
+work=\"\$(mktemp -d)\"
+cleanup_work() { rm -rf \"\$work\"; }
+trap cleanup_work EXIT
+tar -xzf '$source_archive' -C \"\$work\"
+php -r '
+\$manifestPath = \$argv[1];
+\$manifest = json_decode(file_get_contents(\$manifestPath), true);
+if (! is_array(\$manifest)) {
+    fwrite(STDERR, \"Backup manifest is not valid JSON.\\n\");
+    exit(1);
+}
+\$manifest[\"wayfindr_version\"] = \$argv[2];
+\$manifest[\"wayfindr_commit\"] = \$argv[3];
+file_put_contents(
+    \$manifestPath,
+    json_encode(\$manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL
+);
+' \"\$work/manifest.json\" '$synthetic_version' '$synthetic_commit'
+tar -czf '$target_archive' -C \"\$work\" .
+tar -tzf '$target_archive' ./manifest.json >/dev/null"
+}
+
+prepare_synthetic_version_skew_restore_archive() {
     create_backup_archive \
-        "Preparing pre-upgrade archive for version-skew restore drill" \
+        "Preparing source archive for synthetic version-skew restore drill" \
         "/app/apps/server/storage/app/evidence-skew-backup"
 
-    SKEW_RESTORE_ARCHIVE="$LAST_BACKUP_ARCHIVE"
     SKEW_RESTORE_MARKER="$RESTORE_MARKER"
+    SKEW_RESTORE_ARCHIVE="/tmp/wayfindr-evidence-synthetic-skew/wayfindr-backup-synthetic-skew.tar.gz"
 
-    echo "Version-skew restore archive prepared: $SKEW_RESTORE_ARCHIVE"
+    compose_exec mkdir -p "$(dirname "$SKEW_RESTORE_ARCHIVE")"
+    make_synthetic_skew_archive \
+        "$LAST_BACKUP_ARCHIVE" \
+        "$SKEW_RESTORE_ARCHIVE" \
+        "v0.2.0" \
+        "synthetic-skew-restore-archive"
+
+    echo "Synthetic version-skew restore archive prepared: $SKEW_RESTORE_ARCHIVE"
 }
 
 backup_restore_drill() {
@@ -382,9 +418,16 @@ version_skew_restore_drill() {
 
     echo
     echo "== Version-skew restore drill =="
-    echo "Restoring older archive into upgraded runtime: $SKEW_RESTORE_ARCHIVE"
+    echo "Restoring skewed archive into the current runtime: $SKEW_RESTORE_ARCHIVE"
     compose_exec php artisan down >/dev/null
     compose stop queue scheduler >/dev/null
+
+    RESTORE_MARKER="$SKEW_RESTORE_MARKER"
+    compose_exec php artisan tinker --execute="
+\\Illuminate\\Support\\Facades\\DB::table('users')->where('email', '${RESTORE_MARKER}@example.test')->delete();
+\\Illuminate\\Support\\Facades\\Storage::disk('attachments')->delete('evidence/${RESTORE_MARKER}.bin');
+" >/dev/null
+    assert_restore_marker gone
 
     restore_out="$(compose_exec php artisan wayfindr:restore "$SKEW_RESTORE_ARCHIVE" --force)"
     printf '%s\n' "$restore_out"
@@ -392,10 +435,9 @@ version_skew_restore_drill() {
     grep -F 'Restore complete.' <<< "$restore_out" >/dev/null
     grep -F 'Attachments verified present:' <<< "$restore_out" >/dev/null
 
-    RESTORE_MARKER="$SKEW_RESTORE_MARKER"
     assert_restore_marker present
 
-    echo "Migrating restored older archive to the upgraded runtime."
+    echo "Running migrations after restoring the skewed archive."
     compose_exec php artisan migrate --force
     compose start queue scheduler >/dev/null
     compose_exec php artisan up >/dev/null
@@ -510,19 +552,16 @@ bootstrap_instance
 verify_runtime "after initial install"
 run_support_loop "after initial install"
 
-if [ "$SKEW_RESTORE_AFTER_UPGRADE" = "1" ]; then
-    prepare_version_skew_restore_archive
-fi
-
 if [ "$MODE" = "upgrade" ]; then
     [ -n "$UPGRADE_CHAIN" ] || { echo "Upgrade mode requires WAYFINDR_EVIDENCE_UPGRADE_CHAIN." >&2; exit 1; }
     run_upgrade_chain "$UPGRADE_CHAIN"
 fi
 
-if [ "$SKEW_RESTORE_AFTER_UPGRADE" = "1" ]; then
+if [ "$SYNTHETIC_SKEW_RESTORE" = "1" ]; then
+    prepare_synthetic_version_skew_restore_archive
     version_skew_restore_drill
-    verify_runtime "after version-skew restore recovery"
-    run_support_loop "after version-skew restore recovery"
+    verify_runtime "after synthetic version-skew restore recovery"
+    run_support_loop "after synthetic version-skew restore recovery"
 fi
 
 backup_restore_drill

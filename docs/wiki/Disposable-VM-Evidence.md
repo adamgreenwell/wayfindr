@@ -31,7 +31,10 @@ The repository has a manual
 for fresh GitHub-hosted Ubuntu 24.04 x64 runs. Use it to collect repeatable
 public-artifact evidence for clean install, supported upgrade, and recovery
 skew-restore scenarios, then copy the sanitized result summary into the relevant
-issue.
+issue. The hosted recovery path uses
+`recovery-latest-synthetic-skew-restore`: latest public release install, real
+backup archive, synthetic older manifest identity, forced restore, migration,
+and post-restore support-loop proof.
 
 That workflow is helpful but deliberately bounded: it does not replace a
 bare-metal VM reboot, rollback drill, real DNS/TLS, mail delivery, offsite

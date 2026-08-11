@@ -79,11 +79,13 @@ Available scenarios:
   installer and image, sets a custom `BACKUP_QUEUE`, upgrades to the latest
   release, verifies support-loop survival, and proves the backup-worker advisory
   retires once the upgraded worker is observed.
-- `recovery-v0.2.0-latest-skew-restore` — starts from `v0.2.0`, takes a real
-  backup archive, upgrades to the latest release, restores the older archive
-  into the upgraded runtime, asserts the version-skew warning, runs migrations,
-  and proves the recovered support loop before continuing through the normal
-  backup/restore and restart checks.
+- `recovery-latest-synthetic-skew-restore` — installs the latest public
+  release, takes a real backup archive, rewrites a copy of its manifest to carry
+  a synthetic older release/commit identity, restores that archive, asserts the
+  version-skew warning, runs migrations, and proves the recovered support loop
+  before continuing through the normal backup/restore and restart checks.
+  This is warning-path evidence, not proof that an arbitrary older archive is
+  schema-compatible with the current release.
 - `upgrade-v0.1.0-latest` — starts from `v0.1.0` and upgrades directly to the
   latest release.
 - `upgrade-v0.1.0-v0.2.0-latest` — starts from `v0.1.0`, steps through `v0.2.0`,
