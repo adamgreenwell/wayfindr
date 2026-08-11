@@ -1,6 +1,6 @@
 # Engineering Handoff & Roadmap
 
-*Living document — last updated August 10, 2026. For an agent (or engineer) picking up
+*Living document — last updated August 11, 2026. For an agent (or engineer) picking up
 Wayfindr development. Read this, then `docs/product/roadmap.md` and
 `docs/self-hosting/` for depth.*
 
@@ -146,7 +146,8 @@ agent UI density (#602–#605), break-glass (ADR 0008, #606–#611), unattended
 alerts (#613), self-hosting packaging + first release (#614–#616), operator
 settings + guided onboarding (ADR 0011, #627–#634), backup remote-push
 (ADR 0010, #623/#624), external issue integrations (#22), platform versioning +
-upgrade enforcement (ADR 0012/0013, #635–#649).
+upgrade enforcement (ADR 0012/0013, #635–#656 — completed August 11 with the
+advisory response; see §12).
 
 **Issue housekeeping is current.** #564 (launch proof) was reconciled and
 closed. #22's comment relay shipped and was live-validated; the issue remains
@@ -294,27 +295,17 @@ recommended against as specced).
 
 Ordered by real dogfood value and dependency, not feature novelty.
 
-1. **Operate `v0.1.0`.** Two feedback channels exist: the dogfood instance on
-   stage and whoever runs the one-liner in the wild. Watch GitHub issues from
-   self-hosters, keep release notes honest, and cut releases freely — the upgrade
-   path is one command and installs pin to releases, so shipping small is cheap.
+1. **Operate `v0.3.0`.** Three releases are out and the upgrade path is proven in
+   both directions (see §11 and §12). Cut freely: the upgrade is one command,
+   installs pin to releases, and the guard now has a proportionate response for
+   requirements that are worth reporting without being worth an outage.
 
-   **Note a deliberate divergence from this document's earlier plan.** It said
-   the first stable `v0.1.0` should wait until someone other than the owner had
-   run an install *and an upgrade* successfully. That did not happen, and `0.1.0`
-   was cut anyway on August 5. The reasoning: two complete epics (ADR 0011,
-   ADR 0012/0013) had been sitting unreleased for two weeks, and the upgrade
-   guard could not be exercised on the path that matters — a real published
-   manifest, read by the installer preflight off a real release — until a release
-   published one. Alphas 1–3 predate the manifest format entirely. `0.1.0` was
-   also the safest possible first exercise, since ADR 0013 requires the first
-   enforcing release to declare nothing.
-
-   **So the unmet condition is still unmet, and it still matters**: no one but
-   the owner has run an install or an upgrade. The next genuinely new evidence is
-   a *third-party upgrade across a release boundary* — `0.1.0 → 0.2.0` — which is
-   the first time the guard, the preflight, and `minimum_upgrade_from` all run
-   against a stranger's install rather than a fixture.
+   **The condition this document set in July is still unmet, and still matters**:
+   nobody but the owner has run an install *or* an upgrade. `0.1.0 → 0.2.0` and
+   `0.2.0 → 0.3.0` have both been proven end to end in a clean room against real
+   published artifacts, so the mechanism is no longer the open question — the
+   open question is whether it survives contact with someone else's environment.
+   That is the next genuinely new evidence, and it cannot be manufactured here.
 
 2. **Operate the real dogfood loop.** Route Wayfindr support through Wayfindr,
    keep synthetic smoke records distinguishable from real work, and let actual
@@ -393,6 +384,26 @@ Ordered by real dogfood value and dependency, not feature novelty.
   R2 → Manage API Tokens (NOT My Profile → API Tokens), and the secret is the
   SHA-256 of the token value if the confirmation screen is missed. Forge env
   edits need a deploy to take effect (`config:cache`).
+- **Codex delivers review findings as INLINE comments** — read
+  `gh api repos/OWNER/REPO/pulls/N/comments`, not `issues/N/comments` or
+  reactions, which stay empty while findings exist. Filter on
+  `original_commit_id`; `commit_id` is re-anchored to the branch tip for older
+  comments, so already-fixed findings resurface as if new. A `COMMENTED` review
+  with an empty-looking body means the findings are inline.
+- **A test that prints `FAIL` may still exit 0.** `assertFailed()` executes a
+  pending Artisan command immediately, so any `expectsOutputToContain()`
+  registered after it never runs; and shell checks appended after a script's
+  final `[ "$fail" -eq 0 ]` cannot affect its exit status. Both happened here.
+  After writing a test for a fix, mutate the fix and confirm the test *fails*.
+- **Compose interpolates `${...}` from the invoking SHELL ahead of `--env-file`**
+  (`install.sh:412` documents it). Anything the container must resolve from its
+  own environment needs `$${...}` so the container shell expands it. Both forms
+  look right in the YAML; `docker compose config` is the only thing that tells
+  them apart.
+- **At a release cut, ask what the CHANGELOG covers, not whether it is stale.**
+  The commit-since-last-touch check passes when a later PR touched the file
+  without covering earlier ones — which is exactly what happened at the 0.3.0
+  cut.
 - **The self-hosting stack's health story**: the loopback ops site on `:8000`
   exists in every TLS mode — probe that, never the public vhost. `compose.yml`
   is pull-only; source builds need the `compose.build.yml` overlay.
@@ -592,3 +603,142 @@ action (pre-1.0, RELEASING.md puts any action-bearing release on a minor bump). 
 `backups-queue-consumer` check exists and works; declaring it still waits on a
 third, non-blocking *advisory* severity, per ADR 0013 and `release.json`'s
 `_bootstrap` note.
+
+---
+
+## 12. `v0.3.0` released — advisory notices, and ADR 0013 completed (August 11, 2026)
+
+**`v0.3.0` is published**, and with it ADR 0013 has all three of its responses for
+the first time. Every one has now been exercised against real published artifacts
+rather than fixtures.
+
+### Advisory notices: the third response
+
+The guard could only halt the migration or refuse traffic. ADR 0013 recorded that
+as a gap — *"some requirements are worth reporting without being worth an
+outage"* — and the backups queue worker had been sitting in it since #650: its
+check built and working, and deliberately undeclared, because the only phase it
+could take was `after-start` and an unmet `after-start` **action gates serving**.
+An install missing a backups worker would have refused all traffic over a backup
+feature.
+
+Advisory requirements are now declared under a separate top-level **`notices`**
+list, reported on the operator console, in `wayfindr:upgrade-guard`, and in the
+installer's upgrade output. They block nothing.
+
+**The decision that matters is that it is a separate list, not a `severity` flag
+on an action.** An advisory must be honoured at three independent gates — the
+migration filter, the serving filter, the installer's partition — and a flag means
+each has to *remember* to check it. A gate that forgets turns advice into an
+outage, which is exactly what the response exists to prevent. The gates read
+`actions` and cannot see `notices`.
+
+It is also the only backward-compatible shape, which was not obvious until
+checked against 0.2.0's shipped reader: older readers ignore an unknown top-level
+key, so a notice-carrying release upgrades cleanly from every release predating
+them, with **no schema bump** (a bump makes older images reject the manifest
+outright). A `severity` flag inside `actions` would be read by old code as
+*required*, so a `before-pull` advisory would have made the *old* installer refuse
+the pull.
+
+Three constraints follow, all enforced by the validator:
+
+- A notice takes **no `phase`, no `depends_on_release`, no `upgrade-from`**. All
+  three only mean something to work owed by a particular hop.
+- **An action belongs to a hop; a notice belongs to the install.** Notices are
+  read from the running release's own manifest — no span, no origin, no freshness
+  reading. Getting this wrong caused two of the three P2s on #656.
+- **`detail` is static.** A manifest is published once and rendered verbatim by
+  three surfaces, none of which can substitute configuration. Where the right step
+  depends on how an install is configured, name the requirement and point at the
+  surface that computes the command.
+
+`requires_operator_action` counts actions only, so a notice-only release stays
+honestly marked safe to take unattended. Notices **carry over** between releases
+(the post-release reset clears `actions` and leaves `notices`); removing one is a
+deliberate edit.
+
+### Proven end to end, in both directions
+
+`0.2.0 -> 0.3.0` in a clean room, run with **0.2.0's own installer**, which has no
+notices support at all:
+
+```
+==> Handing off to the refreshed installer.                    <- the re-exec
+==> Preflight: nothing outstanding between 0.2.0 and 0.3.0.    <- nothing blocks
+  This release advises:                                        <- the advisory
+    0.3.0/backups-queue-consumer - Run a queue worker on the backups connection.
+  Nothing here blocks the upgrade.
+==> Pulling the release image.
+```
+
+The advisory could only appear because the hand-off replaced the installer before
+the preflight ran. Post-upgrade: `fresh_install: false`, all endpoints 200, and
+`notices: []` — the compose worker was running, so the check retired it instantly.
+
+| state | result |
+| --- | --- |
+| worker running | silent |
+| worker stopped, heartbeat cleared | advisory appears, **exit 0**, still serving |
+| worker restarted | retires itself, no operator action |
+| acknowledged while stopped | silenced |
+
+The exit code is load-bearing: advice that fails a command costs automation
+exactly what a refusal costs, which would defeat the point.
+
+Stage confirmed the same independently — notice declared, `check: true`, nothing
+reported, everything serving. Host-managed installs are the only class where it
+can fire.
+
+### A real bug the notice uncovered
+
+`compose.yml` ran the backups worker with a hard-coded `--queue=backups` while the
+app dispatches to `env('BACKUP_QUEUE', 'backups')`. Any Compose install that set
+`BACKUP_QUEUE` had **every GUI backup stuck at *Running*, silently**, with the
+check correctly reporting a worker that visibly existed.
+
+**Declaring a requirement forced someone to check the platform actually met it,
+and it did not.** That is an argument for the notices mechanism nobody
+anticipated. Fixed twice: a host-side `${BACKUP_QUEUE:-backups}` is resolved by
+Compose from the *invoking shell* ahead of `--env-file` (`install.sh:412`
+documents this), so it diverged again; the correct form is `$${...}` so the
+**container** shell expands it from the same env_file Laravel reads. Both broken
+versions look right in the YAML — `docker compose config` is the only thing that
+tells them apart, and the compose template test now renders with a poisoned shell
+value to keep it that way.
+
+### Process lessons worth more than the code
+
+**Codex delivers findings as inline review comments — read `pulls/N/comments`.**
+Watching `issues/N/comments` and reactions instead produced three false "clean"
+reports and a merge past a **P1 I had introduced**: the floor refusal printed
+`WAYFINDR_UPGRADE_FROM=<the floor>`, and since `declaredOrigin()` trusts that
+value and the floor refuses only a definite *below*, an install genuinely too old
+could follow the refusal's own advice and migrate on a retired path. Filter on
+`original_commit_id`; `commit_id` is re-anchored to the tip for older comments.
+
+**Thirteen findings this session. Ten were in operator-facing prose, two were
+tests of mine that asserted nothing, one was the Compose bug. None were in a
+predicate, a gate, or an evaluation rule.** In a subsystem whose only output is
+instructions to humans, the prose *is* the feature —
+`docs/self-hosting/release-manifest.md` already says *"this text IS the recovery
+path"*. Review it as carefully as the logic behind it.
+
+**Check tests by exit code, not by output.** Two of mine printed `FAIL` and exited
+0 — one registered `expectsOutputToContain()` after `assertFailed()` (which
+executes immediately), one appended checks after the script's final assertion.
+After writing a test for a fix, mutate the fix and confirm the test *fails*.
+
+**At a cut, ask what the changelog COVERS, not whether it is stale.** The
+commit-since-last-touch check passed at this cut while `[Unreleased]` was missing
+both floor fixes, because a later PR had touched the file without covering the
+earlier ones.
+
+### Next
+
+- **Operate 0.3.0.** Cut freely; the upgrade path is proven in both directions.
+- **Still unproven, unchanged since 0.1.0:** nobody outside the owner has run an
+  install *or* an upgrade.
+- The advisory response is available for any future requirement worth reporting
+  without an outage. Extend `ActionDisposition`/`ActionAdvice`/`FloorAdvice`
+  rather than re-deriving their rules — that coupling is what #647 was about.
