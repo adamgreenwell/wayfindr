@@ -142,6 +142,33 @@ for service in ("queue", "scheduler"):
     if not healthcheck.get("disable"):
         raise SystemExit(f"{service} should disable the image healthcheck")
 
+
+def assert_storage_volume_nocopy(service):
+    volumes = config["services"][service].get("volumes") or []
+
+    for volume in volumes:
+        if (
+            volume.get("type") == "volume"
+            and volume.get("source") == "wayfindr-storage"
+            and volume.get("target") == "/app/apps/server/storage"
+        ):
+            volume_options = volume.get("volume") or {}
+            if volume_options.get("nocopy") is True:
+                return
+
+            raise SystemExit(
+                f"{service} storage volume must set nocopy=true; got {volume!r}"
+            )
+
+    raise SystemExit(f"{service} is missing the shared Wayfindr storage volume")
+
+
+# Several app services share the Laravel storage volume and may be created in
+# parallel on first boot. Docker must not try to pre-populate that named volume
+# from the image; the entrypoint creates the expected tree idempotently.
+for service in ("web", "queue", "backup-queue", "scheduler", "reverb"):
+    assert_storage_volume_nocopy(service)
+
 # Split horizon: the server posts events to the reverb service, browsers get
 # the public client values from the env file.
 web_env = config["services"]["web"]["environment"]

@@ -12,6 +12,10 @@ data, transcripts, raw cobrowse payloads, or private URLs into a public issue.
 - Confirm Docker Compose v2, supported CPU architecture, disk space, and memory.
 - Check that ports 80/443 are free, DNS resolves, and the generated `.env` was
   not partially edited.
+- If first boot fails while creating `wayfindr-storage` directories, refresh to
+  the current `compose.yml`; the shared Laravel storage volume uses Docker
+  `nocopy` so parallel app-service creation does not race while Docker prepares
+  the named volume.
 
 ## Web Works but Background Features Do Not
 

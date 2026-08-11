@@ -38,6 +38,9 @@ missed while skimming.
   and the official self-hosting image. This corrects the previous documented
   floor; it does not introduce a new runtime requirement beyond what the
   published dependency set already enforced.
+- The self-hosting Compose stack now mounts the shared application storage
+  volume with Docker `nocopy`, avoiding a first-boot race when app services are
+  created in parallel and letting the entrypoint create Laravel's storage tree.
 
 ### Security
 
