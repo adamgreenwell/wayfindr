@@ -1,6 +1,7 @@
 **Wayfindr Wiki**
 
 - [Home](Home)
+- [Project Status](Project-Status)
 - [Quick Start](Quick-Start)
 - [Installation](Installation)
 - [Upgrading](Upgrading)

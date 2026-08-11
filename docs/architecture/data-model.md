@@ -12,9 +12,18 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
 - `visitors`: anonymous or identified people seen on a site.
 - `conversations`: chat/support sessions between a visitor and support agents. Each conversation has a unique support code for later lookup.
 - `conversation_messages`: messages or system events inside a conversation. The sender is polymorphic so visitors, agents, and future system actors can share one message stream.
+- `conversation_message_attachments`: private message-scoped files. Rows carry
+  denormalized account, site, conversation, message, upload, scan, and
+  `storage_disk` state so pending uploads can bind atomically and old storage
+  surfaces can coexist after a disk change.
+- `conversation_read_states`: per-user/per-conversation read markers used by
+  calm unread and unattended-alert behavior.
 - `tickets`: durable support records that may be created from a conversation.
   Tickets can carry provider-neutral category values for local triage without
   depending on an external issue tracker.
+- `ticket_labels`: account-owned labels assignable to tickets.
+- `reply_templates`: account-owned snippets that help agents answer common
+  support questions without changing the ticket model.
 - `ticket_external_links`: provider-neutral records that connect a local
   Wayfindr ticket to an external issue tracker record without making that
   external provider the source of truth.
@@ -29,6 +38,14 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   `metadata.snapshot`, a bounded recent mutation buffer is kept in
   `metadata.mutations`, and the active cobrowse intake limits are kept in
   `metadata.payload_budget`, while the transport shape is still changing.
+- `operator_readiness_confirmations`: operator acknowledgements for readiness
+  checks that require human confirmation.
+- `operator_settings`: database-backed instance settings for mail, attachment
+  storage, malware scanning, backups, and related operator-controlled values.
+- `backup_runs`: operator-triggered backup and restore history with status,
+  destination, artifact, and error metadata.
+- `break_glass_grants`: scoped, reasoned, time-bound, read-only platform
+  operator access grants for support events.
 - `audit_events`: append-style records for important user, visitor, or system actions.
 
 See [../privacy/data-inventory.md](../privacy/data-inventory.md) for the
@@ -39,6 +56,10 @@ operator-facing data inventory and retention posture.
 - Status fields are strings instead of database enums so early product states can change without database-type churn.
 - Visitor identity supports both `anonymous_id` and optional host-provided `external_id`. Public widget requests bootstrap a signed visitor token before they can create conversations or read/write visitor messages.
 - Cobrowsing state is separate from conversations because consent, start, end timing, connection telemetry, visitor page state, sanitized page snapshots, and mutation diagnostics need their own lifecycle.
+- Attachments are separate from messages because upload, scan, bind, storage,
+  retention, and streaming authorization have their own lifecycle. The row's
+  denormalized scope columns are a defense-in-depth check, not a replacement
+  for re-deriving the conversation/site/account boundary on every read.
 - External ticket integrations should link to Wayfindr tickets through explicit
   local records and audit events. Provider-specific identifiers, capabilities,
   and sync metadata should stay outside the core `tickets` table.
@@ -49,5 +70,16 @@ operator-facing data inventory and retention posture.
   URL, sync status, last sync time, and metadata separately from the canonical
   Wayfindr ticket lifecycle.
 - Audit actors and subjects are polymorphic so the model can track agent, visitor, conversation, ticket, and cobrowse events without creating a new audit table per feature.
+- Operator settings are database-backed overrides so operators can change
+  runtime behavior through reviewed application flows. Browser settings must not
+  rewrite `.env`.
+- Backup runs record the application-level backup/restore attempt; they do not
+  replace host, database, object-storage, or VM-level durability evidence.
+- Break-glass grants outlive the content they exposed and audit every
+  transition; platform operator authority stays separate from account support
+  access.
+- Release identity and upgrade state live outside tenant data: official images
+  bake their identity, source builds derive development identity, and
+  self-hosted installs persist their current version state for upgrade checks.
 - Integration packages should stay thin and write through Laravel APIs rather than owning product persistence directly.
 - Platform operator data should describe instance authority only. It should not grant account support visibility, customer content access, or site-access bypass by default.
