@@ -26,6 +26,11 @@ actions that must happen before migration or before serving traffic.
 4. Check the release's required actions and advisory notices.
 5. Preserve the previous image tag and environment so rollback remains possible.
 
+Dependency-only security refreshes are still normal upgrades. Official images
+carry the reviewed dependency set; source-based installs should update the
+checkout, run `composer install --no-dev --prefer-dist --no-interaction` from
+`apps/server`, and verify `composer audit --locked` before serving traffic.
+
 Do not bypass a release guard casually. A refusal is designed to keep the old
 release running when the new artifact cannot safely continue. Follow the
 on-screen action, or step through an intermediate release if the guard says the
