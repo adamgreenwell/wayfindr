@@ -50,7 +50,7 @@ repo-scoped install flow to document for self-hosters.
 - Repository: your fork, for example `your-org/wayfindr`.
 - Initial deploy branch: `main` for stable releases, or a feature branch when
   intentionally testing unreleased work.
-- PHP: 8.3 or newer.
+- PHP: 8.4 or newer.
 - Database: Postgres.
 - Cache/queue: Redis.
 - Root directory: `/`.
@@ -538,7 +538,7 @@ background process reloads the active release.
 
 ## First Deploy Checklist
 
-1. Provision a Forge server with PHP 8.3+, Postgres, Redis, and Nginx.
+1. Provision a Forge server with PHP 8.4+, Postgres, Redis, and Nginx.
 2. Fork Wayfindr to your GitHub account or organization.
 3. Create the Forge site using `Custom Git`.
 4. Enable `Generate a site deploy key for your source control provider`.

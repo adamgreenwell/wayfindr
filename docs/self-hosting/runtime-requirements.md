@@ -24,7 +24,7 @@ Run Composer, Artisan, queue, scheduler, and Reverb commands from
 
 Minimum runtime:
 
-- PHP 8.3 or newer.
+- PHP 8.4 or newer.
 - Composer 2.
 - A web server that can serve Laravel through PHP-FPM or an equivalent PHP
   runtime.

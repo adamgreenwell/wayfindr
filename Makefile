@@ -1,9 +1,10 @@
 SERVER_DIR := apps/server
 
-.PHONY: help public-info-check public-info-test self-host-test services-up services-down server-install server-migrate server-serve server-test
+.PHONY: help php-version-test public-info-check public-info-test self-host-test services-up services-down server-install server-migrate server-serve server-test
 
 help:
 	@printf '%s\n' 'Wayfindr development commands:'
+	@printf '%s\n' '  make php-version-test   Check that every PHP minimum agrees'
 	@printf '%s\n' '  make public-info-check  Check tracked files for sensitive markers'
 	@printf '%s\n' '  make public-info-test   Test the public-info boundary guard'
 	@printf '%s\n' '  make self-host-test     Test the installer and compose stack (needs Docker)'
@@ -20,9 +21,12 @@ public-info-check:
 public-info-test:
 	scripts/test-public-info-boundary.sh
 
+php-version-test:
+	scripts/test-php-version-contract.sh
+
 # The installer is shipped code that operators curl into bash, and two of these
 # guard rules the artifact ALSO implements — see docs/development/testing.md.
-self-host-test:
+self-host-test: php-version-test
 	scripts/test-self-host-env-generator.sh
 	scripts/test-self-host-compose-template.sh
 	scripts/test-self-host-env-value.sh

@@ -30,7 +30,12 @@ missed while skimming.
 
 ## [Unreleased]
 
-*Nothing yet.*
+### Changed
+
+- PHP 8.4 is now the declared minimum everywhere, matching the dependency lock
+  and the official self-hosting image. This corrects the previous documented
+  floor; it does not introduce a new runtime requirement beyond what the
+  published dependency set already enforced.
 
 ## [0.3.0] - 2026-08-11
 
