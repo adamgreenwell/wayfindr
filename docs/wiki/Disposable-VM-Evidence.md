@@ -45,6 +45,13 @@ persistent `WAYFINDR_EVIDENCE_TARGET_DIR`, fixed synthetic credentials, and
 `scripts/smoke/public-artifact-reverify.sh` with the same target directory,
 project name, app URL, site key, and synthetic agent credentials.
 
+The repo also includes
+[`scripts/smoke/disposable-vm-evidence-runner.sh`](https://github.com/adamgreenwell/wayfindr/blob/main/scripts/smoke/disposable-vm-evidence-runner.sh)
+for bare-metal disposable VMs. It wraps the install and post-reboot reverify
+scripts, keeps the stack running, stores synthetic reverify credentials on the
+VM, tees a local command log, and writes a Markdown report skeleton that can be
+reviewed and sanitized before posting to GitHub.
+
 That workflow is helpful but deliberately bounded: it does not replace a
 bare-metal VM reboot, rollback drill, real DNS/TLS, mail delivery, offsite
 backup, or production restore posture. If the workflow proves only part of a

@@ -134,6 +134,25 @@ export WAYFINDR_EVIDENCE_REQUIRE_SUPPORT_LOOP=1
 scripts/smoke/public-artifact-reverify.sh
 ```
 
+For a more guided bare-metal VM run, use the wrapper that records a local log
+and creates a Markdown report skeleton:
+
+```bash
+WAYFINDR_EVIDENCE_APP_URL=http://203.0.113.10 \
+  scripts/smoke/disposable-vm-evidence-runner.sh install clean-install-latest
+
+sudo reboot
+
+scripts/smoke/disposable-vm-evidence-runner.sh reverify
+```
+
+By default, the wrapper installs into `/opt/wayfindr-evidence`, keeps the stack
+running, stores synthetic reverify credentials in
+`/opt/wayfindr-evidence/evidence-reports/last-run.env`, tees command output into
+a local log, and writes a report skeleton next to it. Review and sanitize the
+report before copying it into GitHub; the local state file is for the disposable
+VM only.
+
 Use the workflow log as evidence only for what it actually proves. A GitHub
 runner is a fresh Ubuntu 24.04 x64 environment and is useful for public-artifact
 install/upgrade checks, but it does **not** replace a bare-metal VM reboot,
