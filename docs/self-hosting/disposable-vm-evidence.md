@@ -61,6 +61,43 @@ If a local patch is being validated before publication, label the report
 `pre-publication` and do not use it as release evidence until the same steps are
 repeated against the public artifact.
 
+## GitHub-Hosted Evidence Harness
+
+The repository includes a manual workflow,
+[`Disposable VM evidence`](https://github.com/adamgreenwell/wayfindr/actions/workflows/disposable-vm-evidence.yml),
+that runs selected public-artifact scenarios on a fresh GitHub-hosted Ubuntu
+24.04 x64 runner. It is not pull-request CI; trigger it when you need release
+evidence for an install or upgrade claim.
+
+Available scenarios:
+
+- `clean-install-latest` — downloads the public one-line installer, installs the
+  latest release image, completes synthetic setup, verifies runtime processes,
+  runs the support-loop smoke, runs a backup/restore drill, and restarts the
+  stack.
+- `upgrade-v0.2.0-latest-custom-backup-queue` — starts from the `v0.2.0`
+  installer and image, sets a custom `BACKUP_QUEUE`, upgrades to the latest
+  release, verifies support-loop survival, and proves the backup-worker advisory
+  retires once the upgraded worker is observed.
+- `upgrade-v0.1.0-latest` — starts from `v0.1.0` and upgrades directly to the
+  latest release.
+- `upgrade-v0.1.0-v0.2.0-latest` — starts from `v0.1.0`, steps through `v0.2.0`,
+  then upgrades to the latest release.
+
+The workflow uses `scripts/smoke/public-artifact-install.sh`, which can also run
+on a disposable VM:
+
+```bash
+WAYFINDR_EVIDENCE_SCENARIO=clean-install-latest \
+  scripts/smoke/public-artifact-install.sh
+```
+
+Use the workflow log as evidence only for what it actually proves. A GitHub
+runner is a fresh Ubuntu 24.04 x64 environment and is useful for public-artifact
+install/upgrade checks, but it does **not** replace a bare-metal VM reboot,
+operator-managed DNS/TLS, real mail delivery, offsite backups, rollback, or a
+production restore posture. Record those separately.
+
 ## Evidence Rules
 
 Capture facts, not vibes:
