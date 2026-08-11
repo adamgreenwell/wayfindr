@@ -1,0 +1,134 @@
+name: Pull request CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pull-request-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  php-application:
+    name: PHP application
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out the source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up PHP 8.4
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.4"
+          extensions: gd, intl, mbstring, pcntl, pdo_sqlite, sockets, zip
+          tools: composer:v2
+          coverage: none
+
+      - name: Set up Node.js 24 for test assets
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/server/package-lock.json
+
+      - name: Validate Composer metadata
+        working-directory: apps/server
+        run: composer validate --strict --no-check-publish
+
+      - name: Install locked PHP dependencies
+        working-directory: apps/server
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Prepare the local test environment
+        run: cp apps/server/.env.example apps/server/.env
+
+      - name: Build assets used by feature tests
+        run: |
+          npm ci --prefix apps/server --ignore-scripts
+          npm run build --prefix apps/server
+
+      - name: Run the Pest suite
+        working-directory: apps/server
+        run: composer test
+
+      - name: Validate the authored release manifest
+        run: |
+          release_version="$(tr -d '[:space:]' < VERSION)-ci"
+          php scripts/release/build-manifest.php \
+            --version="$release_version" \
+            --commit="${GITHUB_SHA}" \
+            --out="${RUNNER_TEMP}/release-manifest.json"
+
+  widget-and-assets:
+    name: Widget and assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out the source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            apps/server/package-lock.json
+            packages/widget-js/package-lock.json
+
+      - name: Install widget dependencies
+        run: npm ci --prefix packages/widget-js --ignore-scripts
+
+      - name: Test the widget
+        run: npm test --prefix packages/widget-js
+
+      - name: Install dashboard asset dependencies
+        run: npm ci --prefix apps/server --ignore-scripts
+
+      - name: Build production assets
+        run: npm run build --prefix apps/server
+
+  repository-contracts:
+    name: Repository contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out the source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check the public-information boundary
+        run: make public-info-check
+
+      - name: Test the public-information boundary
+        run: make public-info-test
+
+      - name: Validate Wiki navigation when Wiki source exists
+        if: ${{ hashFiles('scripts/test-wiki-docs.sh') != '' }}
+        run: make wiki-test
+
+  self-hosting-contracts:
+    name: Self-hosting contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out the source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up PHP 8.4
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.4"
+          coverage: none
+
+      - name: Validate the installer and Compose contracts
+        run: make self-host-test
