@@ -50,7 +50,7 @@ repo-scoped install flow to document for self-hosters.
 - Repository: your fork, for example `your-org/wayfindr`.
 - Initial deploy branch: `main` for stable releases, or a feature branch when
   intentionally testing unreleased work.
-- PHP: 8.3 or newer.
+- PHP: 8.4 or newer.
 - Database: Postgres.
 - Cache/queue: Redis.
 - Root directory: `/`.

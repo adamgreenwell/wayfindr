@@ -58,7 +58,7 @@ stale_claims="$(
 
 if [ -n "$stale_claims" ]; then
     printf '%s\n' "$stale_claims" >&2
-    fail "tracked files still claim PHP 8.3 support."
+    fail "tracked files still claim the old PHP floor."
 fi
 
 printf '%s\n' "PHP $EXPECTED_VERSION is consistent across Composer, builds, and documentation."
