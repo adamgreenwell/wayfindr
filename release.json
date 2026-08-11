@@ -45,11 +45,22 @@
                 "No `phase` and no `depends_on_release`: a notice never blocks, so",
                 "there is nothing to time and nothing to strand. Running a queue",
                 "worker needs no particular release's code, which is what makes",
-                "this legitimately advisory rather than an action in disguise."
+                "this legitimately advisory rather than an action in disguise.",
+                "`detail` DOES NOT print a copy-paste command, deliberately.",
+                "`BACKUP_QUEUE` can move the backups queue off its default, and a",
+                "manifest is static text - it cannot substitute this install's",
+                "configured queue or timeout. A hard-coded `--queue=backups` would",
+                "tell such an operator to start a worker draining a queue nothing",
+                "dispatches to, leaving backups queued forever after they did",
+                "exactly as they were told, with the check still reporting.",
+                "OperatorBackupSettingsController::workerObservation() already",
+                "carries that warning, and the backups page builds the command from",
+                "the live config - so the notice names the requirement and points",
+                "at the surface that can get the command right."
             ],
             "id": "backups-queue-consumer",
             "summary": "Run a queue worker on the backups connection.",
-            "detail": "Without one, \"Run a backup now\" queues a job nothing will process and the run sits at Running indefinitely. Scheduled backups are unaffected. Compose stacks already run this worker; host-managed installs (Forge and similar) need: php artisan queue:work backups --queue=backups --sleep=5 --tries=1 --timeout=3600",
+            "detail": "Without one, \"Run a backup now\" queues a job nothing will process and the run sits at Running indefinitely. Scheduled backups are unaffected. Compose stacks already run this worker. On a host-managed install, open /operator/settings/backups - it prints the exact command for this install, with your configured queue name and timeout filled in (BACKUP_QUEUE can move the queue off its default, so a copied command may drain the wrong one).",
             "applicability": {
                 "type": "always"
             },

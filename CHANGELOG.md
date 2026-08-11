@@ -42,7 +42,14 @@ missed while skimming.
 - The first one: **run a queue worker on the `backups` connection**. Without it,
   "Run a backup now" queues a job nothing will process and the run sits at
   *Running* indefinitely. Scheduled backups are unaffected. Compose stacks
-  already run this worker; host-managed installs (Forge and similar) need:
+  already run this worker; host-managed installs (Forge and similar) need one.
+
+  **Get the command from `/operator/settings/backups`** rather than copying it
+  from here. That page fills in *your* configured queue name and timeout, and
+  `BACKUP_QUEUE` can move the backups queue off its default — a copied
+  `--queue=backups` would then start a worker draining a queue nothing dispatches
+  to, leaving backups queued forever after you did exactly as you were told. With
+  stock settings it is:
 
   ```bash
   php artisan queue:work backups --queue=backups --sleep=5 --tries=1 --timeout=3600
