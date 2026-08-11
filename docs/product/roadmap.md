@@ -2,8 +2,8 @@
 
 This roadmap is directional and should not include private business strategy.
 
-As of August 11, 2026, the repository is on the `0.4.0` development line and
-the latest public release is `v0.3.0`.
+As of August 11, 2026, the latest public release is `v0.3.1`, and the next
+development line is `0.4.0`.
 
 ## Current Alpha Spine
 
