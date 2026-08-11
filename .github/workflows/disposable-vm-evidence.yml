@@ -12,6 +12,7 @@ on:
           - clean-install-latest
           - upgrade-v0.2.0-latest-custom-backup-queue
           - recovery-latest-synthetic-skew-restore
+          - recovery-latest-v0.3.1-image-rollback-retry
           - upgrade-v0.1.0-latest
           - upgrade-v0.1.0-v0.2.0-latest
 

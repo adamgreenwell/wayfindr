@@ -86,6 +86,13 @@ Available scenarios:
   before continuing through the normal backup/restore and restart checks.
   This is warning-path evidence, not proof that an arbitrary older archive is
   schema-compatible with the current release.
+- `recovery-latest-v0.3.1-image-rollback-retry` — installs the latest public
+  release, records the running image, rolls the stack back to
+  `ghcr.io/adamgreenwell/wayfindr:0.3.1`, proves runtime and support-loop health,
+  then retries the original image and proves runtime and support-loop health
+  again before continuing through the normal backup/restore and restart checks.
+  This is evidence for the current schema-compatible image rollback/retry span,
+  not a promise that every future downgrade is safe.
 - `upgrade-v0.1.0-latest` — starts from `v0.1.0` and upgrades directly to the
   latest release.
 - `upgrade-v0.1.0-v0.2.0-latest` — starts from `v0.1.0`, steps through `v0.2.0`,
@@ -269,6 +276,11 @@ A rollback claim needs:
 
 If rollback is not supported for a version span, say that directly and record
 the safe recovery path instead.
+
+The hosted `recovery-latest-v0.3.1-image-rollback-retry` scenario covers only a
+schema-compatible image rollback/retry drill. A destructive schema or data
+rollback still needs its own disposable VM evidence and must not be generalized
+from that hosted run.
 
 ### Reboot Recovery
 
