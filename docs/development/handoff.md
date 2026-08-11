@@ -18,11 +18,12 @@ differentiator.
 - **Widget**: `packages/widget-js/src/wayfindr-widget.js` (vanilla JS, no build
   framework — it is embedded on customer sites).
 - **Deploy target**: Laravel Forge (first-class). Stage:
-  `https://wayfindr.on-forge.com`.
+  `https://wayfindr.on-forge.com`. Treat every stage or fork observation in this
+  file as dated evidence, not proof of the current deployed state.
 
 ---
 
-## 2. Current state (July 2026)
+## 2. Current state (August 2026)
 
 The **MVP support loop works end to end**: a visitor chats via the widget → the
 agent sees it live and replies → tickets capture durable work → cobrowse gives a
@@ -30,13 +31,15 @@ consented, masked view of the visitor's page.
 
 **The current Forge stage is the initial controlled dogfood instance.** The
 owner explicitly chose it instead of creating a separate production install
-first. The July 14 readiness pass confirmed the full runtime contract live:
+first. The July 14 readiness pass confirmed the then-current runtime contract live:
 `APP_DEBUG=false`, public HTTPS, current migrations, PostgreSQL, Redis, outbound
 mail, the scheduler, durable queue worker, Reverb, writable storage, deploy
 restarts, and no failed queue jobs. A manual database export and isolated
-restore drill also succeeded. Automated backup orchestration is intentionally
-not an initial launch requirement; the self-hosting operator owns the manual
-backup process until productized archive/object-storage tooling exists.
+restore drill also succeeded. Since then, operator settings, GUI backup/restore,
+release manifests, upgrade guards, advisory notices, pull-request CI, branch
+protection, Dependabot, the GitHub Wiki, and the disposable-VM evidence contract
+have landed. Do not treat the July 14 stage pass, the deployment fork, or any
+later dated smoke as current deployment proof without re-checking the target.
 
 **Controlled dogfooding is open.** The first real mobile support session on
 `wayfindr.cc` completed the visitor/agent chat loop, produced a durable Wayfindr
@@ -77,7 +80,7 @@ behind the native `<x-details-disclosure>` component with state-bearing
 summaries, install-wide constants moved to readiness pages, duplication killed.
 The disclosure pattern is approved for reuse on new surfaces.
 
-**The break-glass epic (#58) is code-complete (July 16).** The full
+**The break-glass epic is code-complete (July 16).** The full
 [ADR 0008](../decisions/0008-platform-operator-break-glass.md) contract shipped
 across PRs #606–#611: the grant model and lifecycle service (scoped, reasoned,
 time-bound, read-only, row-locked, audited), the operator request/self-approve
@@ -145,16 +148,20 @@ Discipline), #490 (Cobrowse Observe-Mode Fidelity), attachments (ADR 0007),
 agent UI density (#602–#605), break-glass (ADR 0008, #606–#611), unattended
 alerts (#613), self-hosting packaging + first release (#614–#616), operator
 settings + guided onboarding (ADR 0011, #627–#634), backup remote-push
-(ADR 0010, #623/#624), external issue integrations (#22), platform versioning +
-upgrade enforcement (ADR 0012/0013, #635–#656 — completed August 11 with the
-advisory response; see §12).
+(ADR 0010, #623/#624), external issue integration foundations, platform
+versioning + upgrade enforcement (ADR 0012/0013, #635–#656 — completed August
+11 with the advisory response; see §12), repository CI/config hardening, and the
+repo-authored GitHub Wiki.
 
 **Issue housekeeping is current.** #564 (launch proof) was reconciled and
-closed. #22's comment relay shipped and was live-validated; the issue remains
-open solely for demand-gated field mapping. The longer-lived open product areas
-are #58 (Platform Operator Boundary — break-glass done, platform-action audit
-inventory remains demand-gated) and #492 (live in-place cobrowse replay —
-recommended against as specced).
+closed. External issue creation, state sync, and comment relay shipped and were
+live-validated; demand-gated follow-up now lives in #626 rather than the original
+integration umbrella. The break-glass half of the platform-operator boundary is
+done; any future platform-action audit inventory should start from
+`docs/product/platform-operator-boundary.md` instead of reopening the shipped
+grant contract. Other long-lived product work is deliberately demand-gated:
+#626 for richer external ticket follow-ups and #492 for live in-place cobrowse
+replay, which remains recommended against as originally specced.
 
 ---
 
@@ -264,18 +271,18 @@ recommended against as specced).
 ## 5. Working conventions (please keep these)
 
 - **PR flow**: branch → open PR → wait ~5 min → check for **Codex bot** review
-  comments → address / reply / resolve threads → **merge when green**. There is
-  **no test CI** in this repo — the only Actions workflow is the tag-triggered
-  release image build (`release-image.yml`, `v*` tags only); "green" means
-  local tests pass **and** Codex has cleared (it often stays silent = no
-  findings). Codex catches real
-  bugs — take its P2s seriously.
+  comments when requested → address / reply / resolve threads → **merge when
+  green**. Pull requests now have required CI: PHP application, widget/assets,
+  repository contracts, and self-hosting contracts. Tag-triggered release-image
+  publishing remains separate and only runs for `v*` tags.
 - **Commits under the owner's creds only** — **no** `Co-Authored-By` trailers,
   **no** "Generated with Claude Code" footers. (The repo's `attribution` config
   already suppresses the harness trailer; just don't hand-type one.)
 - **Fork sync is the owner's action.** Stage deploys from the
   `northcoastmedia/wayfindr` fork's `main`, which the owner syncs from upstream
-  `main` to trigger a Forge deploy. **Do not sync it yourself.**
+  `main` to trigger a Forge deploy. **Do not sync it yourself.** A synced fork
+  proves only that source was moved; it is not runtime proof until the target
+  deployment is checked.
 - **Test toolchain**: run server tests with the PHP 8.5 binary
   (`/opt/homebrew/opt/php/bin/php`); add `-d memory_limit=1G` for the full suite.
   Pest + Pint (`./vendor/bin/pint <files>`). Widget: `node --test` + jsdom. For
@@ -295,10 +302,11 @@ recommended against as specced).
 
 Ordered by real dogfood value and dependency, not feature novelty.
 
-1. **Operate `v0.3.0`.** Three releases are out and the upgrade path is proven in
-   both directions (see §11 and §12). Cut freely: the upgrade is one command,
-   installs pin to releases, and the guard now has a proportionate response for
-   requirements that are worth reporting without being worth an outage.
+1. **Operate `v0.3.0` while preparing the `0.4.0` reliability cycle.** Three
+   releases are out and the upgrade path is proven in both directions (see §11
+   and §12). Cut freely: the upgrade is one command, installs pin to releases,
+   and the guard now has a proportionate response for requirements that are worth
+   reporting without being worth an outage.
 
    **The condition this document set in July is still unmet, and still matters**:
    nobody but the owner has run an install *or* an upgrade. `0.1.0 → 0.2.0` and
@@ -319,19 +327,19 @@ Ordered by real dogfood value and dependency, not feature novelty.
    direct-ticket/internal-note attachments, office-document opt-ins, pre-signed
    URL opt-in — all deliberately excluded from ADR 0007's v1.
 
-4. **#22 — richer field mapping, only after live demand.** Syncing labels,
+4. **#626 — external ticket follow-ups, only after live demand.** Syncing labels,
    assignee, or priority needs a product decision about fields, direction, and
    conflict handling. Do not guess that contract before dogfood traffic shows
    which provider metadata agents actually need. Inbound-comment notifications
    and richer presentation belong to the same demand-gated polish lane.
 
-5. **#58 — Platform Operator Boundary: break-glass is done.** The design-heavy
-   half shipped (ADR 0008, PRs #606–#611; see §3). What remains on the issue is
-   the comprehensive **platform-action audit inventory** — demand-gated, and
-   much of its foundation (account-homed `break_glass.*` events, the operator
-   dashboard's safe-activity feed) now exists. Possible later extensions the
-   ADR deliberately excluded from v1: repair verbs, attachment binary access.
-   Start from `docs/product/platform-operator-boundary.md`.
+5. **Platform operator boundary: break-glass is done.** The design-heavy grant
+   contract shipped (ADR 0008, PRs #606–#611; see §3). Any later
+   platform-action audit inventory is demand-gated, and much of its foundation
+   (account-homed `break_glass.*` events, the operator dashboard's safe-activity
+   feed) now exists. Possible later extensions the ADR deliberately excluded
+   from v1: repair verbs, attachment binary access. Start from
+   `docs/product/platform-operator-boundary.md`.
 
 6. **#492 — live in-place cobrowse replay (incremental DOM patching).**
    **Recommended against as currently specced**: it would require weakening the
@@ -358,8 +366,8 @@ Ordered by real dogfood value and dependency, not feature novelty.
 - **Blade `@php(...)` short form** can truncate on inner `()` — use
   `@php … @endphp` block form.
 - **GitHub auto-close keywords in PR titles/bodies** (`closes #NN`) will close
-  the referenced issue on merge. #22 was reopened after an accidental close this
-  way — mind epic references in PR text.
+  the referenced issue on merge. This already caused avoidable issue housekeeping
+  on an older integration epic — mind epic references in PR text.
 - **Codex review triggers occasionally drop silently** (no 👀 reaction on the
   `@codex review` comment = it never started). Re-trigger once; when it *has*
   reviewed the substance and only a tiny, test-covered delta is unreviewed,
@@ -736,9 +744,11 @@ earlier ones.
 
 ### Next
 
-- **Operate 0.3.0.** Cut freely; the upgrade path is proven in both directions.
-- **Still unproven, unchanged since 0.1.0:** nobody outside the owner has run an
-  install *or* an upgrade.
+- **Operate `v0.3.0`; prepare `0.4.0`.** Cut freely; the upgrade path is proven
+  in both directions.
+- **Next proof is disposable-VM evidence.** Nobody outside the owner has run an
+  install or upgrade, so use `docs/self-hosting/disposable-vm-evidence.md` to
+  make the owner's throwaway-VM runs repeatable and sanitized.
 - The advisory response is available for any future requirement worth reporting
   without an outage. Extend `ActionDisposition`/`ActionAdvice`/`FloorAdvice`
   rather than re-deriving their rules — that coupling is what #647 was about.

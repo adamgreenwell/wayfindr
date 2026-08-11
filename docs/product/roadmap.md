@@ -2,6 +2,9 @@
 
 This roadmap is directional and should not include private business strategy.
 
+As of August 11, 2026, the repository is on the `0.4.0` development line and
+the latest public release is `v0.3.0`.
+
 ## Current Alpha Spine
 
 The current pre-alpha app has moved beyond the original technical spike. The
@@ -9,11 +12,13 @@ foundation now includes:
 
 - Laravel core app shell, authentication, account roles, site access, and
   platform operator authority.
-- Browser and CLI first-run setup, operator readiness diagnostics, Forge-first
-  docs, generic runtime docs, mail smoke testing, and recovery for incomplete
-  bootstrap records.
+- Browser and CLI first-run setup, operator readiness diagnostics, database-
+  backed operator settings, guided onboarding, Forge-first docs, generic runtime
+  docs, mail smoke testing, and recovery for incomplete bootstrap records.
 - A script-tag widget, visitor identity, conversation creation, two-way
   messaging, Reverb delivery, and manual refresh fallbacks.
+- Private conversation-message attachments, visitor/agent upload UI, retention
+  sweep, pluggable malware scanning, and S3-compatible storage routing.
 - Support-code lookup, visitor profiles, safe visitor context, and support
   reference trails across conversations and tickets.
 - Consent-based cobrowse observe-mode foundations: request/consent lifecycle,
@@ -25,24 +30,33 @@ foundation now includes:
 - Alert preferences, dashboard notifications, queued email delivery, welcome
   emails, mail readiness warnings, and documented alert digest/escalation
   guardrails.
+- Operator backup configuration, run-on-demand backup history, restore
+  preflights, and self-hosting release manifests with upgrade guards and
+  non-blocking advisory notices.
+- Scoped break-glass grants for platform-operator support: reasoned, time-bound,
+  read-only, account-visible, audited, and transparent in the dashboard while
+  live.
 - Provider-neutral external issue connections, site project mappings, external
   ticket links, GitHub/GitLab/Jira outbound issue creation, reflected inbound
   state, bidirectional comment relay, and local sync-health visibility.
+- Repository maintenance foundations: PHP 8.4, pull-request CI, branch
+  protection, private vulnerability reporting, Dependabot, and a repo-authored
+  GitHub Wiki.
 
 ## Next Alpha Focus
 
-These are the nearest product slices because they improve the daily support
-experience without opening broad integration or platform-service work too soon.
+These are the nearest slices because the product spine exists; the project now
+needs repeatable self-hosting evidence and deliberately demand-gated polish.
 
-- MVP dogfood operation: the current Forge stage is the owner-approved initial
-  dogfood instance. Keep routing real Wayfindr support through it, use
+- `0.4.0` reliability evidence cycle: use the
+  [disposable VM evidence contract](../self-hosting/disposable-vm-evidence.md)
+  to prove clean install, supported upgrade/advisory behavior, backup/restore,
+  rollback, reboot recovery, and deployment-fork readiness without treating
+  local or dated stage evidence as current release proof.
+- MVP dogfood operation: the Forge stage has been the owner-approved initial
+  dogfood instance. Keep any runtime claim dated, use
   [MVP Dogfood Readiness](mvp-dogfood-readiness.md) after deploys, and let real
-  conversations select the next narrow slice.
-- Attachment contract and message-level delivery: define private storage,
-  authorization, file/size limits, retention, scanning expectations, and mobile
-  picker behavior before adding visitor and agent upload UI. Start with
-  conversation-message attachments; let linked tickets surface that context
-  without copying binaries or exporting them to external trackers by default.
+  conversations select the next narrow product slice.
 - External integration polish: live GitHub issue creation, inbound state,
   comment relay, and echo suppression are proven. Use continued traffic to
   decide whether labels, assignee, priority mapping, richer inbound-comment
@@ -54,8 +68,8 @@ experience without opening broad integration or platform-service work too soon.
   observable, and metadata-safe before adding automatic urgency rules. See
   [Account Escalation Policies](account-escalation-policies.md).
 - Operator hardening: clearer setup/recovery guidance, safer instance activity,
-  process-health affordances, platform-action auditing, and a separately
-  designed break-glass access path that does not erode tenant boundaries.
+  process-health affordances, platform-action audit inventory, and continued
+  checks that break-glass support does not erode tenant boundaries.
 - Privacy and retention controls: transcript/message retention visibility,
   operator-owned defaults, deletion/export planning, and warnings that help
   self-hosters understand their responsibility.
@@ -71,9 +85,9 @@ stable.
 - Richer inbound-comment presentation and assigned-agent notifications only if
   continued live use demonstrates that the base internal-note relay is too
   quiet or too plain.
-- Direct ticket attachments, internal-note attachments, and broader attachment
-  workflows only after message attachments establish the required lifecycle,
-  retention, and operator controls.
+- Direct ticket attachments, internal-note attachments, office-document opt-ins,
+  pre-signed attachment URLs, and broader attachment workflows only if
+  conversation-message attachments prove the demand and operator controls.
 - Agent-assisted summaries, reply drafts, and ticket suggestions when they
   improve concrete workflows without becoming AI decoration.
 - SPA route tracking and richer host-app SDKs.

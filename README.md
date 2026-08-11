@@ -106,8 +106,11 @@ Start with [data-responsibility.md](docs/privacy/data-responsibility.md), the
 
 ## Status
 
-Pre-alpha. Wayfindr now has a usable internal alpha spine for the first support
-loop:
+Pre-alpha. The repository is on the `0.4.0` development line; the latest public
+release is `v0.3.0` (August 11, 2026). Wayfindr now has a usable internal alpha
+spine for the first support loop and a review-gated self-hosting path, but
+release-readiness claims are still being proven on disposable VMs before the
+project should be treated as a boring appliance.
 
 - browser and CLI first-run setup;
 - authenticated account owners, admins, agents, and platform operators;
@@ -115,15 +118,26 @@ loop:
 - visitor identity, live chat, Reverb updates, and manual refresh fallbacks;
 - consent-based cobrowse state, snapshots, mutation diagnostics, telemetry, and
   an inert agent-side replay preview;
+- private conversation-message attachments with visitor and agent upload UI,
+  retention sweep, malware-scanner hook, and S3-compatible storage routing;
 - durable tickets with assignment, status changes, categories, priorities,
   labels, notes, replies, queue filters, and support reference panels;
 - visitor profiles, support-code lookup, and safe cross-record context;
 - alert preferences, dashboard alerts, queued email notifications, welcome
   emails, and mail smoke testing;
-- operator readiness diagnostics, safe operator activity, self-hosting docs,
-  and Forge-first deployment guidance;
-- provider-neutral external issue links plus GitHub outbound issue creation.
+- operator readiness diagnostics, database-backed operator settings, guided
+  onboarding, backup/restore surfaces, safe operator activity, self-hosting
+  docs, and Forge-first deployment guidance;
+- scoped, audited break-glass grants for read-only platform-operator support;
+- release manifests, upgrade guards, advisory notices, branch protection,
+  Dependabot, pull-request CI, and a repo-authored GitHub Wiki;
+- provider-neutral external issue links plus GitHub/GitLab/Jira issue creation,
+  state reflection, and comment relay foundations.
 
-The next product work is less about proving that the parts can exist and more
-about making the everyday support experience calm: chat polish, ticket flow
-comfort, cobrowse transport discipline, and continued operator hardening.
+The current `0.4.0` reliability cycle is about proving the self-hosting story
+with repeatable evidence: clean installs, supported upgrades, advisory behavior,
+backup/restore, rollback, reboot recovery, and deployment-fork readiness. See
+[disposable-vm-evidence.md](docs/self-hosting/disposable-vm-evidence.md) for the
+evidence contract. Product expansion is intentionally demand-gated around ticket
+workflow comfort, external integration field mapping, and any future cobrowse
+replay work.

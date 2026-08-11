@@ -16,10 +16,13 @@ an actively managed system rather than a set-and-forget appliance.
 - Protecting real support data? Read
   [Backup, Restore, and Rollback](Backup-Restore-and-Rollback) and
   [Security and Privacy](Security-and-Privacy) first.
+- Wondering what is shipped versus parked? Read
+  [Project Status](Project-Status).
 
 ## All Pages
 
 - [Quick Start](Quick-Start)
+- [Project Status](Project-Status)
 - [Installation](Installation)
 - [Upgrading](Upgrading)
 - [Runtime and Operations](Runtime-and-Operations)
