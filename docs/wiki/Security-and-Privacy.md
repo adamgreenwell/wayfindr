@@ -18,6 +18,9 @@ and use
 
 - Use HTTPS and secure WebSocket routing.
 - Keep application, database, Redis, host packages, and images patched.
+- Keep Composer dependencies on the reviewed lock file; source installs should
+  update with `composer install` from the release checkout rather than ad hoc
+  dependency resolution.
 - Store secrets outside Git and avoid placing them in logs or issue reports.
 - Review account roles, site assignments, and platform-operator boundaries.
 - Configure attachment storage and malware scanning deliberately.
