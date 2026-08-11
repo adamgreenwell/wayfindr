@@ -98,7 +98,7 @@ scheduler, and Reverb commands from that directory.
 
 ### Requirements
 
-- PHP 8.3 or newer
+- PHP 8.4 or newer
 - Composer 2
 - Docker Compose v2
 - Node.js and npm (only when working on Vite-built frontend assets)
