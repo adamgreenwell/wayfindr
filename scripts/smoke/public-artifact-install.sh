@@ -22,6 +22,8 @@ INSTALL_REF="${WAYFINDR_EVIDENCE_INSTALL_REF:-}"
 INSTALLER_REF="${WAYFINDR_EVIDENCE_INSTALLER_REF:-}"
 UPGRADE_CHAIN="${WAYFINDR_EVIDENCE_UPGRADE_CHAIN:-}"
 SYNTHETIC_SKEW_RESTORE="${WAYFINDR_EVIDENCE_SYNTHETIC_SKEW_RESTORE:-0}"
+IMAGE_ROLLBACK_RETRY="${WAYFINDR_EVIDENCE_IMAGE_ROLLBACK_RETRY:-0}"
+ROLLBACK_IMAGE="${WAYFINDR_EVIDENCE_ROLLBACK_IMAGE:-ghcr.io/adamgreenwell/wayfindr:0.3.1}"
 LAST_BACKUP_ARCHIVE=""
 SKEW_RESTORE_ARCHIVE=""
 SKEW_RESTORE_MARKER=""
@@ -45,6 +47,13 @@ case "$SCENARIO" in
         INSTALLER_REF="${INSTALLER_REF:-main}"
         SYNTHETIC_SKEW_RESTORE="${WAYFINDR_EVIDENCE_SYNTHETIC_SKEW_RESTORE:-1}"
         ;;
+    recovery-latest-v0.3.1-image-rollback-retry)
+        MODE="${MODE:-clean}"
+        INSTALL_REF="${INSTALL_REF:-}"
+        INSTALLER_REF="${INSTALLER_REF:-main}"
+        IMAGE_ROLLBACK_RETRY="${WAYFINDR_EVIDENCE_IMAGE_ROLLBACK_RETRY:-1}"
+        ROLLBACK_IMAGE="${WAYFINDR_EVIDENCE_ROLLBACK_IMAGE:-ghcr.io/adamgreenwell/wayfindr:0.3.1}"
+        ;;
     upgrade-v0.1.0-latest)
         MODE="${MODE:-upgrade}"
         INSTALL_REF="${INSTALL_REF:-v0.1.0}"
@@ -63,7 +72,7 @@ case "$SCENARIO" in
         ;;
     *)
         echo "Unknown WAYFINDR_EVIDENCE_SCENARIO: $SCENARIO" >&2
-        echo "Use clean-install-latest, upgrade-v0.2.0-latest-custom-backup-queue, recovery-latest-synthetic-skew-restore, upgrade-v0.1.0-latest, upgrade-v0.1.0-v0.2.0-latest, or custom." >&2
+        echo "Use clean-install-latest, upgrade-v0.2.0-latest-custom-backup-queue, recovery-latest-synthetic-skew-restore, recovery-latest-v0.3.1-image-rollback-retry, upgrade-v0.1.0-latest, upgrade-v0.1.0-v0.2.0-latest, or custom." >&2
         exit 1
         ;;
 esac
@@ -186,6 +195,8 @@ print_baseline() {
     echo "Installer ref: $INSTALLER_REF"
     echo "Upgrade chain: ${UPGRADE_CHAIN:-none}"
     echo "Custom BACKUP_QUEUE: ${BACKUP_QUEUE_OVERRIDE:-none}"
+    echo "Image rollback retry: $IMAGE_ROLLBACK_RETRY"
+    echo "Rollback image: ${ROLLBACK_IMAGE:-none}"
     lsb_release -a 2>/dev/null || cat /etc/os-release
     uname -a
     docker version
@@ -448,6 +459,43 @@ version_skew_restore_drill() {
     echo "Version-skew restore drill passed."
 }
 
+image_rollback_retry_drill() {
+    local current_image
+
+    current_image="$(read_env_value WAYFINDR_IMAGE)"
+
+    if [ -z "$current_image" ]; then
+        echo "Image rollback/retry drill needs WAYFINDR_IMAGE in $ENV_FILE." >&2
+        exit 1
+    fi
+
+    if [ -z "$ROLLBACK_IMAGE" ]; then
+        echo "Image rollback/retry drill needs WAYFINDR_EVIDENCE_ROLLBACK_IMAGE." >&2
+        exit 1
+    fi
+
+    echo
+    echo "== Image rollback/retry drill =="
+    echo "Current image before rollback: $current_image"
+    echo "Rollback image: $ROLLBACK_IMAGE"
+
+    set_env_value WAYFINDR_IMAGE "$ROLLBACK_IMAGE"
+    compose pull web
+    compose up -d
+    verify_runtime "after image rollback to $ROLLBACK_IMAGE"
+    run_support_loop "after image rollback to $ROLLBACK_IMAGE"
+
+    echo
+    echo "Retrying original image: $current_image"
+    set_env_value WAYFINDR_IMAGE "$current_image"
+    compose pull web
+    compose up -d
+    verify_runtime "after retry to $current_image"
+    run_support_loop "after retry to $current_image"
+
+    echo "Image rollback/retry drill passed."
+}
+
 restart_stack_check() {
     echo
     echo "== Service restart recovery check =="
@@ -564,6 +612,10 @@ if [ "$SYNTHETIC_SKEW_RESTORE" = "1" ]; then
     run_support_loop "after synthetic version-skew restore recovery"
 fi
 
+if [ "$IMAGE_ROLLBACK_RETRY" = "1" ]; then
+    image_rollback_retry_drill
+fi
+
 backup_restore_drill
 verify_runtime "after restore"
 run_support_loop "after restore"
@@ -576,6 +628,7 @@ Scenario: $SCENARIO
 Result: pass
 Install ref: ${INSTALL_REF:-latest release}
 Upgrade chain: ${UPGRADE_CHAIN:-none}
+Rollback image: ${ROLLBACK_IMAGE:-none}
 App URL: $APP_URL
 Compose project: $PROJECT_NAME
 Synthetic agent: $AGENT_EMAIL

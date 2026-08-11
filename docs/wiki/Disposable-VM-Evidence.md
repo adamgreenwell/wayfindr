@@ -30,11 +30,14 @@ The repository has a manual
 [Disposable VM evidence workflow](https://github.com/adamgreenwell/wayfindr/actions/workflows/disposable-vm-evidence.yml)
 for fresh GitHub-hosted Ubuntu 24.04 x64 runs. Use it to collect repeatable
 public-artifact evidence for clean install, supported upgrade, and recovery
-skew-restore scenarios, then copy the sanitized result summary into the relevant
-issue. The hosted recovery path uses
+skew-restore/image-rollback scenarios, then copy the sanitized result summary
+into the relevant issue. The hosted skew-restore path uses
 `recovery-latest-synthetic-skew-restore`: latest public release install, real
 backup archive, synthetic older manifest identity, forced restore, migration,
-and post-restore support-loop proof.
+and post-restore support-loop proof. The hosted image rollback/retry path uses
+`recovery-latest-v0.3.1-image-rollback-retry`: latest public release install,
+rollback to the previous schema-compatible `0.3.1` image, support-loop proof,
+retry of the original image, and support-loop proof again.
 
 For a real disposable VM reboot check, run the evidence installer with a
 persistent `WAYFINDR_EVIDENCE_TARGET_DIR`, fixed synthetic credentials, and
