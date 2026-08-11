@@ -30,6 +30,10 @@ missed while skimming.
 
 ## [Unreleased]
 
+*Nothing yet.*
+
+## [0.3.0] - 2026-08-11
+
 **No operator action required.** Pull, restart, and migrations run themselves.
 
 ### Added
