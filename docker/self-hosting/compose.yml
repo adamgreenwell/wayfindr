@@ -115,7 +115,12 @@ services:
   # raised.
   backup-queue:
     <<: *wayfindr-app
-    command: ["php", "artisan", "queue:work", "backups", "--queue=${BACKUP_QUEUE:-backups}", "--sleep=5", "--tries=1", "--timeout=3600"]
+    # `$$` keeps Compose from interpolating this: the CONTAINER shell expands it,
+    # reading the same env_file Laravel does. Host-side `${...}` would be resolved
+    # by Compose from the invoking SHELL first (install.sh documents that
+    # precedence), so an exported BACKUP_QUEUE differing from the env file would
+    # have the worker draining one queue while the app dispatched to another.
+    command: ["sh", "-c", "exec php artisan queue:work backups --queue=\"$${BACKUP_QUEUE:-backups}\" --sleep=5 --tries=1 --timeout=3600"]
     environment:
       DB_CONNECTION: pgsql
       DB_HOST: postgres
