@@ -1,10 +1,12 @@
 SERVER_DIR := apps/server
 
-.PHONY: help php-version-test public-info-check public-info-test self-host-test services-up services-down server-install server-migrate server-serve server-test wiki-sync-dry-run wiki-test
+.PHONY: help php-version-test public-artifact-install-test public-info-check public-info-test self-host-test services-up services-down server-install server-migrate server-serve server-test wiki-sync-dry-run wiki-test
 
 help:
 	@printf '%s\n' 'Wayfindr development commands:'
 	@printf '%s\n' '  make php-version-test   Check that every PHP minimum agrees'
+	@printf '%s\n' '  make public-artifact-install-test'
+	@printf '%s\n' '                          Test public release artifacts in Docker (destructive to its evidence project)'
 	@printf '%s\n' '  make public-info-check  Check tracked files for sensitive markers'
 	@printf '%s\n' '  make public-info-test   Test the public-info boundary guard'
 	@printf '%s\n' '  make self-host-test     Test the installer and compose stack (needs Docker)'
@@ -39,6 +41,9 @@ self-host-test: php-version-test
 	scripts/test-self-host-compose-template.sh
 	scripts/test-self-host-env-value.sh
 	scripts/test-self-host-classification.sh
+
+public-artifact-install-test:
+	scripts/smoke/public-artifact-install.sh
 
 services-up:
 	docker compose up -d postgres redis
