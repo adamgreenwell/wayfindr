@@ -324,7 +324,10 @@ if [[ "$dashboard_code" != "200" ]]; then
     exit 1
 fi
 
-assert_contains "$dashboard_page" "Workspace shortcuts" "agent dashboard"
+# Keep this assertion tied to a durable product landmark rather than marketing
+# copy. The dashboard used to say "Workspace shortcuts"; current releases expose
+# the same successful-login proof through the support queue section.
+assert_contains "$dashboard_page" "Support queues" "agent dashboard"
 
 echo "Opening agent conversation..."
 conversation_page="$tmp_dir/conversation.html"
