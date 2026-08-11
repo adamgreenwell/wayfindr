@@ -1146,3 +1146,25 @@ check "it scopes by the label"    1 "$(printf '%s' "$refusal_tail" | grep -c 'mu
 
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
+
+echo
+echo "floor refusal must not dictate its own bypass:"
+
+# The floor override is trusted: env_value() reads it back as a known origin, so
+# the preflight permits the pull and the artifact trusts the same declaration.
+# Printing the floor as the suggested VALUE therefore tells an install genuinely
+# below the floor exactly how to migrate on a path whose migrations no longer
+# ship — through the primary installer flow, having done as it was told.
+#
+# Checked in BOTH halves of this message, because they are rendered independently
+# and the artifact's copy carried the identical defect. Whichever one is edited,
+# this fails if the other is forgotten.
+installer_floor_line="$(grep -A2 'State the release you are upgrading FROM' "$INSTALLER" | grep 'WAYFINDR_UPGRADE_FROM=' || true)"
+check "installer offers a placeholder, not the floor" \
+    "ok" \
+    "$(case "$installer_floor_line" in *'$floor'*|*'%s'*) echo "prefills" ;; *'<'*) echo "ok" ;; *) echo "missing" ;; esac)"
+
+check "artifact offers a placeholder, not the floor" \
+    "ok" \
+    "$(grep -A1 'WAYFINDR_UPGRADE_FROM=' "$APP/app/Support/Release/FloorAdvice.php" \
+        | grep -q 'WAYFINDR_UPGRADE_FROM=<' && echo ok || echo prefills)"
