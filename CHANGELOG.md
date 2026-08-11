@@ -41,8 +41,8 @@ missed while skimming.
   disappears on its own once the thing is done.
 - The first one: **run a queue worker on the `backups` connection**. Without it,
   "Run a backup now" queues a job nothing will process and the run sits at
-  *Running* indefinitely. Scheduled backups are unaffected. Compose stacks
-  already run this worker; host-managed installs (Forge and similar) need one.
+  *Running* indefinitely. Scheduled backups are unaffected. Compose stacks run
+  this worker themselves; host-managed installs (Forge and similar) need one.
 
   **Get the command from `/operator/settings/backups`** rather than copying it
   from here. That page fills in *your* configured queue name and timeout, and
@@ -75,6 +75,14 @@ missed while skimming.
   platform down because a *backup* worker was missing is not a proportionate
   answer. A release that can only shout or stay silent will eventually shout at
   the wrong time.
+
+### Fixed
+
+- The Compose stack's backup worker now follows `BACKUP_QUEUE`. It ran with a
+  hard-coded `--queue=backups` while the application dispatched to whatever
+  `BACKUP_QUEUE` named, so an operator who changed it had a worker draining a
+  queue nothing was sent to — every GUI-triggered backup stuck at *Running*,
+  with no error anywhere. Only installs that set `BACKUP_QUEUE` were affected.
 
 ## [0.2.0] - 2026-08-10
 

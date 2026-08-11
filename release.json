@@ -56,11 +56,14 @@
                 "OperatorBackupSettingsController::workerObservation() already",
                 "carries that warning, and the backups page builds the command from",
                 "the live config - so the notice names the requirement and points",
-                "at the surface that can get the command right."
+                "at the surface that can get the command right.",
+                "The Compose worker follows BACKUP_QUEUE too (compose.yml interpolates",
+                "it into --queue), so the claim that Compose stacks are already",
+                "covered holds for a custom queue as well - it did not before."
             ],
             "id": "backups-queue-consumer",
             "summary": "Run a queue worker on the backups connection.",
-            "detail": "Without one, \"Run a backup now\" queues a job nothing will process and the run sits at Running indefinitely. Scheduled backups are unaffected. Compose stacks already run this worker. On a host-managed install, open /operator/settings/backups - it prints the exact command for this install, with your configured queue name and timeout filled in (BACKUP_QUEUE can move the queue off its default, so a copied command may drain the wrong one).",
+            "detail": "Without one, \"Run a backup now\" queues a job nothing will process and the run sits at Running indefinitely. Scheduled backups are unaffected. Compose stacks run this worker themselves, on whichever queue BACKUP_QUEUE names. On a host-managed install, open /operator/settings/backups - it prints the exact command for this install, with your configured queue name and timeout filled in (BACKUP_QUEUE can move the queue off its default, so a copied command may drain the wrong one).",
             "applicability": {
                 "type": "always"
             },
