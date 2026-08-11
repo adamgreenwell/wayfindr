@@ -104,6 +104,19 @@ clear. The smoke scripts may still use an ephemeral Playwright install for
 runtime checks; that is separate from adding browser tests to the automated
 suite.
 
+## Wiki Documentation
+
+Run the Wiki navigation and authority-link check from the repository root:
+
+```bash
+make wiki-test
+```
+
+It requires the curated page set, prevents pages from becoming orphaned from
+Home or the sidebar, validates internal Wiki links, and confirms that linked
+repository files still exist. The authoring and review-gated publication flow
+is documented in [wiki.md](wiki.md).
+
 ## Smoke Scripts
 
 Use smoke scripts when you need runtime proof against a local, staging, or

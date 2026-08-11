@@ -30,12 +30,23 @@ missed while skimming.
 
 ## [Unreleased]
 
+**No operator action required.** Pull, restart, and migrations run themselves.
+
 ### Changed
 
 - PHP 8.4 is now the declared minimum everywhere, matching the dependency lock
   and the official self-hosting image. This corrects the previous documented
   floor; it does not introduce a new runtime requirement beyond what the
   published dependency set already enforced.
+
+### Security
+
+- Refreshed the locked PHP dependency set to clear current Composer advisories
+  in Guzzle, Laravel, League CommonMark, and Symfony. Source-based self-hosters
+  should install from the reviewed lock file after updating; official images
+  receive the refreshed dependencies through the normal release artifact.
+- Composer now resolves dependency updates against PHP 8.4.1 so automation sees
+  the patched PHP 8.4 floor required by the refreshed Symfony packages.
 
 ## [0.3.0] - 2026-08-11
 
