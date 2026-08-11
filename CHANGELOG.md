@@ -30,7 +30,14 @@ missed while skimming.
 
 ## [Unreleased]
 
-No unreleased changes yet.
+**No operator action required.** Pull, restart, and migrations run themselves.
+
+### Fixed
+
+- Empty self-hosting storage volumes are now initialized by a one-shot root
+  helper before the non-root app services start. This preserves Docker `nocopy`
+  protection against first-boot copy races while keeping Laravel's writable
+  storage tree owned by the `wayfindr` user.
 
 ## [0.3.1] - 2026-08-11
 

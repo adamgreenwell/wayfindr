@@ -36,12 +36,37 @@ x-wayfindr-app: &wayfindr-app
   volumes:
     - *wayfindr-storage-volume
   depends_on:
+    storage-init:
+      condition: service_completed_successfully
     postgres:
       condition: service_healthy
     redis:
       condition: service_healthy
 
 services:
+  storage-init:
+    image: ${WAYFINDR_IMAGE:-ghcr.io/adamgreenwell/wayfindr:latest}
+    restart: "no"
+    user: "0:0"
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        mkdir -p \
+          /app/apps/server/storage/app/public \
+          /app/apps/server/storage/app/private/attachments \
+          /app/apps/server/storage/framework/cache/data \
+          /app/apps/server/storage/framework/sessions \
+          /app/apps/server/storage/framework/views \
+          /app/apps/server/storage/logs
+        find /app/apps/server/storage -maxdepth 4 -type d -exec chown 1000:1000 {} +
+        find /app/apps/server/storage -maxdepth 4 -type d -exec chmod ug+rwX {} +
+    volumes:
+      - *wayfindr-storage-volume
+    healthcheck:
+      disable: true
+
   web:
     <<: *wayfindr-app
     environment:

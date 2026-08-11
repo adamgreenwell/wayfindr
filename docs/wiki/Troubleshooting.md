@@ -14,8 +14,9 @@ data, transcripts, raw cobrowse payloads, or private URLs into a public issue.
   not partially edited.
 - If first boot fails while creating `wayfindr-storage` directories, refresh to
   the current `compose.yml`; the shared Laravel storage volume uses Docker
-  `nocopy` so parallel app-service creation does not race while Docker prepares
-  the named volume.
+  `nocopy` plus a one-shot `storage-init` helper so parallel app-service
+  creation does not race while Docker prepares the named volume and the non-root
+  app user still owns the storage tree.
 
 ## Web Works but Background Features Do Not
 

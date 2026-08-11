@@ -198,8 +198,17 @@ install_wayfindr() {
     echo "Installer source: $installer_url"
     echo "Requested install ref: ${install_ref:-latest release}"
 
-    curl -fsSL "$installer_url" \
-        | COMPOSE_PROJECT_NAME="$PROJECT_NAME" bash -s -- "${install_args[@]}"
+    if ! curl -fsSL "$installer_url" \
+        | COMPOSE_PROJECT_NAME="$PROJECT_NAME" bash -s -- "${install_args[@]}"; then
+        echo "Installer failed. Capturing stack state before cleanup." >&2
+
+        if [ -f "$ENV_FILE" ] && [ -f "$COMPOSE_FILE" ]; then
+            compose ps >&2 || true
+            compose logs --tail 120 storage-init web queue backup-queue scheduler reverb postgres redis >&2 || true
+        fi
+
+        return 1
+    fi
 }
 
 bootstrap_instance() {
