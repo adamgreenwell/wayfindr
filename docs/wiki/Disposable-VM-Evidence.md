@@ -85,6 +85,17 @@ claim, record it as partial and keep the issue open.
   migrations after restore, completed the support loop after recovery, then
   completed the normal backup/restore and restart checks. This proves the hosted
   warning/recovery path, not arbitrary cross-version archive compatibility.
+- August 11, 2026:
+  [`recovery-latest-v0.3.1-image-rollback-retry` passed](https://github.com/adamgreenwell/wayfindr/actions/runs/31539581605).
+  The run installed the latest public release, `v0.3.2`, resolved image digest
+  `sha256:3fe112ca3d3f83efb1f4d00c401b8bf43cc706ec5bfddb05244be01b2fd8e660`,
+  rolled the stack back to `ghcr.io/adamgreenwell/wayfindr:0.3.1` at digest
+  `sha256:36cdaf94f29372eab5b60a48eccc3ca40c3664afb9f3df01137a0a26a8941a8f`,
+  verified runtime and support-loop health, retried the original `v0.3.2`
+  image, verified runtime and support-loop health again, then completed the
+  normal backup/restore and restart checks. This proves the current
+  schema-compatible hosted image rollback/retry path, not arbitrary downgrade
+  safety.
 - This is still hosted-runner evidence. Use it as partial proof for the clean
   install and local backup/restore path, not as proof of a bare-metal VM reboot,
   rollback drill, DNS/TLS, mail delivery, offsite backups, or production restore
