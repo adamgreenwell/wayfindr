@@ -33,9 +33,14 @@ This baseline is locally verified with mocked provider HTTP boundaries and has
 completed a full live GitHub dogfood round trip: issue creation, reflected state,
 two-way comment relay, and echo suppression. GitLab and Jira should receive the
 same live-provider proof when an operator actually configures them; that is not
-a blocker for the GitHub-backed dogfood install. Richer field mapping remains
-deliberately demand-gated until dogfood traffic establishes which metadata is
-useful.
+a blocker for the GitHub-backed dogfood install.
+
+The remaining integration ideas are parked in the roadmap rather than tracked as
+open implementation issues. Labels, assignees, priority mapping, richer inbound
+comment presentation, and assigned-agent notifications should reopen only as
+narrow issues backed by real support traffic or operator complaints. That keeps
+the implemented provider boundary small until there is evidence that a specific
+piece of external metadata improves the agent workflow.
 
 ## Platform Shape
 
@@ -178,7 +183,25 @@ Default behavior should be conservative:
    **Shipped for GitHub; GitLab and Jira remain provider-specific follow-up when
    a real install configures them.**
 9. Decide whether labels, assignee, or priority mapping is justified by real
-   traffic, including direction and conflict rules.
+   traffic, including direction and conflict rules. **Parked until demand is
+   observed; create a fresh scoped issue when the evidence exists.**
+
+## Demand-Gated Follow-Ups
+
+The old catch-all follow-up list is intentionally closed as an active issue. Use
+this section as the durable parking lot instead:
+
+- **Richer field mapping:** wait for real tickets to show that labels,
+  assignees, priority, milestones, or issue types are needed. A new issue should
+  name the provider, field direction, conflict policy, and privacy consequence.
+- **Integration readiness hint for missing webhook secrets:** reopen only if
+  operators miss inbound state/comment setup during onboarding or support.
+- **Richer inbound-comment presentation and assigned-agent notifications:**
+  reopen only if live agents miss provider comments or if internal-note relay
+  formatting proves too noisy or too plain.
+
+These are product bets, not reliability gates. Do not ship them merely because a
+provider API supports them.
 
 ## Open Questions
 
