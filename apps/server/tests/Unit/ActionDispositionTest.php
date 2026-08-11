@@ -215,7 +215,14 @@ test('the floor refusal never hands the operator the value that defeats it', fun
     // And it must ask for the PRE-UPGRADE version. This message is emitted by
     // the migration guard AFTER the pull, so "the version you are on" reads as
     // the target — and entering the target clears the floor exactly as the old
-    // prefill did. The prompt has to disown the target by name.
-    expect($text)->toContain('upgrading FROM')
-        ->toContain('not 0.3.0');
+    // prefill did. The prompt disambiguates by TIMING.
+    expect($text)->toContain('BEFORE this pull');
+
+    // But it must NOT assert that the answer differs from the target. A source
+    // deployment stamps every commit of a cycle with the same VERSION, so an
+    // install updating within a cycle has a truthful pre-pull origin equal to
+    // the target — and telling that operator it must differ invites them to
+    // invent an older version, which is the fabrication this whole fix exists
+    // to prevent.
+    expect($text)->not->toContain('not 0.3.0');
 });

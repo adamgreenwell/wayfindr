@@ -65,6 +65,16 @@ final readonly class FloorAdvice
             // is the only value that makes this an origin rather than an
             // override — and if that version really is below the floor, the
             // refusal stands, which is the honest outcome.
+            //
+            // DISAMBIGUATED BY TIMING, NOT BY INEQUALITY. An earlier attempt said
+            // "not <target>", which is false on a source deployment: those stamp
+            // every commit of a cycle with the same VERSION (see
+            // UpgradeGuard::assess()), so an install updating between two commits
+            // of one cycle has a truthful pre-pull origin EQUAL to the target.
+            // Telling that operator it must differ invites them to invent an
+            // older version — the same fabrication this fix exists to prevent,
+            // arrived at from the other side. "Before this pull" identifies the
+            // right release without asserting anything about its value.
             // AND IT MUST ASK FOR THE PRE-UPGRADE VERSION, EXPLICITLY.
             //
             // The migration guard emits this AFTER the pull, so "the version
@@ -78,8 +88,7 @@ final readonly class FloorAdvice
                 'This install has no recorded release, so the upgrade floor cannot be verified.',
                 sprintf('%s only supports upgrading from %s or later.', $release, $floor),
                 'Either upgrade to that release first, which records where you are,',
-                'or state the release you are upgrading FROM — the one that was',
-                sprintf('running before this pull, not %s:', $release),
+                'or state the release that was running BEFORE this pull:',
                 '  WAYFINDR_UPGRADE_FROM=<the release you upgraded from>',
                 sprintf('Stating a version below %s is still refused — this establishes', $floor),
                 'where you started, it does not grant permission.',
