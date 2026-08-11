@@ -31,6 +31,13 @@ jobs:
           tools: composer:v2
           coverage: none
 
+      - name: Set up Node.js 24 for test assets
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/server/package-lock.json
+
       - name: Validate Composer metadata
         working-directory: apps/server
         run: composer validate --strict --no-check-publish
@@ -38,6 +45,14 @@ jobs:
       - name: Install locked PHP dependencies
         working-directory: apps/server
         run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Prepare the local test environment
+        run: cp apps/server/.env.example apps/server/.env
+
+      - name: Build assets used by feature tests
+        run: |
+          npm ci --prefix apps/server --ignore-scripts
+          npm run build --prefix apps/server
 
       - name: Run the Pest suite
         working-directory: apps/server
