@@ -37,6 +37,21 @@ bare-metal VM reboot, rollback drill, real DNS/TLS, mail delivery, offsite
 backup, or production restore posture. If the workflow proves only part of a
 claim, record it as partial and keep the issue open.
 
+## Current Hosted Evidence
+
+- August 11, 2026:
+  [`clean-install-latest` passed](https://github.com/adamgreenwell/wayfindr/actions/runs/31535388323)
+  against the latest public release, `v0.3.2`. The run installed from public
+  artifacts, resolved image digest
+  `sha256:3fe112ca3d3f83efb1f4d00c401b8bf43cc706ec5bfddb05244be01b2fd8e660`,
+  verified healthy services, ran migrations, completed the support loop, took
+  and restored a backup, completed the support loop again after restore, and
+  restarted the stack.
+- This is still hosted-runner evidence. Use it as partial proof for the clean
+  install and local backup/restore path, not as proof of a bare-metal VM reboot,
+  rollback drill, DNS/TLS, mail delivery, offsite backups, or production restore
+  posture.
+
 ## Related Pages
 
 - [Installation](Installation)
