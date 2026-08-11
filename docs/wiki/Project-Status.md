@@ -39,24 +39,30 @@ Treat dated stage or fork observations as context, not current runtime proof.
 ## Current Evidence Snapshot
 
 As of August 11, 2026, the hosted public-artifact workflow has passing runs for
-the current clean-install and published-upgrade scenarios:
+the current clean-install, published-upgrade, warning/recovery, and
+schema-compatible image rollback/retry scenarios:
 
 - [`clean-install-latest`](https://github.com/adamgreenwell/wayfindr/actions/runs/31535388323)
   for `v0.3.2`;
 - [`upgrade-v0.2.0-latest-custom-backup-queue`](https://github.com/adamgreenwell/wayfindr/actions/runs/31535924025);
 - [`upgrade-v0.1.0-latest`](https://github.com/adamgreenwell/wayfindr/actions/runs/31536143352);
-- [`upgrade-v0.1.0-v0.2.0-latest`](https://github.com/adamgreenwell/wayfindr/actions/runs/31536145475).
+- [`upgrade-v0.1.0-v0.2.0-latest`](https://github.com/adamgreenwell/wayfindr/actions/runs/31536145475);
+- [`recovery-latest-synthetic-skew-restore`](https://github.com/adamgreenwell/wayfindr/actions/runs/31537984956);
+- [`recovery-latest-v0.3.1-image-rollback-retry`](https://github.com/adamgreenwell/wayfindr/actions/runs/31539581605).
 
 Together, those hosted runs prove fresh GitHub-hosted Ubuntu runners can install
 published artifacts, upgrade through the supported public-release paths, boot
 the Compose stack, run migrations, complete the support loop, take and restore
 a backup, repeat the support loop after restore, and restart the stack. The
 custom backup queue run also proves the backups-queue advisory appears during
-upgrade guidance and retires once the worker is observed.
+upgrade guidance and retires once the worker is observed. The recovery runs add
+hosted proof for the current restore warning path and for a narrow
+schema-compatible image rollback from `0.3.2` to `0.3.1`, followed by retrying
+the current image.
 
 It remains partial evidence. It does not close the bare-metal disposable VM
-reboot, rollback, real DNS/TLS, mail delivery, offsite backup, or production
-restore posture checks.
+reboot, destructive schema/data rollback, real DNS/TLS, mail delivery, offsite
+backup, or production restore posture checks.
 
 ## Parked or Demand-Gated
 

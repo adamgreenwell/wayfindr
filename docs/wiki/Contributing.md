@@ -6,6 +6,12 @@ Wayfindr welcomes focused bug reports, documentation fixes, tests, and
 reviewable product changes. The project is early, so open an issue before a
 large implementation to confirm direction and boundaries.
 
+Use the repository issue templates when filing public work. They ask for the
+smallest reproducible outcome, public-safe evidence, and explicit security,
+privacy, migration, or operational boundaries. For self-hosting claims, prefer
+the dedicated evidence template so clean install, upgrade, backup/restore,
+rollback, and reboot reports all carry the same receipts.
+
 ## Development Path
 
 1. Read the [contribution guide](https://github.com/adamgreenwell/wayfindr/blob/main/CONTRIBUTING.md).
