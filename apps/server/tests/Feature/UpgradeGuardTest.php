@@ -2254,10 +2254,14 @@ test('a fresh install still gets the running release advice', function (): void 
     expect(app(UpgradeGuard::class)->notices())->toHaveCount(1);
 });
 
-test('notices from a skipped release are still reported', function (): void {
-    // Advisory work must be performable at any time (a notice takes no
-    // depends_on_release), so a release the upgrade jumped past has advice that
-    // is still actionable today.
+test('only the running release advises; an intermediate release does not', function (): void {
+    // A notice belongs to the INSTALL, not to a hop. It is read from the running
+    // release's own manifest, so advice that still applies is carried forward by
+    // the next release (the post-release reset deliberately leaves `notices`
+    // alone) and advice that is removed stops being given.
+    //
+    // Reading a span instead was the first shape, and it broke twice: see the
+    // two regressions below.
     bakeRelease(['actions' => []], '0.4.0', history: [
         ReleaseManifest::build(noticeDeclaration(), '0.3.0', 'bbb'),
         ReleaseManifest::build(['actions' => []], '0.4.0', 'abc123'),
@@ -2265,8 +2269,39 @@ test('notices from a skipped release are still reported', function (): void {
 
     app(ReleaseState::class)->record('0.2.0', 'aaa', satisfiedThrough: '0.2.0');
 
-    expect(array_column(app(UpgradeGuard::class)->notices(), 'id'))
-        ->toBe(['backups-queue-consumer']);
+    // 0.4.0 declares none, so nothing is advised — 0.3.0 dropping it is how you
+    // retire advice.
+    expect(app(UpgradeGuard::class)->notices())->toBeEmpty();
+});
+
+test('an unmet notice survives the release being recorded', function (): void {
+    // REGRESSION. Evaluating notices over a span made them vanish the moment
+    // `satisfied_through` advanced: that value moves on outstanding ACTIONS
+    // alone, so the next span became (target, target] and the still-unmet advice
+    // disappeared from the guard and the console while nothing had changed about
+    // the install.
+    bakeRelease(noticeDeclaration(), '0.3.0');
+
+    expect(app(UpgradeGuard::class)->notices())->toHaveCount(1);
+
+    // Exactly what RecordReleaseAfterMigration writes on a clean migration.
+    app(ReleaseState::class)->record('0.3.0', 'abc123', satisfiedThrough: '0.3.0');
+
+    expect(app(UpgradeGuard::class)->notices())->toHaveCount(1);
+});
+
+test('a notice cannot be scoped by upgrade-from', function (): void {
+    // REGRESSION. `upgrade-from` compares a `min` against the upgrade's origin,
+    // and a notice has no origin — it is evaluated against the running release.
+    // Left allowed, the origin it was measured against stopped meaning "where
+    // the upgrade started" as soon as the release was recorded, so a retirement
+    // notice correctly skipped during the jump reappeared straight afterwards,
+    // and applied to fresh installs that had never had the state being retired.
+    expect(fn () => ReleaseManifest::build(
+        noticeDeclaration(['applicability' => ['type' => 'upgrade-from', 'min' => '0.2.0']]),
+        '0.3.0',
+        'abc',
+    ))->toThrow(InvalidArgumentException::class);
 });
 
 test('a notice takes no phase and no depends_on_release', function (): void {

@@ -241,6 +241,26 @@ final class ReleaseManifest
             self::validateApplicability($notice['applicability'], $notice['id']);
             self::validateVerification($notice['verification'], $notice['id']);
 
+            // `upgrade-from` is rejected for notices, because a notice has no
+            // upgrade to measure from. It is evaluated against the running
+            // release's own manifest — no span, no origin — so a `min` here
+            // would be compared against nothing and silently either always or
+            // never apply.
+            //
+            // This is the same shape as the rejected `phase` and
+            // `depends_on_release`: fields that only mean something to work owed
+            // by a particular hop. Advisory work is about the install's state,
+            // and "only advise installs that came from at least X" is a
+            // distinction that belongs to an action.
+            if (($notice['applicability']['type'] ?? null) === 'upgrade-from') {
+                throw new InvalidArgumentException(sprintf(
+                    'Notice "%s" cannot use `upgrade-from` applicability: a notice is evaluated '
+                    .'against the running release, not against an upgrade, so there is no origin '
+                    .'to compare `min` with. Use `always`, or `state` with a check.',
+                    $notice['id'],
+                ));
+            }
+
             // Unique for the same reason actions are: an acknowledgement is keyed
             // `<release>/<id>`, and the two lists share that namespace — so this
             // collides against action ids as well as against other notices.

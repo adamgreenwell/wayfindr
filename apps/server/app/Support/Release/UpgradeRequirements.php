@@ -240,36 +240,54 @@ final class UpgradeRequirements
      * @return list<array<string, mixed>> unmet notices, each with `satisfied_by`
      */
     public static function outstandingNotices(
-        array $history,
-        ?string $from,
-        string $target,
+        array $manifest,
         array $acknowledged,
         callable $evaluateCheck,
-        bool $freshInstall = false,
     ): array {
         $outstanding = [];
 
-        // A fresh install skips upgrade-only ACTIONS because it never made the
-        // upgrade. Notices are different: they describe how this release wants to
-        // be run, and a fresh install runs it. Suppressing them here would hide
-        // the missing-backups-worker advice from precisely the installs most
-        // likely to be missing one.
-        $origin = $freshInstall ? $target : $from;
-
-        foreach (self::span($history, $origin, $target, includeTarget: true) as $manifest) {
-            foreach ($manifest['notices'] ?? [] as $notice) {
-                if (! self::applies($notice, $origin, $evaluateCheck)) {
-                    continue;
-                }
-
-                $settled = self::settled($notice, $acknowledged, $evaluateCheck);
-
-                if ($settled['satisfied']) {
-                    continue;
-                }
-
-                $outstanding[] = $notice + ['satisfied_by' => $settled['by']];
+        // THE RUNNING RELEASE'S OWN NOTICES, AND NOTHING ELSE. No span, no
+        // origin, no freshness.
+        //
+        // The first version of this evaluated a span like actions do, and that
+        // was wrong twice over. An action belongs to an UPGRADE: it is work owed
+        // because of a particular hop, so where the hop started decides whether
+        // it applies. A notice belongs to the INSTALL: it is advice about how the
+        // release now running wants to be operated, and the upgrade that got here
+        // has no bearing on whether a backups worker should exist.
+        //
+        // Reading a span produced two defects, both found in review:
+        //
+        //  - `upgrade-from` applicability was measured against an origin that
+        //    stops meaning "where the upgrade started" the moment the release is
+        //    recorded, so a retirement notice correctly skipped during the
+        //    upgrade reappeared immediately afterwards, and on fresh installs.
+        //  - An unmet notice from an intermediate release vanished after
+        //    migration, because `satisfied_through` advances on ACTIONS alone and
+        //    the next span became (target, target].
+        //
+        // Reading only the target's manifest removes both, and makes the
+        // published carry-over rule the mechanism rather than a workaround: a
+        // notice that still applies is re-declared by the next release (the
+        // release reset deliberately does not clear `notices`), and one that is
+        // removed stops being reported. See RELEASING.md and
+        // docs/self-hosting/release-manifest.md.
+        foreach ($manifest['notices'] ?? [] as $notice) {
+            // Origin is passed as null because there is none: `upgrade-from` is
+            // rejected for notices at validation, so the only applicability
+            // types that reach here are `always` and `state`, neither of which
+            // consults it.
+            if (! self::applies($notice, null, $evaluateCheck)) {
+                continue;
             }
+
+            $settled = self::settled($notice, $acknowledged, $evaluateCheck);
+
+            if ($settled['satisfied']) {
+                continue;
+            }
+
+            $outstanding[] = $notice + ['satisfied_by' => $settled['by']];
         }
 
         return $outstanding;
