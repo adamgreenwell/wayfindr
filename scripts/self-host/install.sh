@@ -1215,9 +1215,23 @@ upgrade_preflight() {
             printf '\n\033[1;31mTHIS UPGRADE CANNOT BE VERIFIED\033[0m\n\n'
             printf '  %s only supports upgrading from %s or later, and nothing here\n' "$to" "$floor"
             printf '  records which version this install is running.\n\n'
-            printf '  Pin the version you are on in %s, for example:\n' "$ENV_FILE"
-            printf '    WAYFINDR_UPGRADE_FROM=%s\n\n' "$floor"
+            # NEVER PRINT THE FLOOR AS THE VALUE HERE. This used to read
+            # `WAYFINDR_UPGRADE_FROM=$floor`, which handed the operator the one
+            # value that defeats the check: env_value() reads it back as a known
+            # origin so the next preflight permits the pull, and the artifact
+            # trusts the same declaration, so an install genuinely below the
+            # floor migrates on a path whose migrations no longer ship - through
+            # the primary installer flow, having done exactly as it was told.
+            #
+            # The artifact's copy of this refusal (App\Support\Release\FloorAdvice)
+            # had the same defect and was fixed with it. Two independently
+            # rendered halves of one message, which is the drift this area keeps
+            # producing - when either changes, grep the WHOLE repo for the other.
+            printf '  State the release you are upgrading FROM in %s:\n' "$ENV_FILE"
+            printf '    WAYFINDR_UPGRADE_FROM=<the release you are upgrading from>\n\n'
             printf '  Or upgrade to %s first, which records it.\n\n' "$floor"
+            printf '  Stating a version below %s is still refused - this establishes\n' "$floor"
+            printf '  where you started, it does not grant permission.\n\n'
             printf '  Nothing has been pulled or changed - the release you are running is intact.\n\n'
             exit 78
         fi

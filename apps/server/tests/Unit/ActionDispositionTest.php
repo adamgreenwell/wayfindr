@@ -159,8 +159,11 @@ test('an unverifiable floor is a question, not an accusation', function (): void
 
     expect($advice->verifiable)->toBeFalse()
         ->and($text)->toContain('cannot be verified')
-        // The escape hatch is the whole point of this branch.
-        ->and($text)->toContain('WAYFINDR_UPGRADE_FROM=0.1.0-alpha.1')
+        // The escape hatch is the whole point of this branch — but the VALUE is
+        // a placeholder, never the floor. This assertion originally demanded the
+        // floor be prefilled, which pinned a bypass in place: see the dedicated
+        // test below.
+        ->and($text)->toContain('WAYFINDR_UPGRADE_FROM=')
         // And it must NOT claim the install is old, because it may be current.
         ->and($text)->not->toContain('is older than')
         ->and($text)->not->toContain('unknown');
@@ -187,4 +190,39 @@ test('the floor refusal never renders a null origin as a version', function (): 
             expect($line)->not->toContain('(unknown)');
         }
     }
+});
+
+test('the floor refusal never hands the operator the value that defeats it', function (): void {
+    // The override is trusted by `UpgradeGuard::declaredOrigin()`, and an
+    // asserted origin equal to the floor compares as "not below" — so printing
+    // the floor as the suggested value let an install genuinely older than the
+    // floor migrate on a path whose migrations no longer ship. The refusal was
+    // dictating its own bypass.
+    $advice = FloorAdvice::for(null, '0.3.0', '0.2.0');
+    $text = implode("\n", $advice->lines);
+
+    // The env line must not carry the floor as its value.
+    foreach ($advice->lines as $line) {
+        if (str_contains($line, 'WAYFINDR_UPGRADE_FROM=')) {
+            expect($line)->not->toContain('WAYFINDR_UPGRADE_FROM=0.2.0');
+        }
+    }
+
+    // It still tells them how to clear it, and what will not clear it.
+    expect($text)->toContain('WAYFINDR_UPGRADE_FROM=')
+        ->toContain('below 0.2.0 is still refused');
+
+    // And it must ask for the PRE-UPGRADE version. This message is emitted by
+    // the migration guard AFTER the pull, so "the version you are on" reads as
+    // the target — and entering the target clears the floor exactly as the old
+    // prefill did. The prompt disambiguates by TIMING.
+    expect($text)->toContain('BEFORE this pull');
+
+    // But it must NOT assert that the answer differs from the target. A source
+    // deployment stamps every commit of a cycle with the same VERSION, so an
+    // install updating within a cycle has a truthful pre-pull origin equal to
+    // the target — and telling that operator it must differ invites them to
+    // invent an older version, which is the fabrication this whole fix exists
+    // to prevent.
+    expect($text)->not->toContain('not 0.3.0');
 });

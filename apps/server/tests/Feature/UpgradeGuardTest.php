@@ -2089,7 +2089,12 @@ test('the command renders the same advice as the migration refusal', function ()
         '0.2.0',
     )->lines();
 
-    $command = $this->artisan('wayfindr:upgrade-guard')->assertFailed();
+    // ORDER MATTERS AND IS EASY TO GET WRONG. `assertFailed()` executes the
+    // pending command immediately, so any expectation registered after it never
+    // participates in verification and the trailing `run()` just returns the
+    // already-finished result. Written that way, this test passed even when the
+    // command rendered none of the shared advice — it was asserting nothing.
+    $command = $this->artisan('wayfindr:upgrade-guard');
 
     foreach ($expected as $line) {
         // Style tags are consumed by the renderer, so compare on the prose.
@@ -2100,7 +2105,7 @@ test('the command renders the same advice as the migration refusal', function ()
     // declared phase, so the label must not read "serving" here.
     $command->expectsOutputToContain('Blocks: migration');
 
-    $command->run();
+    $command->assertFailed();
 });
 
 test('the refusal footer speaks only for work no acknowledgement can clear', function (): void {

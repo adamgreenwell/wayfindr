@@ -51,12 +51,47 @@ final readonly class FloorAdvice
             // Not an accusation — a question the install cannot answer about
             // itself. The escape hatch is the whole point of this branch: an
             // operator who knows where they are can say so and proceed.
+            //
+            // THE VALUE IS A PLACEHOLDER, NEVER THE FLOOR. Printing the floor
+            // here handed the operator the one value that defeats the check they
+            // are being asked to satisfy: `declaredOrigin()` trusts what they
+            // state, and an asserted origin equal to the floor compares as "not
+            // below", so an install genuinely older than the floor migrates on a
+            // path whose migrations no longer ship. The whole point of the floor
+            // is to stop exactly that jump, and the refusal message was
+            // dictating the bypass.
+            //
+            // The operator must supply the version they are actually on, which
+            // is the only value that makes this an origin rather than an
+            // override — and if that version really is below the floor, the
+            // refusal stands, which is the honest outcome.
+            //
+            // DISAMBIGUATED BY TIMING, NOT BY INEQUALITY. An earlier attempt said
+            // "not <target>", which is false on a source deployment: those stamp
+            // every commit of a cycle with the same VERSION (see
+            // UpgradeGuard::assess()), so an install updating between two commits
+            // of one cycle has a truthful pre-pull origin EQUAL to the target.
+            // Telling that operator it must differ invites them to invent an
+            // older version — the same fabrication this fix exists to prevent,
+            // arrived at from the other side. "Before this pull" identifies the
+            // right release without asserting anything about its value.
+            // AND IT MUST ASK FOR THE PRE-UPGRADE VERSION, EXPLICITLY.
+            //
+            // The migration guard emits this AFTER the pull, so "the version
+            // this install is on" is read as the release being installed — and
+            // entering the target compares at-or-above the floor, recreating the
+            // same bypass by a different route. The prompt has to name the
+            // release the operator upgraded FROM, and say that it is not the one
+            // being installed, because the only reader who needs this message is
+            // standing in front of a container that has already been replaced.
             return new self(false, [
                 'This install has no recorded release, so the upgrade floor cannot be verified.',
                 sprintf('%s only supports upgrading from %s or later.', $release, $floor),
                 'Either upgrade to that release first, which records where you are,',
-                'or state the version you are on:',
-                sprintf('  WAYFINDR_UPGRADE_FROM=%s', $floor),
+                'or state the release that was running BEFORE this pull:',
+                '  WAYFINDR_UPGRADE_FROM=<the release you upgraded from>',
+                sprintf('Stating a version below %s is still refused — this establishes', $floor),
+                'where you started, it does not grant permission.',
             ]);
         }
 
