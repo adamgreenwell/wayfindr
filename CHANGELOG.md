@@ -42,17 +42,26 @@ missed while skimming.
 - The first one: **run a queue worker on the `backups` connection**. Without it,
   "Run a backup now" queues a job nothing will process and the run sits at
   *Running* indefinitely. Scheduled backups are unaffected. Compose stacks
-  already run this worker and will see nothing; host-managed installs (Forge and
-  similar) need:
+  already run this worker; host-managed installs (Forge and similar) need:
 
   ```bash
   php artisan queue:work backups --queue=backups --sleep=5 --tries=1 --timeout=3600
   ```
 
   This is the same requirement 0.1.0 described in prose. It is now checked
-  against a real worker heartbeat, so if you already run one you will not be told
-  anything. To silence it without running a worker, add
-  `<release>/backups-queue-consumer` to `WAYFINDR_ACKNOWLEDGED_ACTIONS`.
+  against a real worker heartbeat, so **on a running install you are only told if
+  a worker genuinely has not been seen** — if you already run one, the operator
+  console and `wayfindr:upgrade-guard` say nothing.
+
+  The installer is the exception, and deliberately so: it prints this advice
+  while upgrading whether or not you need it, because it runs *before* the
+  release is installed and cannot evaluate the check. Treat what it prints as
+  "this release advises", not as a finding about your install — that is how it is
+  worded. The running install is what tells you whether it actually applies.
+
+  To silence it without running a worker, add
+  `<release>/backups-queue-consumer` to `WAYFINDR_ACKNOWLEDGED_ACTIONS`; that is
+  honoured everywhere, including the installer.
 
   Worth being explicit about why this is advisory rather than enforced: the only
   way to enforce it would have been to refuse traffic, and taking a whole support
