@@ -194,3 +194,22 @@ if published.count("8000") > 1:
 PY
 
 echo "Self-host Compose template renders with an isolated env file and smoke ports."
+
+# The backups worker must resolve BACKUP_QUEUE inside the CONTAINER, not on the
+# host. Compose interpolates `${...}` from the invoking shell ahead of
+# --env-file (scripts/self-host/install.sh documents that precedence), so a
+# host-side placeholder lets an exported BACKUP_QUEUE differ from the env file
+# Laravel reads — worker draining one queue while the app dispatches to another,
+# with every GUI backup stuck at Running and no error anywhere.
+BACKUP_QUEUE=leaked-from-shell docker compose --env-file "$ENV_FILE" \
+    -f "$ROOT_DIR/docker/self-hosting/compose.yml" config > "$TMP_DIR/leak-check.yml" 2>/dev/null
+
+if grep -q 'leaked-from-shell' "$TMP_DIR/leak-check.yml"; then
+    echo "The shell environment leaked into a compose command; expand BACKUP_QUEUE in the container." >&2
+    exit 1
+fi
+
+if ! grep -q 'BACKUP_QUEUE:-backups' "$TMP_DIR/leak-check.yml"; then
+    echo "The backups worker no longer carries a BACKUP_QUEUE placeholder for the container to expand." >&2
+    exit 1
+fi

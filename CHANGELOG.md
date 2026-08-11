@@ -30,7 +30,73 @@ missed while skimming.
 
 ## [Unreleased]
 
-*Nothing yet.*
+**No operator action required.** Pull, restart, and migrations run themselves.
+
+### Added
+
+- Releases can now carry **advisory notices** — things worth telling you about
+  that are not worth stopping your upgrade over. They appear on the operator
+  console, in `wayfindr:upgrade-guard`, and in the installer's upgrade output,
+  and they block nothing. Where a notice can be checked automatically it
+  disappears on its own once the thing is done.
+- The first one: **run a queue worker on the `backups` connection**. Without it,
+  "Run a backup now" queues a job nothing will process and the run sits at
+  *Running* indefinitely. Scheduled backups are unaffected. Compose stacks run
+  this worker themselves; host-managed installs (Forge and similar) need one.
+
+  **Get the command from `/operator/settings/backups`** rather than copying it
+  from here. That page fills in *your* configured queue name and timeout, and
+  `BACKUP_QUEUE` can move the backups queue off its default — a copied
+  `--queue=backups` would then start a worker draining a queue nothing dispatches
+  to, leaving backups queued forever after you did exactly as you were told. With
+  stock settings it is:
+
+  ```bash
+  php artisan queue:work backups --queue=backups --sleep=5 --tries=1 --timeout=3600
+  ```
+
+  This is the same requirement 0.1.0 described in prose. It is now checked
+  against a real worker heartbeat, and the check has **three** answers rather
+  than two:
+
+  - **A worker has been seen** — nothing is reported. If you already run one you
+    will not hear about this at all.
+  - **No worker has been seen** — the advice appears, which is the case it exists
+    for.
+  - **This install cannot tell** — the advice appears *and says so*. A worker
+    records its heartbeat in the cache, so an `array` or `null` cache driver
+    cannot carry that sighting from the worker process to the web process. Rather
+    than guess, it reports that it could not check; you may well already have a
+    worker running.
+
+  That third answer is deliberate. Reporting "no worker" because of a cache
+  driver would blame you for a configuration that is none of this check's
+  business, and treating "cannot tell" as a pass would hide a genuinely missing
+  worker.
+
+  The installer is the exception, and deliberately so: it prints this advice
+  while upgrading whether or not you need it, because it runs *before* the
+  release is installed and cannot evaluate the check. Treat what it prints as
+  "this release advises", not as a finding about your install — that is how it is
+  worded. The running install is what tells you whether it actually applies.
+
+  To silence it without running a worker, add
+  `<release>/backups-queue-consumer` to `WAYFINDR_ACKNOWLEDGED_ACTIONS`; that is
+  honoured everywhere, including the installer.
+
+  Worth being explicit about why this is advisory rather than enforced: the only
+  way to enforce it would have been to refuse traffic, and taking a whole support
+  platform down because a *backup* worker was missing is not a proportionate
+  answer. A release that can only shout or stay silent will eventually shout at
+  the wrong time.
+
+### Fixed
+
+- The Compose stack's backup worker now follows `BACKUP_QUEUE`. It ran with a
+  hard-coded `--queue=backups` while the application dispatched to whatever
+  `BACKUP_QUEUE` named, so an operator who changed it had a worker draining a
+  queue nothing was sent to — every GUI-triggered backup stuck at *Running*,
+  with no error anywhere. Only installs that set `BACKUP_QUEUE` were affected.
 
 ## [0.2.0] - 2026-08-10
 

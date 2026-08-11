@@ -3,37 +3,74 @@
         "What the release being prepared requires of an operator (ADR 0012, ADR 0013).",
         "Authored by hand, like the CHANGELOG's Unreleased section; version and commit",
         "are NOT here because they are derived at build time from the release identity.",
-        "`requires_operator_action` is derived too, from whether `actions` is empty.",
-        "See docs/self-hosting/release-manifest.md for the field reference."
+        "`requires_operator_action` is derived too, from whether `actions` is empty -",
+        "NOTICES ARE NOT COUNTED, because a notice-only release is safe to take",
+        "unattended. See docs/self-hosting/release-manifest.md for the field reference."
     ],
     "_bootstrap": [
         "The bootstrap constraint is DISCHARGED: 0.1.0 shipped the guard declaring",
         "nothing, as ADR 0013 requires of the first enforcing release - one that",
         "refused traffic the moment it landed would punish installs already doing",
-        "the right thing. Later releases MAY declare actions.",
-        "The backups-queue-worker requirement stays in the CHANGELOG as prose and",
-        "is DELIBERATELY NOT DECLARED HERE. This is settled, not pending - do not",
-        "declare it because the check now exists.",
-        "The check does exist: `backups-queue-consumer` really evaluates, against",
-        "a worker heartbeat. Declaring it is what was rejected, because the only",
-        "phase it could take is `after-start`, and an unmet after-start",
-        "requirement gates SERVING. An install missing a backups worker would",
-        "refuse all traffic - the whole support platform down because a BACKUP",
-        "worker is absent. Compose stacks start that worker themselves, so it",
-        "would only ever fire on host-managed installs, whose operator then has",
-        "to edit .env and restart while their site is down.",
-        "ADR 0013 has no lighter setting than refusing: phases say WHEN an action",
-        "can be performed, not how hard the response is. Until it grows an",
-        "advisory severity, a requirement worth reporting but not worth an outage",
-        "does not belong in `actions` at all. This one is reported where the",
-        "operator meets it instead - the backups page shows whether a worker has",
-        "been seen, and says so plainly when none has.",
-        "NOTE: tests/Feature/BootstrapSelfEnforcementTest.php still asserts that",
-        "NOTHING here gates serving. That was the bootstrap invariant; now that",
-        "0.1.0 has shipped it is a tripwire, not a law. The first legitimate",
-        "after-start action will fail it, and that test should be reconsidered at",
-        "that point rather than the action being weakened to satisfy it."
+        "the right thing. Later releases MAY declare actions."
+    ],
+    "_backups_queue_consumer": [
+        "RESOLVED. This entry used to record why the backups-queue-worker",
+        "requirement was deliberately NOT declared, and the condition it named has",
+        "now been met, so it is declared - as a NOTICE.",
+        "The objection was never to the requirement, which is real, but to the",
+        "response available. The only phase it could have taken was `after-start`,",
+        "and an unmet after-start ACTION gates SERVING: an install missing a",
+        "backups worker would have refused all traffic, taking the whole support",
+        "platform down because a BACKUP worker was absent - on host-managed",
+        "installs only, since compose stacks start that worker themselves, whose",
+        "operator would then have to edit .env and restart with their site",
+        "already down.",
+        "ADR 0013 recorded the gap and named this requirement as the first",
+        "candidate for a third, non-blocking response. That response now exists:",
+        "`notices` is reported on the operator console, in wayfindr:upgrade-guard,",
+        "and in the installer's upgrade output, and the gates cannot see it.",
+        "So the response is now proportionate to the requirement, which is the",
+        "test that was always being applied - not whether the check existed.",
+        "It is verified by `check` rather than attested, so it retires itself the",
+        "moment a worker is actually seen; an operator who already runs one is",
+        "never told anything. It is also still reported where the operator meets",
+        "it - the backups page shows whether a worker has been seen - because the",
+        "person configuring backups should not have to read a release manifest."
     ],
     "minimum_upgrade_from": "0.1.0-alpha.1",
-    "actions": []
+    "actions": [],
+    "notices": [
+        {
+            "_note": [
+                "No `phase` and no `depends_on_release`: a notice never blocks, so",
+                "there is nothing to time and nothing to strand. Running a queue",
+                "worker needs no particular release's code, which is what makes",
+                "this legitimately advisory rather than an action in disguise.",
+                "`detail` DOES NOT print a copy-paste command, deliberately.",
+                "`BACKUP_QUEUE` can move the backups queue off its default, and a",
+                "manifest is static text - it cannot substitute this install's",
+                "configured queue or timeout. A hard-coded `--queue=backups` would",
+                "tell such an operator to start a worker draining a queue nothing",
+                "dispatches to, leaving backups queued forever after they did",
+                "exactly as they were told, with the check still reporting.",
+                "OperatorBackupSettingsController::workerObservation() already",
+                "carries that warning, and the backups page builds the command from",
+                "the live config - so the notice names the requirement and points",
+                "at the surface that can get the command right.",
+                "The Compose worker follows BACKUP_QUEUE too (compose.yml interpolates",
+                "it into --queue), so the claim that Compose stacks are already",
+                "covered holds for a custom queue as well - it did not before."
+            ],
+            "id": "backups-queue-consumer",
+            "summary": "Run a queue worker on the backups connection.",
+            "detail": "Without one, \"Run a backup now\" queues a job nothing will process and the run sits at Running indefinitely. Scheduled backups are unaffected. Compose stacks run this worker themselves, on whichever queue BACKUP_QUEUE names. On a host-managed install, open /operator/settings/backups - it prints the exact command for this install, with your configured queue name and timeout filled in (BACKUP_QUEUE can move the queue off its default, so a copied command may drain the wrong one).",
+            "applicability": {
+                "type": "always"
+            },
+            "verification": {
+                "type": "check",
+                "check": "backups-queue-consumer"
+            }
+        }
+    ]
 }

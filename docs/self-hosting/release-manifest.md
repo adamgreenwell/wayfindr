@@ -108,12 +108,30 @@ Other properties worth knowing:
   answers. Its changelog entry should say *No operator action required*.
 - **Prefer `check` over `attest`.** A checked notice retires itself when the
   thing is actually done. An attested one can only be silenced by hand.
+- **`detail` is static, so it cannot carry install-specific values.** A manifest
+  is published once and read by every install, and three surfaces render its text
+  verbatim — none can substitute configuration. Where the correct step depends on
+  how an install is configured, **name the requirement and point at the surface
+  that computes the command**, rather than printing one that is right only with
+  stock settings. The backups notice does this: `BACKUP_QUEUE` can move the queue
+  off its default, and a hard-coded `--queue=backups` would have told those
+  operators to start a worker draining a queue nothing dispatches to — leaving
+  the work queued forever after they did exactly as they were told, with the
+  check still reporting.
 - **Silencing is the same mechanism as acknowledging.** Add `<release>/<id>` to
   `WAYFINDR_ACKNOWLEDGED_ACTIONS`. Ids are unique across actions *and* notices in
   a release, because they share that namespace.
 - **A notice is reported to fresh installs too.** An action is upgrade work, so a
   fresh install is exempt; a notice describes how the release wants to be *run*,
   and a fresh install runs it.
+- **Notices carry over between releases; actions do not.** The post-release reset
+  (`--reset-declaration`) empties `actions` and leaves `notices` alone, because
+  standing advice is as true next release as it is this one — clearing it would
+  make a real requirement vanish the moment a release shipped without re-adding
+  it. Removing a notice is a deliberate edit. A carried-over notice is re-stamped
+  with the new version, so its acknowledgement key changes; that only reaches an
+  operator who acknowledged *instead of* doing the work, since a checked notice
+  retires itself for everyone who did it.
 
 #### Why a separate list rather than a severity flag
 
