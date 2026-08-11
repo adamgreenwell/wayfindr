@@ -21,6 +21,10 @@ MODE="${WAYFINDR_EVIDENCE_MODE:-}"
 INSTALL_REF="${WAYFINDR_EVIDENCE_INSTALL_REF:-}"
 INSTALLER_REF="${WAYFINDR_EVIDENCE_INSTALLER_REF:-}"
 UPGRADE_CHAIN="${WAYFINDR_EVIDENCE_UPGRADE_CHAIN:-}"
+SKEW_RESTORE_AFTER_UPGRADE="${WAYFINDR_EVIDENCE_SKEW_RESTORE_AFTER_UPGRADE:-0}"
+LAST_BACKUP_ARCHIVE=""
+SKEW_RESTORE_ARCHIVE=""
+SKEW_RESTORE_MARKER=""
 
 case "$SCENARIO" in
     clean-install-latest)
@@ -34,6 +38,13 @@ case "$SCENARIO" in
         INSTALLER_REF="${INSTALLER_REF:-$INSTALL_REF}"
         UPGRADE_CHAIN="${UPGRADE_CHAIN:-latest}"
         BACKUP_QUEUE_OVERRIDE="${BACKUP_QUEUE_OVERRIDE:-evidence-backups}"
+        ;;
+    recovery-v0.2.0-latest-skew-restore)
+        MODE="${MODE:-upgrade}"
+        INSTALL_REF="${INSTALL_REF:-v0.2.0}"
+        INSTALLER_REF="${INSTALLER_REF:-$INSTALL_REF}"
+        UPGRADE_CHAIN="${UPGRADE_CHAIN:-latest}"
+        SKEW_RESTORE_AFTER_UPGRADE="${WAYFINDR_EVIDENCE_SKEW_RESTORE_AFTER_UPGRADE:-1}"
         ;;
     upgrade-v0.1.0-latest)
         MODE="${MODE:-upgrade}"
@@ -53,7 +64,7 @@ case "$SCENARIO" in
         ;;
     *)
         echo "Unknown WAYFINDR_EVIDENCE_SCENARIO: $SCENARIO" >&2
-        echo "Use clean-install-latest, upgrade-v0.2.0-latest-custom-backup-queue, upgrade-v0.1.0-latest, upgrade-v0.1.0-v0.2.0-latest, or custom." >&2
+        echo "Use clean-install-latest, upgrade-v0.2.0-latest-custom-backup-queue, recovery-v0.2.0-latest-skew-restore, upgrade-v0.1.0-latest, upgrade-v0.1.0-v0.2.0-latest, or custom." >&2
         exit 1
         ;;
 esac
@@ -294,16 +305,15 @@ assert_restore_marker() {
     fi
 }
 
-backup_restore_drill() {
-    local backup_dir="/tmp/wayfindr-evidence-backup"
+create_backup_archive() {
+    local label="$1"
+    local backup_dir="$2"
     local archive
-    local restore_out
-    local restored_bytes
 
     seed_restore_marker
 
     echo
-    echo "== Backup and restore drill =="
+    echo "== $label =="
     compose_exec php artisan wayfindr:backup --path="$backup_dir"
     archive="$(compose_exec sh -c "find '$backup_dir' -name 'wayfindr-backup-*.tar.gz' 2>/dev/null | sort | tail -n1")"
 
@@ -313,6 +323,28 @@ backup_restore_drill() {
     fi
 
     compose_exec sh -c "tar -xzOf '$archive' ./database.sql | grep -q 'PostgreSQL database dump'"
+
+    LAST_BACKUP_ARCHIVE="$archive"
+}
+
+prepare_version_skew_restore_archive() {
+    create_backup_archive \
+        "Preparing pre-upgrade archive for version-skew restore drill" \
+        "/app/apps/server/storage/app/evidence-skew-backup"
+
+    SKEW_RESTORE_ARCHIVE="$LAST_BACKUP_ARCHIVE"
+    SKEW_RESTORE_MARKER="$RESTORE_MARKER"
+
+    echo "Version-skew restore archive prepared: $SKEW_RESTORE_ARCHIVE"
+}
+
+backup_restore_drill() {
+    local archive
+    local restore_out
+    local restored_bytes
+
+    create_backup_archive "Backup and restore drill" "/tmp/wayfindr-evidence-backup"
+    archive="$LAST_BACKUP_ARCHIVE"
 
     echo "Quiescing app and deleting restore markers."
     compose_exec php artisan down >/dev/null
@@ -337,6 +369,41 @@ backup_restore_drill() {
     grep -F "EVIDENCE-BYTES-${RESTORE_MARKER}" <<< "$restored_bytes" >/dev/null
 
     echo "Backup/restore drill passed."
+}
+
+version_skew_restore_drill() {
+    local restore_out
+    local restored_bytes
+
+    if [ -z "$SKEW_RESTORE_ARCHIVE" ] || [ -z "$SKEW_RESTORE_MARKER" ]; then
+        echo "Version-skew restore drill needs a pre-upgrade archive and marker." >&2
+        exit 1
+    fi
+
+    echo
+    echo "== Version-skew restore drill =="
+    echo "Restoring older archive into upgraded runtime: $SKEW_RESTORE_ARCHIVE"
+    compose_exec php artisan down >/dev/null
+    compose stop queue scheduler >/dev/null
+
+    restore_out="$(compose_exec php artisan wayfindr:restore "$SKEW_RESTORE_ARCHIVE" --force)"
+    printf '%s\n' "$restore_out"
+    grep -F 'Version skew:' <<< "$restore_out" >/dev/null
+    grep -F 'Restore complete.' <<< "$restore_out" >/dev/null
+    grep -F 'Attachments verified present:' <<< "$restore_out" >/dev/null
+
+    RESTORE_MARKER="$SKEW_RESTORE_MARKER"
+    assert_restore_marker present
+
+    echo "Migrating restored older archive to the upgraded runtime."
+    compose_exec php artisan migrate --force
+    compose start queue scheduler >/dev/null
+    compose_exec php artisan up >/dev/null
+
+    restored_bytes="$(compose_exec php artisan tinker --execute="echo \\Illuminate\\Support\\Facades\\Storage::disk('attachments')->get('evidence/${RESTORE_MARKER}.bin');")"
+    grep -F "EVIDENCE-BYTES-${RESTORE_MARKER}" <<< "$restored_bytes" >/dev/null
+
+    echo "Version-skew restore drill passed."
 }
 
 restart_stack_check() {
@@ -443,9 +510,19 @@ bootstrap_instance
 verify_runtime "after initial install"
 run_support_loop "after initial install"
 
+if [ "$SKEW_RESTORE_AFTER_UPGRADE" = "1" ]; then
+    prepare_version_skew_restore_archive
+fi
+
 if [ "$MODE" = "upgrade" ]; then
     [ -n "$UPGRADE_CHAIN" ] || { echo "Upgrade mode requires WAYFINDR_EVIDENCE_UPGRADE_CHAIN." >&2; exit 1; }
     run_upgrade_chain "$UPGRADE_CHAIN"
+fi
+
+if [ "$SKEW_RESTORE_AFTER_UPGRADE" = "1" ]; then
+    version_skew_restore_drill
+    verify_runtime "after version-skew restore recovery"
+    run_support_loop "after version-skew restore recovery"
 fi
 
 backup_restore_drill
@@ -467,5 +544,5 @@ Synthetic site public key: $SITE_PUBLIC_KEY
 
 Boundary: this proves a fresh hosted runner path for public artifacts. It does
 not prove a bare-metal VM reboot, operator-managed DNS/TLS, real mail delivery,
-offsite backups, or a production restore posture.
+offsite backups, bare-metal rollback, or a production restore posture.
 SUMMARY

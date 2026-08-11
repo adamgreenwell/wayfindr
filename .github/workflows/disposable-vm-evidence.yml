@@ -11,6 +11,7 @@ on:
         options:
           - clean-install-latest
           - upgrade-v0.2.0-latest-custom-backup-queue
+          - recovery-v0.2.0-latest-skew-restore
           - upgrade-v0.1.0-latest
           - upgrade-v0.1.0-v0.2.0-latest
 
