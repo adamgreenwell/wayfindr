@@ -67,6 +67,15 @@ claim, record it as partial and keep the issue open.
   The run upgraded from `v0.1.0` to `v0.2.0`, then to `v0.3.2`, with runtime
   verification and support-loop smoke after each upgrade, followed by
   backup/restore, post-restore smoke, and restart checks.
+- August 11, 2026:
+  [`recovery-latest-synthetic-skew-restore` passed](https://github.com/adamgreenwell/wayfindr/actions/runs/31537984956).
+  The run installed the latest public release, `v0.3.2`, resolved image digest
+  `sha256:3fe112ca3d3f83efb1f4d00c401b8bf43cc706ec5bfddb05244be01b2fd8e660`,
+  took a real backup, rewrote a copy of the backup manifest to simulate an
+  archive from `v0.2.0`, asserted the `Version skew:` restore warning, ran
+  migrations after restore, completed the support loop after recovery, then
+  completed the normal backup/restore and restart checks. This proves the hosted
+  warning/recovery path, not arbitrary cross-version archive compatibility.
 - This is still hosted-runner evidence. Use it as partial proof for the clean
   install and local backup/restore path, not as proof of a bare-metal VM reboot,
   rollback drill, DNS/TLS, mail delivery, offsite backups, or production restore
