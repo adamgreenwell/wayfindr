@@ -146,6 +146,12 @@ sudo reboot
 scripts/smoke/disposable-vm-evidence-runner.sh reverify
 ```
 
+The wrapper requires Bash, curl, Docker Engine with the Compose plugin, grep,
+OpenSSL, sed, and tee. It does not require PHP on the VM host; all PHP commands
+run inside the Wayfindr application container. Its generated synthetic agent
+email uses a bounded run-ID prefix so long scenario names remain valid email
+addresses. An explicit `WAYFINDR_EVIDENCE_AGENT_EMAIL` still takes precedence.
+
 By default, the wrapper installs into `/opt/wayfindr-evidence`, keeps the stack
 running, stores synthetic reverify credentials in
 `/opt/wayfindr-evidence/evidence-reports/last-run.env`, tees command output into

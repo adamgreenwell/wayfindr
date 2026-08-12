@@ -52,6 +52,11 @@ scripts, keeps the stack running, stores synthetic reverify credentials on the
 VM, tees a local command log, and writes a Markdown report skeleton that can be
 reviewed and sanitized before posting to GitHub.
 
+The bare-metal wrapper needs Bash, curl, Docker Engine with the Compose plugin,
+grep, OpenSSL, sed, and tee. Host PHP is not a prerequisite because its PHP
+checks execute inside the Wayfindr container. Generated synthetic addresses use
+a bounded run-ID prefix, so even long upgrade scenario names remain valid.
+
 That workflow is helpful but deliberately bounded: it does not replace a
 bare-metal VM reboot, rollback drill, real DNS/TLS, mail delivery, offsite
 backup, or production restore posture. If the workflow proves only part of a

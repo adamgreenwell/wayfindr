@@ -51,6 +51,14 @@ sanitize_name() {
         | sed -E 's/^-+//; s/-+$//; s/-+/-/g'
 }
 
+default_agent_email() {
+    local run_id="$1"
+
+    # The local part of an email address cannot exceed 64 characters. Run IDs
+    # include the scenario name, so keep only a short, still-useful prefix.
+    printf 'agent+%.40s@example.test' "$run_id"
+}
+
 require_command() {
     command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
 }
@@ -287,6 +295,10 @@ run_with_log() {
     return "$exit_status"
 }
 
+if [ "${BASH_SOURCE[0]}" != "$0" ]; then
+    return 0
+fi
+
 ACTION="${1:-install}"
 case "$ACTION" in
     -h|--help)
@@ -319,10 +331,12 @@ fi
 SCENARIO="${2:-${WAYFINDR_EVIDENCE_SCENARIO:-clean-install-latest}}"
 SCENARIO_SLUG="$(sanitize_name "$SCENARIO")"
 [ -n "$SCENARIO_SLUG" ] || SCENARIO_SLUG="custom"
-RUN_ID="${WAYFINDR_EVIDENCE_RUN_ID:-$(date -u +%Y%m%dt%H%M%sz)-$SCENARIO_SLUG}"
+RUN_ID_RAW="${WAYFINDR_EVIDENCE_RUN_ID:-$(date -u +%Y%m%dt%H%M%sz)-$SCENARIO_SLUG}"
+RUN_ID="$(sanitize_name "$RUN_ID_RAW")"
+[ -n "$RUN_ID" ] || die "WAYFINDR_EVIDENCE_RUN_ID must contain at least one letter or number."
 APP_URL="${WAYFINDR_EVIDENCE_APP_URL:-http://127.0.0.1:18080}"
 PROJECT_NAME="${WAYFINDR_EVIDENCE_PROJECT:-wayfindr-evidence-$RUN_ID}"
-AGENT_EMAIL="${WAYFINDR_EVIDENCE_AGENT_EMAIL:-agent+$RUN_ID@example.test}"
+AGENT_EMAIL="${WAYFINDR_EVIDENCE_AGENT_EMAIL:-$(default_agent_email "$RUN_ID")}"
 AGENT_PASSWORD="${WAYFINDR_EVIDENCE_AGENT_PASSWORD:-$(openssl rand -hex 24)}"
 SITE_PUBLIC_KEY="${WAYFINDR_EVIDENCE_SITE_PUBLIC_KEY:-site_${SCENARIO_SLUG//-/_}}"
 LOG_FILE="$REPORT_DIR/$RUN_ID-$ACTION.log"

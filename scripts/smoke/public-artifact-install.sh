@@ -576,7 +576,6 @@ require_command curl
 require_command docker
 require_command grep
 require_command openssl
-require_command php
 require_command sed
 
 docker info >/dev/null
