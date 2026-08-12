@@ -2,10 +2,11 @@
 
 [Back to Home](Home)
 
-Wayfindr is pre-alpha. As of August 11, 2026, the latest public release is
+Wayfindr is pre-alpha. As of August 12, 2026, the latest public release is
 `v0.3.2`, and the next development line is `0.4.0`. The core support loop
-exists, and the current cycle is about proving that self-hosting and upgrades
-are repeatable from public artifacts.
+exists, and the reliability cycle has now proved repeatable self-hosting and
+upgrades from public artifacts on both hosted runners and disposable bare-metal
+guests.
 
 ## Shipped Spine
 
@@ -25,8 +26,8 @@ are repeatable from public artifacts.
 
 ## Current Reliability Cycle
 
-The active `0.4.0` proof work is not broad feature expansion. It is clean
-evidence for:
+The completed `0.4.0` proof cycle was not broad feature expansion. It collected
+clean evidence for:
 
 - disposable-VM clean installation;
 - supported upgrade and advisory behavior;
@@ -38,7 +39,7 @@ Treat dated stage or fork observations as context, not current runtime proof.
 
 ## Current Evidence Snapshot
 
-As of August 11, 2026, the hosted public-artifact workflow has passing runs for
+As of August 12, 2026, the public-artifact matrix has passing hosted runs for
 the current clean-install, published-upgrade, warning/recovery, and
 schema-compatible image rollback/retry scenarios:
 
@@ -60,9 +61,32 @@ hosted proof for the current restore warning path and for a narrow
 schema-compatible image rollback from `0.3.2` to `0.3.1`, followed by retrying
 the current image.
 
-It remains partial evidence. It does not close the bare-metal disposable VM
-reboot, destructive schema/data rollback, real DNS/TLS, mail delivery, offsite
-backup, or production restore posture checks.
+The owner-operated bare-metal repeat adds two fresh Ubuntu 24.04.4 clean guests,
+a public `v0.2.0` to `v0.3.2` upgrade guest, database and exact attachment-byte
+restore, pre-mutation refusal with the previous release kept live, and real
+guest reboot/reverify passes. Both clean attempts found actionable Docker-only
+host gaps; PRs
+[#707](https://github.com/adamgreenwell/wayfindr/pull/707) and
+[#708](https://github.com/adamgreenwell/wayfindr/pull/708) fixed them before the
+final repeat. See [Disposable VM Evidence](Disposable-VM-Evidence) for the
+sanitized matrix and its limits.
+
+The deployment fork matched source at `b8be095` after PR #708, with passing
+[fork CI](https://github.com/northcoastmedia/wayfindr/actions/runs/31630708915)
+and an observed successful Forge deployment. The authenticated operator surface
+reported the same revision, PHP 8.4, a ready `13 / 0 / 2` installation posture,
+configured SMTP, Redis queueing, Reverb, writable storage, S3-compatible private
+attachment storage, and reachable ClamAV. Forge showed queue, backup queue,
+Reverb, and per-minute scheduler processes plus three-region HTTP 200 health
+checks. The operator's scheduler confirmation was stale and its backup/restore
+confirmation missing; those manual proof notes remain operational follow-up,
+not evidence of a failed process or restore.
+
+The combined evidence still does not claim destructive-schema downgrade safety,
+real DNS/TLS configuration, real mail delivery, offsite-backup durability, or a
+production restore. No `0.4.0` release is cut for an evidence/docs-only cycle;
+the deployed development revision and the public `v0.3.2` artifact remain
+distinct.
 
 ## Parked or Demand-Gated
 

@@ -2,7 +2,7 @@
 
 This roadmap is directional and should not include private business strategy.
 
-As of August 11, 2026, the latest public release is `v0.3.2`, and the next
+As of August 12, 2026, the latest public release is `v0.3.2`, and the next
 development line is `0.4.0`.
 
 ## Current Alpha Spine
@@ -45,14 +45,15 @@ foundation now includes:
 
 ## Next Alpha Focus
 
-These are the nearest slices because the product spine exists; the project now
-needs repeatable self-hosting evidence and deliberately demand-gated polish.
+These are the nearest slices because the product spine exists, the repeatable
+self-hosting evidence gate has passed, and polish should stay demand-gated.
 
-- `0.4.0` reliability evidence cycle: use the
+- Keep reliability evidence repeatable: use the
   [disposable VM evidence contract](../self-hosting/disposable-vm-evidence.md)
-  to prove clean install, supported upgrade/advisory behavior, backup/restore,
-  rollback, reboot recovery, and deployment-fork readiness without treating
-  local or dated stage evidence as current release proof.
+  for future release candidates. The August 12 matrix proved clean install,
+  supported upgrade/advisory behavior, backup/restore, narrow rollback/retry,
+  reboot recovery, and deployment-fork readiness; do not stretch that dated
+  evidence into proof for a later artifact or production restore posture.
 - MVP dogfood operation: the Forge stage has been the owner-approved initial
   dogfood instance. Keep any runtime claim dated, use
   [MVP Dogfood Readiness](mvp-dogfood-readiness.md) after deploys, and let real
