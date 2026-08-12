@@ -15,6 +15,10 @@ anonymous_id="${WAYFINDR_ANONYMOUS_ID:-anon-support-loop-smoke-$(date +%s)}"
 tmp_dir="$(mktemp -d)"
 cookie_jar="$tmp_dir/cookies.txt"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+php_command="${WAYFINDR_SMOKE_PHP:-php}"
+php_compose_file="${WAYFINDR_SMOKE_PHP_COMPOSE_FILE:-}"
+php_compose_env_file="${WAYFINDR_SMOKE_PHP_ENV_FILE:-}"
+php_compose_project="${WAYFINDR_SMOKE_PHP_PROJECT:-}"
 
 base_url="${base_url%/}"
 page_url="${host_page_url:-$base_url/smoke}"
@@ -38,10 +42,49 @@ require_command() {
     fi
 }
 
+require_php_runtime() {
+    if [[ -n "$php_compose_file" ]]; then
+        require_command docker
+        [[ -n "$php_compose_env_file" ]] || {
+            echo "WAYFINDR_SMOKE_PHP_ENV_FILE is required with WAYFINDR_SMOKE_PHP_COMPOSE_FILE." >&2
+            exit 1
+        }
+        [[ -n "$php_compose_project" ]] || {
+            echo "WAYFINDR_SMOKE_PHP_PROJECT is required with WAYFINDR_SMOKE_PHP_COMPOSE_FILE." >&2
+            exit 1
+        }
+        [[ -f "$php_compose_file" ]] || {
+            echo "Compose file not found: $php_compose_file" >&2
+            exit 1
+        }
+        [[ -f "$php_compose_env_file" ]] || {
+            echo "Compose environment file not found: $php_compose_env_file" >&2
+            exit 1
+        }
+
+        return
+    fi
+
+    require_command "$php_command"
+}
+
+php_cli() {
+    if [[ -n "$php_compose_file" ]]; then
+        COMPOSE_PROJECT_NAME="$php_compose_project" docker compose \
+            --project-name "$php_compose_project" \
+            --env-file "$php_compose_env_file" \
+            -f "$php_compose_file" \
+            exec -T web php "$@"
+        return
+    fi
+
+    "$php_command" "$@"
+}
+
 json_value() {
     local path="$1"
 
-    php -r '
+    php_cli -r '
         $payload = json_decode(stream_get_contents(STDIN), true);
         $value = $payload;
 
@@ -60,7 +103,7 @@ json_value() {
 }
 
 json_object() {
-    php -r '
+    php_cli -r '
         $pairs = array_slice($argv, 1);
         $payload = [];
 
@@ -73,21 +116,21 @@ json_object() {
 }
 
 urlencode() {
-    php -r 'echo rawurlencode($argv[1]);' "$1"
+    php_cli -r 'echo rawurlencode($argv[1]);' "$1"
 }
 
 csrf_token_from() {
-    php -r '
-        $html = file_get_contents($argv[1]);
+    php_cli -r '
+        $html = stream_get_contents(STDIN);
 
         if (preg_match("/<meta name=\"csrf-token\" content=\"([^\"]+)\"/", $html, $matches)) {
             echo $matches[1];
             exit(0);
         }
 
-        fwrite(STDERR, "Unable to find CSRF token in {$argv[1]}.\n");
+        fwrite(STDERR, "Unable to find CSRF token.\n");
         exit(1);
-    ' "$1"
+    ' < "$1"
 }
 
 assert_contains() {
@@ -104,7 +147,7 @@ assert_contains() {
 }
 
 resolve_url() {
-    php -r '
+    php_cli -r '
         $base = $argv[1];
         $src = $argv[2];
 
@@ -176,13 +219,13 @@ verify_host_page_widget_config() {
         return 0
     fi
 
-    php -r '
-        $html = file_get_contents($argv[1]);
+    php_cli -r '
+        $html = stream_get_contents(STDIN);
 
         if (preg_match_all("/<script[^>]+src=[\"\\x27]([^\"\\x27]+)[\"\\x27]/i", $html, $matches)) {
             echo implode(PHP_EOL, $matches[1]);
         }
-    ' "$html_file" > "$scripts_file"
+    ' < "$html_file" > "$scripts_file"
 
     while IFS= read -r script_src || [[ -n "$script_src" ]]; do
         [[ -z "$script_src" ]] && continue
@@ -280,7 +323,7 @@ run_browser_visitor_smoke() {
 
 require_command curl
 require_command grep
-require_command php
+require_php_runtime
 
 trap cleanup EXIT
 
@@ -374,13 +417,13 @@ if [[ "$conversation_code" != "200" ]]; then
 fi
 
 ticket_path="$(
-    php -r '
-        $html = file_get_contents($argv[1]);
+    php_cli -r '
+        $html = stream_get_contents(STDIN);
 
         if (preg_match("#/dashboard/tickets/[0-9]+#", $html, $matches)) {
             echo $matches[0];
         }
-    ' "$ticket_create_page"
+    ' < "$ticket_create_page"
 )"
 
 if [[ -z "$ticket_path" ]]; then

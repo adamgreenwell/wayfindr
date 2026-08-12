@@ -140,6 +140,9 @@ run_support_loop_if_configured() {
             WAYFINDR_AGENT_PASSWORD="$AGENT_PASSWORD" \
             WAYFINDR_SMOKE_SUBJECT="Disposable evidence reboot reverify" \
             WAYFINDR_SMOKE_MESSAGE="Hello from disposable evidence reboot reverify." \
+            WAYFINDR_SMOKE_PHP_COMPOSE_FILE="$COMPOSE_FILE" \
+            WAYFINDR_SMOKE_PHP_ENV_FILE="$ENV_FILE" \
+            WAYFINDR_SMOKE_PHP_PROJECT="$PROJECT_NAME" \
             "$ROOT_DIR/scripts/smoke/support-loop.sh"
         SUPPORT_LOOP_RESULT="pass"
 

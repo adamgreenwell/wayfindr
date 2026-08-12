@@ -36,4 +36,18 @@ if grep -Eq '^require_command[[:space:]]+php$' "$ROOT_DIR/scripts/smoke/public-a
     exit 1
 fi
 
+if grep -Eq '^[[:space:]]*require_command[[:space:]]+php$|^[[:space:]]*php[[:space:]]+-r' \
+    "$ROOT_DIR/scripts/smoke/support-loop.sh"; then
+    echo "The support-loop smoke must use its PHP adapter so Docker-only evidence hosts remain supported." >&2
+    exit 1
+fi
+
+for harness in public-artifact-install.sh public-artifact-reverify.sh; do
+    if ! grep -F 'WAYFINDR_SMOKE_PHP_COMPOSE_FILE="$COMPOSE_FILE"' \
+        "$ROOT_DIR/scripts/smoke/$harness" >/dev/null; then
+        echo "$harness must route support-loop PHP through the Wayfindr container." >&2
+        exit 1
+    fi
+done
+
 echo "Disposable VM evidence defaults stay valid on a Docker-only host."
