@@ -108,10 +108,54 @@ claim, record it as partial and keep the issue open.
   normal backup/restore and restart checks. This proves the current
   schema-compatible hosted image rollback/retry path, not arbitrary downgrade
   safety.
-- This is still hosted-runner evidence. Use it as partial proof for the clean
-  install and local backup/restore path, not as proof of a bare-metal VM reboot,
-  rollback drill, DNS/TLS, mail delivery, offsite backups, or production restore
-  posture.
+- The hosted matrix remains partial on its own. The owner-operated matrix below
+  adds real bare-metal guest creation and reboot proof; neither matrix proves
+  DNS/TLS, mail delivery, offsite backups, or production restore posture.
+
+## Current Bare-Metal Evidence
+
+On August 12, 2026, the owner ran the public-artifact contract on disposable
+Ubuntu 24.04.4 x86_64 guests created on an owner-operated Hyper-V host. The
+guests used fresh virtual disks, isolated synthetic identities, Docker Engine
+29.1.3, Docker Compose 2.40.3, and a private local-only network. Reports were
+copied off each guest before destruction; private addressing, secrets, support
+codes, and host identifiers are not published.
+
+- Clean installation was repeated on two independently created guests. Both
+  pinned `v0.3.2` at commit `47a65ca330920630596bc84f08451d498894ae04`
+  and image digest
+  `sha256:3fe112ca3d3f83efb1f4d00c401b8bf43cc706ec5bfddb05244be01b2fd8e660`.
+  The final clean run started with empty Docker state and no host PHP, completed
+  setup, verified web, queue, backup queue, scheduler, Reverb, Postgres, Redis,
+  migrations, the upgrade guard, and zero failed jobs, then passed the synthetic
+  support loop, database-plus-attachment backup/restore, post-restore support
+  loop, and full service restart.
+- A real guest reboot changed the kernel boot ID. Docker restarted the entire
+  stack without manual intervention; the public reverify runner then confirmed
+  the same release/digest, healthy services, migrations, zero failed jobs,
+  schedule, clear upgrade guard, and another complete support loop.
+- The upgrade guest installed public `v0.2.0` with its own installer, used a
+  non-default `BACKUP_QUEUE`, upgraded to public `v0.3.2`, observed the
+  backups-worker advisory and its retirement, preserved the synthetic support
+  path, restored the exact database marker and attachment bytes, and passed a
+  real reboot reverify.
+- A forced public-release discovery outage made the upgrade preflight refuse
+  with exit `78` and HTTP `000` before mutation. The web container ID, image
+  digest, migration-status digest, `/up` response, and zero-failed-job state
+  stayed unchanged, and the previous release completed the support loop after
+  refusal.
+- The first clean attempt exposed an undocumented host-PHP dependency in the
+  evidence preflight; [PR #707](https://github.com/adamgreenwell/wayfindr/pull/707)
+  moved that work into the application container. The independent repeat then
+  exposed the same assumption in the support-loop parser;
+  [PR #708](https://github.com/adamgreenwell/wayfindr/pull/708) added the
+  container PHP adapter. The passing final repeat used public `main` after both
+  fixes, so these are closed findings rather than waived prerequisites.
+
+The version-skew restore warning and `0.3.2` to `0.3.1` image rollback/retry are
+covered by the hosted recovery runs above. The combined matrix does not claim a
+destructive-schema downgrade, arbitrary archive compatibility, real DNS/TLS,
+real mail delivery, offsite-backup durability, or a production restore.
 
 ## Related Pages
 

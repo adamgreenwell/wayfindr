@@ -752,3 +752,50 @@ earlier ones.
 - The advisory response is available for any future requirement worth reporting
   without an outage. Extend `ActionDisposition`/`ActionAdvice`/`FloorAdvice`
   rather than re-deriving their rules — that coupling is what #647 was about.
+
+## 13. Bare-metal readiness evidence completed — August 12, 2026
+
+The `v0.3.2` public artifact matrix now has external-style evidence from
+owner-operated disposable Hyper-V guests, not only GitHub-hosted runners. Two
+independently created Ubuntu 24.04.4 clean guests and one separate upgrade guest
+covered clean install, first-run setup, release identity, every Compose process,
+migrations, zero failed jobs, the schedule, upgrade guard, synthetic support
+loop, database-plus-attachment backup/restore, full service restart, and real VM
+reboot/reverify. The upgrade guest proved public `v0.2.0 → v0.3.2` with a custom
+`BACKUP_QUEUE`, advisory appearance/retirement, exact restore markers, and
+post-reboot support. Reports were copied off each guest before destruction.
+
+The matrix paid for itself by finding two Docker-only portability bugs. The
+first guest reached the installer preflight only after host PHP was installed;
+PR #707 moved that check into the application container. The independent repeat
+started with no host PHP, then found `support-loop.sh` still required it for
+parsing; PR #708 added a PHP adapter that streams host temp data to container
+PHP. The final clean run used a fresh public `main` checkout after both merges,
+empty Docker state, and no host PHP. Install and reboot reverify both exited `0`.
+
+Recovery evidence is now explicit rather than implied. A forced release-
+discovery outage made the upgrade installer refuse with exit `78` before schema
+or container mutation; web container ID, image digest, migration-status digest,
+`/up`, zero failed jobs, and the support loop all stayed unchanged on the old
+release. The hosted recovery jobs separately cover a version-skew restore
+warning and the current schema-compatible `0.3.2 → 0.3.1 → 0.3.2` image
+rollback/retry. Neither result promises arbitrary downgrade safety.
+
+The deployment fork and source matched at `b8be095` with green CI on both repos,
+and Forge deployed that revision successfully. Authenticated operator evidence
+showed PHP 8.4, ready `13 / 0 / 2` posture, SMTP, Redis queueing, Reverb, storage,
+private S3-compatible attachments, and ClamAV. Forge showed the queue, backup
+queue, Reverb, per-minute scheduler, and three-region HTTP 200 checks. The manual
+scheduler proof note was stale and backup/restore proof note missing; do not
+rewrite those as runtime failures or as current production restore proof.
+
+### Next
+
+- Do not cut `0.4.0` for evidence tooling and documentation alone. Keep
+  `v0.3.2` as the latest public artifact until an operator-facing or reliability
+  change merits a release.
+- Operate the controlled Forge dogfood instance. Refresh the scheduler and
+  backup/restore proof notes only when current operational evidence exists, and
+  let real support conversations choose the next branch-sized product slice.
+- Rerun the same disposable matrix for any later release candidate; the August
+  12 results prove only the exact public artifacts and dated environments above.
