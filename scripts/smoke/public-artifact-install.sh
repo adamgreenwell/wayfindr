@@ -289,6 +289,9 @@ run_support_loop() {
         WAYFINDR_AGENT_PASSWORD="$AGENT_PASSWORD" \
         WAYFINDR_SMOKE_SUBJECT="Disposable evidence $SCENARIO" \
         WAYFINDR_SMOKE_MESSAGE="Hello from disposable evidence $SCENARIO." \
+        WAYFINDR_SMOKE_PHP_COMPOSE_FILE="$COMPOSE_FILE" \
+        WAYFINDR_SMOKE_PHP_ENV_FILE="$ENV_FILE" \
+        WAYFINDR_SMOKE_PHP_PROJECT="$PROJECT_NAME" \
         "$ROOT_DIR/scripts/smoke/support-loop.sh"
 }
 
