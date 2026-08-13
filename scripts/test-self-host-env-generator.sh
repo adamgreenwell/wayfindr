@@ -315,6 +315,30 @@ done
 generate_for "https://xn--bcher-kva.example.com"
 expect_env 'CADDY_SERVER_EXTRA_DIRECTIVES='
 
+# A hostname is letters, digits, hyphens and dots. The forbidden host code
+# points include ^ < > and |, and enumerating whichever were not already
+# consumed as delimiters invites another round of "here is one you missed" --
+# so the allowed set is stated instead. Left through, https://foo^bar.com went
+# into APP_URL, SERVER_NAME and the Reverb settings.
+for forbidden in 'https://foo^bar.com' 'https://foo|bar.com' \
+                 'https://foo<bar.com' 'https://foo>bar.com'; do
+    if generate_for "$forbidden"; then
+        echo "Expected the forbidden host character in $forbidden to be refused." >&2
+        exit 1
+    fi
+done
+
+# An empty label is invalid; the TRAILING dot is the DNS root and stays legal.
+for empty_label in 'https://example..com' 'https://.example.com'; do
+    if generate_for "$empty_label"; then
+        echo "Expected the empty label in $empty_label to be refused." >&2
+        exit 1
+    fi
+done
+
+generate_for "https://my-host.example.com"
+expect_env 'APP_URL=https://my-host.example.com'
+
 # docs/self-hosting/install.md lists ::1 among the loopback hosts a bare
 # argument accepts, so it has to work. Unbracketed, the host/port split cuts
 # at the first colon and leaves an EMPTY host: the installer announced

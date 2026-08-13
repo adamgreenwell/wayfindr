@@ -1182,6 +1182,34 @@ case "$HOST" in
         ;;
 esac
 
+# What a hostname MAY contain, rather than a list of what it may not.
+#
+# The forbidden host code points include ^ < > | and the control characters,
+# and most of the others (/ ? # \ @ % : and whitespace) are already refused
+# above or consumed as delimiters. Enumerating whichever remain invites
+# another round of "here is one you missed", so this states the allowed set:
+# https://foo^bar.com otherwise wrote that value into APP_URL, SERVER_NAME and
+# the Reverb settings and reported an install at a URL no client will open.
+#
+# A bracketed host has already been validated as IPv6 and is exempt.
+case "$HOST" in
+    \[*) ;;
+    *[!a-zA-Z0-9.-]*)
+        echo "--app-url host contains characters not allowed in a hostname: $HOST" >&2
+        exit 1
+        ;;
+esac
+
+# An empty label is invalid too. The TRAILING dot is legal -- it is the DNS
+# root, stripped during normalisation -- so only a leading dot and empty
+# interior labels are refused.
+case "$HOST" in
+    .*|*..*)
+        echo "--app-url host has an empty label: $HOST" >&2
+        exit 1
+        ;;
+esac
+
 # ...and the rest of 0/8 is refused outright rather than published somewhere
 # it cannot be reached. Both the plain and the IPv4-mapped spellings.
 VALIDATED_IPV4="$(ipv4_canonical "$(bare_host "$HOST")" 2>/dev/null \
