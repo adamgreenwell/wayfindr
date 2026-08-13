@@ -310,6 +310,20 @@ expect_env 'APP_URL=http://[::1]:8443'
 generate_for "localhost:8080"
 expect_env 'APP_URL=http://localhost:8080'
 
+# 0.0.0.0 is the IPv4 counterpart of :: and carries the same split meaning: a
+# DESTINATION of "this host", but a BIND of every interface. Confining :: to
+# loopback while leaving this one exposed was the inconsistency. Nothing else
+# in 0/8 is a usable destination either.
+generate_for "http://0.0.0.0"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
+generate_for "http://0"
+expect_env 'APP_URL=http://0.0.0.0'
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
+
+# A routable address is unaffected by that range check.
+generate_for "http://1.2.3.4"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=80'
+
 # The protocol that is NOT serving still gets published, because compose.yml
 # maps both -- so its fallback port has to dodge the operator's port too, or
 # Compose refuses the whole stack over a duplicate publish.

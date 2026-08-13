@@ -426,11 +426,18 @@ loopback_bind_address() {
             # being bindable: Docker gets 127.0.0.1, never `0177.0.0.1`.
             canonical="$(ipv4_canonical "$host" 2>/dev/null || true)"
 
-            if [ -n "$canonical" ]; then
-                printf '%s\n' "$canonical"
-            else
-                printf '%s\n' "$host"
-            fi
+            case "$canonical" in
+                127.*) printf '%s\n' "$canonical" ;;
+                '') printf '%s\n' "$host" ;;
+                *)
+                    # 0/8 reaches here. Publishing on 0.0.0.0 is the IPv4
+                    # WILDCARD -- every interface -- which is the outcome this
+                    # classification exists to prevent, exactly as with [::].
+                    # Being a destination that means "this host", loopback is
+                    # what was actually asked for.
+                    printf '127.0.0.1\n'
+                    ;;
+            esac
             ;;
     esac
 }
@@ -543,9 +550,17 @@ host_is_loopback() {
             ipv6_high_bits_zero "$host"
             ;;
         *)
-            # Any spelling of an address in 127/8.
+            # Any spelling of an address in 127/8, plus 0/8.
+            #
+            # 0.0.0.0 is the IPv4 counterpart of :: and carries the same split
+            # meaning: as a DESTINATION it is this host, which is what an
+            # operator typing it asks for, but as a BIND it is the wildcard.
+            # Leaving it out while :: was confined to loopback was the
+            # inconsistency, not the fix. Nothing else in 0/8 is a usable
+            # destination either, so the whole range answers the same way --
+            # the same reasoning as the ::/96 backstop.
             case "$(ipv4_canonical "$host" 2>/dev/null || true)" in
-                127.*) return 0 ;;
+                127.*|0.*) return 0 ;;
                 *) return 1 ;;
             esac
             ;;
