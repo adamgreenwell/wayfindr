@@ -263,10 +263,21 @@ ipv4_component() {
     case "$part" in
         '') return 1 ;;
         0[xX]*)
-            digits="$(strip_leading_zeros "${part#0[xX]}")"
+            digits="${part#0[xX]}"
+
+            # `0x` with no digits at all is zero, which is exactly what a URL
+            # client makes of it. Rejecting it sent the host down the DNS path
+            # instead, so `--app-url 0x` published on every interface rather
+            # than getting the 0/8 protection.
+            if [ -z "$digits" ]; then
+                printf '0\n'
+                return 0
+            fi
+
+            digits="$(strip_leading_zeros "$digits")"
 
             case "$digits" in
-                ''|*[!0-9a-fA-F]*) return 1 ;;
+                *[!0-9a-fA-F]*) return 1 ;;
             esac
 
             [ "${#digits}" -le 8 ] || return 1
@@ -545,10 +556,6 @@ ipv6_high_bits_zero() {
             head="${addr%%::*}"
             tail="${addr##*::}"
 
-            case "$tail" in
-                *:*:*) return 1 ;;
-            esac
-
             if [ -n "$head" ]; then
                 local IFS=:
                 set -- $head
@@ -558,6 +565,26 @@ ipv6_high_bits_zero() {
                     case "$group" in
                         ''|*[!0]*) return 1 ;;
                     esac
+                done
+            fi
+
+            # The tail occupies the LAST groups, and only its final two are
+            # the low 32 bits -- anything before them sits above and has to be
+            # zero. Counting the groups instead rejected ::0:0:1 purely for
+            # having three, though it is still ::1: explicit zero groups are
+            # legal, and refusing them published a loopback URL on every
+            # interface.
+            if [ -n "$tail" ]; then
+                local IFS=:
+                set -- $tail
+                unset IFS
+
+                while [ "$#" -gt 2 ]; do
+                    case "$1" in
+                        ''|*[!0]*) return 1 ;;
+                    esac
+
+                    shift
                 done
             fi
 
@@ -638,8 +665,10 @@ host_looks_numeric() {
     case "$last" in
         '') return 1 ;;
         0[xX]*)
+            # An empty payload counts: `0x` is a numeric host meaning zero, so
+            # `example.0x` is a malformed ADDRESS rather than a DNS name.
             case "${last#0[xX]}" in
-                ''|*[!0-9a-fA-F]*) return 1 ;;
+                *[!0-9a-fA-F]*) return 1 ;;
                 *) return 0 ;;
             esac
             ;;

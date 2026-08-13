@@ -438,6 +438,34 @@ expect_env 'APP_URL=https://127.example.com'
 generate_for "https://beef.cafe"
 expect_env 'APP_URL=https://beef.cafe'
 
+# Explicit zero groups are legal. Only the LAST TWO tail groups are the low 32
+# bits, so counting groups instead of checking which are zero rejected
+# ::0:0:1 -- still ::1 -- and published a loopback URL everywhere.
+generate_for "http://[::0:0:1]"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=[::0:0:1]:80'
+generate_for "http://[::0:0:0:1]"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=[::0:0:0:1]:80'
+
+# ...but a non-zero group above the low 32 bits is still routable.
+generate_for "http://[::1:0:0]"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=80'
+
+# `0x` with no digits is zero to a URL client. Rejecting it sent the host down
+# the DNS path, so it published everywhere instead of getting 0/8 protection.
+generate_for "0x"
+expect_env 'APP_URL=http://0.0.0.0'
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
+
+# Which also makes example.0x a malformed ADDRESS rather than a DNS name...
+if generate_for "example.0x"; then
+    echo "Expected example.0x to be refused as a malformed address." >&2
+    exit 1
+fi
+
+# ...while a 0x label anywhere but last is just a name.
+generate_for "https://0x.example.com"
+expect_env 'APP_URL=https://0x.example.com'
+
 # The protocol that is NOT serving still gets published, because compose.yml
 # maps both -- so its fallback port has to dodge the operator's port too, or
 # Compose refuses the whole stack over a duplicate publish.
