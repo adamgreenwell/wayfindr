@@ -399,6 +399,12 @@ EOF
     for octet in "$a" "$b" "$c" "$d"; do
         case "$octet" in
             ''|*[!0-9]*) printf '%s\n' "$addr"; return 0 ;;
+            # A leading zero is NOT octal here, it is invalid: URL clients
+            # reject an embedded IPv4 octet written that way, so
+            # ::ffff:127.0.0.01 folded to valid hex, passed every later check,
+            # and announced a URL nothing would open. Standalone IPv4 keeps
+            # its octal spelling; only the embedded form is strict.
+            0?*) printf '%s\n' "$addr"; return 0 ;;
         esac
 
         [ "$octet" -le 255 ] || { printf '%s\n' "$addr"; return 0; }
@@ -515,6 +521,13 @@ loopback_bind_address() {
             # private, and these addresses were never reachable anyway.
             if ipv6_is_loopback "$host"; then
                 printf '[%s]\n' "$host"
+            elif ipv6_is_unspecified "$host"; then
+                # :: is the local IPv6 host as a destination but the WILDCARD
+                # as a bind, so the literal is never published. [::1] is the
+                # address a client actually reaches -- 127.0.0.1 would be
+                # private and listenable but the wrong FAMILY, refusing every
+                # request while the health probe passed.
+                printf '[::1]\n'
             else
                 printf '127.0.0.1\n'
             fi
@@ -612,6 +625,18 @@ ipv6_high_bits_zero() {
     done
 
     return 0
+}
+
+# Whether every bit is zero -- the unspecified address, ::, however spelled.
+#
+# It has the same split meaning as 0.0.0.0: a DESTINATION of "this host", and
+# the WILDCARD as a bind. It is separated from the rest of ::/96 because the
+# rest carries neither meaning and is simply unreachable.
+ipv6_is_unspecified() {
+    case "$(ipv6_fold_mapped "$1")" in
+        *[!0:]*) return 1 ;;
+        *) return 0 ;;
+    esac
 }
 
 # Whether an IPv6 address is ::1, however it happens to be spelled.
@@ -849,7 +874,10 @@ host_is_loopback() {
                 return $?
             fi
 
-            ipv6_high_bits_zero "$host"
+            # ::1 in any spelling, or :: itself. The REST of ::/96 is neither
+            # -- it is unreachable, and is refused before this rather than
+            # quietly rebound onto IPv4.
+            ipv6_is_loopback "$host" || ipv6_is_unspecified "$host"
             ;;
         *)
             # Any spelling of an address in 127/8, plus 0/8.
@@ -1164,6 +1192,25 @@ case "$VALIDATED_IPV4" in
     0.*)
         echo "--app-url is not a reachable address: $HOST" >&2
         exit 1
+        ;;
+esac
+
+# The IPv6 half of the same rule. ::/96 holds ::1 and :: -- which mean this
+# host -- and otherwise addresses assigned to nothing, including the
+# deprecated IPv4-compatible forms. Those used to be classified loopback and
+# rebound onto 127.0.0.1, reporting success for a URL that could never arrive
+# there; they are refused instead.
+case "$HOST" in
+    \[*)
+        BARE_IPV6="$(bare_host "$HOST")"
+
+        if ipv6_high_bits_zero "$BARE_IPV6" \
+            && ! ipv6_is_loopback "$BARE_IPV6" \
+            && ! ipv6_is_unspecified "$BARE_IPV6" \
+            && ! ipv6_mapped_ipv4 "$BARE_IPV6" >/dev/null 2>&1; then
+            echo "--app-url is not a reachable address: $HOST" >&2
+            exit 1
+        fi
         ;;
 esac
 

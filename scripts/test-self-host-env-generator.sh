@@ -162,15 +162,38 @@ expect_env 'CADDY_SERVER_EXTRA_DIRECTIVES=tls internal'
 # to a single representation before asking anything.
 generate_for "http://[::ffff:7f00:1]"
 expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
-generate_for "http://[::127.0.0.1]"
-expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
+
+# `::127.0.0.1` -- the DEPRECATED IPv4-compatible form, not the mapped one --
+# used to bind loopback here. It is now refused with the rest of the
+# unreachable ::/96 block: it means neither this host nor anything a client
+# can reach, and silently rebinding it onto IPv4 reported success for a URL
+# that could never arrive. The refusal is asserted below with its siblings.
 
 # THE ONE THAT MATTERS MOST. `::` is the IPv6 WILDCARD, and Docker publishes
-# on it happily -- so the ::/96 backstop treating it as loopback must never
-# hand it back as the bind address, or the safety net becomes the exposure it
-# exists to prevent. It falls back to the v4 loopback instead.
+# on it happily -- so it must never be handed back as the bind address, or the
+# safety net becomes the exposure it exists to prevent. It binds [::1]: the
+# address a client actually reaches for that destination. 127.0.0.1 would be
+# private and listenable but the wrong FAMILY, refusing every request while
+# the health probe passed.
 generate_for "http://[::]"
-expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=[::1]:80'
+
+# The REST of ::/96 means neither this host nor anything reachable, so it is
+# refused rather than quietly rebound onto IPv4 -- the same narrowing applied
+# to 0/8, which should have been done to both families at once.
+for unreachable_v6 in "http://[::2]" "http://[::0:1:0]" "http://[::7f00:1]" "http://[::127.0.0.1]"; do
+    if generate_for "$unreachable_v6"; then
+        echo "Expected the unreachable address $unreachable_v6 to be refused." >&2
+        exit 1
+    fi
+done
+
+# A leading zero in an EMBEDDED IPv4 octet is invalid rather than octal, so
+# ::ffff:127.0.0.01 folded to valid hex and passed every later check.
+if generate_for "http://[::ffff:127.0.0.01]"; then
+    echo "Expected an embedded octet with a leading zero to be refused." >&2
+    exit 1
+fi
 
 # A routable v6 address is still published where its URL says.
 generate_for "http://[2001:db8::1]:8080"
