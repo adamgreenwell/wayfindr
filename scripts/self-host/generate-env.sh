@@ -610,6 +610,44 @@ ipv6_is_loopback() {
     return 0
 }
 
+# Whether a URL client would try to read this host as an IPv4 address.
+#
+# The rule is about the LAST label: if it is all digits, or 0x followed by hex
+# digits, the address parser runs -- and a failure there is a URL error, not a
+# fallback to DNS. So `1.2.3.256` is not a hostname that happens to look
+# numeric; it is a malformed address, and every browser refuses it.
+#
+# This corrects an assumption made earlier in this change, that a digit-string
+# host could safely be left to resolve as a name. It cannot: the install
+# reported success and left an operator with a setup URL nothing would open.
+host_looks_numeric() {
+    local host last
+
+    host="$(bare_host "$1")"
+
+    # An IPv6 literal is never read as IPv4 -- but the MAPPED form ends in a
+    # dotted quad, so its last label is numeric and this said yes, refusing
+    # [::ffff:127.0.0.1] as a malformed address. The rule is about IPv4 hosts
+    # only.
+    case "$host" in
+        *:*) return 1 ;;
+    esac
+
+    last="${host##*.}"
+
+    case "$last" in
+        '') return 1 ;;
+        0[xX]*)
+            case "${last#0[xX]}" in
+                ''|*[!0-9a-fA-F]*) return 1 ;;
+                *) return 0 ;;
+            esac
+            ;;
+        *[!0-9]*) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
 # Whether this host can only ever mean "this machine", which is what decides
 # between a loopback publish and one on every interface.
 #
@@ -919,6 +957,20 @@ case "$APP_URL" in
         exit 1
         ;;
 esac
+
+# A host a client will read as an address has to BE one. Left to fall through
+# as though it were a DNS name, `1.2.3.256` produced APP_URL=https://1.2.3.256
+# and a successful-looking install -- the loopback health probe passes, the
+# installer prints the URL, and no browser will ever open it.
+# BOTH sides read the same normalised form. host_looks_numeric goes through
+# bare_host, so parsing the raw $HOST here made them disagree the moment a
+# trailing root dot was involved: `127.1.` looked numeric and then failed to
+# parse, refusing a valid address.
+if host_looks_numeric "$HOST" \
+    && ! ipv4_canonical "$(bare_host "$HOST")" >/dev/null 2>&1; then
+    echo "--app-url is not a valid address: $HOST" >&2
+    exit 1
+fi
 
 if [ -n "$(printf '%s' "$HOST" | tr -d '\000-\177')" ]; then
     echo "--app-url must use the punycode (xn--) form of an internationalised host." >&2

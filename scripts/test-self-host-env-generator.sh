@@ -419,6 +419,25 @@ if "$GENERATOR" --app-url localhost --output >/dev/null 2>&1; then
     exit 1
 fi
 
+# A client reads a host whose LAST label is numeric as an address, and a
+# failure there is a URL error rather than a fallback to DNS. Left to fall
+# through as a name, 1.2.3.256 produced APP_URL=https://1.2.3.256 and a
+# successful-looking install at a URL no browser will open -- the loopback
+# health probe passes either way.
+for malformed in "1.2.3.256" "999.1" "1.2.3.4.5" "18446744073709551616" "0xffffffffff" "127.0.0.256"; do
+    if generate_for "$malformed"; then
+        echo "Expected the malformed address $malformed to be refused." >&2
+        exit 1
+    fi
+done
+
+# Hostnames that merely contain or end in hex-ish letters are NOT addresses
+# and must survive that check.
+generate_for "https://127.example.com"
+expect_env 'APP_URL=https://127.example.com'
+generate_for "https://beef.cafe"
+expect_env 'APP_URL=https://beef.cafe'
+
 # The protocol that is NOT serving still gets published, because compose.yml
 # maps both -- so its fallback port has to dodge the operator's port too, or
 # Compose refuses the whole stack over a duplicate publish.
