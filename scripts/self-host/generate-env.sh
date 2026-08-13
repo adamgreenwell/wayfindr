@@ -73,7 +73,9 @@ url_scheme() {
 # Everything between the scheme and the first path segment: "support.example.com",
 # "localhost:2345", "[::1]:8443". The scheme strip is a no-op on a bare host, so
 # this is also usable before the scheme has been inferred.
-url_authority() {
+# The authority exactly as written, userinfo included. Only the credential
+# check wants this; everything else wants url_authority below.
+url_authority_raw() {
     local without_scheme
 
     without_scheme="${APP_URL#*://}"
@@ -87,6 +89,18 @@ url_authority() {
     without_scheme="${without_scheme%%\?*}"
 
     printf '%s\n' "${without_scheme%%/*}"
+}
+
+url_authority() {
+    local authority
+
+    authority="$(url_authority_raw)"
+
+    # Userinfo is part of the authority but is NOT the host: the host of
+    # http://guest@localhost is localhost. Left attached, the classification
+    # saw "guest@localhost", matched no loopback pattern, and published on
+    # every interface while the browser still reached localhost.
+    printf '%s\n' "${authority##*@}"
 }
 
 url_host() {
@@ -843,6 +857,17 @@ esac
 case "$APP_URL" in
     *\?*|*\#*)
         echo "--app-url must not include a query string or fragment." >&2
+        exit 1
+        ;;
+esac
+
+# Credentials would be written into the env file, echoed in the installer's
+# output, and baked into every link the application generates. They are
+# refused rather than quietly stripped: dropping them silently would leave an
+# operator believing the install is authenticated in some way it is not.
+case "$(url_authority_raw)" in
+    *@*)
+        echo "--app-url must not include credentials." >&2
         exit 1
         ;;
 esac

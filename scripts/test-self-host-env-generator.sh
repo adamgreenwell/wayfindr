@@ -361,6 +361,23 @@ done
 generate_for "http://localhost/base"
 expect_env 'APP_URL=http://localhost/base'
 
+# Userinfo is part of the authority but is NOT the host. Left attached, the
+# classification saw "guest@localhost", matched nothing, and published on
+# every interface while the browser still reached localhost. Refused rather
+# than stripped: credentials would otherwise land in the env file, the
+# installer's output, and every generated link.
+for with_credentials in "http://guest@localhost" "http://user:pass@localhost"; do
+    if generate_for "$with_credentials"; then
+        echo "Expected $with_credentials to be refused rather than misclassified." >&2
+        exit 1
+    fi
+done
+
+# An @ in the PATH is not userinfo and must not trip the check.
+generate_for "http://localhost/@handle"
+expect_env 'APP_URL=http://localhost/@handle'
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
+
 # The protocol that is NOT serving still gets published, because compose.yml
 # maps both -- so its fallback port has to dodge the operator's port too, or
 # Compose refuses the whole stack over a duplicate publish.
