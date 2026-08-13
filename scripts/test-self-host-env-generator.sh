@@ -203,6 +203,28 @@ expect_env 'CADDY_SERVER_EXTRA_DIRECTIVES='
 generate_for "http://3232235778:8080"
 expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=8080'
 
+# A browser rewrites https://127.1 into a request for 127.0.0.1, so a site and
+# a certificate named `127.1` would never match it even once the local CA is
+# trusted. Canonicalising only the BIND is what made this necessary: the two
+# halves of one install would otherwise disagree about its own address.
+generate_for "https://127.1"
+expect_env 'APP_URL=https://127.0.0.1'
+expect_env 'SERVER_NAME=127.0.0.1'
+expect_env 'REVERB_HOST=127.0.0.1'
+expect_env 'WAYFINDR_PUBLIC_HTTPS_BIND=127.0.0.1:443'
+
+# The port and any path survive the rewrite.
+generate_for "https://0x7f000001:8443"
+expect_env 'APP_URL=https://127.0.0.1:8443'
+expect_env 'REVERB_CLIENT_PORT=8443'
+
+# The mapping prefix is 80 zero bits, ffff, then EXACTLY two groups.
+# ::ffff:0:7f00:1 has an extra one, making it a different address entirely --
+# reading its last two groups as the mapped value bound v4 loopback for a URL
+# that names neither.
+generate_for "http://[::ffff:0:7f00:1]"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=80'
+
 # The protocol that is NOT serving still gets published, because compose.yml
 # maps both -- so its fallback port has to dodge the operator's port too, or
 # Compose refuses the whole stack over a duplicate publish.

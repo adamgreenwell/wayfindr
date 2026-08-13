@@ -284,6 +284,16 @@ ipv6_mapped_ipv4() {
         *) return 1 ;;
     esac
 
+    # The mapping prefix is 80 zero bits then ffff then EXACTLY two groups.
+    # Without the count, ::ffff:0:7f00:1 -- a distinct address with an extra
+    # group -- passed the zero-prefix test and had its last two groups read as
+    # the mapped address, binding v4 loopback for a URL that names neither.
+    case "${addr#*:ffff:}" in
+        *:*:*) return 1 ;;
+        *:*) ;;
+        *) return 1 ;;
+    esac
+
     low="${addr##*:}"
     high="${addr%:*}"
     high="${high##*:}"
@@ -642,6 +652,30 @@ HOST="$(url_host)"
 if [ -z "$HOST" ] || [ "$HOST" = "[]" ]; then
     echo "--app-url must include a host." >&2
     exit 1
+fi
+
+# A shorthand address is canonicalised before anything downstream sees it.
+#
+# Browsers do this themselves: https://127.1 leaves the client as a request
+# for 127.0.0.1, so a Caddy site and a certificate named `127.1` would never
+# match it, even once the local CA is trusted. The BIND was already
+# canonicalised, which is what makes this necessary rather than cosmetic --
+# otherwise the two halves of the same install disagree about its address.
+if CANONICAL_HOST="$(ipv4_canonical "$HOST" 2>/dev/null)" \
+    && [ "$CANONICAL_HOST" != "$HOST" ]; then
+    APP_URL_PORT=""
+
+    case "$(url_authority)" in
+        *:*) APP_URL_PORT=":$(url_port)" ;;
+    esac
+
+    APP_URL_PATH="${APP_URL#*://}"
+    APP_URL_PATH="${APP_URL_PATH#"$(url_authority)"}"
+
+    APP_URL="${SCHEME}://${CANONICAL_HOST}${APP_URL_PORT}${APP_URL_PATH}"
+    HOST="$CANONICAL_HOST"
+
+    echo "Canonicalised the address; installing as $APP_URL." >&2
 fi
 
 if [ -e "$OUTPUT_FILE" ] && [ "$FORCE" != "1" ]; then
