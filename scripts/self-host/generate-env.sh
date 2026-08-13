@@ -666,6 +666,24 @@ normalize_app_url() {
             ;;
     esac
 
+    # Only a BARE host reaches here, which is what makes the bracketing below
+    # safe: the scheme's own colon would otherwise count toward the test and
+    # wrap a whole URL, turning http://[::1]:8443 into [http://[::1]:8443].
+    #
+    # A bare IPv6 literal cannot be a URL host without brackets -- unbracketed,
+    # the host/port split cuts at the first colon and yields an EMPTY host, so
+    # `--app-url ::1` announced "installing as https://::1" and then died with
+    # "must include a host". docs/self-hosting/install.md lists ::1 among the
+    # loopback hosts a bare argument accepts, making this a documented path.
+    #
+    # Two or more colons and no bracket means the whole argument is the
+    # address: RFC 3986 requires brackets before a port can be appended, so
+    # there is no port here to keep separate.
+    case "$APP_URL" in
+        \[*) ;;
+        *:*:*) APP_URL="[$APP_URL]" ;;
+    esac
+
     if host_is_loopback "$(url_host)"; then
         APP_URL="http://$APP_URL"
     else

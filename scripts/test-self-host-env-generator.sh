@@ -292,6 +292,24 @@ done
 generate_for "https://xn--bcher-kva.example.com"
 expect_env 'CADDY_SERVER_EXTRA_DIRECTIVES='
 
+# docs/self-hosting/install.md lists ::1 among the loopback hosts a bare
+# argument accepts, so it has to work. Unbracketed, the host/port split cuts
+# at the first colon and leaves an EMPTY host: the installer announced
+# "installing as https://::1" and then died with "must include a host".
+generate_for "::1"
+expect_env 'APP_URL=http://[::1]'
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=[::1]:80'
+
+generate_for "0:0:0:0:0:0:0:1"
+expect_env 'APP_URL=http://[0:0:0:0:0:0:0:1]'
+
+# An already-bracketed argument must not be double-bracketed, and a single
+# colon is still a port rather than an address.
+generate_for "[::1]:8443"
+expect_env 'APP_URL=http://[::1]:8443'
+generate_for "localhost:8080"
+expect_env 'APP_URL=http://localhost:8080'
+
 # The protocol that is NOT serving still gets published, because compose.yml
 # maps both -- so its fallback port has to dodge the operator's port too, or
 # Compose refuses the whole stack over a duplicate publish.
