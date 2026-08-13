@@ -171,6 +171,20 @@ report_notices() {
 say() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
+# The value for an option that takes one, or a clear failure.
+#
+# `--app-url --upgrade` would otherwise consume the flag as the URL and
+# silently discard it, and a value-taking option in LAST position made the
+# bare `shift 2` abort under `set -e` with no message at all. generate-env.sh
+# carries the same guard: both are documented entry points.
+option_value() {
+    case "${2:-}" in
+        ''|-*) die "$1 needs a value." ;;
+    esac
+
+    printf '%s\n' "$2"
+}
+
 # The parse loop below consumes $@ with `shift`, so the hand-off would have
 # nothing left to replay. Capture the operator's arguments first — losing --dir
 # would silently upgrade a different install than the one they asked for.
@@ -178,12 +192,12 @@ WAYFINDR_ORIGINAL_ARGS=("$@")
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        --app-url) APP_URL="${2:-}"; shift 2 ;;
-        --dir) TARGET_DIR="${2:-}"; shift 2 ;;
-        --mail-from) MAIL_FROM="${2:-}"; shift 2 ;;
+        --app-url) APP_URL="$(option_value "--app-url" "${2:-}")"; shift 2 ;;
+        --dir) TARGET_DIR="$(option_value "--dir" "${2:-}")"; shift 2 ;;
+        --mail-from) MAIL_FROM="$(option_value "--mail-from" "${2:-}")"; shift 2 ;;
         --behind-proxy) BEHIND_PROXY=1; shift ;;
-        --ref) REF="${2:-}"; shift 2 ;;
-        --source-dir) SOURCE_DIR="${2:-}"; shift 2 ;;
+        --ref) REF="$(option_value "--ref" "${2:-}")"; shift 2 ;;
+        --source-dir) SOURCE_DIR="$(option_value "--source-dir" "${2:-}")"; shift 2 ;;
         --upgrade) UPGRADE=1; shift ;;
         --no-start) NO_START=1; shift ;;
         -h|--help) usage; exit 0 ;;

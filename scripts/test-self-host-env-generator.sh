@@ -399,6 +399,26 @@ for with_space in "local host" "https://local host"; do
     fi
 done
 
+# Accepting a bare host made a missing value dangerous: `--app-url --force`
+# used to be caught by the scheme check, and would now become
+# https://--force, an unreachable install that also silently swallowed the
+# flag. A value-taking option in last position aborted on the bare `shift 2`
+# with no message at all.
+if "$GENERATOR" --app-url --force --output "$ENV_FILE" >/dev/null 2>&1; then
+    echo "Expected an option-shaped --app-url value to be refused." >&2
+    exit 1
+fi
+
+if "$GENERATOR" --app-url >/dev/null 2>&1; then
+    echo "Expected a missing --app-url value to be refused." >&2
+    exit 1
+fi
+
+if "$GENERATOR" --app-url localhost --output >/dev/null 2>&1; then
+    echo "Expected a missing --output value to be refused." >&2
+    exit 1
+fi
+
 # The protocol that is NOT serving still gets published, because compose.yml
 # maps both -- so its fallback port has to dodge the operator's port too, or
 # Compose refuses the whole stack over a duplicate publish.

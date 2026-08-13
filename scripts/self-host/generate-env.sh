@@ -39,6 +39,25 @@ sending real visitor traffic to the instance.
 USAGE
 }
 
+# The value for an option that takes one, or a clear failure.
+#
+# `--app-url --force` used to be caught downstream by the scheme check; now
+# that a bare host is legitimate, it would have become https://--force -- an
+# unreachable install that also silently discarded the flag the operator
+# typed. This also replaces the bare `shift 2` failure when a value-taking
+# option is the LAST argument, which under `set -e` aborted with no message
+# at all.
+option_value() {
+    case "${2:-}" in
+        ''|-*)
+            echo "$1 needs a value." >&2
+            exit 1
+            ;;
+    esac
+
+    printf '%s\n' "$2"
+}
+
 require_command() {
     if ! command -v "$1" >/dev/null 2>&1; then
         echo "Missing required command: $1" >&2
@@ -70,11 +89,11 @@ url_scheme() {
     esac
 }
 
-# Everything between the scheme and the first path segment: "support.example.com",
-# "localhost:2345", "[::1]:8443". The scheme strip is a no-op on a bare host, so
-# this is also usable before the scheme has been inferred.
-# The authority exactly as written, userinfo included. Only the credential
-# check wants this; everything else wants url_authority below.
+# Everything between the scheme and the first delimiter: "support.example.com",
+# "localhost:2345", "[::1]:8443" -- userinfo included, exactly as written. Only
+# the credential check wants this form; everything else wants url_authority
+# below. The scheme strip is a no-op on a bare host, so this is also usable
+# before the scheme has been inferred.
 url_authority_raw() {
     local without_scheme
 
@@ -784,19 +803,19 @@ normalize_app_url() {
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --app-url)
-            APP_URL="${2:-}"
+            APP_URL="$(option_value "--app-url" "${2:-}")"
             shift 2
             ;;
         --output)
-            OUTPUT_FILE="${2:-}"
+            OUTPUT_FILE="$(option_value "--output" "${2:-}")"
             shift 2
             ;;
         --app-name)
-            APP_NAME="${2:-}"
+            APP_NAME="$(option_value "--app-name" "${2:-}")"
             shift 2
             ;;
         --mail-from)
-            MAIL_FROM_ADDRESS="${2:-}"
+            MAIL_FROM_ADDRESS="$(option_value "--mail-from" "${2:-}")"
             shift 2
             ;;
         --behind-proxy)
