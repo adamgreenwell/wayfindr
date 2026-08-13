@@ -469,8 +469,14 @@ expect_env 'APP_URL=https://0x.example.com'
 # A bracketed host was accepted as an address on the strength of containing a
 # colon and nothing else, so a malformed literal generated an env, passed the
 # loopback health probe, and left an APP_URL browsers reject outright.
+# Empty groups need catching BEFORE the split and before field splitting.
+# `%%::*` and `##*::` each consume a different pair out of `1:::2`, leaving a
+# clean head and tail; and shell field splitting DISCARDS empty fields rather
+# than counting them, so `::1:` and `1::2:` passed the group counts too.
 for bad_ipv6 in "http://[1::2::3]" "http://[gggg::1]" "http://[12345::1]" \
-                "http://[::ffff:999.1.1.1]" "http://[0:0:0:0:0:0:1]"; do
+                "http://[::ffff:999.1.1.1]" "http://[0:0:0:0:0:0:1]" \
+                "http://[1:::2]" "http://[::::1]" "http://[::1:]" \
+                "http://[1::2:]" "http://[:1]"; do
     if generate_for "$bad_ipv6"; then
         echo "Expected the malformed literal $bad_ipv6 to be refused." >&2
         exit 1
@@ -481,7 +487,11 @@ done
 # silently discarded whatever sat between: localhost:80:90 became
 # localhost:90, and [::1]junk:8080 became [::1]:8080 -- a reported success at
 # a URL the operator never typed.
-for bad_authority in "http://localhost:80:90" "http://[::1]junk:8080" "http://localhost:"; do
+# The FIRST closing bracket has to end the address: accepting any authority
+# that merely ENDS in "]" let [::1]junk] through, and normalisation then
+# quietly rewrote it to [::1].
+for bad_authority in "http://localhost:80:90" "http://[::1]junk:8080" "http://localhost:" \
+                     "http://[::1]junk]" "http://[::1" "http://[::1]:"; do
     if generate_for "$bad_authority"; then
         echo "Expected the malformed authority $bad_authority to be refused." >&2
         exit 1

@@ -683,14 +683,32 @@ ipv6_is_valid() {
         # dotted quad will not parse, so a surviving dot is a malformed
         # embedded IPv4 rather than a valid mapped address.
         *.*) return 1 ;;
-        # :: may appear once.
+        # :: may appear once...
         *::*::*) return 1 ;;
+        # ...and three in a row is never valid. This has to be caught BEFORE
+        # the split: `%%::*` and `##*::` each consume a different pair out of
+        # `1:::2`, leaving a clean head and tail with the extra colon gone, so
+        # every check after the split saw a well-formed address.
+        *:::*) return 1 ;;
     esac
 
     case "$addr" in
         *::*)
             head="${addr%%::*}"
             tail="${addr##*::}"
+
+            # An empty group is invalid, and shell field splitting DISCARDS
+            # empty fields rather than counting them -- so `1:::2`, `::1:` and
+            # `1::2:` sailed through the counts below. The only legal place for
+            # adjacent colons is the :: marker, which has just been split off,
+            # so neither side may now begin or end with one.
+            case "$head" in
+                :*|*:) return 1 ;;
+            esac
+
+            case "$tail" in
+                :*|*:) return 1 ;;
+            esac
 
             hcount="$(ipv6_group_count "$head")" || return 1
             tcount="$(ipv6_group_count "$tail")" || return 1
@@ -699,6 +717,10 @@ ipv6_is_valid() {
             [ "$((hcount + tcount))" -le 7 ]
             ;;
         *)
+            case "$addr" in
+                :*|*:) return 1 ;;
+            esac
+
             hcount="$(ipv6_group_count "$addr")" || return 1
             [ "$hcount" -eq 8 ]
             ;;
@@ -717,10 +739,18 @@ authority_is_well_formed() {
 
     case "$authority" in
         \[*)
-            case "$authority" in
-                *\]) return 0 ;;
-                *\]:*)
-                    rest="${authority##*\]:}"
+            # The FIRST closing bracket has to end the address, and only an
+            # empty remainder or exactly one numeric port may follow it.
+            # Accepting any authority that merely ENDS in "]" let
+            # [::1]junk] through, which normalisation then quietly rewrote to
+            # [::1] -- a success reported at a different URL again. A missing
+            # bracket leaves the whole string in `rest` and fails here too.
+            rest="${authority#*\]}"
+
+            case "$rest" in
+                '') return 0 ;;
+                :*)
+                    rest="${rest#:}"
 
                     case "$rest" in
                         ''|*[!0-9]*) return 1 ;;
