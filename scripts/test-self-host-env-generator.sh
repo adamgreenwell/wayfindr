@@ -42,6 +42,83 @@ fi
 grep -F 'SESSION_SECURE_COOKIE=false' "$ENV_FILE" >/dev/null
 grep -F 'REVERB_HOST=127.0.0.1' "$ENV_FILE" >/dev/null
 
+# The loopback ops site must move off a port the public bind now claims.
+# Leaving both on 8000 makes Compose refuse the stack over a duplicate publish.
+grep -F 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:8000' "$ENV_FILE" >/dev/null
+grep -F 'WAYFINDR_LOCAL_BIND=127.0.0.1:18000' "$ENV_FILE" >/dev/null
+
+expect_env() {
+    if ! grep -qF "$1" "$ENV_FILE"; then
+        echo "Expected '$1' in the env generated for $CURRENT_URL:" >&2
+        grep -E '^(APP_URL|SERVER_NAME|WAYFINDR_(PUBLIC|LOCAL)|CADDY_)' "$ENV_FILE" >&2
+        exit 1
+    fi
+}
+
+generate_for() {
+    CURRENT_URL="$1"
+    shift
+    "$GENERATOR" --force --output "$ENV_FILE" --app-url "$CURRENT_URL" "$@" >/dev/null 2>&1
+}
+
+# A bare host is accepted, and loopback infers http:// rather than handing the
+# operator a certificate to trust before the first page will load.
+generate_for "localhost"
+expect_env 'APP_URL=http://localhost'
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
+expect_env 'SESSION_SECURE_COOKIE=false'
+
+# A bare host that is NOT loopback is something another machine resolves, so
+# it infers https://.
+generate_for "support.example.com"
+expect_env 'APP_URL=https://support.example.com'
+expect_env 'SESSION_SECURE_COOKIE=true'
+
+# The regression this suite could not see before: every published port was a
+# constant, so an operator's port only worked when it happened to match one.
+# The URL is the contract -- whatever port it names is the port that serves.
+generate_for "https://localhost:2345"
+expect_env 'WAYFINDR_PUBLIC_HTTPS_BIND=127.0.0.1:2345'
+expect_env 'REVERB_CLIENT_PORT=2345'
+expect_env 'SESSION_SECURE_COOKIE=true'
+# The certificate covers the hostname; the operator's port lives on the host
+# side of the publish, so SERVER_NAME stays portless.
+expect_env 'SERVER_NAME=localhost'
+expect_env 'CADDY_SERVER_EXTRA_DIRECTIVES=tls internal'
+
+# Names no public CA can issue for get a locally-issued certificate rather
+# than an ACME challenge that can only fail.
+generate_for "https://wayfinder.local"
+expect_env 'CADDY_SERVER_EXTRA_DIRECTIVES=tls internal'
+expect_env 'SERVER_NAME=wayfinder.local'
+# Not loopback: reachable from the rest of the network, as the URL implies.
+expect_env 'WAYFINDR_PUBLIC_HTTPS_BIND=443'
+
+generate_for "https://192.168.10.4:8443"
+expect_env 'CADDY_SERVER_EXTRA_DIRECTIVES=tls internal'
+# A routable literal still binds every interface: the address in the URL is
+# often NOT on a local interface (NAT), and binding it would fail at `up`.
+expect_env 'WAYFINDR_PUBLIC_HTTPS_BIND=8443'
+
+# A real domain must still go to a public CA, on the only port ACME validates.
+generate_for "https://support.example.com"
+expect_env 'CADDY_SERVER_EXTRA_DIRECTIVES='
+expect_env 'WAYFINDR_PUBLIC_HTTPS_BIND=443'
+
+if generate_for "https://support.example.com:8443"; then
+    echo "A public certificate on a port ACME cannot validate should be refused." >&2
+    exit 1
+fi
+
+# --behind-proxy still owns every bind: the operator's proxy holds the port,
+# so honouring the URL's port here would fight it for the same one.
+generate_for "https://support.example.com" --behind-proxy
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:18080'
+expect_env 'WAYFINDR_PUBLIC_HTTPS_BIND=127.0.0.1:18443'
+expect_env 'TRUSTED_PROXIES=*'
+
+"$GENERATOR" --force --output "$ENV_FILE" --app-url "http://127.0.0.1:8000" >/dev/null
+
 docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker/self-hosting/compose.yml" config --format json > "$CONFIG_JSON_FILE"
 
 python3 - "$CONFIG_JSON_FILE" <<'PY'
@@ -62,6 +139,21 @@ for service in ("web", "queue", "scheduler", "reverb"):
 
     if env["REVERB_APP_SECRET"] == "replace-with-private-reverb-secret":
         raise SystemExit(f"{service} kept the placeholder Reverb secret")
+
+# This env came from --app-url http://127.0.0.1:8000, the case where the
+# operator's port collides with the loopback ops site. Compose refuses to
+# start a stack that publishes one host port twice, so the proof has to be
+# taken at the rendered level, not from the env file alone.
+published = [
+    (port.get("host_ip"), str(port.get("published")), port.get("protocol"))
+    for port in config["services"]["web"]["ports"]
+]
+
+if len(published) != len(set(published)):
+    raise SystemExit(f"web publishes a host port twice: {published}")
+
+if ("127.0.0.1", "8000", "tcp") not in published:
+    raise SystemExit(f"the URL's own port is not published: {published}")
 PY
 
 echo "Self-host env generator creates safe starter values and renders through Compose."

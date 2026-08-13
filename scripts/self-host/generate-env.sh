@@ -18,6 +18,12 @@ Usage:
 
 Options:
   --app-url <url>          Required public URL, such as https://support.example.com.
+                           A bare host works too (localhost:2345, wayfindr.local):
+                           loopback infers http://, anything else https://.
+                           Hosts no public CA can issue for -- localhost, IP
+                           literals, .local/.localhost/.internal/.home.arpa/.test,
+                           and single-label names -- get a locally-issued
+                           certificate, on whatever port the URL names.
   --output <path>          Env file to write. Defaults to docker/self-hosting/.env.
   --app-name <name>        Application name. Defaults to Wayfindr.
   --mail-from <email>      Mail from address placeholder. Defaults to support@example.com.
@@ -64,33 +70,143 @@ url_scheme() {
     esac
 }
 
-url_host() {
+# Everything between the scheme and the first path segment: "support.example.com",
+# "localhost:2345", "[::1]:8443". The scheme strip is a no-op on a bare host, so
+# this is also usable before the scheme has been inferred.
+url_authority() {
     local without_scheme
-    local authority
 
     without_scheme="${APP_URL#*://}"
-    authority="${without_scheme%%/*}"
-    printf '%s\n' "${authority%%:*}"
+    printf '%s\n' "${without_scheme%%/*}"
+}
+
+url_host() {
+    local authority
+
+    authority="$(url_authority)"
+
+    case "$authority" in
+        # An IPv6 literal is bracketed and carries colons of its own, so the
+        # host/port split cannot cut at the first colon -- that returns "["
+        # for http://[::1]:8443, and a "[" host poisons SERVER_NAME,
+        # REVERB_HOST and every classification below it.
+        \[*\]*) printf '%s\n' "${authority%%\]*}]" ;;
+        *) printf '%s\n' "${authority%%:*}" ;;
+    esac
 }
 
 url_port() {
-    local without_scheme
     local authority
     local port
 
-    without_scheme="${APP_URL#*://}"
-    authority="${without_scheme%%/*}"
-    port="${authority##*:}"
+    authority="$(url_authority)"
+    port=""
 
-    if [ "$port" = "$authority" ]; then
-        if [ "$SCHEME" = "https" ]; then
-            printf '443\n'
-        else
-            printf '80\n'
-        fi
-    else
+    case "$authority" in
+        \[*\]:*) port="${authority##*:}" ;;
+        \[*\]) port="" ;;
+        *:*) port="${authority##*:}" ;;
+    esac
+
+    if [ -n "$port" ]; then
         printf '%s\n' "$port"
+    elif [ "$SCHEME" = "https" ]; then
+        printf '443\n'
+    else
+        printf '80\n'
     fi
+}
+
+# Brackets belong in a URL and in a Caddy site address, but never in a
+# comparison against a bare address.
+bare_host() {
+    local host="$1"
+
+    host="${host#"["}"
+    host="${host%"]"}"
+
+    printf '%s\n' "$host"
+}
+
+host_is_loopback() {
+    case "$(bare_host "$1")" in
+        localhost|127.*|::1) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+host_is_ip_literal() {
+    local host
+
+    host="$(bare_host "$1")"
+
+    case "$host" in
+        *:*) return 0 ;;
+        [0-9]*.[0-9]*.[0-9]*.[0-9]*)
+            case "$host" in
+                *[!0-9.]*) return 1 ;;
+                *) return 0 ;;
+            esac
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+# Whether a public certificate authority could ever issue for this host.
+#
+# Wrong in either direction is expensive. Call a real domain internal and a
+# public site quietly serves a certificate no visitor's browser trusts. Call
+# an unreachable name public and Caddy retries an ACME challenge that cannot
+# succeed, which is how a rate limit gets burned for the whole domain.
+#
+# So the question is "can a CA validate this from the internet?", not "does it
+# look local": IP literals (no CA issues for private space), the suffixes
+# reserved by RFC 6761/6762/8375, and any single-label name -- which has no
+# registrable domain to validate in the first place.
+host_is_internal() {
+    local host
+
+    host="$(bare_host "$1")"
+
+    host_is_ip_literal "$host" && return 0
+
+    case "$host" in
+        localhost|*.localhost) return 0 ;;
+        *.local|*.internal|*.home.arpa) return 0 ;;
+        *.test|*.example|*.invalid) return 0 ;;
+        *.*) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+# Accept a bare host and infer the scheme, then say which one was chosen.
+#
+# `--app-url localhost` is the first thing an operator types, and refusing it
+# taught them nothing they could act on. Loopback infers http://: a smoke test
+# or a workstation should reach a page before it is asked to trust anything.
+# Every other host infers https://, the only safe default for a name another
+# machine resolves. The inference is always announced -- a wrong guess about
+# TLS has to be visible now, not at first login.
+normalize_app_url() {
+    case "$APP_URL" in
+        http://*|https://*) return 0 ;;
+        *://*)
+            echo "--app-url supports http:// and https:// only." >&2
+            exit 1
+            ;;
+        */*)
+            echo "--app-url needs a scheme when it includes a path, such as https://$APP_URL." >&2
+            exit 1
+            ;;
+    esac
+
+    if host_is_loopback "$(url_host)"; then
+        APP_URL="http://$APP_URL"
+    else
+        APP_URL="https://$APP_URL"
+    fi
+
+    echo "No scheme given; installing as $APP_URL." >&2
 }
 
 while [ "$#" -gt 0 ]; do
@@ -139,11 +255,13 @@ fi
 
 require_command openssl
 
+normalize_app_url
+
 OUTPUT_FILE="$(absolute_path "$OUTPUT_FILE")"
 SCHEME="$(url_scheme)"
 HOST="$(url_host)"
 
-if [ -z "$HOST" ]; then
+if [ -z "$HOST" ] || [ "$HOST" = "[]" ]; then
     echo "--app-url must include a host." >&2
     exit 1
 fi
@@ -165,8 +283,11 @@ REVERB_PORT="$PUBLIC_PORT"
 # loopback while cookies and browser websocket values follow the https
 # APP_URL, and TRUSTED_PROXIES lets Laravel honor X-Forwarded-* from the
 # operator's proxy. Without the flag, an https URL means FrankenPHP binds
-# 80/443 and obtains certificates itself.
+# the public port and obtains certificates itself.
 TRUSTED_PROXIES=""
+CADDY_GLOBAL_OPTIONS=""
+CADDY_SERVER_EXTRA_DIRECTIVES=""
+INTERNAL_CERT=0
 
 if [ "$SCHEME" = "https" ]; then
     SECURE_COOKIE="true"
@@ -174,11 +295,49 @@ else
     SECURE_COOKIE="false"
 fi
 
-if [ "$SCHEME" = "https" ] && [ "$BEHIND_PROXY" != "1" ] && [ "$PUBLIC_PORT" != "443" ]; then
-    echo "Automatic HTTPS serves port 443 only; an https URL with port $PUBLIC_PORT needs --behind-proxy (your proxy owns that port) or a portless URL." >&2
+# A loopback host publishes on loopback. "localhost" names an interface no
+# other machine can reach, so binding it to every interface would expose a
+# machine the operator just described as private.
+#
+# A loopback IP literal binds to ITSELF rather than to 127.0.0.1: ::1 and
+# 127.0.0.1 are both loopback but they are not the same address, and
+# publishing an operator's [::1] URL on the v4 loopback yields a stack that is
+# running, healthy, and unreachable at the URL they typed.
+#
+# A ROUTABLE literal deliberately does not get the same treatment. Binding
+# 203.0.113.10 because the URL says so fails outright on every NAT'd cloud
+# instance, where the public address the operator browses to is not on any
+# local interface -- "cannot assign requested address", at `up` time, from a
+# URL that was perfectly correct.
+if host_is_loopback "$HOST"; then
+    if host_is_ip_literal "$HOST"; then
+        BIND_PREFIX="${HOST}:"
+    else
+        BIND_PREFIX="127.0.0.1:"
+    fi
+else
+    BIND_PREFIX=""
+fi
+
+if [ "$SCHEME" = "https" ] && [ "$BEHIND_PROXY" != "1" ] && host_is_internal "$HOST"; then
+    INTERNAL_CERT=1
+fi
+
+# ACME validates over ports 80 and 443 only, so a PUBLIC certificate on any
+# other port simply cannot be issued -- that is a fact about the protocol and
+# the refusal below is correct. An internally-issued certificate involves no
+# challenge at all, so it is served wherever the operator asked for it, and
+# https://localhost:2345 is a perfectly coherent request.
+if [ "$SCHEME" = "https" ] && [ "$BEHIND_PROXY" != "1" ] \
+    && [ "$INTERNAL_CERT" != "1" ] && [ "$PUBLIC_PORT" != "443" ]; then
+    echo "A publicly-issued certificate for $HOST can only be obtained on port 443; port $PUBLIC_PORT needs --behind-proxy (your proxy owns that port) or a portless URL." >&2
     exit 1
 fi
 
+# The container always listens on 80 and 443; the operator's port lives on the
+# HOST side of the publish. Keeping the container ports fixed is what lets a
+# custom port work without Caddy having to agree about it -- the certificate
+# covers a hostname, not a port, so SNI still matches on the way through.
 if [ "$BEHIND_PROXY" = "1" ]; then
     SERVER_NAME=":80"
     HTTP_BIND="127.0.0.1:18080"
@@ -186,12 +345,57 @@ if [ "$BEHIND_PROXY" = "1" ]; then
     TRUSTED_PROXIES="*"
 elif [ "$SCHEME" = "https" ]; then
     SERVER_NAME="$HOST"
-    HTTP_BIND="80"
-    HTTPS_BIND="443"
+    HTTPS_BIND="${BIND_PREFIX}${PUBLIC_PORT}"
+
+    if [ "$PUBLIC_PORT" = "443" ]; then
+        # Port 80 carries the HTTP->HTTPS redirect, plus the ACME HTTP-01
+        # challenge when the certificate is public.
+        HTTP_BIND="${BIND_PREFIX}80"
+    else
+        # A custom HTTPS port means something already owns 443 on this
+        # machine; claiming 80 as well would be a second collision nobody
+        # asked for. An internal certificate needs no challenge on it.
+        HTTP_BIND="127.0.0.1:18080"
+    fi
+
+    if [ "$INTERNAL_CERT" = "1" ]; then
+        # Stated outright rather than left to Caddy's own "is this name
+        # public" classification: this file decides, and the decision stays
+        # auditable in the generated env instead of living in a dependency's
+        # heuristics. skip_install_trust stops Caddy trying to write its root
+        # into the CONTAINER's trust store on every boot -- it cannot, that is
+        # not where the root would help anyone, and the failure reads like a
+        # real error in the logs.
+        CADDY_SERVER_EXTRA_DIRECTIVES="tls internal"
+        CADDY_GLOBAL_OPTIONS="skip_install_trust"
+    fi
 else
     SERVER_NAME=":80"
-    HTTP_BIND="127.0.0.1:18080"
+    HTTP_BIND="${BIND_PREFIX}${PUBLIC_PORT}"
     HTTPS_BIND="127.0.0.1:18443"
+fi
+
+# The always-on loopback ops site -- health probes, and the upstream a
+# --behind-proxy install points at -- must not land on a port the public bind
+# already claimed. Now that the public port comes from the operator's URL,
+# `--app-url http://127.0.0.1:8000` would publish 8000 twice and Compose would
+# refuse to start the stack at all. The installer reads this value back for
+# its own health probe, so moving it is safe; guessing it is not.
+LOCAL_BIND=""
+CLAIMED_PORTS=" ${HTTP_BIND##*:} ${HTTPS_BIND##*:} "
+
+for candidate in 8000 18000 18001 18002; do
+    case "$CLAIMED_PORTS" in
+        *" $candidate "*) continue ;;
+    esac
+
+    LOCAL_BIND="127.0.0.1:$candidate"
+    break
+done
+
+if [ -z "$LOCAL_BIND" ]; then
+    echo "Could not place the loopback ops port clear of $CLAIMED_PORTS. Choose a different --app-url port." >&2
+    exit 1
 fi
 
 umask 077
@@ -202,7 +406,12 @@ WAYFINDR_ENV_FILE=$OUTPUT_FILE
 SERVER_NAME=$SERVER_NAME
 WAYFINDR_PUBLIC_HTTP_BIND=$HTTP_BIND
 WAYFINDR_PUBLIC_HTTPS_BIND=$HTTPS_BIND
-WAYFINDR_LOCAL_BIND=127.0.0.1:8000
+WAYFINDR_LOCAL_BIND=$LOCAL_BIND
+# Caddy knobs (docker/self-hosting/Caddyfile). 'tls internal' means this host
+# is one no public CA can issue for, so Caddy signs with its own CA -- the
+# root has to be trusted on each machine that browses here.
+CADDY_GLOBAL_OPTIONS=$CADDY_GLOBAL_OPTIONS
+CADDY_SERVER_EXTRA_DIRECTIVES=$CADDY_SERVER_EXTRA_DIRECTIVES
 WAYFINDR_PHP_VERSION=8.4
 WAYFINDR_NODE_VERSION=24
 
@@ -259,8 +468,36 @@ MAIL_FROM_ADDRESS=$MAIL_FROM_ADDRESS
 MAIL_FROM_NAME="\${APP_NAME}"
 ENV
 
+# Only one of the two binds is the one Caddy actually serves the public site
+# on; naming the other is how an operator ends up debugging a port nothing
+# was ever listening on.
+if [ "$BEHIND_PROXY" = "1" ]; then
+    PUBLISHED_ON="proxy upstream $LOCAL_BIND"
+elif [ "$SCHEME" = "https" ]; then
+    PUBLISHED_ON="published on $HTTPS_BIND"
+else
+    PUBLISHED_ON="published on $HTTP_BIND"
+fi
+
 cat <<EOF
 Generated $OUTPUT_FILE.
+
+Serving $APP_URL ($PUBLISHED_ON).
+EOF
+
+if [ "$INTERNAL_CERT" = "1" ]; then
+    cat <<EOF
+
+No public certificate authority can issue for $HOST, so Caddy signs with its
+own CA. Browsers will warn until that root is trusted. Once the stack is up,
+export it and add it to the trust store of each machine that browses here:
+
+  docker compose -f docker/self-hosting/compose.yml --env-file $OUTPUT_FILE \\
+    cp web:/data/caddy/pki/authorities/local/root.crt ./wayfindr-local-ca.crt
+EOF
+fi
+
+cat <<EOF
 
 Next steps before real traffic:
 - Review APP_URL, DNS, TLS, and WebSocket proxy routing.
