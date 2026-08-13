@@ -225,6 +225,34 @@ expect_env 'REVERB_CLIENT_PORT=8443'
 generate_for "http://[::ffff:0:7f00:1]"
 expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=80'
 
+# The root dot has to come off BEFORE the address is parsed, or `127.1.`
+# fails to parse, the URL keeps the dot, and the bind canonicalises anyway --
+# the same split-brain through a different door.
+generate_for "https://127.1."
+expect_env 'APP_URL=https://127.0.0.1'
+expect_env 'SERVER_NAME=127.0.0.1'
+
+# Names are normalised too: a certificate is issued for the dotless form.
+generate_for "https://support.example.com."
+expect_env 'APP_URL=https://support.example.com'
+expect_env 'SERVER_NAME=support.example.com'
+
+# A URL client reads 0443 as 443. Leaving the spelling alone refused a valid
+# install outright, because the ACME guard compares this against "443", and
+# would have let :0443 collide undetected with a bind already on 443.
+generate_for "https://support.example.com:0443"
+expect_env 'WAYFINDR_PUBLIC_HTTPS_BIND=443'
+generate_for "https://localhost:02345"
+expect_env 'WAYFINDR_PUBLIC_HTTPS_BIND=127.0.0.1:2345'
+expect_env 'REVERB_CLIENT_PORT=2345'
+
+for bad_port in "http://localhost:abc" "http://localhost:0" "http://localhost:99999"; do
+    if generate_for "$bad_port"; then
+        echo "Expected $bad_port to be refused as an invalid port." >&2
+        exit 1
+    fi
+done
+
 # The protocol that is NOT serving still gets published, because compose.yml
 # maps both -- so its fallback port has to dodge the operator's port too, or
 # Compose refuses the whole stack over a duplicate publish.

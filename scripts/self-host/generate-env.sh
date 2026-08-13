@@ -109,6 +109,25 @@ url_port() {
     esac
 
     if [ -n "$port" ]; then
+        # Normalised to plain decimal, because everything downstream COMPARES
+        # this: the ACME guard against 443, and the collision checks that keep
+        # the fallback binds and the ops port clear of it. A URL client reads
+        # `0443` as 443, so leaving the spelling alone refused a valid install
+        # and let :0443 sit undetected on top of a bind already using 443.
+        case "$port" in
+            *[!0-9]*)
+                echo "--app-url has a non-numeric port: $port" >&2
+                exit 1
+                ;;
+        esac
+
+        port=$((10#$port))
+
+        if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+            echo "--app-url port is out of range: $port" >&2
+            exit 1
+        fi
+
         printf '%s\n' "$port"
     elif [ "$SCHEME" = "https" ]; then
         printf '443\n'
@@ -661,8 +680,19 @@ fi
 # match it, even once the local CA is trusted. The BIND was already
 # canonicalised, which is what makes this necessary rather than cosmetic --
 # otherwise the two halves of the same install disagree about its address.
-if CANONICAL_HOST="$(ipv4_canonical "$HOST" 2>/dev/null)" \
-    && [ "$CANONICAL_HOST" != "$HOST" ]; then
+# The root dot goes first, and from the ALREADY-stripped form.
+#
+# Passing the raw host to the parser meant `127.1.` failed to parse, so the
+# URL kept the trailing dot while the bind canonicalised anyway -- the same
+# split-brain this block exists to prevent, reached through a different door.
+# Names get the same treatment: a certificate is issued for the dotless form.
+NORMALISED_HOST="${HOST%.}"
+
+if CANONICAL_IPV4="$(ipv4_canonical "$NORMALISED_HOST" 2>/dev/null)"; then
+    NORMALISED_HOST="$CANONICAL_IPV4"
+fi
+
+if [ "$NORMALISED_HOST" != "$HOST" ]; then
     APP_URL_PORT=""
 
     case "$(url_authority)" in
@@ -672,8 +702,8 @@ if CANONICAL_HOST="$(ipv4_canonical "$HOST" 2>/dev/null)" \
     APP_URL_PATH="${APP_URL#*://}"
     APP_URL_PATH="${APP_URL_PATH#"$(url_authority)"}"
 
-    APP_URL="${SCHEME}://${CANONICAL_HOST}${APP_URL_PORT}${APP_URL_PATH}"
-    HOST="$CANONICAL_HOST"
+    APP_URL="${SCHEME}://${NORMALISED_HOST}${APP_URL_PORT}${APP_URL_PATH}"
+    HOST="$NORMALISED_HOST"
 
     echo "Canonicalised the address; installing as $APP_URL." >&2
 fi
