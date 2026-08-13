@@ -96,6 +96,7 @@ url_host() {
 }
 
 url_port() {
+    local port_digits
     local authority
     local port
 
@@ -121,7 +122,32 @@ url_port() {
                 ;;
         esac
 
-        port=$((10#$port))
+        # Leading zeros are a valid spelling, so they come off first.
+        #
+        # Written as a loop rather than the nested-expansion idiom, which
+        # install.sh already avoids for being one layer of quoting away from
+        # silently doing nothing.
+        port_digits="$port"
+
+        while :; do
+            case "$port_digits" in
+                0?*) port_digits="${port_digits#0}" ;;
+                *) break ;;
+            esac
+        done
+
+        # The LENGTH is checked before the arithmetic, because bash arithmetic
+        # is 64-bit and WRAPS. A long enough digit string lands back inside the
+        # valid range -- 18446744073709552059 evaluates to 443 -- and would
+        # then pass every check after it, publishing on 443 while APP_URL kept
+        # a port no client will accept. An install reporting success at a URL
+        # that cannot be opened is the worst shape this can fail in.
+        if [ "${#port_digits}" -gt 5 ]; then
+            echo "--app-url port is out of range: $port" >&2
+            exit 1
+        fi
+
+        port=$((10#$port_digits))
 
         if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
             echo "--app-url port is out of range: $port" >&2
@@ -160,9 +186,28 @@ bare_host() {
     printf '\n'
 }
 
+strip_leading_zeros() {
+    local value="$1"
+
+    while :; do
+        case "$value" in
+            0?*) value="${value#0}" ;;
+            *) break ;;
+        esac
+    done
+
+    printf '%s\n' "$value"
+}
+
 # One component of an IPv4 literal, in the bases inet_aton accepts: decimal,
 # octal with a leading zero, or hex with an 0x prefix. Prints its value, or
 # fails if this is not a number at all.
+#
+# Each base carries a digit-count limit, checked BEFORE the arithmetic runs.
+# Bash arithmetic is 64-bit and wraps, so without this a long enough component
+# lands back inside the 32-bit range and passes the validation below it -- the
+# same trap the port parsing hit, where 18446744073709552059 evaluated to 443.
+# The limits are simply how many digits a 32-bit value takes in each base.
 ipv4_component() {
     local part="$1"
     local digits
@@ -170,11 +215,13 @@ ipv4_component() {
     case "$part" in
         '') return 1 ;;
         0[xX]*)
-            digits="${part#0[xX]}"
+            digits="$(strip_leading_zeros "${part#0[xX]}")"
 
             case "$digits" in
                 ''|*[!0-9a-fA-F]*) return 1 ;;
             esac
+
+            [ "${#digits}" -le 8 ] || return 1
 
             printf '%d\n' "$((16#$digits))"
             ;;
@@ -182,16 +229,25 @@ ipv4_component() {
             printf '0\n'
             ;;
         0*)
-            digits="${part#0}"
+            digits="$(strip_leading_zeros "${part#0}")"
 
             case "$digits" in
                 *[!0-7]*) return 1 ;;
             esac
 
+            [ -n "$digits" ] || digits=0
+            [ "${#digits}" -le 11 ] || return 1
+
             printf '%d\n' "$((8#$digits))"
             ;;
         *[!0-9]*) return 1 ;;
-        *) printf '%d\n' "$((10#$part))" ;;
+        *)
+            digits="$(strip_leading_zeros "$part")"
+
+            [ "${#digits}" -le 10 ] || return 1
+
+            printf '%d\n' "$((10#$digits))"
+            ;;
     esac
 }
 
@@ -692,17 +748,30 @@ if CANONICAL_IPV4="$(ipv4_canonical "$NORMALISED_HOST" 2>/dev/null)"; then
     NORMALISED_HOST="$CANONICAL_IPV4"
 fi
 
-if [ "$NORMALISED_HOST" != "$HOST" ]; then
-    APP_URL_PORT=""
+# Compared as a whole AUTHORITY, not just the host, because the port has a
+# canonical spelling too: `:0443` normalises to 443 for every comparison the
+# script makes, and leaving it raw in APP_URL puts the two halves back out of
+# step in the one place this block exists to keep them aligned.
+#
+# The port test is bracket-aware. Asking "does the authority contain a colon"
+# is true of every IPv6 literal, which would have appended a port nobody
+# asked for -- http://[::1] becoming http://[::1]:80.
+APP_URL_AUTHORITY="$(url_authority)"
+APP_URL_PORT=""
 
-    case "$(url_authority)" in
-        *:*) APP_URL_PORT=":$(url_port)" ;;
-    esac
+case "$APP_URL_AUTHORITY" in
+    \[*\]:*) APP_URL_PORT=":$(url_port)" ;;
+    \[*\]) ;;
+    *:*) APP_URL_PORT=":$(url_port)" ;;
+esac
 
+NORMALISED_AUTHORITY="${NORMALISED_HOST}${APP_URL_PORT}"
+
+if [ "$NORMALISED_AUTHORITY" != "$APP_URL_AUTHORITY" ]; then
     APP_URL_PATH="${APP_URL#*://}"
-    APP_URL_PATH="${APP_URL_PATH#"$(url_authority)"}"
+    APP_URL_PATH="${APP_URL_PATH#"$APP_URL_AUTHORITY"}"
 
-    APP_URL="${SCHEME}://${NORMALISED_HOST}${APP_URL_PORT}${APP_URL_PATH}"
+    APP_URL="${SCHEME}://${NORMALISED_AUTHORITY}${APP_URL_PATH}"
     HOST="$NORMALISED_HOST"
 
     echo "Canonicalised the address; installing as $APP_URL." >&2

@@ -253,6 +253,25 @@ for bad_port in "http://localhost:abc" "http://localhost:0" "http://localhost:99
     fi
 done
 
+# Bash arithmetic is 64-bit and WRAPS, so a long enough digit string lands
+# back inside the valid range: 18446744073709552059 evaluates to 443. Checked
+# before the arithmetic, or the installer reports success on 443 while APP_URL
+# keeps a port no client will open.
+if generate_for "https://support.example.com:18446744073709552059"; then
+    echo "Expected an oversized port to be refused rather than wrapped." >&2
+    exit 1
+fi
+
+# The port has a canonical spelling too, and APP_URL has to carry it -- the
+# whole authority is compared, not just the host.
+generate_for "https://support.example.com:0000000443"
+expect_env 'APP_URL=https://support.example.com:443'
+
+# ...but a bracketed literal with NO port must not acquire one. "Does the
+# authority contain a colon" is true of every IPv6 address.
+generate_for "http://[::1]"
+expect_env 'APP_URL=http://[::1]'
+
 # The protocol that is NOT serving still gets published, because compose.yml
 # maps both -- so its fallback port has to dodge the operator's port too, or
 # Compose refuses the whole stack over a duplicate publish.
