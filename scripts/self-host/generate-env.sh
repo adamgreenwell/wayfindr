@@ -637,6 +637,111 @@ ipv6_is_loopback() {
     return 0
 }
 
+# The number of groups in a colon-separated list, or failure if any of them is
+# not one to four hex digits.
+ipv6_group_count() {
+    local list="$1"
+    local group
+    local count=0
+
+    if [ -z "$list" ]; then
+        printf '0\n'
+        return 0
+    fi
+
+    local IFS=:
+    set -- $list
+    unset IFS
+
+    for group in "$@"; do
+        case "$group" in
+            ''|*[!0-9a-fA-F]*) return 1 ;;
+        esac
+
+        [ "${#group}" -le 4 ] || return 1
+        count=$((count + 1))
+    done
+
+    printf '%s\n' "$count"
+}
+
+# Whether this is a syntactically valid IPv6 literal.
+#
+# Every bracketed host containing a colon used to be accepted as an address
+# without ever checking it, so `[1::2::3]` and `[gggg::1]` generated an env,
+# passed the loopback health probe, and left the operator with an APP_URL that
+# browsers reject outright -- the install reporting success at a URL that
+# cannot be opened, which is the same failure the malformed-IPv4 check exists
+# to prevent.
+ipv6_is_valid() {
+    local addr head tail hcount tcount
+
+    addr="$(ipv6_fold_mapped "$1")"
+
+    case "$addr" in
+        # ipv6_fold_mapped returns its input unchanged when the trailing
+        # dotted quad will not parse, so a surviving dot is a malformed
+        # embedded IPv4 rather than a valid mapped address.
+        *.*) return 1 ;;
+        # :: may appear once.
+        *::*::*) return 1 ;;
+    esac
+
+    case "$addr" in
+        *::*)
+            head="${addr%%::*}"
+            tail="${addr##*::}"
+
+            hcount="$(ipv6_group_count "$head")" || return 1
+            tcount="$(ipv6_group_count "$tail")" || return 1
+
+            # :: has to stand for at least one omitted zero group.
+            [ "$((hcount + tcount))" -le 7 ]
+            ;;
+        *)
+            hcount="$(ipv6_group_count "$addr")" || return 1
+            [ "$hcount" -eq 8 ]
+            ;;
+    esac
+}
+
+# Whether the authority is exactly a host and at most one port.
+#
+# Taking the host from one end and the port from the other silently discarded
+# whatever sat between them: http://localhost:80:90 became
+# http://localhost:90, and http://[::1]junk:8080 became http://[::1]:8080. The
+# installer then reported success at a URL the operator never typed.
+authority_is_well_formed() {
+    local authority="$1"
+    local rest
+
+    case "$authority" in
+        \[*)
+            case "$authority" in
+                *\]) return 0 ;;
+                *\]:*)
+                    rest="${authority##*\]:}"
+
+                    case "$rest" in
+                        ''|*[!0-9]*) return 1 ;;
+                        *) return 0 ;;
+                    esac
+                    ;;
+                *) return 1 ;;
+            esac
+            ;;
+        *:*)
+            rest="${authority#*:}"
+
+            case "$rest" in
+                ''|*[!0-9]*) return 1 ;;
+                *) return 0 ;;
+            esac
+            ;;
+        *) return 0 ;;
+    esac
+}
+
 # Whether a URL client would try to read this host as an IPv4 address.
 #
 # The rule is about the LAST label: if it is all digits, or 0x followed by hex
@@ -998,6 +1103,22 @@ esac
 if host_looks_numeric "$HOST" \
     && ! ipv4_canonical "$(bare_host "$HOST")" >/dev/null 2>&1; then
     echo "--app-url is not a valid address: $HOST" >&2
+    exit 1
+fi
+
+# The same for IPv6, which was accepted on the strength of containing a colon
+# and nothing else.
+case "$HOST" in
+    *:*)
+        if ! ipv6_is_valid "$(bare_host "$HOST")"; then
+            echo "--app-url is not a valid address: $HOST" >&2
+            exit 1
+        fi
+        ;;
+esac
+
+if ! authority_is_well_formed "$(url_authority)"; then
+    echo "--app-url authority must be a host and at most one port: $(url_authority)" >&2
     exit 1
 fi
 

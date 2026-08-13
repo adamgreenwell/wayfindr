@@ -466,6 +466,34 @@ fi
 generate_for "https://0x.example.com"
 expect_env 'APP_URL=https://0x.example.com'
 
+# A bracketed host was accepted as an address on the strength of containing a
+# colon and nothing else, so a malformed literal generated an env, passed the
+# loopback health probe, and left an APP_URL browsers reject outright.
+for bad_ipv6 in "http://[1::2::3]" "http://[gggg::1]" "http://[12345::1]" \
+                "http://[::ffff:999.1.1.1]" "http://[0:0:0:0:0:0:1]"; do
+    if generate_for "$bad_ipv6"; then
+        echo "Expected the malformed literal $bad_ipv6 to be refused." >&2
+        exit 1
+    fi
+done
+
+# Taking the host from one end of the authority and the port from the other
+# silently discarded whatever sat between: localhost:80:90 became
+# localhost:90, and [::1]junk:8080 became [::1]:8080 -- a reported success at
+# a URL the operator never typed.
+for bad_authority in "http://localhost:80:90" "http://[::1]junk:8080" "http://localhost:"; do
+    if generate_for "$bad_authority"; then
+        echo "Expected the malformed authority $bad_authority to be refused." >&2
+        exit 1
+    fi
+done
+
+# Valid literals and authorities are untouched by either check.
+generate_for "http://[2001:db8::1]:8080"
+expect_env 'APP_URL=http://[2001:db8::1]:8080'
+generate_for "http://[::ffff:127.0.0.1]"
+expect_env 'APP_URL=http://[::ffff:127.0.0.1]'
+
 # The protocol that is NOT serving still gets published, because compose.yml
 # maps both -- so its fallback port has to dodge the operator's port too, or
 # Compose refuses the whole stack over a duplicate publish.
