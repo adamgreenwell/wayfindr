@@ -100,6 +100,20 @@ expect_env 'CADDY_SERVER_EXTRA_DIRECTIVES=tls internal'
 # often NOT on a local interface (NAT), and binding it would fail at `up`.
 expect_env 'WAYFINDR_PUBLIC_HTTPS_BIND=8443'
 
+# "127." has to match an ADDRESS, not a prefix. DNS labels may begin with a
+# digit, so 127.example.com is a real publicly-resolvable name -- treating it
+# as loopback would publish a public site on 127.0.0.1 and nowhere else.
+generate_for "https://127.example.com"
+expect_env 'WAYFINDR_PUBLIC_HTTPS_BIND=443'
+expect_env 'CADDY_SERVER_EXTRA_DIRECTIVES='
+
+# RFC 6761 requires *.localhost to resolve to loopback, so it binds there:
+# publishing on every interface would expose ports for a name nothing off
+# this machine can resolve to reach anyway.
+generate_for "https://wayfindr.localhost"
+expect_env 'WAYFINDR_PUBLIC_HTTPS_BIND=127.0.0.1:443'
+expect_env 'CADDY_SERVER_EXTRA_DIRECTIVES=tls internal'
+
 # A real domain must still go to a public CA, on the only port ACME validates.
 generate_for "https://support.example.com"
 expect_env 'CADDY_SERVER_EXTRA_DIRECTIVES='

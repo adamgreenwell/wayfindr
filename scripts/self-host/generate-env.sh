@@ -128,9 +128,26 @@ bare_host() {
     printf '%s\n' "$host"
 }
 
+# Whether this host can only ever mean "this machine", which is what decides
+# between a loopback publish and one on every interface.
+#
+# "127." has to be matched as an ADDRESS, not as a prefix. A DNS label may
+# legally begin with a digit, so the glob 127.* also matches the real,
+# publicly-resolvable hostname 127.example.com -- and classifying that as
+# loopback would publish a public site on 127.0.0.1 only, leaving it
+# unreachable through the DNS name it was installed under.
+#
+# *.localhost belongs here too. RFC 6761 requires those names to resolve to
+# loopback, so binding them to every interface exposes ports for a name
+# nothing off this machine can resolve to reach anyway.
 host_is_loopback() {
-    case "$(bare_host "$1")" in
-        localhost|127.*|::1) return 0 ;;
+    local host
+
+    host="$(bare_host "$1")"
+
+    case "$host" in
+        localhost|*.localhost|::1) return 0 ;;
+        127.*) host_is_ip_literal "$host" ;;
         *) return 1 ;;
     esac
 }
