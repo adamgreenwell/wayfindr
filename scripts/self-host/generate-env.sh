@@ -802,6 +802,31 @@ authority_is_well_formed() {
     esac
 }
 
+# Whether the name fits what DNS can carry: 63 octets per label, 253 for the
+# whole name in presentation form.
+#
+# A longer label cannot resolve anywhere, so accepting one produced an install
+# reporting a setup URL that never resolves -- while the loopback health probe
+# passed, because it never touches the name. The bare-host path made this
+# reachable: a 64-character single label is exactly the shape an operator
+# fat-fingers or pastes.
+host_length_is_valid() {
+    local host="${1%.}"
+    local label
+
+    [ "${#host}" -le 253 ] || return 1
+
+    local IFS=.
+    set -- $host
+    unset IFS
+
+    for label in "$@"; do
+        [ "${#label}" -le 63 ] || return 1
+    done
+
+    return 0
+}
+
 # Whether a URL client would try to read this host as an IPv4 address.
 #
 # The rule is about the LAST label: if it is all digits, or 0x followed by hex
@@ -1207,6 +1232,16 @@ case "$HOST" in
     .*|*..*)
         echo "--app-url host has an empty label: $HOST" >&2
         exit 1
+        ;;
+esac
+
+case "$HOST" in
+    \[*) ;;
+    *)
+        if ! host_length_is_valid "$HOST"; then
+            echo "--app-url host is too long to resolve (63 octets per label, 253 total): $HOST" >&2
+            exit 1
+        fi
         ;;
 esac
 

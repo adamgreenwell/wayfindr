@@ -339,6 +339,24 @@ done
 generate_for "https://my-host.example.com"
 expect_env 'APP_URL=https://my-host.example.com'
 
+# DNS carries 63 octets per label and 253 for the whole name. A longer label
+# resolves nowhere, so the install reported a setup URL that never resolves --
+# the loopback health probe passes regardless, since it never touches the
+# name. The bare-host path made this reachable.
+LABEL_63="$(printf 'a%.0s' $(seq 1 63))"
+LABEL_64="$(printf 'a%.0s' $(seq 1 64))"
+
+generate_for "$LABEL_63"
+expect_env "APP_URL=https://$LABEL_63"
+
+for too_long in "$LABEL_64" "$LABEL_64.example.com" \
+                "$LABEL_63.$LABEL_63.$LABEL_63.$LABEL_63"; do
+    if generate_for "$too_long"; then
+        echo "Expected an over-long host to be refused." >&2
+        exit 1
+    fi
+done
+
 # docs/self-hosting/install.md lists ::1 among the loopback hosts a bare
 # argument accepts, so it has to work. Unbracketed, the host/port split cuts
 # at the first colon and leaves an EMPTY host: the installer announced
