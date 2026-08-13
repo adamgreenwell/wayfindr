@@ -324,6 +324,19 @@ expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
 generate_for "http://1.2.3.4"
 expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=80'
 
+# ...and the same rule has to hold through the MAPPED path. This rule needs
+# four sites to agree -- plain literal, mapped literal, and the bind for each
+# -- and writing it out separately at each one missed a different site every
+# time. It lives in ipv4_is_local / ipv4_is_bindable_loopback now.
+generate_for "http://[::ffff:0.0.0.0]"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
+generate_for "http://[::ffff:0:0]"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
+
+# A mapped address that is genuinely routable still publishes everywhere.
+generate_for "http://[::ffff:192.168.10.5]"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=80'
+
 # The protocol that is NOT serving still gets published, because compose.yml
 # maps both -- so its fallback port has to dodge the operator's port too, or
 # Compose refuses the whole stack over a duplicate publish.

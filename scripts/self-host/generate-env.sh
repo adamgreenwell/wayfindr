@@ -388,6 +388,35 @@ ipv6_mapped_ipv4() {
         "$(((0x$low >> 8) & 255))" "$((0x$low & 255))"
 }
 
+# Does this IPv4 address mean "this machine"?
+#
+# 127/8 is loopback. 0/8 is the unspecified range, which as a DESTINATION also
+# means this host -- a client given 0.0.0.0 reaches the local machine.
+#
+# This lives in one place because FOUR call sites need the answer: the plain
+# literal, the IPv4-mapped literal, and the bind for each. Written out
+# separately at each of them, one was missed every single time -- first the
+# plain 0.0.0.0 case, then the mapped one.
+ipv4_is_local() {
+    case "$1" in
+        127.*|0.*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# ...and may it be used verbatim as a BIND?
+#
+# Only 127/8. The same 0.0.0.0 that means "this host" as a destination is the
+# WILDCARD as a bind, covering every interface -- so binding the literal would
+# produce the exposure the classification exists to prevent. It falls back to
+# the v4 loopback instead, exactly as [::] does.
+ipv4_is_bindable_loopback() {
+    case "$1" in
+        127.*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 # The address Docker should publish on for a loopback host.
 #
 # Normally the literal itself, so [::1] stays on the v6 loopback rather than
@@ -401,7 +430,12 @@ loopback_bind_address() {
     host="$(bare_host "$1")"
 
     if mapped="$(ipv6_mapped_ipv4 "$host")"; then
-        printf '%s\n' "$mapped"
+        if ipv4_is_bindable_loopback "$mapped"; then
+            printf '%s\n' "$mapped"
+        else
+            printf '127.0.0.1\n'
+        fi
+
         return 0
     fi
 
@@ -426,18 +460,13 @@ loopback_bind_address() {
             # being bindable: Docker gets 127.0.0.1, never `0177.0.0.1`.
             canonical="$(ipv4_canonical "$host" 2>/dev/null || true)"
 
-            case "$canonical" in
-                127.*) printf '%s\n' "$canonical" ;;
-                '') printf '%s\n' "$host" ;;
-                *)
-                    # 0/8 reaches here. Publishing on 0.0.0.0 is the IPv4
-                    # WILDCARD -- every interface -- which is the outcome this
-                    # classification exists to prevent, exactly as with [::].
-                    # Being a destination that means "this host", loopback is
-                    # what was actually asked for.
-                    printf '127.0.0.1\n'
-                    ;;
-            esac
+            if [ -z "$canonical" ]; then
+                printf '%s\n' "$host"
+            elif ipv4_is_bindable_loopback "$canonical"; then
+                printf '%s\n' "$canonical"
+            else
+                printf '127.0.0.1\n'
+            fi
             ;;
     esac
 }
@@ -541,10 +570,8 @@ host_is_loopback() {
             mapped="$(ipv6_mapped_ipv4 "$host")" || mapped=""
 
             if [ -n "$mapped" ]; then
-                case "$mapped" in
-                    127.*) return 0 ;;
-                    *) return 1 ;;
-                esac
+                ipv4_is_local "$mapped"
+                return $?
             fi
 
             ipv6_high_bits_zero "$host"
@@ -559,10 +586,7 @@ host_is_loopback() {
             # inconsistency, not the fix. Nothing else in 0/8 is a usable
             # destination either, so the whole range answers the same way --
             # the same reasoning as the ::/96 backstop.
-            case "$(ipv4_canonical "$host" 2>/dev/null || true)" in
-                127.*|0.*) return 0 ;;
-                *) return 1 ;;
-            esac
+            ipv4_is_local "$(ipv4_canonical "$host" 2>/dev/null || true)"
             ;;
     esac
 }
