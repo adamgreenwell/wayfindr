@@ -1614,6 +1614,24 @@ cat <<DONE
 
 DONE
 
+# The proxy upstream is PRINTED rather than left to the documentation, because
+# it is no longer always 127.0.0.1:8000. When the operator's own port collides
+# with the ops site -- `--behind-proxy` with https://host:8000 -- the ops site
+# moves, and a proxy pointed at the documented 8000 would be aimed at its own
+# public listener, which loops or 502s. The env file is the truth; this reads
+# it back rather than restating a constant.
+if [ "$(env_value TRUSTED_PROXIES)" = "*" ]; then
+    cat <<PROXY
+  Point your reverse proxy at:  $LOCAL_URL
+
+  That is WAYFINDR_LOCAL_BIND in the environment file, and it is NOT always
+  127.0.0.1:8000 -- it moves when your own public port would collide with it.
+  Websockets are routed internally, so this single upstream covers the
+  application and realtime together.
+
+PROXY
+fi
+
 # A locally-issued certificate is a certificate, not a warning to click past —
 # but only once its root is trusted, and nothing else in this output would
 # explain why the first visit to a working install looks broken.

@@ -52,10 +52,13 @@ curl -fsSL https://raw.githubusercontent.com/adamgreenwell/wayfindr/main/scripts
   | bash -s -- --app-url https://support.example.com --behind-proxy
 ```
 
-Every port then binds to loopback and your proxy points at
-`127.0.0.1:8000` (websockets are routed internally, so that single
-upstream is enough), while URLs, secure cookies, and browser websockets
-stay https and the stack honors your proxy's `X-Forwarded-*` headers.
+Every port then binds to loopback and your proxy points at the value of
+**`WAYFINDR_LOCAL_BIND`** in the generated env file — usually
+`127.0.0.1:8000`, but it moves if your own public port would collide with
+it, and the installer prints the address to use. Websockets are routed
+internally, so that single upstream is enough. URLs, secure cookies, and
+browser websockets stay https, and the stack honors your proxy's
+`X-Forwarded-*` headers.
 
 ### Installing on localhost or an internal network
 

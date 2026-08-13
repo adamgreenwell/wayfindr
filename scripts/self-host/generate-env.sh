@@ -458,7 +458,12 @@ ipv6_mapped_ipv4() {
 # plain 0.0.0.0 case, then the mapped one.
 ipv4_is_local() {
     case "$1" in
-        127.*|0.*) return 0 ;;
+        # 0.0.0.0 EXACTLY. The rest of 0/8 is "this network" (RFC 1122) and
+        # carries none of the destination behaviour being accommodated here:
+        # 0.0.0.1 is not translated to loopback, it is simply unreachable, so
+        # treating the whole block as local bound 127.0.0.1 and reported
+        # success for a URL that could never arrive there.
+        127.*|0.0.0.0) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -1146,6 +1151,19 @@ case "$HOST" in
             echo "--app-url is not a valid address: $HOST" >&2
             exit 1
         fi
+        ;;
+esac
+
+# ...and the rest of 0/8 is refused outright rather than published somewhere
+# it cannot be reached. Both the plain and the IPv4-mapped spellings.
+VALIDATED_IPV4="$(ipv4_canonical "$(bare_host "$HOST")" 2>/dev/null \
+    || ipv6_mapped_ipv4 "$(bare_host "$HOST")" 2>/dev/null || true)"
+
+case "$VALIDATED_IPV4" in
+    0.0.0.0) ;;
+    0.*)
+        echo "--app-url is not a reachable address: $HOST" >&2
+        exit 1
         ;;
 esac
 

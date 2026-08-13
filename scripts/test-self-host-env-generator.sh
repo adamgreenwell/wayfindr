@@ -544,6 +544,21 @@ expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:18081'
 generate_for "https://support.example.com:8000" --behind-proxy
 expect_env 'WAYFINDR_LOCAL_BIND=127.0.0.1:18000'
 
+# Only 0.0.0.0 carries the "this host" destination behaviour. The rest of 0/8
+# is not translated to loopback, it is unreachable, so binding 127.0.0.1 for
+# it reported success at a URL that could never arrive there.
+generate_for "http://0.0.0.0"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
+generate_for "http://[::ffff:0.0.0.0]"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
+
+for unreachable in "http://0.0.0.1" "http://0.1.2.3" "http://[::ffff:0.0.0.1]"; do
+    if generate_for "$unreachable"; then
+        echo "Expected the unreachable address $unreachable to be refused." >&2
+        exit 1
+    fi
+done
+
 "$GENERATOR" --force --output "$ENV_FILE" --app-url "http://127.0.0.1:8000" >/dev/null
 
 docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker/self-hosting/compose.yml" config --format json > "$CONFIG_JSON_FILE"

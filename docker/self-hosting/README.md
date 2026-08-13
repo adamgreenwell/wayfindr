@@ -44,9 +44,10 @@ container health.
 hostname and publishes the URL's port; adding `--behind-proxy` keeps every
 bind on loopback while `APP_URL`, cookies, and the browser websocket values
 stay https, and sets `TRUSTED_PROXIES` so Laravel honors your proxy's
-`X-Forwarded-*` headers. Point the proxy at `127.0.0.1:8000` — the in-stack
-Caddy still routes `/app` and `/apps` to Reverb, so one upstream covers the
-app and websockets.
+`X-Forwarded-*` headers. Point the proxy at whatever `WAYFINDR_LOCAL_BIND`
+says in the generated env — usually `127.0.0.1:8000`, but it moves if your own
+public port would otherwise collide with it. The in-stack Caddy still routes
+`/app` and `/apps` to Reverb, so one upstream covers the app and websockets.
 
 **The URL's port is the port that serves.** The container always listens on
 80/443; the port from `--app-url` lives on the host side of the publish, so
