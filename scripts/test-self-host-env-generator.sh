@@ -388,6 +388,17 @@ for with_backslash in 'http://localhost\path' 'http://support.example.com\x'; do
     fi
 done
 
+# install.sh guards whitespace too, but README documents running this script
+# directly -- a check that exists on only one of two documented entry points
+# is not a check. Whitespace would otherwise reach SERVER_NAME, where Caddy
+# cannot serve it, and only after the env file had been written.
+for with_space in "local host" "https://local host"; do
+    if generate_for "$with_space"; then
+        echo "Expected '$with_space' to be refused for containing whitespace." >&2
+        exit 1
+    fi
+done
+
 # The protocol that is NOT serving still gets published, because compose.yml
 # maps both -- so its fallback port has to dodge the operator's port too, or
 # Compose refuses the whole stack over a duplicate publish.

@@ -825,6 +825,19 @@ if [ -z "$APP_URL" ]; then
     exit 1
 fi
 
+# install.sh guards this too, but docker/self-hosting/README.md documents
+# running this script directly, so both documented entry points have to
+# validate the same things -- a check that exists on only one of them is not
+# a check. Whitespace would otherwise reach SERVER_NAME and APP_URL, where
+# Caddy cannot serve it and the failure arrives only after the env file has
+# been written.
+case "$APP_URL" in
+    *[[:space:]]*)
+        echo "--app-url must not contain whitespace: $APP_URL" >&2
+        exit 1
+        ;;
+esac
+
 require_command openssl
 
 normalize_app_url
