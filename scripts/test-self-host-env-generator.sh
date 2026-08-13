@@ -272,6 +272,26 @@ expect_env 'APP_URL=https://support.example.com:443'
 generate_for "http://[::1]"
 expect_env 'APP_URL=http://[::1]'
 
+# RFC 9476 keeps .alt outside the global DNS, so ACME has nothing to validate.
+generate_for "https://service.alt"
+expect_env 'CADDY_SERVER_EXTRA_DIRECTIVES=tls internal'
+
+# A browser decodes http://local%68ost to localhost, so letting the escape
+# through classified a loopback name as public and published it everywhere.
+# These are REFUSED rather than decoded: a percent-decoder and an IDNA
+# implementation in shell would be two more parsers guarding a security
+# classification, and one that is subtly wrong is worse than none.
+for unparseable in "http://local%68ost" "https://bücher.example.com"; do
+    if generate_for "$unparseable"; then
+        echo "Expected $unparseable to be refused rather than misclassified." >&2
+        exit 1
+    fi
+done
+
+# The punycode form of the same name is plain ASCII and goes through.
+generate_for "https://xn--bcher-kva.example.com"
+expect_env 'CADDY_SERVER_EXTRA_DIRECTIVES='
+
 # The protocol that is NOT serving still gets published, because compose.yml
 # maps both -- so its fallback port has to dodge the operator's port too, or
 # Compose refuses the whole stack over a duplicate publish.

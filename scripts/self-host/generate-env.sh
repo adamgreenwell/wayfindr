@@ -602,6 +602,9 @@ host_is_internal() {
         # RFC 7686. A Tor onion service is reached through Tor, never through
         # a CA-validatable path, so ACME could only fail here.
         *.onion) return 0 ;;
+        # RFC 9476 reserves .alt for namespaces outside the global DNS, so
+        # there is nothing for a public CA to validate against.
+        *.alt) return 0 ;;
         # The apex of the one reserved suffix that is not a single label.
         # `local`, `internal`, `test` and friends are caught by the
         # single-label branch below; `home.arpa` would have fallen through to
@@ -726,6 +729,29 @@ HOST="$(url_host)"
 
 if [ -z "$HOST" ] || [ "$HOST" = "[]" ]; then
     echo "--app-url must include a host." >&2
+    exit 1
+fi
+
+# Spellings this script will not pretend to canonicalise are REFUSED, not
+# guessed at.
+#
+# A browser decodes http://local%68ost to localhost and percent-encoding is a
+# valid host spelling, so letting it through unchanged classified a loopback
+# name as public and published it on every interface. The fix is not to write
+# a percent-decoder and an IDNA implementation in shell to keep pace: every
+# parser added here has needed its own correction, and a decoder that is
+# subtly wrong about a SECURITY classification is worse than no decoder. The
+# script asks for the form it can reason about instead, which is also the form
+# the operator will see in their browser.
+case "$HOST" in
+    *%*)
+        echo "--app-url must use a decoded host: write local%68ost as localhost." >&2
+        exit 1
+        ;;
+esac
+
+if [ -n "$(printf '%s' "$HOST" | tr -d '\000-\177')" ]; then
+    echo "--app-url must use the punycode (xn--) form of an internationalised host." >&2
     exit 1
 fi
 
