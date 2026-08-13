@@ -337,6 +337,30 @@ expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
 generate_for "http://[::ffff:192.168.10.5]"
 expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=80'
 
+# `::` may sit anywhere, not only at the front. Matching only a LEADING ::
+# missed 0::1 -- a valid spelling of ::1 -- while the eight-group branch could
+# not see it either, so a loopback address published on every interface.
+generate_for "http://[0::1]"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=[0::1]:80'
+generate_for "http://[0:0::1]"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=[0:0::1]:80'
+generate_for "http://[2001:db8::1]"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=80'
+
+# A query or fragment can arrive with no path at all, and stopping the
+# authority only at "/" made the host "localhost?preview=1" -- matching no
+# loopback pattern, so published everywhere and written into REVERB_HOST too.
+for with_query in "http://localhost?preview=1" "http://localhost#frag" "http://localhost/base?x=1"; do
+    if generate_for "$with_query"; then
+        echo "Expected $with_query to be refused rather than corrupting the host." >&2
+        exit 1
+    fi
+done
+
+# A plain path is still fine.
+generate_for "http://localhost/base"
+expect_env 'APP_URL=http://localhost/base'
+
 # The protocol that is NOT serving still gets published, because compose.yml
 # maps both -- so its fallback port has to dodge the operator's port too, or
 # Compose refuses the whole stack over a duplicate publish.

@@ -77,6 +77,15 @@ url_authority() {
     local without_scheme
 
     without_scheme="${APP_URL#*://}"
+
+    # The authority ends at the first delimiter, and a query or fragment can
+    # arrive with no path at all: http://localhost?preview=1 has the host
+    # "localhost", but stopping only at "/" made the host
+    # "localhost?preview=1" -- matching no loopback pattern, so published on
+    # every interface, and written into REVERB_HOST as well.
+    without_scheme="${without_scheme%%\#*}"
+    without_scheme="${without_scheme%%\?*}"
+
     printf '%s\n' "${without_scheme%%/*}"
 }
 
@@ -480,20 +489,40 @@ loopback_bind_address() {
 # second. "All interfaces" is the only answer that could be actively wrong,
 # which is why the unrecognised spelling lands here rather than in the open.
 ipv6_high_bits_zero() {
-    local addr rest group
+    local addr head tail group
 
     addr="$(ipv6_fold_mapped "$1")"
 
     case "$addr" in
-        ::*)
-            # ::X:Y is six zero groups then X and Y; a third group means the
-            # top bits carry something.
-            rest="${addr#::}"
+        *::*)
+            # `::` may sit anywhere, not only at the front: 0::1 is a valid
+            # spelling of ::1, and matching only a LEADING :: missed it while
+            # the eight-group branch below could not see it either -- so a
+            # loopback address published on every interface.
+            #
+            # Splitting at the :: gives the two halves. The tail occupies the
+            # LAST groups, so more than two of them puts something above the
+            # low 32 bits; whatever is written before the :: has to be zeros.
+            head="${addr%%::*}"
+            tail="${addr##*::}"
 
-            case "$rest" in
+            case "$tail" in
                 *:*:*) return 1 ;;
-                *) return 0 ;;
             esac
+
+            if [ -n "$head" ]; then
+                local IFS=:
+                set -- $head
+                unset IFS
+
+                for group in "$@"; do
+                    case "$group" in
+                        ''|*[!0]*) return 1 ;;
+                    esac
+                done
+            fi
+
+            return 0
             ;;
     esac
 
@@ -803,6 +832,17 @@ fi
 case "$HOST" in
     *%*)
         echo "--app-url must use a decoded host: write local%68ost as localhost." >&2
+        exit 1
+        ;;
+esac
+
+# The authority parsing above stops at these, so they no longer corrupt the
+# host -- but a base URL carrying a query or fragment is still meaningless,
+# and silently dropping part of what the operator typed is worse than saying
+# so. APP_URL feeds every generated link.
+case "$APP_URL" in
+    *\?*|*\#*)
+        echo "--app-url must not include a query string or fragment." >&2
         exit 1
         ;;
 esac
