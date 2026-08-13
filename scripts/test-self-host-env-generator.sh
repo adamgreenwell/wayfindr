@@ -476,7 +476,8 @@ expect_env 'APP_URL=https://0x.example.com'
 for bad_ipv6 in "http://[1::2::3]" "http://[gggg::1]" "http://[12345::1]" \
                 "http://[::ffff:999.1.1.1]" "http://[0:0:0:0:0:0:1]" \
                 "http://[1:::2]" "http://[::::1]" "http://[::1:]" \
-                "http://[1::2:]" "http://[:1]"; do
+                "http://[1::2:]" "http://[:1]" \
+                "http://[localhost]" "http://[127.0.0.1]" "http://[example.com]"; do
     if generate_for "$bad_ipv6"; then
         echo "Expected the malformed literal $bad_ipv6 to be refused." >&2
         exit 1
@@ -530,6 +531,18 @@ generate_for "https://support.example.com" --behind-proxy
 expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:18080'
 expect_env 'WAYFINDR_PUBLIC_HTTPS_BIND=127.0.0.1:18443'
 expect_env 'TRUSTED_PROXIES=*'
+
+# ...but the operator's proxy owns the URL's port on this machine, which is
+# exactly what the public-certificate refusal tells them. Fixed 18080/18443
+# meant --behind-proxy with https://host:18443 published 127.0.0.1:18443
+# itself, so a proxy binding all interfaces could not take the port it had
+# just been told was its own. The ops site has to dodge it too.
+generate_for "https://support.example.com:18443" --behind-proxy
+expect_env 'WAYFINDR_PUBLIC_HTTPS_BIND=127.0.0.1:18444'
+generate_for "https://support.example.com:18080" --behind-proxy
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:18081'
+generate_for "https://support.example.com:8000" --behind-proxy
+expect_env 'WAYFINDR_LOCAL_BIND=127.0.0.1:18000'
 
 "$GENERATOR" --force --output "$ENV_FILE" --app-url "http://127.0.0.1:8000" >/dev/null
 

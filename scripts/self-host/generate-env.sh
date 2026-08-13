@@ -1136,10 +1136,12 @@ if host_looks_numeric "$HOST" \
     exit 1
 fi
 
-# The same for IPv6, which was accepted on the strength of containing a colon
-# and nothing else.
+# Brackets mean IPv6 and nothing else, so EVERY bracketed host has to validate
+# as one. Triggering this on "contains a colon" instead let `[localhost]`,
+# `[127.0.0.1]` and `[example.com]` through -- all rejected by URL clients,
+# all generating an env that passes the loopback health probe.
 case "$HOST" in
-    *:*)
+    \[*)
         if ! ipv6_is_valid "$(bare_host "$HOST")"; then
             echo "--app-url is not a valid address: $HOST" >&2
             exit 1
@@ -1279,8 +1281,14 @@ fi
 # covers a hostname, not a port, so SNI still matches on the way through.
 if [ "$BEHIND_PROXY" = "1" ]; then
     SERVER_NAME=":80"
-    HTTP_BIND="127.0.0.1:18080"
-    HTTPS_BIND="127.0.0.1:18443"
+
+    # Clear of the operator's port, which their proxy owns on this machine --
+    # the refusal message for a public certificate says exactly that. Fixed
+    # 18080/18443 meant `--behind-proxy` with https://host:18443 published
+    # 127.0.0.1:18443 itself, and a proxy binding all interfaces could then
+    # not take the port it was just told was its own.
+    HTTP_BIND="127.0.0.1:$(pick_spare_port 18080 "$PUBLIC_PORT")"
+    HTTPS_BIND="127.0.0.1:$(pick_spare_port 18443 "$PUBLIC_PORT")"
     TRUSTED_PROXIES="*"
 elif [ "$SCHEME" = "https" ]; then
     SERVER_NAME="$HOST"
@@ -1321,7 +1329,10 @@ fi
 # refuse to start the stack at all. The installer reads this value back for
 # its own health probe, so moving it is safe; guessing it is not.
 LOCAL_BIND=""
-CLAIMED_PORTS=" ${HTTP_BIND##*:} ${HTTPS_BIND##*:} "
+# PUBLIC_PORT is listed even though it usually equals one of the binds: under
+# --behind-proxy it equals neither, and the operator's proxy owns it on this
+# machine, so the ops site must not land there either.
+CLAIMED_PORTS=" ${HTTP_BIND##*:} ${HTTPS_BIND##*:} $PUBLIC_PORT "
 
 for candidate in 8000 18000 18001 18002; do
     case "$CLAIMED_PORTS" in
