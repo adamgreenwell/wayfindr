@@ -176,6 +176,33 @@ expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
 generate_for "http://[2001:db8::1]:8080"
 expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=8080'
 
+# inet_aton accepts one to four parts in decimal, octal or hex, so 127.1,
+# 2130706433 and 0x7f000001 all reach loopback. A dotted-quad-only check read
+# them as hostnames and published them on every interface -- the IPv4 half of
+# the same mistake the IPv6 folding prevents.
+generate_for "http://127.1"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
+generate_for "http://2130706433"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
+generate_for "http://0x7f000001"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
+generate_for "http://0177.0.0.1"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
+
+# ...and https://127.1 must not be sent to a CA that can never issue for it.
+generate_for "https://127.1"
+expect_env 'CADDY_SERVER_EXTRA_DIRECTIVES=tls internal'
+
+# A hostname that merely begins with 127 is still a hostname. This is the
+# negative that the numeric parsing must not swallow.
+generate_for "https://127.example.com"
+expect_env 'WAYFINDR_PUBLIC_HTTPS_BIND=443'
+expect_env 'CADDY_SERVER_EXTRA_DIRECTIVES='
+
+# A non-loopback address in shorthand is still published where the URL says.
+generate_for "http://3232235778:8080"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=8080'
+
 # The protocol that is NOT serving still gets published, because compose.yml
 # maps both -- so its fallback port has to dodge the operator's port too, or
 # Compose refuses the whole stack over a duplicate publish.

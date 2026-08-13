@@ -141,6 +141,104 @@ bare_host() {
     printf '\n'
 }
 
+# One component of an IPv4 literal, in the bases inet_aton accepts: decimal,
+# octal with a leading zero, or hex with an 0x prefix. Prints its value, or
+# fails if this is not a number at all.
+ipv4_component() {
+    local part="$1"
+    local digits
+
+    case "$part" in
+        '') return 1 ;;
+        0[xX]*)
+            digits="${part#0[xX]}"
+
+            case "$digits" in
+                ''|*[!0-9a-fA-F]*) return 1 ;;
+            esac
+
+            printf '%d\n' "$((16#$digits))"
+            ;;
+        0)
+            printf '0\n'
+            ;;
+        0*)
+            digits="${part#0}"
+
+            case "$digits" in
+                *[!0-7]*) return 1 ;;
+            esac
+
+            printf '%d\n' "$((8#$digits))"
+            ;;
+        *[!0-9]*) return 1 ;;
+        *) printf '%d\n' "$((10#$part))" ;;
+    esac
+}
+
+# An IPv4 literal written any way a URL parser accepts, as a dotted quad --
+# or failure if this is not an IPv4 literal at all.
+#
+# inet_aton takes one to four parts, each decimal, octal or hex, and packs the
+# LAST one into whatever bits remain: 127.0.0.1, 127.1, 0177.0.0.1,
+# 2130706433 and 0x7f000001 are all the same address. Checking only for a
+# dotted quad read the other four as hostnames and published them on every
+# interface -- the IPv4 half of the mistake the IPv6 folding above prevents.
+#
+# The canonical form, not just a verdict, because the caller needs an address
+# Docker will actually listen on: `0177.0.0.1` is loopback but not something
+# to hand to a bind.
+ipv4_canonical() {
+    local raw="$1"
+    local count value p1 p2 p3 p4
+
+    case "$raw" in
+        ''|.*|*.|*..*) return 1 ;;
+        *[!0-9a-fA-FxX.]*) return 1 ;;
+    esac
+
+    local IFS=.
+    set -- $raw
+    unset IFS
+
+    count=$#
+    [ "$count" -ge 1 ] && [ "$count" -le 4 ] || return 1
+
+    # Every component has to parse, or this is a hostname that merely looks
+    # numeric -- 127.example.com must not read as an address.
+    p1="$(ipv4_component "$1")" || return 1
+
+    case "$count" in
+        1)
+            value="$p1"
+            ;;
+        2)
+            p2="$(ipv4_component "$2")" || return 1
+            { [ "$p1" -le 255 ] && [ "$p2" -le 16777215 ]; } || return 1
+            value=$(((p1 << 24) | p2))
+            ;;
+        3)
+            p2="$(ipv4_component "$2")" || return 1
+            p3="$(ipv4_component "$3")" || return 1
+            { [ "$p1" -le 255 ] && [ "$p2" -le 255 ] && [ "$p3" -le 65535 ]; } || return 1
+            value=$(((p1 << 24) | (p2 << 16) | p3))
+            ;;
+        *)
+            p2="$(ipv4_component "$2")" || return 1
+            p3="$(ipv4_component "$3")" || return 1
+            p4="$(ipv4_component "$4")" || return 1
+            { [ "$p1" -le 255 ] && [ "$p2" -le 255 ] && [ "$p3" -le 255 ] && [ "$p4" -le 255 ]; } || return 1
+            value=$(((p1 << 24) | (p2 << 16) | (p3 << 8) | p4))
+            ;;
+    esac
+
+    [ "$value" -ge 0 ] && [ "$value" -le 4294967295 ] || return 1
+
+    printf '%d.%d.%d.%d\n' \
+        "$(((value >> 24) & 255))" "$(((value >> 16) & 255))" \
+        "$(((value >> 8) & 255))" "$((value & 255))"
+}
+
 # Rewrite a trailing dotted quad as the two hex groups it stands for, so
 # everything downstream only ever has to reason about hex.
 #
@@ -213,7 +311,7 @@ ipv6_mapped_ipv4() {
 # not available"), and the address a client reaches through it is the embedded
 # 127.0.0.1 anyway -- so binding that is both accepted and correct.
 loopback_bind_address() {
-    local host mapped
+    local host mapped canonical
 
     host="$(bare_host "$1")"
 
@@ -238,7 +336,17 @@ loopback_bind_address() {
                 printf '127.0.0.1\n'
             fi
             ;;
-        *) printf '%s\n' "$host" ;;
+        *)
+            # Canonicalised, because a shorthand literal is loopback without
+            # being bindable: Docker gets 127.0.0.1, never `0177.0.0.1`.
+            canonical="$(ipv4_canonical "$host" 2>/dev/null || true)"
+
+            if [ -n "$canonical" ]; then
+                printf '%s\n' "$canonical"
+            else
+                printf '%s\n' "$host"
+            fi
+            ;;
     esac
 }
 
@@ -332,7 +440,6 @@ host_is_loopback() {
 
     case "$host" in
         localhost|*.localhost) return 0 ;;
-        127.*) host_is_ip_literal "$host" ;;
         *:*)
             # An IPv4-mapped literal is loopback exactly when the address it
             # embeds is, whichever way that address happens to be written --
@@ -350,7 +457,13 @@ host_is_loopback() {
 
             ipv6_high_bits_zero "$host"
             ;;
-        *) return 1 ;;
+        *)
+            # Any spelling of an address in 127/8.
+            case "$(ipv4_canonical "$host" 2>/dev/null || true)" in
+                127.*) return 0 ;;
+                *) return 1 ;;
+            esac
+            ;;
     esac
 }
 
@@ -388,6 +501,14 @@ host_is_internal() {
     host="$(bare_host "$1")"
 
     host_is_ip_literal "$host" && return 0
+
+    # An address written in one of inet_aton's shorthand forms is still an
+    # address, and no public CA issues for one -- without this, https://127.1
+    # would be sent to ACME. host_is_ip_literal stays strict because it also
+    # governs what is used as a BIND address, where only forms Docker accepts
+    # are safe; certificate eligibility is a different question with a
+    # different answer.
+    ipv4_canonical "$host" >/dev/null 2>&1 && return 0
 
     case "$host" in
         localhost|*.localhost) return 0 ;;
