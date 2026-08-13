@@ -141,6 +141,70 @@ bare_host() {
     printf '\n'
 }
 
+# Rewrite a trailing dotted quad as the two hex groups it stands for, so
+# everything downstream only ever has to reason about hex.
+#
+# This exists because enumerating spellings was a losing game. ::ffff:127.0.0.1
+# and ::ffff:7f00:1 are the same address, as are ::1, 0:0:0:0:0:0:0:1 and
+# 0000:...:0001 -- and each spelling that was handled separately left the next
+# one as a fresh fail-open bug. Folding to ONE representation answers all of
+# them at once, and the questions below get asked a single way.
+ipv6_fold_mapped() {
+    local addr="$1"
+    local dotted a b c d octet
+
+    case "$addr" in
+        *:*.*.*.*) ;;
+        *) printf '%s\n' "$addr"; return 0 ;;
+    esac
+
+    dotted="${addr##*:}"
+
+    IFS='.' read -r a b c d <<EOF
+$dotted
+EOF
+
+    for octet in "$a" "$b" "$c" "$d"; do
+        case "$octet" in
+            ''|*[!0-9]*) printf '%s\n' "$addr"; return 0 ;;
+        esac
+
+        [ "$octet" -le 255 ] || { printf '%s\n' "$addr"; return 0; }
+    done
+
+    printf '%s:%x:%x\n' "${addr%:*}" "$((a * 256 + b))" "$((c * 256 + d))"
+}
+
+# The IPv4 address embedded in an IPv4-mapped literal, or nothing.
+ipv6_mapped_ipv4() {
+    local addr high low
+
+    addr="$(ipv6_fold_mapped "$1")"
+
+    case "$addr" in
+        *:ffff:*:*) ;;
+        *) return 1 ;;
+    esac
+
+    low="${addr##*:}"
+    high="${addr%:*}"
+    high="${high##*:}"
+
+    case "$high$low" in
+        ''|*[!0-9a-f]*) return 1 ;;
+    esac
+
+    # Everything above the mapping prefix has to be zero, or this is some
+    # other address that merely contains an ffff group.
+    case "${addr%%:ffff:*}" in
+        *[!0:]*) return 1 ;;
+    esac
+
+    printf '%d.%d.%d.%d\n' \
+        "$(((0x$high >> 8) & 255))" "$((0x$high & 255))" \
+        "$(((0x$low >> 8) & 255))" "$((0x$low & 255))"
+}
+
 # The address Docker should publish on for a loopback host.
 #
 # Normally the literal itself, so [::1] stays on the v6 loopback rather than
@@ -149,30 +213,88 @@ bare_host() {
 # not available"), and the address a client reaches through it is the embedded
 # 127.0.0.1 anyway -- so binding that is both accepted and correct.
 loopback_bind_address() {
-    local host
+    local host mapped
 
     host="$(bare_host "$1")"
 
+    if mapped="$(ipv6_mapped_ipv4 "$host")"; then
+        printf '%s\n' "$mapped"
+        return 0
+    fi
+
     case "$host" in
-        ::ffff:*.*.*.*) printf '%s\n' "${host##*:}" ;;
-        *:*) printf '[%s]\n' "$host" ;;
+        *:*)
+            # ::1 is the only listenable IPv6 loopback. The rest of what the
+            # ::/96 backstop accepts is not assigned to any interface, so
+            # Docker refuses to listen on it -- and `::` is the WILDCARD,
+            # which Docker takes happily and publishes on every interface.
+            # Binding the literal there would turn the safety net into the
+            # exposure it exists to prevent, so anything that is not ::1
+            # falls back to the v4 loopback: always listenable, always
+            # private, and these addresses were never reachable anyway.
+            if ipv6_is_loopback "$host"; then
+                printf '[%s]\n' "$host"
+            else
+                printf '127.0.0.1\n'
+            fi
+            ;;
         *) printf '%s\n' "$host" ;;
     esac
 }
 
+# Whether the top 96 bits are zero -- the ::/96 range, which holds ::1, ::
+# itself, and the deprecated IPv4-compatible forms like ::127.0.0.1.
+#
+# This is the backstop that ends the enumeration. Nothing in ::/96 is a
+# routable interface address: it either means this machine or means nothing at
+# all, so binding it to loopback is right in the first case and harmless in the
+# second. "All interfaces" is the only answer that could be actively wrong,
+# which is why the unrecognised spelling lands here rather than in the open.
+ipv6_high_bits_zero() {
+    local addr rest group
+
+    addr="$(ipv6_fold_mapped "$1")"
+
+    case "$addr" in
+        ::*)
+            # ::X:Y is six zero groups then X and Y; a third group means the
+            # top bits carry something.
+            rest="${addr#::}"
+
+            case "$rest" in
+                *:*:*) return 1 ;;
+                *) return 0 ;;
+            esac
+            ;;
+    esac
+
+    # Written out in full: the first six groups must all be zero, however
+    # many leading zeros each was padded with.
+    local IFS=:
+    set -- $addr
+    unset IFS
+
+    [ "$#" -eq 8 ] || return 1
+
+    for group in "$1" "$2" "$3" "$4" "$5" "$6"; do
+        case "$group" in
+            ''|*[!0]*) return 1 ;;
+        esac
+    done
+
+    return 0
+}
+
 # Whether an IPv6 address is ::1, however it happens to be spelled.
 #
-# `0:0:0:0:0:0:0:1` and `0000:...:0001` are the same address as `::1`, and an
-# exact-string check let them fall through to a public bind. Rather than
-# implement IPv6 canonicalisation in shell, this asks the only question that
-# matters: is the final group 1, and is everything before it zeros?
-#
-# The final-group test is what keeps `1::` (a real, non-loopback address that
-# is all zeros and a one) from matching -- its last group is empty, not 1.
+# Asks the only question that matters: is the final group 1, and is everything
+# before it zeros? The final-group test is what keeps `1::` (a real,
+# non-loopback address that is all zeros and a one) from matching -- its last
+# group is empty, not 1.
 ipv6_is_loopback() {
     local addr head last
 
-    addr="$1"
+    addr="$(ipv6_fold_mapped "$1")"
     last="${addr##*:}"
     head="${addr%:*}"
 
@@ -204,22 +326,30 @@ ipv6_is_loopback() {
 # loopback, so binding them to every interface exposes ports for a name
 # nothing off this machine can resolve to reach anyway.
 host_is_loopback() {
-    local host
+    local host mapped
 
     host="$(bare_host "$1")"
 
     case "$host" in
         localhost|*.localhost) return 0 ;;
         127.*) host_is_ip_literal "$host" ;;
-        ::ffff:*)
-            # IPv4-mapped: a client given ::ffff:127.0.0.1 reaches the
-            # embedded v4 address, so loopback there is loopback here.
-            case "${host##*:}" in
-                127.*) host_is_ip_literal "${host##*:}" ;;
-                *) return 1 ;;
-            esac
+        *:*)
+            # An IPv4-mapped literal is loopback exactly when the address it
+            # embeds is, whichever way that address happens to be written --
+            # ::ffff:127.0.0.1 and ::ffff:7f00:1 are the same thing. A mapped
+            # address that is NOT loopback is a real routable one, so it
+            # answers here rather than falling through to the backstop.
+            mapped="$(ipv6_mapped_ipv4 "$host")" || mapped=""
+
+            if [ -n "$mapped" ]; then
+                case "$mapped" in
+                    127.*) return 0 ;;
+                    *) return 1 ;;
+                esac
+            fi
+
+            ipv6_high_bits_zero "$host"
             ;;
-        *:*) ipv6_is_loopback "$host" ;;
         *) return 1 ;;
     esac
 }
@@ -263,6 +393,9 @@ host_is_internal() {
         localhost|*.localhost) return 0 ;;
         *.local|*.internal|*.home.arpa) return 0 ;;
         *.test|*.example|*.invalid) return 0 ;;
+        # RFC 7686. A Tor onion service is reached through Tor, never through
+        # a CA-validatable path, so ACME could only fail here.
+        *.onion) return 0 ;;
         # The apex of the one reserved suffix that is not a single label.
         # `local`, `internal`, `test` and friends are caught by the
         # single-label branch below; `home.arpa` would have fallen through to

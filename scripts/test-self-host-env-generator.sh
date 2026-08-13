@@ -152,6 +152,30 @@ expect_env 'CADDY_SERVER_EXTRA_DIRECTIVES=tls internal'
 generate_for "https://arpa.example.com"
 expect_env 'CADDY_SERVER_EXTRA_DIRECTIVES='
 
+# RFC 7686: an onion service is reached through Tor, never through a path a
+# public CA can validate.
+generate_for "https://support.example.onion"
+expect_env 'CADDY_SERVER_EXTRA_DIRECTIVES=tls internal'
+
+# The hex spelling of the mapped loopback is the same address as the dotted
+# one. Enumerating spellings was the losing game that motivated folding them
+# to a single representation before asking anything.
+generate_for "http://[::ffff:7f00:1]"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
+generate_for "http://[::127.0.0.1]"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
+
+# THE ONE THAT MATTERS MOST. `::` is the IPv6 WILDCARD, and Docker publishes
+# on it happily -- so the ::/96 backstop treating it as loopback must never
+# hand it back as the bind address, or the safety net becomes the exposure it
+# exists to prevent. It falls back to the v4 loopback instead.
+generate_for "http://[::]"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
+
+# A routable v6 address is still published where its URL says.
+generate_for "http://[2001:db8::1]:8080"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=8080'
+
 # The protocol that is NOT serving still gets published, because compose.yml
 # maps both -- so its fallback port has to dodge the operator's port too, or
 # Compose refuses the whole stack over a duplicate publish.
