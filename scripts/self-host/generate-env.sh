@@ -131,8 +131,33 @@ bare_host() {
     host="${host#"["}"
     host="${host%"]"}"
 
+    # A trailing dot is the DNS root, and `localhost.` is the valid absolute
+    # spelling of `localhost` -- left on, it matched no pattern and the host
+    # was published on every interface. Exactly one is stripped: "localhost.."
+    # is not a name worth accommodating.
+    host="${host%.}"
+
     printf '%s' "$host" | tr 'A-Z' 'a-z'
     printf '\n'
+}
+
+# The address Docker should publish on for a loopback host.
+#
+# Normally the literal itself, so [::1] stays on the v6 loopback rather than
+# silently moving to the v4 one. An IPv4-MAPPED literal is the exception and
+# has to be unwrapped: Docker refuses [::ffff:127.0.0.1] outright ("ports are
+# not available"), and the address a client reaches through it is the embedded
+# 127.0.0.1 anyway -- so binding that is both accepted and correct.
+loopback_bind_address() {
+    local host
+
+    host="$(bare_host "$1")"
+
+    case "$host" in
+        ::ffff:*.*.*.*) printf '%s\n' "${host##*:}" ;;
+        *:*) printf '[%s]\n' "$host" ;;
+        *) printf '%s\n' "$host" ;;
+    esac
 }
 
 # Whether an IPv6 address is ::1, however it happens to be spelled.
@@ -186,6 +211,14 @@ host_is_loopback() {
     case "$host" in
         localhost|*.localhost) return 0 ;;
         127.*) host_is_ip_literal "$host" ;;
+        ::ffff:*)
+            # IPv4-mapped: a client given ::ffff:127.0.0.1 reaches the
+            # embedded v4 address, so loopback there is loopback here.
+            case "${host##*:}" in
+                127.*) host_is_ip_literal "${host##*:}" ;;
+                *) return 1 ;;
+            esac
+            ;;
         *:*) ipv6_is_loopback "$host" ;;
         *) return 1 ;;
     esac
@@ -230,6 +263,11 @@ host_is_internal() {
         localhost|*.localhost) return 0 ;;
         *.local|*.internal|*.home.arpa) return 0 ;;
         *.test|*.example|*.invalid) return 0 ;;
+        # The apex of the one reserved suffix that is not a single label.
+        # `local`, `internal`, `test` and friends are caught by the
+        # single-label branch below; `home.arpa` would have fallen through to
+        # `*.*` and been sent to a public CA that will never issue for it.
+        home.arpa) return 0 ;;
         *.*) return 1 ;;
         *) return 0 ;;
     esac
@@ -397,7 +435,7 @@ fi
 # URL that was perfectly correct.
 if host_is_loopback "$HOST"; then
     if host_is_ip_literal "$HOST"; then
-        BIND_PREFIX="${HOST}:"
+        BIND_PREFIX="$(loopback_bind_address "$HOST"):"
     else
         BIND_PREFIX="127.0.0.1:"
     fi

@@ -127,6 +127,31 @@ expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
 generate_for "http://[0:0:0:0:0:0:0:1]"
 expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=[0:0:0:0:0:0:0:1]:80'
 
+# A trailing dot is the DNS root: localhost. is the absolute spelling of the
+# same name, and leaving it on matched no pattern at all.
+generate_for "http://localhost."
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
+
+# An IPv4-mapped literal is loopback, but it is also the one address Docker
+# refuses to publish on ("ports are not available"), so the bind unwraps to
+# the embedded address a client actually reaches.
+generate_for "http://[::ffff:127.0.0.1]"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
+
+# ...and a mapped address that is NOT loopback stays on every interface.
+generate_for "http://[::ffff:192.168.10.5]"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=80'
+
+# home.arpa is the only reserved suffix that is not a single label, so the
+# apex fell through to the public branch and would have been sent to a CA
+# that can never issue for it.
+generate_for "https://home.arpa"
+expect_env 'CADDY_SERVER_EXTRA_DIRECTIVES=tls internal'
+
+# The suffix must not match a real domain that merely ends in those letters.
+generate_for "https://arpa.example.com"
+expect_env 'CADDY_SERVER_EXTRA_DIRECTIVES='
+
 # The protocol that is NOT serving still gets published, because compose.yml
 # maps both -- so its fallback port has to dodge the operator's port too, or
 # Compose refuses the whole stack over a duplicate publish.
