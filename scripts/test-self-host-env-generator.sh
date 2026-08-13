@@ -378,6 +378,16 @@ generate_for "http://localhost/@handle"
 expect_env 'APP_URL=http://localhost/@handle'
 expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
 
+# For http and https the URL standard normalises a backslash to a path
+# separator, so a browser given http://localhost\path reaches localhost --
+# while keeping it in the host matched nothing and published everywhere.
+for with_backslash in 'http://localhost\path' 'http://support.example.com\x'; do
+    if generate_for "$with_backslash"; then
+        echo "Expected $with_backslash to be refused rather than misclassified." >&2
+        exit 1
+    fi
+done
+
 # The protocol that is NOT serving still gets published, because compose.yml
 # maps both -- so its fallback port has to dodge the operator's port too, or
 # Compose refuses the whole stack over a duplicate publish.

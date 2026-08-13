@@ -88,6 +88,12 @@ url_authority_raw() {
     without_scheme="${without_scheme%%\#*}"
     without_scheme="${without_scheme%%\?*}"
 
+    # A backslash ends the authority too. For http and https the URL standard
+    # normalises it to a path separator, so a browser given
+    # http://localhost\path connects to localhost -- while keeping it in the
+    # host matched no loopback pattern and published on every interface.
+    without_scheme="${without_scheme%%\\*}"
+
     printf '%s\n' "${without_scheme%%/*}"
 }
 
@@ -868,6 +874,16 @@ esac
 case "$(url_authority_raw)" in
     *@*)
         echo "--app-url must not include credentials." >&2
+        exit 1
+        ;;
+esac
+
+# Parsed correctly above, but still refused: a backslash in a URL is a typo
+# worth naming rather than silently reinterpreting, and APP_URL feeds every
+# generated link.
+case "$APP_URL" in
+    *\\*)
+        echo '--app-url must use / rather than \ as a path separator.' >&2
         exit 1
         ;;
 esac
