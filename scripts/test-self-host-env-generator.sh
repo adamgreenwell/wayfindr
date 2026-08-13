@@ -114,6 +114,29 @@ generate_for "https://wayfindr.localhost"
 expect_env 'WAYFINDR_PUBLIC_HTTPS_BIND=127.0.0.1:443'
 expect_env 'CADDY_SERVER_EXTRA_DIRECTIVES=tls internal'
 
+# DNS is case-insensitive; shell globs are not. Failing to fold the case
+# published the plain-HTTP service on every interface for the one input that
+# most clearly means "this machine only" -- the classification failing open.
+generate_for "http://LOCALHOST"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
+generate_for "http://wayfindr.LOCALHOST"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:80'
+
+# ::1 spelled out in full is the same address, and an exact-string match let it
+# fall through to an all-interfaces bind.
+generate_for "http://[0:0:0:0:0:0:0:1]"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=[0:0:0:0:0:0:0:1]:80'
+
+# The protocol that is NOT serving still gets published, because compose.yml
+# maps both -- so its fallback port has to dodge the operator's port too, or
+# Compose refuses the whole stack over a duplicate publish.
+generate_for "https://wayfindr.local:18080"
+expect_env 'WAYFINDR_PUBLIC_HTTPS_BIND=18080'
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=127.0.0.1:18081'
+generate_for "http://192.168.10.9:18443"
+expect_env 'WAYFINDR_PUBLIC_HTTP_BIND=18443'
+expect_env 'WAYFINDR_PUBLIC_HTTPS_BIND=127.0.0.1:18444'
+
 # A real domain must still go to a public CA, on the only port ACME validates.
 generate_for "https://support.example.com"
 expect_env 'CADDY_SERVER_EXTRA_DIRECTIVES='

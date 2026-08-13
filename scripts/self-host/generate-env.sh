@@ -117,15 +117,53 @@ url_port() {
     fi
 }
 
-# Brackets belong in a URL and in a Caddy site address, but never in a
-# comparison against a bare address.
+# The comparison copy of a host: brackets stripped and folded to lower case.
+#
+# Brackets belong in a URL and in a Caddy site address but never in a match
+# against a bare address. Case matters because DNS is case-INsensitive while
+# shell globs are not: `http://LOCALHOST` is the same host as `localhost`, and
+# failing to match it published the plain-HTTP service on every interface --
+# the classification failing open, on the one input that most clearly means
+# "this machine only".
 bare_host() {
     local host="$1"
 
     host="${host#"["}"
     host="${host%"]"}"
 
-    printf '%s\n' "$host"
+    printf '%s' "$host" | tr 'A-Z' 'a-z'
+    printf '\n'
+}
+
+# Whether an IPv6 address is ::1, however it happens to be spelled.
+#
+# `0:0:0:0:0:0:0:1` and `0000:...:0001` are the same address as `::1`, and an
+# exact-string check let them fall through to a public bind. Rather than
+# implement IPv6 canonicalisation in shell, this asks the only question that
+# matters: is the final group 1, and is everything before it zeros?
+#
+# The final-group test is what keeps `1::` (a real, non-loopback address that
+# is all zeros and a one) from matching -- its last group is empty, not 1.
+ipv6_is_loopback() {
+    local addr head last
+
+    addr="$1"
+    last="${addr##*:}"
+    head="${addr%:*}"
+
+    case "$last" in
+        1|01|001|0001) ;;
+        *) return 1 ;;
+    esac
+
+    # Zeros and colons only. Rejects an empty head, so a bare "1" -- which has
+    # no colon and so survives the strip unchanged -- is not read as an address.
+    case "$head" in
+        "") return 1 ;;
+        *[!0:]*) return 1 ;;
+    esac
+
+    return 0
 }
 
 # Whether this host can only ever mean "this machine", which is what decides
@@ -146,8 +184,9 @@ host_is_loopback() {
     host="$(bare_host "$1")"
 
     case "$host" in
-        localhost|*.localhost|::1) return 0 ;;
+        localhost|*.localhost) return 0 ;;
         127.*) host_is_ip_literal "$host" ;;
+        *:*) ipv6_is_loopback "$host" ;;
         *) return 1 ;;
     esac
 }
@@ -194,6 +233,36 @@ host_is_internal() {
         *.*) return 1 ;;
         *) return 0 ;;
     esac
+}
+
+# A loopback port for the protocol that is NOT serving, chosen clear of the
+# ports already claimed.
+#
+# compose.yml maps both protocols unconditionally, so the inactive one still
+# has to be published somewhere -- and Compose refuses the entire stack over a
+# duplicate host port. Handing back a fixed 18080/18443 meant
+# `--app-url https://wayfindr.local:18080` claimed 18080 twice and could not
+# start at all. Preference order keeps the familiar port when nothing collides.
+pick_spare_port() {
+    local preferred="$1"
+    shift
+
+    local claimed=" $* "
+    local candidate offset
+
+    for offset in 0 1 2 3; do
+        candidate=$((preferred + offset))
+
+        case "$claimed" in
+            *" $candidate "*) continue ;;
+        esac
+
+        printf '%s\n' "$candidate"
+        return 0
+    done
+
+    echo "Could not place the unused $preferred bind clear of$claimed. Choose a different --app-url port." >&2
+    exit 1
 }
 
 # Accept a bare host and infer the scheme, then say which one was chosen.
@@ -372,7 +441,7 @@ elif [ "$SCHEME" = "https" ]; then
         # A custom HTTPS port means something already owns 443 on this
         # machine; claiming 80 as well would be a second collision nobody
         # asked for. An internal certificate needs no challenge on it.
-        HTTP_BIND="127.0.0.1:18080"
+        HTTP_BIND="127.0.0.1:$(pick_spare_port 18080 "$PUBLIC_PORT")"
     fi
 
     if [ "$INTERNAL_CERT" = "1" ]; then
@@ -389,7 +458,7 @@ elif [ "$SCHEME" = "https" ]; then
 else
     SERVER_NAME=":80"
     HTTP_BIND="${BIND_PREFIX}${PUBLIC_PORT}"
-    HTTPS_BIND="127.0.0.1:18443"
+    HTTPS_BIND="127.0.0.1:$(pick_spare_port 18443 "$PUBLIC_PORT")"
 fi
 
 # The always-on loopback ops site -- health probes, and the upstream a
