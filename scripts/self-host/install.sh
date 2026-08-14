@@ -37,8 +37,13 @@ Usage:
   install.sh --upgrade [--dir <path>]
 
 Options:
-  --app-url <url>   Public URL (https://support.example.com for automatic TLS,
-                    http://... for smoke tests or behind your own proxy).
+  --app-url <url>   Public URL, or a bare host. A real domain gets a public
+                    certificate on 443. Hosts no public CA can issue for
+                    (localhost, IP literals, .local/.localhost/.internal/
+                    .home.arpa/.test, single-label names) get a locally-issued
+                    one, on whatever port the URL names -- so
+                    https://localhost:2345 works. Without a scheme, loopback
+                    assumes http:// and everything else https://.
   --dir <path>      Install directory. Defaults to ./wayfindr.
   --mail-from <a>   Mail from address placeholder. Defaults to support@example.com.
   --behind-proxy    Your own reverse proxy terminates TLS; every bind stays on
@@ -166,6 +171,20 @@ report_notices() {
 say() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
+# The value for an option that takes one, or a clear failure.
+#
+# `--app-url --upgrade` would otherwise consume the flag as the URL and
+# silently discard it, and a value-taking option in LAST position made the
+# bare `shift 2` abort under `set -e` with no message at all. generate-env.sh
+# carries the same guard: both are documented entry points.
+option_value() {
+    case "${2:-}" in
+        ''|-*) die "$1 needs a value." ;;
+    esac
+
+    printf '%s\n' "$2"
+}
+
 # The parse loop below consumes $@ with `shift`, so the hand-off would have
 # nothing left to replay. Capture the operator's arguments first — losing --dir
 # would silently upgrade a different install than the one they asked for.
@@ -173,12 +192,12 @@ WAYFINDR_ORIGINAL_ARGS=("$@")
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        --app-url) APP_URL="${2:-}"; shift 2 ;;
-        --dir) TARGET_DIR="${2:-}"; shift 2 ;;
-        --mail-from) MAIL_FROM="${2:-}"; shift 2 ;;
+        --app-url) APP_URL="$(option_value "--app-url" "${2:-}")"; shift 2 ;;
+        --dir) TARGET_DIR="$(option_value "--dir" "${2:-}")"; shift 2 ;;
+        --mail-from) MAIL_FROM="$(option_value "--mail-from" "${2:-}")"; shift 2 ;;
         --behind-proxy) BEHIND_PROXY=1; shift ;;
-        --ref) REF="${2:-}"; shift 2 ;;
-        --source-dir) SOURCE_DIR="${2:-}"; shift 2 ;;
+        --ref) REF="$(option_value "--ref" "${2:-}")"; shift 2 ;;
+        --source-dir) SOURCE_DIR="$(option_value "--source-dir" "${2:-}")"; shift 2 ;;
         --upgrade) UPGRADE=1; shift ;;
         --no-start) NO_START=1; shift ;;
         -h|--help) usage; exit 0 ;;
@@ -1507,9 +1526,20 @@ fi
 
 [ -n "$APP_URL" ] || die "--app-url is required, e.g. --app-url https://support.example.com"
 
+# Which hosts get which certificate, and what a bare host infers, live in
+# generate-env.sh and ONLY there -- that script has to agree with the binds,
+# SERVER_NAME, and Reverb values it writes from the same URL, and a second
+# copy of those rules here is exactly how the installer ends up printing a URL
+# the stack does not serve.
+#
+# What is worth catching early is only what cannot become valid either way: a
+# scheme this stack will never speak, and whitespace that would have split the
+# argument before either script saw it. A bare host falls through on purpose.
+# Failing here saves downloading the whole stack first.
 case "$APP_URL" in
+    *[[:space:]]*) die "--app-url must not contain whitespace: $APP_URL" ;;
     http://*|https://*) ;;
-    *) die "--app-url must start with http:// or https://" ;;
+    *://*) die "--app-url supports http:// and https:// only: $APP_URL" ;;
 esac
 
 mkdir -p "$TARGET_DIR"
@@ -1527,9 +1557,23 @@ else
     say "Generating $ENV_FILE with fresh secrets."
     generate_args=(--app-url "$APP_URL" --mail-from "$MAIL_FROM" --output "$ENV_FILE")
     [ "$BEHIND_PROXY" = "1" ] && generate_args+=(--behind-proxy)
+    # stdout is the generator's own "next steps" summary, which this script
+    # replaces with a tailored one below. Its stderr (the inferred-scheme
+    # notice) is deliberately left to pass through.
     "$TARGET_DIR/generate-env.sh" "${generate_args[@]}" >/dev/null
     pin_image
 fi
+
+# Read back what was WRITTEN rather than trusting the flag that was passed.
+#
+# Two ways they differ, both of which end with an operator at a dead URL. The
+# generator infers a scheme for a bare host, so `--app-url localhost` becomes
+# http://localhost on disk. And a re-run over an existing env keeps the
+# ORIGINAL URL by design (secrets are preserved, so the whole file is) while
+# --app-url is silently ignored -- printing the flag would send them to a URL
+# this stack has never served.
+APP_URL="$(env_value APP_URL)"
+[ -n "$APP_URL" ] || die "The environment file at $ENV_FILE has no APP_URL."
 
 if [ "$NO_START" = "1" ]; then
     say "Stack prepared in $TARGET_DIR (not started, per --no-start)."
@@ -1569,3 +1613,42 @@ cat <<DONE
   Readiness checks live at $APP_URL/dashboard/readiness after you sign in.
 
 DONE
+
+# The proxy upstream is PRINTED rather than left to the documentation, because
+# it is no longer always 127.0.0.1:8000. When the operator's own port collides
+# with the ops site -- `--behind-proxy` with https://host:8000 -- the ops site
+# moves, and a proxy pointed at the documented 8000 would be aimed at its own
+# public listener, which loops or 502s. The env file is the truth; this reads
+# it back rather than restating a constant.
+if [ "$(env_value TRUSTED_PROXIES)" = "*" ]; then
+    cat <<PROXY
+  Point your reverse proxy at:  $LOCAL_URL
+
+  That is WAYFINDR_LOCAL_BIND in the environment file, and it is NOT always
+  127.0.0.1:8000 -- it moves when your own public port would collide with it.
+  Websockets are routed internally, so this single upstream covers the
+  application and realtime together.
+
+PROXY
+fi
+
+# A locally-issued certificate is a certificate, not a warning to click past —
+# but only once its root is trusted, and nothing else in this output would
+# explain why the first visit to a working install looks broken.
+case "$(env_value CADDY_SERVER_EXTRA_DIRECTIVES)" in
+    *"tls internal"*)
+        cat <<CERT
+  No public certificate authority can issue for this host, so Caddy signed
+  with its own. Until that root is trusted, browsers will warn. Export it:
+
+    docker compose -f $COMPOSE_FILE --env-file $ENV_FILE \\
+      cp web:/data/caddy/pki/authorities/local/root.crt ./wayfindr-local-ca.crt
+
+  Then add wayfindr-local-ca.crt to the trust store of every machine that
+  browses here (macOS: Keychain Access > System > drag in > Always Trust.
+  Debian/Ubuntu: copy to /usr/local/share/ca-certificates/ and run
+  update-ca-certificates).
+
+CERT
+        ;;
+esac

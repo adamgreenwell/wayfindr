@@ -32,6 +32,7 @@ Use it with the runtime contract in
 | `SERVER_NAME`         | Behavior                                                                                          |
 | --------------------- | ------------------------------------------------------------------------------------------------- |
 | `support.example.com` | FrankenPHP binds 80/443 and obtains + renews Let's Encrypt certificates automatically.             |
+| `localhost`           | Same, but Caddy signs with its own CA (`tls internal`) — no public CA can issue for this name.     |
 | `:80` (default)       | Plain HTTP — for smoke tests or an operator-managed reverse proxy.                                 |
 
 A loopback ops site on `:8000` exists in **every** mode: health probes and
@@ -40,12 +41,41 @@ container health.
 
 `generate-env.sh` picks the mode from the `--app-url` scheme and the
 `--behind-proxy` flag: an `https://` URL alone sets `SERVER_NAME` to the
-hostname and publishes 80/443; adding `--behind-proxy` keeps every bind on
-loopback while `APP_URL`, cookies, and the browser websocket values stay
-https, and sets `TRUSTED_PROXIES` so Laravel honors your proxy's
-`X-Forwarded-*` headers. Point the proxy at `127.0.0.1:8000` — the in-stack
-Caddy still routes `/app` and `/apps` to Reverb, so one upstream covers the
-app and websockets.
+hostname and publishes the URL's port; adding `--behind-proxy` keeps every
+bind on loopback while `APP_URL`, cookies, and the browser websocket values
+stay https, and sets `TRUSTED_PROXIES` so Laravel honors your proxy's
+`X-Forwarded-*` headers. Point the proxy at whatever `WAYFINDR_LOCAL_BIND`
+says in the generated env — usually `127.0.0.1:8000`, but it moves if your own
+public port would otherwise collide with it. The in-stack Caddy still routes
+`/app` and `/apps` to Reverb, so one upstream covers the app and websockets.
+
+**The URL's port is the port that serves.** The container always listens on
+80/443; the port from `--app-url` lives on the host side of the publish, so
+`https://localhost:2345` publishes `127.0.0.1:2345 -> 443`. A certificate
+covers a hostname and not a port, so SNI still matches on the way through and
+`SERVER_NAME` stays portless.
+
+### Locally-issued certificates
+
+Hosts no public certificate authority can issue for get one from Caddy's own
+CA instead of an ACME challenge that could only fail: `localhost`, IP
+literals, the RFC-reserved suffixes (`.localhost`, `.local`, `.internal`,
+`.home.arpa`, `.test`, `.example`, `.invalid`), and any single-label name.
+`generate-env.sh` writes `CADDY_SERVER_EXTRA_DIRECTIVES=tls internal` and
+`CADDY_GLOBAL_OPTIONS=skip_install_trust` for those, so the decision is
+visible in the env file rather than left to Caddy's own classification.
+
+Because ACME never runs for them, these are **not** limited to port 443 the
+way a publicly-issued certificate is. Browsers will warn until the CA root is
+trusted on each machine that browses there:
+
+```bash
+docker compose -f docker/self-hosting/compose.yml --env-file docker/self-hosting/.env \
+  cp web:/data/caddy/pki/authorities/local/root.crt ./wayfindr-local-ca.crt
+```
+
+The root lives in the `wayfindr-caddy-data` volume, so it survives recreates
+and only has to be trusted once per client machine.
 
 ## Quick start
 

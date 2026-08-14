@@ -19,6 +19,8 @@ Wayfindr with real visitors.
 - A few GB of disk for images, the database, and attachments.
 - For automatic HTTPS: a **DNS record** for your support hostname pointing
   at the machine, with ports **80 and 443** free.
+- For a local or internal install, none of that — `localhost`, an IP, or a
+  `.local`/`.internal` name works, on whatever port you pick.
 
 ## Path 1: the one-line installer
 
@@ -50,11 +52,51 @@ curl -fsSL https://raw.githubusercontent.com/adamgreenwell/wayfindr/main/scripts
   | bash -s -- --app-url https://support.example.com --behind-proxy
 ```
 
-Every port then binds to loopback and your proxy points at
-`127.0.0.1:8000` (websockets are routed internally, so that single
-upstream is enough), while URLs, secure cookies, and browser websockets
-stay https and the stack honors your proxy's `X-Forwarded-*` headers.
-Plain `http://` URLs are for local smoke tests only.
+Every port then binds to loopback and your proxy points at the value of
+**`WAYFINDR_LOCAL_BIND`** in the generated env file — usually
+`127.0.0.1:8000`, but it moves if your own public port would collide with
+it, and the installer prints the address to use. Websockets are routed
+internally, so that single upstream is enough. URLs, secure cookies, and
+browser websockets stay https, and the stack honors your proxy's
+`X-Forwarded-*` headers.
+
+### Installing on localhost or an internal network
+
+The URL you give is the URL that serves — including its port. A bare host
+works too, and the installer prints the URL it settled on:
+
+```bash
+./install.sh --app-url localhost                  # http://localhost
+./install.sh --app-url https://localhost:2345     # TLS on 2345
+./install.sh --app-url https://wayfindr.local     # TLS on your LAN
+```
+
+Loopback hosts (`localhost`, `127.0.0.1`, `::1`) infer `http://` and publish
+**only on loopback** — nothing is exposed to your network. Every other host
+infers `https://` and publishes on all interfaces, as its URL implies.
+
+No public certificate authority can issue for `localhost`, an IP address, or
+a `.local`/`.internal`/`.test` name, so Caddy signs those with its own CA
+during install rather than attempting an ACME challenge that could only fail.
+That also means they are not restricted to port 443 the way a public
+certificate is — any port you name works.
+
+Browsers will warn until that CA root is trusted. The installer prints the
+export command when it applies:
+
+```bash
+docker compose -f ./wayfindr/compose.yml --env-file ./wayfindr/.env \
+  cp web:/data/caddy/pki/authorities/local/root.crt ./wayfindr-local-ca.crt
+```
+
+Add `wayfindr-local-ca.crt` to the trust store of each machine that browses
+there — on macOS via Keychain Access (System → drag in → Always Trust), on
+Debian/Ubuntu by copying it to `/usr/local/share/ca-certificates/` and
+running `update-ca-certificates`. The root lives in a Docker volume, so it
+survives upgrades and only needs trusting once per client machine.
+
+DNS for a `.local` name is still yours to arrange (mDNS or a hosts entry) —
+the certificate does not make the name resolve.
 
 ## Path 2: Docker Compose by hand
 
