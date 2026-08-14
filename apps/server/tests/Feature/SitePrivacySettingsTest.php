@@ -130,7 +130,11 @@ test('site install snippet includes public reverb configuration when realtime is
     $this->actingAs($agent)
         ->get("/dashboard/sites/{$site->id}")
         ->assertOk()
-        ->assertSee('src=&quot;https://js.pusher.com/8.3.0/pusher.min.js&quot;', false)
+        // The snippet a customer pastes loads ONE script, from the Wayfindr
+        // host. The realtime library used to come from js.pusher.com, which
+        // broke air-gapped installs and strict-CSP host pages, and sent every
+        // visitor's browser to a third party (issue #714).
+        ->assertDontSee('js.pusher.com')
         ->assertSee('src=&quot;https://support.example.test/widget.js&quot;', false)
         ->assertSee('data-wayfindr-api-base-url=&quot;https://support.example.test&quot;', false)
         ->assertSee('data-wayfindr-site-key=&quot;site_public_docs&quot;', false)

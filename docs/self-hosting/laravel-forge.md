@@ -513,12 +513,13 @@ location /apps {
 If the WebSocket host differs from `APP_URL`, make sure that hostname has TLS
 before testing from an external smoke site.
 
-The widget needs the public Reverb connection settings plus `pusher-js` on the
-host page. The dashboard-generated site install snippet includes these values
-automatically when Reverb is configured. Manually, the shape looks like this:
+The widget needs the public Reverb connection settings on the host page. The
+realtime library is served inside `widget.js` itself, so nothing else has to be
+loaded and nothing outside your own host has to be allowlisted. The
+dashboard-generated site install snippet fills these values in automatically
+when Reverb is configured. Manually, the shape looks like this:
 
 ```html
-<script src="https://js.pusher.com/8.3.0/pusher.min.js"></script>
 <script
   src="https://replace-with-forge-site-host/widget.js"
   data-wayfindr-api-base-url="https://replace-with-forge-site-host"

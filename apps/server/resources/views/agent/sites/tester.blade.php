@@ -98,9 +98,7 @@
                 </form>
             </section>
 
-            @if ($widgetReverbConfig)
-                <script src="https://js.pusher.com/8.3.0/pusher.min.js"></script>
-            @endif
+            {{-- widget.js carries the realtime library itself (issue #714). --}}
             <script src="{{ $widgetBaseUrl }}/widget.js"></script>
             <script>
                 (function () {

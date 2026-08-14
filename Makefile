@@ -43,6 +43,7 @@ self-host-test: php-version-test
 	scripts/test-self-host-compose-template.sh
 	scripts/test-self-host-env-value.sh
 	scripts/test-self-host-classification.sh
+	scripts/test-widget-bundle.sh
 
 public-artifact-install-test:
 	scripts/smoke/public-artifact-install.sh
