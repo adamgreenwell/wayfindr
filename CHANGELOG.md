@@ -32,6 +32,68 @@ missed while skimming.
 
 No unreleased changes yet.
 
+## [0.4.0] - 2026-08-14
+
+**No operator action required.** Pull, restart, and migrations run themselves.
+
+Existing installs are untouched. The environment file is preserved whenever
+the installer re-runs, so an install that is already serving keeps the URL,
+the published ports, and the certificate arrangement it was set up with.
+Everything below applies to installs created from here on.
+
+### Added
+
+- **Local and internal hostnames are supported install targets.** Hosts that
+  no public certificate authority can issue for now receive a certificate
+  from Caddy's own CA instead of attempting an ACME challenge that could only
+  fail: `localhost`, IP addresses, the reserved suffixes (`.localhost`,
+  `.local`, `.internal`, `.home.arpa`, `.test`, `.example`, `.invalid`,
+  `.onion`, `.alt`), and any single-label name. Because no challenge is
+  involved these are **not** restricted to port 443 the way a publicly-issued
+  certificate is, so `https://localhost:2345` is a valid install URL.
+
+  Browsers warn until that CA root is trusted. The installer prints the
+  command that exports it when it applies, and
+  [docs/self-hosting/install.md](docs/self-hosting/install.md) covers adding
+  it to a trust store. The root lives in a Docker volume, so it survives
+  upgrades and only needs trusting once per client machine.
+
+- **`--app-url` accepts a bare host** and infers the scheme: loopback hosts
+  become `http://`, everything else `https://`. The URL it settled on is
+  printed rather than assumed silently, so `--app-url localhost` works and
+  says what it did.
+
+### Fixed
+
+- **The URL given to `--app-url` is now the URL the stack serves**, including
+  its port. Plain-HTTP installs previously published on a hardcoded
+  `127.0.0.1:18080` whatever the URL said, so `--app-url http://localhost`
+  reported a successful install and printed a `/setup` link on a port nothing
+  was listening on. The URL's port now drives the published port, and its
+  host decides the interface: loopback publishes on loopback only, any other
+  host on all interfaces, as its URL implies.
+- **`--app-url localhost` is accepted.** It was previously rejected outright
+  for having no scheme.
+- **`--behind-proxy` no longer claims the port it tells you your proxy owns.**
+  With a custom public port matching one of the stack's internal loopback
+  ports, the stack published that port itself, so a proxy binding all
+  interfaces could not take it. ⚠ If you run behind your own proxy, point it
+  at the value of **`WAYFINDR_LOCAL_BIND`** in your environment file rather
+  than assuming `127.0.0.1:8000` — it is usually that, but it moves when your
+  own public port would collide with it, and the installer now prints the
+  address to use. Existing installs keep whatever value they already have.
+- **The installer reports the URL recorded in the environment file** rather
+  than the one passed on the command line. Re-running an existing install
+  with a different `--app-url` previously printed the new URL while the stack
+  carried on serving the original one.
+- **Malformed URLs are refused instead of producing a broken install.**
+  Addresses that no client will open (`1.2.3.256`, `[1::2::3]`,
+  `http://localhost:80:90`), hosts containing characters a hostname may not
+  contain, names with labels beyond the DNS length limits, embedded
+  credentials, and query strings or fragments were all previously accepted:
+  the stack started, the health check passed, and the operator was handed a
+  setup URL that could not be opened.
+
 ## [0.3.2] - 2026-08-11
 
 **No operator action required.** Pull, restart, and migrations run themselves.
