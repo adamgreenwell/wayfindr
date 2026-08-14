@@ -115,13 +115,22 @@ expect_env 'CADDY_GLOBAL_OPTIONS_EXTRA=default_sni 127.0.0.1'
 generate_for "https://[::1]:8443"
 expect_env 'CADDY_GLOBAL_OPTIONS_EXTRA=default_sni ::1'
 
-# Names do not: browsers send SNI for them, and setting a default would mask
-# a genuine mismatch rather than fix one.
+# Names get one too. They do not need it -- browsers send SNI for them -- but
+# ONE rule is migratable and two are not: install.sh must add this key to
+# environments generated before it existed, and "whichever hosts are IP
+# literals" would mean a second copy of address classification living there.
+# The cost is nil, since default_sni applies only to connections that send no
+# SNI at all.
 generate_for "https://localhost:2345"
-expect_env 'CADDY_GLOBAL_OPTIONS_EXTRA='
+expect_env 'CADDY_GLOBAL_OPTIONS_EXTRA=default_sni localhost'
 generate_for "https://wayfindr.local"
-expect_env 'CADDY_GLOBAL_OPTIONS_EXTRA='
+expect_env 'CADDY_GLOBAL_OPTIONS_EXTRA=default_sni wayfindr.local'
+
+# A PUBLIC certificate gets nothing: those installs are the highest-stakes
+# ones and there is no no-SNI case to serve.
 generate_for "https://support.example.com"
+expect_env 'CADDY_GLOBAL_OPTIONS_EXTRA='
+generate_for "http://localhost"
 expect_env 'CADDY_GLOBAL_OPTIONS_EXTRA='
 
 # "127." has to match an ADDRESS, not a prefix. DNS labels may begin with a
