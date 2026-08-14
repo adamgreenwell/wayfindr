@@ -1355,6 +1355,7 @@ REVERB_PORT="$PUBLIC_PORT"
 # the public port and obtains certificates itself.
 TRUSTED_PROXIES=""
 CADDY_GLOBAL_OPTIONS=""
+CADDY_GLOBAL_OPTIONS_EXTRA=""
 CADDY_SERVER_EXTRA_DIRECTIVES=""
 INTERNAL_CERT=0
 
@@ -1443,6 +1444,26 @@ elif [ "$SCHEME" = "https" ]; then
         # real error in the logs.
         CADDY_SERVER_EXTRA_DIRECTIVES="tls internal"
         CADDY_GLOBAL_OPTIONS="skip_install_trust"
+
+        # A default SNI, for EVERY locally-issued certificate rather than only
+        # the IP addresses that strictly need one.
+        #
+        # An IP address needs it: a client connecting to one sends NO SNI (RFC
+        # 6066 forbids IP literals in it), so Caddy has no name to select a
+        # certificate by and aborts the handshake with an internal error,
+        # which browsers report as ERR_SSL_PROTOCOL_ERROR. The certificate is
+        # obtained successfully and never served, which is why the logs look
+        # healthy.
+        #
+        # A name does not need it, and gets it anyway, because ONE rule is
+        # migratable and two are not: install.sh has to add this key to
+        # environments generated before it existed, and "whichever hosts are
+        # IP literals" would mean reimplementing address classification there
+        # -- a second copy of a rule this file has already needed several
+        # attempts to get right. The cost is nil: default_sni applies only to
+        # connections that send no SNI, so for a name it changes nothing a
+        # browser does, and a mismatched SNI still fails to match as before.
+        CADDY_GLOBAL_OPTIONS_EXTRA="default_sni $(bare_host "$HOST")"
     fi
 else
     SERVER_NAME=":80"
@@ -1489,6 +1510,7 @@ WAYFINDR_LOCAL_BIND=$LOCAL_BIND
 # is one no public CA can issue for, so Caddy signs with its own CA -- the
 # root has to be trusted on each machine that browses here.
 CADDY_GLOBAL_OPTIONS=$CADDY_GLOBAL_OPTIONS
+CADDY_GLOBAL_OPTIONS_EXTRA=$CADDY_GLOBAL_OPTIONS_EXTRA
 CADDY_SERVER_EXTRA_DIRECTIVES=$CADDY_SERVER_EXTRA_DIRECTIVES
 WAYFINDR_PHP_VERSION=8.4
 WAYFINDR_NODE_VERSION=24
@@ -1570,8 +1592,7 @@ No public certificate authority can issue for $HOST, so Caddy signs with its
 own CA. Browsers will warn until that root is trusted. Once the stack is up,
 export it and add it to the trust store of each machine that browses here:
 
-  docker compose -f docker/self-hosting/compose.yml --env-file $OUTPUT_FILE \\
-    cp web:/data/caddy/pki/authorities/local/root.crt ./wayfindr-local-ca.crt
+  docker compose -f docker/self-hosting/compose.yml --env-file $OUTPUT_FILE cp web:/data/caddy/pki/authorities/local/root.crt ./wayfindr-local-ca.crt
 EOF
 fi
 

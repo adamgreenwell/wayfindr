@@ -85,8 +85,7 @@ Browsers will warn until that CA root is trusted. The installer prints the
 export command when it applies:
 
 ```bash
-docker compose -f ./wayfindr/compose.yml --env-file ./wayfindr/.env \
-  cp web:/data/caddy/pki/authorities/local/root.crt ./wayfindr-local-ca.crt
+cd ./wayfindr && docker compose -f compose.yml --env-file .env cp web:/data/caddy/pki/authorities/local/root.crt ./wayfindr-local-ca.crt
 ```
 
 Add `wayfindr-local-ca.crt` to the trust store of each machine that browses
