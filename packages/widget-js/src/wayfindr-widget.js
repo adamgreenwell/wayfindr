@@ -2315,6 +2315,15 @@
         var scheme = reverb.scheme || 'https';
         var port = reverb.port || (scheme === 'https' ? 443 : 80);
         var pusher = new Pusher(reverb.appKey, {
+          // pusher-js demands a cluster even when wsHost names the server
+          // outright, and throws "Options object must provide a cluster"
+          // without one -- so every widget realtime connection was failing at
+          // construction, on every install, whatever the host.
+          //
+          // The value is unused here: a cluster only picks Pusher's own hosted
+          // endpoint, which wsHost replaces. An empty string satisfies the
+          // check and is what Laravel Echo passes for a self-hosted Reverb.
+          cluster: reverb.cluster || '',
           wsHost: reverb.host,
           wsPort: reverb.wsPort || port,
           wssPort: reverb.wssPort || port,
