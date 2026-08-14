@@ -32,6 +32,20 @@ missed while skimming.
 
 No unreleased changes yet.
 
+## [0.4.3] - 2026-08-14
+
+**No operator action required.** Pull, restart, and migrations run themselves.
+
+### Fixed
+
+- **The widget's live updates now connect.** They never did: the realtime
+  client requires a `cluster` setting even when the server address is given
+  outright, and without one it failed while being created — on every install,
+  whatever the address. Visitors fell back to polling for new messages, so
+  replies arrived within a few seconds rather than instantly, and typing
+  indicators never appeared at all. Nothing reported it, because the failure
+  was swallowed silently until 0.4.2 began logging it.
+
 ## [0.4.2] - 2026-08-14
 
 **No operator action required.** Pull, restart, and migrations run themselves.
