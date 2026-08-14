@@ -32,6 +32,29 @@ missed while skimming.
 
 No unreleased changes yet.
 
+## [0.4.2] - 2026-08-14
+
+**No operator action required.** Pull, restart, and migrations run themselves.
+
+### Fixed
+
+- **A visitor's message is no longer reported as failed after it was
+  delivered.** If the widget's realtime connection threw while starting up,
+  the composer reported "Message could not be sent" for a message the server
+  had already accepted and stored. Visitors retried, sending a duplicate that
+  also succeeded and also reported failure. Only a genuinely rejected send is
+  reported as one now.
+- **An agent's reply reaches the widget even when realtime is unavailable.**
+  The message poll that exists as the fallback for realtime was scheduled
+  after the realtime connection in the same unguarded sequence, so a fault
+  there removed the fallback along with it — leaving a visitor no route at
+  all for a reply. Realtime setup is now isolated and the poll always runs, so
+  a reply arrives within a few seconds regardless.
+- **Faults inside the widget are written to the browser console.** They were
+  caught deliberately, so a visitor never sees a stack trace over a chat box,
+  but they were caught *silently* — leaving nothing to diagnose from. They now
+  log what failed while the visitor-facing behaviour stays unchanged.
+
 ## [0.4.1] - 2026-08-14
 
 **No operator action required.** Pull, restart, and migrations run themselves.
