@@ -42,6 +42,26 @@ fi
 grep -q 'COPY packages/widget-js/vendor' "$DOCKERFILE" \
     || fail "server.Dockerfile does not stage packages/widget-js/vendor, so the released image would serve the widget without its realtime client."
 
+# ...and the context must actually contain it. `**/vendor` in .dockerignore
+# exists to keep composer trees out, and also catches this directory: with it
+# ignored, BuildKit cannot checksum the COPY source and EVERY image build
+# fails with "packages/widget-js/vendor: not found".
+#
+# Checking the COPY line alone was not enough -- that check passed while the
+# build was broken. Order matters too, because a later .dockerignore rule wins,
+# so the negation has to come after the pattern it is overriding.
+DOCKERIGNORE="$ROOT_DIR/.dockerignore"
+[ -f "$DOCKERIGNORE" ] || fail "No .dockerignore at $DOCKERIGNORE."
+
+ignore_line="$(grep -nxF '**/vendor' "$DOCKERIGNORE" | head -1 | cut -d: -f1 || true)"
+unignore_line="$(grep -nxF '!packages/widget-js/vendor' "$DOCKERIGNORE" | head -1 | cut -d: -f1 || true)"
+
+if [ -n "$ignore_line" ]; then
+    [ -n "$unignore_line" ] || fail ".dockerignore excludes packages/widget-js/vendor via '**/vendor' and never unignores it, so every self-hosting image build fails on the COPY."
+    [ "$unignore_line" -gt "$ignore_line" ] \
+        || fail ".dockerignore unignores packages/widget-js/vendor on line $unignore_line, BEFORE the '**/vendor' rule on line $ignore_line. A later rule wins, so the directory is still excluded."
+fi
+
 # No path may reintroduce the third-party fetch.
 if grep -rn 'js\.pusher\.com' \
     "$ROOT_DIR/apps/server/app" \

@@ -9,6 +9,13 @@
 **/.phpunit.result.cache
 **/node_modules
 **/vendor
+# ...except the widget's, which is SHIPPED code rather than installed
+# dependencies. `**/vendor` exists to keep composer trees out of the context;
+# it also caught packages/widget-js/vendor, which holds the realtime client
+# the image must carry. Without this the COPY has no source and every
+# self-hosting image build fails.
+!packages/widget-js/vendor
+!packages/widget-js/vendor/**
 
 apps/server/bootstrap/cache/*.php
 apps/server/database/database.sqlite
