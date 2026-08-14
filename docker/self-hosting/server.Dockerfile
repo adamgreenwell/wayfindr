@@ -170,6 +170,11 @@ RUN cp /app/releases/history.json /etc/wayfindr/release-history.json \
         --history=/etc/wayfindr/release-history.json \
     && rm -rf /app/release.json /app/releases /app/scripts
 COPY packages/widget-js/src /app/packages/widget-js/src
+# The realtime library ships INSIDE the image. Omitting it would not fail the
+# build: the widget would simply be served without realtime, on an install
+# whose config says realtime is on -- the exact silent degradation issue #714
+# exists to end.
+COPY packages/widget-js/vendor /app/packages/widget-js/vendor
 COPY docker/self-hosting/Caddyfile /etc/frankenphp/Caddyfile
 COPY docker/self-hosting/docker-entrypoint.sh /usr/local/bin/wayfindr-entrypoint
 

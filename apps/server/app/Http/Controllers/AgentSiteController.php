@@ -15,6 +15,7 @@ use App\Support\ExternalIssueSyncStatus;
 use App\Support\OperatorReadiness;
 use App\Support\SiteInstallHealth;
 use App\Support\TicketExternalIssueState;
+use App\Support\WidgetRealtimeConfig;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -171,7 +172,7 @@ class AgentSiteController extends Controller
             'site' => $site,
             'testerAnonymousId' => "tester-site-{$site->id}-agent-{$request->user()->id}",
             'widgetBaseUrl' => $this->widgetBaseUrl(),
-            'widgetReverbConfig' => $this->publicReverbConfig(),
+            'widgetReverbConfig' => WidgetRealtimeConfig::public(),
         ]);
     }
 
@@ -1007,11 +1008,14 @@ class AgentSiteController extends Controller
             'data-wayfindr-site-key' => $site->public_key,
         ];
 
-        $reverb = $this->publicReverbConfig();
+        $reverb = WidgetRealtimeConfig::public();
         $lines = [];
 
         if ($reverb !== null) {
-            $lines[] = '<script src="https://js.pusher.com/8.3.0/pusher.min.js"></script>';
+            // No CDN tag: widget.js carries the realtime library itself, so
+            // the snippet a customer pastes into their page loads one script,
+            // from one origin, and needs nothing allowlisted beyond the
+            // Wayfindr host (issue #714).
             $attributes = [
                 ...$attributes,
                 'data-wayfindr-reverb-app-key' => $reverb['app_key'],
@@ -1040,39 +1044,6 @@ class AgentSiteController extends Controller
     /**
      * @return array{app_key: string, host: string, port: string, scheme: string}|null
      */
-    private function publicReverbConfig(): ?array
-    {
-        if ((string) config('broadcasting.default') !== 'reverb') {
-            return null;
-        }
-
-        $appKey = config('broadcasting.connections.reverb.key');
-        // Browser-facing values: in containerized installs the server-side
-        // host is an internal service address the browser cannot reach.
-        // Single-endpoint deployments set no client_* values and fall back.
-        $host = config('broadcasting.connections.reverb.options.client_host')
-            ?? config('broadcasting.connections.reverb.options.host');
-        $port = config('broadcasting.connections.reverb.options.client_port')
-            ?? config('broadcasting.connections.reverb.options.port');
-        $scheme = config('broadcasting.connections.reverb.options.client_scheme')
-            ?? config('broadcasting.connections.reverb.options.scheme');
-
-        if (! $this->hasConfigValue($appKey) || ! $this->hasConfigValue($host) || ! $this->hasConfigValue($port) || ! $this->hasConfigValue($scheme)) {
-            return null;
-        }
-
-        return [
-            'app_key' => (string) $appKey,
-            'host' => (string) $host,
-            'port' => (string) $port,
-            'scheme' => (string) $scheme,
-        ];
-    }
-
-    private function hasConfigValue(mixed $value): bool
-    {
-        return is_string($value) ? trim($value) !== '' : $value !== null;
-    }
 
     private function attribute(mixed $value): string
     {

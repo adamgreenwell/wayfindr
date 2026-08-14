@@ -2300,7 +2300,11 @@
       return null;
     }
 
-    var Pusher = options.Pusher || (root && root.Pusher);
+    // The bundled copy first: widget.js carries the realtime library itself,
+    // published under a namespaced global so the host page's own `Pusher` is
+    // left exactly as it was. `root.Pusher` remains a fallback for pages that
+    // still load the library separately, which the old install snippet did.
+    var Pusher = options.Pusher || (root && (root.__wayfindrPusher || root.Pusher));
 
     if (!Pusher || !options.reverb.appKey) {
       return null;
@@ -2328,7 +2332,17 @@
           wsPort: reverb.wsPort || port,
           wssPort: reverb.wssPort || port,
           forceTLS: scheme === 'https',
+          // Websockets only, and no telemetry -- both stated rather than
+          // inherited. The library's built-in defaults still name
+          // pusher.com hosts: `cdn_https` is where it lazily fetches
+          // dependencies for the HTTP fallback transports, and `stats_host` is
+          // where it reports usage. Restricting transports means the first is
+          // never reached, and stats are off unless asked for -- but a
+          // self-hosted install should not depend on a third party's defaults
+          // staying convenient. Saying so keeps a library upgrade from
+          // quietly reintroducing an outbound request (issue #714).
           enabledTransports: reverb.enabledTransports || ['ws', 'wss'],
+          enableStats: false,
           channelAuthorization: {
             customHandler: function (params, callback) {
               postJsonRaw(fetcher, config.authEndpoint, Object.assign({}, config.authPayload, {
