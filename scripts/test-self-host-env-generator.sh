@@ -100,6 +100,30 @@ expect_env 'CADDY_SERVER_EXTRA_DIRECTIVES=tls internal'
 # often NOT on a local interface (NAT), and binding it would fail at `up`.
 expect_env 'WAYFINDR_PUBLIC_HTTPS_BIND=8443'
 
+# An IP host needs a default SNI or the handshake never reaches the
+# certificate. A client connecting to an IP sends NO SNI (RFC 6066 forbids IP
+# literals in it), so Caddy has no name to select by and aborts with an
+# internal error, which browsers report as ERR_SSL_PROTOCOL_ERROR. The
+# certificate is obtained successfully and never served, so the logs look
+# healthy -- which is exactly why generating the right env was not evidence
+# that the URL worked.
+expect_env 'CADDY_GLOBAL_OPTIONS_EXTRA=default_sni 192.168.10.4'
+
+# Loopback literals need it just as much: the client still sends no SNI.
+generate_for "https://127.0.0.1:2345"
+expect_env 'CADDY_GLOBAL_OPTIONS_EXTRA=default_sni 127.0.0.1'
+generate_for "https://[::1]:8443"
+expect_env 'CADDY_GLOBAL_OPTIONS_EXTRA=default_sni ::1'
+
+# Names do not: browsers send SNI for them, and setting a default would mask
+# a genuine mismatch rather than fix one.
+generate_for "https://localhost:2345"
+expect_env 'CADDY_GLOBAL_OPTIONS_EXTRA='
+generate_for "https://wayfindr.local"
+expect_env 'CADDY_GLOBAL_OPTIONS_EXTRA='
+generate_for "https://support.example.com"
+expect_env 'CADDY_GLOBAL_OPTIONS_EXTRA='
+
 # "127." has to match an ADDRESS, not a prefix. DNS labels may begin with a
 # digit, so 127.example.com is a real publicly-resolvable name -- treating it
 # as loopback would publish a public site on 127.0.0.1 and nowhere else.

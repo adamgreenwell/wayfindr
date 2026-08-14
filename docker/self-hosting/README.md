@@ -70,9 +70,15 @@ way a publicly-issued certificate is. Browsers will warn until the CA root is
 trusted on each machine that browses there:
 
 ```bash
-docker compose -f docker/self-hosting/compose.yml --env-file docker/self-hosting/.env \
-  cp web:/data/caddy/pki/authorities/local/root.crt ./wayfindr-local-ca.crt
+docker compose -f docker/self-hosting/compose.yml --env-file docker/self-hosting/.env cp web:/data/caddy/pki/authorities/local/root.crt ./wayfindr-local-ca.crt
 ```
+
+An install whose host is an **IP address** also needs `default_sni`, which
+`generate-env.sh` writes into `CADDY_GLOBAL_OPTIONS_EXTRA`. A client connecting
+to an IP sends no SNI (RFC 6066 forbids IP literals in it), so without a
+default there is no name for Caddy to select a certificate by and it aborts
+the handshake — browsers report `ERR_SSL_PROTOCOL_ERROR`. The certificate is
+issued and simply never served, so the logs look healthy.
 
 The root lives in the `wayfindr-caddy-data` volume, so it survives recreates
 and only has to be trusted once per client machine.

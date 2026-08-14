@@ -1355,6 +1355,7 @@ REVERB_PORT="$PUBLIC_PORT"
 # the public port and obtains certificates itself.
 TRUSTED_PROXIES=""
 CADDY_GLOBAL_OPTIONS=""
+CADDY_GLOBAL_OPTIONS_EXTRA=""
 CADDY_SERVER_EXTRA_DIRECTIVES=""
 INTERNAL_CERT=0
 
@@ -1443,6 +1444,18 @@ elif [ "$SCHEME" = "https" ]; then
         # real error in the logs.
         CADDY_SERVER_EXTRA_DIRECTIVES="tls internal"
         CADDY_GLOBAL_OPTIONS="skip_install_trust"
+
+        # An IP address needs a default SNI or the handshake never gets as far
+        # as the certificate. A client connecting to an IP sends NO SNI -- RFC
+        # 6066 forbids IP literals in it -- so Caddy has no name to select by
+        # and aborts with an internal error, which browsers report as
+        # ERR_SSL_PROTOCOL_ERROR. The certificate is obtained successfully and
+        # simply never served, which is why the logs look healthy.
+        #
+        # Names do not need this: browsers send SNI for them.
+        if host_is_ip_literal "$HOST"; then
+            CADDY_GLOBAL_OPTIONS_EXTRA="default_sni $(bare_host "$HOST")"
+        fi
     fi
 else
     SERVER_NAME=":80"
@@ -1489,6 +1502,7 @@ WAYFINDR_LOCAL_BIND=$LOCAL_BIND
 # is one no public CA can issue for, so Caddy signs with its own CA -- the
 # root has to be trusted on each machine that browses here.
 CADDY_GLOBAL_OPTIONS=$CADDY_GLOBAL_OPTIONS
+CADDY_GLOBAL_OPTIONS_EXTRA=$CADDY_GLOBAL_OPTIONS_EXTRA
 CADDY_SERVER_EXTRA_DIRECTIVES=$CADDY_SERVER_EXTRA_DIRECTIVES
 WAYFINDR_PHP_VERSION=8.4
 WAYFINDR_NODE_VERSION=24
@@ -1570,8 +1584,7 @@ No public certificate authority can issue for $HOST, so Caddy signs with its
 own CA. Browsers will warn until that root is trusted. Once the stack is up,
 export it and add it to the trust store of each machine that browses here:
 
-  docker compose -f docker/self-hosting/compose.yml --env-file $OUTPUT_FILE \\
-    cp web:/data/caddy/pki/authorities/local/root.crt ./wayfindr-local-ca.crt
+  docker compose -f docker/self-hosting/compose.yml --env-file $OUTPUT_FILE cp web:/data/caddy/pki/authorities/local/root.crt ./wayfindr-local-ca.crt
 EOF
 fi
 

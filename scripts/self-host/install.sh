@@ -1641,8 +1641,7 @@ case "$(env_value CADDY_SERVER_EXTRA_DIRECTIVES)" in
   No public certificate authority can issue for this host, so Caddy signed
   with its own. Until that root is trusted, browsers will warn. Export it:
 
-    docker compose -f $COMPOSE_FILE --env-file $ENV_FILE \\
-      cp web:/data/caddy/pki/authorities/local/root.crt ./wayfindr-local-ca.crt
+    cd $TARGET_DIR && docker compose -f compose.yml --env-file .env cp web:/data/caddy/pki/authorities/local/root.crt ./wayfindr-local-ca.crt
 
   Then add wayfindr-local-ca.crt to the trust store of every machine that
   browses here (macOS: Keychain Access > System > drag in > Always Trust.

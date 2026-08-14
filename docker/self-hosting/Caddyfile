@@ -1,5 +1,12 @@
 {
 	{$CADDY_GLOBAL_OPTIONS}
+	# A second slot, because Caddyfile global options each need their own line
+	# and a dotenv value cannot carry a newline. An IP-address install needs
+	# `default_sni` here alongside `skip_install_trust` above: a client
+	# connecting to an IP sends no SNI (RFC 6066 forbids IP literals in it),
+	# so without a default there is no name to select a certificate by and the
+	# handshake is aborted -- the certificate is issued and simply never used.
+	{$CADDY_GLOBAL_OPTIONS_EXTRA}
 
 	frankenphp {
 		{$FRANKENPHP_CONFIG}
