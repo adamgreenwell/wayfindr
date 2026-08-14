@@ -20,6 +20,20 @@
   // The file picker's accept hint (mobile shows the camera for image/*). The
   // server enforces the real allowlist by sniffing bytes regardless of this.
   var ATTACHMENT_ACCEPT = 'image/*,application/pdf,text/plain,.txt,.log';
+
+  // A caught error still has to be findable.
+  //
+  // Every `catch` here swallows deliberately, because the visitor should not
+  // see a stack trace over a chat box -- but swallowing it SILENTLY left
+  // nothing in the console either, so a fault could only be located by
+  // stepping through the widget with "pause on caught exceptions". That cost
+  // a real support-loop investigation. The visitor-facing behaviour is
+  // unchanged; the console now names what failed.
+  function reportSuppressed(what, error) {
+    if (root && root.console && typeof root.console.error === 'function') {
+      root.console.error('[wayfindr] ' + what + ' failed:', error);
+    }
+  }
   var DEFAULT_COBROWSE_PAYLOAD_BUDGET = {
     mutationBatchMaxBytes: 60000,
     mutationQueueMaxRecords: 250,
@@ -1266,8 +1280,31 @@
       }
 
       conversationActivated = true;
-      connectRealtime();
-      renderCobrowseConsent();
+
+      // Realtime and cobrowse are isolated so that POLLING is always
+      // scheduled.
+      //
+      // Polling is the fallback for realtime being unavailable, and it used to
+      // be scheduled after an unguarded connectRealtime() in the same
+      // sequence. A throw there -- not a null return, which was handled, but a
+      // throw from inside the transport library -- skipped the very fallback
+      // that exists for realtime failing. The visitor then had neither, so an
+      // agent's reply never arrived by any route, and the enclosing handler
+      // reported it as a failed send. A fallback sharing a failure path with
+      // the thing it backs up is not a fallback.
+      try {
+        connectRealtime();
+      } catch (error) {
+        reportSuppressed('realtime connection', error);
+        renderConnectionState('polling');
+      }
+
+      try {
+        renderCobrowseConsent();
+      } catch (error) {
+        reportSuppressed('cobrowse consent', error);
+      }
+
       refresh.hidden = false;
       scheduleMessagePoll();
       scheduleCobrowseStatusPoll();
@@ -2092,6 +2129,8 @@
         pendingClientMessageBody = body;
       }
 
+      var sentMessage;
+
       try {
         // A resume of a stored conversation may still be in flight on a slow
         // reload. Wait for it (it never rejects) so a quick first message
@@ -2136,7 +2175,26 @@
           }
         }
 
-        var sentMessage = await client.sendMessage(supportCode, body, pendingClientMessageId, readyIds.concat(stagedIds));
+        sentMessage = await client.sendMessage(supportCode, body, pendingClientMessageId, readyIds.concat(stagedIds));
+      } catch (error) {
+        reportSuppressed('message send', error);
+        status.textContent = MESSAGE_SEND_ERROR;
+        showNotice('warning', MESSAGE_SEND_ERROR, {
+          retry: true,
+          onRetry: retryComposerSend,
+        });
+        setComposerBusy(false);
+
+        return;
+      }
+
+      // The message IS sent from here on, and nothing below may claim
+      // otherwise. Rendering it, connecting realtime and refreshing are all
+      // work that happens AFTER the server accepted it, and reporting a
+      // failure for any of them told the visitor to send again — which is
+      // exactly what produced duplicate messages, since the retry succeeded
+      // too and reported the same false failure.
+      try {
         applyConversationStatus(sentMessage.conversation);
         appendMessage(sentMessage.message);
         renderConversationNotice();
@@ -2150,11 +2208,12 @@
         await refreshCobrowseStatus({ silent: true });
         status.textContent = 'Message sent. Support code ' + supportCode + '.';
       } catch (error) {
-        status.textContent = MESSAGE_SEND_ERROR;
-        showNotice('warning', MESSAGE_SEND_ERROR, {
-          retry: true,
-          onRetry: retryComposerSend,
-        });
+        reportSuppressed('post-send update', error);
+
+        // Still a success as far as the visitor is concerned: the transcript
+        // may be a beat behind, and the poll scheduled by activateConversation
+        // catches it up.
+        status.textContent = 'Message sent. Support code ' + supportCode + '.';
       } finally {
         setComposerBusy(false);
       }
