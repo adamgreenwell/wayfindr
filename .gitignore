@@ -29,3 +29,11 @@ node_modules/
 # the root makes write-release-identity.sh see a dirty tree and record an
 # unverifiable identity on every deploy after the first.
 /release-manifest.json
+
+# Cloud-init seed directories left by the agent environment that runs the
+# disposable-VM evidence checks. Nothing in this repository creates them, so
+# they are not build output — but like release-manifest.json above they have to
+# be IGNORED rather than merely untracked: an untracked directory at the root
+# makes sync-github-wiki.sh refuse to publish, since it requires a clean
+# checkout before pushing to the Wiki.
+/.codex-*/
