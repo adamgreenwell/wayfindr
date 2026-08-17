@@ -36,4 +36,9 @@ node_modules/
 # be IGNORED rather than merely untracked: an untracked directory at the root
 # makes sync-github-wiki.sh refuse to publish, since it requires a clean
 # checkout before pushing to the Wiki.
-/.codex-*/
+#
+# Matched on the artifact family rather than the `.codex-` tooling prefix. A
+# broader pattern would silently hide any future `.codex-`-prefixed directory,
+# and a file invisible to `git status` is easy to leave out of a commit — worse
+# than the occasional dirty tree this exists to prevent.
+/.codex-evidence-seed-*/
