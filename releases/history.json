@@ -177,6 +177,29 @@
                     }
                 }
             ]
+        },
+        {
+            "schema": 1,
+            "version": "0.4.4",
+            "commit": "",
+            "requires_operator_action": false,
+            "minimum_upgrade_from": "0.1.0-alpha.1",
+            "actions": [],
+            "notices": [
+                {
+                    "release": "0.4.4",
+                    "id": "backups-queue-consumer",
+                    "summary": "Run a queue worker on the backups connection.",
+                    "detail": "Without one, \"Run a backup now\" queues a job nothing will process and the run sits at Running indefinitely. Scheduled backups are unaffected. Compose stacks run this worker themselves, on whichever queue BACKUP_QUEUE names. On a host-managed install, open /operator/settings/backups - it prints the exact command for this install, with your configured queue name and timeout filled in (BACKUP_QUEUE can move the queue off its default, so a copied command may drain the wrong one).",
+                    "applicability": {
+                        "type": "always"
+                    },
+                    "verification": {
+                        "type": "check",
+                        "check": "backups-queue-consumer"
+                    }
+                }
+            ]
         }
     ]
 }

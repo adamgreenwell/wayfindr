@@ -32,6 +32,31 @@ missed while skimming.
 
 No unreleased changes yet.
 
+## [0.4.4] - 2026-08-14
+
+**No operator action required.** Pull, restart, and migrations run themselves.
+
+Your install snippet changes, but the one already on your pages keeps working.
+Copy the new one from the site settings screen when convenient — see below.
+
+### Changed
+
+- **The widget no longer loads anything from a third party.** Its realtime
+  library came from a public CDN (`js.pusher.com`), which meant an install
+  without outbound internet lost live updates with nothing to explain why, a
+  host page with a strict content-security policy could not load it, and every
+  visitor's browser contacted an external service to use support chat. The
+  library now ships inside `widget.js`, so a self-hosted install serves every
+  byte it runs and only your own host needs allowing through.
+
+  The install snippet on the site settings screen is now a single `<script>`
+  tag. Existing pages carrying the older two-tag snippet continue to work —
+  the extra tag is simply redundant — so replace it whenever it suits you.
+
+  The bytes are not new: pages with realtime already downloaded this same
+  library, from further away, in an extra request. Installs without realtime
+  configured carry nothing extra.
+
 ## [0.4.3] - 2026-08-14
 
 **No operator action required.** Pull, restart, and migrations run themselves.
