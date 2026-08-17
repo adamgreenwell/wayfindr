@@ -55,15 +55,18 @@ only on your laptop, will fail from the host while working perfectly from
 elsewhere.
 
 **Is the application running at all?** From the host, the always-on loopback
-site answers regardless of the public TLS arrangement:
+site answers regardless of the public TLS arrangement. Read its address out of
+the environment file rather than assuming it — the installer moves it when your
+own public port would otherwise collide with it, so it is not always
+`127.0.0.1:8000`:
 
 ```bash
-curl -fsS http://127.0.0.1:8000/up
+curl -fsS "http://$(grep '^WAYFINDR_LOCAL_BIND=' ~/wayfindr/.env | cut -d= -f2)/up"
 ```
 
-Use the address in `WAYFINDR_LOCAL_BIND` if you changed it. A `200` here with a
-failure above isolates the problem to the public endpoint rather than the
-application.
+A `200` here with a failure above isolates the problem to the public endpoint
+rather than the application. Probing a guessed port instead can hit your own
+public socket and report the application as down when it is running normally.
 
 ## Web Works but Background Features Do Not
 
