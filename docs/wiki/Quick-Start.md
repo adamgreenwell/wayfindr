@@ -57,10 +57,16 @@ plan to browse from your laptop, use the VM's address or a name, not
 
 ## 3. Trust the Local Certificate, If You Have One
 
-Installing at an IP address, `localhost`, or a `.local`-style name means no
-public authority can issue for it, so Wayfindr signs the certificate itself.
-Browsers will warn until that root is trusted — the warning is expected, not a
-sign of a broken install.
+This step applies only to an **`https://`** install at an address no public
+authority can issue for — an IP address, `https://localhost`, or a
+`.local`-style name. Wayfindr signs the certificate itself, and browsers warn
+until that root is trusted. The warning is expected, not a sign of a broken
+install.
+
+It does **not** apply to a bare `localhost`, which infers `http://` and has no
+certificate at all. If you passed `localhost` and want TLS, pass
+`https://localhost` instead. The installer prints the URL it settled on, so
+check that line if you are unsure which you got.
 
 The installer prints the command to export the root when this applies. Add the
 exported `wayfindr-local-ca.crt` to the trust store of each machine you browse

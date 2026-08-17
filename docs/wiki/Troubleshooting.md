@@ -36,11 +36,34 @@ read the error code before changing anything.
   server name and the certificate could not be selected. `./wayfindr/install.sh
   --upgrade` repairs an environment file generated before that fix.
 
-The logs are misleading for the second case: the certificate is obtained
-successfully and simply never served, so `docker compose ... logs web` shows a
-healthy startup either way. Check `curl -k https://<your-url>/up` from the host
-instead — it answers `200` when the handshake works, whatever your browser
-thinks of the certificate.
+The logs mislead for the second case: the certificate is obtained successfully
+and simply never served, so `docker compose ... logs web` shows a healthy
+startup either way. Two probes separate the possibilities.
+
+**Is TLS working?** Run this from a machine that actually reaches the URL —
+normally the one you browse from:
+
+```bash
+curl -k https://<your-url>/up
+```
+
+`200` means the handshake completed and only certificate trust is in question.
+A connection or protocol error means the handshake failed. Run it from the
+browsing machine rather than from the host: an install at a cloud IP that is
+NAT'd rather than assigned to the machine, or a `.local` name that resolves
+only on your laptop, will fail from the host while working perfectly from
+elsewhere.
+
+**Is the application running at all?** From the host, the always-on loopback
+site answers regardless of the public TLS arrangement:
+
+```bash
+curl -fsS http://127.0.0.1:8000/up
+```
+
+Use the address in `WAYFINDR_LOCAL_BIND` if you changed it. A `200` here with a
+failure above isolates the problem to the public endpoint rather than the
+application.
 
 ## Web Works but Background Features Do Not
 
