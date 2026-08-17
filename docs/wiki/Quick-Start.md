@@ -57,20 +57,26 @@ plan to browse from your laptop, use the VM's address or a name, not
 
 ## 3. Trust the Local Certificate, If You Have One
 
-This step applies only to an **`https://`** install at an address no public
-authority can issue for — an IP address, `https://localhost`, or a
+This step applies only to a **direct** `https://` install at an address no
+public authority can issue for — an IP address, `https://localhost`, or a
 `.local`-style name. Wayfindr signs the certificate itself, and browsers warn
 until that root is trusted. The warning is expected, not a sign of a broken
 install.
 
-It does **not** apply to a bare `localhost`, which infers `http://` and has no
-certificate at all. If you passed `localhost` and want TLS, pass
-`https://localhost` instead. The installer prints the URL it settled on, so
-check that line if you are unsure which you got.
+It does **not** apply in two cases:
 
-The installer prints the command to export the root when this applies. Add the
-exported `wayfindr-local-ca.crt` to the trust store of each machine you browse
-from (on macOS via Keychain Access, on Debian/Ubuntu by copying it to
+- **A bare `localhost`**, which infers `http://` and has no certificate at all.
+  Pass `https://localhost` if you want TLS locally.
+- **`--behind-proxy`**, where your own proxy terminates TLS and issues the
+  certificate. Wayfindr signs nothing and prints no export command in that
+  mode, so a certificate problem there is your proxy's to solve.
+
+The installer prints the URL it settled on, and prints the command to export
+the root when this step applies — so its closing output tells you which case
+you are in.
+
+Add the exported `wayfindr-local-ca.crt` to the trust store of each machine you
+browse from (on macOS via Keychain Access, on Debian/Ubuntu by copying it to
 `/usr/local/share/ca-certificates/` and running `update-ca-certificates`), then
 restart the browser.
 

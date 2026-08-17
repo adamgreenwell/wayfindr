@@ -51,8 +51,12 @@ reported, scheme and all:
 curl -k <your-app-url>/up
 ```
 
-`200` means the handshake completed and only certificate trust is in question.
-A connection or protocol error means the handshake failed. Run it from the
+If the URL is `https://`, a `200` means the handshake completed and only
+certificate trust is in question, while a connection or protocol error means
+the handshake failed. If the URL the installer reported is `http://` — which a
+bare `localhost` install gives you — then a `200` proves the application is
+reachable and says nothing about TLS, because none is involved; there is no
+certificate to trust and nothing on this page to apply. Run it from the
 browsing machine rather than the host: an install at a cloud IP that is NAT'd
 rather than assigned to the machine, or a `.local` name that resolves only on
 your laptop, will fail from the host while working perfectly from elsewhere.
