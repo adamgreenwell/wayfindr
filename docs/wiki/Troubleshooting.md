@@ -43,8 +43,10 @@ startup either way. Two probes separate the possibilities.
 **Is TLS working?** Run this from a machine that actually reaches the URL —
 normally the one you browse from:
 
+Substitute the URL the installer printed, scheme and all:
+
 ```bash
-curl -k https://<your-url>/up
+curl -k <your-app-url>/up
 ```
 
 `200` means the handshake completed and only certificate trust is in question.
