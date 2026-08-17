@@ -62,8 +62,13 @@ the environment file rather than assuming it — the installer moves it when you
 own public port would otherwise collide with it, so it is not always
 `127.0.0.1:8000`:
 
+Run it from the install directory — the installer writes to `./wayfindr` in
+whatever directory you launched it from, unless `--dir` said otherwise, and
+prints the environment file's full path in its closing output:
+
 ```bash
-curl -fsS "http://$(grep '^WAYFINDR_LOCAL_BIND=' ~/wayfindr/.env | cut -d= -f2)/up"
+cd /path/to/wayfindr
+curl -fsS "http://$(grep '^WAYFINDR_LOCAL_BIND=' .env | cut -d= -f2)/up"
 ```
 
 A `200` here with a failure above isolates the problem to the public endpoint
