@@ -27,7 +27,7 @@ test('widget.js carries the realtime library instead of pointing at a CDN', func
     // matters is that neither can be reached from our configuration, which the
     // next assertions pin. The install snippet and tester page are covered
     // separately -- those are where a CDN <script> tag would actually appear.
-    expect($body)->toContain("enabledTransports");
+    expect($body)->toContain('enabledTransports');
     expect($body)->toContain('enableStats: false');
 });
 
@@ -40,7 +40,7 @@ test('the bundled library leaves the host page Pusher untouched', function (): v
     // would be a regression the page owner could not see coming.
     expect($body)->toContain('__wayfindrPusher');
     expect($body)->toContain('previousPusher');
-    expect($body)->toContain("delete window.Pusher");
+    expect($body)->toContain('delete window.Pusher');
 });
 
 test('the bundled library cannot be captured by a module loader on the host page', function (): void {

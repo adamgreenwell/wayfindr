@@ -5,10 +5,10 @@ namespace App\Http\Controllers\Widget;
 use App\Http\Controllers\Controller;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
-use App\Models\Site;
 use App\Support\CobrowseConsentState;
 use App\Support\CobrowseResyncRequestPolicy;
 use App\Support\VisitorSessionToken;
+use App\Support\WidgetSiteResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -27,11 +27,7 @@ class CobrowseStatusController extends Controller
             'visitor_token' => ['nullable', 'string', 'max:4096'],
         ]);
 
-        $site = Site::query()
-            ->where('public_key', $validated['site_public_key'])
-            ->first();
-
-        abort_unless($site, 404, 'Site not found.');
+        $site = WidgetSiteResolver::resolveOrFail($validated['site_public_key']);
 
         $visitor = $visitorSessionToken->visitorFromRequest($request, $site, $validated['anonymous_id']);
 

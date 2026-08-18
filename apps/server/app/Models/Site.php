@@ -22,6 +22,7 @@ class Site extends Model
     {
         return [
             'settings' => 'array',
+            'archived_at' => 'datetime',
         ];
     }
 
@@ -62,6 +63,33 @@ class Site extends Model
         }
 
         return $this->eligibleSupportAgents()->whereKey($agent->id)->exists();
+    }
+
+    public function isArchived(): bool
+    {
+        return $this->archived_at !== null;
+    }
+
+    /**
+     * Sites the widget will still serve.
+     *
+     * Archiving a site takes it out of service without destroying anything, so
+     * every public entry point resolves through this scope rather than testing
+     * the column itself - see App\Support\WidgetSiteResolver.
+     *
+     * @return Builder<Site>
+     */
+    public function scopeServable(Builder $query): Builder
+    {
+        return $query->whereNull('archived_at');
+    }
+
+    /**
+     * @return Builder<Site>
+     */
+    public function scopeArchived(Builder $query): Builder
+    {
+        return $query->whereNotNull('archived_at');
     }
 
     /**

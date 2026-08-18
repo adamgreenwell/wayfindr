@@ -6,9 +6,9 @@ use App\Events\CobrowseStateUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
-use App\Models\Site;
 use App\Support\CobrowsePayloadBudget;
 use App\Support\VisitorSessionToken;
+use App\Support\WidgetSiteResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -36,11 +36,7 @@ class CobrowseMutationController extends Controller
             'mutations.*.masked_count' => ['nullable', 'integer', 'min:0', 'max:100000'],
         ]);
 
-        $site = Site::query()
-            ->where('public_key', $validated['site_public_key'])
-            ->first();
-
-        abort_unless($site, 404, 'Site not found.');
+        $site = WidgetSiteResolver::resolveOrFail($validated['site_public_key']);
 
         $visitor = $visitorSessionToken->visitorFromRequest($request, $site, $validated['anonymous_id']);
 

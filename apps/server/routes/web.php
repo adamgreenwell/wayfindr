@@ -136,6 +136,14 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.sites.tester');
     Route::put('/dashboard/sites/{site}', [AgentSiteController::class, 'update'])
         ->name('dashboard.sites.update');
+    Route::put('/dashboard/sites/{site}/details', [AgentSiteController::class, 'updateDetails'])
+        ->name('dashboard.sites.details.update');
+    Route::post('/dashboard/sites/{site}/archive', [AgentSiteController::class, 'archive'])
+        ->name('dashboard.sites.archive');
+    Route::post('/dashboard/sites/{site}/unarchive', [AgentSiteController::class, 'unarchive'])
+        ->name('dashboard.sites.unarchive');
+    Route::delete('/dashboard/sites/{site}', [AgentSiteController::class, 'purge'])
+        ->name('dashboard.sites.purge');
     Route::put('/dashboard/sites/{site}/support-agents', [AgentSiteController::class, 'updateSupportAgents'])
         ->name('dashboard.sites.support-agents.update');
     Route::post('/dashboard/sites/{site}/external-issue-projects', [AgentSiteExternalIssueProjectController::class, 'store'])
