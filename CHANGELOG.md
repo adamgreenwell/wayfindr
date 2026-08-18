@@ -32,6 +32,49 @@ missed while skimming.
 
 No unreleased changes yet.
 
+## [0.5.0] - 2026-08-18
+
+**No operator action required.** Pull, restart, and migrations run themselves.
+
+Nothing changes for a site you leave alone, and the install snippet on your
+pages is untouched. Everything below is new capability on the site settings
+screen.
+
+### Added
+
+- **A site can be renamed, and its domain corrected.** Both were fixed at
+  creation and could never be changed afterwards, so a typo in a site's name was
+  permanent. Neither field identifies the site — the widget works from the site's
+  public key — so renaming cannot interrupt a live install, and the snippet
+  already on your pages keeps working untouched.
+
+- **A site can be archived when you stop supporting it.** Archiving takes the
+  site out of service: the widget stops answering for it everywhere and
+  immediately, including for visitors who already have it open. The site also
+  leaves the working site list, the conversation and ticket queues, and the
+  dashboard, so retired work stops competing for attention with live work.
+
+  Nothing is deleted. Every conversation, ticket, visitor and audit record stays
+  exactly where it was, and restoring the site puts it straight back into
+  service. Archived sites stay reachable under the site list's **Archived**
+  filter, and stay selectable in the audit log, because their history outlives
+  their being in service.
+
+- **A site can be permanently deleted.** This destroys the site and everything
+  recorded beneath it — conversations, messages, attachments, tickets, visitors,
+  cobrowse history, and the site's own audit trail. It cannot be undone; the only
+  way back is a backup taken beforehand.
+
+  It is deliberately awkward to do by accident. The site must be archived first,
+  so a deletion can never cut off a visitor mid-conversation; only an account
+  owner can do it, where archiving needs only an admin; and the site's name has
+  to be typed exactly to confirm, against a summary of what will be destroyed. A
+  record of the deletion — who did it, which site, and how much it contained — is
+  kept against the account afterwards, outliving the site it describes.
+
+The self-hosting installation and troubleshooting guides now also cover
+installing at a local, private, or IP address, which 0.4.0 introduced.
+
 ## [0.4.4] - 2026-08-14
 
 **No operator action required.** Pull, restart, and migrations run themselves.
