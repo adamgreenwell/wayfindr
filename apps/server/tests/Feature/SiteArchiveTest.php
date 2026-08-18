@@ -1,8 +1,13 @@
 <?php
 
 use App\Enums\AccountRole;
+use App\Events\ConversationMessageCreated;
+use App\Events\ConversationPresenceUpdated;
+use App\Events\ConversationReadReceiptUpdated;
+use App\Events\ConversationTypingUpdated;
 use App\Models\Account;
 use App\Models\Conversation;
+use App\Models\ConversationMessage;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
@@ -210,4 +215,83 @@ test('archived sites do not count toward the operations snapshot', function (): 
         ->get('/dashboard/sites?site_state=archived')
         ->assertOk()
         ->assertSee('1 visible site');
+});
+
+test('archiving suppresses realtime broadcasts to an already-open widget', function (): void {
+    $site = Site::factory()->create();
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create(['status' => 'open']);
+    $message = ConversationMessage::factory()->for($conversation)->create();
+
+    // Gating the HTTP entry points does not reach a visitor who already holds an
+    // authorized subscription: nothing re-checks the site once it exists, so an
+    // agent reply would still land in a widget for a retired site.
+    expect((new ConversationMessageCreated($message))->broadcastWhen())->toBeTrue()
+        ->and((new ConversationTypingUpdated($conversation))->broadcastWhen())->toBeTrue()
+        ->and((new ConversationPresenceUpdated($conversation))->broadcastWhen())->toBeTrue()
+        ->and((new ConversationReadReceiptUpdated($conversation))->broadcastWhen())->toBeTrue();
+
+    $site->forceFill(['archived_at' => now()])->save();
+
+    $message->unsetRelation('conversation');
+    $conversation->unsetRelation('site');
+    $conversation->refresh();
+    $message->refresh();
+
+    expect((new ConversationMessageCreated($message))->broadcastWhen())->toBeFalse()
+        ->and((new ConversationTypingUpdated($conversation))->broadcastWhen())->toBeFalse()
+        ->and((new ConversationPresenceUpdated($conversation))->broadcastWhen())->toBeFalse()
+        ->and((new ConversationReadReceiptUpdated($conversation))->broadcastWhen())->toBeFalse();
+});
+
+test('archived work leaves the agent queues and dashboard', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+
+    $live = Site::factory()->for($account)->create(['name' => 'Live Site']);
+    $liveVisitor = Visitor::factory()->for($live)->create();
+    Conversation::factory()->for($live)->for($liveVisitor)->create([
+        'status' => 'open',
+        'subject' => 'Live question',
+    ]);
+
+    $retired = Site::factory()->for($account)->create(['name' => 'Retired Site']);
+    $retiredVisitor = Visitor::factory()->for($retired)->create();
+    Conversation::factory()->for($retired)->for($retiredVisitor)->create([
+        'status' => 'open',
+        'subject' => 'Retired question',
+    ]);
+
+    $this->actingAs($admin)->get('/dashboard/conversations')->assertOk()->assertSee('Live question');
+    $this->actingAs($admin)->get('/dashboard')->assertOk();
+
+    $retired->forceFill(['archived_at' => now()])->save();
+
+    // An agent must not be able to pick up work the visitor can no longer be
+    // reached about: the widget endpoints now 404, so a reply would go nowhere.
+    $this->actingAs($admin)
+        ->get('/dashboard/conversations')
+        ->assertOk()
+        ->assertSee('Live question')
+        ->assertDontSee('Retired question');
+
+    $this->actingAs($admin)
+        ->get('/dashboard')
+        ->assertOk()
+        ->assertDontSee('Retired question');
+});
+
+test('the audit log can still be filtered to an archived site', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['name' => 'Retired But Audited']);
+
+    $this->actingAs($admin)->post("/dashboard/sites/{$site->id}/archive")->assertRedirect();
+
+    // Audit records outlive a site being in service - including the record of
+    // archiving it - so the site must stay selectable here.
+    $this->actingAs($admin)
+        ->get('/dashboard/account/audit')
+        ->assertOk()
+        ->assertSee('Retired But Audited');
 });

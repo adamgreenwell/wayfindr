@@ -2,7 +2,9 @@
 
 namespace App\Events;
 
+use App\Events\Concerns\NotBroadcastForArchivedSites;
 use App\Models\ConversationMessage;
+use App\Models\Site;
 use App\Models\User;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
@@ -14,11 +16,17 @@ class ConversationMessageCreated implements ShouldBroadcastNow
 {
     use Dispatchable;
     use InteractsWithSockets;
+    use NotBroadcastForArchivedSites;
     use SerializesModels;
 
     public function __construct(public ConversationMessage $message)
     {
         $this->message->loadMissing(['conversation', 'sender', 'attachments']);
+    }
+
+    protected function broadcastSite(): ?Site
+    {
+        return $this->message->conversation?->site;
     }
 
     /**

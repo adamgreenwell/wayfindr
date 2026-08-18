@@ -34,7 +34,7 @@ class AgentSiteController extends Controller
         $agent = $request->user();
         $account = $this->account($request);
         $sites = $account->sites()
-            ->visibleToAgent($agent)
+            ->visibleToAgentIncludingArchived($agent)
             ->with('latestVisitor')
             ->with([
                 'supportAgents' => fn ($query) => $query

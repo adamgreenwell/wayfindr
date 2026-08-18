@@ -93,9 +93,31 @@ class Site extends Model
     }
 
     /**
+     * Sites this agent works in.
+     *
+     * Excludes archived sites, because almost every caller is an operational
+     * surface - queues, dashboards, lookups - where retired work must not
+     * appear. The default is the safe one on purpose: a new caller that forgets
+     * to think about archiving gets the right behaviour, and the two surfaces
+     * that genuinely need retired sites ask for them by name below.
+     *
      * @return Builder<Site>
      */
     public function scopeVisibleToAgent(Builder $query, User $agent): Builder
+    {
+        return $query->servable()->visibleToAgentIncludingArchived($agent);
+    }
+
+    /**
+     * The same visibility rules, but including archived sites.
+     *
+     * Only for surfaces that are about a site's history rather than its current
+     * support work: the site list itself, which can filter to archived, and the
+     * audit log, whose records outlive the site being in service.
+     *
+     * @return Builder<Site>
+     */
+    public function scopeVisibleToAgentIncludingArchived(Builder $query, User $agent): Builder
     {
         return $query
             ->where('account_id', $agent->account_id)
