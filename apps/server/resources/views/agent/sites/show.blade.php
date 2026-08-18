@@ -1,8 +1,28 @@
 <x-layouts.app title="Site Settings" :agent="$agent" :account="$account">
-            <x-page-header :title="$site->name" :subtitle="'Privacy settings for '.($site->domain ?? 'an unconfigured domain')" :back-href="route('dashboard.sites.index')" back-label="Back to sites" />
+            <x-page-header :title="$site->name" :subtitle="'Settings for '.($site->domain ?? 'an unconfigured domain')" :back-href="route('dashboard.sites.index')" back-label="Back to sites" />
 
             @if (session('status'))
                 <p class="status-message">{{ session('status') }}</p>
+            @endif
+
+            @if ($site->isArchived())
+                <section class="section" aria-labelledby="site-archived-heading">
+                    <div class="section-header">
+                        <h2 id="site-archived-heading">This site is archived</h2>
+                        <span class="readiness-status">Archived {{ $site->archived_at->diffForHumans() }}</span>
+                    </div>
+
+                    <p class="lede">
+                        The widget stopped serving this site when it was archived, so the install and readiness panels below describe a widget that is no longer answering. Nothing has been deleted &mdash; every conversation, ticket and audit record is intact, and restoring the site puts it straight back into service.
+                    </p>
+
+                    @can('archive', $site)
+                        <form method="POST" action="{{ route('dashboard.sites.unarchive', $site) }}">
+                            @csrf
+                            <button class="button" type="submit">Restore this site</button>
+                        </form>
+                    @endcan
+                </section>
             @endif
 
             @php
@@ -257,6 +277,37 @@
                         <a class="text-link" href="{{ route('dashboard.sites.tester', $site) }}">Open tester</a>
                     </div>
                 </div>
+
+                @can('update', $site)
+                    <x-details-disclosure summary="Edit name and domain">
+                        <form class="section-form" method="POST" action="{{ route('dashboard.sites.details.update', $site) }}">
+                            @csrf
+                            @method('PUT')
+
+                            <div class="field">
+                                <label for="site_name">Name</label>
+                                <input id="site_name" name="name" type="text" value="{{ old('name', $site->name) }}" maxlength="255" required>
+                                @error('name')
+                                    <p class="field-error">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            <div class="field">
+                                <label for="site_domain">Domain</label>
+                                <input id="site_domain" name="domain" type="text" value="{{ old('domain', $site->domain) }}" maxlength="255" placeholder="support.example.com" autocomplete="off">
+                                @error('domain')
+                                    <p class="field-error">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            <p class="field-help">
+                                Both are labels. The widget identifies this site by its public key, so changing either is safe and will not interrupt a live install &mdash; the domain is used for display and for the install checks on this page.
+                            </p>
+
+                            <button class="button" type="submit">Save site details</button>
+                        </form>
+                    </x-details-disclosure>
+                @endcan
             </section>
 
             <section id="install-verification" class="section" aria-labelledby="install-verification-heading">
@@ -494,7 +545,9 @@
                             </thead>
                             <tbody>
                                 @foreach ($siteExternalIssueProjects as $externalIssueProject)
-                                    @php($handoffState = $externalIssueProject->issueCreationHandoffState())
+                                    @php
+                                        $handoffState = $externalIssueProject->issueCreationHandoffState();
+                                    @endphp
                                     <tr>
                                         <td>
                                             <strong>{{ $externalIssueProject->providerConnection?->name ?? $externalIssueProject->providerLabel() }}</strong>
@@ -738,4 +791,71 @@
                     </div>
                 @endif
             </section>
+
+            @can('archive', $site)
+                @unless ($site->isArchived())
+                    <section class="section" aria-labelledby="retire-site-heading">
+                        <div class="section-header">
+                            <h2 id="retire-site-heading">Retire this site</h2>
+                            <span class="lede">Stop serving the widget</span>
+                        </div>
+
+                        <p class="lede">
+                            Archiving takes this site out of service immediately: the widget stops answering everywhere, and the site leaves the working site list. Nothing is deleted. Conversations, tickets, visitors and audit history stay exactly as they are, and you can restore the site at any time.
+                        </p>
+
+                        <p class="field-help">
+                            Visitors with the widget open will stop being served as soon as you archive, including anyone part-way through a conversation.
+                        </p>
+
+                        <form method="POST" action="{{ route('dashboard.sites.archive', $site) }}">
+                            @csrf
+                            <button class="button secondary" type="submit">Archive this site</button>
+                        </form>
+                    </section>
+                @endunless
+            @endcan
+
+            @can('purge', $site)
+                @if ($site->isArchived())
+                    @php
+                        $purgeConversationCount = $site->conversations()->count();
+                        $purgeTicketCount = $site->tickets()->count();
+                        $purgeVisitorCount = $site->visitors()->count();
+                    @endphp
+
+                    <section class="section" aria-labelledby="purge-site-heading">
+                        <div class="section-header">
+                            <h2 id="purge-site-heading">Delete this site permanently</h2>
+                            <span class="readiness-status" data-status="attention">Cannot be undone</span>
+                        </div>
+
+                        <p class="lede">
+                            This deletes the site and every record beneath it. Unlike archiving, nothing here is recoverable &mdash; the only way back is restoring a backup taken before the deletion.
+                        </p>
+
+                        <div class="notice-list">
+                            <p>{{ $purgeConversationCount }} {{ \Illuminate\Support\Str::plural('conversation', $purgeConversationCount) }} and all their messages and attachments</p>
+                            <p>{{ $purgeTicketCount }} {{ \Illuminate\Support\Str::plural('ticket', $purgeTicketCount) }}, including any links to external issues</p>
+                            <p>{{ $purgeVisitorCount }} {{ \Illuminate\Support\Str::plural('visitor', $purgeVisitorCount) }} and their cobrowse history</p>
+                            <p>This site's audit history. A record that you deleted it is kept against the account.</p>
+                        </div>
+
+                        <form class="section-form" method="POST" action="{{ route('dashboard.sites.purge', $site) }}">
+                            @csrf
+                            @method('DELETE')
+
+                            <div class="field">
+                                <label for="confirm_name">Type <strong>{{ $site->name }}</strong> to confirm</label>
+                                <input id="confirm_name" name="confirm_name" type="text" autocomplete="off" spellcheck="false" required>
+                                @error('confirm_name')
+                                    <p class="field-error">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            <button class="button danger" type="submit">Permanently delete this site</button>
+                        </form>
+                    </section>
+                @endif
+            @endcan
 </x-layouts.app>

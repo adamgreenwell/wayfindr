@@ -6,8 +6,8 @@ use App\Events\ConversationPresenceUpdated;
 use App\Events\ConversationTypingUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
-use App\Models\Site;
 use App\Support\VisitorSessionToken;
+use App\Support\WidgetSiteResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -22,11 +22,7 @@ class ConversationTypingController extends Controller
             'is_typing' => ['required', 'boolean'],
         ]);
 
-        $site = Site::query()
-            ->where('public_key', $validated['site_public_key'])
-            ->first();
-
-        abort_unless($site, 404, 'Site not found.');
+        $site = WidgetSiteResolver::resolveOrFail($validated['site_public_key']);
 
         $visitor = $visitorSessionToken->visitorFromRequest($request, $site, $validated['anonymous_id']);
 

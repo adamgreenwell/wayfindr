@@ -2,7 +2,9 @@
 
 namespace App\Events;
 
+use App\Events\Concerns\NotBroadcastForArchivedSites;
 use App\Models\CobrowseSession;
+use App\Models\Site;
 use App\Support\CobrowseReplayPreview;
 use App\Support\CobrowseSnapshotFreshness;
 use App\Support\CobrowseTransportPressure;
@@ -16,11 +18,17 @@ class CobrowseStateUpdated implements ShouldBroadcastNow
 {
     use Dispatchable;
     use InteractsWithSockets;
+    use NotBroadcastForArchivedSites;
     use SerializesModels;
 
     public function __construct(public CobrowseSession $cobrowseSession, public string $kind)
     {
         $this->cobrowseSession->loadMissing('conversation');
+    }
+
+    protected function broadcastSite(): ?Site
+    {
+        return $this->cobrowseSession->site;
     }
 
     /**

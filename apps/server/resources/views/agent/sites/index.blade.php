@@ -66,6 +66,14 @@
                             </select>
                         </div>
                         <div class="meta-item">
+                            <label class="meta-label" for="site_state">State</label>
+                            <select id="site_state" name="site_state">
+                                @foreach ($siteFilters['state_options'] as $value => $label)
+                                    <option value="{{ $value }}" @selected($siteFilters['state'] === $value)>{{ $label }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="meta-item">
                             <span class="meta-label">Results</span>
                             <span class="meta-value">{{ $siteFilters['summary_label'] }}</span>
                             <button class="button secondary" type="submit">Apply filters</button>
@@ -139,6 +147,9 @@
                                     <tr>
                                         <td>
                                             <a class="text-link" href="{{ route('dashboard.sites.show', $site) }}">{{ $site->name }}</a>
+                                            @if ($site->isArchived())
+                                                <span class="readiness-status">Archived</span>
+                                            @endif
                                             <span class="lede">{{ $site->domain ?? 'Not set' }}</span>
                                             <div class="lede"><a class="text-link" href="{{ route('dashboard.sites.tester', $site) }}">Open tester</a></div>
                                         </td>

@@ -84,8 +84,10 @@ class AgentAccountAuditController extends Controller
      */
     private function visibleSites(Account $account, User $agent): Collection
     {
+        // Audit records outlive a site being in service, so the filter has to
+        // keep offering archived sites.
         return $account->sites()
-            ->visibleToAgent($agent)
+            ->visibleToAgentIncludingArchived($agent)
             ->orderBy('name')
             ->orderBy('domain')
             ->get();

@@ -7,6 +7,7 @@ use App\Models\Site;
 use App\Models\Visitor;
 use App\Support\VisitorContextSanitizer;
 use App\Support\VisitorSessionToken;
+use App\Support\WidgetSiteResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -22,11 +23,7 @@ class BootstrapController extends Controller
             'context' => ['nullable', 'array', 'max:50'],
         ]);
 
-        $site = Site::query()
-            ->where('public_key', $validated['site_public_key'])
-            ->first();
-
-        abort_unless($site, 404, 'Site not found.');
+        $site = WidgetSiteResolver::resolveOrFail($validated['site_public_key']);
 
         $visitor = Visitor::query()->firstOrNew([
             'site_id' => $site->id,

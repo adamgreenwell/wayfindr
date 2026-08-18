@@ -14,6 +14,7 @@ use App\Support\ExternalIssueProvider;
 use App\Support\ExternalIssueSyncStatus;
 use App\Support\OperatorReadiness;
 use App\Support\SiteInstallHealth;
+use App\Support\SitePurge;
 use App\Support\TicketExternalIssueState;
 use App\Support\WidgetRealtimeConfig;
 use Illuminate\Http\RedirectResponse;
@@ -33,7 +34,7 @@ class AgentSiteController extends Controller
         $agent = $request->user();
         $account = $this->account($request);
         $sites = $account->sites()
-            ->visibleToAgent($agent)
+            ->visibleToAgentIncludingArchived($agent)
             ->with('latestVisitor')
             ->with([
                 'supportAgents' => fn ($query) => $query
@@ -55,7 +56,12 @@ class AgentSiteController extends Controller
             ])
             ->orderBy('name')
             ->get();
-        $siteOperationsSnapshot = $this->siteOperationsSnapshot($sites);
+        // Always describes sites still in service, whichever state the operator is
+        // browsing: an archived site has no install to fix and no support work to
+        // chase, so counting it here would nag about a site deliberately retired.
+        $siteOperationsSnapshot = $this->siteOperationsSnapshot(
+            $sites->reject(fn (Site $site): bool => $site->isArchived())->values()
+        );
         [$sites, $siteFilters] = $this->filteredSites($sites, $request);
 
         return view('agent.sites.index', [
@@ -504,6 +510,173 @@ class AgentSiteController extends Controller
             ->with('status', 'Site privacy settings saved.');
     }
 
+    /**
+     * Edit a site's name and domain.
+     *
+     * Kept apart from update() so the privacy form and the details form cannot
+     * blank each other's fields by omission.
+     */
+    public function updateDetails(Request $request, Site $site): RedirectResponse
+    {
+        $this->authorizeSiteAbility($request, 'view', $site, 404);
+        $this->authorizeSiteAbility($request, 'update', $site);
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'domain' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $before = ['name' => $site->name, 'domain' => $site->domain];
+
+        $site->forceFill([
+            'name' => trim($validated['name']),
+            'domain' => $this->normalizeDomain($validated['domain'] ?? null),
+        ])->save();
+
+        $after = ['name' => $site->name, 'domain' => $site->domain];
+
+        if ($before !== $after) {
+            $this->recordSiteAudit($site, $request->user(), 'site.details_updated', [
+                'before' => $before,
+                'after' => $after,
+            ]);
+        }
+
+        return redirect()
+            ->route('dashboard.sites.show', $site)
+            ->with('status', 'Site details saved.');
+    }
+
+    /**
+     * Take a site out of service without destroying anything.
+     *
+     * The widget stops resolving the site immediately - see WidgetSiteResolver -
+     * and the site leaves the working lists, but every conversation, ticket and
+     * audit event stays exactly where it was. Reversible via unarchive().
+     */
+    public function archive(Request $request, Site $site): RedirectResponse
+    {
+        $this->authorizeSiteAbility($request, 'view', $site, 404);
+        $this->authorizeSiteAbility($request, 'archive', $site);
+
+        if ($site->isArchived()) {
+            return redirect()
+                ->route('dashboard.sites.show', $site)
+                ->with('status', 'That site is already archived.');
+        }
+
+        $site->forceFill(['archived_at' => now()])->save();
+
+        // Record the scale of what just stopped serving: an operator reading
+        // this later wants to know whether a live site was taken down.
+        $this->recordSiteAudit($site, $request->user(), 'site.archived', [
+            'conversations' => $site->conversations()->count(),
+            'tickets' => $site->tickets()->count(),
+        ]);
+
+        return redirect()
+            ->route('dashboard.sites.show', $site)
+            ->with('status', 'Site archived. The widget has stopped serving it, and nothing has been deleted.');
+    }
+
+    public function unarchive(Request $request, Site $site): RedirectResponse
+    {
+        $this->authorizeSiteAbility($request, 'view', $site, 404);
+        $this->authorizeSiteAbility($request, 'archive', $site);
+
+        if (! $site->isArchived()) {
+            return redirect()
+                ->route('dashboard.sites.show', $site)
+                ->with('status', 'That site is not archived.');
+        }
+
+        $site->forceFill(['archived_at' => null])->save();
+
+        $this->recordSiteAudit($site, $request->user(), 'site.unarchived', []);
+
+        return redirect()
+            ->route('dashboard.sites.show', $site)
+            ->with('status', 'Site restored. The widget is serving it again.');
+    }
+
+    /**
+     * Irreversibly destroy a site and everything beneath it.
+     */
+    public function purge(Request $request, Site $site, SitePurge $purge): RedirectResponse
+    {
+        $this->authorizeSiteAbility($request, 'view', $site, 404);
+        $this->authorizeSiteAbility($request, 'purge', $site);
+
+        if ($reason = $this->purgeBlockedReason($site)) {
+            return redirect()
+                ->route('dashboard.sites.show', $site)
+                ->withErrors(['confirm_name' => $reason]);
+        }
+
+        // Typing the name is the last thing standing between an operator and a
+        // cascade they cannot undo, so it is validated as a hard match.
+        $request->validate([
+            'confirm_name' => ['required', 'string'],
+        ]);
+
+        if ($request->string('confirm_name')->trim()->value() !== $site->name) {
+            return redirect()
+                ->route('dashboard.sites.show', $site)
+                ->withErrors(['confirm_name' => 'That name did not match, so nothing was deleted. Type the site name exactly to confirm.']);
+        }
+
+        $summary = $purge->purge($site, $request->user());
+
+        return redirect()
+            ->route('dashboard.sites.index')
+            ->with('status', sprintf(
+                'Site "%s" was permanently deleted, along with %d %s, %d %s and %d %s.',
+                $site->name,
+                $summary['conversations'],
+                Str::plural('conversation', $summary['conversations']),
+                $summary['tickets'],
+                Str::plural('ticket', $summary['tickets']),
+                $summary['attachments'],
+                Str::plural('attachment', $summary['attachments']),
+            ));
+    }
+
+    /**
+     * Why this site may not be purged right now, or null when it may be.
+     *
+     * A site must be archived before it can be destroyed. Archiving has already
+     * taken the widget out of service, so purging cannot pull the ground from
+     * under a visitor who is part-way through a conversation, and retiring a
+     * site becomes two deliberate steps rather than one irreversible click.
+     * It still allows a same-day deletion obligation to be met: archive, then
+     * purge.
+     */
+    private function purgeBlockedReason(Site $site): ?string
+    {
+        if (! $site->isArchived()) {
+            return 'This site has to be archived before it can be deleted. Archive it first, confirm the widget has stopped serving, then delete it.';
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $metadata
+     */
+    private function recordSiteAudit(Site $site, User $actor, string $action, array $metadata): void
+    {
+        $site->auditEvents()->create([
+            'account_id' => $site->account_id,
+            'actor_type' => $actor->getMorphClass(),
+            'actor_id' => $actor->id,
+            'subject_type' => $site->getMorphClass(),
+            'subject_id' => $site->id,
+            'action' => $action,
+            'metadata' => $metadata,
+            'occurred_at' => now(),
+        ]);
+    }
+
     public function updateSupportAgents(Request $request, Site $site): RedirectResponse
     {
         $this->authorizeSiteAbility($request, 'view', $site, 404);
@@ -558,8 +731,34 @@ class AgentSiteController extends Controller
      * @param  Collection<int, Site>  $sites
      * @return array{0: Collection<int, Site>, 1: array{search: string, workload: string, install: string, workload_options: array<string, string>, install_options: array<string, string>, active: list<array{label: string, value: string}>, has_active_filters: bool, visible_count: int, result_count: int, summary_label: string}}
      */
+    private function siteMatchesStateFilter(Site $site, string $state): bool
+    {
+        return match ($state) {
+            'archived' => $site->isArchived(),
+            'all' => true,
+            default => ! $site->isArchived(),
+        };
+    }
+
     private function filteredSites(Collection $sites, Request $request): array
     {
+        $stateOptions = [
+            'active' => 'Active sites',
+            'archived' => 'Archived',
+            'all' => 'All states',
+        ];
+        $state = $this->normalizeSiteFilter(
+            $this->stringQuery($request, 'site_state', 'active'),
+            array_keys($stateOptions),
+        );
+
+        // Applied before the visible count so "N visible" describes the set the
+        // operator is actually looking at, rather than counting retired sites
+        // the page is not showing.
+        $sites = $sites
+            ->filter(fn (Site $site): bool => $this->siteMatchesStateFilter($site, $state))
+            ->values();
+
         $visibleCount = $sites->count();
         $workloadOptions = [
             'all' => 'All workloads',
@@ -600,6 +799,12 @@ class AgentSiteController extends Controller
             $activeFilters[] = ['label' => 'Install', 'value' => $installOptions[$install]];
         }
 
+        // 'active' is the default view rather than a filter the operator chose,
+        // so it earns no chip; the other two are worth announcing.
+        if ($state !== 'active') {
+            $activeFilters[] = ['label' => 'State', 'value' => $stateOptions[$state]];
+        }
+
         $resultCount = $filteredSites->count();
         $hasActiveFilters = $activeFilters !== [];
 
@@ -609,8 +814,10 @@ class AgentSiteController extends Controller
                 'search' => $search,
                 'workload' => $workload,
                 'install' => $install,
+                'state' => $state,
                 'workload_options' => $workloadOptions,
                 'install_options' => $installOptions,
+                'state_options' => $stateOptions,
                 'active' => $activeFilters,
                 'has_active_filters' => $hasActiveFilters,
                 'visible_count' => $visibleCount,
@@ -756,6 +963,14 @@ class AgentSiteController extends Controller
             ];
         }
 
+        if ($siteFilters['state'] === 'archived') {
+            return [
+                'heading' => 'No sites are archived.',
+                'detail' => 'Archiving takes a site out of service without deleting anything, so it can be undone at any time. Nothing here means every site you can see is still serving its widget.',
+                'actions' => [['label' => 'Back to active sites', 'url' => route('dashboard.sites.index')]],
+            ];
+        }
+
         return [
             'heading' => 'No sites are visible to you yet.',
             'detail' => 'Add the first site to get a public key and widget install snippet.',
@@ -772,6 +987,7 @@ class AgentSiteController extends Controller
         $search = $overrides['search'] ?? $siteFilters['search'];
         $workload = $overrides['workload'] ?? $siteFilters['workload'];
         $install = $overrides['install'] ?? $siteFilters['install'];
+        $state = $overrides['state'] ?? $siteFilters['state'];
         $query = [];
 
         if ($search !== '') {
@@ -784,6 +1000,10 @@ class AgentSiteController extends Controller
 
         if ($install !== 'all') {
             $query['site_install'] = $install;
+        }
+
+        if ($state !== 'active') {
+            $query['site_state'] = $state;
         }
 
         return route('dashboard.sites.index', $query);
@@ -1044,7 +1264,6 @@ class AgentSiteController extends Controller
     /**
      * @return array{app_key: string, host: string, port: string, scheme: string}|null
      */
-
     private function attribute(mixed $value): string
     {
         return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8', false);

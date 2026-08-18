@@ -2,7 +2,9 @@
 
 namespace App\Events;
 
+use App\Events\Concerns\NotBroadcastForArchivedSites;
 use App\Models\Conversation;
+use App\Models\Site;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
@@ -13,9 +15,15 @@ class ConversationTypingUpdated implements ShouldBroadcastNow
 {
     use Dispatchable;
     use InteractsWithSockets;
+    use NotBroadcastForArchivedSites;
     use SerializesModels;
 
     public function __construct(public Conversation $conversation) {}
+
+    protected function broadcastSite(): ?Site
+    {
+        return $this->conversation->site;
+    }
 
     /**
      * @return array<int, PrivateChannel>

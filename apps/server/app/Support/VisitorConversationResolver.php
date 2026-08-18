@@ -3,7 +3,6 @@
 namespace App\Support;
 
 use App\Models\Conversation;
-use App\Models\Site;
 use Illuminate\Http\Request;
 
 /**
@@ -27,11 +26,7 @@ class VisitorConversationResolver
         string $sitePublicKey,
         string $anonymousId,
     ): Conversation {
-        $site = Site::query()
-            ->where('public_key', $sitePublicKey)
-            ->first();
-
-        abort_unless($site, 404, 'Site not found.');
+        $site = WidgetSiteResolver::resolveOrFail($sitePublicKey);
 
         $visitor = $this->visitorSessionToken->visitorFromRequest($request, $site, $anonymousId);
 
