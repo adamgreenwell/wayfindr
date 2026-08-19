@@ -31,13 +31,6 @@ jobs:
           tools: composer:v2
           coverage: none
 
-      - name: Set up Node.js 24 for test assets
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: apps/server/package-lock.json
-
       - name: Validate Composer metadata
         working-directory: apps/server
         run: composer validate --strict --no-check-publish
@@ -48,11 +41,6 @@ jobs:
 
       - name: Prepare the local test environment
         run: cp apps/server/.env.example apps/server/.env
-
-      - name: Build assets used by feature tests
-        run: |
-          npm ci --prefix apps/server --ignore-scripts
-          npm run build --prefix apps/server
 
       - name: Run the Pest suite
         working-directory: apps/server
@@ -80,9 +68,13 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: |
-            apps/server/package-lock.json
-            packages/widget-js/package-lock.json
+          cache-dependency-path: packages/widget-js/package-lock.json
+
+      - name: Set up PHP 8.4
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.4"
+          coverage: none
 
       - name: Install widget dependencies
         run: npm ci --prefix packages/widget-js --ignore-scripts
@@ -90,11 +82,8 @@ jobs:
       - name: Test the widget
         run: npm test --prefix packages/widget-js
 
-      - name: Install dashboard asset dependencies
-        run: npm ci --prefix apps/server --ignore-scripts
-
-      - name: Build production assets
-        run: npm run build --prefix apps/server
+      - name: Check the design tokens are generated from one source
+        run: make design-tokens-test
 
   repository-contracts:
     name: Repository contracts

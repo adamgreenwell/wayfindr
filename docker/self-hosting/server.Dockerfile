@@ -1,24 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
 ARG PHP_VERSION=8.4
-ARG NODE_VERSION=24
-
-# --- Dashboard assets ---------------------------------------------------------
-
-FROM node:${NODE_VERSION}-alpine AS assets
-
-WORKDIR /app/apps/server
-
-COPY apps/server/package.json apps/server/package-lock.json ./
-
-RUN npm ci --ignore-scripts
-
-COPY apps/server/public ./public
-COPY apps/server/resources ./resources
-COPY apps/server/vite.config.js ./
-
-RUN npm run build
-
 # --- Shared PHP runtime (FrankenPHP) -----------------------------------------
 # FrankenPHP is the production web server (Caddy + embedded PHP): one binary,
 # HTTP/2/3, and automatic HTTPS when SERVER_NAME is a real hostname. The same
@@ -73,7 +55,6 @@ RUN composer install \
         --optimize-autoloader
 
 COPY apps/server ./
-COPY --from=assets /app/apps/server/public/build ./public/build
 
 RUN composer dump-autoload --no-dev --classmap-authoritative --no-scripts \
     && php artisan package:discover --ansi \

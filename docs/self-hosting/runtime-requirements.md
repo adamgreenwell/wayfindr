@@ -215,11 +215,6 @@ this from the monorepo root:
 cd apps/server
 composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
 
-if [ -f package-lock.json ]; then
-    npm ci
-    npm run build
-fi
-
 php artisan migrate --force
 php artisan config:cache
 php artisan route:cache

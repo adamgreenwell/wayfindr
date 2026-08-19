@@ -12,6 +12,97 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ $title }}</title>
     <style>
+        /* wayfindr:tokens:start */
+        /* Generated from packages/design-tokens/tokens.json by scripts/generate-design-tokens.php. Do not edit by hand -- run `make design-tokens`. */
+        :root {
+            --wf-paper: #F1F1EE;
+            --wf-surface: #FFFFFF;
+            --wf-surface-2: #E9E9E4;
+            --wf-ink: #16181A;
+            --wf-ink-invert: #F1F1EE;
+            --wf-muted: #6A6E71;
+            --wf-rule: #DCDCD6;
+            --wf-rule-firm: #C4C4BD;
+            --wf-brand: #0D6F68;
+            --wf-signal-rest: #8C9194;
+            --wf-signal-go: #1E7A4C;
+            --wf-signal-hold: #C98A06;
+            --wf-signal-stop: #C3352B;
+            --wf-site-red: #C3352B;
+            --wf-site-blue: #2D4EA2;
+            --wf-site-ochre: #C98A06;
+            --wf-site-pine: #1E7A4C;
+            --wf-site-violet: #6B4E9B;
+            --wf-site-rust: #B5542A;
+            --wf-font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+            --wf-font-cond: "IBM Plex Sans Condensed", "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+            --wf-font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+            --wf-text-display: 2.05rem;
+            --wf-text-title: 1.3rem;
+            --wf-text-body: 0.97rem;
+            --wf-text-ui: 0.875rem;
+            --wf-text-label: 0.75rem;
+            --wf-text-code: 0.86rem;
+            --wf-space-1: 4px;
+            --wf-space-2: 8px;
+            --wf-space-3: 12px;
+            --wf-space-4: 16px;
+            --wf-space-5: 24px;
+            --wf-space-6: 32px;
+            --wf-space-7: 48px;
+            --wf-radius: 2px;
+            --wf-radius-full: 999px;
+            --wf-border: 1px;
+            --wf-rail: 3px;
+            --wf-row-min: 34px;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-wf-theme="light"]) {
+                --wf-paper: #141517;
+                --wf-surface: #1B1D20;
+                --wf-surface-2: #24272A;
+                --wf-ink: #ECECE8;
+                --wf-ink-invert: #16181A;
+                --wf-muted: #9BA0A3;
+                --wf-rule: #2E3134;
+                --wf-rule-firm: #3D4145;
+                --wf-brand: #3FA69D;
+                --wf-signal-rest: #7E8386;
+                --wf-signal-go: #4CA97A;
+                --wf-signal-hold: #E0A72A;
+                --wf-signal-stop: #E2685C;
+                --wf-site-red: #D54C43;
+                --wf-site-blue: #5578D0;
+                --wf-site-ochre: #A57105;
+                --wf-site-pine: #238C57;
+                --wf-site-violet: #896EB6;
+                --wf-site-rust: #C65C2E;
+            }
+        }
+
+        :root[data-wf-theme="dark"] {
+            --wf-paper: #141517;
+            --wf-surface: #1B1D20;
+            --wf-surface-2: #24272A;
+            --wf-ink: #ECECE8;
+            --wf-ink-invert: #16181A;
+            --wf-muted: #9BA0A3;
+            --wf-rule: #2E3134;
+            --wf-rule-firm: #3D4145;
+            --wf-brand: #3FA69D;
+            --wf-signal-rest: #7E8386;
+            --wf-signal-go: #4CA97A;
+            --wf-signal-hold: #E0A72A;
+            --wf-signal-stop: #E2685C;
+            --wf-site-red: #D54C43;
+            --wf-site-blue: #5578D0;
+            --wf-site-ochre: #A57105;
+            --wf-site-pine: #238C57;
+            --wf-site-violet: #896EB6;
+            --wf-site-rust: #C65C2E;
+        }
+        /* wayfindr:tokens:end */
         :root {
             color-scheme: light;
             --bg: #f7f7f3;
