@@ -30,7 +30,53 @@ missed while skimming.
 
 ## [Unreleased]
 
-No unreleased changes yet.
+**No operator action required.** Pull, restart, and migrations run themselves.
+
+The interface renovation described in ADR 0014 is in progress. Nothing about it
+is visible yet — the groundwork below changes what the image contains, not what
+the dashboard looks like.
+
+### Added
+
+- **Every site now has a colour.** Wayfindr is built for one desk covering many
+  sites, so the question an agent asks all day is *whose visitor is this?* A
+  colour answers it faster than a repeated site name. Pick one per site under
+  **Sites → Edit name and domain**; it appears wherever that site does, and on
+  the widget its visitors see.
+
+  Existing sites are assigned a colour automatically when you upgrade, in
+  creation order, so each of your sites starts out distinct from the others.
+  Nothing to configure unless you want to change them.
+
+### Changed
+
+- **The conversation queue is readable again.** It used to put three bands of
+  controls above the first conversation and give every row about 130 pixels, so
+  three conversations filled a screen. Lanes now carry their own counts, the
+  filters sit on one line, and rows are less than half the height &mdash; the same
+  queue shows around four times as many conversations without dropping anything
+  it used to tell you.
+
+  Colour now means something. A calm conversation is no longer marked in amber:
+  red appears where somebody is waiting, and each row carries its site's colour
+  as a stripe so you can tell whose visitor it is at a glance.
+
+- **The dashboard's typeface now ships with the application.** IBM Plex is
+  served from your own install rather than fetched from a font CDN, so an
+  install on `localhost`, on a bare IP, or behind a firewall renders the same as
+  one on a public domain. Previously a font host was configured but never
+  actually used, so every install already fell back to the system stack.
+
+### Removed
+
+- **The unused frontend build.** Wayfindr shipped a Vite and Tailwind pipeline
+  that no page ever loaded: it was built on every release and referenced by no
+  template. Removing it takes an entire Node stage out of the released image.
+
+  If you deploy manually rather than from the published image, the `npm ci` and
+  `npm run build` steps in the deploy flow are gone — see
+  `docs/self-hosting/runtime-requirements.md`. They were already doing nothing;
+  removing them is safe on any install. Nothing else about deploying changes.
 
 ## [0.5.0] - 2026-08-18
 

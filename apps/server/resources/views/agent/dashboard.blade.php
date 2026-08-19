@@ -1,5 +1,5 @@
 <x-layouts.app title="Agent Dashboard" :agent="$agent" :account="$account">
-            <x-page-header :title="$account->name" :subtitle="'Signed in as '.$agent->email" />
+            <x-page-header title="Dashboard" />
 
             @if ($activeBreakGlassGrants->isNotEmpty())
                 <section class="section break-glass-banner" aria-labelledby="operator-access-banner-heading">

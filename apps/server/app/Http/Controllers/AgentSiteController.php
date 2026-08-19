@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\AccountRole;
+use App\Enums\SiteColor;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\Site;
@@ -96,6 +97,9 @@ class AgentSiteController extends Controller
         $site = $account->sites()->create([
             'name' => trim($validated['name']),
             'domain' => $this->normalizeDomain($validated['domain'] ?? null),
+            // Assigned rather than defaulted, so a desk's sites stay tellable
+            // apart on sight from the moment the second one is created.
+            'color' => Site::nextColorForAccount((int) $account->id),
             'public_key' => $this->publicKey(),
             'settings' => [
                 'mask_selectors' => [],
@@ -524,16 +528,36 @@ class AgentSiteController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'domain' => ['nullable', 'string', 'max:255'],
+            // Constrained to the palette rather than accepting a colour value.
+            // The stored key is interpolated into a CSS custom property name on
+            // three surfaces, so an unvalidated value would be an injection
+            // point as well as a broken accent.
+            //
+            // `sometimes`, not `required`: this method exists precisely so one
+            // form cannot blank another's fields by omission, and a caller that
+            // never mentions colour should leave it alone rather than fail.
+            'color' => ['sometimes', Rule::enum(SiteColor::class)],
         ]);
 
-        $before = ['name' => $site->name, 'domain' => $site->domain];
+        $before = [
+            'name' => $site->name,
+            'domain' => $site->domain,
+            'color' => $site->resolvedColor()->value,
+        ];
 
         $site->forceFill([
             'name' => trim($validated['name']),
             'domain' => $this->normalizeDomain($validated['domain'] ?? null),
+            'color' => isset($validated['color'])
+                ? SiteColor::from($validated['color'])
+                : $site->resolvedColor(),
         ])->save();
 
-        $after = ['name' => $site->name, 'domain' => $site->domain];
+        $after = [
+            'name' => $site->name,
+            'domain' => $site->domain,
+            'color' => $site->resolvedColor()->value,
+        ];
 
         if ($before !== $after) {
             $this->recordSiteAudit($site, $request->user(), 'site.details_updated', [
