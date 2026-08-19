@@ -94,3 +94,85 @@ test('searchable references are explained on the field that searches them', func
         ->assertSee('class="wf-filter-help"', false)
         ->assertSee('Search by subject, support code, visitor ID, visitor name, or visitor email.');
 });
+
+// ── Queue switcher (ADR 0014) ───────────────────────────────────────────────
+
+test('the switcher walks the queue the agent came from, in the queue order', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+
+    foreach ([['WF-AAA1', 'First', 3], ['WF-BBB2', 'Second', 2], ['WF-CCC3', 'Third', 1]] as [$code, $subject, $agoMinutes]) {
+        Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => $code,
+            'subject' => $subject,
+            'status' => 'open',
+            'last_message_at' => now()->subMinutes($agoMinutes),
+        ]);
+    }
+
+    // Queue order is last_message_at desc, so: Third, Second, First.
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-BBB2')
+        ->assertOk()
+        ->assertSee('aria-label="Move through the conversation queue"', false)
+        ->assertSee('2 of 3')
+        ->assertSee(route('dashboard.conversations.show', ['supportCode' => 'WF-CCC3']), false)
+        ->assertSee(route('dashboard.conversations.show', ['supportCode' => 'WF-AAA1']), false);
+});
+
+test('a conversation outside the queue offers no neighbours rather than wrong ones', function (): void {
+    // Opened from search or a notification, or replied to and no longer in the
+    // lane. Offering neighbours from a list it is not part of would be a lie
+    // about where "next" goes.
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+
+    Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-CLOSED1',
+        'subject' => 'Resolved',
+        'status' => 'closed',
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-CLOSED1')
+        ->assertOk()
+        ->assertDontSee('aria-label="Move through the conversation queue"', false);
+});
+
+test('the switcher never names a conversation from another account', function (): void {
+    // The real visibility boundary, as opposed to the panel rules: the switcher
+    // reads the same visibleTo scope the queue does.
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+    Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-MINE1',
+        'subject' => 'My conversation',
+        'status' => 'open',
+    ]);
+    Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-MINE2',
+        'subject' => 'My other conversation',
+        'status' => 'open',
+    ]);
+
+    $strangerSite = Site::factory()->for(Account::factory()->create())->create();
+    $strangerVisitor = Visitor::factory()->for($strangerSite)->create();
+    Conversation::factory()->for($strangerSite)->for($strangerVisitor)->create([
+        'support_code' => 'WF-STRANGER',
+        'subject' => 'Somebody else entirely',
+        'status' => 'open',
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-MINE1')
+        ->assertOk()
+        ->assertSee('aria-label="Move through the conversation queue"', false)
+        ->assertDontSee('Somebody else entirely')
+        ->assertDontSee('WF-STRANGER');
+});

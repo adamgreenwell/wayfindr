@@ -13,6 +13,7 @@ use App\Support\Attachments\AttachmentBinder;
 use App\Support\CobrowseAuditTrail;
 use App\Support\CobrowseConsentState;
 use App\Support\CobrowseResyncRequestPolicy;
+use App\Support\Conversations\ConversationQueueQuery;
 use App\Support\ReplyTemplateOptions;
 use App\Support\TicketCategory;
 use App\Support\TicketPriority;
@@ -64,6 +65,7 @@ class AgentConversationController extends Controller
             'conversation' => $conversation,
             'conversationBackUrl' => route('dashboard.conversations.index', $conversationReturnQuery),
             'conversationReturnQuery' => $conversationReturnQuery,
+            'conversationSiblings' => $this->conversationSiblings($agent, $conversation, $conversationReturnQuery),
             'messages' => $messages,
             'priorConversations' => $this->priorConversations($conversation),
             'realtime' => $this->realtimeConfig($conversation),
@@ -109,6 +111,62 @@ class AgentConversationController extends Controller
     /**
      * @return array<string, string|int>
      */
+    /**
+     * The conversations either side of this one, in the queue the agent came
+     * from (ADR 0014).
+     *
+     * The whole point is that an agent working a queue moves conversation to
+     * conversation without a round trip through the index, so this MUST agree
+     * with the queue's own filtering and ordering -- which is why both read
+     * ConversationQueueQuery rather than each stating the rules.
+     *
+     * @param  array<string, mixed>  $returnQuery
+     * @return array{items: Collection<int, array{support_code: string, subject: string, current: bool}>, previous: ?string, next: ?string, position: ?int, total: int}
+     */
+    private function conversationSiblings(User $agent, Conversation $conversation, array $returnQuery): array
+    {
+        $lane = (string) ($returnQuery['conversation_filter'] ?? 'all');
+        $status = $lane === 'closed' ? 'closed' : 'open';
+        $site = $returnQuery['conversation_site'] ?? null;
+        $search = (string) ($returnQuery['conversation_search'] ?? '');
+        $presence = (string) ($returnQuery['conversation_presence'] ?? 'all');
+
+        $query = ConversationQueueQuery::visibleTo($agent, $status, $site ? (int) $site : null, $search);
+
+        if ($presence !== 'all') {
+            ConversationQueueQuery::applyPresence($query, $presence);
+        }
+
+        ConversationQueueQuery::applyLane($query, $lane, $agent);
+        ConversationQueueQuery::ordered($query);
+
+        // Bounded: a desk with thousands of open conversations should not render
+        // thousands of options into every transcript.
+        $siblings = $query->limit(50)->get(['id', 'support_code', 'subject']);
+
+        $index = $siblings->search(fn (Conversation $candidate): bool => $candidate->id === $conversation->id);
+
+        if ($index === false) {
+            // The conversation is not in the queue the agent arrived from --
+            // opened from search, a notification, or a lane it no longer
+            // matches after being replied to. Offering neighbours from a list
+            // it is not part of would be a lie about where "next" goes.
+            return ['items' => collect(), 'previous' => null, 'next' => null, 'position' => null, 'total' => 0];
+        }
+
+        return [
+            'items' => $siblings->map(fn (Conversation $candidate): array => [
+                'support_code' => $candidate->support_code,
+                'subject' => $candidate->subject ?? 'Untitled conversation',
+                'current' => $candidate->id === $conversation->id,
+            ]),
+            'previous' => $siblings->get($index - 1)?->support_code,
+            'next' => $siblings->get($index + 1)?->support_code,
+            'position' => $index + 1,
+            'total' => $siblings->count(),
+        ];
+    }
+
     private function conversationQueueReturnQuery(Request $request): array
     {
         $params = [];
