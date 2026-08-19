@@ -1,9 +1,10 @@
 SERVER_DIR := apps/server
 
-.PHONY: help design-tokens design-tokens-test php-version-test public-artifact-install-test public-info-check public-info-test self-host-test services-up services-down server-install server-migrate server-serve server-test wiki-sync-dry-run wiki-test
+.PHONY: help design-fonts-test design-tokens design-tokens-test php-version-test public-artifact-install-test public-info-check public-info-test self-host-test services-up services-down server-install server-migrate server-serve server-test wiki-sync-dry-run wiki-test
 
 help:
 	@printf '%s\n' 'Wayfindr development commands:'
+	@printf '%s\n' '  make design-fonts-test  Check the vendored typefaces ship and match their hashes'
 	@printf '%s\n' '  make design-tokens      Regenerate the design tokens into both consumers'
 	@printf '%s\n' '  make design-tokens-test Check both consumers match packages/design-tokens/tokens.json'
 	@printf '%s\n' '  make php-version-test   Check that every PHP minimum agrees'
@@ -28,6 +29,11 @@ design-tokens:
 
 design-tokens-test:
 	scripts/test-design-tokens.sh
+
+# The dashboard serves every byte it renders: a CDN font does not fail loudly
+# on a localhost or air-gapped install, it silently renders the system stack.
+design-fonts-test:
+	scripts/test-design-fonts.sh
 
 public-info-check:
 	scripts/check-public-info-boundary.sh

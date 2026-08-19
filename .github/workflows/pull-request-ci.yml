@@ -85,6 +85,9 @@ jobs:
       - name: Check the design tokens are generated from one source
         run: make design-tokens-test
 
+      - name: Check the typefaces ship with the application
+        run: make design-fonts-test
+
   repository-contracts:
     name: Repository contracts
     runs-on: ubuntu-latest

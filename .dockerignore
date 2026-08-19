@@ -41,9 +41,7 @@ docker/self-hosting/.env
 **/.phpactor.json
 **/*.log
 apps/server/.phpunit.cache
-apps/server/public/hot
 apps/server/public/storage
-apps/server/public/fonts-manifest.dev.json
 apps/server/storage/*.key
 apps/server/storage/pail
 

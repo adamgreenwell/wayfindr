@@ -30,7 +30,30 @@ missed while skimming.
 
 ## [Unreleased]
 
-No unreleased changes yet.
+**No operator action required.** Pull, restart, and migrations run themselves.
+
+The interface renovation described in ADR 0014 is in progress. Nothing about it
+is visible yet — the groundwork below changes what the image contains, not what
+the dashboard looks like.
+
+### Changed
+
+- **The dashboard's typeface now ships with the application.** IBM Plex is
+  served from your own install rather than fetched from a font CDN, so an
+  install on `localhost`, on a bare IP, or behind a firewall renders the same as
+  one on a public domain. Previously a font host was configured but never
+  actually used, so every install already fell back to the system stack.
+
+### Removed
+
+- **The unused frontend build.** Wayfindr shipped a Vite and Tailwind pipeline
+  that no page ever loaded: it was built on every release and referenced by no
+  template. Removing it takes an entire Node stage out of the released image.
+
+  If you deploy manually rather than from the published image, the `npm ci` and
+  `npm run build` steps in the deploy flow are gone — see
+  `docs/self-hosting/runtime-requirements.md`. They were already doing nothing;
+  removing them is safe on any install. Nothing else about deploying changes.
 
 ## [0.5.0] - 2026-08-18
 

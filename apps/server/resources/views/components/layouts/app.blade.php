@@ -12,6 +12,62 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ $title }}</title>
     <style>
+        /* IBM Plex, served from this install (ADR 0014). Never a third-party
+           request: Wayfindr runs on localhost, bare IPs and air-gapped networks,
+           where a CDN font does not fail loudly -- it silently renders the system
+           stack. Provenance and hashes: public/fonts/README.md.
+
+           `swap` because an agent reading a queue must not wait on a typeface.
+           These faces are declared but unused until the shell consumes
+           --wf-font-*, and a declared-but-unused @font-face is never fetched. */
+        @font-face {
+            font-family: 'IBM Plex Sans';
+            src: url('/fonts/IBMPlexSans-Regular.woff2') format('woff2');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'IBM Plex Sans';
+            src: url('/fonts/IBMPlexSans-Medium.woff2') format('woff2');
+            font-weight: 500;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'IBM Plex Sans';
+            src: url('/fonts/IBMPlexSans-SemiBold.woff2') format('woff2');
+            font-weight: 600;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'IBM Plex Sans Condensed';
+            src: url('/fonts/IBMPlexSansCondensed-SemiBold.woff2') format('woff2');
+            font-weight: 600;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'IBM Plex Mono';
+            src: url('/fonts/IBMPlexMono-Regular.woff2') format('woff2');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'IBM Plex Mono';
+            src: url('/fonts/IBMPlexMono-Medium.woff2') format('woff2');
+            font-weight: 500;
+            font-style: normal;
+            font-display: swap;
+        }
+
         /* wayfindr:tokens:start */
         /* Generated from packages/design-tokens/tokens.json by scripts/generate-design-tokens.php. Do not edit by hand -- run `make design-tokens`. */
         :root {
