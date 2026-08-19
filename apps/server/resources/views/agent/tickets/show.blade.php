@@ -381,6 +381,7 @@
                         'emptyMessage' => 'No conversation messages yet.',
                         'transcriptMessages' => $linkedConversationMessages,
                         'supportCode' => $linkedConversationSupportCode,
+                        'transcriptSiteColor' => $ticket->site->resolvedColor()->cssVariable(),
                     ])
 
                     @php
@@ -446,8 +447,8 @@
 
                             <div class="reply-template-preview" data-template-preview>
                                 <div data-template-preview-empty @if ($selectedReplyTemplate !== '') hidden @endif>
-                                    <strong>No helper selected</strong>
-                                    <p class="lede">Custom ticket replies stay fully agent-written.</p>
+                                    <strong>Writing this one yourself</strong>
+                                    <p class="lede">Reply helpers offer a starting point you can edit. Wayfindr never writes a reply for you.</p>
                                 </div>
 
                                 @foreach ($replyTemplates as $replyTemplateKey => $replyTemplate)

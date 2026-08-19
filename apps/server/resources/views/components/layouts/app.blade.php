@@ -1890,30 +1890,71 @@
             display: none !important;
         }
 
+        /* ── The transcript (ADR 0014) ─────────────────────────────────────
+           The widget has always rendered this as a conversation -- agent
+           replies to one side, in their own bubble. The agent's own view
+           stacked both sides full width under a header reading "Messages ·
+           3 total", so the two halves of the same exchange used opposite
+           metaphors and only the agent got the log table.
+
+           .message-card is deliberately NOT included here: tickets use it for
+           notes and updates, which are cards, not dialogue. */
         .message-list {
-            display: grid;
-            gap: 14px;
-            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: var(--wf-space-3);
+            padding: var(--wf-space-5);
         }
 
-        .message-card,
-        .message {
-            border: 1px solid var(--border);
+        .message-card {
+            border: var(--wf-border) solid var(--border);
             border-radius: 8px;
             padding: 14px;
         }
 
-        .message-card.agent-message,
-        .message.agent {
+        .message-card.agent-message {
             background: var(--surface-muted);
         }
 
-        .message.grouped {
-            margin-top: -8px;
+        .message {
+            max-width: 74%;
+            min-width: 0;
+            border: var(--wf-border) solid var(--wf-rule);
+            border-radius: var(--wf-radius);
+            padding: 9px 12px;
+            background: var(--wf-surface);
         }
 
-        .message.grouped .message-meta {
+        /* The visitor sits left and carries the site's colour: on a desk
+           covering many sites, whose customer is speaking is the first thing
+           an agent needs. */
+        .message.visitor {
+            align-self: flex-start;
+            border-left: var(--wf-rail) solid var(--wf-conversation-site, var(--wf-rule-firm));
+        }
+
+        /* The agent sits right and recedes. An agent re-reading a thread is
+           looking for what the visitor said; their own replies are context. */
+        .message.agent {
+            align-self: flex-end;
+            background: var(--wf-surface-2);
+        }
+
+        .message.grouped {
+            margin-top: calc(var(--wf-space-3) * -1 + 2px);
+        }
+
+        .message.agent .message-meta {
             justify-content: flex-end;
+        }
+
+        /* A message with neither text nor an attachment used to render as an
+           empty bordered box with a timestamp, which reads as a rendering bug
+           rather than as what it is. */
+        .message-empty {
+            margin: 0;
+            color: var(--wf-muted);
+            font-style: italic;
         }
 
         .empty-state {
@@ -2134,30 +2175,39 @@
         .reply-workspace {
             display: grid;
             grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
-            gap: 1px;
-            background: var(--border);
-            border-top: 1px solid var(--border);
+            background: var(--surface);
+            border-top: var(--wf-border) solid var(--border);
+        }
+
+        .reply-workspace > * + * {
+            border-left: var(--wf-border) solid var(--border);
         }
 
         .reply-workspace .section-form {
             background: var(--surface);
         }
 
+        /* The gap used to be painted by this element's own background, so the
+           three cells the content did not fill rendered as one solid grey block
+           beside it -- the same defect .meta-grid had. Items draw their own
+           hairline instead, and the strip takes only the width it needs. */
         .reply-context-strip {
-            display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
+            display: flex;
+            flex-wrap: wrap;
             gap: 1px;
             overflow: hidden;
             margin-bottom: 18px;
-            border: 1px solid var(--border);
+            border: var(--wf-border) solid var(--border);
             border-radius: 6px;
-            background: var(--border);
+            background: var(--surface);
         }
 
         .reply-context-item {
             min-width: 0;
+            flex: 1 1 200px;
             padding: 12px;
             background: var(--surface-muted);
+            box-shadow: 0 0 0 1px var(--border);
         }
 
         .reply-assist {

@@ -9,6 +9,7 @@
             'emptyMessage' => 'No messages yet.',
             'transcriptMessages' => $messages,
             'supportCode' => $conversation->support_code,
+            'transcriptSiteColor' => $conversation->site->resolvedColor()->cssVariable(),
         ])
     </div>
 
@@ -113,8 +114,8 @@
 
             <div class="reply-template-preview" data-template-preview>
                 <div data-template-preview-empty @if ($selectedReplyTemplate !== '') hidden @endif>
-                    <strong>No helper selected</strong>
-                    <p class="lede">Custom replies stay fully agent-written.</p>
+                    <strong>Writing this one yourself</strong>
+                    <p class="lede">Reply helpers offer a starting point you can edit. Wayfindr never writes a reply for you.</p>
                 </div>
 
                 @foreach ($replyTemplates as $replyTemplateKey => $replyTemplate)

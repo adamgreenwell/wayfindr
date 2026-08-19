@@ -1,6 +1,7 @@
 @php
     $emptyMessage = $emptyMessage ?? 'No messages yet.';
     $supportCode = $supportCode ?? null;
+    $transcriptSiteColor = $transcriptSiteColor ?? null;
     $transcriptMessages = $transcriptMessages ?? collect();
     $latestAgentMessageId = $transcriptMessages
         ->filter(fn ($message) => $message->sender_type === \App\Models\User::class)
@@ -11,7 +12,7 @@
 @if ($transcriptMessages->isEmpty())
     <p class="empty">{{ $emptyMessage }}</p>
 @else
-    <div class="message-list">
+    <div class="message-list" @if ($transcriptSiteColor) style="--wf-conversation-site: var({{ $transcriptSiteColor }})" @endif>
         @foreach ($transcriptMessages as $transcriptMessage)
             @php
                 $isAgent = $transcriptMessage->sender_type === \App\Models\User::class;
@@ -50,8 +51,10 @@
                         : collect();
                 @endphp
 
-                @if (filled($transcriptMessage->body) || $messageAttachments->isEmpty())
+                @if (filled($transcriptMessage->body))
                     <p class="message-body">{{ $transcriptMessage->body }}</p>
+                @elseif ($messageAttachments->isEmpty())
+                    <p class="message-empty">This message has no text or attachment.</p>
                 @endif
 
                 @if ($supportCode && $messageAttachments->isNotEmpty())
@@ -70,7 +73,7 @@
                                 </a>
                             @else
                                 <a class="message-attachment message-attachment-file" href="{{ $attachmentUrl }}" target="_blank" rel="noopener noreferrer" download>
-                                    <span class="message-attachment-icon" aria-hidden="true">📎</span>
+                                    <x-icon name="attachment" :size="14" class="message-attachment-icon" />
                                     <span class="message-attachment-name">{{ $attachment->original_filename }}</span>
                                 </a>
                             @endif
