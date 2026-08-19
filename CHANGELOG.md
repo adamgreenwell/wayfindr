@@ -36,6 +36,18 @@ The interface renovation described in ADR 0014 is in progress. Nothing about it
 is visible yet — the groundwork below changes what the image contains, not what
 the dashboard looks like.
 
+### Added
+
+- **Every site now has a colour.** Wayfindr is built for one desk covering many
+  sites, so the question an agent asks all day is *whose visitor is this?* A
+  colour answers it faster than a repeated site name. Pick one per site under
+  **Sites → Edit name and domain**; it appears wherever that site does, and on
+  the widget its visitors see.
+
+  Existing sites are assigned a colour automatically when you upgrade, in
+  creation order, so each of your sites starts out distinct from the others.
+  Nothing to configure unless you want to change them.
+
 ### Changed
 
 - **The dashboard's typeface now ships with the application.** IBM Plex is

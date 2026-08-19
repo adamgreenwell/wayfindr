@@ -522,6 +522,71 @@
             padding: var(--wf-space-5) var(--wf-space-5) var(--wf-space-7);
         }
 
+        /* ── Site colour (ADR 0014) ───────────────────────────────────────
+           One operator choice, three surfaces. Every consumer resolves the
+           stored key through --wf-site-<key>, so a hue retuned in tokens.json
+           reaches all of them and the dark variants apply for free. */
+        .wf-site-dot {
+            display: inline-block;
+            width: 9px;
+            height: 9px;
+            flex: none;
+            vertical-align: -1px;
+        }
+
+        .wf-color-picker {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--wf-space-2);
+            margin-top: var(--wf-space-2);
+        }
+
+        .wf-color-option {
+            position: relative;
+        }
+
+        /* The input stays in the layout and keeps its focus ring via the label
+           below; opacity rather than display:none, so it remains focusable and
+           announced as the radio it is. */
+        .wf-color-option input {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .wf-color-swatch {
+            display: flex;
+            align-items: center;
+            gap: var(--wf-space-2);
+            padding: 6px 12px 6px 8px;
+            border: var(--wf-border) solid var(--wf-rule);
+            border-radius: var(--wf-radius);
+            font-size: 12.5px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        .wf-color-swatch i {
+            display: block;
+            width: 14px;
+            height: 14px;
+            flex: none;
+        }
+
+        .wf-color-option input:checked + .wf-color-swatch {
+            border-color: var(--wf-ink);
+            box-shadow: inset 0 0 0 1px var(--wf-ink);
+        }
+
+        .wf-color-option input:focus-visible + .wf-color-swatch {
+            outline: 2px solid var(--wf-brand);
+            outline-offset: 2px;
+        }
+
         @media (max-width: 900px) {
             .wf-app {
                 grid-template-columns: minmax(0, 1fr);
@@ -663,6 +728,22 @@
 
         .field {
             margin-top: 18px;
+        }
+
+        /* A fieldset groups the radios for assistive technology, but its UA
+           border and padding are a browser default rather than a choice, and
+           its intrinsic min-width breaks flex and grid parents. */
+        fieldset.field {
+            border: 0;
+            padding: 0;
+            min-width: 0;
+        }
+
+        .field legend {
+            padding: 0;
+            margin-bottom: 6px;
+            font-size: 0.9rem;
+            font-weight: 650;
         }
 
         .field label {
