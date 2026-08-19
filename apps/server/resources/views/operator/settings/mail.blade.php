@@ -1,7 +1,8 @@
-<x-layouts.app title="Mail settings">
-    <p><a class="text-link" href="{{ $backUrl }}">{{ $backLabel }}</a></p>
+<x-layouts.operator title="Mail settings">
 
     <x-page-header
+        :back-href="$backUrl ?? null"
+        :back-label="$backLabel ?? 'Back'"
         title="Mail settings"
         subtitle="Configure outbound email here — no .env editing or restart. Changes apply immediately." />
 
@@ -118,4 +119,4 @@
             <button class="button secondary" type="submit">Send test email</button>
         </form>
     </section>
-</x-layouts.app>
+</x-layouts.operator>

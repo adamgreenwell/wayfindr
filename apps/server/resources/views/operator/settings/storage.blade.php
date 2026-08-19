@@ -1,7 +1,8 @@
-<x-layouts.app title="Storage settings">
-    <p><a class="text-link" href="{{ $backUrl }}">{{ $backLabel }}</a></p>
+<x-layouts.operator title="Storage settings">
 
     <x-page-header
+        :back-href="$backUrl ?? null"
+        :back-label="$backLabel ?? 'Back'"
         title="Attachment storage"
         subtitle="Choose where uploaded files are stored — the local disk or an S3-compatible bucket. Changes apply immediately, no restart." />
 
@@ -134,4 +135,4 @@
             <button class="button secondary" type="submit">Run storage test</button>
         </form>
     </section>
-</x-layouts.app>
+</x-layouts.operator>

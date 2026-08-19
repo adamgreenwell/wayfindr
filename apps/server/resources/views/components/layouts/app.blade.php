@@ -2,6 +2,9 @@
     'title' => config('app.name', 'Wayfindr'),
     'agent' => null,
     'account' => null,
+    // A deeper crumb for surfaces that have their own sections, so the bar can
+    // say "Operator > Backups" rather than stopping at the rail item.
+    'crumb' => null,
 ])
 
 <!DOCTYPE html>
@@ -961,6 +964,74 @@
 
         .wf-queue-assignee[data-unassigned="true"] {
             color: var(--wf-signal-hold);
+        }
+
+        /* ── Context sidebar (ADR 0014) ───────────────────────────────────
+           The rail says which part of the product you are in. This says which
+           part of THIS object -- the operator console has seven sections and
+           used to navigate them with a single "back" link at the top of each
+           page, outside the application shell entirely. */
+        .wf-context {
+            display: grid;
+            grid-template-columns: 188px minmax(0, 1fr);
+            gap: var(--wf-space-6);
+            align-items: start;
+        }
+
+        .wf-context-nav {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            position: sticky;
+            top: calc(52px + var(--wf-space-5));
+        }
+
+        .wf-context-heading {
+            margin: 0 0 var(--wf-space-2);
+            padding: 0 var(--wf-space-3);
+            font-family: var(--wf-font-cond);
+            font-size: 10.5px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--wf-muted);
+        }
+
+        .wf-context-link {
+            padding: 6px var(--wf-space-3);
+            border-radius: var(--wf-radius);
+            color: var(--wf-muted);
+            font-size: var(--wf-text-ui);
+            font-weight: 500;
+            text-decoration: none;
+        }
+
+        .wf-context-link:hover {
+            background: var(--wf-surface-2);
+            color: var(--wf-ink);
+        }
+
+        .wf-context-link[aria-current="page"] {
+            background: var(--wf-surface-2);
+            color: var(--wf-ink);
+            font-weight: 600;
+            box-shadow: inset var(--wf-rail) 0 0 var(--wf-brand);
+        }
+
+        .wf-context-link:focus-visible {
+            outline: 2px solid var(--wf-brand);
+            outline-offset: -2px;
+        }
+
+        .wf-context-body {
+            min-width: 0;
+        }
+
+        /* The first card in the body already carries the top margin the
+           sections below it use, which pushed it out of line with the nav. */
+        .wf-context-body > .section:first-child,
+        .wf-context-body > .page-header + .section {
+            margin-top: var(--wf-space-4);
         }
 
         @media (max-width: 900px) {
@@ -2465,7 +2536,13 @@
                     <nav class="wf-crumbs" aria-label="Breadcrumb">
                         <a href="{{ route('dashboard') }}">{{ $account->name }}</a>
                         <x-icon name="chevron-right" :size="13" />
-                        <span class="wf-crumb-current">{{ $currentLabel }}</span>
+                        @if ($crumb)
+                            <a href="{{ route('operator.dashboard') }}">{{ $currentLabel }}</a>
+                            <x-icon name="chevron-right" :size="13" />
+                            <span class="wf-crumb-current">{{ $crumb }}</span>
+                        @else
+                            <span class="wf-crumb-current">{{ $currentLabel }}</span>
+                        @endif
                     </nav>
 
                     <form class="wf-topbar-search" method="GET" action="{{ route('dashboard.support-code.lookup') }}" aria-label="Find support trail">

@@ -1,4 +1,4 @@
-<x-layouts.app title="Operator console">
+<x-layouts.operator title="Operator console">
     @php
         $readinessConfirmationRoute = route('operator.readiness.confirmations.store');
         $operatorActivityCount = $operatorActivity->count();
@@ -12,19 +12,18 @@
         );
     @endphp
 
-    <p><a class="text-link" href="{{ route('dashboard') }}">Back to dashboard</a></p>
-    <h1>Operator console</h1>
-    <p class="lede">
-        Signed in as {{ $operator->name }}. Platform operator access does not grant support data access.
-    </p>
-
-    <p>
-        <a class="button" href="{{ route('operator.onboarding') }}">Guided setup</a>
-        <a class="button secondary" href="{{ route('operator.settings.mail.edit') }}">Configure mail</a>
-        <a class="button secondary" href="{{ route('operator.settings.storage.edit') }}">Configure storage</a>
-        <a class="button secondary" href="{{ route('operator.settings.scanning.edit') }}">Configure scanning</a>
-        <a class="button secondary" href="{{ route('operator.settings.backups.edit') }}">Configure backups</a>
-    </p>
+    <x-page-header
+        title="Operator console"
+        :subtitle="'Signed in as '.$operator->name.'. Platform operator access does not grant support data access.'"
+    >
+        <x-slot:actions>
+            {{-- One call to action. The four "Configure X" buttons that used to
+                 sit here are every entry in the section sidebar beside this
+                 page, and "Back to dashboard" is in the rail and the
+                 breadcrumb. --}}
+            <a class="button" href="{{ route('operator.onboarding') }}">Guided setup</a>
+        </x-slot:actions>
+    </x-page-header>
 
     <section class="section" aria-labelledby="operator-focus-heading">
         <div class="section-header">
@@ -388,4 +387,4 @@
             @endforeach
         </div>
     </section>
-</x-layouts.app>
+</x-layouts.operator>

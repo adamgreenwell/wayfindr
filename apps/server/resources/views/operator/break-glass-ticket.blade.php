@@ -1,4 +1,4 @@
-<x-layouts.app title="Break-glass — Ticket #{{ $ticket->id }}">
+<x-layouts.operator title="Break-glass — Ticket #{{ $ticket->id }}">
     <p><a class="text-link" href="{{ route('operator.break-glass.show', $grant) }}">Back to grant</a></p>
     <h1>Ticket #{{ $ticket->id }} — {{ $ticket->subject }}</h1>
     <p class="lede">
@@ -49,4 +49,4 @@
             </div>
         @endif
     </section>
-</x-layouts.app>
+</x-layouts.operator>
