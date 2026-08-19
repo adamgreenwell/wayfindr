@@ -52,6 +52,21 @@ application wearing a different face. Screenshots are in the release notes.
 
 ### Changed
 
+- **A conversation looks like a conversation.** The chat widget has always shown
+  replies as a back-and-forth. The agent's own view of the same exchange stacked
+  every message full width in one column, so the two halves of a conversation
+  looked like different things and only the agent got the log. Visitor messages
+  now sit on the left carrying their site's colour, replies sit on the right, and
+  delivery state sits on the message it belongs to.
+
+  A message with no text and no attachment now says so, instead of rendering as an
+  empty box with a timestamp in it.
+
+- **The widget follows the visitor's colour scheme.** A visitor whose device is
+  set to dark mode now sees a dark chat panel, and it wears its site's colour on
+  its top edge. It takes its colours from the same source the dashboard does, so
+  the two cannot drift apart again.
+
 - **Every queue is readable again.** Conversations, tickets, alerts and sites all
   used to stack bands of controls above the first row and give each row about
   130 pixels. Lanes now carry their own counts, filters sit on one line, and rows

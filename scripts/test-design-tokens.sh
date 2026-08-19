@@ -53,6 +53,27 @@ for file in "$BLADE" "$WIDGET"; do
     fi
 done
 
+# The widget must resolve every colour through a token, not repeat one. This is
+# the drift that started ADR 0014: the dashboard and the widget shared five hex
+# values as duplicated literals in two languages with nothing watching them.
+#
+# The generated block is excluded because it is where the values legitimately
+# live; everything else in the injected stylesheet must reference them.
+#
+# box-shadow is excluded too: the widget floats over a page Wayfindr does not
+# own, and its separation shadows are tuned to sit on an unknown background
+# rather than to match either of our themes.
+widget_css_hex="$(awk '/style\.textContent = \[/{inside=1} /\]\.join\(/{inside=0} inside' "$WIDGET" \
+    | awk '/wayfindr:tokens:start/{skip=1} /wayfindr:tokens:end/{skip=0; next} !skip' \
+    | grep -v 'box-shadow' \
+    | grep -nE '#[0-9a-fA-F]{3,8}\\b|rgba?\\(' || true)"
+
+if [ -n "$widget_css_hex" ]; then
+    echo "The widget stylesheet hardcodes a colour instead of using a token:" >&2
+    echo "$widget_css_hex" >&2
+    fail "Add it to packages/design-tokens/tokens.json and reference it as var(--wf-...)."
+fi
+
 # The dead Tailwind pipeline is gone and must stay gone: it was configured,
 # built on every pull request, and referenced by no view (ADR 0014). Left in
 # place it tells the next contributor that utilities are available when they
