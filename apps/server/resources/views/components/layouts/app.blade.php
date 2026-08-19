@@ -11,6 +11,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ $title }}</title>
+    <script>
+        (function () {
+            try {
+                var stored = localStorage.getItem('wayfindr:theme');
+
+                if (stored === 'light' || stored === 'dark') {
+                    document.documentElement.setAttribute('data-wf-theme', stored);
+                }
+            } catch (error) {
+                // Private mode and blocked storage both throw here. Falling
+                // through leaves the OS preference in charge, which is the
+                // right answer when we cannot remember a choice.
+            }
+        })();
+    </script>
     <style>
         /* IBM Plex, served from this install (ADR 0014). Never a third-party
            request: Wayfindr runs on localhost, bare IPs and air-gapped networks,
@@ -159,17 +174,27 @@
             --wf-site-rust: #C65C2E;
         }
         /* wayfindr:tokens:end */
+        /* The legacy palette, repointed at the tokens above (ADR 0014).
+           The ~140 hand-rolled classes below still name --bg, --surface,
+           --accent and so on. Rebinding them in one place moves the whole
+           application onto the new palette and into dark mode without
+           touching those classes, which the later steps rewrite anyway.
+
+           --accent stays the brand hue here because the legacy components use
+           it for tints, focus rings and selected states, where a hue still
+           carries meaning. Primary BUTTONS move to ink below, which is the
+           change that actually reads. */
         :root {
-            color-scheme: light;
-            --bg: #f7f7f3;
-            --surface: #ffffff;
-            --surface-muted: #f1f5f4;
-            --text: #1d2523;
-            --muted: #62706b;
-            --border: #d8dfdc;
-            --accent: #0d6f68;
-            --accent-strong: #094f4b;
-            --danger: #9d1c1c;
+            color-scheme: light dark;
+            --bg: var(--wf-paper);
+            --surface: var(--wf-surface);
+            --surface-muted: var(--wf-surface-2);
+            --text: var(--wf-ink);
+            --muted: var(--wf-muted);
+            --border: var(--wf-rule);
+            --accent: var(--wf-brand);
+            --accent-strong: var(--wf-brand);
+            --danger: var(--wf-signal-stop);
         }
 
         * {
@@ -180,7 +205,8 @@
             margin: 0;
             background: var(--bg);
             color: var(--text);
-            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-family: var(--wf-font-sans);
+            font-size: var(--wf-text-body);
             line-height: 1.5;
         }
 
@@ -195,103 +221,381 @@
             font: inherit;
         }
 
-        .shell {
+        /* ── Application shell (ADR 0014) ────────────────────────────────
+           A persistent rail and a fixed frame, rather than a centred document.
+           The rail is zoned -- daily work at the top, configuration and
+           identity pinned to the bottom -- so "Conversations" and "Operator"
+           stop ranking equally, which is what nine identical pills did. */
+
+        .wf-app {
+            display: grid;
+            grid-template-columns: 236px minmax(0, 1fr);
             min-height: 100vh;
         }
 
-        .topbar {
-            background: var(--surface);
-            border-bottom: 1px solid var(--border);
+        .wf-rail {
+            display: flex;
+            flex-direction: column;
+            gap: var(--wf-space-5);
+            padding: var(--wf-space-4) 0;
+            background: var(--wf-surface);
+            border-right: var(--wf-border) solid var(--wf-rule);
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            overflow-y: auto;
         }
 
-        .topbar-inner,
-        .page {
-            width: min(1120px, calc(100% - 32px));
-            margin: 0 auto;
-        }
-
-        .topbar-inner {
-            min-height: 72px;
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) auto;
-            grid-template-areas:
-                "main actions"
-                "nav nav";
-            align-items: center;
-            gap: 10px 16px;
-        }
-
-        .topbar-main {
-            grid-area: main;
-            min-width: 0;
-        }
-
-        .brand,
-        .brand-link {
-            font-weight: 700;
-        }
-
-        .brand-link {
-            color: var(--text);
-            text-decoration: none;
-        }
-
-        .brand-link:hover {
-            color: var(--accent-strong);
-        }
-
-        .topbar-context {
-            margin-top: 2px;
-        }
-
-        .app-nav {
-            grid-area: nav;
+        .wf-mark {
             display: flex;
             align-items: center;
-            flex-wrap: wrap;
-            gap: 4px;
-            justify-content: flex-start;
-            border-top: 1px solid var(--border);
-            margin-top: 4px;
-            padding-top: 8px;
-        }
-
-        .app-nav-link {
-            border: 1px solid transparent;
-            border-radius: 6px;
-            color: var(--muted);
-            font-weight: 700;
-            padding: 8px 10px;
-            text-decoration: none;
-            white-space: nowrap;
-        }
-
-        .app-nav-link:hover {
-            background: var(--surface-muted);
-            color: var(--text);
-        }
-
-        .app-nav-link[aria-current="page"] {
-            background: var(--surface-muted);
-            border-color: var(--border);
-            color: var(--accent-strong);
-        }
-
-        .topbar-actions {
-            grid-area: actions;
-            display: flex;
-            align-items: center;
-            flex-wrap: wrap;
             gap: 10px;
-            justify-content: flex-end;
+            padding: 0 var(--wf-space-4);
+            color: var(--wf-ink);
+            text-decoration: none;
         }
 
-        .topbar-actions form {
+        /* Three flat planes. The brand mark is the one place these hues appear
+           without carrying data, and it is deliberately small. */
+        .wf-mark-planes {
+            display: flex;
+            flex: none;
+        }
+
+        .wf-mark-planes i {
+            display: block;
+            width: 7px;
+            height: 18px;
+        }
+
+        .wf-mark-planes i:nth-child(1) { background: var(--wf-site-red); }
+        .wf-mark-planes i:nth-child(2) { background: var(--wf-site-ochre); }
+        .wf-mark-planes i:nth-child(3) { background: var(--wf-brand); }
+
+        .wf-mark-name {
+            font-family: var(--wf-font-mono);
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+        }
+
+        .wf-nav {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            padding: 0 var(--wf-space-2);
+        }
+
+        .wf-nav-heading {
+            font-family: var(--wf-font-cond);
+            font-size: 10.5px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--wf-muted);
+            padding: var(--wf-space-2) var(--wf-space-3) var(--wf-space-1);
             margin: 0;
         }
 
+        .wf-nav-link {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 7px var(--wf-space-3);
+            border-radius: var(--wf-radius);
+            color: var(--wf-muted);
+            font-size: var(--wf-text-ui);
+            font-weight: 500;
+            text-decoration: none;
+        }
+
+        .wf-nav-link:hover {
+            background: var(--wf-surface-2);
+            color: var(--wf-ink);
+        }
+
+        .wf-nav-link[aria-current="page"] {
+            background: var(--wf-surface-2);
+            color: var(--wf-ink);
+            font-weight: 600;
+            box-shadow: inset var(--wf-rail) 0 0 var(--wf-brand);
+        }
+
+        .wf-nav-link:focus-visible,
+        .wf-mark:focus-visible,
+        .wf-identity:focus-visible {
+            outline: 2px solid var(--wf-brand);
+            outline-offset: -2px;
+        }
+
+        .wf-icon {
+            display: block;
+            flex: none;
+        }
+
+        .wf-rail-foot {
+            margin-top: auto;
+            display: flex;
+            flex-direction: column;
+            gap: var(--wf-space-3);
+        }
+
+        .wf-theme {
+            display: flex;
+            gap: 1px;
+            margin: 0 var(--wf-space-3);
+            border: var(--wf-border) solid var(--wf-rule);
+            border-radius: var(--wf-radius);
+            overflow: hidden;
+        }
+
+        .wf-theme button {
+            flex: 1;
+            appearance: none;
+            border: 0;
+            background: var(--wf-surface);
+            color: var(--wf-muted);
+            font-family: var(--wf-font-cond);
+            font-size: 10.5px;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            padding: 5px 0;
+            cursor: pointer;
+        }
+
+        .wf-theme button:hover {
+            color: var(--wf-ink);
+        }
+
+        .wf-theme button[aria-pressed="true"] {
+            background: var(--wf-ink);
+            color: var(--wf-ink-invert);
+        }
+
+        .wf-identity {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            padding: var(--wf-space-2) var(--wf-space-3);
+            margin: 0 var(--wf-space-2);
+            border-radius: var(--wf-radius);
+            text-decoration: none;
+            min-width: 0;
+        }
+
+        .wf-identity:hover {
+            background: var(--wf-surface-2);
+        }
+
+        .wf-identity-name {
+            font-size: 12.5px;
+            font-weight: 600;
+            color: var(--wf-ink);
+        }
+
+        .wf-identity-sub {
+            font-size: 11px;
+            color: var(--wf-muted);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .wf-signout {
+            margin: 0 var(--wf-space-2);
+        }
+
+        .wf-signout button {
+            width: 100%;
+            appearance: none;
+            border: var(--wf-border) solid var(--wf-rule);
+            border-radius: var(--wf-radius);
+            background: transparent;
+            color: var(--wf-muted);
+            font-size: 12px;
+            font-weight: 500;
+            padding: 6px 0;
+            cursor: pointer;
+        }
+
+        .wf-signout button:hover {
+            color: var(--wf-ink);
+            border-color: var(--wf-rule-firm);
+        }
+
+        .wf-main {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        /* Location lives here; navigation lives in the rail. Two jobs, two
+           places -- the old topbar did both and did neither well. */
+        .wf-topbar {
+            display: flex;
+            align-items: center;
+            gap: var(--wf-space-4);
+            min-height: 52px;
+            padding: 0 var(--wf-space-5);
+            background: var(--wf-surface);
+            border-bottom: var(--wf-border) solid var(--wf-rule);
+            position: sticky;
+            top: 0;
+            z-index: 5;
+        }
+
+        .wf-crumbs {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            min-width: 0;
+            font-size: var(--wf-text-ui);
+            color: var(--wf-muted);
+        }
+
+        .wf-crumbs a {
+            color: var(--wf-muted);
+            text-decoration: none;
+        }
+
+        .wf-crumbs a:hover {
+            color: var(--wf-ink);
+        }
+
+        .wf-crumb-current {
+            color: var(--wf-ink);
+            font-weight: 600;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .wf-topbar-search {
+            margin-left: auto;
+            display: flex;
+            gap: var(--wf-space-2);
+            align-items: center;
+        }
+
+        .wf-topbar-search input {
+            width: 232px;
+            max-width: 40vw;
+            border: var(--wf-border) solid var(--wf-rule);
+            border-radius: var(--wf-radius);
+            background: var(--wf-paper);
+            color: var(--wf-ink);
+            padding: 5px var(--wf-space-2);
+            font-size: 12.5px;
+        }
+
+        .wf-topbar-search input:focus {
+            outline: 2px solid var(--wf-brand);
+            outline-offset: -1px;
+        }
+
+        .wf-topbar-search button {
+            appearance: none;
+            border: var(--wf-border) solid var(--wf-rule);
+            border-radius: var(--wf-radius);
+            background: transparent;
+            color: var(--wf-muted);
+            font-size: 12.5px;
+            font-weight: 500;
+            padding: 5px var(--wf-space-3);
+            cursor: pointer;
+        }
+
+        .wf-topbar-search button:hover {
+            color: var(--wf-ink);
+            border-color: var(--wf-rule-firm);
+        }
+
+        /* Full bleed rather than a 1120px column, but capped so a line of body
+           text does not run the width of an ultrawide display. Left-aligned
+           inside the cap on purpose: asymmetry is the point. */
         .page {
-            padding: 32px 0;
+            width: auto;
+            max-width: 1360px;
+            margin: 0;
+            padding: var(--wf-space-5) var(--wf-space-5) var(--wf-space-7);
+        }
+
+        @media (max-width: 900px) {
+            .wf-app {
+                grid-template-columns: minmax(0, 1fr);
+            }
+
+            .wf-rail {
+                position: static;
+                height: auto;
+                flex-direction: row;
+                align-items: center;
+                gap: var(--wf-space-3);
+                overflow-x: auto;
+                border-right: 0;
+                border-bottom: var(--wf-border) solid var(--wf-rule);
+                padding: var(--wf-space-2) var(--wf-space-3);
+            }
+
+            .wf-nav {
+                flex-direction: row;
+                padding: 0;
+                gap: var(--wf-space-1);
+            }
+
+            .wf-nav-heading,
+            .wf-theme,
+            .wf-identity-sub {
+                display: none;
+            }
+
+            /* Visually hidden, NOT display:none. The icon beside it is
+               aria-hidden, so removing the label outright leaves every nav
+               link with no accessible name at all on a phone. */
+            .wf-nav-link span {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                padding: 0;
+                margin: -1px;
+                overflow: hidden;
+                clip: rect(0, 0, 0, 0);
+                white-space: nowrap;
+                border: 0;
+            }
+
+            /* The rail already says where you are, and the account name wrapped
+               to three lines in a 52px bar. Keep the page, drop the ancestry. */
+            .wf-crumbs a,
+            .wf-crumbs .wf-icon {
+                display: none;
+            }
+
+            .wf-nav-link[aria-current="page"] {
+                box-shadow: inset 0 calc(var(--wf-rail) * -1) 0 var(--wf-brand);
+            }
+
+            .wf-rail-foot {
+                margin-top: 0;
+                flex-direction: row;
+                align-items: center;
+                gap: var(--wf-space-2);
+            }
+
+            .wf-signout,
+            .wf-identity {
+                margin: 0;
+            }
+
+            .page {
+                padding: var(--wf-space-4) var(--wf-space-4) var(--wf-space-6);
+            }
+
+            .wf-topbar-search input {
+                width: 140px;
+            }
         }
 
         .auth-page {
@@ -375,7 +679,7 @@
             border: 1px solid var(--border);
             border-radius: 6px;
             padding: 11px 12px;
-            background: #ffffff;
+            background: var(--wf-surface);
             color: var(--text);
         }
 
@@ -436,15 +740,15 @@
             border: 1px solid transparent;
             border-radius: 6px;
             padding: 0 16px;
-            background: var(--accent);
-            color: #ffffff;
-            font-weight: 700;
+            background: var(--wf-ink);
+            color: var(--wf-ink-invert);
+            font-weight: 600;
             text-decoration: none;
             cursor: pointer;
         }
 
         .button:hover {
-            background: var(--accent-strong);
+            background: color-mix(in srgb, var(--wf-ink) 82%, var(--wf-paper));
         }
 
         .button.secondary {
@@ -495,7 +799,6 @@
             background: var(--surface);
             border: 1px solid var(--border);
             border-radius: 8px;
-            box-shadow: 0 1px 2px rgba(8, 37, 34, 0.04);
         }
 
         .section[id] {
@@ -656,17 +959,24 @@
             margin-top: 16px;
         }
 
+        /* The 1px gaps used to be filled by the grid's own background, which
+           painted every empty cell of a partial last row as a solid grey void.
+           Each item draws its own hairline ring instead: neighbours overlap
+           harmlessly inside the gap, and an empty cell is simply empty. This
+           works at any column count, which matters because the grid collapses
+           to one column on narrow viewports. */
         .meta-grid {
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 1px;
-            background: var(--border);
+            background: var(--surface);
             border-top: 1px solid var(--border);
         }
 
         .meta-item {
             background: var(--surface);
             padding: 16px 20px;
+            box-shadow: 0 0 0 1px var(--border);
         }
 
         .meta-label {
@@ -690,7 +1000,7 @@
             border: 1px solid var(--border);
             border-radius: 6px;
             padding: 10px 11px;
-            background: #ffffff;
+            background: var(--wf-surface);
             color: var(--text);
         }
 
@@ -750,7 +1060,7 @@
             border: 1px solid var(--border);
             border-radius: 6px;
             padding: 9px 10px;
-            background: #ffffff;
+            background: var(--wf-surface);
             color: var(--text);
         }
 
@@ -856,9 +1166,9 @@
         }
 
         .readiness-status[data-status="manual"] {
-            background: #fff8e4;
-            border-color: #ead18b;
-            color: #72540c;
+            background: color-mix(in srgb, var(--wf-signal-hold) 14%, var(--wf-surface));
+            border-color: color-mix(in srgb, var(--wf-signal-hold) 45%, var(--wf-rule));
+            color: color-mix(in srgb, var(--wf-signal-hold) 72%, var(--wf-ink));
         }
 
         .readiness-action {
@@ -1051,6 +1361,10 @@
             background: transparent;
         }
 
+        /* The two backgrounds below stay literally white on purpose. This frame
+           renders a replay of the VISITOR'S page, which is their design, not
+           ours -- tinting it with our surface token would repaint a customer's
+           site dark and misrepresent what the visitor is looking at. */
         .cobrowse-preview-frame {
             background: var(--surface-muted);
             border-top: 1px solid var(--border);
@@ -1104,11 +1418,11 @@
         }
 
         .live-update[data-state="delayed"] {
-            background: #fff8e4;
+            background: color-mix(in srgb, var(--wf-signal-hold) 12%, var(--wf-surface));
         }
 
         .live-update[data-state="exhausted"] {
-            background: #fff8e4;
+            background: color-mix(in srgb, var(--wf-signal-hold) 12%, var(--wf-surface));
         }
 
         .live-update[data-state="expired"] {
@@ -1284,8 +1598,8 @@
 
         .reply-attach-chip--error {
             background: var(--surface);
-            border-color: #c0563f;
-            color: #8a3b2e;
+            border-color: color-mix(in srgb, var(--wf-signal-stop) 55%, var(--wf-rule));
+            color: var(--wf-signal-stop);
         }
 
         .reply-attach-chip-name {
@@ -1302,7 +1616,7 @@
         }
 
         .reply-attach-chip--error .reply-attach-chip-state {
-            color: #8a3b2e;
+            color: var(--wf-signal-stop);
         }
 
         .reply-attach-chip-remove {
@@ -1317,7 +1631,7 @@
         }
 
         .reply-attach-chip-remove:hover {
-            color: #8a3b2e;
+            color: var(--wf-signal-stop);
         }
 
         .details-disclosure {
@@ -1446,7 +1760,7 @@
         }
 
         .timeline-item.internal-note .timeline-content {
-            border-color: #b8860b;
+            border-color: var(--wf-signal-hold);
         }
 
         .operator-activity-details {
@@ -1569,106 +1883,107 @@
 <body>
     @if ($agent && $account)
         @php
-            $navigationItems = [
-                [
-                    'label' => 'Dashboard',
-                    'href' => route('dashboard'),
-                    'active' => request()->routeIs('dashboard'),
-                ],
-                [
-                    'label' => 'Conversations',
-                    'href' => route('dashboard.conversations.index'),
-                    'active' => request()->routeIs('dashboard.conversations.*'),
-                ],
-                [
-                    'label' => 'Tickets',
-                    'href' => route('dashboard.tickets.index'),
-                    'active' => request()->routeIs('dashboard.tickets.*'),
-                ],
-                [
-                    'label' => 'Alerts',
-                    'href' => route('dashboard.alerts.index'),
-                    'active' => request()->routeIs('dashboard.alerts.*'),
-                ],
-                [
-                    'label' => 'Sites',
-                    'href' => route('dashboard.sites.index'),
-                    'active' => request()->routeIs('dashboard.sites.*'),
-                ],
-                [
-                    'label' => 'Account',
-                    'href' => route('dashboard.account.show'),
-                    'active' => request()->routeIs('dashboard.account.*'),
-                ],
+            $workItems = [
+                ['label' => 'Dashboard', 'icon' => 'dashboard', 'href' => route('dashboard'), 'active' => request()->routeIs('dashboard')],
+                ['label' => 'Conversations', 'icon' => 'conversations', 'href' => route('dashboard.conversations.index'), 'active' => request()->routeIs('dashboard.conversations.*')],
+                ['label' => 'Tickets', 'icon' => 'tickets', 'href' => route('dashboard.tickets.index'), 'active' => request()->routeIs('dashboard.tickets.*')],
+                ['label' => 'Alerts', 'icon' => 'alerts', 'href' => route('dashboard.alerts.index'), 'active' => request()->routeIs('dashboard.alerts.*')],
+            ];
+
+            $manageItems = [
+                ['label' => 'Sites', 'icon' => 'sites', 'href' => route('dashboard.sites.index'), 'active' => request()->routeIs('dashboard.sites.*')],
+                ['label' => 'Account', 'icon' => 'account', 'href' => route('dashboard.account.show'), 'active' => request()->routeIs('dashboard.account.*')],
             ];
 
             if ($agent->isAdmin()) {
-                array_splice($navigationItems, 4, 0, [[
-                    'label' => 'Readiness',
-                    'href' => route('dashboard.readiness.show'),
-                    'active' => request()->routeIs('dashboard.readiness.*'),
-                ]]);
+                $manageItems[] = ['label' => 'Readiness', 'icon' => 'readiness', 'href' => route('dashboard.readiness.show'), 'active' => request()->routeIs('dashboard.readiness.*')];
             }
 
             if ($agent->isPlatformOperator()) {
-                $navigationItems[] = [
-                    'label' => 'Operator',
-                    'href' => route('operator.dashboard'),
-                    'active' => request()->routeIs('operator.*'),
-                ];
+                $manageItems[] = ['label' => 'Operator', 'icon' => 'operator', 'href' => route('operator.dashboard'), 'active' => request()->routeIs('operator.*')];
             }
+
+            // The breadcrumb names where you are. The active navigation item is
+            // the honest answer when there is one; the page title covers the
+            // screens that sit outside the rail, like Profile.
+            $currentLabel = collect($workItems)->concat($manageItems)->firstWhere('active')['label'] ?? $title;
         @endphp
 
-        <div class="shell">
-            <header class="topbar">
-                <div class="topbar-inner">
-                    <div class="topbar-main">
-                        <a class="brand-link" href="{{ route('dashboard') }}">Wayfindr</a>
-                        <div class="lede topbar-context">{{ $agent->name }} - {{ $account->name }}</div>
+        <div class="wf-app">
+            <aside class="wf-rail">
+                <a class="wf-mark" href="{{ route('dashboard') }}">
+                    <span class="wf-mark-planes" aria-hidden="true"><i></i><i></i><i></i></span>
+                    <span class="wf-mark-name">Wayfindr</span>
+                </a>
+
+                <nav class="wf-nav" aria-label="Primary navigation">
+                    <p class="wf-nav-heading">Work</p>
+                    @foreach ($workItems as $item)
+                        <a class="wf-nav-link" href="{{ $item['href'] }}" @if ($item['active']) aria-current="page" @endif>
+                            <x-icon :name="$item['icon']" />
+                            <span>{{ $item['label'] }}</span>
+                        </a>
+                    @endforeach
+
+                    <p class="wf-nav-heading">Manage</p>
+                    @foreach ($manageItems as $item)
+                        <a class="wf-nav-link" href="{{ $item['href'] }}" @if ($item['active']) aria-current="page" @endif>
+                            <x-icon :name="$item['icon']" />
+                            <span>{{ $item['label'] }}</span>
+                        </a>
+                    @endforeach
+                </nav>
+
+                <div class="wf-rail-foot">
+                    <div class="wf-theme" role="group" aria-label="Colour theme" data-wf-theme-group>
+                        <button type="button" data-wf-theme-set="system" aria-pressed="true">Auto</button>
+                        <button type="button" data-wf-theme-set="light" aria-pressed="false">Light</button>
+                        <button type="button" data-wf-theme-set="dark" aria-pressed="false">Dark</button>
                     </div>
 
-                    <nav class="app-nav" aria-label="Primary navigation">
-                        @foreach ($navigationItems as $navigationItem)
-                            <a
-                                class="app-nav-link"
-                                href="{{ $navigationItem['href'] }}"
-                                @if ($navigationItem['active']) aria-current="page" @endif
-                            >
-                                {{ $navigationItem['label'] }}
-                            </a>
-                        @endforeach
+                    <a class="wf-identity" href="{{ route('dashboard.profile.show') }}">
+                        <span class="wf-identity-name">{{ $agent->name }}</span>
+                        <span class="wf-identity-sub">{{ $account->name }}</span>
+                    </a>
+
+                    <form class="wf-signout" method="POST" action="{{ route('logout') }}">
+                        @csrf
+                        <button type="submit">Sign out</button>
+                    </form>
+                </div>
+            </aside>
+
+            <div class="wf-main">
+                <header class="wf-topbar">
+                    <nav class="wf-crumbs" aria-label="Breadcrumb">
+                        <a href="{{ route('dashboard') }}">{{ $account->name }}</a>
+                        <x-icon name="chevron-right" :size="13" />
+                        <span class="wf-crumb-current">{{ $currentLabel }}</span>
                     </nav>
 
-                    <div class="topbar-actions">
-                        <form class="compact-form support-lookup-form" method="GET" action="{{ route('dashboard.support-code.lookup') }}" aria-label="Find support trail">
-                            <label class="sr-only" for="shell_support_code">Support code, ticket, or visitor ID</label>
-                            <input id="shell_support_code" name="support_code" type="search" placeholder="Support code or ticket" autocomplete="off">
-                            <button class="button secondary" type="submit">Find</button>
-                        </form>
-                        <a class="button secondary" href="{{ route('dashboard.profile.show') }}">Profile</a>
-                        <form method="POST" action="{{ route('logout') }}">
-                            @csrf
-                            <button class="button secondary" type="submit">Sign out</button>
-                        </form>
-                    </div>
-                </div>
-            </header>
+                    <form class="wf-topbar-search" method="GET" action="{{ route('dashboard.support-code.lookup') }}" aria-label="Find support trail">
+                        <label class="sr-only" for="shell_support_code">Support code, ticket, or visitor ID</label>
+                        <input id="shell_support_code" name="support_code" type="search" placeholder="Support code, ticket, visitor" autocomplete="off">
+                        <button type="submit">Find</button>
+                    </form>
+                </header>
 
-            <main class="page">
-                @if (session('support_code_lookup_result'))
-                    <p class="status-message">{{ session('support_code_lookup_result') }}</p>
-                @endif
+                <main class="page">
+                    @if (session('support_code_lookup_result'))
+                        <p class="status-message">{{ session('support_code_lookup_result') }}</p>
+                    @endif
 
-                @if (session('support_code_lookup_status'))
-                    <div class="empty empty-state" role="status">
-                        <strong>{{ session('support_code_lookup_status') }}</strong>
-                        <p>Try a support code like WF-ABC123, a ticket reference like Ticket #123, or a visitor ID.</p>
-                        <p>Records outside your support access stay hidden.</p>
-                    </div>
-                @endif
+                    @if (session('support_code_lookup_status'))
+                        <div class="empty empty-state" role="status">
+                            <strong>{{ session('support_code_lookup_status') }}</strong>
+                            <p>Try a support code like WF-ABC123, a ticket reference like Ticket #123, or a visitor ID.</p>
+                            <p>Records outside your support access stay hidden.</p>
+                        </div>
+                    @endif
 
-                {{ $slot }}
-            </main>
+                    {{ $slot }}
+                </main>
+            </div>
         </div>
     @else
         {{ $slot }}
@@ -1739,6 +2054,63 @@
                 copyValue(value).then(function () {
                     markCopied(button);
                 });
+            });
+        })();
+    </script>
+    <script>
+        (function () {
+            var group = document.querySelector('[data-wf-theme-group]');
+
+            if (! group) {
+                return;
+            }
+
+            var buttons = group.querySelectorAll('[data-wf-theme-set]');
+
+            function stored() {
+                try {
+                    return localStorage.getItem('wayfindr:theme') || 'system';
+                } catch (error) {
+                    return 'system';
+                }
+            }
+
+            function apply(value) {
+                if (value === 'dark' || value === 'light') {
+                    document.documentElement.setAttribute('data-wf-theme', value);
+                } else {
+                    // Removing the attribute is what hands control back to the
+                    // OS preference. Setting it to "system" would match neither
+                    // selector and strand the page on the light palette.
+                    document.documentElement.removeAttribute('data-wf-theme');
+                }
+
+                buttons.forEach(function (button) {
+                    button.setAttribute(
+                        'aria-pressed',
+                        button.getAttribute('data-wf-theme-set') === value ? 'true' : 'false'
+                    );
+                });
+            }
+
+            apply(stored());
+
+            group.addEventListener('click', function (event) {
+                var button = event.target.closest('[data-wf-theme-set]');
+
+                if (! button) {
+                    return;
+                }
+
+                var value = button.getAttribute('data-wf-theme-set');
+
+                try {
+                    localStorage.setItem('wayfindr:theme', value);
+                } catch (error) {
+                    // Unremembered but still applied for this page.
+                }
+
+                apply(value);
             });
         })();
     </script>
