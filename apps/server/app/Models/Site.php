@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\SiteColor;
 use Database\Factories\SiteFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -12,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
-#[Fillable(['account_id', 'name', 'domain', 'public_key', 'settings'])]
+#[Fillable(['account_id', 'name', 'domain', 'color', 'public_key', 'settings'])]
 class Site extends Model
 {
     /** @use HasFactory<SiteFactory> */
@@ -23,12 +24,36 @@ class Site extends Model
         return [
             'settings' => 'array',
             'archived_at' => 'datetime',
+            'color' => SiteColor::class,
         ];
     }
 
     public function account(): BelongsTo
     {
         return $this->belongsTo(Account::class);
+    }
+
+    /**
+     * The colour this site is recognised by (ADR 0014).
+     *
+     * Falls back deterministically rather than returning null, because every
+     * surface that shows a site -- queue rail, transcript chip, widget accent --
+     * needs an answer, and a site that changed colour between page loads would
+     * defeat the point of an agent learning it.
+     */
+    public function resolvedColor(): SiteColor
+    {
+        return $this->color ?? SiteColor::forPosition((int) $this->id);
+    }
+
+    /**
+     * The colour a new site should take, so one account's sites stay distinct.
+     */
+    public static function nextColorForAccount(int $accountId): SiteColor
+    {
+        return SiteColor::forPosition(
+            static::query()->where('account_id', $accountId)->count()
+        );
     }
 
     public function supportAgents(): BelongsToMany

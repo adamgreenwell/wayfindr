@@ -100,6 +100,9 @@ class AgentConversationController extends Controller
             'emptyMessage' => 'No messages yet.',
             'transcriptMessages' => $messages,
             'supportCode' => $conversation->support_code,
+            // The realtime refresh replaces the rendered transcript wholesale.
+            // Omitting this dropped the site rail the moment realtime connected.
+            'transcriptSiteColor' => $conversation->site->resolvedColor()->cssVariable(),
         ]);
     }
 

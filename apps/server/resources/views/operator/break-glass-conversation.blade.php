@@ -1,4 +1,4 @@
-<x-layouts.app title="Break-glass — {{ $conversation->support_code }}">
+<x-layouts.operator title="Break-glass — {{ $conversation->support_code }}">
     <p><a class="text-link" href="{{ route('operator.break-glass.show', $grant) }}">Back to grant</a></p>
     <h1>{{ $conversation->support_code }}</h1>
     <p class="lede">
@@ -59,4 +59,4 @@
             </div>
         </section>
     @endif
-</x-layouts.app>
+</x-layouts.operator>

@@ -30,7 +30,76 @@ missed while skimming.
 
 ## [Unreleased]
 
-No unreleased changes yet.
+**No operator action required.** Pull, restart, and migrations run themselves.
+
+The interface renovation described in ADR 0014 lands in this release. **The
+dashboard looks substantially different** — a permanent sidebar instead of a row
+of tabs, a new typeface, denser queues, a colour per site, and a dark mode. Your
+data, URLs, and the install snippet on your pages are untouched; this is the same
+application wearing a different face. Screenshots are in the release notes.
+
+### Added
+
+- **Every site now has a colour.** Wayfindr is built for one desk covering many
+  sites, so the question an agent asks all day is *whose visitor is this?* A
+  colour answers it faster than a repeated site name. Pick one per site under
+  **Sites → Edit name and domain**; it appears wherever that site does, and on
+  the widget its visitors see.
+
+  Existing sites are assigned a colour automatically when you upgrade, in
+  creation order, so each of your sites starts out distinct from the others.
+  Nothing to configure unless you want to change them.
+
+### Changed
+
+- **The operator console is part of the application now.** Every operator page —
+  the console, the setup checklist, mail, storage, scanning, backups and
+  break-glass — used to render outside the dashboard entirely, with a single text
+  link at the top of each page to get back out. They now sit in the same shell as
+  everything else, with their own list of sections down the side, so moving
+  between them no longer means going back to the console first.
+
+- **A conversation looks like a conversation.** The chat widget has always shown
+  replies as a back-and-forth. The agent's own view of the same exchange stacked
+  every message full width in one column, so the two halves of a conversation
+  looked like different things and only the agent got the log. Visitor messages
+  now sit on the left carrying their site's colour, replies sit on the right, and
+  delivery state sits on the message it belongs to.
+
+  A message with no text and no attachment now says so, instead of rendering as an
+  empty box with a timestamp in it.
+
+- **The widget follows the visitor's colour scheme.** A visitor whose device is
+  set to dark mode now sees a dark chat panel, and it wears its site's colour on
+  its top edge. It takes its colours from the same source the dashboard does, so
+  the two cannot drift apart again.
+
+- **Every queue is readable again.** Conversations, tickets, alerts and sites all
+  used to stack bands of controls above the first row and give each row about
+  130 pixels. Lanes now carry their own counts, filters sit on one line, and rows
+  are less than half the height &mdash; the same screen shows roughly four times as
+  much without dropping anything it used to tell you.
+
+  Colour now means something everywhere. A calm row is no longer marked in amber:
+  red appears where somebody is waiting, and each row carries its site's colour as
+  a stripe so you can tell whose work it is at a glance.
+
+- **The dashboard's typeface now ships with the application.** IBM Plex is
+  served from your own install rather than fetched from a font CDN, so an
+  install on `localhost`, on a bare IP, or behind a firewall renders the same as
+  one on a public domain. Previously a font host was configured but never
+  actually used, so every install already fell back to the system stack.
+
+### Removed
+
+- **The unused frontend build.** Wayfindr shipped a Vite and Tailwind pipeline
+  that no page ever loaded: it was built on every release and referenced by no
+  template. Removing it takes an entire Node stage out of the released image.
+
+  If you deploy manually rather than from the published image, the `npm ci` and
+  `npm run build` steps in the deploy flow are gone — see
+  `docs/self-hosting/runtime-requirements.md`. They were already doing nothing;
+  removing them is safe on any install. Nothing else about deploying changes.
 
 ## [0.5.0] - 2026-08-18
 

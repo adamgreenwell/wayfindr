@@ -33,7 +33,7 @@ test('agents can use support trail lookup from the shared app shell', function (
         ->assertOk()
         ->assertSee('aria-label="Find support trail"', false)
         ->assertSee('name="support_code"', false)
-        ->assertSee('placeholder="Support code or ticket"', false)
+        ->assertSee('placeholder="Support code, ticket, visitor"', false)
         ->assertSee(route('dashboard.support-code.lookup'), false);
 });
 

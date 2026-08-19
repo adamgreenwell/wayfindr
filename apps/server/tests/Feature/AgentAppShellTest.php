@@ -143,3 +143,117 @@ test('agent pages render the shared page header component', function (): void {
         ->assertSee('Back to sites')
         ->assertSee('Acme Docs');
 });
+
+// ── Shell rebuilt on the persistent rail (ADR 0014, step 3) ──────────────────
+
+test('the rail groups daily work apart from configuration', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+
+    // Nine equally weighted pills is what this replaces: "Conversations" and
+    // "Operator" used to rank the same.
+    $this->actingAs($agent)
+        ->get('/dashboard')
+        ->assertOk()
+        ->assertSee('wf-rail', false)
+        ->assertSee('>Work</p>', false)
+        ->assertSee('>Manage</p>', false)
+        ->assertSeeInOrder(['>Work</p>', 'Conversations', '>Manage</p>', 'Sites'], false);
+});
+
+test('the breadcrumb names the account and the current section', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/tickets')
+        ->assertOk()
+        ->assertSee('aria-label="Breadcrumb"', false)
+        ->assertSee('wf-crumb-current', false)
+        ->assertSeeInOrder(['Acme Support', 'wf-crumb-current">Tickets'], false);
+});
+
+test('the breadcrumb falls back to the page title outside the rail', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+
+    // Profile has no navigation item, so the page title is the honest answer.
+    $this->actingAs($agent)
+        ->get('/dashboard/profile')
+        ->assertOk()
+        ->assertSee('wf-crumb-current">Agent Profile', false);
+});
+
+test('every navigation item keeps a text label for assistive technology', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+
+    // On narrow viewports the labels are visually hidden, NOT display:none.
+    // Removing them outright leaves every rail link with no accessible name,
+    // because the icon beside it is aria-hidden.
+    $response = $this->actingAs($agent)->get('/dashboard')->assertOk();
+
+    preg_match_all('/<a class="wf-nav-link".*?<\/a>/s', $response->getContent(), $matches);
+
+    expect($matches[0])->not->toBeEmpty();
+
+    foreach ($matches[0] as $link) {
+        expect($link)->toMatch('/<span>[^<]+<\/span>/');
+    }
+});
+
+test('navigation items carry an icon that inherits colour', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+
+    $this->actingAs($agent)
+        ->get('/dashboard')
+        ->assertOk()
+        ->assertSee('class="wf-icon"', false)
+        ->assertSee('aria-hidden="true"', false)
+        ->assertSee('stroke="currentColor"', false);
+});
+
+test('the theme control offers system, light and dark', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+
+    // "system" must be an explicit option rather than merely the default:
+    // choosing it is what clears a stored preference and hands control back
+    // to the operating system.
+    $this->actingAs($agent)
+        ->get('/dashboard')
+        ->assertOk()
+        ->assertSee('data-wf-theme-set="system"', false)
+        ->assertSee('data-wf-theme-set="light"', false)
+        ->assertSee('data-wf-theme-set="dark"', false)
+        ->assertSee('aria-label="Colour theme"', false);
+});
+
+test('the stored theme is applied before the page paints', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+
+    $content = $this->actingAs($agent)->get('/dashboard')->assertOk()->getContent();
+
+    // Anything after </head> is too late: a dark-mode agent gets a white flash
+    // on every navigation.
+    $head = substr($content, 0, strpos($content, '</head>'));
+
+    expect($head)->toContain("localStorage.getItem('wayfindr:theme')")
+        ->and($head)->toContain('data-wf-theme');
+});
+
+test('the dashboard heading does not repeat the breadcrumb or greet you with your own email', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create([
+        'name' => 'Ada Agent',
+        'email' => 'ada@example.com',
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard')
+        ->assertOk()
+        ->assertSee('<h1>Dashboard</h1>', false)
+        ->assertDontSee('Signed in as ada@example.com');
+});

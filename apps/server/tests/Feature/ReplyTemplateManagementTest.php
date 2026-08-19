@@ -297,7 +297,7 @@ test('ticket visitor reply surface shows helper preview affordances', function (
         ->get("/dashboard/tickets/{$ticket->id}")
         ->assertOk()
         ->assertSee('Reply assist')
-        ->assertSee('No helper selected')
+        ->assertSee('Writing this one yourself')
         ->assertSee('Billing follow-up')
         ->assertSee('I will check the billing details and follow up shortly.')
         ->assertSee('data-template-preview-item="managed:', false)
@@ -330,14 +330,14 @@ test('reply surfaces tolerate malformed flashed reply template input', function 
         ->get("/dashboard/conversations/{$conversation->support_code}")
         ->assertOk()
         ->assertSee('Reply assist')
-        ->assertSee('No helper selected');
+        ->assertSee('Writing this one yourself');
 
     $this->actingAs($agent)
         ->withSession(['_old_input' => ['reply_template' => ['managed:'.$template->id]]])
         ->get("/dashboard/tickets/{$ticket->id}")
         ->assertOk()
         ->assertSee('Reply assist')
-        ->assertSee('No helper selected');
+        ->assertSee('Writing this one yourself');
 });
 
 test('agents can send replies from managed account templates', function (): void {

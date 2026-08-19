@@ -8,7 +8,8 @@ Wayfindr is pre-alpha. The current local setup brings up the Laravel server scaf
 - Composer 2
 - Docker Compose v2
 
-Node.js and npm are only needed when working on Vite-built frontend assets.
+Node.js and npm are only needed when working on the browser widget in
+`packages/widget-js`, which runs its own `node --test` suite.
 
 ## First Run
 

@@ -30,9 +30,18 @@ class AgentAlertController extends Controller
         $alertSearch = $this->normalizedAlertSearch($request->query('alert_search'));
         $visibleUnreadNotifications = $this->visibleUnreadNotifications($agent);
         $filteredUnreadNotifications = $this->filterNotifications($visibleUnreadNotifications, $alertKind, $alertSearch);
+        // Computed whichever lane is showing. Deriving the "All alerts" badge
+        // from the rendered collection made it report the UNREAD count while
+        // viewing unread, and cap at 30 -- a badge that described the current
+        // view rather than the destination it links to.
+        $filteredAllNotifications = $this->filterNotifications(
+            $this->visibleRecentNotifications($agent, $visibleUnreadNotifications),
+            $alertKind,
+            $alertSearch,
+        );
         $filteredNotifications = $alertFilter === 'unread'
             ? $filteredUnreadNotifications
-            : $this->filterNotifications($this->visibleRecentNotifications($agent, $visibleUnreadNotifications), $alertKind, $alertSearch);
+            : $filteredAllNotifications;
         $matchingNotificationCount = $filteredNotifications->count();
         $notifications = $filteredNotifications->take(30)->values();
 
@@ -56,6 +65,10 @@ class AgentAlertController extends Controller
             'notifications' => $notifications,
             'notificationCount' => $notifications->count(),
             'unreadNotificationCount' => $filteredUnreadNotifications->count(),
+            'alertLaneCounts' => [
+                'all' => $filteredAllNotifications->count(),
+                'unread' => $filteredUnreadNotifications->count(),
+            ],
         ]);
     }
 

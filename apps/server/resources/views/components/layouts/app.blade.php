@@ -2,6 +2,9 @@
     'title' => config('app.name', 'Wayfindr'),
     'agent' => null,
     'account' => null,
+    // A deeper crumb for surfaces that have their own sections, so the bar can
+    // say "Operator > Backups" rather than stopping at the rail item.
+    'crumb' => null,
 ])
 
 <!DOCTYPE html>
@@ -11,18 +14,204 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ $title }}</title>
+    <script>
+        (function () {
+            try {
+                var stored = localStorage.getItem('wayfindr:theme');
+
+                if (stored === 'light' || stored === 'dark') {
+                    document.documentElement.setAttribute('data-wf-theme', stored);
+                }
+            } catch (error) {
+                // Private mode and blocked storage both throw here. Falling
+                // through leaves the OS preference in charge, which is the
+                // right answer when we cannot remember a choice.
+            }
+        })();
+    </script>
     <style>
+        /* IBM Plex, served from this install (ADR 0014). Never a third-party
+           request: Wayfindr runs on localhost, bare IPs and air-gapped networks,
+           where a CDN font does not fail loudly -- it silently renders the system
+           stack. Provenance and hashes: public/fonts/README.md.
+
+           `swap` because an agent reading a queue must not wait on a typeface.
+           These faces are declared but unused until the shell consumes
+           --wf-font-*, and a declared-but-unused @font-face is never fetched. */
+        @font-face {
+            font-family: 'IBM Plex Sans';
+            src: url('{{ asset('fonts/IBMPlexSans-Regular.woff2') }}') format('woff2');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'IBM Plex Sans';
+            src: url('{{ asset('fonts/IBMPlexSans-Medium.woff2') }}') format('woff2');
+            font-weight: 500;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'IBM Plex Sans';
+            src: url('{{ asset('fonts/IBMPlexSans-SemiBold.woff2') }}') format('woff2');
+            font-weight: 600;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'IBM Plex Sans Condensed';
+            src: url('{{ asset('fonts/IBMPlexSansCondensed-SemiBold.woff2') }}') format('woff2');
+            font-weight: 600;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'IBM Plex Mono';
+            src: url('{{ asset('fonts/IBMPlexMono-Regular.woff2') }}') format('woff2');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'IBM Plex Mono';
+            src: url('{{ asset('fonts/IBMPlexMono-Medium.woff2') }}') format('woff2');
+            font-weight: 500;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        /* wayfindr:tokens:start */
+        /* Generated from packages/design-tokens/tokens.json by scripts/generate-design-tokens.php. Do not edit by hand -- run `make design-tokens`. */
         :root {
+            --wf-paper: #F1F1EE;
+            --wf-surface: #FFFFFF;
+            --wf-surface-2: #E9E9E4;
+            --wf-ink: #16181A;
+            --wf-ink-invert: #F1F1EE;
+            --wf-muted: #6A6E71;
+            --wf-rule: #DCDCD6;
+            --wf-rule-firm: #C4C4BD;
+            --wf-brand: #0D6F68;
+            --wf-signal-rest: #8C9194;
+            --wf-signal-go: #1E7A4C;
+            --wf-signal-hold: #C98A06;
+            --wf-signal-stop: #C3352B;
+            --wf-site-red: #C3352B;
+            --wf-site-blue: #2D4EA2;
+            --wf-site-ochre: #C98A06;
+            --wf-site-pine: #1E7A4C;
+            --wf-site-violet: #6B4E9B;
+            --wf-site-rust: #B5542A;
+            --wf-font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+            --wf-font-cond: "IBM Plex Sans Condensed", "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+            --wf-font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+            --wf-text-display: 2.05rem;
+            --wf-text-title: 1.3rem;
+            --wf-text-body: 0.97rem;
+            --wf-text-ui: 0.875rem;
+            --wf-text-label: 0.75rem;
+            --wf-text-code: 0.86rem;
+            --wf-space-1: 4px;
+            --wf-space-2: 8px;
+            --wf-space-3: 12px;
+            --wf-space-4: 16px;
+            --wf-space-5: 24px;
+            --wf-space-6: 32px;
+            --wf-space-7: 48px;
+            --wf-radius: 2px;
+            --wf-radius-full: 999px;
+            --wf-border: 1px;
+            --wf-rail: 3px;
+            --wf-row-min: 34px;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-wf-theme="light"]) {
+                --wf-paper: #141517;
+                --wf-surface: #1B1D20;
+                --wf-surface-2: #24272A;
+                --wf-ink: #ECECE8;
+                --wf-ink-invert: #16181A;
+                --wf-muted: #9BA0A3;
+                --wf-rule: #2E3134;
+                --wf-rule-firm: #3D4145;
+                --wf-brand: #3FA69D;
+                --wf-signal-rest: #7E8386;
+                --wf-signal-go: #4CA97A;
+                --wf-signal-hold: #E0A72A;
+                --wf-signal-stop: #E2685C;
+                --wf-site-red: #D54C43;
+                --wf-site-blue: #5578D0;
+                --wf-site-ochre: #A57105;
+                --wf-site-pine: #238C57;
+                --wf-site-violet: #896EB6;
+                --wf-site-rust: #C65C2E;
+            }
+        }
+
+        :root[data-wf-theme="dark"] {
+            --wf-paper: #141517;
+            --wf-surface: #1B1D20;
+            --wf-surface-2: #24272A;
+            --wf-ink: #ECECE8;
+            --wf-ink-invert: #16181A;
+            --wf-muted: #9BA0A3;
+            --wf-rule: #2E3134;
+            --wf-rule-firm: #3D4145;
+            --wf-brand: #3FA69D;
+            --wf-signal-rest: #7E8386;
+            --wf-signal-go: #4CA97A;
+            --wf-signal-hold: #E0A72A;
+            --wf-signal-stop: #E2685C;
+            --wf-site-red: #D54C43;
+            --wf-site-blue: #5578D0;
+            --wf-site-ochre: #A57105;
+            --wf-site-pine: #238C57;
+            --wf-site-violet: #896EB6;
+            --wf-site-rust: #C65C2E;
+        }
+        /* wayfindr:tokens:end */
+        /* The legacy palette, repointed at the tokens above (ADR 0014).
+           The ~140 hand-rolled classes below still name --bg, --surface,
+           --accent and so on. Rebinding them in one place moves the whole
+           application onto the new palette and into dark mode without
+           touching those classes, which the later steps rewrite anyway.
+
+           --accent stays the brand hue here because the legacy components use
+           it for tints, focus rings and selected states, where a hue still
+           carries meaning. Primary BUTTONS move to ink below, which is the
+           change that actually reads. */
+        :root {
+            /* Both, so "Auto" hands native controls to the OS. The explicit
+               choices below pin it, or a dark-mode agent choosing Light keeps
+               dark scrollbars and select popups. */
+            color-scheme: light dark;
+            --bg: var(--wf-paper);
+            --surface: var(--wf-surface);
+            --surface-muted: var(--wf-surface-2);
+            --text: var(--wf-ink);
+            --muted: var(--wf-muted);
+            --border: var(--wf-rule);
+            --accent: var(--wf-brand);
+            --accent-strong: var(--wf-brand);
+            --danger: var(--wf-signal-stop);
+        }
+
+        /* An explicit choice must pin the native controls too, or an agent on a
+           dark OS who picks Light keeps dark scrollbars, checkboxes and select
+           popups -- the exact case the toggle exists for. */
+        :root[data-wf-theme="light"] {
             color-scheme: light;
-            --bg: #f7f7f3;
-            --surface: #ffffff;
-            --surface-muted: #f1f5f4;
-            --text: #1d2523;
-            --muted: #62706b;
-            --border: #d8dfdc;
-            --accent: #0d6f68;
-            --accent-strong: #094f4b;
-            --danger: #9d1c1c;
+        }
+
+        :root[data-wf-theme="dark"] {
+            color-scheme: dark;
         }
 
         * {
@@ -33,7 +222,8 @@
             margin: 0;
             background: var(--bg);
             color: var(--text);
-            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-family: var(--wf-font-sans);
+            font-size: var(--wf-text-body);
             line-height: 1.5;
         }
 
@@ -48,103 +238,930 @@
             font: inherit;
         }
 
-        .shell {
+        /* ── Application shell (ADR 0014) ────────────────────────────────
+           A persistent rail and a fixed frame, rather than a centred document.
+           The rail is zoned -- daily work at the top, configuration and
+           identity pinned to the bottom -- so "Conversations" and "Operator"
+           stop ranking equally, which is what nine identical pills did. */
+
+        .wf-app {
+            display: grid;
+            grid-template-columns: 236px minmax(0, 1fr);
             min-height: 100vh;
         }
 
-        .topbar {
-            background: var(--surface);
-            border-bottom: 1px solid var(--border);
+        .wf-rail {
+            display: flex;
+            flex-direction: column;
+            gap: var(--wf-space-5);
+            padding: var(--wf-space-4) 0;
+            background: var(--wf-surface);
+            border-right: var(--wf-border) solid var(--wf-rule);
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            overflow-y: auto;
         }
 
-        .topbar-inner,
-        .page {
-            width: min(1120px, calc(100% - 32px));
-            margin: 0 auto;
-        }
-
-        .topbar-inner {
-            min-height: 72px;
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) auto;
-            grid-template-areas:
-                "main actions"
-                "nav nav";
+        .wf-mark {
+            display: flex;
             align-items: center;
-            gap: 10px 16px;
-        }
-
-        .topbar-main {
-            grid-area: main;
-            min-width: 0;
-        }
-
-        .brand,
-        .brand-link {
-            font-weight: 700;
-        }
-
-        .brand-link {
-            color: var(--text);
+            gap: 10px;
+            padding: 0 var(--wf-space-4);
+            color: var(--wf-ink);
             text-decoration: none;
         }
 
-        .brand-link:hover {
-            color: var(--accent-strong);
+        /* Three flat planes. The brand mark is the one place these hues appear
+           without carrying data, and it is deliberately small. */
+        .wf-mark-planes {
+            display: flex;
+            flex: none;
         }
 
-        .topbar-context {
-            margin-top: 2px;
+        .wf-mark-planes i {
+            display: block;
+            width: 7px;
+            height: 18px;
         }
 
-        .app-nav {
-            grid-area: nav;
+        .wf-mark-planes i:nth-child(1) { background: var(--wf-site-red); }
+        .wf-mark-planes i:nth-child(2) { background: var(--wf-site-ochre); }
+        .wf-mark-planes i:nth-child(3) { background: var(--wf-brand); }
+
+        .wf-mark-name {
+            font-family: var(--wf-font-mono);
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+        }
+
+        .wf-nav {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            padding: 0 var(--wf-space-2);
+        }
+
+        .wf-nav-heading {
+            font-family: var(--wf-font-cond);
+            font-size: 10.5px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--wf-muted);
+            padding: var(--wf-space-2) var(--wf-space-3) var(--wf-space-1);
+            margin: 0;
+        }
+
+        .wf-nav-link {
             display: flex;
             align-items: center;
-            flex-wrap: wrap;
-            gap: 4px;
-            justify-content: flex-start;
-            border-top: 1px solid var(--border);
-            margin-top: 4px;
-            padding-top: 8px;
+            gap: 10px;
+            padding: 7px var(--wf-space-3);
+            border-radius: var(--wf-radius);
+            color: var(--wf-muted);
+            font-size: var(--wf-text-ui);
+            font-weight: 500;
+            text-decoration: none;
         }
 
-        .app-nav-link {
-            border: 1px solid transparent;
-            border-radius: 6px;
-            color: var(--muted);
-            font-weight: 700;
-            padding: 8px 10px;
+        .wf-nav-link:hover {
+            background: var(--wf-surface-2);
+            color: var(--wf-ink);
+        }
+
+        .wf-nav-link[aria-current="page"] {
+            background: var(--wf-surface-2);
+            color: var(--wf-ink);
+            font-weight: 600;
+            box-shadow: inset var(--wf-rail) 0 0 var(--wf-brand);
+        }
+
+        .wf-nav-link:focus-visible,
+        .wf-mark:focus-visible,
+        .wf-identity:focus-visible {
+            outline: 2px solid var(--wf-brand);
+            outline-offset: -2px;
+        }
+
+        .wf-icon {
+            display: block;
+            flex: none;
+        }
+
+        .wf-rail-foot {
+            margin-top: auto;
+            display: flex;
+            flex-direction: column;
+            gap: var(--wf-space-3);
+        }
+
+        .wf-theme {
+            display: flex;
+            gap: 1px;
+            margin: 0 var(--wf-space-3);
+            border: var(--wf-border) solid var(--wf-rule);
+            border-radius: var(--wf-radius);
+            overflow: hidden;
+        }
+
+        .wf-theme button {
+            flex: 1;
+            appearance: none;
+            border: 0;
+            background: var(--wf-surface);
+            color: var(--wf-muted);
+            font-family: var(--wf-font-cond);
+            font-size: 10.5px;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            padding: 5px 0;
+            cursor: pointer;
+        }
+
+        .wf-theme button:hover {
+            color: var(--wf-ink);
+        }
+
+        .wf-theme button[aria-pressed="true"] {
+            background: var(--wf-ink);
+            color: var(--wf-ink-invert);
+        }
+
+        .wf-identity {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            padding: var(--wf-space-2) var(--wf-space-3);
+            margin: 0 var(--wf-space-2);
+            border-radius: var(--wf-radius);
+            text-decoration: none;
+            min-width: 0;
+        }
+
+        .wf-identity:hover {
+            background: var(--wf-surface-2);
+        }
+
+        .wf-identity-name {
+            font-size: 12.5px;
+            font-weight: 600;
+            color: var(--wf-ink);
+        }
+
+        .wf-identity-sub {
+            font-size: 11px;
+            color: var(--wf-muted);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .wf-signout {
+            margin: 0 var(--wf-space-2);
+        }
+
+        .wf-signout button {
+            width: 100%;
+            appearance: none;
+            border: var(--wf-border) solid var(--wf-rule);
+            border-radius: var(--wf-radius);
+            background: transparent;
+            color: var(--wf-muted);
+            font-size: 12px;
+            font-weight: 500;
+            padding: 6px 0;
+            cursor: pointer;
+        }
+
+        .wf-signout button:hover {
+            color: var(--wf-ink);
+            border-color: var(--wf-rule-firm);
+        }
+
+        .wf-main {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        /* Location lives here; navigation lives in the rail. Two jobs, two
+           places -- the old topbar did both and did neither well. */
+        .wf-topbar {
+            display: flex;
+            align-items: center;
+            gap: var(--wf-space-4);
+            min-height: 52px;
+            padding: 0 var(--wf-space-5);
+            background: var(--wf-surface);
+            border-bottom: var(--wf-border) solid var(--wf-rule);
+            position: sticky;
+            top: 0;
+            z-index: 5;
+        }
+
+        .wf-crumbs {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            min-width: 0;
+            font-size: var(--wf-text-ui);
+            color: var(--wf-muted);
+        }
+
+        .wf-crumbs a {
+            color: var(--wf-muted);
+            text-decoration: none;
+        }
+
+        .wf-crumbs a:hover {
+            color: var(--wf-ink);
+        }
+
+        .wf-crumb-current {
+            color: var(--wf-ink);
+            font-weight: 600;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .wf-topbar-search {
+            margin-left: auto;
+            display: flex;
+            gap: var(--wf-space-2);
+            align-items: center;
+        }
+
+        .wf-topbar-search input {
+            width: 232px;
+            max-width: 40vw;
+            border: var(--wf-border) solid var(--wf-rule);
+            border-radius: var(--wf-radius);
+            background: var(--wf-paper);
+            color: var(--wf-ink);
+            padding: 5px var(--wf-space-2);
+            font-size: 12.5px;
+        }
+
+        .wf-topbar-search input:focus {
+            outline: 2px solid var(--wf-brand);
+            outline-offset: -1px;
+        }
+
+        .wf-topbar-search button {
+            appearance: none;
+            border: var(--wf-border) solid var(--wf-rule);
+            border-radius: var(--wf-radius);
+            background: transparent;
+            color: var(--wf-muted);
+            font-size: 12.5px;
+            font-weight: 500;
+            padding: 5px var(--wf-space-3);
+            cursor: pointer;
+        }
+
+        .wf-topbar-search button:hover {
+            color: var(--wf-ink);
+            border-color: var(--wf-rule-firm);
+        }
+
+        /* Full bleed rather than a 1120px column, but capped so a line of body
+           text does not run the width of an ultrawide display. Left-aligned
+           inside the cap on purpose: asymmetry is the point. */
+        .page {
+            width: auto;
+            max-width: 1360px;
+            margin: 0;
+            padding: var(--wf-space-5) var(--wf-space-5) var(--wf-space-7);
+        }
+
+        /* ── Site colour (ADR 0014) ───────────────────────────────────────
+           One operator choice, three surfaces. Every consumer resolves the
+           stored key through --wf-site-<key>, so a hue retuned in tokens.json
+           reaches all of them and the dark variants apply for free. */
+        .wf-site-dot {
+            display: inline-block;
+            width: 9px;
+            height: 9px;
+            flex: none;
+            vertical-align: -1px;
+        }
+
+        .wf-color-picker {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--wf-space-2);
+            margin-top: var(--wf-space-2);
+        }
+
+        .wf-color-option {
+            position: relative;
+        }
+
+        /* The input stays in the layout and keeps its focus ring via the label
+           below; opacity rather than display:none, so it remains focusable and
+           announced as the radio it is. */
+        .wf-color-option input {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .wf-color-swatch {
+            display: flex;
+            align-items: center;
+            gap: var(--wf-space-2);
+            padding: 6px 12px 6px 8px;
+            border: var(--wf-border) solid var(--wf-rule);
+            border-radius: var(--wf-radius);
+            font-size: 12.5px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        .wf-color-swatch i {
+            display: block;
+            width: 14px;
+            height: 14px;
+            flex: none;
+        }
+
+        .wf-color-option input:checked + .wf-color-swatch {
+            border-color: var(--wf-ink);
+            box-shadow: inset 0 0 0 1px var(--wf-ink);
+        }
+
+        .wf-color-option input:focus-visible + .wf-color-swatch {
+            outline: 2px solid var(--wf-brand);
+            outline-offset: 2px;
+        }
+
+        /* ── Queues (ADR 0014) ────────────────────────────────────────────
+           The old queue put three bands of chrome above the first row and gave
+           each row ~130px, so three conversations fitted a screen. Lanes now
+           carry their own counts (which deletes the separate snapshot band),
+           filters collapse to one line, and a row states only what is true:
+           a resting presence or an unavailable cobrowse says nothing, so it
+           shows nothing. */
+
+        .wf-lanes {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2px;
+            border-bottom: var(--wf-border) solid var(--wf-rule-firm);
+        }
+
+        .wf-lane {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 7px 12px;
+            margin-bottom: -1px;
+            border-bottom: 2px solid transparent;
+            color: var(--wf-muted);
+            font-size: var(--wf-text-ui);
+            font-weight: 500;
             text-decoration: none;
             white-space: nowrap;
         }
 
-        .app-nav-link:hover {
-            background: var(--surface-muted);
-            color: var(--text);
+        .wf-lane:hover {
+            color: var(--wf-ink);
         }
 
-        .app-nav-link[aria-current="page"] {
-            background: var(--surface-muted);
-            border-color: var(--border);
-            color: var(--accent-strong);
+        .wf-lane[aria-current="page"] {
+            color: var(--wf-ink);
+            font-weight: 600;
+            border-bottom-color: var(--wf-ink);
         }
 
-        .topbar-actions {
-            grid-area: actions;
+        .wf-lane-count {
+            font-family: var(--wf-font-mono);
+            font-size: 11px;
+            font-variant-numeric: tabular-nums;
+            color: var(--wf-muted);
+        }
+
+        /* Red on the two lanes that mean somebody is waiting, and only when
+           the count is not zero. Everything else stays neutral -- a queue
+           where every number is coloured has no signal in it. */
+        .wf-lane-count[data-tone="waiting"] {
+            color: var(--wf-signal-stop);
+            font-weight: 600;
+        }
+
+        /* A second row of lanes for a queue with more than one axis. Tickets
+           have both "which tickets" (status, owner) and "what needs doing"
+           (next step), and flattening them into one row lost which was which. */
+        .wf-lanes-secondary {
+            border-bottom: 0;
+            padding-top: var(--wf-space-1);
+        }
+
+        .wf-lanes-secondary .wf-lane[aria-current="page"] {
+            border-bottom-color: var(--wf-brand);
+        }
+
+        .wf-lane-divider {
+            align-self: center;
+            width: var(--wf-border);
+            height: 16px;
+            margin: 0 var(--wf-space-2);
+            background: var(--wf-rule-firm);
+        }
+
+        .wf-filters {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-end;
+            gap: var(--wf-space-3);
+            padding: var(--wf-space-3) 0 var(--wf-space-4);
+        }
+
+        .wf-filter {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 0;
+        }
+
+        .wf-filter > label {
+            font-family: var(--wf-font-cond);
+            font-size: 10.5px;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--wf-muted);
+        }
+
+        .wf-filter input,
+        .wf-filter select {
+            border: var(--wf-border) solid var(--wf-rule);
+            border-radius: var(--wf-radius);
+            background: var(--wf-surface);
+            color: var(--wf-ink);
+            padding: 5px 8px;
+            font-size: 12.5px;
+        }
+
+        .wf-filter input:focus,
+        .wf-filter select:focus {
+            outline: 2px solid var(--wf-brand);
+            outline-offset: -1px;
+        }
+
+        .wf-filter-search input {
+            width: 280px;
+            max-width: 100%;
+        }
+
+        .wf-filter-actions {
             display: flex;
             align-items: center;
-            flex-wrap: wrap;
-            gap: 10px;
-            justify-content: flex-end;
+            gap: var(--wf-space-2);
         }
 
-        .topbar-actions form {
-            margin: 0;
+        .wf-filter-actions .button {
+            min-height: 30px;
+            padding: 0 12px;
+            font-size: 12.5px;
         }
 
-        .page {
-            padding: 32px 0;
+        .wf-filter-help {
+            font-size: 11px;
+            color: var(--wf-muted);
+        }
+
+        .wf-queue-summary {
+            margin: 0 0 var(--wf-space-3);
+            font-size: 12.5px;
+            color: var(--wf-muted);
+        }
+
+        .wf-queue-summary strong {
+            color: var(--wf-ink);
+        }
+
+        .wf-queue {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12.5px;
+        }
+
+        .wf-queue thead th {
+            padding: 6px 10px;
+            border-bottom: var(--wf-border) solid var(--wf-rule-firm);
+            font-family: var(--wf-font-cond);
+            font-size: 10.5px;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--wf-muted);
+            text-align: left;
+            white-space: nowrap;
+        }
+
+        .wf-queue tbody td {
+            padding: 7px 10px;
+            border-bottom: var(--wf-border) solid var(--wf-rule);
+            vertical-align: middle;
+        }
+
+        .wf-queue tbody tr:hover td {
+            background: var(--wf-surface-2);
+        }
+
+        /* The site rail. Same device as the transcript chip and the widget's
+           panel edge, all resolving the same token. */
+        .wf-queue-subject {
+            border-left: var(--wf-rail) solid var(--wf-row-site, var(--wf-rule-firm));
+            min-width: 220px;
+        }
+
+        .wf-queue-subject a {
+            color: var(--wf-ink);
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .wf-queue-subject a:hover {
+            text-decoration: underline;
+        }
+
+        .wf-queue-preview {
+            display: block;
+            margin-top: 2px;
+            color: var(--wf-muted);
+            font-size: 11.5px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            /* Narrow by default: several of these sit in the same row, and at
+               52ch each they pushed the last two columns of the ticket queue
+               off the edge entirely. The columns that carry real prose opt
+               into more width below. */
+            max-width: 30ch;
+        }
+
+        .wf-queue-subject .wf-queue-preview,
+        .ticket-activity-preview .wf-queue-preview {
+            max-width: 44ch;
+        }
+
+        .wf-queue-cobrowse {
+            color: var(--wf-muted);
+            white-space: nowrap;
+        }
+
+        .wf-queue-cobrowse[data-tone="live"] {
+            color: var(--wf-signal-go);
+        }
+
+        .wf-queue-cobrowse[data-tone="attention"] {
+            color: var(--wf-signal-hold);
+        }
+
+        .wf-queue-site {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--wf-muted);
+            text-decoration: none;
+            white-space: nowrap;
+        }
+
+        .wf-queue-site:hover {
+            color: var(--wf-ink);
+        }
+
+        .wf-queue-state {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+
+        .wf-queue-state i {
+            width: 7px;
+            height: 7px;
+            flex: none;
+            border-radius: var(--wf-radius-full);
+            background: var(--wf-signal-rest);
+        }
+
+        .wf-queue-state[data-tone="waiting"] {
+            color: var(--wf-signal-stop);
+            font-weight: 500;
+        }
+
+        .wf-queue-state[data-tone="waiting"] i {
+            background: var(--wf-signal-stop);
+        }
+
+        /* Marks appear only when something is true. A quiet visitor and an
+           unavailable cobrowse are the resting states of nearly every row, and
+           printing them on all of them is how the old queue filled 130px with
+           nothing. */
+        .wf-queue-marks {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--wf-space-2);
+            margin-left: var(--wf-space-2);
+        }
+
+        .wf-queue-mark {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 11px;
+            color: var(--wf-muted);
+            white-space: nowrap;
+        }
+
+        .wf-queue-mark i {
+            width: 6px;
+            height: 6px;
+            flex: none;
+            border-radius: var(--wf-radius-full);
+        }
+
+        .wf-queue-mark[data-tone="live"] {
+            color: var(--wf-signal-go);
+        }
+
+        .wf-queue-mark[data-tone="live"] i {
+            background: var(--wf-signal-go);
+        }
+
+        .wf-queue-mark[data-tone="attention"] {
+            color: var(--wf-signal-hold);
+        }
+
+        .wf-queue-mark[data-tone="attention"] i {
+            background: var(--wf-signal-hold);
+        }
+
+        /* Unread is red TEXT with a dot, not a filled badge. On a queue where
+           most rows are unread, a filled badge on every one of them is not a
+           signal -- it is a wall. The dot matches the attention state beside
+           it, so the two read as one language. */
+        .wf-queue-unread {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--wf-signal-stop);
+            font-weight: 500;
+            white-space: nowrap;
+        }
+
+        .wf-queue-unread::before {
+            content: "";
+            width: 7px;
+            height: 7px;
+            flex: none;
+            border-radius: var(--wf-radius-full);
+            background: var(--wf-signal-stop);
+        }
+
+        /* The copy control is useful but must not outweigh the subject above
+           it. In a queue row it is a quiet mono chip, not a button. */
+        .wf-queue-preview .support-reference code {
+            font-size: 11px;
+        }
+
+        .wf-queue-preview .support-reference-copy {
+            font-size: 10px;
+            padding: 0 4px;
+            min-height: 0;
+        }
+
+        .wf-queue-when {
+            font-variant-numeric: tabular-nums;
+            color: var(--wf-muted);
+            white-space: nowrap;
+            width: 138px;
+        }
+
+        /* The wait label is prose ("Waiting on reply for 2 minutes"), so it has
+           to be clamped to its column or it widens the whole table and pushes
+           the last cells off the edge. */
+        .wf-queue-when .wf-queue-preview {
+            max-width: 130px;
+        }
+
+        .wf-queue-code {
+            font-family: var(--wf-font-mono);
+            font-size: 11px;
+            color: var(--wf-muted);
+            text-decoration: none;
+            white-space: nowrap;
+        }
+
+        .wf-queue-code:hover {
+            color: var(--wf-ink);
+        }
+
+        .wf-queue-assignee {
+            color: var(--wf-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .wf-queue-assignee[data-unassigned="true"] {
+            color: var(--wf-signal-hold);
+        }
+
+        /* ── Context sidebar (ADR 0014) ───────────────────────────────────
+           The rail says which part of the product you are in. This says which
+           part of THIS object -- the operator console has seven sections and
+           used to navigate them with a single "back" link at the top of each
+           page, outside the application shell entirely. */
+        .wf-context {
+            display: grid;
+            grid-template-columns: 188px minmax(0, 1fr);
+            gap: var(--wf-space-6);
+            align-items: start;
+        }
+
+        .wf-context-nav {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            position: sticky;
+            top: calc(52px + var(--wf-space-5));
+        }
+
+        .wf-context-heading {
+            margin: 0 0 var(--wf-space-2);
+            padding: 0 var(--wf-space-3);
+            font-family: var(--wf-font-cond);
+            font-size: 10.5px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--wf-muted);
+        }
+
+        .wf-context-link {
+            padding: 6px var(--wf-space-3);
+            border-radius: var(--wf-radius);
+            color: var(--wf-muted);
+            font-size: var(--wf-text-ui);
+            font-weight: 500;
+            text-decoration: none;
+        }
+
+        .wf-context-link:hover {
+            background: var(--wf-surface-2);
+            color: var(--wf-ink);
+        }
+
+        .wf-context-link[aria-current="page"] {
+            background: var(--wf-surface-2);
+            color: var(--wf-ink);
+            font-weight: 600;
+            box-shadow: inset var(--wf-rail) 0 0 var(--wf-brand);
+        }
+
+        .wf-context-link:focus-visible {
+            outline: 2px solid var(--wf-brand);
+            outline-offset: -2px;
+        }
+
+        .wf-context-body {
+            min-width: 0;
+        }
+
+        /* The first card in the body already carries the top margin the
+           sections below it use, which pushed it out of line with the nav. */
+        .wf-context-body > .section:first-child,
+        .wf-context-body > .page-header + .section {
+            margin-top: var(--wf-space-4);
+        }
+
+        @media (max-width: 900px) {
+            .wf-app {
+                grid-template-columns: minmax(0, 1fr);
+            }
+
+            .wf-rail {
+                position: static;
+                height: auto;
+                flex-direction: row;
+                align-items: center;
+                gap: var(--wf-space-3);
+                overflow-x: auto;
+                border-right: 0;
+                border-bottom: var(--wf-border) solid var(--wf-rule);
+                padding: var(--wf-space-2) var(--wf-space-3);
+            }
+
+            .wf-nav {
+                flex-direction: row;
+                padding: 0;
+                gap: var(--wf-space-1);
+            }
+
+            .wf-nav-heading,
+            .wf-identity-sub {
+                display: none;
+            }
+
+            /* Hiding this outright left a phone with no way to change the
+               theme, or to clear a stored choice by going back to Auto -- while
+               the stored choice kept being applied. It shrinks instead. */
+            .wf-theme {
+                margin: 0;
+                flex: none;
+            }
+
+            .wf-theme button {
+                padding: 5px 7px;
+                font-size: 10px;
+            }
+
+            /* Visually hidden, NOT display:none. The icon beside it is
+               aria-hidden, so removing the label outright leaves every nav
+               link with no accessible name at all on a phone. */
+            .wf-nav-link span {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                padding: 0;
+                margin: -1px;
+                overflow: hidden;
+                clip: rect(0, 0, 0, 0);
+                white-space: nowrap;
+                border: 0;
+            }
+
+            /* The rail already says where you are, and the account name wrapped
+               to three lines in a 52px bar. Keep the page, drop the ancestry. */
+            .wf-crumbs a,
+            .wf-crumbs .wf-icon {
+                display: none;
+            }
+
+            .wf-nav-link[aria-current="page"] {
+                box-shadow: inset 0 calc(var(--wf-rail) * -1) 0 var(--wf-brand);
+            }
+
+            .wf-rail-foot {
+                margin-top: 0;
+                flex-direction: row;
+                align-items: center;
+                gap: var(--wf-space-2);
+            }
+
+            .wf-signout,
+            .wf-identity {
+                margin: 0;
+            }
+
+            .page {
+                padding: var(--wf-space-4) var(--wf-space-4) var(--wf-space-6);
+            }
+
+            /* 188px of sidebar beside the content leaves ~130px for a form on a
+               375px phone. The sections become a scrolling row above the body. */
+            .wf-context {
+                grid-template-columns: minmax(0, 1fr);
+                gap: var(--wf-space-4);
+            }
+
+            .wf-context-nav {
+                position: static;
+                flex-direction: row;
+                gap: var(--wf-space-1);
+                overflow-x: auto;
+                border-bottom: var(--wf-border) solid var(--wf-rule);
+                padding-bottom: var(--wf-space-2);
+            }
+
+            .wf-context-heading {
+                display: none;
+            }
+
+            .wf-context-link {
+                white-space: nowrap;
+            }
+
+            .wf-context-link[aria-current="page"] {
+                box-shadow: inset 0 calc(var(--wf-rail) * -1) 0 var(--wf-brand);
+            }
+
+            .wf-topbar-search input {
+                width: 140px;
+            }
         }
 
         .auth-page {
@@ -214,6 +1231,22 @@
             margin-top: 18px;
         }
 
+        /* A fieldset groups the radios for assistive technology, but its UA
+           border and padding are a browser default rather than a choice, and
+           its intrinsic min-width breaks flex and grid parents. */
+        fieldset.field {
+            border: 0;
+            padding: 0;
+            min-width: 0;
+        }
+
+        .field legend {
+            padding: 0;
+            margin-bottom: 6px;
+            font-size: 0.9rem;
+            font-weight: 650;
+        }
+
         .field label {
             display: block;
             margin-bottom: 6px;
@@ -228,7 +1261,7 @@
             border: 1px solid var(--border);
             border-radius: 6px;
             padding: 11px 12px;
-            background: #ffffff;
+            background: var(--wf-surface);
             color: var(--text);
         }
 
@@ -289,15 +1322,15 @@
             border: 1px solid transparent;
             border-radius: 6px;
             padding: 0 16px;
-            background: var(--accent);
-            color: #ffffff;
-            font-weight: 700;
+            background: var(--wf-ink);
+            color: var(--wf-ink-invert);
+            font-weight: 600;
             text-decoration: none;
             cursor: pointer;
         }
 
         .button:hover {
-            background: var(--accent-strong);
+            background: color-mix(in srgb, var(--wf-ink) 82%, var(--wf-paper));
         }
 
         .button.secondary {
@@ -348,7 +1381,6 @@
             background: var(--surface);
             border: 1px solid var(--border);
             border-radius: 8px;
-            box-shadow: 0 1px 2px rgba(8, 37, 34, 0.04);
         }
 
         .section[id] {
@@ -509,17 +1541,24 @@
             margin-top: 16px;
         }
 
+        /* The 1px gaps used to be filled by the grid's own background, which
+           painted every empty cell of a partial last row as a solid grey void.
+           Each item draws its own hairline ring instead: neighbours overlap
+           harmlessly inside the gap, and an empty cell is simply empty. This
+           works at any column count, which matters because the grid collapses
+           to one column on narrow viewports. */
         .meta-grid {
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 1px;
-            background: var(--border);
+            background: var(--surface);
             border-top: 1px solid var(--border);
         }
 
         .meta-item {
             background: var(--surface);
             padding: 16px 20px;
+            box-shadow: 0 0 0 1px var(--border);
         }
 
         .meta-label {
@@ -543,7 +1582,7 @@
             border: 1px solid var(--border);
             border-radius: 6px;
             padding: 10px 11px;
-            background: #ffffff;
+            background: var(--wf-surface);
             color: var(--text);
         }
 
@@ -603,7 +1642,7 @@
             border: 1px solid var(--border);
             border-radius: 6px;
             padding: 9px 10px;
-            background: #ffffff;
+            background: var(--wf-surface);
             color: var(--text);
         }
 
@@ -709,9 +1748,9 @@
         }
 
         .readiness-status[data-status="manual"] {
-            background: #fff8e4;
-            border-color: #ead18b;
-            color: #72540c;
+            background: color-mix(in srgb, var(--wf-signal-hold) 14%, var(--wf-surface));
+            border-color: color-mix(in srgb, var(--wf-signal-hold) 45%, var(--wf-rule));
+            color: color-mix(in srgb, var(--wf-signal-hold) 72%, var(--wf-ink));
         }
 
         .readiness-action {
@@ -904,6 +1943,10 @@
             background: transparent;
         }
 
+        /* The two backgrounds below stay literally white on purpose. This frame
+           renders a replay of the VISITOR'S page, which is their design, not
+           ours -- tinting it with our surface token would repaint a customer's
+           site dark and misrepresent what the visitor is looking at. */
         .cobrowse-preview-frame {
             background: var(--surface-muted);
             border-top: 1px solid var(--border);
@@ -957,11 +2000,11 @@
         }
 
         .live-update[data-state="delayed"] {
-            background: #fff8e4;
+            background: color-mix(in srgb, var(--wf-signal-hold) 12%, var(--wf-surface));
         }
 
         .live-update[data-state="exhausted"] {
-            background: #fff8e4;
+            background: color-mix(in srgb, var(--wf-signal-hold) 12%, var(--wf-surface));
         }
 
         .live-update[data-state="expired"] {
@@ -972,30 +2015,71 @@
             display: none !important;
         }
 
+        /* ── The transcript (ADR 0014) ─────────────────────────────────────
+           The widget has always rendered this as a conversation -- agent
+           replies to one side, in their own bubble. The agent's own view
+           stacked both sides full width under a header reading "Messages ·
+           3 total", so the two halves of the same exchange used opposite
+           metaphors and only the agent got the log table.
+
+           .message-card is deliberately NOT included here: tickets use it for
+           notes and updates, which are cards, not dialogue. */
         .message-list {
-            display: grid;
-            gap: 14px;
-            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: var(--wf-space-3);
+            padding: var(--wf-space-5);
         }
 
-        .message-card,
-        .message {
-            border: 1px solid var(--border);
+        .message-card {
+            border: var(--wf-border) solid var(--border);
             border-radius: 8px;
             padding: 14px;
         }
 
-        .message-card.agent-message,
-        .message.agent {
+        .message-card.agent-message {
             background: var(--surface-muted);
         }
 
-        .message.grouped {
-            margin-top: -8px;
+        .message {
+            max-width: 74%;
+            min-width: 0;
+            border: var(--wf-border) solid var(--wf-rule);
+            border-radius: var(--wf-radius);
+            padding: 9px 12px;
+            background: var(--wf-surface);
         }
 
-        .message.grouped .message-meta {
+        /* The visitor sits left and carries the site's colour: on a desk
+           covering many sites, whose customer is speaking is the first thing
+           an agent needs. */
+        .message.visitor {
+            align-self: flex-start;
+            border-left: var(--wf-rail) solid var(--wf-conversation-site, var(--wf-rule-firm));
+        }
+
+        /* The agent sits right and recedes. An agent re-reading a thread is
+           looking for what the visitor said; their own replies are context. */
+        .message.agent {
+            align-self: flex-end;
+            background: var(--wf-surface-2);
+        }
+
+        .message.grouped {
+            margin-top: calc(var(--wf-space-3) * -1 + 2px);
+        }
+
+        .message.agent .message-meta {
             justify-content: flex-end;
+        }
+
+        /* A message with neither text nor an attachment used to render as an
+           empty bordered box with a timestamp, which reads as a rendering bug
+           rather than as what it is. */
+        .message-empty {
+            margin: 0;
+            color: var(--wf-muted);
+            font-style: italic;
         }
 
         .empty-state {
@@ -1137,8 +2221,8 @@
 
         .reply-attach-chip--error {
             background: var(--surface);
-            border-color: #c0563f;
-            color: #8a3b2e;
+            border-color: color-mix(in srgb, var(--wf-signal-stop) 55%, var(--wf-rule));
+            color: var(--wf-signal-stop);
         }
 
         .reply-attach-chip-name {
@@ -1155,7 +2239,7 @@
         }
 
         .reply-attach-chip--error .reply-attach-chip-state {
-            color: #8a3b2e;
+            color: var(--wf-signal-stop);
         }
 
         .reply-attach-chip-remove {
@@ -1170,7 +2254,7 @@
         }
 
         .reply-attach-chip-remove:hover {
-            color: #8a3b2e;
+            color: var(--wf-signal-stop);
         }
 
         .details-disclosure {
@@ -1216,30 +2300,39 @@
         .reply-workspace {
             display: grid;
             grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
-            gap: 1px;
-            background: var(--border);
-            border-top: 1px solid var(--border);
+            background: var(--surface);
+            border-top: var(--wf-border) solid var(--border);
+        }
+
+        .reply-workspace > * + * {
+            border-left: var(--wf-border) solid var(--border);
         }
 
         .reply-workspace .section-form {
             background: var(--surface);
         }
 
+        /* The gap used to be painted by this element's own background, so the
+           three cells the content did not fill rendered as one solid grey block
+           beside it -- the same defect .meta-grid had. Items draw their own
+           hairline instead, and the strip takes only the width it needs. */
         .reply-context-strip {
-            display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
+            display: flex;
+            flex-wrap: wrap;
             gap: 1px;
             overflow: hidden;
             margin-bottom: 18px;
-            border: 1px solid var(--border);
+            border: var(--wf-border) solid var(--border);
             border-radius: 6px;
-            background: var(--border);
+            background: var(--surface);
         }
 
         .reply-context-item {
             min-width: 0;
+            flex: 1 1 200px;
             padding: 12px;
             background: var(--surface-muted);
+            box-shadow: 0 0 0 1px var(--border);
         }
 
         .reply-assist {
@@ -1299,7 +2392,7 @@
         }
 
         .timeline-item.internal-note .timeline-content {
-            border-color: #b8860b;
+            border-color: var(--wf-signal-hold);
         }
 
         .operator-activity-details {
@@ -1422,106 +2515,113 @@
 <body>
     @if ($agent && $account)
         @php
-            $navigationItems = [
-                [
-                    'label' => 'Dashboard',
-                    'href' => route('dashboard'),
-                    'active' => request()->routeIs('dashboard'),
-                ],
-                [
-                    'label' => 'Conversations',
-                    'href' => route('dashboard.conversations.index'),
-                    'active' => request()->routeIs('dashboard.conversations.*'),
-                ],
-                [
-                    'label' => 'Tickets',
-                    'href' => route('dashboard.tickets.index'),
-                    'active' => request()->routeIs('dashboard.tickets.*'),
-                ],
-                [
-                    'label' => 'Alerts',
-                    'href' => route('dashboard.alerts.index'),
-                    'active' => request()->routeIs('dashboard.alerts.*'),
-                ],
-                [
-                    'label' => 'Sites',
-                    'href' => route('dashboard.sites.index'),
-                    'active' => request()->routeIs('dashboard.sites.*'),
-                ],
-                [
-                    'label' => 'Account',
-                    'href' => route('dashboard.account.show'),
-                    'active' => request()->routeIs('dashboard.account.*'),
-                ],
+            $workItems = [
+                ['label' => 'Dashboard', 'icon' => 'dashboard', 'href' => route('dashboard'), 'active' => request()->routeIs('dashboard')],
+                ['label' => 'Conversations', 'icon' => 'conversations', 'href' => route('dashboard.conversations.index'), 'active' => request()->routeIs('dashboard.conversations.*')],
+                ['label' => 'Tickets', 'icon' => 'tickets', 'href' => route('dashboard.tickets.index'), 'active' => request()->routeIs('dashboard.tickets.*')],
+                ['label' => 'Alerts', 'icon' => 'alerts', 'href' => route('dashboard.alerts.index'), 'active' => request()->routeIs('dashboard.alerts.*')],
+            ];
+
+            $manageItems = [
+                ['label' => 'Sites', 'icon' => 'sites', 'href' => route('dashboard.sites.index'), 'active' => request()->routeIs('dashboard.sites.*')],
+                ['label' => 'Account', 'icon' => 'account', 'href' => route('dashboard.account.show'), 'active' => request()->routeIs('dashboard.account.*')],
             ];
 
             if ($agent->isAdmin()) {
-                array_splice($navigationItems, 4, 0, [[
-                    'label' => 'Readiness',
-                    'href' => route('dashboard.readiness.show'),
-                    'active' => request()->routeIs('dashboard.readiness.*'),
-                ]]);
+                $manageItems[] = ['label' => 'Readiness', 'icon' => 'readiness', 'href' => route('dashboard.readiness.show'), 'active' => request()->routeIs('dashboard.readiness.*')];
             }
 
             if ($agent->isPlatformOperator()) {
-                $navigationItems[] = [
-                    'label' => 'Operator',
-                    'href' => route('operator.dashboard'),
-                    'active' => request()->routeIs('operator.*'),
-                ];
+                $manageItems[] = ['label' => 'Operator', 'icon' => 'operator', 'href' => route('operator.dashboard'), 'active' => request()->routeIs('operator.*')];
             }
+
+            // The breadcrumb names where you are. The active navigation item is
+            // the honest answer when there is one; the page title covers the
+            // screens that sit outside the rail, like Profile.
+            $currentLabel = collect($workItems)->concat($manageItems)->firstWhere('active')['label'] ?? $title;
         @endphp
 
-        <div class="shell">
-            <header class="topbar">
-                <div class="topbar-inner">
-                    <div class="topbar-main">
-                        <a class="brand-link" href="{{ route('dashboard') }}">Wayfindr</a>
-                        <div class="lede topbar-context">{{ $agent->name }} - {{ $account->name }}</div>
+        <div class="wf-app">
+            <aside class="wf-rail">
+                <a class="wf-mark" href="{{ route('dashboard') }}">
+                    <span class="wf-mark-planes" aria-hidden="true"><i></i><i></i><i></i></span>
+                    <span class="wf-mark-name">Wayfindr</span>
+                </a>
+
+                <nav class="wf-nav" aria-label="Primary navigation">
+                    <p class="wf-nav-heading">Work</p>
+                    @foreach ($workItems as $item)
+                        <a class="wf-nav-link" href="{{ $item['href'] }}" @if ($item['active']) aria-current="page" @endif>
+                            <x-icon :name="$item['icon']" />
+                            <span>{{ $item['label'] }}</span>
+                        </a>
+                    @endforeach
+
+                    <p class="wf-nav-heading">Manage</p>
+                    @foreach ($manageItems as $item)
+                        <a class="wf-nav-link" href="{{ $item['href'] }}" @if ($item['active']) aria-current="page" @endif>
+                            <x-icon :name="$item['icon']" />
+                            <span>{{ $item['label'] }}</span>
+                        </a>
+                    @endforeach
+                </nav>
+
+                <div class="wf-rail-foot">
+                    <div class="wf-theme" role="group" aria-label="Colour theme" data-wf-theme-group>
+                        <button type="button" data-wf-theme-set="system" aria-pressed="true">Auto</button>
+                        <button type="button" data-wf-theme-set="light" aria-pressed="false">Light</button>
+                        <button type="button" data-wf-theme-set="dark" aria-pressed="false">Dark</button>
                     </div>
 
-                    <nav class="app-nav" aria-label="Primary navigation">
-                        @foreach ($navigationItems as $navigationItem)
-                            <a
-                                class="app-nav-link"
-                                href="{{ $navigationItem['href'] }}"
-                                @if ($navigationItem['active']) aria-current="page" @endif
-                            >
-                                {{ $navigationItem['label'] }}
-                            </a>
-                        @endforeach
+                    <a class="wf-identity" href="{{ route('dashboard.profile.show') }}">
+                        <span class="wf-identity-name">{{ $agent->name }}</span>
+                        <span class="wf-identity-sub">{{ $account->name }}</span>
+                    </a>
+
+                    <form class="wf-signout" method="POST" action="{{ route('logout') }}">
+                        @csrf
+                        <button type="submit">Sign out</button>
+                    </form>
+                </div>
+            </aside>
+
+            <div class="wf-main">
+                <header class="wf-topbar">
+                    <nav class="wf-crumbs" aria-label="Breadcrumb">
+                        <a href="{{ route('dashboard') }}">{{ $account->name }}</a>
+                        <x-icon name="chevron-right" :size="13" />
+                        @if ($crumb)
+                            <a href="{{ route('operator.dashboard') }}">{{ $currentLabel }}</a>
+                            <x-icon name="chevron-right" :size="13" />
+                            <span class="wf-crumb-current">{{ $crumb }}</span>
+                        @else
+                            <span class="wf-crumb-current">{{ $currentLabel }}</span>
+                        @endif
                     </nav>
 
-                    <div class="topbar-actions">
-                        <form class="compact-form support-lookup-form" method="GET" action="{{ route('dashboard.support-code.lookup') }}" aria-label="Find support trail">
-                            <label class="sr-only" for="shell_support_code">Support code, ticket, or visitor ID</label>
-                            <input id="shell_support_code" name="support_code" type="search" placeholder="Support code or ticket" autocomplete="off">
-                            <button class="button secondary" type="submit">Find</button>
-                        </form>
-                        <a class="button secondary" href="{{ route('dashboard.profile.show') }}">Profile</a>
-                        <form method="POST" action="{{ route('logout') }}">
-                            @csrf
-                            <button class="button secondary" type="submit">Sign out</button>
-                        </form>
-                    </div>
-                </div>
-            </header>
+                    <form class="wf-topbar-search" method="GET" action="{{ route('dashboard.support-code.lookup') }}" aria-label="Find support trail">
+                        <label class="sr-only" for="shell_support_code">Support code, ticket, or visitor ID</label>
+                        <input id="shell_support_code" name="support_code" type="search" placeholder="Support code, ticket, visitor" autocomplete="off">
+                        <button type="submit">Find</button>
+                    </form>
+                </header>
 
-            <main class="page">
-                @if (session('support_code_lookup_result'))
-                    <p class="status-message">{{ session('support_code_lookup_result') }}</p>
-                @endif
+                <main class="page">
+                    @if (session('support_code_lookup_result'))
+                        <p class="status-message">{{ session('support_code_lookup_result') }}</p>
+                    @endif
 
-                @if (session('support_code_lookup_status'))
-                    <div class="empty empty-state" role="status">
-                        <strong>{{ session('support_code_lookup_status') }}</strong>
-                        <p>Try a support code like WF-ABC123, a ticket reference like Ticket #123, or a visitor ID.</p>
-                        <p>Records outside your support access stay hidden.</p>
-                    </div>
-                @endif
+                    @if (session('support_code_lookup_status'))
+                        <div class="empty empty-state" role="status">
+                            <strong>{{ session('support_code_lookup_status') }}</strong>
+                            <p>Try a support code like WF-ABC123, a ticket reference like Ticket #123, or a visitor ID.</p>
+                            <p>Records outside your support access stay hidden.</p>
+                        </div>
+                    @endif
 
-                {{ $slot }}
-            </main>
+                    {{ $slot }}
+                </main>
+            </div>
         </div>
     @else
         {{ $slot }}
@@ -1592,6 +2692,63 @@
                 copyValue(value).then(function () {
                     markCopied(button);
                 });
+            });
+        })();
+    </script>
+    <script>
+        (function () {
+            var group = document.querySelector('[data-wf-theme-group]');
+
+            if (! group) {
+                return;
+            }
+
+            var buttons = group.querySelectorAll('[data-wf-theme-set]');
+
+            function stored() {
+                try {
+                    return localStorage.getItem('wayfindr:theme') || 'system';
+                } catch (error) {
+                    return 'system';
+                }
+            }
+
+            function apply(value) {
+                if (value === 'dark' || value === 'light') {
+                    document.documentElement.setAttribute('data-wf-theme', value);
+                } else {
+                    // Removing the attribute is what hands control back to the
+                    // OS preference. Setting it to "system" would match neither
+                    // selector and strand the page on the light palette.
+                    document.documentElement.removeAttribute('data-wf-theme');
+                }
+
+                buttons.forEach(function (button) {
+                    button.setAttribute(
+                        'aria-pressed',
+                        button.getAttribute('data-wf-theme-set') === value ? 'true' : 'false'
+                    );
+                });
+            }
+
+            apply(stored());
+
+            group.addEventListener('click', function (event) {
+                var button = event.target.closest('[data-wf-theme-set]');
+
+                if (! button) {
+                    return;
+                }
+
+                var value = button.getAttribute('data-wf-theme-set');
+
+                try {
+                    localStorage.setItem('wayfindr:theme', value);
+                } catch (error) {
+                    // Unremembered but still applied for this page.
+                }
+
+                apply(value);
             });
         })();
     </script>
