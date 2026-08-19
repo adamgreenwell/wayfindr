@@ -52,13 +52,17 @@ class BootstrapController extends Controller
     }
 
     /**
-     * @return array{name: string, domain: string|null, public_key: string, settings: array{mask_selectors: array<int, string>, mask_terms: array<int, string>}}
+     * @return array{name: string, domain: string|null, color: string, public_key: string, settings: array{mask_selectors: array<int, string>, mask_terms: array<int, string>}}
      */
     private function sitePayload(Site $site): array
     {
         return [
             'name' => $site->name,
             'domain' => $site->domain,
+            // The token KEY, not a colour value (ADR 0014). The widget resolves
+            // it through --wf-site-<key>, so the theme-tuned dark variant applies
+            // and an operator can recolour a site without a widget redeploy.
+            'color' => $site->resolvedColor()->value,
             'public_key' => $site->public_key,
             'settings' => [
                 'mask_selectors' => $this->stringList($site->settings['mask_selectors'] ?? []),

@@ -146,6 +146,7 @@
                                     @endphp
                                     <tr>
                                         <td>
+                                            <span class="wf-site-dot" style="background: var({{ $site->resolvedColor()->cssVariable() }})" aria-hidden="true"></span>
                                             <a class="text-link" href="{{ route('dashboard.sites.show', $site) }}">{{ $site->name }}</a>
                                             @if ($site->isArchived())
                                                 <span class="readiness-status">Archived</span>

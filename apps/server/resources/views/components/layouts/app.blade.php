@@ -522,6 +522,418 @@
             padding: var(--wf-space-5) var(--wf-space-5) var(--wf-space-7);
         }
 
+        /* ── Site colour (ADR 0014) ───────────────────────────────────────
+           One operator choice, three surfaces. Every consumer resolves the
+           stored key through --wf-site-<key>, so a hue retuned in tokens.json
+           reaches all of them and the dark variants apply for free. */
+        .wf-site-dot {
+            display: inline-block;
+            width: 9px;
+            height: 9px;
+            flex: none;
+            vertical-align: -1px;
+        }
+
+        .wf-color-picker {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--wf-space-2);
+            margin-top: var(--wf-space-2);
+        }
+
+        .wf-color-option {
+            position: relative;
+        }
+
+        /* The input stays in the layout and keeps its focus ring via the label
+           below; opacity rather than display:none, so it remains focusable and
+           announced as the radio it is. */
+        .wf-color-option input {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .wf-color-swatch {
+            display: flex;
+            align-items: center;
+            gap: var(--wf-space-2);
+            padding: 6px 12px 6px 8px;
+            border: var(--wf-border) solid var(--wf-rule);
+            border-radius: var(--wf-radius);
+            font-size: 12.5px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        .wf-color-swatch i {
+            display: block;
+            width: 14px;
+            height: 14px;
+            flex: none;
+        }
+
+        .wf-color-option input:checked + .wf-color-swatch {
+            border-color: var(--wf-ink);
+            box-shadow: inset 0 0 0 1px var(--wf-ink);
+        }
+
+        .wf-color-option input:focus-visible + .wf-color-swatch {
+            outline: 2px solid var(--wf-brand);
+            outline-offset: 2px;
+        }
+
+        /* ── Queues (ADR 0014) ────────────────────────────────────────────
+           The old queue put three bands of chrome above the first row and gave
+           each row ~130px, so three conversations fitted a screen. Lanes now
+           carry their own counts (which deletes the separate snapshot band),
+           filters collapse to one line, and a row states only what is true:
+           a resting presence or an unavailable cobrowse says nothing, so it
+           shows nothing. */
+
+        .wf-lanes {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2px;
+            border-bottom: var(--wf-border) solid var(--wf-rule-firm);
+        }
+
+        .wf-lane {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 7px 12px;
+            margin-bottom: -1px;
+            border-bottom: 2px solid transparent;
+            color: var(--wf-muted);
+            font-size: var(--wf-text-ui);
+            font-weight: 500;
+            text-decoration: none;
+            white-space: nowrap;
+        }
+
+        .wf-lane:hover {
+            color: var(--wf-ink);
+        }
+
+        .wf-lane[aria-current="page"] {
+            color: var(--wf-ink);
+            font-weight: 600;
+            border-bottom-color: var(--wf-ink);
+        }
+
+        .wf-lane-count {
+            font-family: var(--wf-font-mono);
+            font-size: 11px;
+            font-variant-numeric: tabular-nums;
+            color: var(--wf-muted);
+        }
+
+        /* Red on the two lanes that mean somebody is waiting, and only when
+           the count is not zero. Everything else stays neutral -- a queue
+           where every number is coloured has no signal in it. */
+        .wf-lane-count[data-tone="waiting"] {
+            color: var(--wf-signal-stop);
+            font-weight: 600;
+        }
+
+        .wf-filters {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-end;
+            gap: var(--wf-space-3);
+            padding: var(--wf-space-3) 0 var(--wf-space-4);
+        }
+
+        .wf-filter {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 0;
+        }
+
+        .wf-filter > label {
+            font-family: var(--wf-font-cond);
+            font-size: 10.5px;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--wf-muted);
+        }
+
+        .wf-filter input,
+        .wf-filter select {
+            border: var(--wf-border) solid var(--wf-rule);
+            border-radius: var(--wf-radius);
+            background: var(--wf-surface);
+            color: var(--wf-ink);
+            padding: 5px 8px;
+            font-size: 12.5px;
+        }
+
+        .wf-filter input:focus,
+        .wf-filter select:focus {
+            outline: 2px solid var(--wf-brand);
+            outline-offset: -1px;
+        }
+
+        .wf-filter-search input {
+            width: 280px;
+            max-width: 100%;
+        }
+
+        .wf-filter-actions {
+            display: flex;
+            align-items: center;
+            gap: var(--wf-space-2);
+        }
+
+        .wf-filter-actions .button {
+            min-height: 30px;
+            padding: 0 12px;
+            font-size: 12.5px;
+        }
+
+        .wf-filter-help {
+            font-size: 11px;
+            color: var(--wf-muted);
+        }
+
+        .wf-queue-summary {
+            margin: 0 0 var(--wf-space-3);
+            font-size: 12.5px;
+            color: var(--wf-muted);
+        }
+
+        .wf-queue-summary strong {
+            color: var(--wf-ink);
+        }
+
+        .wf-queue {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12.5px;
+        }
+
+        .wf-queue thead th {
+            padding: 6px 10px;
+            border-bottom: var(--wf-border) solid var(--wf-rule-firm);
+            font-family: var(--wf-font-cond);
+            font-size: 10.5px;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--wf-muted);
+            text-align: left;
+            white-space: nowrap;
+        }
+
+        .wf-queue tbody td {
+            padding: 7px 10px;
+            border-bottom: var(--wf-border) solid var(--wf-rule);
+            vertical-align: middle;
+        }
+
+        .wf-queue tbody tr:hover td {
+            background: var(--wf-surface-2);
+        }
+
+        /* The site rail. Same device as the transcript chip and the widget's
+           panel edge, all resolving the same token. */
+        .wf-queue-subject {
+            border-left: var(--wf-rail) solid var(--wf-row-site, var(--wf-rule-firm));
+            min-width: 220px;
+        }
+
+        .wf-queue-subject a {
+            color: var(--wf-ink);
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .wf-queue-subject a:hover {
+            text-decoration: underline;
+        }
+
+        .wf-queue-preview {
+            display: block;
+            margin-top: 2px;
+            color: var(--wf-muted);
+            font-size: 11.5px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 52ch;
+        }
+
+        .wf-queue-cobrowse {
+            color: var(--wf-muted);
+            white-space: nowrap;
+        }
+
+        .wf-queue-cobrowse[data-tone="live"] {
+            color: var(--wf-signal-go);
+        }
+
+        .wf-queue-cobrowse[data-tone="attention"] {
+            color: var(--wf-signal-hold);
+        }
+
+        .wf-queue-site {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--wf-muted);
+            text-decoration: none;
+            white-space: nowrap;
+        }
+
+        .wf-queue-site:hover {
+            color: var(--wf-ink);
+        }
+
+        .wf-queue-state {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+
+        .wf-queue-state i {
+            width: 7px;
+            height: 7px;
+            flex: none;
+            border-radius: var(--wf-radius-full);
+            background: var(--wf-signal-rest);
+        }
+
+        .wf-queue-state[data-tone="waiting"] {
+            color: var(--wf-signal-stop);
+            font-weight: 500;
+        }
+
+        .wf-queue-state[data-tone="waiting"] i {
+            background: var(--wf-signal-stop);
+        }
+
+        /* Marks appear only when something is true. A quiet visitor and an
+           unavailable cobrowse are the resting states of nearly every row, and
+           printing them on all of them is how the old queue filled 130px with
+           nothing. */
+        .wf-queue-marks {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--wf-space-2);
+            margin-left: var(--wf-space-2);
+        }
+
+        .wf-queue-mark {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 11px;
+            color: var(--wf-muted);
+            white-space: nowrap;
+        }
+
+        .wf-queue-mark i {
+            width: 6px;
+            height: 6px;
+            flex: none;
+            border-radius: var(--wf-radius-full);
+        }
+
+        .wf-queue-mark[data-tone="live"] {
+            color: var(--wf-signal-go);
+        }
+
+        .wf-queue-mark[data-tone="live"] i {
+            background: var(--wf-signal-go);
+        }
+
+        .wf-queue-mark[data-tone="attention"] {
+            color: var(--wf-signal-hold);
+        }
+
+        .wf-queue-mark[data-tone="attention"] i {
+            background: var(--wf-signal-hold);
+        }
+
+        /* Unread is red TEXT with a dot, not a filled badge. On a queue where
+           most rows are unread, a filled badge on every one of them is not a
+           signal -- it is a wall. The dot matches the attention state beside
+           it, so the two read as one language. */
+        .wf-queue-unread {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--wf-signal-stop);
+            font-weight: 500;
+            white-space: nowrap;
+        }
+
+        .wf-queue-unread::before {
+            content: "";
+            width: 7px;
+            height: 7px;
+            flex: none;
+            border-radius: var(--wf-radius-full);
+            background: var(--wf-signal-stop);
+        }
+
+        /* The copy control is useful but must not outweigh the subject above
+           it. In a queue row it is a quiet mono chip, not a button. */
+        .wf-queue-preview .support-reference code {
+            font-size: 11px;
+        }
+
+        .wf-queue-preview .support-reference-copy {
+            font-size: 10px;
+            padding: 0 4px;
+            min-height: 0;
+        }
+
+        .wf-queue-when {
+            font-variant-numeric: tabular-nums;
+            color: var(--wf-muted);
+            white-space: nowrap;
+            width: 138px;
+        }
+
+        /* The wait label is prose ("Waiting on reply for 2 minutes"), so it has
+           to be clamped to its column or it widens the whole table and pushes
+           the last cells off the edge. */
+        .wf-queue-when .wf-queue-preview {
+            max-width: 130px;
+        }
+
+        .wf-queue-code {
+            font-family: var(--wf-font-mono);
+            font-size: 11px;
+            color: var(--wf-muted);
+            text-decoration: none;
+            white-space: nowrap;
+        }
+
+        .wf-queue-code:hover {
+            color: var(--wf-ink);
+        }
+
+        .wf-queue-assignee {
+            color: var(--wf-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .wf-queue-assignee[data-unassigned="true"] {
+            color: var(--wf-signal-hold);
+        }
+
         @media (max-width: 900px) {
             .wf-app {
                 grid-template-columns: minmax(0, 1fr);
@@ -663,6 +1075,22 @@
 
         .field {
             margin-top: 18px;
+        }
+
+        /* A fieldset groups the radios for assistive technology, but its UA
+           border and padding are a browser default rather than a choice, and
+           its intrinsic min-width breaks flex and grid parents. */
+        fieldset.field {
+            border: 0;
+            padding: 0;
+            min-width: 0;
+        }
+
+        .field legend {
+            padding: 0;
+            margin-bottom: 6px;
+            font-size: 0.9rem;
+            font-weight: 650;
         }
 
         .field label {

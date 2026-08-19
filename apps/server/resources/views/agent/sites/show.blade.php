@@ -300,8 +300,35 @@
                                 @enderror
                             </div>
 
+                            <fieldset class="field">
+                                <legend>Colour</legend>
+                                <div class="wf-color-picker">
+                                    @foreach (\App\Enums\SiteColor::cases() as $option)
+                                        <span class="wf-color-option">
+                                            <input
+                                                id="site_color_{{ $option->value }}"
+                                                name="color"
+                                                type="radio"
+                                                value="{{ $option->value }}"
+                                                @checked(old('color', $site->resolvedColor()->value) === $option->value)
+                                            >
+                                            <label class="wf-color-swatch" for="site_color_{{ $option->value }}">
+                                                <i style="background: var({{ $option->cssVariable() }})"></i>
+                                                {{ $option->label() }}
+                                            </label>
+                                        </span>
+                                    @endforeach
+                                </div>
+                                @error('color')
+                                    <p class="field-error">{{ $message }}</p>
+                                @enderror
+                                <p class="field-help">
+                                    How this site is recognised across the queues, in conversation transcripts, and on the widget your visitors see. Pick a different colour for each site so an agent covering several can tell them apart without reading.
+                                </p>
+                            </fieldset>
+
                             <p class="field-help">
-                                Both are labels. The widget identifies this site by its public key, so changing either is safe and will not interrupt a live install &mdash; the domain is used for display and for the install checks on this page.
+                                Name and domain are labels. The widget identifies this site by its public key, so changing either is safe and will not interrupt a live install &mdash; the domain is used for display and for the install checks on this page.
                             </p>
 
                             <button class="button" type="submit">Save site details</button>

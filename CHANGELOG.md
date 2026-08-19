@@ -36,7 +36,30 @@ The interface renovation described in ADR 0014 is in progress. Nothing about it
 is visible yet — the groundwork below changes what the image contains, not what
 the dashboard looks like.
 
+### Added
+
+- **Every site now has a colour.** Wayfindr is built for one desk covering many
+  sites, so the question an agent asks all day is *whose visitor is this?* A
+  colour answers it faster than a repeated site name. Pick one per site under
+  **Sites → Edit name and domain**; it appears wherever that site does, and on
+  the widget its visitors see.
+
+  Existing sites are assigned a colour automatically when you upgrade, in
+  creation order, so each of your sites starts out distinct from the others.
+  Nothing to configure unless you want to change them.
+
 ### Changed
+
+- **The conversation queue is readable again.** It used to put three bands of
+  controls above the first conversation and give every row about 130 pixels, so
+  three conversations filled a screen. Lanes now carry their own counts, the
+  filters sit on one line, and rows are less than half the height &mdash; the same
+  queue shows around four times as many conversations without dropping anything
+  it used to tell you.
+
+  Colour now means something. A calm conversation is no longer marked in amber:
+  red appears where somebody is waiting, and each row carries its site's colour
+  as a stripe so you can tell whose visitor it is at a glance.
 
 - **The dashboard's typeface now ships with the application.** IBM Plex is
   served from your own install rather than fetched from a font CDN, so an
