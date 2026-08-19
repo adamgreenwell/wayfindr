@@ -1,101 +1,115 @@
 <x-layouts.app title="Conversations" :agent="$agent" :account="$account">
-            <x-page-header title="Conversations" :subtitle="($conversationFilter === 'closed' ? 'Closed visitor conversations' : 'Active visitor conversations').' for '.$account->name.'.'" :back-href="route('dashboard')" back-label="Back to dashboard" />
+            <x-page-header title="Conversations" :subtitle="($conversationFilter === 'closed' ? 'Closed visitor conversations' : 'Active visitor conversations').' for '.$account->name.'.'" />
 
-            <section id="conversations" class="section" aria-labelledby="conversations-heading">
-                <div class="section-header">
-                    <h2 id="conversations-heading">Conversation queue</h2>
-                    <div class="section-actions">
-                        <span class="lede">{{ $conversationQueueCountSummary['heading'] }}</span>
-                        @foreach ($conversationFilters as $filterValue => $filterLabel)
-                            @php
-                                $filterParams = $conversationQuery;
+            @php
+                // The lanes carry their own counts, which is what lets the
+                // separate "Queue snapshot" band go: four of its six chips were
+                // lanes already. The other two are presence, and they move onto
+                // the presence control below.
+                $laneCounts = collect($conversationQueueSummary)->keyBy('state');
+                $waitingLanes = ['new_activity', 'needs_reply'];
+            @endphp
 
-                                if ($filterValue === 'all') {
-                                    unset($filterParams['conversation_filter']);
-                                } else {
-                                    $filterParams['conversation_filter'] = $filterValue;
-                                }
-                            @endphp
+            <section id="conversations" aria-labelledby="conversations-heading">
+                <h2 id="conversations-heading" class="sr-only">Conversation queue</h2>
+
+                <nav class="wf-lanes" aria-label="Conversation lanes">
+                    @foreach ($conversationFilters as $filterValue => $filterLabel)
+                        @php
+                            $filterParams = $conversationQuery;
+
+                            if ($filterValue === 'all') {
+                                unset($filterParams['conversation_filter']);
+                            } else {
+                                $filterParams['conversation_filter'] = $filterValue;
+                            }
+
+                            $lane = $laneCounts->get($filterValue);
+                        @endphp
+                        <a
+                            class="wf-lane"
+                            href="{{ route('dashboard.conversations.index', $filterParams) }}"
+                            @if ($conversationFilter === $filterValue) aria-current="page" @endif
+                        >
+                            {{ $filterLabel }}
+                            @if ($lane)
+                                <span
+                                    class="wf-lane-count"
+                                    title="{{ $lane['label'] }}: {{ $lane['count'] }}"
+                                    @if (in_array($filterValue, $waitingLanes, true) && $lane['count'] > 0) data-tone="waiting" @endif
+                                >{{ $lane['count'] }}</span>
+                            @endif
+                        </a>
+                    @endforeach
+
+                    @foreach ($conversationQueueSummary as $summaryLane)
+                        @if (in_array($summaryLane['state'], ['active', 'recent'], true))
                             <a
-                                class="button {{ $conversationFilter === $filterValue ? '' : 'secondary' }}"
-                                href="{{ route('dashboard.conversations.index', $filterParams) }}"
-                                @if ($conversationFilter === $filterValue) aria-current="page" @endif
+                                class="wf-lane"
+                                href="{{ $summaryLane['href'] }}"
+                                @if ($summaryLane['active']) aria-current="page" @endif
                             >
-                                {{ $filterLabel }}
+                                {{ $summaryLane['label'] }}
+                                <span class="wf-lane-count" title="{{ $summaryLane['label'] }}: {{ $summaryLane['count'] }}">{{ $summaryLane['count'] }}</span>
                             </a>
-                        @endforeach
-                    </div>
-                </div>
+                        @endif
+                    @endforeach
+                </nav>
 
-                <form class="section-form" method="GET" action="{{ route('dashboard.conversations.index') }}">
+                <form class="wf-filters" method="GET" action="{{ route('dashboard.conversations.index') }}">
                     @if ($conversationFilter !== 'all')
                         <input type="hidden" name="conversation_filter" value="{{ $conversationFilter }}">
                     @endif
 
-                    <div class="meta-grid">
-                        <div class="meta-item">
-                            <label class="meta-label" for="conversation_site">Site</label>
-                            <select id="conversation_site" name="conversation_site">
-                                <option value="">Any site</option>
-                                @foreach ($sites as $site)
-                                    <option value="{{ $site->id }}" @selected($conversationSite === $site->id)>
-                                        {{ $site->name }}
-                                    </option>
-                                @endforeach
-                            </select>
-                        </div>
+                    <div class="wf-filter wf-filter-search">
+                        <label for="conversation_search">Search</label>
+                        <input
+                            id="conversation_search"
+                            name="conversation_search"
+                            type="search"
+                            value="{{ $conversationSearch }}"
+                            placeholder="Subject, support code, or visitor"
+                        >
+                        <span class="wf-filter-help">Search by subject, support code, visitor ID, visitor name, or visitor email.</span>
+                    </div>
 
-                        <div class="meta-item">
-                            <label class="meta-label" for="conversation_presence">Presence</label>
-                            <select id="conversation_presence" name="conversation_presence">
-                                @foreach ($conversationPresenceFilters as $presenceValue => $presenceLabel)
-                                    <option value="{{ $presenceValue === 'all' ? '' : $presenceValue }}" @selected($conversationPresence === $presenceValue)>
-                                        {{ $presenceLabel }}
-                                    </option>
-                                @endforeach
-                            </select>
-                        </div>
+                    <div class="wf-filter">
+                        <label for="conversation_site">Site</label>
+                        <select id="conversation_site" name="conversation_site">
+                            <option value="">Any site</option>
+                            @foreach ($sites as $site)
+                                <option value="{{ $site->id }}" @selected($conversationSite === $site->id)>
+                                    {{ $site->name }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
 
-                        <div class="meta-item">
-                            <label class="meta-label" for="conversation_search">Search</label>
-                            <input
-                                id="conversation_search"
-                                name="conversation_search"
-                                type="search"
-                                value="{{ $conversationSearch }}"
-                                placeholder="Subject, support code, or visitor"
-                            >
-                            <p class="field-help">Search by subject, support code, visitor ID, visitor name, or visitor email.</p>
-                        </div>
+                    <div class="wf-filter">
+                        <label for="conversation_presence">Presence</label>
+                        <select id="conversation_presence" name="conversation_presence">
+                            @foreach ($conversationPresenceFilters as $presenceValue => $presenceLabel)
+                                <option value="{{ $presenceValue === 'all' ? '' : $presenceValue }}" @selected($conversationPresence === $presenceValue)>
+                                    {{ $presenceLabel }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
 
-                        <div class="meta-item">
-                            <span class="meta-label">Queue</span>
-                            <button class="button" type="submit">Search conversations</button>
-                            @php
-                                $clearParams = $conversationQuery;
-                                unset($clearParams['conversation_search'], $clearParams['conversation_site'], $clearParams['conversation_presence']);
-                            @endphp
-                            <a class="button secondary" href="{{ route('dashboard.conversations.index', $clearParams) }}">Clear filters</a>
-                        </div>
+                    @php
+                        $clearParams = $conversationQuery;
+                        unset($clearParams['conversation_search'], $clearParams['conversation_site'], $clearParams['conversation_presence']);
+                    @endphp
+                    <div class="wf-filter-actions">
+                        <button class="button" type="submit">Search conversations</button>
+                        <a class="button secondary" href="{{ route('dashboard.conversations.index', $clearParams) }}">Clear filters</a>
                     </div>
                 </form>
 
-                @php
-                    $conversationQueueFocusItems = [
-                        ['label' => 'Lane', 'value' => $conversationFilters[$conversationFilter]],
-                    ];
-                    $focusedConversationSite = $conversationSite ? $sites->firstWhere('id', $conversationSite) : null;
-
-                    if ($focusedConversationSite) {
-                        $conversationQueueFocusItems[] = ['label' => 'Site', 'value' => $focusedConversationSite->name];
-                    }
-
-                    $conversationQueueFocusItems[] = ['label' => 'Presence', 'value' => $conversationPresenceFilters[$conversationPresence]];
-
-                    if ($conversationSearch !== '') {
-                        $conversationQueueFocusItems[] = ['label' => 'Search', 'value' => $conversationSearch];
-                    }
-                @endphp
+                <p class="wf-queue-summary">
+                    <strong>{{ $conversationQueueCountSummary['heading'] }}</strong>
+                    {{ $conversationQueueCountSummary['detail'] }}
+                </p>
 
                 @if ($activeConversationFilters !== [])
                     <div class="filter-summary" aria-label="Active conversation filters">
@@ -110,26 +124,6 @@
                                 </a>
                             @endforeach
                             <a class="filter-chip filter-chip-clear" href="{{ route('dashboard.conversations.index') }}">Clear all conversation filters</a>
-                        </div>
-                    </div>
-                @endif
-
-                @if (collect($conversationQueueSummary)->sum('count') > 0)
-                    <div class="filter-summary" aria-label="Conversation queue snapshot">
-                        <div>
-                            <strong>Queue snapshot</strong>
-                            <p class="lede">{{ $conversationQueueCountSummary['detail'] }}</p>
-                        </div>
-                        <div class="filter-chips">
-                            @foreach ($conversationQueueSummary as $conversationSummary)
-                                <a
-                                    class="filter-chip"
-                                    href="{{ $conversationSummary['href'] }}"
-                                    @if ($conversationSummary['active']) aria-current="page" @endif
-                                >
-                                    {{ $conversationSummary['label'] }}: {{ $conversationSummary['count'] }}
-                                </a>
-                            @endforeach
                         </div>
                     </div>
                 @endif
@@ -151,18 +145,16 @@
                     </div>
                 @else
                     <div class="table-wrap">
-                        <table>
+                        <table class="wf-queue">
                             <thead>
                                 <tr>
                                     <th scope="col">Subject</th>
                                     <th scope="col">Site</th>
                                     <th scope="col">Visitor</th>
-                                    <th scope="col">Presence</th>
-                                    <th scope="col">Cobrowse</th>
-                                    <th scope="col">Assigned</th>
                                     <th scope="col">Attention</th>
                                     <th scope="col">Read</th>
-                                    <th scope="col">Support Code</th>
+                                    <th scope="col">Cobrowse</th>
+                                    <th scope="col">Assigned</th>
                                     <th scope="col">Timing</th>
                                 </tr>
                             </thead>
@@ -179,61 +171,78 @@
                                             'guidance' => 'Wait for an active cobrowse session before relying on cobrowse.',
                                             'tone' => 'manual',
                                         ]);
+                                        $presenceState = $conversation->visitor?->presenceState();
+                                        $needsReply = $conversation->attentionState() !== 'waiting_on_visitor';
+                                        $visitorLabel = $conversation->visitor?->name
+                                            ?: $conversation->visitor?->email
+                                            ?: $conversation->visitor?->anonymous_id
+                                            ?: 'Unknown visitor';
                                     @endphp
                                     <tr>
-                                        <td class="queue-activity-preview">
-                                            <a class="text-link" href="{{ route('dashboard.conversations.show', ['supportCode' => $conversation->support_code] + $conversationQuery) }}">
+                                        <td class="wf-queue-subject" style="--wf-row-site: var({{ $conversation->site->resolvedColor()->cssVariable() }})">
+                                            <a href="{{ route('dashboard.conversations.show', ['supportCode' => $conversation->support_code] + $conversationQuery) }}">
                                                 {{ $conversation->subject ?? 'Untitled conversation' }}
                                             </a>
-                                            <span class="table-note">{{ $activityPreview['label'] }}</span>
-                                            @if ($activityPreview['occurred_at'])
-                                                <time class="table-note" datetime="{{ $activityPreview['occurred_at']->toJSON() }}">
-                                                    Activity {{ $activityPreview['occurred_at']->diffForHumans() }}
-                                                </time>
-                                            @endif
-                                            <p class="lede">{{ $activityPreview['body'] }}</p>
+                                            <span class="wf-queue-preview" title="{{ $activityPreview['body'] }}">
+                                                <x-support-code-reference
+                                                    :code="$conversation->support_code"
+                                                    :href="route('dashboard.support-code.lookup', ['support_code' => $conversation->support_code])"
+                                                />
+                                                &middot; {{ $activityPreview['label'] }}@if ($activityPreview['occurred_at']) &middot; <time datetime="{{ $activityPreview['occurred_at']->toJSON() }}">Activity {{ $activityPreview['occurred_at']->diffForHumans() }}</time>@endif &middot; {{ $activityPreview['body'] }}
+                                            </span>
                                         </td>
                                         <td>
-                                            <a class="text-link" href="{{ route('dashboard.sites.show', $conversation->site) }}">
+                                            <a class="wf-queue-site" href="{{ route('dashboard.sites.show', $conversation->site) }}">
+                                                <span class="wf-site-dot" style="background: var({{ $conversation->site->resolvedColor()->cssVariable() }})" aria-hidden="true"></span>
                                                 {{ $conversation->site->name }}
                                             </a>
                                         </td>
-                                        <td>{{ $conversation->visitor->anonymous_id ?? 'Unknown visitor' }}</td>
                                         <td>
-                                            <span class="readiness-status" data-status="{{ in_array($conversation->visitor?->presenceState(), ['active', 'recent'], true) ? 'ready' : 'manual' }}">
-                                                {{ $conversation->visitor?->presenceLabel() ?? 'Not reported' }}
+                                            <span class="wf-queue-assignee" title="{{ $visitorLabel }}">{{ Str::limit($visitorLabel, 22) }}</span>
+                                        </td>
+                                        <td>
+                                            <span class="wf-queue-state" @if ($needsReply) data-tone="waiting" @endif>
+                                                <i aria-hidden="true"></i>{{ $conversation->attentionLabel() }}
                                             </span>
+
+                                            {{-- Marks only for what is actually true. A quiet visitor and an
+                                                 unavailable cobrowse are the resting states of nearly every
+                                                 row, and printing them on all of them says nothing. --}}
+                                            <span class="wf-queue-marks">
+                                                @if (in_array($presenceState, ['active', 'recent'], true))
+                                                    <span class="wf-queue-mark" data-tone="live">
+                                                        <i aria-hidden="true"></i>{{ $conversation->visitor?->presenceLabel() }}
+                                                    </span>
+                                                @endif
+                                            </span>
+                                        </td>
+                                        <td>
+                                            @if ($conversation->hasNewActivityFor($agent))
+                                                <span class="wf-queue-unread">{{ $conversation->readStateLabelFor($agent) }}</span>
+                                            @else
+                                                <span class="wf-queue-cobrowse">{{ $conversation->readStateLabelFor($agent) }}</span>
+                                            @endif
                                         </td>
                                         <td>
                                             <span
-                                                class="readiness-status"
-                                                data-status="{{ $cobrowseTransport['tone'] }}"
-                                                aria-label="Cobrowse {{ $cobrowseTransport['label'] }}. {{ $cobrowseTransport['message'] }} {{ $cobrowseTransport['guidance'] }}"
-                                                title="{{ $cobrowseTransport['message'] }}"
-                                            >
-                                                {{ $cobrowseTransport['label'] }}
-                                            </span>
-                                            <span class="table-note">Last report {{ $cobrowseTransport['last_report'] }}</span>
-                                            @if (! in_array($cobrowseTransport['pressure'], ['No drops reported', 'No recent drops reported'], true))
-                                                <span class="table-note">Pressure {{ $cobrowseTransport['pressure'] }}</span>
-                                            @endif
-                                        </td>
-                                        <td>{{ $conversation->assignedAgent?->name ?? 'Unassigned' }}</td>
-                                        <td>{{ $conversation->attentionLabel() }}</td>
-                                        <td>
-                                            <span class="readiness-status" data-status="{{ $conversation->hasNewActivityFor($agent) ? 'attention' : 'ready' }}">
-                                                {{ $conversation->readStateLabelFor($agent) }}
+                                                class="wf-queue-cobrowse"
+                                                @if ($cobrowseTransport['tone'] !== 'manual')
+                                                    data-tone="{{ $cobrowseTransport['tone'] === 'ready' ? 'live' : 'attention' }}"
+                                                @endif
+                                                title="{{ $cobrowseTransport['message'] }} {{ $cobrowseTransport['guidance'] }}"
+                                            >{{ $cobrowseTransport['label'] }}</span>
+                                            <span class="wf-queue-preview">
+                                                Last report {{ $cobrowseTransport['last_report'] }}@if (! in_array($cobrowseTransport['pressure'], ['No drops reported', 'No recent drops reported'], true)) &middot; Pressure {{ $cobrowseTransport['pressure'] }}@endif
                                             </span>
                                         </td>
                                         <td>
-                                            <x-support-code-reference
-                                                :code="$conversation->support_code"
-                                                :href="route('dashboard.support-code.lookup', ['support_code' => $conversation->support_code])"
-                                            />
+                                            <span class="wf-queue-assignee" @if (! $conversation->assignedAgent) data-unassigned="true" @endif>
+                                                {{ $conversation->assignedAgent?->name ?? 'Unassigned' }}
+                                            </span>
                                         </td>
-                                        <td>
-                                            <strong>{{ $conversationTiming['opened_label'] }}</strong>
-                                            <span class="table-note">{{ $conversationTiming['wait_label'] }}</span>
+                                        <td class="wf-queue-when">
+                                            {{ $conversationTiming['opened_label'] }}
+                                            <span class="wf-queue-preview" title="{{ $conversationTiming['wait_label'] }}">{{ $conversationTiming['wait_label'] }}</span>
                                         </td>
                                     </tr>
                                 @endforeach
