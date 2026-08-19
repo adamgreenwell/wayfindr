@@ -43,11 +43,12 @@
                         @if ($alertFilter === $filterValue) aria-current="page" @endif
                     >
                         {{ $filterLabel }}
+                        @php $laneCount = $alertLaneCounts[$filterValue] ?? 0; @endphp
                         <span
                             class="wf-lane-count"
-                            title="{{ $filterValue === 'unread' ? $unreadNotificationCount.' unread' : $notificationCount.' visible' }}"
-                            @if ($filterValue === 'unread' && $unreadNotificationCount > 0) data-tone="waiting" @endif
-                        >{{ $filterValue === 'unread' ? $unreadNotificationCount : $notificationCount }}</span>
+                            title="{{ $filterLabel }}: {{ $laneCount }}"
+                            @if ($filterValue === 'unread' && $laneCount > 0) data-tone="waiting" @endif
+                        >{{ $laneCount }}</span>
                     </a>
                 @endforeach
                 </nav>

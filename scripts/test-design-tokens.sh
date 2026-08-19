@@ -66,7 +66,15 @@ done
 widget_css_hex="$(awk '/style\.textContent = \[/{inside=1} /\]\.join\(/{inside=0} inside' "$WIDGET" \
     | awk '/wayfindr:tokens:start/{skip=1} /wayfindr:tokens:end/{skip=0; next} !skip' \
     | grep -v 'box-shadow' \
-    | grep -nE '#[0-9a-fA-F]{3,8}\\b|rgba?\\(' || true)"
+    | grep -nE '#[0-9a-fA-F]{3,8}|rgba?[(]' || true)"
+
+# Prove the pattern is usable before trusting its silence. The previous one was
+# double-escaped and exited with "Unmatched ( or \\(", which `|| true`
+# swallowed -- so this check silently passed for every commit that added a
+# hardcoded colour, including the two malformed values it was meant to catch.
+if ! printf '%s' '#abc' | grep -qE '#[0-9a-fA-F]{3,8}|rgba?[(]' 2>/dev/null; then
+    fail "The widget colour pattern is not a usable regular expression, so this guard cannot detect anything."
+fi
 
 if [ -n "$widget_css_hex" ]; then
     echo "The widget stylesheet hardcodes a colour instead of using a token:" >&2

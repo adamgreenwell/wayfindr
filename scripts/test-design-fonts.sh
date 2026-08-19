@@ -64,15 +64,19 @@ while read -r url; do
     declared=$((declared + 1))
     file="$ROOT_DIR/apps/server/public${url}"
     [ -f "$file" ] || fail "The layout declares a font that is not vendored: $url"
-done < <(grep -oE "url\('(/fonts/[^']+\.woff2)'\)" "$LAYOUT" | grep -oE "/fonts/[^']+\.woff2" | sort -u)
+done < <(grep -oE "asset\('fonts/[^']+\.woff2'\)" "$LAYOUT" | grep -oE "fonts/[^']+\.woff2" | sed 's|^|/|' | sort -u)
 
 [ "$declared" -gt 0 ] || fail "No @font-face declarations found in ${LAYOUT#"$ROOT_DIR/"}."
+
+if grep -q "url('/fonts/" "$LAYOUT"; then
+    fail "A font is referenced at the origin root. An install mounted below a path (APP_URL=http://host/base) 404s on it and silently falls back to the system stack; use asset()."
+fi
 
 # ...and every vendored face must be declared. An orphan is dead weight every
 # operator ships and every browser could be asked for.
 for file in "$FONT_DIR"/*.woff2; do
     name="$(basename "$file")"
-    grep -q "/fonts/$name" "$LAYOUT" \
+    grep -q "fonts/$name" "$LAYOUT" \
         || fail "$name is vendored but no @font-face references it. Declare it or remove it."
 done
 
@@ -82,7 +86,10 @@ done
 grep -q 'COPY apps/server' "$DOCKERFILE" \
     || fail "server.Dockerfile does not stage apps/server, so the image would ship no fonts."
 
-if grep -qE '^apps/server/public/fonts' "$DOCKERIGNORE"; then
+# Anchored to the directory: a bare prefix also matches
+# apps/server/public/fonts-manifest.dev.json, which is a different file and is
+# excluded on purpose.
+if grep -qE '^apps/server/public/fonts(/|$)' "$DOCKERIGNORE"; then
     fail ".dockerignore excludes apps/server/public/fonts, so the released image would serve the dashboard without its typeface."
 fi
 

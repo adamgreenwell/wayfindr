@@ -79,8 +79,13 @@ test('a contextual return path survives, because mid-setup it is not the console
 });
 
 test('no operator view renders on the bare layout any more', function (): void {
-    $views = glob(base_path('resources/views/operator/**/*.blade.php'))
-        + glob(base_path('resources/views/operator/*.blade.php'));
+    // array_merge, not `+`: the union operator keeps the LEFT array's numeric
+    // keys, so every top-level view was silently discarded and this guard only
+    // ever looked at the six settings templates.
+    $views = array_merge(
+        glob(base_path('resources/views/operator/**/*.blade.php')) ?: [],
+        glob(base_path('resources/views/operator/*.blade.php')) ?: [],
+    );
 
     expect($views)->not->toBeEmpty();
 

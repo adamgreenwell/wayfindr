@@ -42,6 +42,13 @@ docker/self-hosting/.env
 **/*.log
 apps/server/.phpunit.cache
 apps/server/public/storage
+# Kept even though the pipeline that produced them is gone. Their purpose is
+# build integrity, not Vite: `COPY apps/server ./` would otherwise pull these
+# untracked bytes out of a development checkout, so a source build could stamp a
+# commit onto materially different code while git still reports a clean tree
+# (ADR 0012).
+apps/server/public/hot
+apps/server/public/fonts-manifest.dev.json
 apps/server/storage/*.key
 apps/server/storage/pail
 
