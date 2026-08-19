@@ -182,3 +182,42 @@ test('the widget follows the visitor system colour scheme', () => {
 
   assert.match(styles, /@media \(prefers-color-scheme:dark\)\{\.wayfindr-widget/);
 });
+
+test('opening the panel applies the site colour before the visitor sends', async () => {
+  // It used to arrive only with the first send or a resume, so a first-time
+  // visitor opened on the brand fallback and watched it change after typing.
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/',
+  });
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-fresh',
+    storage: memoryStorage(),
+    messagePollMs: 0,
+    cobrowseStatusPollMs: 0,
+    fetch: async (url) => {
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return jsonResponse(200, {
+          data: {
+            site: { public_key: 'site_public_docs', color: 'rust', settings: {} },
+            visitor: { anonymous_id: 'anon-fresh', token: 'visitor-token-fresh' },
+          },
+        });
+      }
+
+      return jsonResponse(200, { data: {} });
+    },
+  });
+
+  assert.equal(widget.root.style.getPropertyValue('--wf-site-accent'), '');
+
+  widget.root.querySelector('.wayfindr-widget__launcher').click();
+  await settle();
+
+  assert.equal(widget.root.style.getPropertyValue('--wf-site-accent'), 'var(--wf-site-rust)');
+});

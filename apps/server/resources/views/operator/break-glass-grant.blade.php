@@ -1,4 +1,4 @@
-<x-layouts.app title="Break-glass access — {{ $grant->scopeLabel() }}">
+<x-layouts.operator title="Break-glass access — {{ $grant->scopeLabel() }}">
     <p><a class="text-link" href="{{ route('operator.break-glass.index') }}">Back to break-glass</a></p>
     <h1>{{ $grant->scopeLabel() }}</h1>
     <p class="lede">
@@ -57,4 +57,4 @@
             </div>
         @endif
     </section>
-</x-layouts.app>
+</x-layouts.operator>

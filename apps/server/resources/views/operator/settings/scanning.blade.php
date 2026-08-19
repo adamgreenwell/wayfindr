@@ -1,7 +1,8 @@
-<x-layouts.app title="Scanning settings">
-    <p><a class="text-link" href="{{ $backUrl }}">{{ $backLabel }}</a></p>
+<x-layouts.operator title="Scanning settings">
 
     <x-page-header
+        :back-href="$backUrl ?? null"
+        :back-label="$backLabel ?? 'Back'"
         title="Attachment scanning"
         subtitle="Scan uploaded files for malware before they are stored. Changes apply immediately, no restart." />
 
@@ -73,4 +74,4 @@
             <button class="button secondary" type="submit">Test scanner</button>
         </form>
     </section>
-</x-layouts.app>
+</x-layouts.operator>

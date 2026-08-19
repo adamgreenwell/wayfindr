@@ -7,8 +7,11 @@ use App\Enums\AccountRole;
 use App\Enums\SiteColor;
 use App\Models\Account;
 use App\Models\AuditEvent;
+use App\Models\Conversation;
+use App\Models\ConversationMessage;
 use App\Models\Site;
 use App\Models\User;
+use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -195,4 +198,74 @@ test('a details update that never mentions colour leaves it alone', function ():
 
     expect($site->fresh()->name)->toBe('Docs Site')
         ->and($site->fresh()->color)->toBe(SiteColor::Violet);
+});
+
+test('the first two sites an install ever has are different colours', function (): void {
+    // The first-run site used to be created with no colour, so it resolved via
+    // the id fallback while the allocator counted it as position 0 -- making
+    // the operator's second site land on the same colour as their first.
+    $this->post(route('setup.store'), [
+        'account_name' => 'Acme Support',
+        'agent_name' => 'Ada Owner',
+        'agent_email' => 'ada@example.test',
+        'password' => 'a-long-enough-password',
+        'password_confirmation' => 'a-long-enough-password',
+        'site_name' => 'First site',
+    ])->assertRedirect();
+
+    $owner = User::query()->where('email', 'ada@example.test')->firstOrFail();
+
+    $this->actingAs($owner)
+        ->post(route('dashboard.sites.store'), ['name' => 'Second site'])
+        ->assertRedirect();
+
+    $colors = Site::query()->orderBy('id')->pluck('color')->map->value->all();
+
+    expect($colors)->toHaveCount(2)
+        ->and($colors[0])->not->toBeNull()
+        ->and($colors[0])->not->toBe($colors[1]);
+});
+
+test('the realtime transcript refresh keeps the site rail', function (): void {
+    // refreshTranscript() replaces the transcript as soon as realtime connects,
+    // so omitting the colour here dropped the rail with no new message.
+    $account = Account::factory()->create();
+    $owner = siteColourOwner($account);
+    $site = Site::factory()->for($account)->create(['color' => SiteColor::Rust]);
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-REFRESH1',
+        'status' => 'open',
+    ]);
+    ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'Still here.',
+    ]);
+
+    $this->actingAs($owner)
+        ->get(route('dashboard.conversations.messages.index', ['supportCode' => $conversation->support_code]))
+        ->assertOk()
+        ->assertSee('--wf-conversation-site: var(--wf-site-rust)', false);
+});
+
+test('font URLs are generated under the application base path', function (): void {
+    // An install mounted below an origin path is explicitly supported, and an
+    // origin-root /fonts/... 404s there -- silently, into the system stack.
+    // Asserting the generated form rather than forcing a root URL, which would
+    // also move the routes this request depends on.
+    $layout = (string) file_get_contents(
+        base_path('resources/views/components/layouts/app.blade.php')
+    );
+
+    expect($layout)->toContain("asset('fonts/")
+        ->and($layout)->not->toContain("url('/fonts/");
+
+    $account = Account::factory()->create();
+
+    $this->actingAs(siteColourOwner($account))
+        ->get('/dashboard')
+        ->assertOk()
+        ->assertSee(asset('fonts/IBMPlexSans-Regular.woff2'), false)
+        ->assertDontSee("url('/fonts/", false);
 });

@@ -2,6 +2,9 @@
     'title' => config('app.name', 'Wayfindr'),
     'agent' => null,
     'account' => null,
+    // A deeper crumb for surfaces that have their own sections, so the bar can
+    // say "Operator > Backups" rather than stopping at the rail item.
+    'crumb' => null,
 ])
 
 <!DOCTYPE html>
@@ -37,7 +40,7 @@
            --wf-font-*, and a declared-but-unused @font-face is never fetched. */
         @font-face {
             font-family: 'IBM Plex Sans';
-            src: url('/fonts/IBMPlexSans-Regular.woff2') format('woff2');
+            src: url('{{ asset('fonts/IBMPlexSans-Regular.woff2') }}') format('woff2');
             font-weight: 400;
             font-style: normal;
             font-display: swap;
@@ -45,7 +48,7 @@
 
         @font-face {
             font-family: 'IBM Plex Sans';
-            src: url('/fonts/IBMPlexSans-Medium.woff2') format('woff2');
+            src: url('{{ asset('fonts/IBMPlexSans-Medium.woff2') }}') format('woff2');
             font-weight: 500;
             font-style: normal;
             font-display: swap;
@@ -53,7 +56,7 @@
 
         @font-face {
             font-family: 'IBM Plex Sans';
-            src: url('/fonts/IBMPlexSans-SemiBold.woff2') format('woff2');
+            src: url('{{ asset('fonts/IBMPlexSans-SemiBold.woff2') }}') format('woff2');
             font-weight: 600;
             font-style: normal;
             font-display: swap;
@@ -61,7 +64,7 @@
 
         @font-face {
             font-family: 'IBM Plex Sans Condensed';
-            src: url('/fonts/IBMPlexSansCondensed-SemiBold.woff2') format('woff2');
+            src: url('{{ asset('fonts/IBMPlexSansCondensed-SemiBold.woff2') }}') format('woff2');
             font-weight: 600;
             font-style: normal;
             font-display: swap;
@@ -69,7 +72,7 @@
 
         @font-face {
             font-family: 'IBM Plex Mono';
-            src: url('/fonts/IBMPlexMono-Regular.woff2') format('woff2');
+            src: url('{{ asset('fonts/IBMPlexMono-Regular.woff2') }}') format('woff2');
             font-weight: 400;
             font-style: normal;
             font-display: swap;
@@ -77,7 +80,7 @@
 
         @font-face {
             font-family: 'IBM Plex Mono';
-            src: url('/fonts/IBMPlexMono-Medium.woff2') format('woff2');
+            src: url('{{ asset('fonts/IBMPlexMono-Medium.woff2') }}') format('woff2');
             font-weight: 500;
             font-style: normal;
             font-display: swap;
@@ -185,6 +188,9 @@
            carries meaning. Primary BUTTONS move to ink below, which is the
            change that actually reads. */
         :root {
+            /* Both, so "Auto" hands native controls to the OS. The explicit
+               choices below pin it, or a dark-mode agent choosing Light keeps
+               dark scrollbars and select popups. */
             color-scheme: light dark;
             --bg: var(--wf-paper);
             --surface: var(--wf-surface);
@@ -195,6 +201,17 @@
             --accent: var(--wf-brand);
             --accent-strong: var(--wf-brand);
             --danger: var(--wf-signal-stop);
+        }
+
+        /* An explicit choice must pin the native controls too, or an agent on a
+           dark OS who picks Light keeps dark scrollbars, checkboxes and select
+           popups -- the exact case the toggle exists for. */
+        :root[data-wf-theme="light"] {
+            color-scheme: light;
+        }
+
+        :root[data-wf-theme="dark"] {
+            color-scheme: dark;
         }
 
         * {
@@ -963,6 +980,74 @@
             color: var(--wf-signal-hold);
         }
 
+        /* ── Context sidebar (ADR 0014) ───────────────────────────────────
+           The rail says which part of the product you are in. This says which
+           part of THIS object -- the operator console has seven sections and
+           used to navigate them with a single "back" link at the top of each
+           page, outside the application shell entirely. */
+        .wf-context {
+            display: grid;
+            grid-template-columns: 188px minmax(0, 1fr);
+            gap: var(--wf-space-6);
+            align-items: start;
+        }
+
+        .wf-context-nav {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            position: sticky;
+            top: calc(52px + var(--wf-space-5));
+        }
+
+        .wf-context-heading {
+            margin: 0 0 var(--wf-space-2);
+            padding: 0 var(--wf-space-3);
+            font-family: var(--wf-font-cond);
+            font-size: 10.5px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--wf-muted);
+        }
+
+        .wf-context-link {
+            padding: 6px var(--wf-space-3);
+            border-radius: var(--wf-radius);
+            color: var(--wf-muted);
+            font-size: var(--wf-text-ui);
+            font-weight: 500;
+            text-decoration: none;
+        }
+
+        .wf-context-link:hover {
+            background: var(--wf-surface-2);
+            color: var(--wf-ink);
+        }
+
+        .wf-context-link[aria-current="page"] {
+            background: var(--wf-surface-2);
+            color: var(--wf-ink);
+            font-weight: 600;
+            box-shadow: inset var(--wf-rail) 0 0 var(--wf-brand);
+        }
+
+        .wf-context-link:focus-visible {
+            outline: 2px solid var(--wf-brand);
+            outline-offset: -2px;
+        }
+
+        .wf-context-body {
+            min-width: 0;
+        }
+
+        /* The first card in the body already carries the top margin the
+           sections below it use, which pushed it out of line with the nav. */
+        .wf-context-body > .section:first-child,
+        .wf-context-body > .page-header + .section {
+            margin-top: var(--wf-space-4);
+        }
+
         @media (max-width: 900px) {
             .wf-app {
                 grid-template-columns: minmax(0, 1fr);
@@ -987,9 +1072,21 @@
             }
 
             .wf-nav-heading,
-            .wf-theme,
             .wf-identity-sub {
                 display: none;
+            }
+
+            /* Hiding this outright left a phone with no way to change the
+               theme, or to clear a stored choice by going back to Auto -- while
+               the stored choice kept being applied. It shrinks instead. */
+            .wf-theme {
+                margin: 0;
+                flex: none;
+            }
+
+            .wf-theme button {
+                padding: 5px 7px;
+                font-size: 10px;
             }
 
             /* Visually hidden, NOT display:none. The icon beside it is
@@ -1032,6 +1129,34 @@
 
             .page {
                 padding: var(--wf-space-4) var(--wf-space-4) var(--wf-space-6);
+            }
+
+            /* 188px of sidebar beside the content leaves ~130px for a form on a
+               375px phone. The sections become a scrolling row above the body. */
+            .wf-context {
+                grid-template-columns: minmax(0, 1fr);
+                gap: var(--wf-space-4);
+            }
+
+            .wf-context-nav {
+                position: static;
+                flex-direction: row;
+                gap: var(--wf-space-1);
+                overflow-x: auto;
+                border-bottom: var(--wf-border) solid var(--wf-rule);
+                padding-bottom: var(--wf-space-2);
+            }
+
+            .wf-context-heading {
+                display: none;
+            }
+
+            .wf-context-link {
+                white-space: nowrap;
+            }
+
+            .wf-context-link[aria-current="page"] {
+                box-shadow: inset 0 calc(var(--wf-rail) * -1) 0 var(--wf-brand);
             }
 
             .wf-topbar-search input {
@@ -2465,7 +2590,13 @@
                     <nav class="wf-crumbs" aria-label="Breadcrumb">
                         <a href="{{ route('dashboard') }}">{{ $account->name }}</a>
                         <x-icon name="chevron-right" :size="13" />
-                        <span class="wf-crumb-current">{{ $currentLabel }}</span>
+                        @if ($crumb)
+                            <a href="{{ route('operator.dashboard') }}">{{ $currentLabel }}</a>
+                            <x-icon name="chevron-right" :size="13" />
+                            <span class="wf-crumb-current">{{ $crumb }}</span>
+                        @else
+                            <span class="wf-crumb-current">{{ $currentLabel }}</span>
+                        @endif
                     </nav>
 
                     <form class="wf-topbar-search" method="GET" action="{{ route('dashboard.support-code.lookup') }}" aria-label="Find support trail">

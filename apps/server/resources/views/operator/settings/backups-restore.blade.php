@@ -1,7 +1,9 @@
-<x-layouts.app title="Restore from backup">
+<x-layouts.operator title="Restore from backup">
     <p><a class="text-link" href="{{ route('operator.settings.backups.edit') }}">Back to backup settings</a></p>
 
     <x-page-header
+        :back-href="$backUrl ?? null"
+        :back-label="$backLabel ?? 'Back'"
         title="Restore from backup"
         subtitle="Replace this install's data with a backup archive. This cannot be undone." />
 
@@ -136,4 +138,4 @@ docker compose start queue scheduler  # after the restore completes</code></pre>
             </section>
         @endif
     @endunless
-</x-layouts.app>
+</x-layouts.operator>

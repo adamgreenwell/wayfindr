@@ -1960,6 +1960,17 @@
         refreshMessages({ silent: true });
       }
 
+      // The accent used to arrive only with the first send or a resume, so a
+      // first-time visitor opened the panel on the brand fallback and watched
+      // it change colour after they typed. Fetch it on open instead; a failure
+      // here is silent by design, because the fallback is already correct.
+      if (wasHidden && !bootstrapped) {
+        client.bootstrap(location ? location.href : null, visitorContext).then(function (result) {
+          bootstrapped = true;
+          applySiteAccent(rootEl, siteAccentKey(result));
+        }, function () {});
+      }
+
       scheduleRenderedReadReceipt();
     }
 
@@ -4236,7 +4247,7 @@
       '.wayfindr-widget__close{border:0;background:transparent;color:var(--wf-muted);cursor:pointer;font:700 24px/1 var(--wf-font-sans);padding:0}',
       '.wayfindr-widget__timeline{display:grid;gap:10px;flex:1 1 auto;min-height:0;max-height:280px;overflow:auto;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-surface-2)}',
       '.wayfindr-widget__notice{display:grid;gap:10px;margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-surface-2);color:var(--wf-muted);font-size:13px;line-height:1.4}',
-      '.wayfindr-widget__notice[data-state="warning"]{background:var(--wf-surface)af0;color:color-mix(in srgb, var(--wf-signal-hold) 70%, var(--wf-ink))}',
+      '.wayfindr-widget__notice[data-state="warning"]{background:color-mix(in srgb, var(--wf-signal-hold) 12%, var(--wf-surface));color:color-mix(in srgb, var(--wf-signal-hold) 70%, var(--wf-ink))}',
       '.wayfindr-widget__notice-copy{margin:0}',
       '.wayfindr-widget__notice-retry{justify-self:start;min-height:34px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);cursor:pointer;padding:0 12px;font:700 13px/1 var(--wf-font-sans)}',
       '.wayfindr-widget__notice-retry:hover{border-color:var(--wf-brand);color:var(--wf-brand)}',
@@ -4268,7 +4279,7 @@
       '.wayfindr-widget__attachments{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}',
       '.wayfindr-widget__attachments[hidden]{display:none}',
       '.wayfindr-widget__attach-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--wf-rule);border-radius:999px;padding:4px 6px 4px 10px;background:var(--wf-surface-2);font-size:12px;line-height:1.3;color:var(--wf-ink);max-width:100%}',
-      '.wayfindr-widget__attach-chip--error{border-color:color-mix(in srgb, var(--wf-signal-stop) 45%, var(--wf-rule));background:var(--wf-surface)6f4;color:var(--wf-signal-stop)}',
+      '.wayfindr-widget__attach-chip--error{border-color:color-mix(in srgb, var(--wf-signal-stop) 45%, var(--wf-rule));background:color-mix(in srgb, var(--wf-signal-stop) 10%, var(--wf-surface));color:var(--wf-signal-stop)}',
       '.wayfindr-widget__attach-chip-name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px}',
       '.wayfindr-widget__attach-chip-state{color:var(--wf-muted);font-size:11px}',
       '.wayfindr-widget__attach-chip--error .wayfindr-widget__attach-chip-state{color:var(--wf-signal-stop)}',

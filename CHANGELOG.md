@@ -52,6 +52,13 @@ application wearing a different face. Screenshots are in the release notes.
 
 ### Changed
 
+- **The operator console is part of the application now.** Every operator page —
+  the console, the setup checklist, mail, storage, scanning, backups and
+  break-glass — used to render outside the dashboard entirely, with a single text
+  link at the top of each page to get back out. They now sit in the same shell as
+  everything else, with their own list of sections down the side, so moving
+  between them no longer means going back to the console first.
+
 - **A conversation looks like a conversation.** The chat widget has always shown
   replies as a back-and-forth. The agent's own view of the same exchange stacked
   every message full width in one column, so the two halves of a conversation
