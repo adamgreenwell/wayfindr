@@ -41,6 +41,27 @@ The guard has its own fixture test:
 make public-info-test
 ```
 
+## Design Token Drift
+
+```bash
+make design-tokens-test
+```
+
+The dashboard and the widget receive the same tokens from
+`packages/design-tokens/tokens.json`, written into both by
+`scripts/generate-design-tokens.php` (ADR 0014). This check fails when either
+generated block no longer matches the source, when a `--wf-*` property is
+defined by hand outside the generated region, or when the markers are lost.
+
+It also runs `node --check` over the widget. The tokens land inside a
+single-quoted JavaScript string literal, so a stray apostrophe in a value does
+not produce one bad rule — it stops the whole file parsing and the widget
+disappears from every customer's site. The first generated run did exactly that,
+because font stacks carry quoted family names.
+
+To fix a failure, edit `tokens.json`, run `make design-tokens`, and commit the
+result.
+
 ## Self-Hosting Tests
 
 The installer is shipped code — operators pipe it into `bash` — so it has its own
