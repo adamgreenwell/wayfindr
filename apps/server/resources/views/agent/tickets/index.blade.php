@@ -1,51 +1,69 @@
 <x-layouts.app title="Tickets" :agent="$agent" :account="$account">
-            <x-page-header title="Tickets" :subtitle="'Structured support work for '.$account->name.'.'" :back-href="route('dashboard')" back-label="Back to dashboard" />
+            <x-page-header title="Tickets" :subtitle="'Structured support work for '.$account->name.'.'" />
 
-            <section id="tickets" class="section" aria-labelledby="tickets-heading">
-                <div class="section-header">
-                    <h2 id="tickets-heading">Ticket queue</h2>
-                    <div class="section-actions">
-                        <span class="lede">{{ $ticketQueueCountSummary['heading'] }}</span>
-                        @foreach ($ticketStatusFilters as $filterValue => $filterLabel)
-                            @php
-                                $statusParams = $ticketQuery;
+            <section id="tickets" aria-labelledby="tickets-heading">
+                <h2 id="tickets-heading" class="sr-only">Ticket queue</h2>
 
-                                if ($filterValue === 'open') {
-                                    unset($statusParams['ticket_status']);
-                                } else {
-                                    $statusParams['ticket_status'] = $filterValue;
-                                }
-                            @endphp
+                <nav class="wf-lanes" aria-label="Ticket lanes">
+                    @foreach ($ticketStatusFilters as $filterValue => $filterLabel)
+                        @php
+                            $statusParams = $ticketQuery;
+
+                            if ($filterValue === 'open') {
+                                unset($statusParams['ticket_status']);
+                            } else {
+                                $statusParams['ticket_status'] = $filterValue;
+                            }
+                        @endphp
+                        <a
+                            class="wf-lane"
+                            href="{{ route('dashboard.tickets.index', $statusParams) }}"
+                            @if ($ticketStatus === $filterValue) aria-current="page" @endif
+                        >{{ $filterLabel }}</a>
+                    @endforeach
+
+                    <span class="wf-lane-divider" aria-hidden="true"></span>
+
+                    @foreach ($ticketFilters as $filterValue => $filterLabel)
+                        @php
+                            $ownerParams = $ticketQuery;
+
+                            if ($filterValue === 'all') {
+                                unset($ownerParams['ticket_filter']);
+                            } else {
+                                $ownerParams['ticket_filter'] = $filterValue;
+                            }
+                        @endphp
+                        <a
+                            class="wf-lane"
+                            href="{{ route('dashboard.tickets.index', $ownerParams) }}"
+                            @if ($ticketFilter === $filterValue) aria-current="page" @endif
+                        >{{ $filterLabel }}</a>
+                    @endforeach
+                </nav>
+
+                @if (collect($ticketQueueSummary)->sum('count') > 0)
+                    {{-- The old "Queue snapshot" band. These chips were always the
+                         next-step filter with a count on it, so they are lanes. --}}
+                    <nav class="wf-lanes wf-lanes-secondary" aria-label="Ticket next steps">
+                        @foreach ($ticketQueueSummary as $ticketSummary)
                             <a
-                                class="button {{ $ticketStatus === $filterValue ? '' : 'secondary' }}"
-                                href="{{ route('dashboard.tickets.index', $statusParams) }}"
-                                @if ($ticketStatus === $filterValue) aria-current="page" @endif
+                                class="wf-lane"
+                                href="{{ $ticketSummary['href'] }}"
+                                @if ($ticketAttention === $ticketSummary['state']) aria-current="page" @endif
                             >
-                                {{ $filterLabel }}
+                                {{ $ticketSummary['label'] }}
+                                <span
+                                    class="wf-lane-count"
+                                    title="{{ $ticketSummary['label'] }}: {{ $ticketSummary['count'] }}"
+                                    @if (in_array($ticketSummary['state'], ['needs_reply', 'needs_owner'], true) && $ticketSummary['count'] > 0) data-tone="waiting" @endif
+                                >{{ $ticketSummary['count'] }}</span>
                             </a>
                         @endforeach
-                        @foreach ($ticketFilters as $filterValue => $filterLabel)
-                            @php
-                                $ownerParams = $ticketQuery;
+                    </nav>
+                @endif
 
-                                if ($filterValue === 'all') {
-                                    unset($ownerParams['ticket_filter']);
-                                } else {
-                                    $ownerParams['ticket_filter'] = $filterValue;
-                                }
-                            @endphp
-                            <a
-                                class="button {{ $ticketFilter === $filterValue ? '' : 'secondary' }}"
-                                href="{{ route('dashboard.tickets.index', $ownerParams) }}"
-                                @if ($ticketFilter === $filterValue) aria-current="page" @endif
-                            >
-                                {{ $filterLabel }}
-                            </a>
-                        @endforeach
-                    </div>
-                </div>
-
-                <form class="section-form" method="GET" action="{{ route('dashboard.tickets.index') }}">
+                <form class="wf-filters" method="GET" action="{{ route('dashboard.tickets.index') }}">
                     @if ($ticketStatus !== 'open')
                         <input type="hidden" name="ticket_status" value="{{ $ticketStatus }}">
                     @endif
@@ -54,148 +72,56 @@
                         <input type="hidden" name="ticket_filter" value="{{ $ticketFilter }}">
                     @endif
 
-                    <div class="meta-grid">
-                        <div class="meta-item">
-                            <label class="meta-label" for="ticket_site">Site</label>
-                            <select id="ticket_site" name="ticket_site">
-                                <option value="">Any site</option>
-                                @foreach ($sites as $site)
-                                    <option value="{{ $site->id }}" @selected($ticketSite === $site->id)>
-                                        {{ $site->name }}
+                    <div class="wf-filter wf-filter-search">
+                        <label for="ticket_search">Search</label>
+                        <input
+                            id="ticket_search"
+                            name="ticket_search"
+                            type="search"
+                            value="{{ $ticketSearch }}"
+                            placeholder="Ticket #123, support code, subject, requester"
+                        >
+                        <span class="wf-filter-help">Search by ticket number, subject, description, support code, requester, email, or anonymous visitor ID.</span>
+                    </div>
+
+                    @php
+                        $ticketSelectFilters = [
+                            ['id' => 'ticket_site', 'label' => 'Site', 'options' => $sites->pluck('name', 'id')->prepend('Any site', '')->all(), 'selected' => $ticketSite ?? ''],
+                            ['id' => 'ticket_priority', 'label' => 'Priority', 'options' => $ticketPriorityFilters, 'selected' => $ticketPriority],
+                            ['id' => 'ticket_category', 'label' => 'Category', 'options' => $ticketCategoryFilters, 'selected' => $ticketCategory],
+                            ['id' => 'ticket_label', 'label' => 'Label', 'options' => $ticketLabelFilters, 'selected' => $ticketLabel],
+                            ['id' => 'ticket_attention', 'label' => 'Next step', 'options' => $ticketAttentionFilters, 'selected' => $ticketAttention],
+                            ['id' => 'ticket_external', 'label' => 'External issue', 'options' => $ticketExternalIssueFilters, 'selected' => $ticketExternalIssue],
+                        ];
+                    @endphp
+
+                    @foreach ($ticketSelectFilters as $selectFilter)
+                        <div class="wf-filter">
+                            <label for="{{ $selectFilter['id'] }}">{{ $selectFilter['label'] }}</label>
+                            <select id="{{ $selectFilter['id'] }}" name="{{ $selectFilter['id'] }}">
+                                @foreach ($selectFilter['options'] as $optionValue => $optionLabel)
+                                    <option value="{{ $optionValue }}" @selected((string) $selectFilter['selected'] === (string) $optionValue)>
+                                        {{ $optionLabel }}
                                     </option>
                                 @endforeach
                             </select>
                         </div>
+                    @endforeach
 
-                        <div class="meta-item">
-                            <label class="meta-label" for="ticket_priority">Priority</label>
-                            <select id="ticket_priority" name="ticket_priority">
-                                @foreach ($ticketPriorityFilters as $filterValue => $filterLabel)
-                                    <option value="{{ $filterValue }}" @selected($ticketPriority === $filterValue)>
-                                        {{ $filterLabel }}
-                                    </option>
-                                @endforeach
-                            </select>
-                        </div>
-
-                        <div class="meta-item">
-                            <label class="meta-label" for="ticket_category">Category</label>
-                            <select id="ticket_category" name="ticket_category">
-                                @foreach ($ticketCategoryFilters as $filterValue => $filterLabel)
-                                    <option value="{{ $filterValue }}" @selected($ticketCategory === $filterValue)>
-                                        {{ $filterLabel }}
-                                    </option>
-                                @endforeach
-                            </select>
-                        </div>
-
-                        <div class="meta-item">
-                            <label class="meta-label" for="ticket_label">Label</label>
-                            <select id="ticket_label" name="ticket_label">
-                                @foreach ($ticketLabelFilters as $filterValue => $filterLabel)
-                                    <option value="{{ $filterValue }}" @selected($ticketLabel === $filterValue)>
-                                        {{ $filterLabel }}
-                                    </option>
-                                @endforeach
-                            </select>
-                        </div>
-
-                        <div class="meta-item">
-                            <label class="meta-label" for="ticket_attention">Next step</label>
-                            <select id="ticket_attention" name="ticket_attention">
-                                @foreach ($ticketAttentionFilters as $filterValue => $filterLabel)
-                                    <option value="{{ $filterValue }}" @selected($ticketAttention === $filterValue)>
-                                        {{ $filterLabel }}
-                                    </option>
-                                @endforeach
-                            </select>
-                        </div>
-
-                        <div class="meta-item">
-                            <label class="meta-label" for="ticket_external">External issue</label>
-                            <select id="ticket_external" name="ticket_external">
-                                @foreach ($ticketExternalIssueFilters as $filterValue => $filterLabel)
-                                    <option value="{{ $filterValue }}" @selected($ticketExternalIssue === $filterValue)>
-                                        {{ $filterLabel }}
-                                    </option>
-                                @endforeach
-                            </select>
-                        </div>
-
-                        <div class="meta-item">
-                            <label class="meta-label" for="ticket_search">Search</label>
-                            <input
-                                id="ticket_search"
-                                name="ticket_search"
-                                type="search"
-                                value="{{ $ticketSearch }}"
-                                placeholder="Ticket #123, support code, subject, requester"
-                            >
-                            <p class="field-help">Search by ticket number, subject, description, support code, requester, email, or anonymous visitor ID.</p>
-                        </div>
-
-                        <div class="meta-item">
-                            <span class="meta-label">Queue</span>
-                            <button class="button" type="submit">Apply filters</button>
-                            @php
-                                $clearParams = $ticketQuery;
-                                unset($clearParams['ticket_site'], $clearParams['ticket_priority'], $clearParams['ticket_category'], $clearParams['ticket_label'], $clearParams['ticket_attention'], $clearParams['ticket_external'], $clearParams['ticket_search']);
-                            @endphp
-                            <a class="button secondary" href="{{ route('dashboard.tickets.index', $clearParams) }}">Clear filters</a>
-                        </div>
+                    @php
+                        $clearParams = $ticketQuery;
+                        unset($clearParams['ticket_site'], $clearParams['ticket_priority'], $clearParams['ticket_category'], $clearParams['ticket_label'], $clearParams['ticket_attention'], $clearParams['ticket_external'], $clearParams['ticket_search']);
+                    @endphp
+                    <div class="wf-filter-actions">
+                        <button class="button" type="submit">Apply filters</button>
+                        <a class="button secondary" href="{{ route('dashboard.tickets.index', $clearParams) }}">Clear filters</a>
                     </div>
                 </form>
 
-                @php
-                    $ticketQueueFocusItems = [
-                        ['label' => 'Status', 'value' => $ticketStatusFilters[$ticketStatus]],
-                        ['label' => 'Assignee', 'value' => $ticketFilters[$ticketFilter]],
-                    ];
-                    $focusedSite = $ticketSite ? $sites->firstWhere('id', $ticketSite) : null;
-
-                    if ($focusedSite) {
-                        $ticketQueueFocusItems[] = ['label' => 'Site', 'value' => $focusedSite->name];
-                    }
-
-                    if ($ticketPriority !== 'all') {
-                        $ticketQueueFocusItems[] = ['label' => 'Priority', 'value' => $ticketPriorityFilters[$ticketPriority]];
-                    }
-
-                    if ($ticketCategory !== 'all') {
-                        $ticketQueueFocusItems[] = ['label' => 'Category', 'value' => $ticketCategoryFilters[$ticketCategory]];
-                    }
-
-                    if ($ticketLabel !== 'all') {
-                        $ticketQueueFocusItems[] = ['label' => 'Label', 'value' => $ticketLabelFilters[$ticketLabel]];
-                    }
-
-                    $ticketQueueFocusItems[] = ['label' => 'Next step', 'value' => $ticketAttentionFilters[$ticketAttention]];
-                    $ticketQueueFocusItems[] = ['label' => 'External issue', 'value' => $ticketExternalIssueFilters[$ticketExternalIssue]];
-
-                    if ($ticketSearch !== '') {
-                        $ticketQueueFocusItems[] = ['label' => 'Search', 'value' => $ticketSearch];
-                    }
-                @endphp
-
-                @if (collect($ticketQueueSummary)->sum('count') > 0)
-                    <div class="filter-summary" aria-label="Ticket queue snapshot">
-                        <div>
-                            <strong>Queue snapshot</strong>
-                            <p class="lede">{{ $ticketQueueCountSummary['detail'] }}</p>
-                        </div>
-                        <div class="filter-chips">
-                            @foreach ($ticketQueueSummary as $ticketSummary)
-                                <a
-                                    class="filter-chip"
-                                    href="{{ $ticketSummary['href'] }}"
-                                    @if ($ticketAttention === $ticketSummary['state']) aria-current="page" @endif
-                                >
-                                    {{ $ticketSummary['label'] }}: {{ $ticketSummary['count'] }}
-                                </a>
-                            @endforeach
-                        </div>
-                    </div>
-                @endif
+                <p class="wf-queue-summary">
+                    <strong>{{ $ticketQueueCountSummary['heading'] }}</strong>
+                    {{ $ticketQueueCountSummary['detail'] }}
+                </p>
 
                 @if ($ticketActiveFilters !== [])
                     <div class="filter-summary" aria-label="Active ticket filters">
@@ -231,7 +157,7 @@
                     </div>
                 @else
                     <div class="table-wrap">
-                        <table>
+                        <table class="wf-queue">
                             <thead>
                                 <tr>
                                     <th scope="col">Subject</th>
@@ -243,7 +169,6 @@
                                     <th scope="col">Priority</th>
                                     <th scope="col">Assignee</th>
                                     <th scope="col">Next step</th>
-                                    <th scope="col">Support Code</th>
                                     <th scope="col">External issue</th>
                                     <th scope="col">Timing</th>
                                 </tr>
@@ -252,6 +177,9 @@
                                 @foreach ($tickets as $ticket)
                                     @php
                                         $ticketTiming = $ticket->queueTimingContext();
+                                        $activityPreview = $ticket->queueActivityPreview();
+                                        $recentEscalation = $ticket->latestRecentEscalationEvent();
+                                        $ticketLifecycleNote = $ticket->latestLifecycleNote();
                                         $ticketExternalIssueState = $ticketExternalIssueStates[$ticket->id] ?? [
                                             'attempt' => null,
                                             'label' => 'No external issue',
@@ -260,36 +188,45 @@
                                         ];
                                     @endphp
                                     <tr>
-                                        <td>
-                                            <a class="text-link" href="{{ route('dashboard.tickets.show', ['ticket' => $ticket] + $ticketQuery) }}">
+                                        <td class="wf-queue-subject" style="--wf-row-site: var({{ $ticket->site->resolvedColor()->cssVariable() }})">
+                                            <a href="{{ route('dashboard.tickets.show', ['ticket' => $ticket] + $ticketQuery) }}">
                                                 {{ $ticket->subject }}
                                             </a>
+                                            <span class="wf-queue-preview">
+                                                @if ($ticket->conversation)
+                                                    <x-support-code-reference
+                                                        :code="$ticket->conversation->support_code"
+                                                        :href="route('dashboard.support-code.lookup', ['support_code' => $ticket->conversation->support_code])"
+                                                    />
+                                                @else
+                                                    Not linked
+                                                @endif
+                                            </span>
                                         </td>
                                         <td class="ticket-activity-preview">
-                                            @php
-                                                $activityPreview = $ticket->queueActivityPreview();
-                                            @endphp
-                                            <strong>{{ $activityPreview['label'] }}</strong>
-                                            <div class="lede">{{ $activityPreview['body'] }}</div>
-                                            @if ($activityPreview['occurred_at'])
-                                                <span class="table-note">{{ $activityPreview['occurred_at']->diffForHumans() }}</span>
-                                            @endif
+                                            <span class="wf-queue-cobrowse">{{ $activityPreview['label'] }}</span>
+                                            <span class="wf-queue-preview" title="{{ $activityPreview['body'] }}">
+                                                {{ $activityPreview['body'] }}@if ($activityPreview['occurred_at']) &middot; {{ $activityPreview['occurred_at']->diffForHumans() }}@endif
+                                            </span>
                                             @if ($activityPreview['reply_visibility'])
-                                                <span class="table-note">
+                                                <span class="wf-queue-preview">
                                                     Reply visibility:
-                                                    <span class="readiness-status" data-status="{{ $activityPreview['reply_visibility']['tone'] }}">
-                                                        {{ $activityPreview['reply_visibility']['label'] }}
-                                                    </span>
+                                                    <span class="wf-queue-mark" @if ($activityPreview['reply_visibility']['tone'] !== 'manual') data-tone="attention" @endif>{{ $activityPreview['reply_visibility']['label'] }}</span>
                                                     {{ $activityPreview['reply_visibility']['detail'] }}
                                                 </span>
                                             @endif
                                         </td>
-                                        <td>{{ $ticket->site->name }}</td>
-                                        <td>{{ ucfirst($ticket->status) }}</td>
-                                        <td>{{ $ticket->categoryLabel() }}</td>
+                                        <td>
+                                            <span class="wf-queue-site">
+                                                <span class="wf-site-dot" style="background: var({{ $ticket->site->resolvedColor()->cssVariable() }})" aria-hidden="true"></span>
+                                                {{ $ticket->site->name }}
+                                            </span>
+                                        </td>
+                                        <td><span class="wf-queue-cobrowse">{{ ucfirst($ticket->status) }}</span></td>
+                                        <td><span class="wf-queue-cobrowse">{{ $ticket->categoryLabel() }}</span></td>
                                         <td>
                                             @if ($ticket->labels->isEmpty())
-                                                None
+                                                <span class="wf-queue-cobrowse">None</span>
                                             @else
                                                 <div class="ticket-label-list">
                                                     @foreach ($ticket->labels as $label)
@@ -298,58 +235,48 @@
                                                 </div>
                                             @endif
                                         </td>
-                                        <td>{{ ucfirst($ticket->priority) }}</td>
-                                        <td>{{ $ticket->assignee?->name ?? 'Unassigned' }}</td>
                                         <td>
-                                            @php
-                                                $recentEscalation = $ticket->latestRecentEscalationEvent();
-                                                $ticketLifecycleNote = $ticket->latestLifecycleNote();
-                                            @endphp
-                                            <strong>{{ $ticket->attentionLabel() }}</strong>
-                                            <div class="lede">{{ $ticket->attentionDescription() }}</div>
+                                            <span class="wf-queue-cobrowse" @if ($ticket->priority === 'urgent' || $ticket->priority === 'high') data-tone="attention" @endif>
+                                                {{ ucfirst($ticket->priority) }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <span class="wf-queue-assignee" @if (! $ticket->assignee) data-unassigned="true" @endif>
+                                                {{ $ticket->assignee?->name ?? 'Unassigned' }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <span class="wf-queue-state" @if (in_array($ticket->attentionState(), ['needs_reply', 'needs_owner'], true)) data-tone="waiting" @endif>
+                                                <i aria-hidden="true"></i>{{ $ticket->attentionLabel() }}
+                                            </span>
+                                            <span class="wf-queue-preview" title="{{ $ticket->attentionDescription() }}">{{ $ticket->attentionDescription() }}</span>
                                             @if ($recentEscalation)
-                                                <div class="lede">{{ $ticket->escalationAudienceLabelFor($agent) }}</div>
+                                                <span class="wf-queue-preview">{{ $ticket->escalationAudienceLabelFor($agent) }}</span>
                                             @endif
                                             @if ($ticketLifecycleNote)
-                                                <div class="table-note">
-                                                    <strong>Lifecycle note</strong>
-                                                    {{ $ticketLifecycleNote['label'] }}:
-                                                    {{ $ticketLifecycleNote['body'] }}
-                                                </div>
-                                                <span class="table-note">
-                                                    {{ $ticketLifecycleNote['actor'] }} - {{ $ticketLifecycleNote['occurred_at']->diffForHumans() }}
+                                                <span class="wf-queue-preview" title="{{ $ticketLifecycleNote['body'] }}">
+                                                    Lifecycle note {{ $ticketLifecycleNote['label'] }}: {{ $ticketLifecycleNote['body'] }}
                                                 </span>
+                                                <span class="wf-queue-preview">{{ $ticketLifecycleNote['actor'] }} - {{ $ticketLifecycleNote['occurred_at']->diffForHumans() }}</span>
                                             @endif
                                         </td>
                                         <td>
-                                            @if ($ticket->conversation)
-                                                <x-support-code-reference
-                                                    :code="$ticket->conversation->support_code"
-                                                    :href="route('dashboard.support-code.lookup', ['support_code' => $ticket->conversation->support_code])"
-                                                />
-                                            @else
-                                                Not linked
-                                            @endif
-                                        </td>
-                                        <td>
-                                            <span class="readiness-status" data-status="{{ $ticketExternalIssueState['tone'] }}">
+                                            <span class="wf-queue-cobrowse" @if ($ticketExternalIssueState['tone'] !== 'manual') data-tone="{{ $ticketExternalIssueState['tone'] === 'ready' ? 'live' : 'attention' }}" @endif>
                                                 {{ $ticketExternalIssueState['label'] }}
                                             </span>
-                                            <span class="table-note">{{ $ticketExternalIssueState['detail'] }}</span>
+                                            <span class="wf-queue-preview" title="{{ $ticketExternalIssueState['detail'] }}">{{ $ticketExternalIssueState['detail'] }}</span>
                                             @if ($ticketExternalIssueState['attempt'])
-                                                <span class="table-note">
-                                                    <strong>Latest attempt</strong>
-                                                    {{ $ticketExternalIssueState['attempt']['label'] }}:
-                                                    {{ $ticketExternalIssueState['attempt']['body'] }}
+                                                <span class="wf-queue-preview" title="{{ $ticketExternalIssueState['attempt']['body'] }}">
+                                                    Latest attempt {{ $ticketExternalIssueState['attempt']['label'] }}: {{ $ticketExternalIssueState['attempt']['body'] }}
                                                 </span>
                                                 @if ($ticketExternalIssueState['attempt']['occurred_at'])
-                                                    <span class="table-note">{{ $ticketExternalIssueState['attempt']['occurred_at']->diffForHumans() }}</span>
+                                                    <span class="wf-queue-preview">{{ $ticketExternalIssueState['attempt']['occurred_at']->diffForHumans() }}</span>
                                                 @endif
                                             @endif
                                         </td>
-                                        <td>
-                                            <strong>{{ $ticketTiming['opened_label'] }}</strong>
-                                            <span class="table-note">{{ $ticketTiming['wait_label'] }}</span>
+                                        <td class="wf-queue-when">
+                                            {{ $ticketTiming['opened_label'] }}
+                                            <span class="wf-queue-preview" title="{{ $ticketTiming['wait_label'] }}">{{ $ticketTiming['wait_label'] }}</span>
                                         </td>
                                     </tr>
                                 @endforeach

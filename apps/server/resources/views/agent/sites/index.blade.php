@@ -43,41 +43,30 @@
                     @endif
                 </div>
 
-                <form class="section-form" method="GET" action="{{ route('dashboard.sites.index') }}">
-                    <div class="meta-grid">
-                        <div class="meta-item">
-                            <label class="meta-label" for="site_search">Search</label>
-                            <input id="site_search" name="site_search" type="search" value="{{ $siteFilters['search'] }}" placeholder="Site name or domain" autocomplete="off">
-                        </div>
-                        <div class="meta-item">
-                            <label class="meta-label" for="site_workload">Workload</label>
-                            <select id="site_workload" name="site_workload">
-                                @foreach ($siteFilters['workload_options'] as $value => $label)
-                                    <option value="{{ $value }}" @selected($siteFilters['workload'] === $value)>{{ $label }}</option>
+                <form class="wf-filters" method="GET" action="{{ route('dashboard.sites.index') }}">
+                    <div class="wf-filter wf-filter-search">
+                        <label for="site_search">Search</label>
+                        <input id="site_search" name="site_search" type="search" value="{{ $siteFilters['search'] }}" placeholder="Site name or domain" autocomplete="off">
+                    </div>
+
+                    @foreach ([
+                        ['id' => 'site_workload', 'label' => 'Workload', 'options' => $siteFilters['workload_options'], 'selected' => $siteFilters['workload']],
+                        ['id' => 'site_install', 'label' => 'Install health', 'options' => $siteFilters['install_options'], 'selected' => $siteFilters['install']],
+                        ['id' => 'site_state', 'label' => 'State', 'options' => $siteFilters['state_options'], 'selected' => $siteFilters['state']],
+                    ] as $siteSelectFilter)
+                        <div class="wf-filter">
+                            <label for="{{ $siteSelectFilter['id'] }}">{{ $siteSelectFilter['label'] }}</label>
+                            <select id="{{ $siteSelectFilter['id'] }}" name="{{ $siteSelectFilter['id'] }}">
+                                @foreach ($siteSelectFilter['options'] as $value => $label)
+                                    <option value="{{ $value }}" @selected($siteSelectFilter['selected'] === $value)>{{ $label }}</option>
                                 @endforeach
                             </select>
                         </div>
-                        <div class="meta-item">
-                            <label class="meta-label" for="site_install">Install health</label>
-                            <select id="site_install" name="site_install">
-                                @foreach ($siteFilters['install_options'] as $value => $label)
-                                    <option value="{{ $value }}" @selected($siteFilters['install'] === $value)>{{ $label }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <div class="meta-item">
-                            <label class="meta-label" for="site_state">State</label>
-                            <select id="site_state" name="site_state">
-                                @foreach ($siteFilters['state_options'] as $value => $label)
-                                    <option value="{{ $value }}" @selected($siteFilters['state'] === $value)>{{ $label }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Results</span>
-                            <span class="meta-value">{{ $siteFilters['summary_label'] }}</span>
-                            <button class="button secondary" type="submit">Apply filters</button>
-                        </div>
+                    @endforeach
+
+                    <div class="wf-filter-actions">
+                        <button class="button" type="submit">Apply filters</button>
+                        <span class="wf-filter-help">{{ $siteFilters['summary_label'] }}</span>
                     </div>
                 </form>
 
@@ -114,7 +103,7 @@
                     </div>
                 @else
                     <div class="table-wrap">
-                        <table>
+                        <table class="wf-queue">
                             <thead>
                                 <tr>
                                     <th scope="col">Site</th>
@@ -145,9 +134,8 @@
                                         }
                                     @endphp
                                     <tr>
-                                        <td>
-                                            <span class="wf-site-dot" style="background: var({{ $site->resolvedColor()->cssVariable() }})" aria-hidden="true"></span>
-                                            <a class="text-link" href="{{ route('dashboard.sites.show', $site) }}">{{ $site->name }}</a>
+                                        <td class="wf-queue-subject" style="--wf-row-site: var({{ $site->resolvedColor()->cssVariable() }})">
+                                            <a href="{{ route('dashboard.sites.show', $site) }}">{{ $site->name }}</a>
                                             @if ($site->isArchived())
                                                 <span class="readiness-status">Archived</span>
                                             @endif

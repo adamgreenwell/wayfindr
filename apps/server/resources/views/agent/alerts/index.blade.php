@@ -1,5 +1,5 @@
 <x-layouts.app title="Alerts" :agent="$agent" :account="$account">
-    <x-page-header title="Alert center" :subtitle="'Visible support alerts for '.$account->name.'.'" :back-href="route('dashboard')" back-label="Back to dashboard" />
+    <x-page-header title="Alert center" :subtitle="'Visible support alerts for '.$account->name.'.'" />
 
     <section class="section" aria-labelledby="alert-center-heading">
         @php
@@ -26,6 +26,7 @@
                 <p class="lede">Unread alerts stay here until the related work is opened or marked read.</p>
             </div>
             <div class="section-actions">
+                <nav class="wf-lanes" aria-label="Alert lanes">
                 @foreach (['all' => 'All alerts', 'unread' => 'Unread only'] as $filterValue => $filterLabel)
                     @php
                         $filterParams = [];
@@ -37,15 +38,19 @@
                         $filterParams = array_merge($filterParams, $alertBaseParams);
                     @endphp
                     <a
-                        class="button {{ $alertFilter === $filterValue ? '' : 'secondary' }}"
+                        class="wf-lane"
                         href="{{ route('dashboard.alerts.index', $filterParams) }}"
                         @if ($alertFilter === $filterValue) aria-current="page" @endif
                     >
                         {{ $filterLabel }}
+                        <span
+                            class="wf-lane-count"
+                            title="{{ $filterValue === 'unread' ? $unreadNotificationCount.' unread' : $notificationCount.' visible' }}"
+                            @if ($filterValue === 'unread' && $unreadNotificationCount > 0) data-tone="waiting" @endif
+                        >{{ $filterValue === 'unread' ? $unreadNotificationCount : $notificationCount }}</span>
                     </a>
                 @endforeach
-                <span class="lede">{{ $notificationCount }} visible</span>
-                <span class="lede">{{ $unreadNotificationCount }} unread</span>
+                </nav>
                 @if ($unreadNotificationCount > 0)
                     <form method="POST" action="{{ route('dashboard.alerts.read-all') }}">
                         @csrf
@@ -83,34 +88,39 @@
             </div>
         </div>
 
-        <form class="section-form compact-form" method="GET" action="{{ route('dashboard.alerts.index') }}" aria-label="Filter alerts">
+        <form class="wf-filters" method="GET" action="{{ route('dashboard.alerts.index') }}" aria-label="Filter alerts">
             @if ($alertFilter === 'unread')
                 <input type="hidden" name="alert_filter" value="unread">
             @endif
 
-            <label class="meta-label" for="alert_kind">Alert type</label>
-            <select id="alert_kind" name="alert_kind">
-                @foreach (['all' => 'All alerts', 'conversation' => 'Conversation alerts', 'ticket' => 'Ticket alerts'] as $kindValue => $kindLabel)
-                    <option value="{{ $kindValue }}" @selected($alertKind === $kindValue)>{{ $kindLabel }}</option>
-                @endforeach
-            </select>
+            <div class="wf-filter wf-filter-search">
+                <label for="alert_search">Search alerts</label>
+                <input
+                    id="alert_search"
+                    name="alert_search"
+                    type="search"
+                    value="{{ $alertSearch }}"
+                    placeholder="Support code, ticket #, subject, site, or visitor"
+                    aria-describedby="alert-search-help"
+                >
+                <span id="alert-search-help" class="wf-filter-help">Search visible alert context only; restricted support work stays hidden.</span>
+            </div>
 
-            <label class="meta-label" for="alert_search">Search alerts</label>
-            <input
-                id="alert_search"
-                name="alert_search"
-                type="search"
-                value="{{ $alertSearch }}"
-                placeholder="Support code, ticket #, subject, site, or visitor"
-                aria-describedby="alert-search-help"
-            >
+            <div class="wf-filter">
+                <label for="alert_kind">Alert type</label>
+                <select id="alert_kind" name="alert_kind">
+                    @foreach (['all' => 'All alerts', 'conversation' => 'Conversation alerts', 'ticket' => 'Ticket alerts'] as $kindValue => $kindLabel)
+                        <option value="{{ $kindValue }}" @selected($alertKind === $kindValue)>{{ $kindLabel }}</option>
+                    @endforeach
+                </select>
+            </div>
 
-            <button class="button secondary" type="submit">Apply</button>
-            @if ($hasAlertFilters)
-                <a class="button secondary" href="{{ route('dashboard.alerts.index', $alertFilter === 'unread' ? ['alert_filter' => 'unread'] : []) }}">Clear filters</a>
-            @endif
-
-            <span id="alert-search-help" class="table-note">Search visible alert context only; restricted support work stays hidden.</span>
+            <div class="wf-filter-actions">
+                <button class="button" type="submit">Apply</button>
+                @if ($hasAlertFilters)
+                    <a class="button secondary" href="{{ route('dashboard.alerts.index', $alertFilter === 'unread' ? ['alert_filter' => 'unread'] : []) }}">Clear filters</a>
+                @endif
+            </div>
         </form>
 
         @php

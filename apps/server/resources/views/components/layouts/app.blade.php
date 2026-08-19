@@ -641,6 +641,26 @@
             font-weight: 600;
         }
 
+        /* A second row of lanes for a queue with more than one axis. Tickets
+           have both "which tickets" (status, owner) and "what needs doing"
+           (next step), and flattening them into one row lost which was which. */
+        .wf-lanes-secondary {
+            border-bottom: 0;
+            padding-top: var(--wf-space-1);
+        }
+
+        .wf-lanes-secondary .wf-lane[aria-current="page"] {
+            border-bottom-color: var(--wf-brand);
+        }
+
+        .wf-lane-divider {
+            align-self: center;
+            width: var(--wf-border);
+            height: 16px;
+            margin: 0 var(--wf-space-2);
+            background: var(--wf-rule-firm);
+        }
+
         .wf-filters {
             display: flex;
             flex-wrap: wrap;
@@ -767,7 +787,16 @@
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
-            max-width: 52ch;
+            /* Narrow by default: several of these sit in the same row, and at
+               52ch each they pushed the last two columns of the ticket queue
+               off the edge entirely. The columns that carry real prose opt
+               into more width below. */
+            max-width: 30ch;
+        }
+
+        .wf-queue-subject .wf-queue-preview,
+        .ticket-activity-preview .wf-queue-preview {
+            max-width: 44ch;
         }
 
         .wf-queue-cobrowse {

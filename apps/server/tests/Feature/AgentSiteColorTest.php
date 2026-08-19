@@ -144,8 +144,7 @@ test('the sites list shows each site colour', function (): void {
     $this->actingAs($owner)
         ->get(route('dashboard.sites.index'))
         ->assertOk()
-        ->assertSee('wf-site-dot', false)
-        ->assertSee('var(--wf-site-ochre)', false);
+        ->assertSee('--wf-row-site: var(--wf-site-ochre)', false);
 });
 
 test('the widget bootstrap carries the site colour as a token key', function (): void {
