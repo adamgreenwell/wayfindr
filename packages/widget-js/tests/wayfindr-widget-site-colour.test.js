@@ -130,3 +130,94 @@ test('the panel accent falls back to the brand token', () => {
 
   assert.match(styles, /border-top:3px solid var\(--wf-site-accent,var\(--wf-brand\)\)/);
 });
+
+// --- Theme (ADR 0014, step 6) ---------------------------------------------
+
+function widgetStyles() {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/',
+  });
+
+  Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-docs',
+    storage: memoryStorage(),
+    fetch: async () => jsonResponse(404, { message: 'Not used' }),
+  });
+
+  return dom.window.document.querySelector('#wayfindr-widget-styles').textContent;
+}
+
+test('every colour in the widget stylesheet resolves through a token', () => {
+  const styles = widgetStyles();
+
+  const literals = styles
+    .split(/[;{}]/)
+    // A `--wf-*` declaration IS the token definition, which is the one place a
+    // literal belongs. Shadows are exempt too: they sit on a page Wayfindr does
+    // not own, so they are tuned for an unknown background rather than for
+    // either of our themes.
+    .filter((rule) => !rule.trim().startsWith('--wf-') && !rule.includes('box-shadow'))
+    .filter((rule) => /#[0-9a-fA-F]{3,8}\b|rgba?\(/.test(rule));
+
+  assert.deepEqual(literals, []);
+});
+
+test('the composer sets a background as well as a text colour', () => {
+  // It set only `color`. A visitor whose system is in dark mode therefore typed
+  // near-white text onto the browser default white, and could not read it.
+  const styles = widgetStyles();
+  const rule = styles.match(/\.wayfindr-widget__textarea\{[^}]*\}/)[0];
+
+  assert.match(rule, /background:var\(--wf-surface\)/);
+  assert.match(rule, /color:var\(--wf-ink\)/);
+});
+
+test('the widget follows the visitor system colour scheme', () => {
+  const styles = widgetStyles();
+
+  assert.match(styles, /@media \(prefers-color-scheme:dark\)\{\.wayfindr-widget/);
+});
+
+test('opening the panel applies the site colour before the visitor sends', async () => {
+  // It used to arrive only with the first send or a resume, so a first-time
+  // visitor opened on the brand fallback and watched it change after typing.
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/',
+  });
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-fresh',
+    storage: memoryStorage(),
+    messagePollMs: 0,
+    cobrowseStatusPollMs: 0,
+    fetch: async (url) => {
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return jsonResponse(200, {
+          data: {
+            site: { public_key: 'site_public_docs', color: 'rust', settings: {} },
+            visitor: { anonymous_id: 'anon-fresh', token: 'visitor-token-fresh' },
+          },
+        });
+      }
+
+      return jsonResponse(200, { data: {} });
+    },
+  });
+
+  assert.equal(widget.root.style.getPropertyValue('--wf-site-accent'), '');
+
+  widget.root.querySelector('.wayfindr-widget__launcher').click();
+  await settle();
+
+  assert.equal(widget.root.style.getPropertyValue('--wf-site-accent'), 'var(--wf-site-rust)');
+});

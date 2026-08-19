@@ -1,7 +1,8 @@
-<x-layouts.app title="Backup settings">
-    <p><a class="text-link" href="{{ $backUrl }}">{{ $backLabel }}</a></p>
+<x-layouts.operator title="Backup settings">
 
     <x-page-header
+        :back-href="$backUrl ?? null"
+        :back-label="$backLabel ?? 'Back'"
         title="Backups"
         subtitle="Configure where backups are mirrored, how long they are kept, and run one on demand. Changes apply immediately, no restart." />
 
@@ -227,4 +228,4 @@
             <button class="button secondary" type="submit">Run offsite test</button>
         </form>
     </section>
-</x-layouts.app>
+</x-layouts.operator>

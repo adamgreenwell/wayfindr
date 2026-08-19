@@ -3029,7 +3029,7 @@ test('dashboard summarizes the ticket queue next steps before the active next st
     $this->actingAs($agent)
         ->get('/dashboard/tickets?ticket_status=all&ticket_attention=needs_reply')
         ->assertOk()
-        ->assertSee('Queue snapshot')
+        ->assertSee('aria-label="Ticket next steps"', false)
         ->assertSee('Needs reply: 1')
         ->assertSee('Needs owner: 1')
         ->assertSee('Needs agent: 1')

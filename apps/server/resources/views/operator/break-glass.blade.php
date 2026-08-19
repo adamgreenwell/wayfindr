@@ -1,5 +1,4 @@
-<x-layouts.app title="Break-glass access">
-    <p><a class="text-link" href="{{ route('operator.dashboard') }}">Back to operator console</a></p>
+<x-layouts.operator title="Break-glass access">
     <h1>Break-glass access</h1>
     <p class="lede">
         Scoped, reasoned, time-bound, read-only. Every request and every view is visible to the account it touches.
@@ -132,4 +131,4 @@
             </div>
         @endif
     </section>
-</x-layouts.app>
+</x-layouts.operator>

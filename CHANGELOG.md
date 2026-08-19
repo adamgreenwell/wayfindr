@@ -32,9 +32,11 @@ missed while skimming.
 
 **No operator action required.** Pull, restart, and migrations run themselves.
 
-The interface renovation described in ADR 0014 is in progress. Nothing about it
-is visible yet — the groundwork below changes what the image contains, not what
-the dashboard looks like.
+The interface renovation described in ADR 0014 lands in this release. **The
+dashboard looks substantially different** — a permanent sidebar instead of a row
+of tabs, a new typeface, denser queues, a colour per site, and a dark mode. Your
+data, URLs, and the install snippet on your pages are untouched; this is the same
+application wearing a different face. Screenshots are in the release notes.
 
 ### Added
 
@@ -50,16 +52,37 @@ the dashboard looks like.
 
 ### Changed
 
-- **The conversation queue is readable again.** It used to put three bands of
-  controls above the first conversation and give every row about 130 pixels, so
-  three conversations filled a screen. Lanes now carry their own counts, the
-  filters sit on one line, and rows are less than half the height &mdash; the same
-  queue shows around four times as many conversations without dropping anything
-  it used to tell you.
+- **The operator console is part of the application now.** Every operator page —
+  the console, the setup checklist, mail, storage, scanning, backups and
+  break-glass — used to render outside the dashboard entirely, with a single text
+  link at the top of each page to get back out. They now sit in the same shell as
+  everything else, with their own list of sections down the side, so moving
+  between them no longer means going back to the console first.
 
-  Colour now means something. A calm conversation is no longer marked in amber:
-  red appears where somebody is waiting, and each row carries its site's colour
-  as a stripe so you can tell whose visitor it is at a glance.
+- **A conversation looks like a conversation.** The chat widget has always shown
+  replies as a back-and-forth. The agent's own view of the same exchange stacked
+  every message full width in one column, so the two halves of a conversation
+  looked like different things and only the agent got the log. Visitor messages
+  now sit on the left carrying their site's colour, replies sit on the right, and
+  delivery state sits on the message it belongs to.
+
+  A message with no text and no attachment now says so, instead of rendering as an
+  empty box with a timestamp in it.
+
+- **The widget follows the visitor's colour scheme.** A visitor whose device is
+  set to dark mode now sees a dark chat panel, and it wears its site's colour on
+  its top edge. It takes its colours from the same source the dashboard does, so
+  the two cannot drift apart again.
+
+- **Every queue is readable again.** Conversations, tickets, alerts and sites all
+  used to stack bands of controls above the first row and give each row about
+  130 pixels. Lanes now carry their own counts, filters sit on one line, and rows
+  are less than half the height &mdash; the same screen shows roughly four times as
+  much without dropping anything it used to tell you.
+
+  Colour now means something everywhere. A calm row is no longer marked in amber:
+  red appears where somebody is waiting, and each row carries its site's colour as
+  a stripe so you can tell whose work it is at a glance.
 
 - **The dashboard's typeface now ships with the application.** IBM Plex is
   served from your own install rather than fetched from a font CDN, so an

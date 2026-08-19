@@ -76,11 +76,26 @@ function modeValues(array $tokens, string $mode): array
 
             if (is_array($entry)) {
                 // A themed token. `dark` is optional: a token that reads the
-                // same on both grounds (the site hues, today) declares `light`
-                // alone rather than repeating itself.
-                $values[$name] = (string) ($entry[$mode] ?? $entry['light']);
+                // same on both grounds declares `light` alone rather than
+                // repeating itself. `light` is NOT optional -- without this
+                // check a misspelled key rendered `--wf-paper: ;`, both
+                // interfaces silently lost the token, and once the outputs were
+                // committed `--check` agreed with itself forever.
+                $value = $entry[$mode] ?? $entry['light'] ?? null;
+
+                if (! is_string($value) || trim($value) === '') {
+                    fwrite(STDERR, "Token '{$name}' has no usable '{$mode}' or 'light' value.\n");
+                    exit(EXIT_USAGE);
+                }
+
+                $values[$name] = $value;
 
                 continue;
+            }
+
+            if (! is_string($entry) && ! is_numeric($entry)) {
+                fwrite(STDERR, "Token '{$name}' is neither a value nor a themed pair.\n");
+                exit(EXIT_USAGE);
             }
 
             $values[$name] = (string) $entry;

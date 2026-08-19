@@ -44,7 +44,7 @@ test('the lanes carry their own counts, so the separate snapshot band is gone', 
     $response = $this->actingAs($agent)->get('/dashboard/conversations')->assertOk();
 
     $response->assertSee('aria-label="Conversation lanes"', false)
-        ->assertSee('wf-lane-count', false)
+        ->assertSee('class="wf-lane-count"', false)
         // Three stacked bands is what this replaces.
         ->assertDontSee('Queue snapshot');
 });
@@ -57,7 +57,7 @@ test('a resting cobrowse state is not coloured as a warning', function (): void 
     $response = $this->actingAs($agent)->get('/dashboard/conversations')->assertOk();
 
     expect($response->getContent())
-        ->toContain('wf-queue-cobrowse')
+        ->toContain('class="wf-queue-cobrowse"')
         ->toContain('Unavailable')
         // The transport is still stated; it just is not painted as a warning.
         ->not->toContain('wf-queue-cobrowse" data-tone');
@@ -69,7 +69,7 @@ test('the support code is set in mono beside the subject it belongs to', functio
     $this->actingAs($agent)
         ->get('/dashboard/conversations')
         ->assertOk()
-        ->assertSee('wf-queue-code', false)
+        ->assertSee('class="support-reference"', false)
         ->assertSee('WF-QUEUE01');
 });
 
@@ -81,7 +81,7 @@ test('the queue still says how many match and how many are shown', function (): 
     $this->actingAs($agent)
         ->get('/dashboard/conversations')
         ->assertOk()
-        ->assertSee('wf-queue-summary', false)
+        ->assertSee('class="wf-queue-summary"', false)
         ->assertSee('Showing 1 conversation matching the current queue filters.');
 });
 
@@ -91,6 +91,6 @@ test('searchable references are explained on the field that searches them', func
     $this->actingAs($agent)
         ->get('/dashboard/conversations')
         ->assertOk()
-        ->assertSee('wf-filter-help', false)
+        ->assertSee('class="wf-filter-help"', false)
         ->assertSee('Search by subject, support code, visitor ID, visitor name, or visitor email.');
 });

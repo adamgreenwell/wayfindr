@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\AccountRole;
 use App\Enums\PlatformRole;
+use App\Enums\SiteColor;
 use App\Models\Account;
 use App\Models\Site;
 use App\Models\User;
@@ -86,6 +87,10 @@ class FirstRunSetupController extends Controller
             $siteAttributes = [
                 'account_id' => $account->id,
                 'name' => $siteName,
+                // Stored, not left to the fallback. A null here made the second
+                // site an operator creates land on the same colour, because the
+                // allocator counts rows rather than reading resolved colours.
+                'color' => SiteColor::forPosition(0),
                 'domain' => $this->normalizeDomain($validated['site_domain'] ?? null),
                 'settings' => [
                     'mask_selectors' => ['input[type="password"]', '[data-wayfindr-mask]'],

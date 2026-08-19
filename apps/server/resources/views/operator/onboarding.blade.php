@@ -1,7 +1,8 @@
-<x-layouts.app title="Set up Wayfindr">
-    <p><a class="text-link" href="{{ route('operator.dashboard') }}">Operator console</a></p>
+<x-layouts.operator title="Set up Wayfindr">
 
     <x-page-header
+        :back-href="$backUrl ?? null"
+        :back-label="$backLabel ?? 'Back'"
         title="Set up your installation"
         subtitle="A guided walk to a runnable Wayfindr — configure the essentials in the browser, mail first." />
 
@@ -82,4 +83,4 @@
             </p>
         </div>
     </section>
-</x-layouts.app>
+</x-layouts.operator>

@@ -1,7 +1,9 @@
-<x-layouts.app title="Backup history">
+<x-layouts.operator title="Backup history">
     <p><a class="text-link" href="{{ route('operator.settings.backups.edit') }}">Back to backup settings</a></p>
 
     <x-page-header
+        :back-href="$backUrl ?? null"
+        :back-label="$backLabel ?? 'Back'"
         title="Backup history"
         subtitle="Every recorded backup run — the scheduled backup and the operator “run now” both land here." />
 
@@ -52,4 +54,4 @@
             </div>
         @endif
     </section>
-</x-layouts.app>
+</x-layouts.operator>
