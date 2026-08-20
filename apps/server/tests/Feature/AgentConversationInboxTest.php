@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\PlatformRole;
 use App\Events\CobrowseStateUpdated;
 use App\Events\ConversationMessageCreated;
 use App\Events\ConversationTypingUpdated;
@@ -3181,10 +3182,13 @@ test('readiness page shows ready realtime status when reverb is configured', fun
     config()->set('broadcasting.connections.reverb.options.scheme', 'https');
 
     $account = Account::factory()->create();
-    $agent = User::factory()->for($account)->create(['account_role' => 'admin']);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => 'admin',
+        'platform_role' => PlatformRole::Operator,
+    ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard/readiness')
+        ->get('/operator')
         ->assertOk()
         ->assertSee('Realtime')
         ->assertSee('Ready')
@@ -3208,10 +3212,13 @@ test('readiness page shows realtime setup guidance when reverb is incomplete', f
     config()->set('broadcasting.connections.reverb.options.scheme', 'https');
 
     $account = Account::factory()->create();
-    $agent = User::factory()->for($account)->create(['account_role' => 'admin']);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => 'admin',
+        'platform_role' => PlatformRole::Operator,
+    ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard/readiness')
+        ->get('/operator')
         ->assertOk()
         ->assertSee('Realtime')
         ->assertSee('Needs setup')
@@ -3230,10 +3237,13 @@ test('readiness page shows realtime disabled when broadcasting is not using reve
     config()->set('broadcasting.default', 'log');
 
     $account = Account::factory()->create();
-    $agent = User::factory()->for($account)->create(['account_role' => 'admin']);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => 'admin',
+        'platform_role' => PlatformRole::Operator,
+    ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard/readiness')
+        ->get('/operator')
         ->assertOk()
         ->assertSee('Realtime')
         ->assertSee('Disabled')
