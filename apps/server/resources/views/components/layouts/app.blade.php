@@ -1495,7 +1495,10 @@
         }
 
         .tabs__tab {
-            scroll-margin-top: 24px;
+            /* Matches .section[id]: clears the sticky 52px topbar with room to
+               spare, so a deep-linked tab is visible rather than tucked under
+               the header. */
+            scroll-margin-top: 96px;
             appearance: none;
             background: none;
             border: 0;
