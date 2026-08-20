@@ -18,7 +18,7 @@ Laravel web request.
 
 ## Routine Checks
 
-- Review `/operator` and `/dashboard/readiness` after deploys.
+- Review `/operator` after deploys.
 - Confirm `php artisan queue:failed` is empty after a smoke test.
 - Confirm `php artisan schedule:list` renders and contains expected work.
 - Run `php artisan wayfindr:cobrowse-transport-smoke` when validating realtime.

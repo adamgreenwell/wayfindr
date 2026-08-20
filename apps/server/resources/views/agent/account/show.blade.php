@@ -342,13 +342,6 @@
                             </span>
                             <span class="management-action">Manage</span>
                         </a>
-                        <a class="management-link" href="{{ route('dashboard.readiness.show') }}">
-                            <span>
-                                <strong>Readiness checks</strong>
-                                <span class="lede">Deploy, realtime, queue, and privacy checks before visitor pressure.</span>
-                            </span>
-                            <span class="management-action">Review</span>
-                        </a>
                         <a class="management-link" href="{{ route('dashboard.account.audit.index') }}">
                             <span>
                                 <strong>Audit log</strong>
@@ -471,7 +464,6 @@
                             <span class="readiness-status" data-status="{{ $agentAlertReadinessSummary['status'] }}">
                                 {{ $agentAlertReadinessSummary['label'] }}
                             </span>
-                            <a class="button secondary" href="{{ route('dashboard.readiness.show') }}">Readiness</a>
                         </div>
                     </div>
                     <div class="meta-grid readiness-summary-grid">

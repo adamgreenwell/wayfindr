@@ -2627,10 +2627,6 @@
                 ['label' => 'Account', 'icon' => 'account', 'href' => route('dashboard.account.show'), 'active' => request()->routeIs('dashboard.account.*')],
             ];
 
-            if ($agent->isAdmin()) {
-                $manageItems[] = ['label' => 'Readiness', 'icon' => 'readiness', 'href' => route('dashboard.readiness.show'), 'active' => request()->routeIs('dashboard.readiness.*')];
-            }
-
             if ($agent->isPlatformOperator()) {
                 $manageItems[] = ['label' => 'Operator', 'icon' => 'operator', 'href' => route('operator.dashboard'), 'active' => request()->routeIs('operator.*')];
             }

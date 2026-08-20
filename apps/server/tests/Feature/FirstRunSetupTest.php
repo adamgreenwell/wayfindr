@@ -194,7 +194,6 @@ test('first run setup handoff shows install guidance and operator readiness link
         ->assertSee('php artisan queue:failed')
         ->assertSee('/operator', false)
         ->assertSee('Open operator console')
-        ->assertSee('/dashboard/readiness', false)
         ->assertSee('data-wayfindr-site-key=&quot;'.$site->public_key.'&quot;', false);
 });
 

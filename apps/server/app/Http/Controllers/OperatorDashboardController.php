@@ -6,6 +6,7 @@ use App\Models\AuditEvent;
 use App\Models\User;
 use App\Support\OperatorReadiness;
 use App\Support\OperatorSystemIdentity;
+use App\Support\RealtimeHealth;
 use App\Support\Release\UpgradeGuard;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\Request;
@@ -19,12 +20,14 @@ class OperatorDashboardController extends Controller
         OperatorReadiness $readiness,
         OperatorSystemIdentity $systemIdentity,
         UpgradeGuard $guard,
+        RealtimeHealth $realtimeHealth,
     ): View {
         return view('operator.dashboard', [
             'operator' => $request->user(),
             'operatorActivity' => $this->operatorActivity(),
             'operatorActivityTotal' => $this->operatorActivityTotal(),
             'readiness' => $readiness->summary(),
+            'realtimeHealth' => $realtimeHealth->summary(),
             'systemIdentity' => $systemIdentity->summary(),
             // Advisory notices (ADR 0013). This is the console half of "reported
             // where the operator meets it" — the other half is the upgrade

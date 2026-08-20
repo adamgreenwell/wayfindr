@@ -373,9 +373,6 @@
                         @if ($agent->isPlatformOperator())
                             <a class="text-link" href="{{ route('operator.dashboard') }}">Open operator console</a>
                         @endif
-                        @if ($agent->isAdmin())
-                            <a class="text-link" href="{{ route('dashboard.readiness.show') }}">Review readiness</a>
-                        @endif
                         <span class="lede">Copy-ready widget script</span>
                     </div>
                 </div>

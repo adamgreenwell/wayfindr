@@ -181,7 +181,7 @@ class VisitorSupportReadiness
                 summary: 'Realtime delivery is configured.',
                 detail: 'Reverb is ready for live chat and cobrowse updates.',
                 action: 'Keep reverb:restart in the deploy script so long-running workers refresh.',
-                href: $canViewReadiness ? route('dashboard.readiness.show') : null
+                href: $canViewReadiness ? route('operator.dashboard') : null
             );
         }
 
@@ -192,7 +192,7 @@ class VisitorSupportReadiness
             summary: 'Realtime delivery needs setup.',
             detail: 'Live chat can fall back, but Reverb should be configured before serious dogfooding.',
             action: 'Review Reverb credentials and public host settings.',
-            href: $canViewReadiness ? route('dashboard.readiness.show') : null
+            href: $canViewReadiness ? route('operator.dashboard') : null
         );
     }
 
@@ -211,7 +211,7 @@ class VisitorSupportReadiness
                 summary: "Queue driver is {$connection}.",
                 detail: 'Synchronous queues are fine locally, but support alerts and background work need a durable worker in production.',
                 action: 'Use database or redis queues and run a queue worker.',
-                href: $canViewReadiness ? route('dashboard.readiness.show') : null
+                href: $canViewReadiness ? route('operator.dashboard') : null
             );
         }
 
@@ -222,7 +222,7 @@ class VisitorSupportReadiness
             summary: "Queue driver is {$connection}.",
             detail: 'Background work can leave the request lifecycle.',
             action: 'Confirm a queue worker is running under Forge, Supervisor, systemd, or your host.',
-            href: $canViewReadiness ? route('dashboard.readiness.show') : null
+            href: $canViewReadiness ? route('operator.dashboard') : null
         );
     }
 
@@ -238,7 +238,7 @@ class VisitorSupportReadiness
             summary: 'Scheduler must be confirmed outside the request.',
             detail: 'Wayfindr cannot prove cron from the dashboard, but operators should run the Laravel scheduler once per minute.',
             action: 'Configure * * * * * php artisan schedule:run, then keep this on the operator checklist.',
-            href: $canViewReadiness ? route('dashboard.readiness.show') : null
+            href: $canViewReadiness ? route('operator.dashboard') : null
         );
     }
 

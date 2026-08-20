@@ -220,8 +220,8 @@ test('the account page is the management hub; the home stays queue-focused', fun
         ->assertSee('Sites')
         ->assertSee('Reply templates')
         ->assertSee('Ticket labels')
-        ->assertSee('Readiness checks')
-        ->assertSee('/dashboard/readiness', false)
+        ->assertDontSee('Readiness checks')
+        ->assertDontSee('/dashboard/readiness', false)
         ->assertSee('Audit log')
         ->assertSee('/dashboard/account/audit', false)
         ->assertSee('Data responsibility');

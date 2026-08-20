@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\AccountRole;
+use App\Enums\PlatformRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\CobrowseSession;
@@ -37,10 +38,11 @@ test('account owner can inspect operator readiness diagnostics', function (): vo
 
     $agent = User::factory()->for(Account::factory(['name' => 'Acme Support']))->create([
         'account_role' => AccountRole::Owner,
+        'platform_role' => PlatformRole::Operator,
     ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard/readiness')
+        ->get('/operator')
         ->assertOk()
         ->assertSee('Operator readiness')
         ->assertSee('Application key')
@@ -82,13 +84,60 @@ test('account owner can inspect operator readiness diagnostics', function (): vo
         ->assertSee('Confirm backups can restore');
 });
 
+test('an account admin cannot reach the instance readiness report', function (): void {
+    // Readiness reports on mail, queues, storage and scanning for the whole
+    // install. It used to answer on a /dashboard route to any account admin,
+    // who then got a 403 on every settings page that could act on it. The old
+    // link still resolves so bookmarks are not dead ends, but it resolves to
+    // the operator console, which refuses them.
+    $admin = User::factory()->for(Account::factory())->create([
+        'account_role' => AccountRole::Admin,
+        'platform_role' => null,
+    ]);
+
+    $this->actingAs($admin)
+        ->get('/dashboard/readiness')
+        ->assertRedirect('/operator');
+
+    $this->actingAs($admin)
+        ->get('/operator')
+        ->assertForbidden();
+});
+
+test('an account admin can no longer record instance readiness proof', function (): void {
+    // Confirmations assert that a human verified something about the install
+    // itself, so an account admin was recording proof on an operator's behalf.
+    $admin = User::factory()->for(Account::factory())->create([
+        'account_role' => AccountRole::Admin,
+        'platform_role' => null,
+    ]);
+
+    $this->actingAs($admin)
+        ->post('/dashboard/readiness/confirmations', [
+            'key' => 'scheduler',
+            'note' => 'Not mine to confirm.',
+        ])
+        ->assertNotFound();
+
+    $this->actingAs($admin)
+        ->post('/operator/readiness/confirmations', [
+            'key' => 'scheduler',
+            'note' => 'Not mine to confirm.',
+        ])
+        ->assertForbidden();
+
+    $this->assertDatabaseMissing('operator_readiness_confirmations', [
+        'key' => 'scheduler',
+    ]);
+});
+
 test('plain agents cannot inspect operator readiness diagnostics', function (): void {
     $agent = User::factory()->for(Account::factory())->create([
         'account_role' => AccountRole::Agent,
     ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard/readiness')
+        ->get('/operator')
         ->assertForbidden();
 });
 
@@ -388,6 +437,7 @@ test('dashboard readiness shows cobrowse budget defaults without support data', 
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create([
         'account_role' => AccountRole::Owner,
+        'platform_role' => PlatformRole::Operator,
     ]);
     $site = Site::factory()->for($account)->create(['name' => 'Sensitive Budget Site']);
     $visitor = Visitor::factory()->for($site)->create([
@@ -412,7 +462,7 @@ test('dashboard readiness shows cobrowse budget defaults without support data', 
     ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard/readiness')
+        ->get('/operator')
         ->assertOk()
         ->assertSee('Cobrowse budget defaults')
         ->assertSee('Safe default limits for stock widget payloads and server intake.')
@@ -658,6 +708,7 @@ test('dashboard readiness shows stale confirmation refresh guidance', function (
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create([
         'account_role' => AccountRole::Admin,
+        'platform_role' => PlatformRole::Operator,
         'name' => 'Adam Admin',
     ]);
 
@@ -669,7 +720,7 @@ test('dashboard readiness shows stale confirmation refresh guidance', function (
     ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard/readiness')
+        ->get('/operator')
         ->assertOk()
         ->assertSee('Scheduler confirmation needs refresh.')
         ->assertSee('Confirmed by Adam Admin 8 days ago.')
@@ -715,15 +766,16 @@ test('account admins can confirm a manual readiness item', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create([
         'account_role' => AccountRole::Admin,
+        'platform_role' => PlatformRole::Operator,
         'name' => 'Adam Admin',
     ]);
 
     $this->actingAs($agent)
-        ->post('/dashboard/readiness/confirmations', [
+        ->post('/operator/readiness/confirmations', [
             'key' => 'scheduler',
             'note' => 'Forge scheduled job is configured.',
         ])
-        ->assertRedirect('/dashboard/readiness');
+        ->assertRedirect('/operator');
 
     $this->assertDatabaseHas('operator_readiness_confirmations', [
         'key' => 'scheduler',
@@ -744,7 +796,7 @@ test('account admins can confirm a manual readiness item', function (): void {
         ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard/readiness')
+        ->get('/operator')
         ->assertOk()
         ->assertSee('Scheduler confirmed.')
         ->assertSee('Confirmed by Adam Admin')
@@ -758,6 +810,7 @@ test('blank readiness refresh preserves the existing evidence note', function ()
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create([
         'account_role' => AccountRole::Admin,
+        'platform_role' => PlatformRole::Operator,
         'name' => 'Adam Admin',
     ]);
 
@@ -771,11 +824,11 @@ test('blank readiness refresh preserves the existing evidence note', function ()
     $this->travelTo(Carbon::parse('2026-06-22 12:05:00'));
 
     $this->actingAs($agent)
-        ->post('/dashboard/readiness/confirmations', [
+        ->post('/operator/readiness/confirmations', [
             'key' => 'scheduler',
             'note' => '   ',
         ])
-        ->assertRedirect('/dashboard/readiness');
+        ->assertRedirect('/operator');
 
     $this->assertDatabaseHas('operator_readiness_confirmations', [
         'key' => 'scheduler',
@@ -805,7 +858,7 @@ test('plain agents cannot confirm readiness items', function (): void {
     ]);
 
     $this->actingAs($agent)
-        ->post('/dashboard/readiness/confirmations', [
+        ->post('/operator/readiness/confirmations', [
             'key' => 'scheduler',
             'note' => 'Nope.',
         ])
@@ -1449,6 +1502,6 @@ test('readiness smoke path preserves cobrowse manual remediation when transport 
 });
 
 test('readiness diagnostics require an authenticated agent', function (): void {
-    $this->get('/dashboard/readiness')
+    $this->get('/operator')
         ->assertRedirect('/login');
 });
