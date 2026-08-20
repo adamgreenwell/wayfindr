@@ -1,5 +1,44 @@
 <x-layouts.app title="Conversation {{ $conversation->support_code }}" :agent="$agent" :account="$account">
-            <x-page-header :title="$conversation->subject ?? 'Untitled conversation'" :subtitle="'Support code '.$conversation->support_code" :back-href="$conversationBackUrl" back-label="Back to conversations" />
+            <x-page-header :title="$conversation->subject ?? 'Untitled conversation'" :subtitle="'Support code '.$conversation->support_code" :back-href="$conversationBackUrl" back-label="Back to conversations">
+                @if ($conversationSiblings['total'] > 1)
+                    <x-slot:actions>
+                        {{-- Move through the queue without returning to it. The
+                             list, the order and the neighbours all come from the
+                             same query the queue itself runs. --}}
+                        <nav class="wf-switcher" aria-label="Move through the conversation queue">
+                            @if ($conversationSiblings['previous'])
+                                <a class="wf-switcher-step" rel="prev" aria-label="Previous conversation in this queue"
+                                   href="{{ route('dashboard.conversations.show', ['supportCode' => $conversationSiblings['previous'], 'from_queue' => '1'] + $conversationReturnQuery) }}">&#8593;</a>
+                            @else
+                                <span class="wf-switcher-step" aria-hidden="true" data-disabled="true">&#8593;</span>
+                            @endif
+
+                            <details class="wf-switcher-list">
+                                <summary>
+                                    {{ $conversationSiblings['position'] }} of {{ $conversationSiblings['total'] }}
+                                    <x-icon name="chevron-down" :size="12" />
+                                </summary>
+                                <div class="wf-switcher-menu">
+                                    @foreach ($conversationSiblings['items'] as $sibling)
+                                        <a
+                                            class="wf-switcher-item"
+                                            href="{{ route('dashboard.conversations.show', ['supportCode' => $sibling['support_code'], 'from_queue' => '1'] + $conversationReturnQuery) }}"
+                                            @if ($sibling['current']) aria-current="true" @endif
+                                        >{{ $sibling['subject'] }}</a>
+                                    @endforeach
+                                </div>
+                            </details>
+
+                            @if ($conversationSiblings['next'])
+                                <a class="wf-switcher-step" rel="next" aria-label="Next conversation in this queue"
+                                   href="{{ route('dashboard.conversations.show', ['supportCode' => $conversationSiblings['next'], 'from_queue' => '1'] + $conversationReturnQuery) }}">&#8595;</a>
+                            @else
+                                <span class="wf-switcher-step" aria-hidden="true" data-disabled="true">&#8595;</span>
+                            @endif
+                        </nav>
+                    </x-slot:actions>
+                @endif
+            </x-page-header>
 
             @if (session('status'))
                 <p class="status-message">{{ session('status') }}</p>

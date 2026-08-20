@@ -1048,6 +1048,105 @@
             margin-top: var(--wf-space-4);
         }
 
+        /* ── Queue switcher (ADR 0014) ────────────────────────────────────
+           The reference platforms put this in the breadcrumb; here it sits with
+           the page title, which is the same affordance without threading a slot
+           through the shared layout for one screen. */
+        .wf-switcher {
+            display: inline-flex;
+            align-items: stretch;
+            border: var(--wf-border) solid var(--wf-rule);
+            border-radius: var(--wf-radius);
+            background: var(--wf-surface);
+        }
+
+        .wf-switcher-step {
+            display: flex;
+            align-items: center;
+            padding: 0 var(--wf-space-3);
+            color: var(--wf-muted);
+            font-size: 13px;
+            text-decoration: none;
+        }
+
+        .wf-switcher-step:hover {
+            background: var(--wf-surface-2);
+            color: var(--wf-ink);
+        }
+
+        .wf-switcher-step[data-disabled="true"] {
+            opacity: 0.35;
+        }
+
+        .wf-switcher-list {
+            position: relative;
+            border-left: var(--wf-border) solid var(--wf-rule);
+            border-right: var(--wf-border) solid var(--wf-rule);
+        }
+
+        .wf-switcher-list > summary {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px var(--wf-space-3);
+            cursor: pointer;
+            list-style: none;
+            font-family: var(--wf-font-mono);
+            font-size: 11.5px;
+            font-variant-numeric: tabular-nums;
+            color: var(--wf-muted);
+            white-space: nowrap;
+        }
+
+        .wf-switcher-list > summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .wf-switcher-list[open] > summary {
+            color: var(--wf-ink);
+        }
+
+        .wf-switcher-menu {
+            position: absolute;
+            right: 0;
+            z-index: 10;
+            width: 340px;
+            max-height: 320px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            margin-top: var(--wf-space-1);
+            border: var(--wf-border) solid var(--wf-rule-firm);
+            border-radius: var(--wf-radius);
+            background: var(--wf-surface);
+        }
+
+        .wf-switcher-item {
+            padding: 7px var(--wf-space-3);
+            border-bottom: var(--wf-border) solid var(--wf-rule);
+            color: var(--wf-muted);
+            font-size: 12.5px;
+            text-decoration: none;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .wf-switcher-item:last-child {
+            border-bottom: 0;
+        }
+
+        .wf-switcher-item:hover {
+            background: var(--wf-surface-2);
+            color: var(--wf-ink);
+        }
+
+        .wf-switcher-item[aria-current="true"] {
+            color: var(--wf-ink);
+            font-weight: 600;
+            box-shadow: inset var(--wf-rail) 0 0 var(--wf-brand);
+        }
+
         @media (max-width: 900px) {
             .wf-app {
                 grid-template-columns: minmax(0, 1fr);
