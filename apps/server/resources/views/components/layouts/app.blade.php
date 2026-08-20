@@ -1790,6 +1790,11 @@
 
         .readiness-list {
             display: grid;
+            /* An implicit auto track sizes to max-content, and grid items
+               default to min-width:auto, so one long command stretched the
+               whole list past its card. minmax(0, 1fr) lets the track stay at
+               the container width and the code block scroll inside it. */
+            grid-template-columns: minmax(0, 1fr);
         }
 
         .readiness-check {
