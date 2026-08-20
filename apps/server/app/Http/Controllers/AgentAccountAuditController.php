@@ -304,7 +304,7 @@ class AgentAccountAuditController extends Controller
                 ?? data_get($event->metadata, 'scope_label')
                 ?? $event->subject->scopeLabel();
 
-            return 'Break-glass: '.$label;
+            return 'Operator access: '.$label;
         }
 
         if ($event->subject instanceof User) {

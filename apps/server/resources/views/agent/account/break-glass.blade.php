@@ -1,5 +1,5 @@
 <x-layouts.app title="Operator access" :agent="$agent" :account="$account">
-            <x-page-header title="Operator access" subtitle="Break-glass requests and grants touching this account — approve, deny, or revoke." :back-href="route('dashboard.account.show')" back-label="Back to account">
+            <x-page-header title="Operator access" subtitle="When a platform operator needs to see this account's support data, they have to ask. Approve, refuse, or end access here." :back-href="route('dashboard.account.show')" back-label="Back to account">
                 <x-slot:actions>
                     <span class="lede">{{ $activeGrants->count() }} active</span>
                 </x-slot:actions>

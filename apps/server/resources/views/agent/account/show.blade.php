@@ -359,7 +359,7 @@
                         <a class="management-link" href="{{ route('dashboard.account.break-glass.index') }}">
                             <span>
                                 <strong>Operator access</strong>
-                                <span class="lede">Break-glass requests and grants touching this account.</span>
+                                <span class="lede">Requests from platform operators to see this account's support data.</span>
                             </span>
                             <span class="management-action">Review</span>
                         </a>

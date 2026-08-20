@@ -65,8 +65,8 @@
     <section class="section" aria-labelledby="operator-break-glass-heading">
         <div class="section-header">
             <div>
-                <h2 id="operator-break-glass-heading">Break-glass access</h2>
-                <p class="lede">The only path to customer support content: scoped, reasoned, time-bound, read-only.</p>
+                <h2 id="operator-break-glass-heading">Operator access</h2>
+                <p class="lede">The only way to see an account’s support content, and only if they agree. Read-only, time-limited, and recorded for them.</p>
             </div>
             <a class="button secondary" href="{{ route('operator.break-glass.index') }}">Open</a>
         </div>
@@ -245,8 +245,8 @@
                 <span class="meta-value">Not available here</span>
             </div>
             <div class="meta-item">
-                <span class="meta-label">Break-glass access</span>
-                <span class="meta-value">Future scoped workflow</span>
+                <span class="meta-label">Operator access</span>
+                <span class="meta-value">Available — the account decides</span>
             </div>
         </div>
 
@@ -283,9 +283,9 @@
                 <p class="lede">Manual backup, scheduler, and restore confirmations record safe operator evidence.</p>
             </div>
             <div class="meta-item">
-                <span class="meta-label">Future break-glass actions</span>
-                <span class="meta-value">Not enabled</span>
-                <p class="lede">Customer-data access requires explicit scope, expiry, approval, and audit before it exists.</p>
+                <span class="meta-label">Access to support data</span>
+                <span class="meta-value">Only when an account grants it</span>
+                <p class="lede">Operators can ask an account for read-only access to one conversation, site or account. The account approves it, sees every page opened, and can end it at any time.</p>
             </div>
         </div>
 

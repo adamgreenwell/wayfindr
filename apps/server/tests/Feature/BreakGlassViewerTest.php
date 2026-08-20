@@ -113,7 +113,7 @@ test('attachments render as metadata with no path to the binary', function (): v
         ->get(route('operator.break-glass.conversations.show', [$w['grant'], $w['conversation']]))
         ->assertOk()
         ->assertSee('crash-report.txt')
-        ->assertSee('metadata only');
+        ->assertSee('names and sizes only');
 
     expect($response->getContent())->not->toContain('/attachments/');
 });
@@ -320,7 +320,7 @@ test('the account audit page names exactly what an operator reached', function (
         ->get(route('dashboard.account.audit.index'))
         ->assertOk()
         ->assertSee('Break Glass Resource Viewed')
-        ->assertSee('Break-glass: Conversation '.$w['conversation']->support_code);
+        ->assertSee('Operator access: Conversation '.$w['conversation']->support_code);
 });
 
 test('the transcript renders in chronological order, not insertion order', function (): void {
@@ -349,12 +349,12 @@ test('audit search finds break-glass events by their surfaced label', function (
     $this->actingAs($admin)
         ->get(route('dashboard.account.audit.index', ['audit_search' => $w['conversation']->support_code]))
         ->assertOk()
-        ->assertSee('Break-glass: Conversation '.$w['conversation']->support_code);
+        ->assertSee('Operator access: Conversation '.$w['conversation']->support_code);
 
     $this->actingAs($admin)
         ->get(route('dashboard.account.audit.index', ['audit_search' => 'WF-ZZZZZZZZ']))
         ->assertOk()
-        ->assertDontSee('Break-glass: Conversation');
+        ->assertDontSee('Operator access: Conversation');
 });
 
 test('a non-operator cannot reach any viewer route', function (): void {

@@ -90,7 +90,7 @@ class OperatorBreakGlassController extends Controller
 
         return redirect()
             ->route('operator.break-glass.index')
-            ->with('status', sprintf('Break-glass access requested for %s.', $grant->scopeLabel()));
+            ->with('status', sprintf('Access requested for %s. The account decides.', $grant->scopeLabel()));
     }
 
     public function approve(Request $request, BreakGlassGrant $grant, BreakGlassGrants $grants): RedirectResponse
