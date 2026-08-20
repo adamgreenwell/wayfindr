@@ -34,7 +34,7 @@ test('every operator section is reachable from every other one', function (): vo
 
     $response->assertSee('aria-label="Operator sections"', false);
 
-    foreach (['Console', 'Setup checklist', 'Mail', 'Storage', 'Scanning', 'Backups', 'Break-glass'] as $section) {
+    foreach (['Console', 'Setup checklist', 'Mail', 'Storage', 'Scanning', 'Backups', 'Operator access'] as $section) {
         $response->assertSee($section);
     }
 

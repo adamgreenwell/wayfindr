@@ -296,10 +296,10 @@ test('operator console explains the platform support data boundary', function ()
         ->assertSee('Safe for operators')
         ->assertSee('Support data')
         ->assertSee('Not available here')
-        ->assertSee('Break-glass access')
-        ->assertSee('Future scoped workflow')
+        ->assertSee('Operator access')
+        ->assertSee('Available — the account decides')
         ->assertSee('Conversations, tickets, cobrowse snapshots, transcripts, and visitor page data stay out of operator screens.')
-        ->assertSee('Any future customer-data access must be explicit, time-bound, and audited.');
+        ->assertSee('Customer-data access is explicit, time-bound, and audited: an account grants it for one conversation, site or account, and can end it at any time.');
 });
 
 test('platform operator authority does not bypass dashboard support access', function (): void {
@@ -386,9 +386,9 @@ test('operator console shows a platform action inventory without support data', 
         ->assertSee('Read-only')
         ->assertSee('Instance readiness confirmations')
         ->assertSee('Audited manual proof')
-        ->assertSee('Future break-glass actions')
-        ->assertSee('Not enabled')
-        ->assertSee('Customer-data access requires explicit scope, expiry, approval, and audit before it exists.')
+        ->assertSee('Access to support data')
+        ->assertSee('Only when an account grants it')
+        ->assertSee('The account approves it, sees every page opened, and can end it at any time.')
         ->assertDontSee('WF-ACTIONSECRET')
         ->assertDontSee('Private account audit request')
         ->assertDontSee('Sensitive Action Site')

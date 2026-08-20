@@ -1675,7 +1675,8 @@
         }
 
         .meta-item input,
-        .meta-item select {
+        .meta-item select,
+        .meta-item textarea {
             width: 100%;
             margin-top: 8px;
             border: 1px solid var(--border);
