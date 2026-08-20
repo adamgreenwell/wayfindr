@@ -16,7 +16,8 @@ class VisitorSupportReadiness
      *     checks: array<int, array{action: string, detail: string, href: string|null, key: string, label: string, status: string, status_label: string, summary: string}>,
      *     label: string,
      *     manual_count: int,
-     *     ready_count: int
+     *     ready_count: int,
+     *     status: string
      * }
      */
     public function summary(Collection $sites, array $realtimeHealth, bool $canViewReadiness = false, bool $canManagePrivacy = false): array
@@ -35,12 +36,24 @@ class VisitorSupportReadiness
         $manualCount = count(array_filter($checks, fn (array $check): bool => $check['status'] === 'manual'));
         $readyCount = count(array_filter($checks, fn (array $check): bool => $check['status'] === 'ready'));
 
+        // The scheduler check is always 'manual' -- Wayfindr cannot see cron
+        // from inside the request -- so a two-way label would claim "Ready for
+        // visitors" while the list below it still says something needs
+        // confirming. Manual work is its own state, as it is in
+        // OperatorReadiness::dogfoodSummary().
+        $status = $attentionCount > 0 ? 'attention' : ($manualCount > 0 ? 'manual' : 'ready');
+
         return [
             'attention_count' => $attentionCount,
             'checks' => $checks,
-            'label' => $attentionCount > 0 ? 'Needs attention' : 'Ready for visitors',
+            'label' => match ($status) {
+                'ready' => 'Ready for visitors',
+                'manual' => 'Nearly ready',
+                default => 'Needs attention',
+            },
             'manual_count' => $manualCount,
             'ready_count' => $readyCount,
+            'status' => $status,
         ];
     }
 

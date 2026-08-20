@@ -295,7 +295,12 @@ test('dashboard shows a visitor support readiness checklist', function (): void 
         ->assertSee('Visitor support readiness')
         ->assertSee('6 ready')
         ->assertSee('0 need attention')
-        ->assertSee('1 manual check')
+        ->assertSee('1 to confirm')
+        // Everything automatic passes here, but the scheduler can only be
+        // confirmed by a person, so the panel must not claim the install is
+        // ready for visitors while it still lists something to confirm.
+        ->assertSee('Nearly ready')
+        ->assertDontSee('Ready for visitors')
         ->assertSee('Widget check-in is fresh.')
         ->assertSee('Privacy masking has selectors configured.')
         ->assertSee('Realtime delivery is configured.')
