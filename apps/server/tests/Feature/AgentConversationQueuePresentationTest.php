@@ -7,6 +7,7 @@
 use App\Enums\SiteColor;
 use App\Models\Account;
 use App\Models\Conversation;
+use App\Models\ConversationMessage;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
@@ -114,7 +115,7 @@ test('the switcher walks the queue the agent came from, in the queue order', fun
 
     // Queue order is last_message_at desc, so: Third, Second, First.
     $this->actingAs($agent)
-        ->get('/dashboard/conversations/WF-BBB2')
+        ->get('/dashboard/conversations/WF-BBB2?from_queue=1')
         ->assertOk()
         ->assertSee('aria-label="Move through the conversation queue"', false)
         ->assertSee('2 of 3')
@@ -138,7 +139,7 @@ test('a conversation outside the queue offers no neighbours rather than wrong on
     ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard/conversations/WF-CLOSED1')
+        ->get('/dashboard/conversations/WF-CLOSED1?from_queue=1')
         ->assertOk()
         ->assertDontSee('aria-label="Move through the conversation queue"', false);
 });
@@ -170,9 +171,62 @@ test('the switcher never names a conversation from another account', function ()
     ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard/conversations/WF-MINE1')
+        ->get('/dashboard/conversations/WF-MINE1?from_queue=1')
         ->assertOk()
         ->assertSee('aria-label="Move through the conversation queue"', false)
         ->assertDontSee('Somebody else entirely')
         ->assertDontSee('WF-STRANGER');
+});
+
+test('the switcher survives the new-activity lane marking the conversation read', function (): void {
+    // Opening a conversation marks it read, and the new-activity lane is
+    // DEFINED by unread state -- so computing siblings after that removed the
+    // conversation from its own list and hid the control entirely.
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+
+    foreach (['WF-NEW1', 'WF-NEW2'] as $index => $code) {
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => $code,
+            'subject' => 'Unread '.$code,
+            'status' => 'open',
+            'last_message_at' => now()->subMinutes($index + 1),
+        ]);
+        ConversationMessage::factory()->for($conversation)->create([
+            'sender_type' => Visitor::class,
+            'sender_id' => $visitor->id,
+            'body' => 'Please help.',
+        ]);
+    }
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-NEW1?from_queue=1&conversation_filter=new_activity')
+        ->assertOk()
+        ->assertSee('aria-label="Move through the conversation queue"', false)
+        ->assertSee('1 of 2');
+});
+
+test('a conversation opened outside a queue offers no neighbours', function (): void {
+    // Notifications, tickets, the visitor page and support-code lookup all link
+    // without queue parameters. Treating that as the all-open queue would offer
+    // neighbours from a list the agent never navigated.
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+
+    foreach (['WF-DIRECT1', 'WF-DIRECT2'] as $code) {
+        Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => $code,
+            'subject' => 'Open '.$code,
+            'status' => 'open',
+        ]);
+    }
+
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-DIRECT1')
+        ->assertOk()
+        ->assertDontSee('aria-label="Move through the conversation queue"', false);
 });

@@ -180,7 +180,7 @@
                                     @endphp
                                     <tr>
                                         <td class="wf-queue-subject" style="--wf-row-site: var({{ $conversation->site->resolvedColor()->cssVariable() }})">
-                                            <a href="{{ route('dashboard.conversations.show', ['supportCode' => $conversation->support_code] + $conversationQuery) }}">
+                                            <a href="{{ route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'from_queue' => '1'] + $conversationQuery) }}">
                                                 {{ $conversation->subject ?? 'Untitled conversation' }}
                                             </a>
                                             <span class="wf-queue-preview" title="{{ $activityPreview['body'] }}">

@@ -8,7 +8,7 @@
                         <nav class="wf-switcher" aria-label="Move through the conversation queue">
                             @if ($conversationSiblings['previous'])
                                 <a class="wf-switcher-step" rel="prev" aria-label="Previous conversation in this queue"
-                                   href="{{ route('dashboard.conversations.show', ['supportCode' => $conversationSiblings['previous']] + $conversationReturnQuery) }}">&#8593;</a>
+                                   href="{{ route('dashboard.conversations.show', ['supportCode' => $conversationSiblings['previous'], 'from_queue' => '1'] + $conversationReturnQuery) }}">&#8593;</a>
                             @else
                                 <span class="wf-switcher-step" aria-hidden="true" data-disabled="true">&#8593;</span>
                             @endif
@@ -22,7 +22,7 @@
                                     @foreach ($conversationSiblings['items'] as $sibling)
                                         <a
                                             class="wf-switcher-item"
-                                            href="{{ route('dashboard.conversations.show', ['supportCode' => $sibling['support_code']] + $conversationReturnQuery) }}"
+                                            href="{{ route('dashboard.conversations.show', ['supportCode' => $sibling['support_code'], 'from_queue' => '1'] + $conversationReturnQuery) }}"
                                             @if ($sibling['current']) aria-current="true" @endif
                                         >{{ $sibling['subject'] }}</a>
                                     @endforeach
@@ -31,7 +31,7 @@
 
                             @if ($conversationSiblings['next'])
                                 <a class="wf-switcher-step" rel="next" aria-label="Next conversation in this queue"
-                                   href="{{ route('dashboard.conversations.show', ['supportCode' => $conversationSiblings['next']] + $conversationReturnQuery) }}">&#8595;</a>
+                                   href="{{ route('dashboard.conversations.show', ['supportCode' => $conversationSiblings['next'], 'from_queue' => '1'] + $conversationReturnQuery) }}">&#8595;</a>
                             @else
                                 <span class="wf-switcher-step" aria-hidden="true" data-disabled="true">&#8595;</span>
                             @endif

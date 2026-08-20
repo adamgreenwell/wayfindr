@@ -660,7 +660,7 @@ test('conversation detail links preserve conversation queue return context', fun
     $this->actingAs($agent)
         ->get('/dashboard/conversations?conversation_filter=closed&conversation_site='.$site->id.'&conversation_search=return&ignored=yes')
         ->assertOk()
-        ->assertSee('/dashboard/conversations/WF-RETURN?conversation_filter=closed&amp;conversation_search=return&amp;conversation_site='.$site->id, false)
+        ->assertSee('/dashboard/conversations/WF-RETURN?from_queue=1&amp;conversation_filter=closed&amp;conversation_search=return&amp;conversation_site='.$site->id, false)
         ->assertDontSee('ignored=yes', false);
 
     $this->actingAs($agent)
@@ -1259,7 +1259,7 @@ test('dashboard preserves visitor presence filters when opening a conversation',
         $this->actingAs($agent)
             ->get('/dashboard/conversations?conversation_filter=needs_reply&conversation_site='.$site->id.'&conversation_presence=active&conversation_search=Active')
             ->assertOk()
-            ->assertSee('/dashboard/conversations/WF-PRESERVE?conversation_filter=needs_reply&amp;conversation_search=Active&amp;conversation_site='.$site->id.'&amp;conversation_presence=active', false);
+            ->assertSee('/dashboard/conversations/WF-PRESERVE?from_queue=1&amp;conversation_filter=needs_reply&amp;conversation_search=Active&amp;conversation_site='.$site->id.'&amp;conversation_presence=active', false);
 
         $this->actingAs($agent)
             ->get('/dashboard/conversations/WF-PRESERVE?conversation_filter=needs_reply&conversation_site='.$site->id.'&conversation_presence=active&conversation_search=Active')

@@ -33,12 +33,25 @@ use Illuminate\Validation\ValidationException;
 
 class AgentConversationController extends Controller
 {
+    /** How many conversations either side of the current one the menu lists. */
+    private const SWITCHER_MENU_WINDOW = 25;
+
     public function show(Request $request, string $supportCode, CobrowseConsentState $cobrowseConsentState, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, CobrowseAuditTrail $cobrowseAuditTrail): View
     {
         $agent = $request->user();
 
         $conversation = $this->conversationForAgent($agent, $supportCode, 'view')
             ->load(['assignedAgent', 'latestAgentMessage', 'latestMessage', 'site', 'visitor']);
+
+        $conversationReturnQuery = $this->conversationQueueReturnQuery($request);
+
+        // Computed BEFORE the read state is mutated. The new-activity lane is
+        // defined by withNewActivityFor(), so marking this conversation read
+        // first removes it from its own sibling list -- and the "not in this
+        // queue" branch below then swallows that as if it were intended,
+        // hiding the switcher entirely from the one lane an agent most often
+        // works through.
+        $conversationSiblings = $this->conversationSiblings($agent, $conversation, $conversationReturnQuery, $cobrowseConsentState);
 
         $this->markConversationNotificationsRead($agent, $conversation);
         $conversation->markReadFor($agent);
@@ -55,7 +68,6 @@ class AgentConversationController extends Controller
             ->with(['assignee', 'conversation.latestAgentMessage', 'conversation.latestMessage'])
             ->latest()
             ->get();
-        $conversationReturnQuery = $this->conversationQueueReturnQuery($request);
 
         return view('agent.conversations.show', [
             'account' => $agent->account()->firstOrFail(),
@@ -65,7 +77,7 @@ class AgentConversationController extends Controller
             'conversation' => $conversation,
             'conversationBackUrl' => route('dashboard.conversations.index', $conversationReturnQuery),
             'conversationReturnQuery' => $conversationReturnQuery,
-            'conversationSiblings' => $this->conversationSiblings($agent, $conversation, $conversationReturnQuery),
+            'conversationSiblings' => $conversationSiblings,
             'messages' => $messages,
             'priorConversations' => $this->priorConversations($conversation),
             'realtime' => $this->realtimeConfig($conversation),
@@ -115,16 +127,29 @@ class AgentConversationController extends Controller
      * The conversations either side of this one, in the queue the agent came
      * from (ADR 0014).
      *
-     * The whole point is that an agent working a queue moves conversation to
-     * conversation without a round trip through the index, so this MUST agree
-     * with the queue's own filtering and ordering -- which is why both read
-     * ConversationQueueQuery rather than each stating the rules.
+     * Must agree with the queue exactly -- same filters, same order, same
+     * post-filtering -- which is why both read ConversationQueueQuery instead
+     * of each stating the rules.
      *
      * @param  array<string, mixed>  $returnQuery
      * @return array{items: Collection<int, array{support_code: string, subject: string, current: bool}>, previous: ?string, next: ?string, position: ?int, total: int}
      */
-    private function conversationSiblings(User $agent, Conversation $conversation, array $returnQuery): array
-    {
+    private function conversationSiblings(
+        User $agent,
+        Conversation $conversation,
+        array $returnQuery,
+        CobrowseConsentState $cobrowseConsentState,
+    ): array {
+        $empty = ['items' => collect(), 'previous' => null, 'next' => null, 'position' => null, 'total' => 0];
+
+        // An empty query is NOT the all-open queue. A conversation opened from
+        // a notification, a ticket, the visitor page or a support-code lookup
+        // carries no queue parameters, and treating that as queue context would
+        // offer neighbours from a list the agent never navigated.
+        if (($returnQuery['from_queue'] ?? null) !== '1') {
+            return $empty;
+        }
+
         $lane = (string) ($returnQuery['conversation_filter'] ?? 'all');
         $status = $lane === 'closed' ? 'closed' : 'open';
         $site = $returnQuery['conversation_site'] ?? null;
@@ -140,26 +165,40 @@ class AgentConversationController extends Controller
         ConversationQueueQuery::applyLane($query, $lane, $agent);
         ConversationQueueQuery::ordered($query);
 
-        // Bounded: a desk with thousands of open conversations should not render
-        // thousands of options into every transcript.
-        $siblings = $query->limit(50)->get(['id', 'support_code', 'subject']);
+        $siblings = $query->get(['id', 'support_code', 'subject']);
+
+        // The cobrowse lane is narrowed AFTER the query in the queue itself,
+        // against live transport state. Without the same pass the switcher
+        // lists conversations the queue does not show.
+        if ($lane === 'cobrowse_attention') {
+            $siblings = $siblings
+                ->filter(fn (Conversation $candidate): bool => $cobrowseConsentState->transportNeedsAttention(
+                    $cobrowseConsentState->queueTransportForConversation($candidate)
+                ))
+                ->values();
+        }
 
         $index = $siblings->search(fn (Conversation $candidate): bool => $candidate->id === $conversation->id);
 
         if ($index === false) {
-            // The conversation is not in the queue the agent arrived from --
-            // opened from search, a notification, or a lane it no longer
-            // matches after being replied to. Offering neighbours from a list
-            // it is not part of would be a lie about where "next" goes.
-            return ['items' => collect(), 'previous' => null, 'next' => null, 'position' => null, 'total' => 0];
+            return $empty;
         }
 
+        // Position and neighbours come from the WHOLE queue; only the rendered
+        // menu is bounded. Capping the query instead made the total wrong, cut
+        // the next link at item 50, and removed the control entirely for
+        // anything ranked below that.
+        $windowStart = max(0, $index - self::SWITCHER_MENU_WINDOW);
+
         return [
-            'items' => $siblings->map(fn (Conversation $candidate): array => [
-                'support_code' => $candidate->support_code,
-                'subject' => $candidate->subject ?? 'Untitled conversation',
-                'current' => $candidate->id === $conversation->id,
-            ]),
+            'items' => $siblings
+                ->slice($windowStart, self::SWITCHER_MENU_WINDOW * 2 + 1)
+                ->map(fn (Conversation $candidate): array => [
+                    'support_code' => $candidate->support_code,
+                    'subject' => $candidate->subject ?? 'Untitled conversation',
+                    'current' => $candidate->id === $conversation->id,
+                ])
+                ->values(),
             'previous' => $siblings->get($index - 1)?->support_code,
             'next' => $siblings->get($index + 1)?->support_code,
             'position' => $index + 1,
@@ -170,6 +209,12 @@ class AgentConversationController extends Controller
     private function conversationQueueReturnQuery(Request $request): array
     {
         $params = [];
+
+        // Explicit, so an absent query is never mistaken for "the all-open
+        // queue". Only links rendered BY a queue carry it.
+        if ($request->input('from_queue') === '1' || $request->input('from_queue') === 1) {
+            $params['from_queue'] = '1';
+        }
         $conversationFilters = [
             'new_activity',
             'needs_reply',
