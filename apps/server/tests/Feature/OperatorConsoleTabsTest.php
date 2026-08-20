@@ -3,6 +3,7 @@
 use App\Enums\PlatformRole;
 use App\Models\Account;
 use App\Models\User;
+use App\Support\OperatorReadiness;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -119,4 +120,37 @@ test('tabs badge problems and stay silent about pending work', function (): void
 
     $accessTab = substr($tablist, strpos($tablist, 'data-tab="access"'), 200);
     expect($accessTab)->not->toContain('tabs__badge');
+});
+
+test('a retention failure badges Data, not Health', function (): void {
+    // attention_count folds a retention failure into the install-wide total,
+    // but the checks live on Health and the retention summary lives on Data.
+    // Badging the total on Health would send an operator to a panel of green
+    // checks while the tab holding the actual failure showed nothing.
+    config([
+        'wayfindr.retention' => [
+            'status' => 'attention',
+            'summary' => 'Retention review is overdue for this install.',
+            'description' => 'The operator flagged retention as needing attention before traffic.',
+        ],
+    ]);
+
+    $readiness = app(OperatorReadiness::class)->summary();
+
+    expect($readiness['retention_needs_attention'])->toBeTrue()
+        ->and($readiness['attention_count'])->toBe($readiness['check_attention_count'] + 1);
+
+    $html = operatorConsoleHtml($this);
+    $tablist = substr($html, strpos($html, 'role="tablist"'), 3000);
+
+    $dataTab = substr($tablist, strpos($tablist, 'data-tab="data"'), 220);
+    expect($dataTab)->toContain('tabs__badge');
+
+    // Health may still badge its own failing checks -- it must never inherit
+    // the retention one.
+    $healthTab = substr($tablist, strpos($tablist, 'data-tab="health"'), 220);
+    preg_match('/tabs__badge">(\d+)</', $healthTab, $m);
+    $healthBadge = isset($m[1]) ? (int) $m[1] : 0;
+
+    expect($healthBadge)->toBe($readiness['check_attention_count']);
 });

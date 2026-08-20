@@ -44,6 +44,7 @@ class OperatorReadiness
     /**
      * @return array{
      *     attention_count: int,
+     *     check_attention_count: int,
      *     checks: array<int, array{action: string, commands?: array<int, string>, detail: string, key: string, label: string, status: string, status_label: string, summary: string}>,
      *     cobrowse_budget_defaults: array<int, array{description: string, items: array<int, array{label: string, value: string}>, label: string}>,
      *     dogfood_summary: array{attention_count: int, items: array<int, array{action: string, commands: array<int, string>, detail: string, docs_url: string|null, key: string, label: string, status: string, status_label: string, summary: string}>, label: string, manual_count: int, ready_count: int, status: string, summary: string},
@@ -52,6 +53,7 @@ class OperatorReadiness
      *     next_step: array{action: string, commands?: array<int, string>, detail: string, key: string, label: string, status: string, status_label: string, summary: string},
      *     proof_coverage: array{fresh_count: int, items: array<int, array{key: string, label: string, note_status: string, status: string, status_label: string, summary: string}>, missing_count: int, stale_count: int},
      *     ready_count: int,
+     *     retention_needs_attention: bool,
      *     retention_summary: array{description: string, docs_url: string|null, items: array<int, array{description: string, label: string, value: string}>, label: string, reminders: array<int, string>, status: string, status_label: string, summary: string},
      *     smoke_path: array<int, array{action: string, commands: array<int, string>, key: string, label: string, status: string, status_label: string, summary: string}>
      * }
@@ -81,8 +83,8 @@ class OperatorReadiness
         $retentionSummary = $this->retentionSummary();
         $retentionNeedsAttention = ($retentionSummary['status'] ?? null) === 'attention';
 
-        $attentionCount = count(array_filter($checks, fn (array $check): bool => $check['status'] === 'attention'))
-            + ($retentionNeedsAttention ? 1 : 0);
+        $checkAttentionCount = count(array_filter($checks, fn (array $check): bool => $check['status'] === 'attention'));
+        $attentionCount = $checkAttentionCount + ($retentionNeedsAttention ? 1 : 0);
         $manualCount = count(array_filter($checks, fn (array $check): bool => $check['status'] === 'manual'));
         $readyCount = count(array_filter($checks, fn (array $check): bool => $check['status'] === 'ready'));
         $checksByKey = collect($checks)->keyBy('key')->all();
@@ -91,7 +93,13 @@ class OperatorReadiness
 
         return [
             'attention_count' => $attentionCount,
+            // attention_count covers the whole install, so it answers the
+            // top-line status. These two say WHERE the problem is, which is
+            // what a per-section badge needs: the checks and the retention
+            // summary are read on different screens.
+            'check_attention_count' => $checkAttentionCount,
             'checks' => $checks,
+            'retention_needs_attention' => $retentionNeedsAttention,
             'cobrowse_budget_defaults' => CobrowsePayloadBudget::readinessDefaults(),
             'dogfood_summary' => $this->dogfoodSummary($checksByKey, $smokePathByKey),
             'label' => $attentionCount > 0 ? 'Needs attention' : 'Ready',

@@ -18,9 +18,13 @@
         // resting states (ADR 0014).
         $consoleTabs = [
             ['id' => 'overview', 'label' => 'Overview'],
-            ['id' => 'health', 'label' => 'Health', 'badge' => $readiness['attention_count'] ?: null],
+            // A badge has to point at the tab holding the problem. Health
+            // uses the CHECK-only count, because attention_count also folds in
+            // a retention failure that is read on the Data tab -- badging that
+            // on Health would send an operator to a panel of green checks.
+            ['id' => 'health', 'label' => 'Health', 'badge' => $readiness['check_attention_count'] ?: null],
             ['id' => 'golive', 'label' => 'Go live', 'badge' => $readiness['dogfood_summary']['attention_count'] ?: null],
-            ['id' => 'data', 'label' => 'Data'],
+            ['id' => 'data', 'label' => 'Data', 'badge' => $readiness['retention_needs_attention'] ? 1 : null],
             ['id' => 'access', 'label' => 'Access'],
         ];
     @endphp
@@ -156,8 +160,8 @@
                     <h2>Instance readiness</h2>
                     <p class="lede">Infrastructure checks for this Wayfindr installation.</p>
                 </div>
-                <span class="readiness-status" data-status="{{ $readiness['attention_count'] > 0 ? 'attention' : 'ready' }}">
-                    {{ $readiness['label'] }}
+                <span class="readiness-status" data-status="{{ $readiness['check_attention_count'] > 0 ? 'attention' : 'ready' }}">
+                    {{ $readiness['check_attention_count'] > 0 ? 'Needs attention' : 'Ready' }}
                 </span>
             </div>
 
@@ -168,7 +172,7 @@
                 </div>
                 <div class="meta-item">
                     <span class="meta-label">Needs attention</span>
-                    <span class="meta-value">{{ $readiness['attention_count'] }}</span>
+                    <span class="meta-value">{{ $readiness['check_attention_count'] }}</span>
                 </div>
                 <div class="meta-item">
                     <span class="meta-label">Manual checks</span>
