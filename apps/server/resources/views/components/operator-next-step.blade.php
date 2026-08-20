@@ -22,7 +22,9 @@
             </div>
         </div>
 
-        <p class="lede">{{ $nextStep['detail'] }}</p>
+        @if (($nextStep['detail'] ?? '') !== '')
+            <p class="lede">{{ $nextStep['detail'] }}</p>
+        @endif
         <p class="readiness-action">{{ $nextStep['action'] }}</p>
         <x-operator-readiness-commands :commands="$nextStep['commands'] ?? []" />
         <x-operator-readiness-confirmation-form :action="$confirmationRoute" :item="$nextStep" />

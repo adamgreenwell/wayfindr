@@ -1495,6 +1495,10 @@
         }
 
         .tabs__tab {
+            /* Matches .section[id]: clears the sticky 52px topbar with room to
+               spare, so a deep-linked tab is visible rather than tucked under
+               the header. */
+            scroll-margin-top: 96px;
             appearance: none;
             background: none;
             border: 0;
@@ -1866,6 +1870,7 @@
         }
 
         .readiness-command {
+            min-width: 0;
             align-items: center;
             display: inline-flex;
             gap: 6px;
@@ -1875,6 +1880,9 @@
         .readiness-command code {
             overflow-x: auto;
             white-space: nowrap;
+            /* Without this the code element cannot shrink below its content
+               and a long command overflows the card instead of scrolling. */
+            min-width: 0;
         }
 
         .notice-copy {
