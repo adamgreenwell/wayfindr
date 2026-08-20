@@ -1495,6 +1495,7 @@
         }
 
         .tabs__tab {
+            scroll-margin-top: 24px;
             appearance: none;
             background: none;
             border: 0;
@@ -1866,6 +1867,7 @@
         }
 
         .readiness-command {
+            min-width: 0;
             align-items: center;
             display: inline-flex;
             gap: 6px;
@@ -1875,6 +1877,9 @@
         .readiness-command code {
             overflow-x: auto;
             white-space: nowrap;
+            /* Without this the code element cannot shrink below its content
+               and a long command overflows the card instead of scrolling. */
+            min-width: 0;
         }
 
         .notice-copy {

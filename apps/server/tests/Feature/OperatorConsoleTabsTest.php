@@ -154,3 +154,41 @@ test('a retention failure badges Data, not Health', function (): void {
 
     expect($healthBadge)->toBe($readiness['check_attention_count']);
 });
+
+test('the next step card never prints the same sentence twice', function (): void {
+    // Smoke steps carry one sentence. The card renders summary then detail, so
+    // a fabricated detail showed the identical line twice -- visible on stage
+    // the moment a smoke step became the next step.
+    // With nothing failing, the next step falls through to the smoke path --
+    // which is the only branch that had the bug. Without this the assertion
+    // passes trivially against a check() item that has a real detail.
+    config([
+        'app.url' => 'https://support.example.test',
+        'app.key' => 'base64:'.base64_encode(str_repeat('a', 32)),
+        'broadcasting.default' => 'reverb',
+        'broadcasting.connections.reverb.app_id' => 'wayfindr-production',
+        'broadcasting.connections.reverb.key' => 'wayfindr-key',
+        'broadcasting.connections.reverb.secret' => 'wayfindr-secret',
+        'broadcasting.connections.reverb.options.host' => 'support.example.test',
+        'broadcasting.connections.reverb.options.port' => 443,
+        'broadcasting.connections.reverb.options.scheme' => 'https',
+        'mail.default' => 'smtp',
+        'mail.mailers.smtp.host' => 'smtp.example.test',
+        'mail.mailers.smtp.port' => 587,
+        'mail.from.address' => 'support@example.test',
+        'queue.default' => 'database',
+        'wayfindr.retention' => ['status' => 'ready'],
+    ]);
+
+    $readiness = app(OperatorReadiness::class)->summary();
+    $next = $readiness['next_step'];
+
+    expect($next['status'])->toBe('manual')
+        ->and($next['detail'])->not->toBe($next['summary']);
+
+    $html = operatorConsoleHtml($this);
+    $panel = operatorConsolePanel($html, 'overview');
+    $card = substr($panel, strpos($panel, 'Recommended next step'));
+
+    expect(substr_count($card, e($next['summary'])))->toBe(1);
+});

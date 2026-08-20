@@ -1114,7 +1114,7 @@ class OperatorReadiness
             'ready_count' => $readyCount,
             'status' => $status,
             'summary' => sprintf(
-                '%d ready / %d manual / %d blocked',
+                '%d ready / %d to confirm / %d not ready',
                 $readyCount,
                 $manualCount,
                 $attentionCount,
@@ -1419,9 +1419,12 @@ class OperatorReadiness
 
         foreach ($smokePath as $step) {
             if ($step['status'] === 'manual') {
+                // A smoke step has one sentence, not a summary and a detail.
+                // Copying the summary across made the card print the same line
+                // twice wherever a smoke step was the next step.
                 return [
                     ...$step,
-                    'detail' => $step['summary'],
+                    'detail' => '',
                 ];
             }
         }

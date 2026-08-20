@@ -175,7 +175,7 @@
                     <span class="meta-value">{{ $readiness['check_attention_count'] }}</span>
                 </div>
                 <div class="meta-item">
-                    <span class="meta-label">Manual checks</span>
+                    <span class="meta-label">To confirm</span>
                     <span class="meta-value">{{ $readiness['manual_count'] }}</span>
                 </div>
             </div>
