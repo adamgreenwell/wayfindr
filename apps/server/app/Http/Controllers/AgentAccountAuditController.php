@@ -276,6 +276,17 @@ class AgentAccountAuditController extends Controller
             'agent.reactivated' => 'Agent reactivated',
             'agent.role_changed' => 'Agent role changed',
             'site_access.updated' => 'Site access updated',
+            // Without these the default arm headline-cases the raw action
+            // and the account reads "Break Glass Resource Viewed" in its
+            // own audit log -- the most user-facing place the old term had.
+            'break_glass.requested' => 'Operator access requested',
+            'break_glass.approved' => 'Operator access approved',
+            'break_glass.self_approved' => 'Operator access self-approved',
+            'break_glass.denied' => 'Operator access denied',
+            'break_glass.opened' => 'Operator started viewing',
+            'break_glass.resource_viewed' => 'Operator viewed a record',
+            'break_glass.closed' => 'Operator access ended',
+            'break_glass.expired' => 'Operator access expired',
             default => str($action)->replace(['.', '_'], ' ')->headline()->toString(),
         };
     }

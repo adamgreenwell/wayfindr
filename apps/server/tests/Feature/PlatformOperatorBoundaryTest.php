@@ -299,7 +299,7 @@ test('operator console explains the platform support data boundary', function ()
         ->assertSee('Operator access')
         ->assertSee('Available — the account decides')
         ->assertSee('Conversations, tickets, cobrowse snapshots, transcripts, and visitor page data stay out of operator screens.')
-        ->assertSee('Any future customer-data access must be explicit, time-bound, and audited.');
+        ->assertSee('Customer-data access is explicit, time-bound, and audited: an account grants it for one conversation, site or account, and can end it at any time.');
 });
 
 test('platform operator authority does not bypass dashboard support access', function (): void {

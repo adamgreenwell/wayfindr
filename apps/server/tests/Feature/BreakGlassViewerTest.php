@@ -319,7 +319,7 @@ test('the account audit page names exactly what an operator reached', function (
     $this->actingAs($admin)
         ->get(route('dashboard.account.audit.index'))
         ->assertOk()
-        ->assertSee('Break Glass Resource Viewed')
+        ->assertSee('Operator viewed a record')
         ->assertSee('Operator access: Conversation '.$w['conversation']->support_code);
 });
 

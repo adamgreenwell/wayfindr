@@ -3,7 +3,7 @@
     <p class="lede">
         You cannot see any account's conversations or tickets by default. Ask here when you
         need to, for one conversation, one site or one account. The account sees your reason,
-        approves or refuses it, and can end it at any point. Access is read-only and expires on
+        approves or denies it, and can end it at any point. Access is read-only and expires on
         its own, and every page you open is recorded for them.
     </p>
 
