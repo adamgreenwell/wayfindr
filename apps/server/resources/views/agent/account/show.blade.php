@@ -66,7 +66,7 @@
                 if ($canViewAlertDelivery && $agentAlertReadinessSummary) {
                     $accountMapItems[] = [
                         'label' => 'Team alert readiness',
-                        'detail' => 'Notification delivery posture across active agents.',
+                        'detail' => 'Whether your active agents can actually receive notifications.',
                         'href' => '#team-alert-readiness-heading',
                     ];
                 }

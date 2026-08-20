@@ -5,8 +5,8 @@
 <section class="section" aria-labelledby="operator-dogfood-summary-heading">
     <div class="section-header">
         <div>
-            <h2 id="operator-dogfood-summary-heading">Dogfood readiness</h2>
-            <p class="lede">Controlled MVP gates for demo and staging use.</p>
+            <h2 id="operator-dogfood-summary-heading">Before real support traffic</h2>
+            <p class="lede">What should be true before this install answers real visitors.</p>
         </div>
         <span class="readiness-status" data-status="{{ $dogfoodSummary['status'] }}">
             {{ $dogfoodSummary['label'] }}
@@ -19,17 +19,17 @@
             <span class="meta-value">{{ $dogfoodSummary['ready_count'] }}</span>
         </div>
         <div class="meta-item">
-            <span class="meta-label">Manual proof</span>
+            <span class="meta-label">To confirm</span>
             <span class="meta-value">{{ $dogfoodSummary['manual_count'] }}</span>
         </div>
         <div class="meta-item">
-            <span class="meta-label">Blocked</span>
+            <span class="meta-label">Not ready</span>
             <span class="meta-value">{{ $dogfoodSummary['attention_count'] }}</span>
         </div>
     </div>
 
     <div class="notice-copy">
-        <p>{{ $dogfoodSummary['summary'] }}. These gates intentionally stay metadata-only and avoid customer support data.</p>
+        <p>{{ $dogfoodSummary['summary'] }}. These checks read configuration only. None of them opens a conversation or a ticket.</p>
     </div>
 
     <div class="readiness-list">

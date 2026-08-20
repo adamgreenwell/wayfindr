@@ -5,8 +5,8 @@
 <section class="section" aria-labelledby="operator-retention-summary-heading">
     <div class="section-header">
         <div>
-            <h2 id="operator-retention-summary-heading">Retention posture</h2>
-            <p class="lede">Plain-language data retention visibility for this install.</p>
+            <h2 id="operator-retention-summary-heading">How long data is kept</h2>
+            <p class="lede">What this install stores, and for how long.</p>
         </div>
         <span class="readiness-status" data-status="{{ $retentionSummary['status'] }}">
             {{ $retentionSummary['status_label'] }}
@@ -15,7 +15,7 @@
 
     <div class="meta-grid readiness-summary-grid">
         <div class="meta-item">
-            <span class="meta-label">Current posture</span>
+            <span class="meta-label">Current setting</span>
             <span class="meta-value">{{ $retentionSummary['label'] }}</span>
         </div>
         @foreach ($retentionSummary['items'] as $item)

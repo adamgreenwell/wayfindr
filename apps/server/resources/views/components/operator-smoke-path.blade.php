@@ -6,8 +6,8 @@
 <section class="section" aria-labelledby="post-install-smoke-path-heading">
     <div class="section-header">
         <div>
-            <h2 id="post-install-smoke-path-heading">Post-install smoke path</h2>
-            <p class="lede">A practical proof path before the install carries real visitor conversations.</p>
+            <h2 id="post-install-smoke-path-heading">Prove the install works</h2>
+            <p class="lede">Do these once, in order, before this install carries real conversations.</p>
         </div>
         <span class="lede">{{ count($smokePath) }} steps</span>
     </div>

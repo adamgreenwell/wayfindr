@@ -44,7 +44,7 @@ test('account owner can inspect operator readiness diagnostics', function (): vo
     $this->actingAs($agent)
         ->get('/operator')
         ->assertOk()
-        ->assertSee('Operator readiness')
+        ->assertSee('Instance readiness')
         ->assertSee('Application key')
         ->assertSee('Database connection')
         ->assertSee('Public URL')
@@ -55,11 +55,11 @@ test('account owner can inspect operator readiness diagnostics', function (): vo
         ->assertSee('Scheduler')
         ->assertSee('Backups and restore')
         ->assertSee('Ready')
-        ->assertSee('Dogfood readiness')
-        ->assertSee('Controlled MVP gates for demo and staging use.')
-        ->assertSee('Full support-loop smoke')
+        ->assertSee('Before real support traffic')
+        ->assertSee('What should be true before this install answers real visitors.')
+        ->assertSee('A full support conversation, end to end')
         ->assertSee('Data responsibility review')
-        ->assertSee('Retention posture')
+        ->assertSee('How long data is kept')
         ->assertSee('Cobrowse page content is pruned automatically; broader retention stays operator-owned.')
         ->assertSee('Application records')
         ->assertSee('Automatic deletion')
@@ -69,7 +69,7 @@ test('account owner can inspect operator readiness diagnostics', function (): vo
         ->assertSee('php artisan schedule:run')
         ->assertSee('php artisan reverb:start --host=127.0.0.1 --port=8080')
         ->assertSee('php artisan reverb:restart')
-        ->assertSee('Post-install smoke path')
+        ->assertSee('Prove the install works')
         ->assertSee('Recommended next step')
         ->assertSee('data-copy-value="php artisan wayfindr:mail-test --to=you@example.com"', false)
         ->assertSee('data-copy-value="php artisan queue:failed"', false)
@@ -78,8 +78,8 @@ test('account owner can inspect operator readiness diagnostics', function (): vo
         ->assertDontSee('data-copy-value="php artisan wayfindr:send-alert-digests"', false)
         ->assertSee('Confirm background workers')
         ->assertSee('Open the public app URL')
-        ->assertSee('Send a widget smoke test')
-        ->assertSee('Run cobrowse transport smoke')
+        ->assertSee('Send a test message from the widget')
+        ->assertSee('Check cobrowse can connect')
         ->assertSee('php artisan wayfindr:cobrowse-transport-smoke')
         ->assertSee('Confirm backups can restore');
 });
@@ -218,7 +218,7 @@ test('readiness diagnostics recommend manual smoke confirmation when no attentio
         'confirmable' => true,
         'label' => 'Confirm background workers',
         'status' => 'manual',
-        'status_label' => 'Manual check',
+        'status_label' => 'Confirm this',
         'summary' => 'Queues and the scheduler need process-manager coverage outside the request lifecycle.',
         'action' => 'Confirm php artisan queue:work is managed by Forge, Supervisor, systemd, or your host; run php artisan queue:failed to inspect failures; verify * * * * * cd /path/to/apps/server && php artisan schedule:run is configured once per minute; and confirm php artisan wayfindr:send-alert-digests appears in php artisan schedule:list.',
     ]);
@@ -664,7 +664,7 @@ test('readiness diagnostics mark stale confirmations as refresh due', function (
         ->manual_count->toBe(2)
         ->and($scheduler)->toMatchArray([
             'status' => 'manual',
-            'status_label' => 'Refresh due',
+            'status_label' => 'Due again',
             'summary' => 'Scheduler confirmation needs refresh.',
         ])
         ->and($scheduler['confirmation'])->toMatchArray([
@@ -677,7 +677,7 @@ test('readiness diagnostics mark stale confirmations as refresh due', function (
         ])
         ->and($backups)->toMatchArray([
             'status' => 'manual',
-            'status_label' => 'Refresh due',
+            'status_label' => 'Due again',
             'summary' => 'Backups and restore confirmation needs refresh.',
         ])
         ->and($backups['confirmation'])->toMatchArray([
@@ -687,18 +687,18 @@ test('readiness diagnostics mark stale confirmations as refresh due', function (
         ])
         ->and($backgroundProcesses)->toMatchArray([
             'status' => 'manual',
-            'status_label' => 'Refresh due',
+            'status_label' => 'Due again',
             'confirmation_key' => 'scheduler',
         ])
         ->and($backupRestore)->toMatchArray([
             'status' => 'manual',
-            'status_label' => 'Refresh due',
+            'status_label' => 'Due again',
             'confirmation_key' => 'backups_restore',
         ])
         ->and($readiness['next_step'])->toMatchArray([
             'key' => 'background_processes',
             'status' => 'manual',
-            'status_label' => 'Refresh due',
+            'status_label' => 'Due again',
         ]);
 });
 
@@ -932,7 +932,7 @@ test('readiness security posture flags debug mode enabled in production', functi
     $security = collect($readiness['checks'])->firstWhere('key', 'security_posture');
 
     expect($security)->toMatchArray([
-        'label' => 'Security posture',
+        'label' => 'Debug mode',
         'status' => 'attention',
         'summary' => 'Debug mode is enabled in production.',
         'commands' => ['php artisan config:cache'],
@@ -949,7 +949,7 @@ test('readiness security posture is ready when debug is disabled in production',
     $security = collect($readiness['checks'])->firstWhere('key', 'security_posture');
 
     expect($security)->toMatchArray([
-        'label' => 'Security posture',
+        'label' => 'Debug mode',
         'status' => 'ready',
         'summary' => 'Debug mode is disabled.',
     ]);
@@ -1105,15 +1105,15 @@ test('readiness diagnostics include a guided post install smoke path', function 
         ]),
         fn ($step) => $step->toMatchArray([
             'key' => 'widget_smoke',
-            'label' => 'Send a widget smoke test',
+            'label' => 'Send a test message from the widget',
             'status' => 'ready',
         ]),
         fn ($step) => $step->toMatchArray([
             'key' => 'cobrowse_transport_smoke',
-            'label' => 'Run cobrowse transport smoke',
+            'label' => 'Check cobrowse can connect',
             'status' => 'ready',
             'status_label' => 'No data yet',
-            'action' => 'Run php artisan wayfindr:cobrowse-transport-smoke from apps/server after a consented widget smoke test, then review aggregate transport state before relying on cobrowse.',
+            'action' => 'Run php artisan wayfindr:cobrowse-transport-smoke from apps/server after a consented widget test, then review aggregate transport state before relying on cobrowse.',
             'commands' => ['php artisan wayfindr:cobrowse-transport-smoke'],
         ]),
         fn ($step) => $step->toMatchArray([
@@ -1148,7 +1148,7 @@ test('readiness diagnostics include a dogfood gate summary', function (): void {
 
     expect($summary)->toMatchArray([
         'status' => 'manual',
-        'label' => 'Manual proof needed',
+        'label' => 'Waiting on you',
         'attention_count' => 0,
     ])
         ->and(array_keys($items->all()))->toBe([
@@ -1167,11 +1167,11 @@ test('readiness diagnostics include a dogfood gate summary', function (): void {
             'status' => 'ready',
         ])
         ->and($items->get('host_widget_install'))->toMatchArray([
-            'label' => 'Host project widget install',
+            'label' => 'Widget installed on the real site',
             'status' => 'manual',
         ])
         ->and($items->get('support_loop_smoke'))->toMatchArray([
-            'label' => 'Full support-loop smoke',
+            'label' => 'A full support conversation, end to end',
             'status' => 'manual',
         ])
         ->and($items->get('support_loop_smoke')['commands'][0])->toContain('scripts/smoke/support-loop.sh')
@@ -1181,7 +1181,7 @@ test('readiness diagnostics include a dogfood gate summary', function (): void {
             'status' => 'manual',
         ])
         ->and($items->get('operator_boundary'))->toMatchArray([
-            'label' => 'Operator readiness boundary',
+            'label' => 'Readiness stays out of support data',
             'status' => 'ready',
         ])
         ->and($items->get('data_responsibility'))->toMatchArray([
@@ -1317,11 +1317,11 @@ test('dogfood support loop gate allows manual refresh when realtime is not ready
         'status' => 'attention',
     ])
         ->and($supportLoop)->toMatchArray([
-            'label' => 'Full support-loop smoke',
+            'label' => 'A full support conversation, end to end',
             'status' => 'manual',
-            'status_label' => 'Manual proof',
+            'status_label' => 'Confirm this',
         ])
-        ->and($supportLoop['summary'])->toContain('Manual refresh remains acceptable')
+        ->and($supportLoop['summary'])->toContain('manual refresh is acceptable')
         ->and($supportLoop['detail'])->toContain('manual refresh as a stated fallback');
 });
 
@@ -1353,13 +1353,13 @@ test('dogfood support loop gate blocks when queue workers are disabled', functio
     ])
         ->and($readiness['dogfood_summary'])->toMatchArray([
             'status' => 'attention',
-            'label' => 'Dogfood blocked',
+            'label' => 'Not ready yet',
         ])
         ->and($supportLoop)->toMatchArray([
-            'label' => 'Full support-loop smoke',
+            'label' => 'A full support conversation, end to end',
             'status' => 'attention',
             'status_label' => 'Needs attention',
-            'summary' => 'Fix the blocked app/runtime checks before running the browser-backed support-loop smoke.',
+            'summary' => 'Fix the failing app and runtime checks before running the scripted support loop.',
         ]);
 });
 
@@ -1380,7 +1380,7 @@ test('dogfood gate summary blocks on insecure public app urls', function (): voi
 
     expect($summary)->toMatchArray([
         'status' => 'attention',
-        'label' => 'Dogfood blocked',
+        'label' => 'Not ready yet',
     ])
         ->and($items->get('production_https_host'))->toMatchArray([
             'status' => 'attention',
@@ -1444,7 +1444,7 @@ test('readiness smoke path reflects cobrowse transport attention without leaking
     $step = collect($readiness['smoke_path'])->firstWhere('key', 'cobrowse_transport_smoke');
 
     expect($step)->toMatchArray([
-        'label' => 'Run cobrowse transport smoke',
+        'label' => 'Check cobrowse can connect',
         'status' => 'attention',
         'status_label' => 'Needs attention',
         'summary' => '1 active cobrowse session needs transport attention.',
@@ -1488,9 +1488,9 @@ test('readiness smoke path preserves cobrowse manual remediation when transport 
     $step = collect($readiness['smoke_path'])->firstWhere('key', 'cobrowse_transport_smoke');
 
     expect($step)->toMatchArray([
-        'label' => 'Run cobrowse transport smoke',
+        'label' => 'Check cobrowse can connect',
         'status' => 'manual',
-        'status_label' => 'Manual check',
+        'status_label' => 'Confirm this',
         'summary' => 'Cobrowse transport readiness could not inspect active sessions.',
         'action' => 'Confirm the database is reachable, run php artisan migrate --force if needed, then rerun php artisan wayfindr:cobrowse-transport-smoke.',
     ])

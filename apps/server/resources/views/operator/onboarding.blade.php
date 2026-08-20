@@ -79,7 +79,7 @@
             <p>
                 This is the short path to a running install. The operator console has the
                 <a class="text-link" href="{{ route('operator.dashboard') }}">full instance diagnostic</a>
-                — every check, smoke path, and readiness proof.
+                — every check, setup step, and confirmation.
             </p>
         </div>
     </section>

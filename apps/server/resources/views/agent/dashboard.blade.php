@@ -119,13 +119,13 @@
                         <h2 id="visitor-support-readiness-heading">Visitor support readiness</h2>
                     </div>
                     <div class="section-actions">
-                        <span class="readiness-status" data-status="{{ $visitorSupportReadiness['attention_count'] > 0 ? 'attention' : 'ready' }}">
+                        <span class="readiness-status" data-status="{{ $visitorSupportReadiness['status'] }}">
                             {{ $visitorSupportReadiness['label'] }}
                         </span>
                         <span class="lede">
                             {{ $visitorSupportReadiness['ready_count'] }} ready
                             · {{ $visitorSupportReadiness['attention_count'] }} {{ $visitorSupportReadiness['attention_count'] === 1 ? 'needs' : 'need' }} attention
-                            · {{ $visitorSupportReadiness['manual_count'] }} {{ \Illuminate\Support\Str::plural('manual check', $visitorSupportReadiness['manual_count']) }}
+                            · {{ $visitorSupportReadiness['manual_count'] }} to confirm
                         </span>
                     </div>
                 </div>
