@@ -18,7 +18,7 @@ test('cobrowse smoke command reports no-data readiness without failing', functio
         ->and(Artisan::output())->toContain('Wayfindr cobrowse transport smoke')
         ->toContain('Status: No data yet')
         ->toContain('Summary: No active cobrowse transport samples yet.')
-        ->toContain('Next step: Run the widget smoke path with cobrowse consent before relying on cobrowse for real visitor support.');
+        ->toContain('Next step: Send a test message from the widget with cobrowse consent before relying on cobrowse for real visitor support.');
 });
 
 test('cobrowse smoke command prints static payload budgets without leaking support data', function (): void {
@@ -210,7 +210,7 @@ test('cobrowse smoke command treats pending first transport reports as manual bu
     $exitCode = Artisan::call('wayfindr:cobrowse-transport-smoke');
 
     expect($exitCode)->toBe(0)
-        ->and(Artisan::output())->toContain('Status: Manual check')
+        ->and(Artisan::output())->toContain('Status: Confirm this')
         ->toContain('1 active cobrowse session is waiting for transport reports.')
         ->toContain('confirm the widget can reach the cobrowse telemetry endpoints');
 });
@@ -224,7 +224,7 @@ test('cobrowse smoke command reports a manual check when cobrowse sessions canno
     $exitCode = Artisan::call('wayfindr:cobrowse-transport-smoke');
 
     expect($exitCode)->toBe(0)
-        ->and(Artisan::output())->toContain('Status: Manual check')
+        ->and(Artisan::output())->toContain('Status: Confirm this')
         ->toContain('Cobrowse transport readiness could not inspect active sessions.')
         ->toContain('Check database connectivity and run migrations');
 });
@@ -238,7 +238,7 @@ test('cobrowse smoke command reports a manual check when cobrowse sessions table
     $exitCode = Artisan::call('wayfindr:cobrowse-transport-smoke');
 
     expect($exitCode)->toBe(0)
-        ->and(Artisan::output())->toContain('Status: Manual check')
+        ->and(Artisan::output())->toContain('Status: Confirm this')
         ->toContain('Cobrowse transport readiness could not inspect active sessions.')
         ->toContain('Check database connectivity and run migrations');
 });

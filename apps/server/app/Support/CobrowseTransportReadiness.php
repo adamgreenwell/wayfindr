@@ -41,7 +41,7 @@ class CobrowseTransportReadiness
                 status: 'ready',
                 summary: 'No active cobrowse transport samples yet.',
                 detail: 'Cobrowse health will appear after a visitor grants consent and the widget reports telemetry.',
-                action: 'Run the widget smoke path with cobrowse consent before relying on cobrowse for real visitor support.',
+                action: 'Send a test message from the widget with cobrowse consent before relying on cobrowse for real visitor support.',
                 statusLabel: 'No data yet',
             );
         }
@@ -86,7 +86,7 @@ class CobrowseTransportReadiness
                 str('session')->plural($activeCount),
             ),
             detail: 'Aggregate signals: '.$this->stateSummary($states).'.',
-            action: 'Keep dogfooding cobrowse on representative pages and review this check after deploys, Reverb changes, or widget configuration changes.',
+            action: 'Keep exercising cobrowse on representative pages and review this check after deploys, Reverb changes, or widget configuration changes.',
         );
     }
 
@@ -171,7 +171,7 @@ class CobrowseTransportReadiness
             'status' => $status,
             'status_label' => $statusLabel ?? match ($status) {
                 'ready' => 'Ready',
-                'manual' => 'Manual check',
+                'manual' => 'Confirm this',
                 default => 'Needs attention',
             },
             'summary' => $summary,

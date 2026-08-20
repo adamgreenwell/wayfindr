@@ -29,7 +29,7 @@
         <div class="section-header">
             <div>
                 <h2 id="operator-focus-heading">Operator focus</h2>
-                <p class="lede">Current instance posture, without opening customer support data.</p>
+                <p class="lede">How this installation is doing, without opening customer support data.</p>
             </div>
             <span class="readiness-status" data-status="{{ $readiness['attention_count'] > 0 ? 'attention' : 'ready' }}">
                 {{ $readiness['label'] }}
@@ -38,11 +38,11 @@
 
         <div class="meta-grid realtime-grid">
             <div class="meta-item">
-                <span class="meta-label">Posture</span>
+                <span class="meta-label">Status</span>
                 <span class="meta-value">{{ $readiness['label'] }}</span>
             </div>
             <div class="meta-item">
-                <span class="meta-label">Proof coverage</span>
+                <span class="meta-label">Confirmed checks</span>
                 <span class="meta-value">{{ $proofCoverageSummary }}</span>
             </div>
             <div class="meta-item">
@@ -182,30 +182,30 @@
     <section class="section" aria-labelledby="readiness-proof-coverage-heading">
         <div class="section-header">
             <div>
-                <h2 id="readiness-proof-coverage-heading">Readiness proof coverage</h2>
-                <p class="lede">Manual operational evidence without replaying note contents.</p>
+                <h2 id="readiness-proof-coverage-heading">What you have confirmed</h2>
+                <p class="lede">Some checks only a person can make. This tracks when each was last confirmed, never what the note said.</p>
             </div>
         </div>
 
         <div class="meta-grid readiness-summary-grid">
             <div class="meta-item">
-                <span class="meta-label">Fresh proofs</span>
-                <span class="meta-value">{{ $readiness['proof_coverage']['fresh_count'] }} current</span>
+                <span class="meta-label">Confirmed recently</span>
+                <span class="meta-value">{{ $readiness['proof_coverage']['fresh_count'] }}</span>
             </div>
             <div class="meta-item">
-                <span class="meta-label">Refresh due</span>
-                <span class="meta-value">{{ $readiness['proof_coverage']['stale_count'] }} stale</span>
+                <span class="meta-label">Due again</span>
+                <span class="meta-value">{{ $readiness['proof_coverage']['stale_count'] }}</span>
             </div>
             <div class="meta-item">
-                <span class="meta-label">Missing proofs</span>
-                <span class="meta-value">{{ $readiness['proof_coverage']['missing_count'] }} missing</span>
+                <span class="meta-label">Never confirmed</span>
+                <span class="meta-value">{{ $readiness['proof_coverage']['missing_count'] }}</span>
             </div>
         </div>
 
         <div class="notice-copy notice-copy-bordered">
             <p>
-                Manual proof notes stay out of this summary. Use notes only for operational evidence,
-                not support codes, visitor identifiers, conversation text, or ticket details.
+                Your notes are never shown here. Keep them to what you did, and leave out support codes,
+                visitor identifiers, conversation text, and ticket details.
             </p>
         </div>
 
@@ -230,8 +230,8 @@
     <section class="section" aria-labelledby="operator-boundary-inventory-heading">
         <div class="section-header">
             <div>
-                <h2 id="operator-boundary-inventory-heading">Boundary inventory</h2>
-                <p class="lede">A quick map of what platform operators can inspect here.</p>
+                <h2 id="operator-boundary-inventory-heading">What an operator can see</h2>
+                <p class="lede">What this console shows you, and what it keeps closed.</p>
             </div>
         </div>
 
@@ -266,21 +266,21 @@
     <section class="section" aria-labelledby="operator-action-inventory-heading">
         <div class="section-header">
             <div>
-                <h2 id="operator-action-inventory-heading">Platform action inventory</h2>
-                <p class="lede">The operator console lists instance-level actions without making support data an input.</p>
+                <h2 id="operator-action-inventory-heading">What an operator can do</h2>
+                <p class="lede">Actions here affect the installation, never a customer's conversations or tickets.</p>
             </div>
         </div>
 
         <div class="meta-grid readiness-summary-grid">
             <div class="meta-item">
-                <span class="meta-label">Current safe actions</span>
+                <span class="meta-label">Available actions</span>
                 <span class="meta-value">Read-only</span>
                 <p class="lede">System identity and release checks help operators verify what is running.</p>
             </div>
             <div class="meta-item">
-                <span class="meta-label">Instance readiness confirmations</span>
-                <span class="meta-value">Audited manual proof</span>
-                <p class="lede">Manual backup, scheduler, and restore confirmations record safe operator evidence.</p>
+                <span class="meta-label">Readiness confirmations</span>
+                <span class="meta-value">Recorded and audited</span>
+                <p class="lede">Confirming backups, the scheduler or a restore records who did it and when.</p>
             </div>
             <div class="meta-item">
                 <span class="meta-label">Access to support data</span>

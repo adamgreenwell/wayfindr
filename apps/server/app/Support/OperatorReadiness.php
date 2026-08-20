@@ -192,7 +192,7 @@ class OperatorReadiness
         if ($debugEnabled && app()->environment('production')) {
             return $this->check(
                 key: 'security_posture',
-                label: 'Security posture',
+                label: 'Debug mode',
                 status: 'attention',
                 summary: 'Debug mode is enabled in production.',
                 detail: 'APP_DEBUG=true in production exposes stack traces, environment values, and configuration to anyone who triggers an error, which can leak database credentials, API keys, and visitor data.',
@@ -204,7 +204,7 @@ class OperatorReadiness
         if ($debugEnabled) {
             return $this->check(
                 key: 'security_posture',
-                label: 'Security posture',
+                label: 'Debug mode',
                 status: 'ready',
                 summary: sprintf('Debug mode is on in the %s environment.', $environment),
                 detail: 'Debug mode is expected outside production. A production install must keep APP_DEBUG=false so errors never expose stack traces, environment values, or secrets.',
@@ -215,7 +215,7 @@ class OperatorReadiness
 
         return $this->check(
             key: 'security_posture',
-            label: 'Security posture',
+            label: 'Debug mode',
             status: 'ready',
             summary: 'Debug mode is disabled.',
             detail: sprintf('APP_DEBUG is off in the %s environment, so application errors will not expose stack traces, environment values, or secrets.', $environment),
@@ -469,7 +469,7 @@ class OperatorReadiness
             status: 'ready',
             summary: sprintf('QUEUE_CONNECTION is %s.', $connection),
             detail: 'The queue driver is configured for background work.',
-            action: 'Confirm php artisan queue:work is managed by Forge, Supervisor, systemd, or your deployment platform, then run php artisan queue:failed after smoke tests to inspect failures.',
+            action: 'Confirm php artisan queue:work is managed by Forge, Supervisor, systemd, or your deployment platform, then run php artisan queue:failed after testing to inspect failures.',
             commands: ['php artisan queue:work', 'php artisan queue:failed']
         );
     }
@@ -933,19 +933,19 @@ class OperatorReadiness
             ),
             $this->smokeStep(
                 key: 'widget_smoke',
-                label: 'Send a widget smoke test',
+                label: 'Send a test message from the widget',
                 status: $this->statusFromCheck($checks, 'realtime_broadcasting'),
                 summary: 'The real support loop is visitor message, agent reply, and live updates without manual refresh.',
-                action: 'Install the widget on a smoke site, send a visitor message, reply as an agent, and confirm both sides update.'
+                action: 'Install the widget on a test site, send a visitor message, reply as an agent, and confirm both sides update without a refresh.'
             ),
             $this->smokeStep(
                 key: 'cobrowse_transport_smoke',
-                label: 'Run cobrowse transport smoke',
+                label: 'Check cobrowse can connect',
                 status: $this->statusFromCheck($checks, 'cobrowse_transport'),
                 summary: $cobrowseTransportCheck['summary'] ?? 'Confirm aggregate cobrowse transport state before relying on cobrowse.',
                 action: ($cobrowseTransportCheck['status'] ?? null) === 'manual'
                     ? $cobrowseTransportCheck['action']
-                    : 'Run php artisan wayfindr:cobrowse-transport-smoke from apps/server after a consented widget smoke test, then review aggregate transport state before relying on cobrowse.',
+                    : 'Run php artisan wayfindr:cobrowse-transport-smoke from apps/server after a consented widget test, then review aggregate transport state before relying on cobrowse.',
                 statusLabel: $cobrowseTransportCheck['status_label'] ?? null,
                 commands: ($cobrowseTransportCheck['status'] ?? null) === 'manual'
                     ? []
@@ -1006,7 +1006,7 @@ class OperatorReadiness
                 label: 'Production-like HTTPS host',
                 status: $this->statusFromCheck($checks, 'public_url'),
                 summary: $checks['public_url']['summary'] ?? 'Confirm the public app URL is the HTTPS URL used for the demo.',
-                detail: 'Agents, widgets, cookies, callbacks, and smoke scripts need the same public HTTPS origin.',
+                detail: 'Agents, widgets, cookies, callbacks, and setup scripts need the same public HTTPS origin.',
                 action: 'Open APP_URL from outside the server, confirm /up returns 200, then sign in from /login on that public domain.',
             ),
             $this->dogfoodGate(
@@ -1019,23 +1019,23 @@ class OperatorReadiness
             ),
             $this->dogfoodGate(
                 key: 'host_widget_install',
-                label: 'Host project widget install',
+                label: 'Widget installed on the real site',
                 status: $this->statusFromCheck($checks, 'public_url') === 'attention' ? 'attention' : 'manual',
                 summary: 'Confirm the real host page loads the intended Wayfindr widget and site public key.',
-                detail: 'The host project is outside this app, so the strongest proof is the browser-backed smoke script against the live host page.',
-                action: 'Run the full support-loop smoke with the real host page URL before demo traffic arrives.',
+                detail: 'The host project is outside this app, so the strongest evidence is the scripted browser run against the live host page.',
+                action: 'Run the full support-loop script with the real host page URL before real traffic arrives.',
                 commands: [$supportLoopCommand],
             ),
             $this->dogfoodGate(
                 key: 'support_loop_smoke',
-                label: 'Full support-loop smoke',
+                label: 'A full support conversation, end to end',
                 status: $supportLoopStatus,
                 summary: $supportLoopStatus === 'attention'
-                    ? 'Fix the blocked app/runtime checks before running the browser-backed support-loop smoke.'
-                    : 'Run the browser-backed smoke from widget load through ticket creation. Manual refresh remains acceptable if realtime is not demo-ready.',
+                    ? 'Fix the failing app and runtime checks before running the scripted support loop.'
+                    : 'Run the scripted support loop from widget load through ticket creation. Falling back to a manual refresh is acceptable if realtime is not ready.',
                 detail: $widgetSmoke
-                    ? sprintf('Current live-update signal: %s. The MVP dogfood loop can still pass with manual refresh as a stated fallback.', $widgetSmoke['summary'])
-                    : 'The MVP dogfood loop must prove visitor message, agent reply, support-code lookup, and ticket creation.',
+                    ? sprintf('Current live-update signal: %s. This can still pass with a manual refresh as a stated fallback.', rtrim($widgetSmoke['summary'], '.'))
+                    : 'One run must prove visitor message, agent reply, support-code lookup, and ticket creation.',
                 action: 'Run scripts/smoke/support-loop.sh with the staging app URL, host page URL, site public key, and disposable demo agent credentials.',
                 commands: [$supportLoopCommand],
                 docsUrl: 'https://github.com/adamgreenwell/wayfindr/blob/main/docs/product/mvp-demo-rehearsal.md#full-support-loop-smoke',
@@ -1047,8 +1047,8 @@ class OperatorReadiness
                 summary: $ticketWorkflowStatus === 'attention'
                     ? 'Fix database or storage readiness before relying on tickets.'
                     : 'Manually prove ticket assignment, labels, replies, status changes, and support-code lookup.',
-                detail: 'The smoke creates the first ticket; the demo rehearsal should also work the ticket through the human-facing lifecycle.',
-                action: 'After the smoke creates a ticket, assign it, label it, reply, move it through one status change, and find it again by support code.',
+                detail: 'That run creates the first ticket; the ticket should then be worked through the lifecycle a person would use.',
+                action: 'Once that ticket exists, assign it, label it, reply, move it through one status change, and find it again by support code.',
             ),
             $this->dogfoodGate(
                 key: 'alerts_email',
@@ -1057,7 +1057,7 @@ class OperatorReadiness
                 summary: $alertStatus === 'attention'
                     ? 'Mail, scheduler, or digest delivery needs attention before email alerts are part of the demo.'
                     : 'Confirm alert preferences and email delivery match the demo agent configuration.',
-                detail: 'Dogfood does not require every agent to use email, but configured alert paths should be honest before a live demo.',
+                detail: 'Not every agent needs email, but any alert path that is configured should actually work.',
                 action: 'Run the mail test, confirm scheduler status, and verify alert preference behavior for the disposable demo agent.',
                 commands: ['php artisan wayfindr:mail-test --to=you@example.com', 'php artisan schedule:list'],
             ),
@@ -1066,16 +1066,16 @@ class OperatorReadiness
                 label: 'Consent-based cobrowse observe mode',
                 status: $this->statusFromCheck($checks, 'cobrowse_transport'),
                 summary: $checks['cobrowse_transport']['summary'] ?? 'Confirm cobrowse transport before relying on observe mode.',
-                detail: 'The dogfood demo should request observe-only cobrowse, receive explicit visitor consent, and avoid pre-consent page state.',
-                action: 'Run a consented cobrowse smoke after the support-loop smoke, then confirm aggregate transport state stays healthy.',
+                detail: 'Cobrowse should be requested observe-only, receive explicit visitor consent, and show no page state before that consent.',
+                action: 'Run a consented cobrowse session after the support loop, then confirm aggregate transport state stays healthy.',
                 commands: ['php artisan wayfindr:cobrowse-transport-smoke'],
             ),
             $this->dogfoodGate(
                 key: 'operator_boundary',
-                label: 'Operator readiness boundary',
+                label: 'Readiness stays out of support data',
                 status: 'ready',
-                summary: 'Operator readiness surfaces show instance posture without customer support data.',
-                detail: 'The operator console is for runtime gaps, safe activity, smoke guidance, and manual evidence status.',
+                summary: 'Readiness shows how the installation is doing, without customer support data.',
+                detail: 'The operator console is for runtime gaps, safe activity, setup guidance, and what has been confirmed.',
                 action: 'Use /operator and /dashboard/readiness during the demo, and keep conversation bodies, ticket contents, visitor identifiers, and proof notes out of operator review.',
             ),
             $this->dogfoodGate(
@@ -1098,9 +1098,9 @@ class OperatorReadiness
             'attention_count' => $attentionCount,
             'items' => $items,
             'label' => match ($status) {
-                'ready' => 'Ready for controlled dogfood',
-                'manual' => 'Manual proof needed',
-                default => 'Dogfood blocked',
+                'ready' => 'Ready for real traffic',
+                'manual' => 'Waiting on you',
+                default => 'Not ready yet',
             },
             'manual_count' => $manualCount,
             'ready_count' => $readyCount,
@@ -1138,7 +1138,7 @@ class OperatorReadiness
             'status' => $status,
             'status_label' => match ($status) {
                 'ready' => 'Ready',
-                'manual' => 'Manual proof',
+                'manual' => 'Confirm this',
                 default => 'Needs attention',
             },
             'summary' => $summary,
@@ -1255,7 +1255,7 @@ class OperatorReadiness
                 confirmable: true,
                 confirmation: $confirmationPayload,
                 confirmationKey: $key,
-                statusLabel: $isStale ? 'Refresh due' : null,
+                statusLabel: $isStale ? 'Due again' : null,
                 commands: $commands,
             );
         }
@@ -1341,7 +1341,7 @@ class OperatorReadiness
                         ? 'Evidence note recorded'
                         : 'No evidence note recorded',
                     'status' => $isStale ? 'stale' : 'fresh',
-                    'status_label' => $isStale ? 'Refresh due' : 'Fresh',
+                    'status_label' => $isStale ? 'Due again' : 'Confirmed',
                     'summary' => $summary,
                 ];
             })
@@ -1400,9 +1400,9 @@ class OperatorReadiness
         if (($retentionSummary['status'] ?? null) === 'attention') {
             return $this->check(
                 key: 'retention_posture',
-                label: 'Fix retention posture',
+                label: 'Fix how long data is kept',
                 status: 'attention',
-                summary: $this->stringOrDefault($retentionSummary['summary'] ?? null, 'Retention posture needs attention.'),
+                summary: $this->stringOrDefault($retentionSummary['summary'] ?? null, 'Data retention needs attention.'),
                 detail: $this->stringOrDefault($retentionSummary['description'] ?? null, 'A configured retention status is blocking readiness.'),
                 action: 'Resolve the configured retention attention before onboarding real visitor traffic.',
                 statusLabel: $this->stringOrNull($retentionSummary['status_label'] ?? null),
@@ -1423,7 +1423,7 @@ class OperatorReadiness
             label: 'Ready for traffic',
             status: 'ready',
             summary: 'No readiness items need attention.',
-            detail: 'Keep smoke tests, mail checks, queue monitoring, and restore checks in the operator rhythm.',
+            detail: 'Keep setup tests, mail checks, queue monitoring, and restore checks in the operator rhythm.',
             action: 'Onboard real sites gradually, starting with a low-risk support surface.'
         );
     }
@@ -1456,7 +1456,7 @@ class OperatorReadiness
             'status' => $status,
             'status_label' => $statusLabel ?? match ($status) {
                 'ready' => 'Ready',
-                'manual' => 'Manual check',
+                'manual' => 'Confirm this',
                 default => 'Needs attention',
             },
             'summary' => $summary,
@@ -1489,7 +1489,7 @@ class OperatorReadiness
             'status' => $status,
             'status_label' => $statusLabel ?? match ($status) {
                 'ready' => 'Ready',
-                'manual' => 'Manual check',
+                'manual' => 'Confirm this',
                 default => 'Needs attention',
             },
             'summary' => $summary,

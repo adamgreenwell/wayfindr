@@ -254,7 +254,7 @@ test('dashboard shows a visitor support readiness checklist', function (): void 
         ->assertSee('Set up realtime delivery')
         ->assertSee('Move queues out of sync mode')
         ->assertSee('Confirm scheduler job')
-        ->assertSee('Manual check')
+        ->assertSee('Confirm this')
         ->assertSee('Run a first test conversation')
         ->assertSee('Open tester')
         ->assertSee('Ask an account owner or admin to add mask selectors before cobrowse is used with real visitors.')

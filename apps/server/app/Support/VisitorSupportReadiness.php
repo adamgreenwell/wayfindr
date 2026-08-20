@@ -38,7 +38,7 @@ class VisitorSupportReadiness
         return [
             'attention_count' => $attentionCount,
             'checks' => $checks,
-            'label' => $attentionCount > 0 ? 'Needs attention' : 'Ready enough to dogfood',
+            'label' => $attentionCount > 0 ? 'Needs attention' : 'Ready for visitors',
             'manual_count' => $manualCount,
             'ready_count' => $readyCount,
         ];
@@ -57,7 +57,7 @@ class VisitorSupportReadiness
                 status: 'ready',
                 summary: $sites->count().' visible '.str('site')->plural($sites->count()).' connected.',
                 detail: 'Wayfindr has at least one support site to serve.',
-                action: 'Add additional sites when you are ready to dogfood more properties.',
+                action: 'Add more sites when you are ready to support more properties.',
                 href: route('dashboard.sites.index')
             );
         }
@@ -180,7 +180,7 @@ class VisitorSupportReadiness
                 status: 'ready',
                 summary: 'Realtime delivery is configured.',
                 detail: 'Reverb is ready for live chat and cobrowse updates.',
-                action: 'Keep reverb:restart in the deploy script so long-running workers refresh.',
+                action: 'Reverb should restart on deploy so long-running workers pick up new code.',
                 href: $canViewReadiness ? route('operator.dashboard') : null
             );
         }
@@ -190,8 +190,8 @@ class VisitorSupportReadiness
             label: 'Set up realtime delivery',
             status: 'attention',
             summary: 'Realtime delivery needs setup.',
-            detail: 'Live chat can fall back, but Reverb should be configured before serious dogfooding.',
-            action: 'Review Reverb credentials and public host settings.',
+            detail: 'Live chat can fall back to manual refresh, but Reverb should be configured before real visitor traffic.',
+            action: 'Reverb credentials and the public host setting must be complete before live updates work.',
             href: $canViewReadiness ? route('operator.dashboard') : null
         );
     }
@@ -210,7 +210,7 @@ class VisitorSupportReadiness
                 status: 'attention',
                 summary: "Queue driver is {$connection}.",
                 detail: 'Synchronous queues are fine locally, but support alerts and background work need a durable worker in production.',
-                action: 'Use database or redis queues and run a queue worker.',
+                action: 'Queues must run on database or redis with a worker process, or alerts and background work are not durable.',
                 href: $canViewReadiness ? route('operator.dashboard') : null
             );
         }
@@ -221,7 +221,7 @@ class VisitorSupportReadiness
             status: 'ready',
             summary: "Queue driver is {$connection}.",
             detail: 'Background work can leave the request lifecycle.',
-            action: 'Confirm a queue worker is running under Forge, Supervisor, systemd, or your host.',
+            action: 'A queue worker must be running for background work to leave the request.',
             href: $canViewReadiness ? route('operator.dashboard') : null
         );
     }
@@ -236,8 +236,8 @@ class VisitorSupportReadiness
             label: 'Confirm scheduler job',
             status: 'manual',
             summary: 'Scheduler must be confirmed outside the request.',
-            detail: 'Wayfindr cannot prove cron from the dashboard, but operators should run the Laravel scheduler once per minute.',
-            action: 'Configure * * * * * php artisan schedule:run, then keep this on the operator checklist.',
+            detail: 'Wayfindr cannot see cron from inside the app, so this one has to be confirmed by hand.',
+            action: 'The Laravel scheduler must run every minute: * * * * * php artisan schedule:run',
             href: $canViewReadiness ? route('operator.dashboard') : null
         );
     }
@@ -314,7 +314,7 @@ class VisitorSupportReadiness
             'status' => $status,
             'status_label' => match ($status) {
                 'ready' => 'Ready',
-                'manual' => 'Manual check',
+                'manual' => 'Confirm this',
                 default => 'Needs attention',
             },
             'summary' => $summary,
