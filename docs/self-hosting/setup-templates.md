@@ -88,7 +88,7 @@ docker compose --env-file docker/self-hosting/.env -f docker/self-hosting/compos
 ```
 
 Then visit `/setup` on the public `APP_URL`, create the first operator/account
-owner, and follow `/operator` or `/dashboard/readiness`.
+owner, and follow `/operator`.
 
 ## Secret Generation
 

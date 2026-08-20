@@ -263,8 +263,8 @@ replay, which remains recommended against as originally specced.
   judgment (dedicated `attachments*` disks only, no exposure markers, ACL
   allowlist) — used by upload routing AND the sweep; never bypass it. Scanning
   runs synchronously pre-store via the `AttachmentScanner` binding.
-- **Operator readiness** (`/dashboard/readiness` admin, `/operator` platform
-  operator) is the app's own ops checklist — trust it over guessing.
+- **Operator readiness** (`/operator`, platform operator only) is the app's own
+  ops checklist — trust it over guessing.
 
 ---
 
@@ -317,7 +317,7 @@ Ordered by real dogfood value and dependency, not feature novelty.
 
 2. **Operate the real dogfood loop.** Route Wayfindr support through Wayfindr,
    keep synthetic smoke records distinguishable from real work, and let actual
-   conversations choose the next branch-sized slice. Watch `/dashboard/readiness`,
+   conversations choose the next branch-sized slice. Watch `/operator`,
    `/operator`, failed queue jobs, mail, and realtime after deploys, but do not
    turn routine observation into a new ceremony layer.
 

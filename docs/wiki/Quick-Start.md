@@ -86,7 +86,7 @@ trusted once per machine.
 ## 4. Finish First-Run Setup
 
 Visit `/setup`, create the first account owner and site, then review `/operator`
-and `/dashboard/readiness`. Before using real visitor data:
+as the platform operator. Before using real visitor data:
 
 1. Configure and smoke-test outbound mail.
 2. Confirm the queue, backup queue, scheduler, and Reverb are healthy.

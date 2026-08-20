@@ -203,7 +203,7 @@ reports *something* — but a bare `-dev` names the lineage, not the build. Sett
 them pins the exact build, which is what lets version checks actually verify:
 without it, a **restore cannot confirm an archive matches this install** and
 keeps the site in maintenance for you to check (ADR 0012). They also make
-`/operator` and `/dashboard/readiness` far more useful when someone needs to
+`/operator` far more useful when someone needs to
 confirm what is running.
 
 ## Deploy Flow
@@ -312,7 +312,7 @@ After deploy:
 
 1. Visit `/setup` and create the first account owner and install site.
 2. Sign in and open the generated site install snippet.
-3. Review `/operator` or `/dashboard/readiness`.
+3. Review `/operator`.
 4. Resolve any app key, database, queue, mail, Reverb, storage, scheduler, or
    backup warnings.
 5. Send a real mail smoke test with `php artisan wayfindr:mail-test

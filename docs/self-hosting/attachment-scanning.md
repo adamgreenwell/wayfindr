@@ -89,7 +89,7 @@ reaches the disk.
 
 ## Readiness
 
-The **Attachment scanning** check on `/operator` and `/dashboard/readiness`
+The **Attachment scanning** check on `/operator`
 reflects the live state:
 
 - **Ready** — no scanner configured (defense-in-depth), _or_ the configured
