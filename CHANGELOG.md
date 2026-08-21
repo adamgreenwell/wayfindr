@@ -30,7 +30,15 @@ missed while skimming.
 
 ## [Unreleased]
 
-Nothing yet.
+**No operator action required.** Pull, restart, and migrations run themselves.
+
+### Fixed
+
+- **The installer no longer sends you to the old readiness address.** Its closing
+  message pointed at `/dashboard/readiness`, which 0.6.0 made operator-only. The
+  link still resolves — it redirects, and the account you create at `/setup` is
+  the install's first platform operator — but it named a page that had moved. It
+  now points at `/operator` and says why that account can open it.
 
 ## [0.6.0] - 2026-08-21
 
