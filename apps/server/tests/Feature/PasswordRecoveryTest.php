@@ -4,12 +4,15 @@ use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\User;
-use Illuminate\Auth\Notifications\ResetPassword;
+use App\Notifications\ResetPasswordLink;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
@@ -30,7 +33,7 @@ test('an agent can ask for a reset link', function (): void {
         ->assertRedirect()
         ->assertSessionHas('status');
 
-    Notification::assertSentTo($agent, ResetPassword::class);
+    Notification::assertSentTo($agent, ResetPasswordLink::class);
 });
 
 test('an unknown address gets the same answer as a real one', function (): void {
@@ -47,7 +50,7 @@ test('an unknown address gets the same answer as a real one', function (): void 
         ->and(session()->get('status'))->not->toBeNull();
 
     $unknown->assertSessionHasNoErrors();
-    Notification::assertSentTimes(ResetPassword::class, 1);
+    Notification::assertSentTimes(ResetPasswordLink::class, 1);
 });
 
 test('a reset link sets a new password and the old one stops working', function (): void {
@@ -206,4 +209,93 @@ test('the login page offers recovery', function (): void {
     agentNeedingRecovery();
 
     $this->get(route('login'))->assertOk()->assertSee(route('password.request'), false);
+});
+
+test('requesting a link does not consume the quota for using one', function (): void {
+    // Sharing a bucket let an attacker spend an agent's completion allowance
+    // just by requesting links for their address -- their valid token would be
+    // refused before it was read, repeatably.
+    Notification::fake();
+    $agent = agentNeedingRecovery();
+    $token = Password::createToken($agent);
+
+    foreach (range(1, 6) as $ignored) {
+        $this->post(route('password.email'), ['email' => $agent->email]);
+    }
+
+    $this->post(route('password.update'), [
+        'token' => $token,
+        'email' => $agent->email,
+        'password' => 'a-brand-new-password',
+        'password_confirmation' => 'a-brand-new-password',
+    ])->assertRedirect(route('login'));
+
+    expect(Hash::check('a-brand-new-password', $agent->fresh()->password))->toBeTrue();
+});
+
+test('the reset link is queued rather than sent inside the request', function (): void {
+    // Sending inline leaked which addresses exist: a known one paid for an SMTP
+    // round trip and could 500, an unknown one returned immediately either way.
+    Notification::fake();
+    $agent = agentNeedingRecovery();
+
+    $this->post(route('password.email'), ['email' => $agent->email]);
+
+    Notification::assertSentTo($agent, ResetPasswordLink::class, function (ResetPasswordLink $notification): bool {
+        return $notification instanceof ShouldQueue;
+    });
+});
+
+test('sessions are deleted from the connection the session store uses', function (): void {
+    // SESSION_CONNECTION can point away from the default. Deleting from the
+    // default would succeed against an empty table while the real sessions
+    // stayed valid -- the guarantee failing silently.
+    //
+    // A file-backed store, because two ':memory:' connections are two separate
+    // databases and would prove nothing about which one was written to.
+    $file = tempnam(sys_get_temp_dir(), 'wf-sessions-').'.sqlite';
+    touch($file);
+
+    config([
+        'session.driver' => 'database',
+        'session.connection' => 'session_store',
+        'database.connections.session_store' => [
+            'driver' => 'sqlite',
+            'database' => $file,
+            'prefix' => '',
+            'foreign_key_constraints' => false,
+        ],
+    ]);
+
+    Schema::connection('session_store')->create('sessions', function (Blueprint $table): void {
+        $table->string('id')->primary();
+        $table->foreignId('user_id')->nullable()->index();
+        $table->string('ip_address', 45)->nullable();
+        $table->text('user_agent')->nullable();
+        $table->longText('payload');
+        $table->integer('last_activity')->index();
+    });
+
+    Notification::fake();
+    $agent = agentNeedingRecovery();
+
+    DB::connection('session_store')->table('sessions')->insert([
+        'id' => 'session-on-other-connection',
+        'user_id' => $agent->id,
+        'ip_address' => '127.0.0.1',
+        'user_agent' => 'test',
+        'payload' => base64_encode(serialize([])),
+        'last_activity' => now()->getTimestamp(),
+    ]);
+
+    $this->post(route('password.update'), [
+        'token' => Password::createToken($agent),
+        'email' => $agent->email,
+        'password' => 'a-brand-new-password',
+        'password_confirmation' => 'a-brand-new-password',
+    ])->assertRedirect(route('login'));
+
+    expect(DB::connection('session_store')->table('sessions')->where('user_id', $agent->id)->count())->toBe(0);
+
+    @unlink($file);
 });

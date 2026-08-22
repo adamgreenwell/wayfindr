@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password as PasswordRule;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 /**
  * Recovering an account without an operator.
@@ -41,7 +42,17 @@ class PasswordResetController extends Controller
             'email' => ['required', 'email'],
         ]);
 
-        $status = Password::sendResetLink(['email' => $validated['email']]);
+        try {
+            $status = Password::sendResetLink(['email' => $validated['email']]);
+        } catch (Throwable $exception) {
+            // Delivery is queued, so this is a broken queue rather than a
+            // broken mailer -- but a known address must not fail differently
+            // from an unknown one even then, because the difference is the
+            // answer to "does this agent exist".
+            report($exception);
+
+            $status = Password::RESET_LINK_SENT;
+        }
 
         if ($status === Password::RESET_LINK_SENT) {
             $this->audit('password_reset.requested', $validated['email']);
@@ -119,7 +130,12 @@ class PasswordResetController extends Controller
             return;
         }
 
-        DB::table(config('session.table', 'sessions'))
+        // On the connection the session store actually uses. SESSION_CONNECTION
+        // can point somewhere other than the default, and deleting from the
+        // default would quietly succeed against an empty table while the live
+        // sessions stayed valid -- the guarantee failing silently.
+        DB::connection(config('session.connection'))
+            ->table(config('session.table', 'sessions'))
             ->where('user_id', $user->id)
             ->delete();
     }

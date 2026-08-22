@@ -83,14 +83,25 @@ class AppServiceProvider extends ServiceProvider
 
     private function configureRateLimiters(): void
     {
-        // Password reset is unauthenticated and sends mail, so it is throttled on
-        // both the address and the source. Keying on the address alone would let
-        // one attacker deny an agent their own recovery; keying on IP alone
-        // would let a distributed source farm one address.
-        RateLimiter::for('password-reset', fn (Request $request): array => [
-            Limit::perMinute(5)->by('password-reset-ip:'.$request->ip()),
-            Limit::perMinutes(15, 5)->by('password-reset-email:'.Str::lower((string) $request->input('email'))),
+        // Asking for a reset link is unauthenticated and sends mail, so it is
+        // throttled on both the address and the source. Keying on the address
+        // alone would let one attacker deny an agent their own recovery;
+        // keying on the source alone would let a distributed one farm a single
+        // address.
+        RateLimiter::for('password-reset-request', fn (Request $request): array => [
+            Limit::perMinute(5)->by('password-reset-request-ip:'.$request->ip()),
+            Limit::perMinutes(15, 5)->by('password-reset-request-email:'.Str::lower((string) $request->input('email'))),
         ]);
+
+        // SUBMITTING a reset carries its own quota, deliberately separate from
+        // the one above. Sharing a bucket meant an attacker could spend an
+        // agent's completion allowance just by requesting links for their
+        // address, and keep doing it every window -- the agent's valid token
+        // would be refused before it was read. Keyed on the source only, for
+        // the same reason: an address-keyed bucket here is the denial.
+        RateLimiter::for('password-reset-submit', fn (Request $request): Limit => Limit::perMinute(10)->by(
+            'password-reset-submit-ip:'.$request->ip()
+        ));
 
         RateLimiter::for(
             'widget-bootstrap',
