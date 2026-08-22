@@ -208,15 +208,27 @@ test('the audit log shows the code, never the visitor-authored subject', functio
         ->assertDontSee('4111 1111 1111 1111');
 });
 
-// NOT COVERED BY A TEST, deliberately: the concurrent-close race needs two
-// simultaneous requests against a real database, and the suite runs SQLite
-// in-memory on one connection. A test that constructs a "stale" instance proves
-// nothing, because conversationForAgent() loads its own fresh copy either way --
-// the first version of this test passed with the lock removed.
+// NOT COVERED BY A TEST, deliberately, and this is the second time it has been
+// worth saying so. Two behaviours here need genuinely simultaneous requests
+// against a real database, and the suite runs SQLite in-memory on one
+// connection:
 //
-// What is covered is the transition guard above ("a close submitted twice
-// records one close"). The lock is what makes that guard hold when the two
-// requests overlap rather than follow each other.
+//   1. Two concurrent closes recording one event rather than two.
+//   2. A transition that loses the race changing nothing rather than writing
+//      through the losing request's stale originals -- Eloquent compares
+//      against the attributes THAT request read, so a reopen that waited
+//      behind a close would find "open" unchanged, omit status from the
+//      update, and leave the row closed while recording a reopen.
+//
+// Both attempts to test these passed with the fix removed, because
+// conversationForAgent() loads its own fresh copy and a "stale" instance built
+// in the test process never reaches the controller. A test that cannot fail is
+// worse than an admission that there isn't one.
+//
+// What is covered is the transition guard ("a close submitted twice records one
+// close") and the atomicity ("a failed lifecycle write takes the status change
+// down with it"). The lock, and writing through the locked instance, are what
+// make those hold when requests overlap instead of following each other.
 
 test('a failed lifecycle write takes the status change down with it', function (): void {
     // Committing the status first and recording after can leave a transition

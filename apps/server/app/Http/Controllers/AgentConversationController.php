@@ -412,10 +412,21 @@ class AgentConversationController extends Controller
             $locked = Conversation::query()->whereKey($conversation->getKey())->lockForUpdate()->first();
             $previousStatus = (string) ($locked?->status ?? $conversation->status);
 
-            $conversation->forceFill([
+            // Written through the LOCKED instance, not the one this request
+            // loaded before it waited. Eloquent compares against the original
+            // attributes it read: a reopen that loaded "open", then waited
+            // behind a close, would find "open" unchanged and omit status from
+            // the update -- leaving the row closed while the callback recorded
+            // a reopen that never happened.
+            $target = $locked ?? $conversation;
+
+            $target->forceFill([
                 'status' => $status,
                 'closed_at' => $closedAt,
             ])->save();
+
+            // Keep the caller's instance honest about what is now stored.
+            $conversation->setRawAttributes($target->getAttributes(), true);
 
             // Written while the lock is still held. Committing the status first
             // and recording after lets a reopen that grabs the released lock
