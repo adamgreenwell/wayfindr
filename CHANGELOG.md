@@ -48,7 +48,9 @@ The interface renovation described in ADR 0014 lands in this release. **The
 dashboard looks substantially different** — a permanent sidebar instead of a row
 of tabs, a new typeface, denser queues, a colour per site, and a dark mode. Your
 data, URLs, and the install snippet on your pages are untouched; this is the same
-application wearing a different face.
+application wearing a different face. Screenshots of the queue, a conversation,
+dark mode, and the operator console are on the
+[0.6.0 release page](https://github.com/adamgreenwell/wayfindr/releases/tag/v0.6.0).
 
 The operator side got the same treatment, plus a pass over its wording: pages
 are named for what they do rather than for the mechanism behind them, and the
