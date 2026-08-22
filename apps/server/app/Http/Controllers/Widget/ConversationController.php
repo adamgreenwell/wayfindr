@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\Visitor;
+use App\Support\Sites\SiteAvailability;
+use App\Support\Sites\SiteIntake;
 use App\Support\VisitorContextSanitizer;
 use App\Support\VisitorSessionToken;
 use App\Support\WidgetSiteResolver;
@@ -17,6 +19,14 @@ class ConversationController extends Controller
 {
     public function store(Request $request, VisitorSessionToken $visitorSessionToken, VisitorContextSanitizer $visitorContextSanitizer): JsonResponse
     {
+        // The site has to be resolved before the intake rules are known, and the
+        // intake rules are part of validation -- so this runs in two passes
+        // rather than one. The alternative is trusting the widget about what it
+        // was asked to collect, which is not a thing a public endpoint may do.
+        $site = WidgetSiteResolver::resolveOrFail((string) $request->input('site_public_key'));
+        $intake = SiteIntake::for($site);
+        $away = ! SiteAvailability::for($site)->open;
+
         $validated = $request->validate([
             'site_public_key' => ['required', 'string', 'max:255'],
             'anonymous_id' => ['required', 'string', 'max:255'],
@@ -25,9 +35,7 @@ class ConversationController extends Controller
             'subject' => ['nullable', 'string', 'max:255'],
             'page_url' => ['nullable', 'url', 'max:2048'],
             'context' => ['nullable', 'array', 'max:50'],
-        ]);
-
-        $site = WidgetSiteResolver::resolveOrFail($validated['site_public_key']);
+        ] + $intake->validationRules($away));
 
         $visitor = $visitorSessionToken->visitorFromRequest($request, $site, $validated['anonymous_id']);
 
@@ -39,7 +47,9 @@ class ConversationController extends Controller
                 $validated['context'] ?? null,
             ),
             'last_seen_at' => now(),
-        ] + $this->externalIdentifierUpdate($site, $visitor, $validated, $visitorContextSanitizer))->save();
+        ]
+            + $this->externalIdentifierUpdate($site, $visitor, $validated, $visitorContextSanitizer)
+            + $this->intakeAnswers($validated))->save();
 
         $conversation = Conversation::query()->create([
             'site_id' => $site->id,
@@ -47,9 +57,13 @@ class ConversationController extends Controller
             'support_code' => $this->generateSupportCode(),
             'status' => 'open',
             'subject' => $validated['subject'] ?? null,
-            'metadata' => [
+            'metadata' => array_filter([
                 'started_page_url' => $validated['page_url'] ?? null,
-            ],
+                // The reason belongs to this conversation, not to the person:
+                // the next one may be about something else entirely. Name and
+                // email go on the visitor, where they are reusable.
+                'reason' => $this->trimmedOrNull($validated['visitor_reason'] ?? null),
+            ], fn ($value): bool => $value !== null),
         ]);
 
         return response()->json([
@@ -62,6 +76,37 @@ class ConversationController extends Controller
                 ],
             ],
         ], 201);
+    }
+
+    /**
+     * Name and email land on the visitor, so the next visit already knows them.
+     *
+     * Only non-empty answers are written. An optional field left blank must not
+     * erase what a previous conversation captured.
+     *
+     * @param  array<string, mixed>  $validated
+     * @return array<string, string>
+     */
+    private function intakeAnswers(array $validated): array
+    {
+        $answers = [];
+
+        foreach (['name', 'email'] as $field) {
+            $value = $this->trimmedOrNull($validated['visitor_'.$field] ?? null);
+
+            if ($value !== null) {
+                $answers[$field] = $value;
+            }
+        }
+
+        return $answers;
+    }
+
+    private function trimmedOrNull(mixed $value): ?string
+    {
+        $text = is_string($value) ? trim($value) : '';
+
+        return $text === '' ? null : $text;
     }
 
     private function generateSupportCode(): string
