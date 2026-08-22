@@ -73,9 +73,13 @@ missed while skimming.
   remembered for the visitor's next visit; the reason belongs to the conversation
   it was given for.
 
-  A visitor your own site already identified through the SDK is not asked again.
-  **Out of hours an email is always required**, whatever you otherwise ask,
-  because it is the only way back to somebody who arrived at 3am.
+  **A question already answered is not asked again** — a stored name or email
+  turns that field off on the next visit, and a stored address also satisfies the
+  out-of-hours rule. The reason is asked each time, because it belongs to the
+  conversation it was given for.
+
+  **Out of hours an email is required**, whatever you otherwise ask, because it
+  is the only way back to somebody who arrived at 3am.
 
   Sites that configure nothing ask nothing, exactly as before.
 

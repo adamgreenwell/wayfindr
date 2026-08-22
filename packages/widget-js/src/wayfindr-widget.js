@@ -584,6 +584,7 @@
     var intakeState = null;
     var intakeConfig = null;
     var intakeAnswered = false;
+    var intakeAnsweredSignature = '';
     // Only the newest bootstrap may touch the panel; anything older is a stale
     // answer that would overwrite it.
     var bootstrapSequence = 0;
@@ -2064,8 +2065,24 @@
       refreshIntakeGate();
     }
 
+    function intakeSignature(state) {
+      return state
+        ? state.fields.map(function (field) { return field.name + ':' + field.required; }).join('|')
+        : '';
+    }
+
     function refreshIntakeGate() {
       intakeState = supportCode ? null : intakeConfig;
+
+      // Answering covers the questions that were ASKED. Crossing a closing
+      // time makes an email newly required, and treating the earlier answer as
+      // covering it hid a field the server now demands -- a 422 no amount of
+      // reopening could clear, because the flag never reset.
+      var signature = intakeSignature(intakeState);
+
+      if (signature !== intakeAnsweredSignature) {
+        intakeAnswered = false;
+      }
 
       if (!intakeState || intakeAnswered) {
         intakeForm.hidden = true;
@@ -2141,6 +2158,7 @@
       }
 
       intakeAnswered = true;
+      intakeAnsweredSignature = intakeSignature(intakeState);
       intakeForm.hidden = true;
       setIntakeGate(false);
 

@@ -189,64 +189,95 @@ test('an unrecognised mode is treated as off', function (): void {
         ->and(SiteIntake::for($site)->asks())->toBeFalse();
 });
 
-test('an identified visitor is not blocked by fields the widget never showed them', function (): void {
-    // The widget hid the form for identified visitors while the server still
-    // required the answers, so those visitors got a 422 and could not start a
-    // conversation at all. One rule now decides both.
-    $site = intakeSite(['name' => SiteIntake::REQUIRED, 'email' => SiteIntake::REQUIRED]);
-    $visitor = Visitor::factory()->for($site)->create(['external_id' => 'customer-42']);
+test('a claimed identity does not waive what the operator made required', function (): void {
+    // external_id is asserted by the host page and arrives through a public
+    // endpoint, so waiving on it let any visitor turn off every required field
+    // by setting one. An answer we hold is evidence; a claim is not.
+    $site = intakeSite(['name' => SiteIntake::REQUIRED]);
+    $visitor = Visitor::factory()->for($site)->create([
+        'external_id' => 'anything-i-like',
+        'name' => null,
+    ]);
 
     $this->postJson('/api/conversations', [
         'site_public_key' => $site->public_key,
         'anonymous_id' => $visitor->anonymous_id,
         'visitor_token' => app(VisitorSessionToken::class)->issue($site, $visitor),
-        'subject' => 'Something is broken',
+    ])->assertStatus(422)->assertJsonValidationErrors('visitor_name');
+});
+
+test('a question already answered is not asked again', function (): void {
+    // The promise the feature makes: answer once, and the next visit knows.
+    $site = intakeSite(['name' => SiteIntake::REQUIRED, 'email' => SiteIntake::REQUIRED]);
+    $visitor = Visitor::factory()->for($site)->create([
+        'name' => 'Avery Lane',
+        'email' => 'avery@example.test',
+    ]);
+
+    $this->postJson('/api/conversations', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => $visitor->anonymous_id,
+        'visitor_token' => app(VisitorSessionToken::class)->issue($site, $visitor),
     ])->assertSuccessful();
 });
 
-test('an identified visitor is still asked for an email out of hours', function (): void {
-    // Identification does not make somebody reachable: an external ID is
-    // deliberately not an email.
-    $site = intakeSite(['name' => SiteIntake::REQUIRED], [
+test('a stored address satisfies the out-of-hours requirement', function (): void {
+    // The rule is reachability, not ceremony. If we can already email them,
+    // asking again out of hours achieves nothing.
+    $site = intakeSite([], [
         'enabled' => true,
         'timezone' => 'UTC',
         'weekdays' => array_fill_keys(SiteAvailability::DAYS, null),
     ]);
-    $visitor = Visitor::factory()->for($site)->create(['external_id' => 'customer-42']);
 
-    $payload = [
+    $unknown = Visitor::factory()->for($site)->create(['email' => null]);
+    $known = Visitor::factory()->for($site)->create(['email' => 'avery@example.test']);
+
+    $this->postJson('/api/conversations', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => $unknown->anonymous_id,
+        'visitor_token' => app(VisitorSessionToken::class)->issue($site, $unknown),
+    ])->assertStatus(422)->assertJsonValidationErrors('visitor_email');
+
+    $this->postJson('/api/conversations', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => $known->anonymous_id,
+        'visitor_token' => app(VisitorSessionToken::class)->issue($site, $known),
+    ])->assertSuccessful();
+});
+
+test('a reason is asked every time, because it belongs to the conversation', function (): void {
+    $site = intakeSite(['reason' => SiteIntake::REQUIRED]);
+    $visitor = Visitor::factory()->for($site)->create(['name' => 'Avery Lane']);
+
+    $this->postJson('/api/conversations', [
         'site_public_key' => $site->public_key,
         'anonymous_id' => $visitor->anonymous_id,
         'visitor_token' => app(VisitorSessionToken::class)->issue($site, $visitor),
-    ];
-
-    $this->postJson('/api/conversations', $payload)
-        ->assertStatus(422)
-        ->assertJsonValidationErrors('visitor_email');
-
-    // The name they were not asked for is not demanded either.
-    $this->postJson('/api/conversations', $payload + ['visitor_email' => 'known@example.test'])
-        ->assertSuccessful();
+    ])->assertStatus(422)->assertJsonValidationErrors('visitor_reason');
 });
 
 test('bootstrap and the endpoint agree on what is asked', function (): void {
-    // They disagreed once, and the visitor paid for it. Whatever bootstrap says
-    // to draw is what the endpoint enforces.
-    $site = intakeSite(['name' => SiteIntake::REQUIRED, 'email' => SiteIntake::OPTIONAL]);
-    $visitor = Visitor::factory()->for($site)->create(['external_id' => 'customer-42']);
+    // They disagreed once, and the visitor paid for it with a 422 about a
+    // question they were never shown.
+    $site = intakeSite(['name' => SiteIntake::REQUIRED, 'email' => SiteIntake::REQUIRED]);
+    $visitor = Visitor::factory()->for($site)->create(['name' => 'Avery Lane', 'email' => null]);
 
     $fields = $this->postJson('/api/widget/bootstrap', [
         'site_public_key' => $site->public_key,
         'anonymous_id' => $visitor->anonymous_id,
     ])->assertSuccessful()->json('data.site.intake.fields');
 
-    expect($fields)->toBe(['name' => SiteIntake::OFF, 'email' => SiteIntake::OFF, 'reason' => SiteIntake::OFF]);
+    expect($fields['name'])->toBe(SiteIntake::OFF)
+        ->and($fields['email'])->toBe(SiteIntake::REQUIRED);
 
+    // And the endpoint enforces exactly that: the name is not demanded, the
+    // email is.
     $this->postJson('/api/conversations', [
         'site_public_key' => $site->public_key,
         'anonymous_id' => $visitor->anonymous_id,
         'visitor_token' => app(VisitorSessionToken::class)->issue($site, $visitor),
-    ])->assertSuccessful();
+    ])->assertStatus(422)->assertJsonValidationErrors('visitor_email');
 });
 
 test('an agent sees what the visitor was asked for', function (): void {
