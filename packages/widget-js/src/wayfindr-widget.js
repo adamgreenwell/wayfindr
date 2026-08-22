@@ -2387,7 +2387,13 @@
           resumePromise = null;
         }
 
-        if (!bootstrapped) {
+        // The rules behind the gate belong to the server and can change
+        // between the panel opening and this send -- a closing time crossed,
+        // an operator editing what the site asks. A conversation created on a
+        // stale copy earns a 422 the visitor cannot clear, because the form is
+        // rebuilt from the same stale rules that just failed. So the send that
+        // creates the conversation always asks again.
+        if (!supportCode || !bootstrapped) {
           await refreshFromBootstrap();
         } else if (bootstrapPromise) {
           // A refresh started when the panel opened may still be in flight.

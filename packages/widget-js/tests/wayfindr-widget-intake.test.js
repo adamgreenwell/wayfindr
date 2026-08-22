@@ -536,3 +536,39 @@ test('a message sent before the first answer lands waits for the questions', asy
     'the message survives the wait'
   );
 });
+
+const ASKS_NOTHING = { asks: false, intro: null, fields: { name: 'off', email: 'off', reason: 'off' } };
+const ASKS_EMAIL = { asks: true, intro: 'One thing first.', fields: { name: 'off', email: 'required', reason: 'off' } };
+
+test('questions that changed while the panel sat open are asked before a conversation exists', async () => {
+  // The desk closes, or an operator edits what the site asks. The panel was
+  // opened before that and still holds the old answer.
+  const { widget, dom, sent } = widgetWith({ intake: ASKS_NOTHING, intakeAfter: ASKS_EMAIL });
+
+  widget.root.querySelector('.wayfindr-widget__launcher').click();
+  await settle();
+
+  // Nothing was asked when this panel opened, so the composer is open.
+  assert.equal(widget.root.querySelector('.wayfindr-widget__form').hidden, false);
+
+  widget.root.querySelector('.wayfindr-widget__textarea').value = 'My order never arrived.';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+    new dom.window.Event('submit', { bubbles: true, cancelable: true })
+  );
+  await settle();
+
+  const intake = widget.root.querySelector('.wayfindr-widget__intake');
+
+  assert.ok(
+    !sent.some((call) => call.url.endsWith('/api/conversations')),
+    'no conversation is created against rules the server has already moved past'
+  );
+  assert.equal(intake.hidden, false, 'the newly required question is asked');
+  assert.ok(intake.querySelector('[name="email"]'), 'and the form is rebuilt from the NEW rules, not the stale ones');
+  assert.equal(widget.root.querySelector('.wayfindr-widget__form').hidden, true);
+  assert.equal(
+    widget.root.querySelector('.wayfindr-widget__textarea').value,
+    'My order never arrived.',
+    'the message the visitor already typed is kept'
+  );
+});
