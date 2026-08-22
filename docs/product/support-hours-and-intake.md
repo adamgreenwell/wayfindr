@@ -116,25 +116,42 @@ a required field is required, and **a field the site does not ask for is
 refused** rather than quietly stored. Otherwise the configuration would be
 advisory and anyone could post whatever they liked against a visitor.
 
-### Already-identified visitors are not asked again
+### A question already answered is not asked again
 
-If the host app identified the visitor through the SDK, the form is skipped.
-Asking a signed-in customer for their email is the fastest way to make a widget
-feel unfinished.
+Answer once and the next visit knows. A stored name or email turns that field
+off, and a stored address satisfies the out-of-hours requirement too — the rule
+is reachability, not ceremony.
 
-**The server decides this, and the widget draws what it is told.** Bootstrap
-sends the fields that will actually be enforced, already accounting for
-identification and for the desk being away.
+The **reason** is asked every time, because it belongs to the conversation it
+was given for.
+
+**The waiver rests on an answer we hold, not on a claim about who somebody is.**
+This is deliberate and it is a security boundary. `external_id` is asserted by
+the host page and reaches the server through a public endpoint, so waiving on
+identification let any visitor turn off every field an operator made required
+simply by setting one. An answer is evidence; a claim is not.
+
+The practical consequence: a visitor the host app has identified, whose name and
+email Wayfindr has never been told, is still asked. Identification says the host
+knows them — it does not say what their address is, and an external ID is
+deliberately not an email. Waiving on a *verified* identity is a real
+improvement, and it needs a verified identity to exist first
+([#761](https://github.com/adamgreenwell/wayfindr/issues/761)).
+
+### The server decides, and the widget draws what it is told
+
+Bootstrap sends the fields that will actually be enforced, already accounting
+for what is known and for the desk being away.
 
 That is not merely tidy. Deciding it separately on each side is how the widget
-came to hide a form for fields the server still demanded, handing identified
-visitors a 422 they could do nothing about — they could not start a conversation
-at all. One rule, used to build the form and to validate the answers, cannot
-disagree with itself.
+came to hide a form for fields the server still demanded, handing visitors a 422
+they could do nothing about. One rule, used to build the form and to validate
+the answers, cannot disagree with itself.
 
-**Identification does not satisfy the out-of-hours email.** An external ID is
-deliberately not an email address, so a visitor the host app knows is still a
-visitor Wayfindr cannot reply to at 3am.
+The gate also reopens when the questions change. A visitor who answers while the
+desk is open and sends after it closes meets a newly required email — and
+treating the earlier answer as covering it left them stuck behind a 422 that
+reopening the panel could not clear.
 
 ### Out of hours, email is required
 

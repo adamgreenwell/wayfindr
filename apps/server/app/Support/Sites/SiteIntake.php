@@ -3,6 +3,7 @@
 namespace App\Support\Sites;
 
 use App\Models\Site;
+use App\Models\Visitor;
 
 /**
  * What a site asks a visitor before the conversation starts.
@@ -55,6 +56,22 @@ final class SiteIntake
         return new self($fields, $intro === '' ? null : $intro);
     }
 
+    /**
+     * Which identity questions this visitor has already answered.
+     *
+     * @return array<string, bool>
+     */
+    public static function knownFor(?Visitor $visitor): array
+    {
+        return [
+            'name' => is_string($visitor?->name) && trim($visitor->name) !== '',
+            'email' => is_string($visitor?->email) && trim($visitor->email) !== '',
+            // A reason belongs to one conversation, so a previous answer never
+            // stands in for this one.
+            'reason' => false,
+        ];
+    }
+
     public function asks(): bool
     {
         return $this->fields !== array_fill_keys(self::FIELDS, self::OFF);
@@ -81,9 +98,9 @@ final class SiteIntake
      *                      would normally leave it optional.
      * @return array{asks: bool, intro: string|null, fields: array<string, string>}
      */
-    public function toPayload(bool $away, bool $identified = false): array
+    public function toPayload(bool $away, array $known = []): array
     {
-        $fields = $this->effectiveFields($away, $identified);
+        $fields = $this->effectiveFields($away, $known);
 
         return [
             'asks' => $fields !== array_fill_keys(self::FIELDS, self::OFF),
@@ -97,26 +114,33 @@ final class SiteIntake
      *
      * One method, used both to build the form and to validate the answers.
      * Two implementations of the same rule is how the widget came to hide a
-     * form for fields the server still demanded, handing identified visitors a
-     * 422 they could do nothing about.
+     * form for fields the server still demanded, handing visitors a 422 they
+     * could do nothing about.
      *
+     * @param  array<string, bool>  $known  Fields this visitor has already answered.
      * @return array<string, string>
      */
-    public function effectiveFields(bool $away, bool $identified = false): array
+    public function effectiveFields(bool $away, array $known = []): array
     {
         $fields = $this->fields;
 
-        if ($identified) {
-            // The host app already told us who this is. Asking again is the
-            // fastest way to make a widget feel unfinished.
-            $fields = array_fill_keys(self::FIELDS, self::OFF);
+        if ($away) {
+            // Out of hours an address is the only way back to somebody.
+            $fields['email'] = self::REQUIRED;
         }
 
-        if ($away) {
-            // Identification does NOT satisfy this. An external ID is
-            // deliberately not an email, so a known visitor out of hours is
-            // still somebody with no way back to them.
-            $fields['email'] = self::REQUIRED;
+        // A question already answered is not asked again -- and this, rather
+        // than identification, is what waives it.
+        //
+        // Waiving on identification was a bypass: `external_id` is asserted by
+        // the host page and reaches the server through a public endpoint, so
+        // any visitor could set one and turn off every field the operator made
+        // required. An answer we hold is evidence; a claim about who somebody
+        // is, is not.
+        foreach (self::FIELDS as $field) {
+            if (($known[$field] ?? false) === true) {
+                $fields[$field] = self::OFF;
+            }
         }
 
         return $fields;
@@ -127,10 +151,10 @@ final class SiteIntake
      *
      * @return array<string, array<int, string>>
      */
-    public function validationRules(bool $away, bool $identified = false): array
+    public function validationRules(bool $away, array $known = []): array
     {
         $rules = [];
-        $effective = $this->effectiveFields($away, $identified);
+        $effective = $this->effectiveFields($away, $known);
 
         foreach (self::FIELDS as $field) {
             $mode = $effective[$field];

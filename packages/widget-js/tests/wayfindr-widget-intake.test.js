@@ -239,3 +239,73 @@ test('the form is built as elements, so configured labels cannot inject markup',
   assert.equal(intro.querySelector('img'), null);
   assert.ok(intro.textContent.includes('<img'));
 });
+
+test('crossing into out-of-hours re-asks for the newly required email', async () => {
+  // Answering covers the questions that were asked. A visitor who answered
+  // while the desk was open and sent after it closed hit a 422 for an email
+  // they were never shown a field for -- and reopening could not clear it,
+  // because the answered flag never reset.
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/',
+  });
+
+  let fields = { name: 'required', email: 'off', reason: 'off' };
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_docs',
+    storage: memoryStorage({
+      'wayfindr:site_public_docs:anonymous-id': 'anon-docs',
+      'wayfindr:site_public_docs:visitor-token': 'visitor-token-docs',
+    }),
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    fetch: async (url) => {
+      if (url.includes('/cobrowse')) {
+        return jsonResponse(200, { data: { cobrowse: { state: 'unavailable' } } });
+      }
+
+      if (url.endsWith('/bootstrap')) {
+        return jsonResponse(200, {
+          data: {
+            site: {
+              public_key: 'site_public_docs',
+              settings: {},
+              color: 'blue',
+              availability: { away: false, message: null, opens_at: null, timezone: 'UTC' },
+              intake: { asks: true, intro: null, fields },
+            },
+            visitor: { anonymous_id: 'anon-docs', token: 'visitor-token-docs' },
+          },
+        });
+      }
+
+      return jsonResponse(200, { data: {} });
+    },
+  });
+
+  const launcher = widget.root.querySelector('.wayfindr-widget__launcher');
+  const intake = widget.root.querySelector('.wayfindr-widget__intake');
+
+  launcher.click();
+  await settle();
+
+  intake.querySelector('[name="name"]').value = 'Avery Lane';
+  intake.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+  await settle();
+
+  assert.equal(intake.hidden, true, 'answered, so the composer is available');
+
+  // Closing time passes. The name is now known, but an email is required.
+  fields = { name: 'off', email: 'required', reason: 'off' };
+  widget.root.querySelector('.wayfindr-widget__close').click();
+  launcher.click();
+  await settle();
+
+  assert.equal(intake.hidden, false, 'a newly required question must be asked');
+  assert.ok(intake.querySelector('[name="email"]'));
+});
