@@ -103,6 +103,10 @@ Each of **name**, **email** and **reason** is off, optional, or required.
 **The reason goes on the conversation**, because the next one may be about
 something else entirely.
 
+All three are shown to the agent on the conversation: the visitor's name
+replaces the anonymous identifier in the header, and the email and reason sit
+beside it. Collecting an answer nobody can see would make the field pointless.
+
 A blank optional answer never erases what an earlier conversation captured.
 
 ### The server decides, not the widget
@@ -118,10 +122,19 @@ If the host app identified the visitor through the SDK, the form is skipped.
 Asking a signed-in customer for their email is the fastest way to make a widget
 feel unfinished.
 
-This uses the **server's** view of whether the visitor is identified, exposed on
-the bootstrap response. The widget's own option can be set while the value was
-rejected — sanitised away, or already claimed by another visitor — so trusting
-the client would ask the wrong people.
+**The server decides this, and the widget draws what it is told.** Bootstrap
+sends the fields that will actually be enforced, already accounting for
+identification and for the desk being away.
+
+That is not merely tidy. Deciding it separately on each side is how the widget
+came to hide a form for fields the server still demanded, handing identified
+visitors a 422 they could do nothing about — they could not start a conversation
+at all. One rule, used to build the form and to validate the answers, cannot
+disagree with itself.
+
+**Identification does not satisfy the out-of-hours email.** An external ID is
+deliberately not an email address, so a visitor the host app knows is still a
+visitor Wayfindr cannot reply to at 3am.
 
 ### Out of hours, email is required
 

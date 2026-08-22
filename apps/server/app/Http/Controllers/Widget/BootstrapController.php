@@ -44,7 +44,7 @@ class BootstrapController extends Controller
 
         return response()->json([
             'data' => [
-                'site' => $this->sitePayload($site),
+                'site' => $this->sitePayload($site, $visitor->external_id !== null),
                 'visitor' => [
                     'anonymous_id' => $visitor->anonymous_id,
                     'token' => $visitorSessionToken->issue($site, $visitor),
@@ -62,7 +62,7 @@ class BootstrapController extends Controller
     /**
      * @return array{name: string, domain: string|null, color: string, public_key: string, availability: array{away: bool, message: string|null, opens_at: string|null, timezone: string}, intake: array{asks: bool, intro: string|null, fields: array<string, string>}, settings: array{mask_selectors: array<int, string>, mask_terms: array<int, string>}}
      */
-    private function sitePayload(Site $site): array
+    private function sitePayload(Site $site, bool $identified): array
     {
         $availability = SiteAvailability::for($site);
 
@@ -81,7 +81,7 @@ class BootstrapController extends Controller
             // What to ask before the conversation starts. Out of hours an email
             // is promoted to required here, because it is the only way back to
             // somebody -- the server applies the same promotion on the way in.
-            'intake' => SiteIntake::for($site)->toPayload(! $availability->open),
+            'intake' => SiteIntake::for($site)->toPayload(! $availability->open, $identified),
             'settings' => [
                 'mask_selectors' => $this->stringList($site->settings['mask_selectors'] ?? []),
                 'mask_terms' => $this->stringList($site->settings['mask_terms'] ?? []),
