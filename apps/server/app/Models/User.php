@@ -2,9 +2,10 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Enums\AccountRole;
+// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Enums\PlatformRole;
+use App\Notifications\ResetPasswordLink;
 use Carbon\CarbonImmutable;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -114,6 +115,17 @@ class User extends Authenticatable
     public function isPlatformOperator(): bool
     {
         return $this->platform_role === PlatformRole::Operator;
+    }
+
+    /**
+     * Send the reset link off the request rather than inside it.
+     *
+     * Overridden so the forgot-password form answers in the same time, and the
+     * same way, whether or not the address belongs to anybody.
+     */
+    public function sendPasswordResetNotification(#[\SensitiveParameter] $token): void
+    {
+        $this->notify(new ResetPasswordLink($token));
     }
 
     public function isDeactivated(): bool

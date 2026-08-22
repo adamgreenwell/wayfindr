@@ -44,6 +44,8 @@
 
                 <button class="button full" type="submit">Sign in</button>
             </form>
+
+            <p><a class="text-link" href="{{ route('password.request') }}">Forgotten your password?</a></p>
         </section>
     </main>
 </x-layouts.app>
