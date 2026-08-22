@@ -597,6 +597,11 @@
     var widgetStorage = resolveStorageOption(options);
     var storedSupportCode = storageGet(widgetStorage, supportCodeStorageKey(options.sitePublicKey));
     var resumePromise = null;
+    // A stored conversation is being restored. supportCode is not set until
+    // that lands, so a bootstrap answer arriving first would read the visitor
+    // as brand new and put the form in front of somebody who already has a
+    // thread -- answers they would then watch be discarded when it restored.
+    var resumePending = Boolean(storedSupportCode);
     var conversationStatus = null;
     var messages = [];
     // A fingerprint of the last rendered message list so a poll that brings no
@@ -2071,8 +2076,18 @@
         : '';
     }
 
+    // The one question every gate decision asks. The gate and the send path
+    // have to agree on it, and two spellings of it is how a send came to
+    // proceed straight through a gate that had just closed.
+    function intakeGateHolds() {
+      return Boolean(intakeState) && !intakeAnswered;
+    }
+
     function refreshIntakeGate() {
-      intakeState = supportCode ? null : intakeConfig;
+      // A resume counts as having a conversation. It has not set supportCode
+      // yet, but it is about to, and gating on the gap shows a form that is
+      // then taken away.
+      intakeState = (supportCode || resumePending) ? null : intakeConfig;
 
       // Answering covers the questions that were ASKED. Crossing a closing
       // time makes an email newly required, and treating the earlier answer as
@@ -2084,7 +2099,7 @@
         intakeAnswered = false;
       }
 
-      if (!intakeState || intakeAnswered) {
+      if (!intakeGateHolds()) {
         intakeForm.hidden = true;
         setIntakeGate(false);
 
@@ -2490,6 +2505,12 @@
         if (error && typeof error.status === 'number' && error.status >= 400 && error.status < 500) {
           storageRemove(widgetStorage, supportCodeStorageKey(options.sitePublicKey));
         }
+      } finally {
+        // Settled either way, and only now can the gate tell the two apart: a
+        // restored conversation needs no form, while a rejected code means
+        // this visitor really is starting fresh and must be asked.
+        resumePending = false;
+        refreshIntakeGate();
       }
     }
 

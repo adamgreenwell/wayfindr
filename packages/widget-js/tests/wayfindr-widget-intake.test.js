@@ -27,7 +27,28 @@ async function settle() {
   }
 }
 
-function widgetWith({ intake, identified = false, storedSupportCode = null } = {}) {
+// A promise somebody else decides when to settle, so a test can hold a
+// response open and act in the window it leaves.
+function deferred() {
+  let release;
+  const promise = new Promise((resolve) => { release = resolve; });
+
+  return { promise, release };
+}
+
+function widgetWith({
+  intake,
+  identified = false,
+  storedSupportCode = null,
+  // The rules the server serves from the SECOND bootstrap onward, so a test
+  // can move the ground under a panel that is already open.
+  intakeAfter = null,
+  holdBootstrap = null,
+  holdResume = null,
+  resumeStatus = 200,
+} = {}) {
+  let bootstraps = 0;
+  let resumes = 0;
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
     url: 'https://docs.example.test/',
   });
@@ -61,6 +82,12 @@ function widgetWith({ intake, identified = false, storedSupportCode = null } = {
       sent.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
 
       if (url.endsWith('/bootstrap')) {
+        bootstraps += 1;
+
+        if (holdBootstrap) {
+          await holdBootstrap;
+        }
+
         return jsonResponse(200, {
           data: {
             site: {
@@ -68,7 +95,7 @@ function widgetWith({ intake, identified = false, storedSupportCode = null } = {
               settings: {},
               color: 'blue',
               availability: { away: false, message: null, opens_at: null, timezone: 'UTC' },
-              intake,
+              intake: (intakeAfter && bootstraps > 1) ? intakeAfter : intake,
             },
             visitor: { anonymous_id: 'anon-docs', token: 'visitor-token-docs', identified },
           },
@@ -80,6 +107,20 @@ function widgetWith({ intake, identified = false, storedSupportCode = null } = {
       }
 
       if (url.includes('/messages')) {
+        resumes += 1;
+
+        // Only the resume -- the first /messages read -- is held or rejected;
+        // the send that follows must still behave normally.
+        if (resumes === 1) {
+          if (holdResume) {
+            await holdResume;
+          }
+
+          if (resumeStatus !== 200) {
+            return jsonResponse(resumeStatus, { message: 'Unknown conversation.' });
+          }
+        }
+
         return jsonResponse(200, {
           data: { conversation: { support_code: 'WF-DOCS', status: 'open' }, messages: [], message: { id: 1 } },
         });
@@ -413,4 +454,54 @@ test('intake inputs carry the server length limit', async () => {
   await settle();
 
   assert.equal(widget.root.querySelector('[name="email"]').maxLength, 255);
+});
+
+// The races below all have one shape: the gate is decided from state that is
+// still provisional -- a resume that has not set the support code, an answer
+// that has not landed, or rules that have gone stale. Each one let a visitor
+// reach a conversation the site meant to ask about first.
+
+test('a visitor whose conversation is still restoring is never shown the form', async () => {
+  const resume = deferred();
+  const { widget } = widgetWith({
+    intake: ASKS_BOTH,
+    storedSupportCode: 'WF-DOCS',
+    holdResume: resume.promise,
+  });
+
+  await settle();
+
+  // The support code is not set until the resume lands, but this visitor
+  // plainly has a conversation already.
+  assert.equal(
+    widget.root.querySelector('.wayfindr-widget__intake').hidden,
+    true,
+    'no form appears in the gap before the resume lands'
+  );
+  assert.equal(widget.root.querySelector('.wayfindr-widget__form').hidden, false);
+
+  resume.release();
+  await settle();
+
+  assert.equal(widget.root.querySelector('.wayfindr-widget__intake').hidden, true);
+  assert.equal(widget.root.querySelector('.wayfindr-widget__form').hidden, false);
+});
+
+test('a stored code the server rejects still leads to the questions', async () => {
+  // The other half of the one above: suppressing intake while a resume is in
+  // flight must not suppress it for a visitor whose code turns out to be dead.
+  const { widget } = widgetWith({
+    intake: ASKS_BOTH,
+    storedSupportCode: 'WF-GONE',
+    resumeStatus: 404,
+  });
+
+  await settle();
+
+  assert.equal(
+    widget.root.querySelector('.wayfindr-widget__intake').hidden,
+    false,
+    'a visitor with no usable conversation really is starting fresh, and is asked'
+  );
+  assert.equal(widget.root.querySelector('.wayfindr-widget__form').hidden, true);
 });
