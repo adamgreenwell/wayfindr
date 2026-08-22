@@ -2108,6 +2108,9 @@
         input.name = field.name;
         input.required = field.required;
         input.autocomplete = field.name === 'email' ? 'email' : (field.name === 'name' ? 'name' : 'off');
+        // Matches the server's rule, so the ordinary case is caught here rather
+        // than as a 422 the visitor has to decipher.
+        input.maxLength = 255;
 
         label.appendChild(text);
         label.appendChild(input);
@@ -2120,6 +2123,29 @@
 
     function setIntakeGate(gated) {
       form.hidden = gated;
+    }
+
+    // Hand the form back when the server rejects what it collected.
+    //
+    // Browsers accept "a@b" as an email input and the server's email:filter
+    // does not, so a 422 here is ordinary rather than exotic. Treated as a
+    // generic send failure it was fatal: the only UI that could correct the
+    // answer was hidden, the answered flag stayed set, and Retry resent the
+    // same rejected values -- the visitor could not start a conversation at
+    // all without closing and reopening the panel.
+    function reopenIntakeForCorrection(error) {
+      if (!intakeState || !error || error.status !== 422) {
+        return false;
+      }
+
+      intakeAnswered = false;
+      intakeAnsweredSignature = '';
+      refreshIntakeGate();
+
+      intakeError.textContent = error.message || 'Please check the details above.';
+      intakeError.hidden = false;
+
+      return true;
     }
 
     function intakeAnswers() {
@@ -2389,12 +2415,19 @@
         sentMessage = await client.sendMessage(supportCode, body, pendingClientMessageId, readyIds.concat(stagedIds));
       } catch (error) {
         reportSuppressed('message send', error);
+        setComposerBusy(false);
+
+        // A rejected answer is correctable, and offering Retry instead would
+        // resend the same values from a form the visitor can no longer see.
+        if (reopenIntakeForCorrection(error)) {
+          return;
+        }
+
         status.textContent = MESSAGE_SEND_ERROR;
         showNotice('warning', MESSAGE_SEND_ERROR, {
           retry: true,
           onRetry: retryComposerSend,
         });
-        setComposerBusy(false);
 
         return;
       }

@@ -309,3 +309,108 @@ test('crossing into out-of-hours re-asks for the newly required email', async ()
   assert.equal(intake.hidden, false, 'a newly required question must be asked');
   assert.ok(intake.querySelector('[name="email"]'));
 });
+
+test('a rejected answer can be corrected rather than trapping the visitor', async () => {
+  // Browsers accept "a@b" as an email input and the server does not, so a 422
+  // here is ordinary. Hiding the form that could fix it, keeping the answered
+  // flag, and offering a Retry that resends the same values meant the visitor
+  // could not start a conversation at all.
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/',
+  });
+
+  let rejectIntake = true;
+  const started = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_docs',
+    storage: memoryStorage({
+      'wayfindr:site_public_docs:anonymous-id': 'anon-docs',
+      'wayfindr:site_public_docs:visitor-token': 'visitor-token-docs',
+    }),
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    fetch: async (url, init) => {
+      if (url.includes('/cobrowse')) {
+        return jsonResponse(200, { data: { cobrowse: { state: 'unavailable' } } });
+      }
+
+      if (url.endsWith('/bootstrap')) {
+        return jsonResponse(200, {
+          data: {
+            site: {
+              public_key: 'site_public_docs',
+              settings: {},
+              color: 'blue',
+              availability: { away: false, message: null, opens_at: null, timezone: 'UTC' },
+              intake: { asks: true, intro: null, fields: { name: 'off', email: 'required', reason: 'off' } },
+            },
+            visitor: { anonymous_id: 'anon-docs', token: 'visitor-token-docs' },
+          },
+        });
+      }
+
+      if (url.endsWith('/api/conversations')) {
+        started.push(JSON.parse(init.body));
+
+        if (rejectIntake) {
+          return jsonResponse(422, { message: 'The visitor email field must be a valid email address.' });
+        }
+
+        return jsonResponse(201, { data: { conversation: { support_code: 'WF-DOCS', status: 'open' } } });
+      }
+
+      return jsonResponse(200, { data: {} });
+    },
+  });
+
+  const launcher = widget.root.querySelector('.wayfindr-widget__launcher');
+  const intake = widget.root.querySelector('.wayfindr-widget__intake');
+
+  launcher.click();
+  await settle();
+
+  intake.querySelector('[name="email"]').value = 'a@b';
+  intake.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+  await settle();
+
+  widget.root.querySelector('.wayfindr-widget__textarea').value = 'Checkout is broken.';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+    new dom.window.Event('submit', { bubbles: true, cancelable: true })
+  );
+  await settle();
+
+  // The form is back, carrying the server's reason.
+  assert.equal(intake.hidden, false, 'the visitor must be able to correct the answer');
+  assert.equal(widget.root.querySelector('.wayfindr-widget__intake-error').hidden, false);
+  assert.ok(widget.root.querySelector('.wayfindr-widget__intake-error').textContent.includes('valid email'));
+
+  // And correcting it works.
+  rejectIntake = false;
+  intake.querySelector('[name="email"]').value = 'avery@example.test';
+  intake.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+  await settle();
+
+  widget.root.querySelector('.wayfindr-widget__textarea').value = 'Checkout is broken.';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+    new dom.window.Event('submit', { bubbles: true, cancelable: true })
+  );
+  await settle();
+
+  assert.equal(started.length, 2);
+  assert.equal(started[1].visitor_email, 'avery@example.test');
+});
+
+test('intake inputs carry the server length limit', async () => {
+  const { widget } = widgetWith({ intake: ASKS_BOTH });
+
+  widget.root.querySelector('.wayfindr-widget__launcher').click();
+  await settle();
+
+  assert.equal(widget.root.querySelector('[name="email"]').maxLength, 255);
+});

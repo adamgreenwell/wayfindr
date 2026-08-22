@@ -157,7 +157,13 @@ came to hide a form for fields the server still demanded, handing visitors a 422
 they could do nothing about. One rule, used to build the form and to validate
 the answers, cannot disagree with itself.
 
-The gate also reopens when the questions change. A visitor who answers while the
+The gate reopens when the server rejects an answer. Browsers accept `a@b` as an
+email input and the server does not, so a 422 here is ordinary — and treating it
+as a generic send failure was fatal: the only form that could correct the answer
+was hidden, and Retry resent the same rejected values. The visitor gets the form
+back, carrying the server's reason.
+
+It also reopens when the questions change. A visitor who answers while the
 desk is open and sends after it closes meets a newly required email — and
 treating the earlier answer as covering it left them stuck behind a 422 that
 reopening the panel could not clear.

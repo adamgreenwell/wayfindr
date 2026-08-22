@@ -879,8 +879,15 @@
                         </div>
 
                         <p class="field-help">
-                            A visitor your own site has already identified through the SDK is not asked again.
-                            Out of hours an email is always required, because it is the only way back to them.
+                            A visitor who has already answered is not asked again: a name or email you hold turns
+                            that question off on their next conversation, and a stored address also covers the
+                            out-of-hours rule. A reason is asked every time, because it belongs to the conversation.
+                        </p>
+                        <p class="field-help">
+                            Being identified through the SDK does not by itself skip these questions. That
+                            identifier is supplied by your own page and could be set by anyone, so it cannot
+                            switch off something you made required. Out of hours an email is always asked for
+                            unless you already have one.
                         </p>
 
                         <div class="field">
