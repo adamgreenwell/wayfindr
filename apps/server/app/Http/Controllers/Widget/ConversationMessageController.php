@@ -11,6 +11,7 @@ use App\Models\ConversationMessage;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Support\Attachments\AttachmentBinder;
+use App\Support\Conversations\ConversationLifecycleLog;
 use App\Support\VisitorConversationResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -135,11 +136,19 @@ class ConversationMessageController extends Controller
             // reference throws and rolls the whole send back.
             $binder->bind($conversation, $message, $attachmentIds, $visitor);
 
+            $previousStatus = (string) $conversation->status;
+
             $conversation->forceFill([
                 'status' => 'open',
                 'closed_at' => null,
                 'last_message_at' => $message->created_at,
             ])->save();
+
+            // A visitor replying to a closed conversation is the reopen that
+            // matters most: it means the resolution did not hold. It used to
+            // leave no trace at all.
+            app(ConversationLifecycleLog::class)
+                ->replyReopenedIfClosed($conversation, $visitor, $previousStatus);
 
             return [$message, true];
         });

@@ -13,6 +13,7 @@ use App\Support\Attachments\AttachmentBinder;
 use App\Support\CobrowseAuditTrail;
 use App\Support\CobrowseConsentState;
 use App\Support\CobrowseResyncRequestPolicy;
+use App\Support\Conversations\ConversationLifecycleLog;
 use App\Support\Conversations\ConversationQueueQuery;
 use App\Support\ReplyTemplateOptions;
 use App\Support\TicketCategory;
@@ -322,6 +323,8 @@ class AgentConversationController extends Controller
             // reference throws and rolls the whole send back.
             $binder->bind($conversation, $message, $attachmentIds, $agent);
 
+            $previousStatus = (string) $conversation->status;
+
             $conversation->forceFill([
                 'assigned_agent_id' => $conversation->assigned_agent_id ?: $agent->id,
                 'status' => 'open',
@@ -329,6 +332,11 @@ class AgentConversationController extends Controller
                 'last_message_at' => $message->created_at,
                 'metadata' => $this->metadataWithoutAgentTypingSignal($conversation, $agent),
             ])->save();
+
+            // Replying to a closed conversation reopens it. That was silent
+            // before -- indistinguishable from any other message.
+            app(ConversationLifecycleLog::class)
+                ->replyReopenedIfClosed($conversation, $agent, $previousStatus);
 
             return $message;
         });
@@ -386,30 +394,38 @@ class AgentConversationController extends Controller
         return $metadata;
     }
 
-    public function close(Request $request, string $supportCode): RedirectResponse
+    public function close(Request $request, string $supportCode, ConversationLifecycleLog $lifecycle): RedirectResponse
     {
         $agent = $request->user();
         $conversation = $this->conversationForAgent($agent, $supportCode, 'updateStatus');
+
+        $previousStatus = (string) $conversation->status;
 
         $conversation->forceFill([
             'status' => 'closed',
             'closed_at' => now(),
         ])->save();
 
+        $lifecycle->closed($conversation, $agent, $previousStatus);
+
         return redirect()
             ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
             ->with('status', 'Conversation closed.');
     }
 
-    public function reopen(Request $request, string $supportCode): RedirectResponse
+    public function reopen(Request $request, string $supportCode, ConversationLifecycleLog $lifecycle): RedirectResponse
     {
         $agent = $request->user();
         $conversation = $this->conversationForAgent($agent, $supportCode, 'updateStatus');
+
+        $previousStatus = (string) $conversation->status;
 
         $conversation->forceFill([
             'status' => 'open',
             'closed_at' => null,
         ])->save();
+
+        $lifecycle->replyReopenedIfClosed($conversation, $agent, $previousStatus);
 
         return redirect()
             ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
