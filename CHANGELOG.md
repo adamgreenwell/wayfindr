@@ -32,6 +32,18 @@ missed while skimming.
 
 **No operator action required.** Pull, restart, and migrations run themselves.
 
+- **An agent who forgets their password can recover it.** There was no
+  forgot-password flow at all: recovery meant asking somebody with production
+  shell access to run a command against the database on your behalf.
+
+  **Sign in → Forgotten your password?** emails a link that expires. Setting a new
+  password also signs that account out everywhere else, so a reset ends whatever
+  access prompted it rather than running alongside it.
+
+  ⚠ **Operator action** if this install has never configured outbound mail: there
+  is no recovery path without it, because the link is an email. `/operator` →
+  **Mail** sets it up, and its test button confirms delivery before you need it.
+
 ### Fixed
 
 - **The installer no longer sends you to the old readiness address.** Its closing

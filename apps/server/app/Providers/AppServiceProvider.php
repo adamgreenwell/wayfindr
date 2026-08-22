@@ -19,6 +19,7 @@ use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Str;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -82,6 +83,15 @@ class AppServiceProvider extends ServiceProvider
 
     private function configureRateLimiters(): void
     {
+        // Password reset is unauthenticated and sends mail, so it is throttled on
+        // both the address and the source. Keying on the address alone would let
+        // one attacker deny an agent their own recovery; keying on IP alone
+        // would let a distributed source farm one address.
+        RateLimiter::for('password-reset', fn (Request $request): array => [
+            Limit::perMinute(5)->by('password-reset-ip:'.$request->ip()),
+            Limit::perMinutes(15, 5)->by('password-reset-email:'.Str::lower((string) $request->input('email'))),
+        ]);
+
         RateLimiter::for(
             'widget-bootstrap',
             fn (Request $request): Limit => $this->widgetLimit($request, 'bootstrap_per_minute', 'bootstrap')
