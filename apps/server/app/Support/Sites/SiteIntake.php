@@ -81,13 +81,9 @@ final class SiteIntake
      *                      would normally leave it optional.
      * @return array{asks: bool, intro: string|null, fields: array<string, string>}
      */
-    public function toPayload(bool $away): array
+    public function toPayload(bool $away, bool $identified = false): array
     {
-        $fields = $this->fields;
-
-        if ($away) {
-            $fields['email'] = self::REQUIRED;
-        }
+        $fields = $this->effectiveFields($away, $identified);
 
         return [
             'asks' => $fields !== array_fill_keys(self::FIELDS, self::OFF),
@@ -97,16 +93,47 @@ final class SiteIntake
     }
 
     /**
+     * What this site asks THIS visitor, right now.
+     *
+     * One method, used both to build the form and to validate the answers.
+     * Two implementations of the same rule is how the widget came to hide a
+     * form for fields the server still demanded, handing identified visitors a
+     * 422 they could do nothing about.
+     *
+     * @return array<string, string>
+     */
+    public function effectiveFields(bool $away, bool $identified = false): array
+    {
+        $fields = $this->fields;
+
+        if ($identified) {
+            // The host app already told us who this is. Asking again is the
+            // fastest way to make a widget feel unfinished.
+            $fields = array_fill_keys(self::FIELDS, self::OFF);
+        }
+
+        if ($away) {
+            // Identification does NOT satisfy this. An external ID is
+            // deliberately not an email, so a known visitor out of hours is
+            // still somebody with no way back to them.
+            $fields['email'] = self::REQUIRED;
+        }
+
+        return $fields;
+    }
+
+    /**
      * The rules the server applies, which are the ones that count.
      *
      * @return array<string, array<int, string>>
      */
-    public function validationRules(bool $away): array
+    public function validationRules(bool $away, bool $identified = false): array
     {
         $rules = [];
+        $effective = $this->effectiveFields($away, $identified);
 
         foreach (self::FIELDS as $field) {
-            $mode = $field === 'email' && $away ? self::REQUIRED : ($this->fields[$field] ?? self::OFF);
+            $mode = $effective[$field];
 
             if ($mode === self::OFF) {
                 // Not merely optional: a field this site does not ask for must

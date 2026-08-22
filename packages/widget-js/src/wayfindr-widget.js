@@ -2909,12 +2909,11 @@
       return null;
     }
 
-    // The host app already told us who this is, so asking again is the fastest
-    // way to look unfinished. This is the SERVER's view: the widget's own
-    // option can be set while the value was rejected.
-    if (result && result.visitor && result.visitor.identified === true) {
-      return null;
-    }
+    // No identification check here any more. The server sends the fields it
+    // will actually enforce, already accounting for identification and for the
+    // desk being away -- the widget draws what it is told. Deciding separately
+    // is what hid the form for fields the server still demanded, handing
+    // identified visitors a 422 they could do nothing about.
 
     var fields = [];
 

@@ -188,3 +188,86 @@ test('an unrecognised mode is treated as off', function (): void {
     expect(SiteIntake::for($site)->fields['email'])->toBe(SiteIntake::OFF)
         ->and(SiteIntake::for($site)->asks())->toBeFalse();
 });
+
+test('an identified visitor is not blocked by fields the widget never showed them', function (): void {
+    // The widget hid the form for identified visitors while the server still
+    // required the answers, so those visitors got a 422 and could not start a
+    // conversation at all. One rule now decides both.
+    $site = intakeSite(['name' => SiteIntake::REQUIRED, 'email' => SiteIntake::REQUIRED]);
+    $visitor = Visitor::factory()->for($site)->create(['external_id' => 'customer-42']);
+
+    $this->postJson('/api/conversations', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => $visitor->anonymous_id,
+        'visitor_token' => app(VisitorSessionToken::class)->issue($site, $visitor),
+        'subject' => 'Something is broken',
+    ])->assertSuccessful();
+});
+
+test('an identified visitor is still asked for an email out of hours', function (): void {
+    // Identification does not make somebody reachable: an external ID is
+    // deliberately not an email.
+    $site = intakeSite(['name' => SiteIntake::REQUIRED], [
+        'enabled' => true,
+        'timezone' => 'UTC',
+        'weekdays' => array_fill_keys(SiteAvailability::DAYS, null),
+    ]);
+    $visitor = Visitor::factory()->for($site)->create(['external_id' => 'customer-42']);
+
+    $payload = [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => $visitor->anonymous_id,
+        'visitor_token' => app(VisitorSessionToken::class)->issue($site, $visitor),
+    ];
+
+    $this->postJson('/api/conversations', $payload)
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('visitor_email');
+
+    // The name they were not asked for is not demanded either.
+    $this->postJson('/api/conversations', $payload + ['visitor_email' => 'known@example.test'])
+        ->assertSuccessful();
+});
+
+test('bootstrap and the endpoint agree on what is asked', function (): void {
+    // They disagreed once, and the visitor paid for it. Whatever bootstrap says
+    // to draw is what the endpoint enforces.
+    $site = intakeSite(['name' => SiteIntake::REQUIRED, 'email' => SiteIntake::OPTIONAL]);
+    $visitor = Visitor::factory()->for($site)->create(['external_id' => 'customer-42']);
+
+    $fields = $this->postJson('/api/widget/bootstrap', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => $visitor->anonymous_id,
+    ])->assertSuccessful()->json('data.site.intake.fields');
+
+    expect($fields)->toBe(['name' => SiteIntake::OFF, 'email' => SiteIntake::OFF, 'reason' => SiteIntake::OFF]);
+
+    $this->postJson('/api/conversations', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => $visitor->anonymous_id,
+        'visitor_token' => app(VisitorSessionToken::class)->issue($site, $visitor),
+    ])->assertSuccessful();
+});
+
+test('an agent sees what the visitor was asked for', function (): void {
+    // Collecting an answer nobody can see makes the field pointless -- the
+    // reason was stored where no agent surface read it.
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['settings' => []]);
+    $visitor = Visitor::factory()->for($site)->create([
+        'name' => 'Avery Lane',
+        'email' => 'avery@example.test',
+    ]);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'metadata' => ['reason' => 'Billing'],
+    ]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->assertSee('Avery Lane')
+        ->assertSee('avery@example.test')
+        ->assertSee('What this is about')
+        ->assertSee('Billing');
+});

@@ -26,6 +26,13 @@ class ConversationController extends Controller
         $site = WidgetSiteResolver::resolveOrFail((string) $request->input('site_public_key'));
         $intake = SiteIntake::for($site);
         $away = ! SiteAvailability::for($site)->open;
+        // The same question bootstrap answered when it told the widget what to
+        // draw, read from the record rather than from the request.
+        $identified = Visitor::query()
+            ->where('site_id', $site->id)
+            ->where('anonymous_id', (string) $request->input('anonymous_id'))
+            ->whereNotNull('external_id')
+            ->exists();
 
         $validated = $request->validate([
             'site_public_key' => ['required', 'string', 'max:255'],
@@ -35,7 +42,7 @@ class ConversationController extends Controller
             'subject' => ['nullable', 'string', 'max:255'],
             'page_url' => ['nullable', 'url', 'max:2048'],
             'context' => ['nullable', 'array', 'max:50'],
-        ] + $intake->validationRules($away));
+        ] + $intake->validationRules($away, $identified));
 
         $visitor = $visitorSessionToken->visitorFromRequest($request, $site, $validated['anonymous_id']);
 

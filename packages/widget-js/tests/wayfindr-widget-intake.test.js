@@ -176,13 +176,40 @@ test('the answers travel with the conversation that follows', async () => {
 test('a visitor the host app already identified is not asked again', async () => {
   // Asking a signed-in customer for their email is the fastest way to make a
   // widget feel unfinished.
-  const { widget } = widgetWith({ intake: ASKS_BOTH, identified: true });
+  //
+  // The exemption is the SERVER's: it sends the fields it will enforce, already
+  // accounting for identification. The widget draws what it is told, so it
+  // cannot hide a form for a field the server still demands -- which is exactly
+  // how identified visitors were handed a 422 they could do nothing about.
+  const { widget } = widgetWith({
+    intake: { asks: false, intro: 'Tell us who you are.', fields: { name: 'off', email: 'off', reason: 'off' } },
+    identified: true,
+  });
 
   widget.root.querySelector('.wayfindr-widget__launcher').click();
   await settle();
 
   assert.equal(widget.root.querySelector('.wayfindr-widget__intake').hidden, true);
   assert.equal(widget.root.querySelector('.wayfindr-widget__form').hidden, false);
+});
+
+test('an identified visitor is still asked for an email out of hours', async () => {
+  // Identification does not make somebody reachable: an external ID is
+  // deliberately not an email, so a known visitor at 3am is still a visitor
+  // nobody can reply to.
+  const { widget } = widgetWith({
+    intake: { asks: true, intro: null, fields: { name: 'off', email: 'required', reason: 'off' } },
+    identified: true,
+  });
+
+  widget.root.querySelector('.wayfindr-widget__launcher').click();
+  await settle();
+
+  const intake = widget.root.querySelector('.wayfindr-widget__intake');
+
+  assert.equal(intake.hidden, false);
+  assert.ok(intake.querySelector('[name="email"]'));
+  assert.equal(intake.querySelector('[name="name"]'), null);
 });
 
 test('returning to an existing conversation never meets the form', async () => {
