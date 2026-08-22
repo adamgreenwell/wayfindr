@@ -68,7 +68,16 @@ back — both silent, and both wrong at exactly the moment somebody decided to
 type.
 
 The return time is rendered in the *visitor's* locale and timezone. They care
-what time it is where they are.
+what time it is where they are. A return more than a week out carries a calendar
+date, because a weekday alone is only unambiguous within the coming week — a
+site open one day a week returns exactly seven days later, and "Back Monday"
+read on a Monday evening names a time that has already passed.
+
+**A failed refresh stops the send.** Opening the panel ignores a failure, since
+the fallback state is fine to look at, but a send that proceeds on an
+unconfirmed answer is a message posted without knowing whether anybody is
+there — the case this exists to prevent. The visitor gets the ordinary send
+error and can retry.
 
 ### The away message is operator copy
 

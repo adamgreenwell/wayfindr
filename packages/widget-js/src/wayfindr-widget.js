@@ -1989,7 +1989,7 @@
       // away long after support came back -- both silent, and both wrong at
       // exactly the moment the visitor decided to type.
       if (wasHidden) {
-        refreshFromBootstrap();
+        refreshFromBootstrap().catch(function () {});
       }
 
       scheduleRenderedReadReceipt();
@@ -2011,7 +2011,15 @@
 
         bootstrapped = true;
         applyBootstrapResult(result);
-      }, function () {});
+      });
+
+      // Opening the panel must not surface a failure: the fallback state is
+      // already correct to look at. SENDING is different -- a send that
+      // proceeds on a swallowed failure is a message posted without knowing
+      // whether anybody is there, which is the case this exists to prevent. So
+      // the rejection is kept on the promise the sender awaits, and only the
+      // opener ignores it.
+      bootstrapPromise.catch(function () {});
 
       return bootstrapPromise;
     }
@@ -2712,10 +2720,20 @@
 
     // Rendered in the visitor's own locale and zone: they care what time it is
     // where they are, not where the desk is.
+    //
+    // A weekday alone is only unambiguous within the coming week. A site open
+    // one day a week returns exactly seven days out, and "Back Monday" read on
+    // a Monday evening names a time that has already passed. Past six days the
+    // date is included.
+    var options = { weekday: 'long', hour: 'numeric', minute: '2-digit' };
+
+    if (when.getTime() - Date.now() > 6 * 24 * 60 * 60 * 1000) {
+      options.day = 'numeric';
+      options.month = 'long';
+    }
+
     try {
-      return when.toLocaleString(undefined, {
-        weekday: 'long', hour: 'numeric', minute: '2-digit',
-      });
+      return when.toLocaleString(undefined, options);
     } catch (error) {
       return when.toISOString();
     }

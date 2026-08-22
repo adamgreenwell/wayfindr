@@ -465,3 +465,98 @@ test('a stale bootstrap cannot restore obsolete masking rules', async () => {
     'a stale answer must not roll masking back to the older ruleset',
   );
 });
+
+test('a failed availability refresh stops the send rather than hiding', async () => {
+  // Swallowing the rejection meant the sender awaited a resolved promise and
+  // posted on the old state -- a message sent without knowing whether anybody
+  // is there, which is the case this feature exists to prevent.
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/',
+  });
+
+  const calls = [];
+  let failBootstrap = false;
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_docs',
+    storage: memoryStorage({
+      'wayfindr:site_public_docs:anonymous-id': 'anon-docs',
+      'wayfindr:site_public_docs:visitor-token': 'visitor-token-docs',
+    }),
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    fetch: async (url) => {
+      if (url.includes('/cobrowse')) {
+        return jsonResponse(200, { data: { cobrowse: { state: 'unavailable' } } });
+      }
+
+      calls.push(url);
+
+      if (url.endsWith('/bootstrap')) {
+        if (failBootstrap) {
+          throw new Error('network down');
+        }
+
+        return jsonResponse(200, {
+          data: {
+            site: {
+              public_key: 'site_public_docs',
+              settings: {},
+              color: 'blue',
+              availability: { away: false, message: null, opens_at: null, timezone: 'UTC' },
+            },
+            visitor: { anonymous_id: 'anon-docs', token: 'visitor-token-docs' },
+          },
+        });
+      }
+
+      return jsonResponse(200, { data: { conversation: { support_code: 'WF-DOCS', status: 'open' } } });
+    },
+  });
+
+  const launcher = widget.root.querySelector('.wayfindr-widget__launcher');
+
+  launcher.click();
+  await settle();
+
+  widget.root.querySelector('.wayfindr-widget__close').click();
+  failBootstrap = true;
+  calls.length = 0;
+  launcher.click();
+  await settle();
+
+  widget.root.querySelector('.wayfindr-widget__textarea').value = 'Anyone there?';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+    new dom.window.Event('submit', { bubbles: true, cancelable: true })
+  );
+  await settle();
+
+  assert.ok(
+    !calls.some((url) => url.endsWith('/api/conversations')),
+    'a message must not go out on state the widget could not confirm',
+  );
+});
+
+test('a return more than a week out names the date', async () => {
+  // A site open one day a week returns exactly seven days later, and "Back
+  // Monday" read on a Monday evening names a time that already passed.
+  const soon = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
+  const far = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  const nearWidget = widgetWithAvailability({ away: true, message: 'Closed.', opens_at: soon, timezone: 'UTC' });
+  await settle();
+  const nearText = nearWidget.root.querySelector('.wayfindr-widget__away').textContent;
+
+  const farWidget = widgetWithAvailability({ away: true, message: 'Closed.', opens_at: far, timezone: 'UTC' });
+  await settle();
+  const farText = farWidget.root.querySelector('.wayfindr-widget__away').textContent;
+
+  // A day number appears only on the distant one.
+  assert.ok(/\d{1,2}/.test(farText.replace(/\d{1,2}:\d{2}/g, '')), 'a far return carries a date');
+  assert.ok(!/\d{1,2}\s|\s\d{1,2},/.test(nearText.replace(/\d{1,2}:\d{2}/g, '')), 'a near return stays weekday-only');
+});
