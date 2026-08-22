@@ -217,3 +217,21 @@ test('the audit log shows the code, never the visitor-authored subject', functio
 // What is covered is the transition guard above ("a close submitted twice
 // records one close"). The lock is what makes that guard hold when the two
 // requests overlap rather than follow each other.
+
+test('a failed lifecycle write takes the status change down with it', function (): void {
+    // Committing the status first and recording after can leave a transition
+    // with nothing recording it. They are one transaction now, so a failure
+    // means neither happened rather than a silent gap in the history.
+    $w = lifecycleWorld();
+
+    AuditEvent::query()->getConnection()->statement('DROP TABLE audit_events');
+
+    try {
+        $this->actingAs($w['agent'])
+            ->post(route('dashboard.conversations.close', $w['conversation']->support_code));
+    } catch (Throwable) {
+        // The write failing is the point.
+    }
+
+    expect($w['conversation']->fresh()->status)->toBe('open');
+});

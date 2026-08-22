@@ -402,9 +402,13 @@ class AgentConversationController extends Controller
      * request loaded, so concurrent transitions serialise: the second one sees
      * what the first actually did and records nothing.
      */
-    private function transitionStatus(Conversation $conversation, string $status, ?CarbonInterface $closedAt): string
-    {
-        return DB::transaction(function () use ($conversation, $status, $closedAt): string {
+    private function transitionStatus(
+        Conversation $conversation,
+        string $status,
+        ?CarbonInterface $closedAt,
+        callable $record,
+    ): void {
+        DB::transaction(function () use ($conversation, $status, $closedAt, $record): void {
             $locked = Conversation::query()->whereKey($conversation->getKey())->lockForUpdate()->first();
             $previousStatus = (string) ($locked?->status ?? $conversation->status);
 
@@ -413,7 +417,13 @@ class AgentConversationController extends Controller
                 'closed_at' => $closedAt,
             ])->save();
 
-            return $previousStatus;
+            // Written while the lock is still held. Committing the status first
+            // and recording after lets a reopen that grabs the released lock
+            // insert its event ahead of the close's -- a reopen->close sequence
+            // for a conversation that ended up open, which is worse than no
+            // history at all. It also means a failed insert cannot leave a
+            // status change with nothing recording it.
+            $record($previousStatus);
         });
     }
 
@@ -426,9 +436,12 @@ class AgentConversationController extends Controller
         // sequential retries: two concurrent closes both read "open" from their
         // own instance and both record a close, which is the duplicate the
         // guard exists to prevent.
-        $previousStatus = $this->transitionStatus($conversation, 'closed', now());
-
-        $lifecycle->closed($conversation, $agent, $previousStatus);
+        $this->transitionStatus(
+            $conversation,
+            'closed',
+            now(),
+            fn (string $previousStatus) => $lifecycle->closed($conversation, $agent, $previousStatus),
+        );
 
         return redirect()
             ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
@@ -440,9 +453,12 @@ class AgentConversationController extends Controller
         $agent = $request->user();
         $conversation = $this->conversationForAgent($agent, $supportCode, 'updateStatus');
 
-        $previousStatus = $this->transitionStatus($conversation, 'open', null);
-
-        $lifecycle->replyReopenedIfClosed($conversation, $agent, $previousStatus);
+        $this->transitionStatus(
+            $conversation,
+            'open',
+            null,
+            fn (string $previousStatus) => $lifecycle->replyReopenedIfClosed($conversation, $agent, $previousStatus),
+        );
 
         return redirect()
             ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))

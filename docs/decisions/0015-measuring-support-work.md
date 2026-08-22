@@ -86,6 +86,13 @@ event.** Double-clicks, retries and stale pages are ordinary, and consecutive
 closes with no reopen between them would corrupt the close count and every
 interval derived from it.
 
+The event is written **inside the same transaction, while the lock is held**.
+Committing the status first and recording afterwards lets a reopen that grabs
+the released lock insert its event ahead of the close's — a `reopen → close`
+sequence for a conversation that ended up open, which is worse than no history
+at all. It also means a failed insert cannot leave a status change with nothing
+recording it.
+
 The status a transition is judged against must come from the **locked** row.
 Two concurrent visitor messages on a closed conversation otherwise both read
 "closed" from their own pre-lock instance and both record a reopen, for one
