@@ -19,6 +19,7 @@ use App\Support\ReplyTemplateOptions;
 use App\Support\TicketCategory;
 use App\Support\TicketPriority;
 use App\Support\VisitorContextSanitizer;
+use Carbon\CarbonInterface;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -394,17 +395,38 @@ class AgentConversationController extends Controller
         return $metadata;
     }
 
+    /**
+     * Move a conversation to a status, and report what it was.
+     *
+     * The status is read from the locked row rather than from the instance the
+     * request loaded, so concurrent transitions serialise: the second one sees
+     * what the first actually did and records nothing.
+     */
+    private function transitionStatus(Conversation $conversation, string $status, ?CarbonInterface $closedAt): string
+    {
+        return DB::transaction(function () use ($conversation, $status, $closedAt): string {
+            $locked = Conversation::query()->whereKey($conversation->getKey())->lockForUpdate()->first();
+            $previousStatus = (string) ($locked?->status ?? $conversation->status);
+
+            $conversation->forceFill([
+                'status' => $status,
+                'closed_at' => $closedAt,
+            ])->save();
+
+            return $previousStatus;
+        });
+    }
+
     public function close(Request $request, string $supportCode, ConversationLifecycleLog $lifecycle): RedirectResponse
     {
         $agent = $request->user();
         $conversation = $this->conversationForAgent($agent, $supportCode, 'updateStatus');
 
-        $previousStatus = (string) $conversation->status;
-
-        $conversation->forceFill([
-            'status' => 'closed',
-            'closed_at' => now(),
-        ])->save();
+        // Read and write under one lock. The transition guard alone only stops
+        // sequential retries: two concurrent closes both read "open" from their
+        // own instance and both record a close, which is the duplicate the
+        // guard exists to prevent.
+        $previousStatus = $this->transitionStatus($conversation, 'closed', now());
 
         $lifecycle->closed($conversation, $agent, $previousStatus);
 
@@ -418,12 +440,7 @@ class AgentConversationController extends Controller
         $agent = $request->user();
         $conversation = $this->conversationForAgent($agent, $supportCode, 'updateStatus');
 
-        $previousStatus = (string) $conversation->status;
-
-        $conversation->forceFill([
-            'status' => 'open',
-            'closed_at' => null,
-        ])->save();
+        $previousStatus = $this->transitionStatus($conversation, 'open', null);
 
         $lifecycle->replyReopenedIfClosed($conversation, $agent, $previousStatus);
 

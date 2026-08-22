@@ -207,3 +207,13 @@ test('the audit log shows the code, never the visitor-authored subject', functio
         ->assertSee('Conversation '.$w['conversation']->support_code)
         ->assertDontSee('4111 1111 1111 1111');
 });
+
+// NOT COVERED BY A TEST, deliberately: the concurrent-close race needs two
+// simultaneous requests against a real database, and the suite runs SQLite
+// in-memory on one connection. A test that constructs a "stale" instance proves
+// nothing, because conversationForAgent() loads its own fresh copy either way --
+// the first version of this test passed with the lock removed.
+//
+// What is covered is the transition guard above ("a close submitted twice
+// records one close"). The lock is what makes that guard hold when the two
+// requests overlap rather than follow each other.
