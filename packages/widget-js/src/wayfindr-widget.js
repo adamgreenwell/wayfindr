@@ -203,15 +203,29 @@
       throw new Error('Wayfindr requires fetch support.');
     }
 
+    var bootstrapTicket = 0;
+
     return {
       anonymousId: anonymousId,
       sitePublicKey: sitePublicKey,
       bootstrap: function (pageUrl, context) {
+        var ticket = ++bootstrapTicket;
+
         return postJson(fetcher, apiBaseUrl + '/api/widget/bootstrap', withVisitorContext({
           site_public_key: sitePublicKey,
           anonymous_id: anonymousId,
           page_url: pageUrl || null,
         }, context, visitorExternalId)).then(function (result) {
+          // Overlapping bootstraps finishing out of order would otherwise let
+          // an older answer restore obsolete masking rules -- and a stale mask
+          // is a field the visitor believes is protected. The client sequences
+          // its own state for the same reason the panel sequences its own:
+          // this applies to host pages calling bootstrap() directly too, which
+          // a caller-applied version would have left unguarded.
+          if (ticket !== bootstrapTicket) {
+            return result;
+          }
+
           var token = result && result.visitor ? result.visitor.token : null;
 
           if (token) {
@@ -2278,10 +2292,7 @@
     async function resumeConversation(candidateCode) {
       try {
         if (!bootstrapped) {
-          applyBootstrapResult(
-            await client.bootstrap(location ? location.href : null, visitorContext)
-          );
-          bootstrapped = true;
+          await refreshFromBootstrap();
         }
 
         var result = await client.fetchMessages(candidateCode);

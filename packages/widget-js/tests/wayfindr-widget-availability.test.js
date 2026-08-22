@@ -401,3 +401,67 @@ test('sending waits for a pending availability refresh', async () => {
     'once availability is known the send proceeds',
   );
 });
+
+test('a stale bootstrap cannot restore obsolete masking rules', async () => {
+  // Privacy, not cosmetics: an out-of-date mask is a field the visitor believes
+  // is protected. Observed through the ruleset a cobrowse snapshot reports,
+  // because that is what the masking actually feeds.
+  const calls = [];
+  const release = [];
+  let selectors = ['#old-secret'];
+
+  const client = Wayfindr.createClient({
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    fetch: async (url, options) => {
+      calls.push({ url, options });
+
+      if (url.endsWith('/api/widget/bootstrap')) {
+        const snapshot = selectors;
+
+        return new Promise((resolve) => {
+          release.push(() => resolve(jsonResponse(200, {
+            data: {
+              site: {
+                public_key: 'site_public_docs',
+                settings: { mask_selectors: snapshot, mask_terms: [] },
+              },
+              visitor: { anonymous_id: 'anon-browser-123', token: 'visitor-token' },
+            },
+          })));
+        });
+      }
+
+      return jsonResponse(200, { data: { snapshot: {} } });
+    },
+  });
+
+  const first = client.bootstrap('https://docs.example.test/');
+
+  // The operator adds a selector; a second bootstrap picks it up.
+  selectors = ['#old-secret', '#newly-protected'];
+  const second = client.bootstrap('https://docs.example.test/');
+
+  // The NEWER answer lands first, then the stale one.
+  release[1]();
+  await second;
+  release[0]();
+  await first;
+
+  await client.reportCobrowseSnapshot('WF-TEST123', {
+    html: '<main></main>',
+    text: 'hello',
+    title: 'Docs',
+    maskedCount: 0,
+  });
+
+  const snapshotCall = calls.find((call) => call.url.endsWith('/cobrowse-snapshot'));
+  const payload = JSON.parse(snapshotCall.options.body);
+
+  assert.deepEqual(
+    payload.mask_selectors,
+    ['#old-secret', '#newly-protected'],
+    'a stale answer must not roll masking back to the older ruleset',
+  );
+});
