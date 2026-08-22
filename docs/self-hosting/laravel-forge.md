@@ -249,9 +249,9 @@ public keys for staging, production, or public dogfood sites.
 
 The first owner is also marked as the initial platform operator. Open
 `/operator` after bootstrap to review safe system identity and instance
-readiness checks. Account owners and admins can still use
-`/dashboard/readiness` for the same install checkup from the account dashboard.
-These pages flag common self-hosting setup gaps such as missing app keys,
+readiness checks. Readiness reports on the install itself, so it is an
+operator surface: an account owner or admin without the platform operator role
+cannot open it. `/operator` flags common self-hosting setup gaps such as missing app keys,
 local or insecure public URLs, database connectivity problems, local-only mail
 transport, queue worker configuration, Reverb settings, storage permissions,
 scheduler setup, and backup/restore planning.
@@ -566,7 +566,7 @@ background process reloads the active release.
 19. Confirm database and storage backups are scheduled, retained, monitored,
     and restorable.
 20. Sign in with the generated first agent credentials.
-21. Review `/operator` or `/dashboard/readiness`, resolve any setup gaps, and
+21. Review `/operator`, resolve any setup gaps, and
     follow the post-install smoke path before real visitor traffic.
 
 ## Smoke Test

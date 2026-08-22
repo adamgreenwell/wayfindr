@@ -11,16 +11,6 @@ use Illuminate\Validation\Rule;
 
 class OperatorReadinessConfirmationController extends Controller
 {
-    public function storeFromDashboard(Request $request): RedirectResponse
-    {
-        $agent = $request->user();
-
-        abort_unless($agent?->account_id, 403);
-        abort_unless($agent->isAdmin(), 403);
-
-        return $this->store($request, route('dashboard.readiness.show'));
-    }
-
     public function storeFromOperator(Request $request): RedirectResponse
     {
         abort_unless($request->user()?->isPlatformOperator(), 403);

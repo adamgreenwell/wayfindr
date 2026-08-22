@@ -66,7 +66,7 @@
                 if ($canViewAlertDelivery && $agentAlertReadinessSummary) {
                     $accountMapItems[] = [
                         'label' => 'Team alert readiness',
-                        'detail' => 'Notification delivery posture across active agents.',
+                        'detail' => 'Whether your active agents can actually receive notifications.',
                         'href' => '#team-alert-readiness-heading',
                     ];
                 }
@@ -342,13 +342,6 @@
                             </span>
                             <span class="management-action">Manage</span>
                         </a>
-                        <a class="management-link" href="{{ route('dashboard.readiness.show') }}">
-                            <span>
-                                <strong>Readiness checks</strong>
-                                <span class="lede">Deploy, realtime, queue, and privacy checks before visitor pressure.</span>
-                            </span>
-                            <span class="management-action">Review</span>
-                        </a>
                         <a class="management-link" href="{{ route('dashboard.account.audit.index') }}">
                             <span>
                                 <strong>Audit log</strong>
@@ -359,7 +352,7 @@
                         <a class="management-link" href="{{ route('dashboard.account.break-glass.index') }}">
                             <span>
                                 <strong>Operator access</strong>
-                                <span class="lede">Break-glass requests and grants touching this account.</span>
+                                <span class="lede">Requests from platform operators to see this account's support data.</span>
                             </span>
                             <span class="management-action">Review</span>
                         </a>
@@ -471,7 +464,6 @@
                             <span class="readiness-status" data-status="{{ $agentAlertReadinessSummary['status'] }}">
                                 {{ $agentAlertReadinessSummary['label'] }}
                             </span>
-                            <a class="button secondary" href="{{ route('dashboard.readiness.show') }}">Readiness</a>
                         </div>
                     </div>
                     <div class="meta-grid readiness-summary-grid">

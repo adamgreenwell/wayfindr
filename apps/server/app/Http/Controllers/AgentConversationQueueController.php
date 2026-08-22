@@ -6,6 +6,7 @@ use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\User;
 use App\Support\CobrowseConsentState;
+use App\Support\Conversations\ConversationQueueQuery;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -143,32 +144,9 @@ class AgentConversationQueueController extends Controller
             ->whereHas('site', fn ($query) => $query->visibleToAgent($agent))
             ->when($conversationSite, fn ($query) => $query->where('site_id', $conversationSite))
             ->when($conversationPresence !== 'all', fn ($query) => $this->applyConversationPresenceFilter($query, $conversationPresence))
-            ->when($conversationSearch !== '', function ($query) use ($conversationSearch): void {
-                $searchPattern = $this->conversationSearchPattern($conversationSearch);
-
-                $query->where(function ($query) use ($searchPattern): void {
-                    $this->whereLiteralLike($query, 'subject', $searchPattern);
-                    $this->whereLiteralLike($query, 'support_code', $searchPattern, 'or');
-                    $query->orWhereHas('visitor', function ($query) use ($searchPattern): void {
-                        $this->whereLiteralLike($query, 'anonymous_id', $searchPattern);
-                        $this->whereLiteralLike($query, 'external_id', $searchPattern, 'or');
-                        $this->whereLiteralLike($query, 'name', $searchPattern, 'or');
-                        $this->whereLiteralLike($query, 'email', $searchPattern, 'or');
-                    });
-                });
-            })
-            ->when($conversationFilter === 'new_activity', fn ($query) => $query->withNewActivityFor($agent))
-            ->when($conversationFilter === 'needs_reply', function ($query): void {
-                $query->where(function ($query): void {
-                    $query->whereDoesntHave('messages')
-                        ->orWhereHas('latestMessage', fn ($query) => $query->where('sender_type', '!=', User::class));
-                });
-            })
-            ->when($conversationFilter === 'assigned_to_me', fn ($query) => $query->where('assigned_agent_id', $agent->id))
-            ->when($conversationFilter === 'unassigned', fn ($query) => $query->whereNull('assigned_agent_id'))
-            ->when($conversationFilter === 'cobrowse_attention', fn ($query) => $query->withActiveCobrowseSession())
-            ->orderByDesc('last_message_at')
-            ->orderByDesc('created_at')
+            ->when($conversationSearch !== '', fn ($query) => ConversationQueueQuery::applySearch($query, $conversationSearch))
+            ->tap(fn ($query) => ConversationQueueQuery::applyLane($query, $conversationFilter, $agent))
+            ->tap(fn ($query) => ConversationQueueQuery::ordered($query))
             ->get();
 
         $cobrowseTransportByConversationId = $conversations
@@ -603,29 +581,12 @@ class AgentConversationQueueController extends Controller
      */
     private function visibleOpenConversationQuery(User $agent, ?int $conversationSite, string $conversationSearch): Builder
     {
-        return Conversation::query()
-            ->where('status', 'open')
-            ->whereHas('site', fn (Builder $query) => $query->visibleToAgent($agent))
-            ->when($conversationSite, fn (Builder $query) => $query->where('site_id', $conversationSite))
-            ->when($conversationSearch !== '', function (Builder $query) use ($conversationSearch): void {
-                $searchPattern = $this->conversationSearchPattern($conversationSearch);
-
-                $query->where(function (Builder $query) use ($searchPattern): void {
-                    $this->whereLiteralLike($query, 'subject', $searchPattern);
-                    $this->whereLiteralLike($query, 'support_code', $searchPattern, 'or');
-                    $query->orWhereHas('visitor', function (Builder $query) use ($searchPattern): void {
-                        $this->whereLiteralLike($query, 'anonymous_id', $searchPattern);
-                        $this->whereLiteralLike($query, 'external_id', $searchPattern, 'or');
-                        $this->whereLiteralLike($query, 'name', $searchPattern, 'or');
-                        $this->whereLiteralLike($query, 'email', $searchPattern, 'or');
-                    });
-                });
-            });
+        return ConversationQueueQuery::visibleTo($agent, 'open', $conversationSite, $conversationSearch);
     }
 
     private function conversationSearchPattern(string $conversationSearch): string
     {
-        return '%'.str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $conversationSearch).'%';
+        return ConversationQueueQuery::searchPattern($conversationSearch);
     }
 
     private function whereLiteralLike($query, string $column, string $pattern, string $boolean = 'and'): void
@@ -641,18 +602,6 @@ class AgentConversationQueueController extends Controller
 
     private function applyConversationPresenceFilter($query, string $conversationPresence): void
     {
-        $activeCutoff = now()->subMinutes(2);
-        $recentCutoff = now()->subMinutes(15);
-
-        $query->whereHas('visitor', function ($query) use ($activeCutoff, $conversationPresence, $recentCutoff): void {
-            match ($conversationPresence) {
-                'active' => $query->where('last_seen_at', '>=', $activeCutoff),
-                'recent' => $query->where('last_seen_at', '<', $activeCutoff)
-                    ->where('last_seen_at', '>=', $recentCutoff),
-                'quiet' => $query->where('last_seen_at', '<', $recentCutoff),
-                'not_reported' => $query->whereNull('last_seen_at'),
-                default => null,
-            };
-        });
+        ConversationQueueQuery::applyPresence($query, $conversationPresence);
     }
 }

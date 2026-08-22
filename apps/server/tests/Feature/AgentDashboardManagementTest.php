@@ -220,8 +220,8 @@ test('the account page is the management hub; the home stays queue-focused', fun
         ->assertSee('Sites')
         ->assertSee('Reply templates')
         ->assertSee('Ticket labels')
-        ->assertSee('Readiness checks')
-        ->assertSee('/dashboard/readiness', false)
+        ->assertDontSee('Readiness checks')
+        ->assertDontSee('/dashboard/readiness', false)
         ->assertSee('Audit log')
         ->assertSee('/dashboard/account/audit', false)
         ->assertSee('Data responsibility');
@@ -254,7 +254,7 @@ test('dashboard shows a visitor support readiness checklist', function (): void 
         ->assertSee('Set up realtime delivery')
         ->assertSee('Move queues out of sync mode')
         ->assertSee('Confirm scheduler job')
-        ->assertSee('Manual check')
+        ->assertSee('Confirm this')
         ->assertSee('Run a first test conversation')
         ->assertSee('Open tester')
         ->assertSee('Ask an account owner or admin to add mask selectors before cobrowse is used with real visitors.')
@@ -295,7 +295,12 @@ test('dashboard shows a visitor support readiness checklist', function (): void 
         ->assertSee('Visitor support readiness')
         ->assertSee('6 ready')
         ->assertSee('0 need attention')
-        ->assertSee('1 manual check')
+        ->assertSee('1 to confirm')
+        // Everything automatic passes here, but the scheduler can only be
+        // confirmed by a person, so the panel must not claim the install is
+        // ready for visitors while it still lists something to confirm.
+        ->assertSee('Nearly ready')
+        ->assertDontSee('Ready for visitors')
         ->assertSee('Widget check-in is fresh.')
         ->assertSee('Privacy masking has selectors configured.')
         ->assertSee('Realtime delivery is configured.')

@@ -1,5 +1,5 @@
-<x-layouts.operator title="Break-glass access — {{ $grant->scopeLabel() }}">
-    <p><a class="text-link" href="{{ route('operator.break-glass.index') }}">Back to break-glass</a></p>
+<x-layouts.operator title="Operator access — {{ $grant->scopeLabel() }}">
+    <p><a class="text-link" href="{{ route('operator.break-glass.index') }}">Back to operator access</a></p>
     <h1>{{ $grant->scopeLabel() }}</h1>
     <p class="lede">
         Read-only access until {{ $grant->expires_at->format('H:i T') }} ({{ $grant->expires_at->diffForHumans() }}).

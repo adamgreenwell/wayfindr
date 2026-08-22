@@ -43,8 +43,8 @@ confirm:
   `php artisan wayfindr:mail-test --to="verified-recipient@example.com"`
   succeeds.
 - Backups are configured outside the application and have a restore path.
-- The first account owner can reach `/dashboard`, `/dashboard/readiness`, and
-  `/operator`.
+- The first account owner can reach `/dashboard`, and — as the initial platform
+  operator — `/operator`.
 
 If any gate is not true, the install can still be useful for local testing, but
 it should not receive real visitor support traffic yet.

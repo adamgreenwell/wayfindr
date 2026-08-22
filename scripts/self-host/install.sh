@@ -1646,7 +1646,8 @@ cat <<DONE
   Logs:                      docker compose -f $COMPOSE_FILE --env-file $ENV_FILE logs -f
   Upgrade later:             $TARGET_DIR/install.sh --upgrade --dir $TARGET_DIR
 
-  Readiness checks live at $APP_URL/dashboard/readiness after you sign in.
+  Readiness checks live at $APP_URL/operator after you sign in. The account you
+  create at /setup is this install's first platform operator, so it is yours.
 
 DONE
 

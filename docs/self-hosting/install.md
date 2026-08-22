@@ -147,7 +147,7 @@ Then work through the readiness screens:
   go nowhere until you configure a real provider. Use
   [email-delivery.md](email-delivery.md) (SPF/DKIM/DMARC included) and run
   the mail smoke test.
-- `/dashboard/readiness` and `/operator` flag what the app can inspect
+- `/operator` flags what the app can inspect
   directly (queues, realtime, scheduler, storage, scanning) and mark
   backups as a manual responsibility. Wayfindr ships `wayfindr:backup` and
   a guarded `wayfindr:restore` for the round trip —

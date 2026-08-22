@@ -187,14 +187,13 @@ test('first run setup handoff shows install guidance and operator readiness link
         ->assertSee('Next steps')
         ->assertSee('Copy this snippet into docs.example.test.')
         ->assertSee('Visit the site and send a test message from the widget.')
-        ->assertSee('Post-install smoke path')
+        ->assertSee('Prove the install works')
         ->assertSee('Send a real email')
         ->assertSee('php artisan wayfindr:mail-test --to=you@example.com')
         ->assertSee('Confirm background workers')
         ->assertSee('php artisan queue:failed')
         ->assertSee('/operator', false)
         ->assertSee('Open operator console')
-        ->assertSee('/dashboard/readiness', false)
         ->assertSee('data-wayfindr-site-key=&quot;'.$site->public_key.'&quot;', false);
 });
 

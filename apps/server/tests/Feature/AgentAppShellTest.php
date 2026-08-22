@@ -68,7 +68,9 @@ test('agent pages include an active state for support filter chips', function ()
         ->assertSee('.filter-chip[aria-current="page"]', false);
 });
 
-test('account admins see operator readiness navigation', function (): void {
+test('account admins are not offered the instance readiness report', function (): void {
+    // Readiness is an operator surface. The rail used to offer it to any
+    // account admin, who could open it but could not act on anything in it.
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $admin = User::factory()->for($account)->create([
         'account_role' => AccountRole::Admin,
@@ -78,8 +80,8 @@ test('account admins see operator readiness navigation', function (): void {
     $this->actingAs($admin)
         ->get('/dashboard')
         ->assertOk()
-        ->assertSee('Readiness')
-        ->assertSee('/dashboard/readiness', false);
+        ->assertDontSee('/dashboard/readiness', false)
+        ->assertDontSee('/operator', false);
 });
 
 test('platform operators see the operator console in navigation', function (): void {

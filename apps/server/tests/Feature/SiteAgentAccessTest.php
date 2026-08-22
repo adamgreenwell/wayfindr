@@ -820,7 +820,7 @@ test('plain agents can see site access context but cannot manage it', function (
         ->assertSee('Bea Builder')
         ->assertSee('Account owners and admins manage site support access.')
         ->assertDontSee('Save site access')
-        ->assertDontSee('Post-install smoke path');
+        ->assertDontSee('Prove the install works');
 
     $this->actingAs($agent)
         ->put("/dashboard/sites/{$site->id}/support-agents", [
@@ -960,7 +960,7 @@ test('site assigned platform operators see the operator smoke path', function ()
         ->get("/dashboard/sites/{$site->id}")
         ->assertOk()
         ->assertSee('Open operator console')
-        ->assertSee('Post-install smoke path')
+        ->assertSee('Prove the install works')
         ->assertSee('Confirm background workers')
         ->assertSee('php artisan queue:failed');
 });

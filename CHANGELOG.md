@@ -32,11 +32,29 @@ missed while skimming.
 
 **No operator action required.** Pull, restart, and migrations run themselves.
 
+### Fixed
+
+- **The installer no longer sends you to the old readiness address.** Its closing
+  message pointed at `/dashboard/readiness`, which 0.6.0 made operator-only. The
+  link still resolves — it redirects, and the account you create at `/setup` is
+  the install's first platform operator — but it named a page that had moved. It
+  now points at `/operator` and says why that account can open it.
+
+## [0.6.0] - 2026-08-21
+
+**No operator action required.** Pull, restart, and migrations run themselves.
+
 The interface renovation described in ADR 0014 lands in this release. **The
 dashboard looks substantially different** — a permanent sidebar instead of a row
 of tabs, a new typeface, denser queues, a colour per site, and a dark mode. Your
 data, URLs, and the install snippet on your pages are untouched; this is the same
-application wearing a different face. Screenshots are in the release notes.
+application wearing a different face.
+
+The operator side got the same treatment, plus a pass over its wording: pages
+are named for what they do rather than for the mechanism behind them, and the
+console is grouped into tabs instead of one long scroll. **One access change is
+worth reading before you upgrade** — the readiness report is now operator-only.
+It is the first item under *Changed*.
 
 ### Added
 
@@ -50,11 +68,64 @@ application wearing a different face. Screenshots are in the release notes.
   creation order, so each of your sites starts out distinct from the others.
   Nothing to configure unless you want to change them.
 
+- **Move through the queue without going back to it.** Opening a conversation
+  used to be a round trip: read it, return to the queue, find your place, open
+  the next one. A conversation now carries the queue it came from — previous and
+  next, your position in it, and a menu of the others — so a run of work is one
+  pass instead of many. It follows the queue you actually used, including its
+  filters and search, and it stays out of the way when you arrive from a
+  notification or a support-code lookup, where there is no queue to speak of.
+
 ### Changed
+
+- **The readiness report is now for operators only.** `/dashboard/readiness`
+  reported on the installation itself — mail, queues, storage, attachment
+  scanning, debug mode, the commands to run — and any account administrator
+  could open it, while every settings page that could act on what it said
+  refused them. It also let them record readiness confirmations, attesting on an
+  operator's behalf that something about the install had been checked.
+
+  It now lives only in the operator console. The old address still works and
+  takes you there, so existing links are not dead ends; anyone who is not a
+  platform operator is refused, the same as anywhere else under `/operator`.
+  Nothing is lost — the console shows everything that page did.
+
+  ⚠ **Operator action** if someone who is *not* a platform operator was using
+  that page: give them the platform operator role, or have an operator take over
+  readiness checks. On an install set up the documented way the first account
+  owner is already the initial platform operator, so most installs are
+  unaffected.
+
+- **The operator console is grouped into tabs.** It had grown to sixteen
+  sections on one page. They are now five, named for the question being asked —
+  *Overview*, *Health*, *Go live*, *Data* and *Access* — and the tabs carrying
+  something that needs attention say so with a count. Overview opens first and
+  carries the summary and the single recommended next step, so the most
+  important thing is still the first thing.
+
+- **Operator pages say what they do.** Several were named after the machinery
+  behind them rather than the job in front of you. *Break-glass* — a security
+  term for the emergency envelope on the wall — is now **Operator access**, and
+  the screen opens by telling you what it guarantees: an operator cannot see any
+  account's conversations or tickets, and asks for read-only, expiring access
+  that the account approves, watches and can end.
+
+  Elsewhere *Dogfood readiness* is now **Before real support traffic**,
+  *Post-install smoke path* is **Prove the install works**, *Readiness proof
+  coverage* is **What you have confirmed**, and *Retention posture* is **How
+  long data is kept**. Status wording is consistent across every readiness
+  surface. Nothing changed about what these pages check or record — only what
+  they are called, including in your account's audit log, where operator access
+  events used to read as "Break Glass Resource Viewed".
+
+- **The operator console stopped describing a feature it already has.** It still
+  said customer-data access was "Not enabled" and would require scope, expiry,
+  approval and audit "before it exists". That shipped a release ago with exactly
+  those four properties.
 
 - **The operator console is part of the application now.** Every operator page —
   the console, the setup checklist, mail, storage, scanning, backups and
-  break-glass — used to render outside the dashboard entirely, with a single text
+  operator access — used to render outside the dashboard entirely, with a single text
   link at the top of each page to get back out. They now sit in the same shell as
   everything else, with their own list of sections down the side, so moving
   between them no longer means going back to the console first.
@@ -89,6 +160,24 @@ application wearing a different face. Screenshots are in the release notes.
   install on `localhost`, on a bare IP, or behind a firewall renders the same as
   one on a public domain. Previously a font host was configured but never
   actually used, so every install already fell back to the system stack.
+
+### Fixed
+
+- **Long commands stay inside their card.** A setup command wide enough to
+  exceed the page — the support-loop script, with a real host page URL in it —
+  stretched its whole list past the edge of the card and made the page scroll
+  sideways. Commands now scroll within their own box.
+
+- **The dashboard no longer calls an install ready while something is
+  unconfirmed.** The support checklist reported "Ready for visitors" whenever
+  nothing had outright failed, even though the scheduler check can only ever be
+  confirmed by a person and so was always outstanding. It now says *Nearly
+  ready* until the last item is confirmed.
+
+- **Smaller console corrections.** The recommended next step printed its
+  explanation twice when that step came from the setup path; a summary line
+  reported counts using different words than the labels directly above it; and
+  a link to a specific tab scrolled it underneath the header.
 
 ### Removed
 

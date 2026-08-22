@@ -1,4 +1,4 @@
-<x-layouts.operator title="Break-glass — {{ $conversation->support_code }}">
+<x-layouts.operator title="Operator access — {{ $conversation->support_code }}">
     <p><a class="text-link" href="{{ route('operator.break-glass.show', $grant) }}">Back to grant</a></p>
     <h1>{{ $conversation->support_code }}</h1>
     <p class="lede">
@@ -28,7 +28,7 @@
                                 <span class="lede">
                                     Attachment: {{ $attachment->original_filename }}
                                     ({{ $attachment->mime_type }}, {{ number_format($attachment->size_bytes / 1024, 1) }} KB, scan: {{ $attachment->scan_status ?? 'n/a' }})
-                                    — metadata only; break-glass access does not open files.
+                                    — names and sizes only; operator access never opens a file.
                                 </span>
                             @endforeach
                         </span>

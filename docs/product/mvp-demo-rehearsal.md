@@ -31,8 +31,8 @@ Before the demo, confirm:
 3. `/up` returns `200`.
 4. `/setup` no longer exposes first-run setup after the first account exists.
 5. `/login` loads and the test agent can sign in.
-6. `/dashboard/readiness` loads for an account owner or admin.
-7. `/operator` loads for a platform operator.
+6. `/operator` loads for a platform operator, and its readiness checks are green.
+7. An account owner or admin who is not a platform operator is refused there.
 8. Queue workers are running on the intended durable queue connection.
 9. The scheduler runs every minute.
 10. Reverb is running and routed through HTTPS if realtime is part of the demo.
@@ -116,7 +116,7 @@ After the smoke passes, rehearse the human-facing path:
 9. Use support-code lookup to find the conversation or ticket.
 10. Request cobrowse, grant consent from the widget, and confirm that page
     state appears only after consent.
-11. Review `/dashboard/readiness` and `/operator`.
+11. Review `/operator`.
 12. Close by naming the known MVP limitations that still apply.
 
 Manual refresh remains an acceptable fallback. If realtime is not part of the

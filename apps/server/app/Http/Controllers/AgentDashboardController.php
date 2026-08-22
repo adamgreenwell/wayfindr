@@ -47,7 +47,7 @@ class AgentDashboardController extends Controller
             'visitorSupportReadiness' => $visitorSupportReadiness->summary(
                 sites: $sites,
                 realtimeHealth: $realtimeHealthSummary,
-                canViewReadiness: $agent->isAdmin(),
+                canViewReadiness: $agent->isPlatformOperator(),
                 canManagePrivacy: $agent->isAdmin(),
             ),
         ]);

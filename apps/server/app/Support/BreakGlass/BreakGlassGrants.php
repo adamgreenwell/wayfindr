@@ -29,7 +29,7 @@ class BreakGlassGrants
 
         if ($reason === '') {
             throw ValidationException::withMessages([
-                'reason' => 'A break-glass request needs a written reason.',
+                'reason' => 'Say why you need access. The account reads this before deciding.',
             ]);
         }
 
@@ -106,7 +106,7 @@ class BreakGlassGrants
                 abort_if(
                     $this->eligibleApprovers($locked)->isNotEmpty(),
                     403,
-                    'This account has an owner or admin who must approve break-glass access.',
+                    'This account has an owner or admin, so they decide. Your request is waiting with them.',
                 );
             } else {
                 abort_unless($this->isEligibleApprover($locked, $approver), 403);

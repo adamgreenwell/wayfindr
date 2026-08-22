@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\PlatformRole;
 use App\Events\CobrowseStateUpdated;
 use App\Events\ConversationMessageCreated;
 use App\Events\ConversationTypingUpdated;
@@ -23,6 +24,19 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Notification;
 
 uses(RefreshDatabase::class);
+
+/**
+ * The page minus the queue switcher.
+ *
+ * The switcher deliberately names every conversation in the lane the agent came
+ * from -- it IS the queue, and they just saw those subjects on it. Assertions
+ * about what a VISITOR-scoped panel may name have to exclude it, or they are
+ * really asserting "this page mentions nothing else", which is not the rule.
+ */
+function withoutQueueSwitcher(string $html): string
+{
+    return preg_replace('/<nav class="wf-switcher".*?<\/nav>/s', '', $html) ?? $html;
+}
 
 test('dashboard lists open conversations for the agent account', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
@@ -647,7 +661,7 @@ test('conversation detail links preserve conversation queue return context', fun
     $this->actingAs($agent)
         ->get('/dashboard/conversations?conversation_filter=closed&conversation_site='.$site->id.'&conversation_search=return&ignored=yes')
         ->assertOk()
-        ->assertSee('/dashboard/conversations/WF-RETURN?conversation_filter=closed&amp;conversation_search=return&amp;conversation_site='.$site->id, false)
+        ->assertSee('/dashboard/conversations/WF-RETURN?from_queue=1&amp;conversation_filter=closed&amp;conversation_search=return&amp;conversation_site='.$site->id, false)
         ->assertDontSee('ignored=yes', false);
 
     $this->actingAs($agent)
@@ -1246,7 +1260,7 @@ test('dashboard preserves visitor presence filters when opening a conversation',
         $this->actingAs($agent)
             ->get('/dashboard/conversations?conversation_filter=needs_reply&conversation_site='.$site->id.'&conversation_presence=active&conversation_search=Active')
             ->assertOk()
-            ->assertSee('/dashboard/conversations/WF-PRESERVE?conversation_filter=needs_reply&amp;conversation_search=Active&amp;conversation_site='.$site->id.'&amp;conversation_presence=active', false);
+            ->assertSee('/dashboard/conversations/WF-PRESERVE?from_queue=1&amp;conversation_filter=needs_reply&amp;conversation_search=Active&amp;conversation_site='.$site->id.'&amp;conversation_presence=active', false);
 
         $this->actingAs($agent)
             ->get('/dashboard/conversations/WF-PRESERVE?conversation_filter=needs_reply&conversation_site='.$site->id.'&conversation_presence=active&conversation_search=Active')
@@ -3168,10 +3182,13 @@ test('readiness page shows ready realtime status when reverb is configured', fun
     config()->set('broadcasting.connections.reverb.options.scheme', 'https');
 
     $account = Account::factory()->create();
-    $agent = User::factory()->for($account)->create(['account_role' => 'admin']);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => 'admin',
+        'platform_role' => PlatformRole::Operator,
+    ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard/readiness')
+        ->get('/operator')
         ->assertOk()
         ->assertSee('Realtime')
         ->assertSee('Ready')
@@ -3195,10 +3212,13 @@ test('readiness page shows realtime setup guidance when reverb is incomplete', f
     config()->set('broadcasting.connections.reverb.options.scheme', 'https');
 
     $account = Account::factory()->create();
-    $agent = User::factory()->for($account)->create(['account_role' => 'admin']);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => 'admin',
+        'platform_role' => PlatformRole::Operator,
+    ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard/readiness')
+        ->get('/operator')
         ->assertOk()
         ->assertSee('Realtime')
         ->assertSee('Needs setup')
@@ -3217,10 +3237,13 @@ test('readiness page shows realtime disabled when broadcasting is not using reve
     config()->set('broadcasting.default', 'log');
 
     $account = Account::factory()->create();
-    $agent = User::factory()->for($account)->create(['account_role' => 'admin']);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => 'admin',
+        'platform_role' => PlatformRole::Operator,
+    ]);
 
     $this->actingAs($agent)
-        ->get('/dashboard/readiness')
+        ->get('/operator')
         ->assertOk()
         ->assertSee('Realtime')
         ->assertSee('Disabled')
@@ -3488,9 +3511,17 @@ test('agent conversation page surfaces a support reference trail', function (): 
         ->assertSee('customer-789')
         ->assertSee('Same visitor support codes')
         ->assertSee('WF-PASTREF')
-        ->assertSee('Earlier checkout issue')
-        ->assertDontSee('WF-NOTTHIS')
-        ->assertDontSee('Different visitor issue');
+        ->assertSee('Earlier checkout issue');
+
+    // Scoped past the switcher: it names every conversation in the lane the
+    // agent came from, which is its job. The rule being guarded here is that
+    // the VISITOR-scoped trail names only this visitor's conversations.
+    $page = withoutQueueSwitcher($this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-CURRENTREF')
+        ->getContent());
+
+    expect($page)->not->toContain('WF-NOTTHIS')
+        ->and($page)->not->toContain('Different visitor issue');
 });
 
 test('agent visitor context hides sensitive host visitor identifiers', function (): void {
@@ -3578,9 +3609,18 @@ test('agent can view prior conversations for the same visitor and site', functio
         ->assertSee('Second earlier question')
         ->assertSee('WF-OLDER2')
         ->assertSee('Unassigned')
-        ->assertSee('No ticket')
-        ->assertDontSee('Different visitor question')
-        ->assertDontSee('Other site question');
+        ->assertSee('No ticket');
+
+    // Both of these are the SAME account -- another visitor and another site the
+    // agent can already see in their own queue -- so the switcher naming them is
+    // correct. The rule being guarded is that the visitor-scoped
+    // prior-conversations panel names only this visitor's conversations.
+    $page = withoutQueueSwitcher($this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-CURRENT')
+        ->getContent());
+
+    expect($page)->not->toContain('Different visitor question')
+        ->and($page)->not->toContain('Other site question');
 });
 
 test('agent can close an open conversation', function (): void {

@@ -15,7 +15,6 @@ use App\Http\Controllers\AgentConversationTypingController;
 use App\Http\Controllers\AgentDashboardController;
 use App\Http\Controllers\AgentExternalIssueProviderConnectionController;
 use App\Http\Controllers\AgentProfileController;
-use App\Http\Controllers\AgentReadinessController;
 use App\Http\Controllers\AgentReplyTemplateController;
 use App\Http\Controllers\AgentSiteController;
 use App\Http\Controllers\AgentSiteExternalIssueProjectController;
@@ -102,10 +101,14 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.account.reply-templates.update');
     Route::post('/dashboard/account/reply-templates/{replyTemplate}/archive', [AgentReplyTemplateController::class, 'archive'])
         ->name('dashboard.account.reply-templates.archive');
-    Route::get('/dashboard/readiness', AgentReadinessController::class)
+    // Readiness is an instance report about mail, queues, storage and
+    // scanning -- an operator's job, not an account's. This route predates the
+    // operator console and served the same report to account admins, who then
+    // got a 403 on every settings page that could act on it. The console owns
+    // it now; operators following an old link land there, and everyone else
+    // gets the same 403 the rest of /operator gives them.
+    Route::redirect('/dashboard/readiness', '/operator')
         ->name('dashboard.readiness.show');
-    Route::post('/dashboard/readiness/confirmations', [OperatorReadinessConfirmationController::class, 'storeFromDashboard'])
-        ->name('dashboard.readiness.confirmations.store');
     Route::post('/dashboard/account/agents', [AgentAccountAgentController::class, 'store'])
         ->name('dashboard.account.agents.store');
     Route::put('/dashboard/account/agents/{agent}/role', AgentAccountAgentRoleController::class)

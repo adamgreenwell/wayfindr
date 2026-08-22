@@ -16,7 +16,8 @@ class VisitorSupportReadiness
      *     checks: array<int, array{action: string, detail: string, href: string|null, key: string, label: string, status: string, status_label: string, summary: string}>,
      *     label: string,
      *     manual_count: int,
-     *     ready_count: int
+     *     ready_count: int,
+     *     status: string
      * }
      */
     public function summary(Collection $sites, array $realtimeHealth, bool $canViewReadiness = false, bool $canManagePrivacy = false): array
@@ -35,12 +36,24 @@ class VisitorSupportReadiness
         $manualCount = count(array_filter($checks, fn (array $check): bool => $check['status'] === 'manual'));
         $readyCount = count(array_filter($checks, fn (array $check): bool => $check['status'] === 'ready'));
 
+        // The scheduler check is always 'manual' -- Wayfindr cannot see cron
+        // from inside the request -- so a two-way label would claim "Ready for
+        // visitors" while the list below it still says something needs
+        // confirming. Manual work is its own state, as it is in
+        // OperatorReadiness::dogfoodSummary().
+        $status = $attentionCount > 0 ? 'attention' : ($manualCount > 0 ? 'manual' : 'ready');
+
         return [
             'attention_count' => $attentionCount,
             'checks' => $checks,
-            'label' => $attentionCount > 0 ? 'Needs attention' : 'Ready enough to dogfood',
+            'label' => match ($status) {
+                'ready' => 'Ready for visitors',
+                'manual' => 'Nearly ready',
+                default => 'Needs attention',
+            },
             'manual_count' => $manualCount,
             'ready_count' => $readyCount,
+            'status' => $status,
         ];
     }
 
@@ -57,7 +70,7 @@ class VisitorSupportReadiness
                 status: 'ready',
                 summary: $sites->count().' visible '.str('site')->plural($sites->count()).' connected.',
                 detail: 'Wayfindr has at least one support site to serve.',
-                action: 'Add additional sites when you are ready to dogfood more properties.',
+                action: 'Add more sites when you are ready to support more properties.',
                 href: route('dashboard.sites.index')
             );
         }
@@ -180,8 +193,8 @@ class VisitorSupportReadiness
                 status: 'ready',
                 summary: 'Realtime delivery is configured.',
                 detail: 'Reverb is ready for live chat and cobrowse updates.',
-                action: 'Keep reverb:restart in the deploy script so long-running workers refresh.',
-                href: $canViewReadiness ? route('dashboard.readiness.show') : null
+                action: 'Reverb should restart on deploy so long-running workers pick up new code.',
+                href: $canViewReadiness ? route('operator.dashboard') : null
             );
         }
 
@@ -190,9 +203,9 @@ class VisitorSupportReadiness
             label: 'Set up realtime delivery',
             status: 'attention',
             summary: 'Realtime delivery needs setup.',
-            detail: 'Live chat can fall back, but Reverb should be configured before serious dogfooding.',
-            action: 'Review Reverb credentials and public host settings.',
-            href: $canViewReadiness ? route('dashboard.readiness.show') : null
+            detail: 'Live chat can fall back to manual refresh, but Reverb should be configured before real visitor traffic.',
+            action: 'Reverb credentials and the public host setting must be complete before live updates work.',
+            href: $canViewReadiness ? route('operator.dashboard') : null
         );
     }
 
@@ -210,8 +223,8 @@ class VisitorSupportReadiness
                 status: 'attention',
                 summary: "Queue driver is {$connection}.",
                 detail: 'Synchronous queues are fine locally, but support alerts and background work need a durable worker in production.',
-                action: 'Use database or redis queues and run a queue worker.',
-                href: $canViewReadiness ? route('dashboard.readiness.show') : null
+                action: 'Queues must run on database or redis with a worker process, or alerts and background work are not durable.',
+                href: $canViewReadiness ? route('operator.dashboard') : null
             );
         }
 
@@ -221,8 +234,8 @@ class VisitorSupportReadiness
             status: 'ready',
             summary: "Queue driver is {$connection}.",
             detail: 'Background work can leave the request lifecycle.',
-            action: 'Confirm a queue worker is running under Forge, Supervisor, systemd, or your host.',
-            href: $canViewReadiness ? route('dashboard.readiness.show') : null
+            action: 'A queue worker must be running for background work to leave the request.',
+            href: $canViewReadiness ? route('operator.dashboard') : null
         );
     }
 
@@ -236,9 +249,9 @@ class VisitorSupportReadiness
             label: 'Confirm scheduler job',
             status: 'manual',
             summary: 'Scheduler must be confirmed outside the request.',
-            detail: 'Wayfindr cannot prove cron from the dashboard, but operators should run the Laravel scheduler once per minute.',
-            action: 'Configure * * * * * php artisan schedule:run, then keep this on the operator checklist.',
-            href: $canViewReadiness ? route('dashboard.readiness.show') : null
+            detail: 'Wayfindr cannot see cron from inside the app, so this one has to be confirmed by hand.',
+            action: 'The Laravel scheduler must run every minute: * * * * * php artisan schedule:run',
+            href: $canViewReadiness ? route('operator.dashboard') : null
         );
     }
 
@@ -314,7 +327,7 @@ class VisitorSupportReadiness
             'status' => $status,
             'status_label' => match ($status) {
                 'ready' => 'Ready',
-                'manual' => 'Manual check',
+                'manual' => 'Confirm this',
                 default => 'Needs attention',
             },
             'summary' => $summary,

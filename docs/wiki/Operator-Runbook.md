@@ -7,7 +7,7 @@ authoritative self-hosting docs.
 
 ## After Every Deploy or Upgrade
 
-1. Confirm `/up`, `/operator`, and `/dashboard/readiness` load.
+1. Confirm `/up` and `/operator` load.
 2. Verify the reported release and commit.
 3. Check migrations, queues, the backup worker, scheduler, and Reverb.
 4. Send a visitor message, reply as an agent, and confirm live or fallback delivery.

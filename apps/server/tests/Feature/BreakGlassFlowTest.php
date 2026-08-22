@@ -41,7 +41,7 @@ test('the operator console break-glass page renders the request form', function 
         ->get(route('operator.break-glass.index'))
         ->assertOk()
         ->assertSee('Request access')
-        ->assertSee('Support code (conversation scope)');
+        ->assertSee('Support code');
 });
 
 test('a non-operator cannot reach the break-glass console', function (): void {
