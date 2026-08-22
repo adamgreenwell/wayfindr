@@ -30,10 +30,19 @@ class ConversationLifecycleLog
     public const REOPENED = 'conversation.reopened';
 
     /**
-     * Record a close. Returns whether the conversation was actually open.
+     * Record a close, if it was one.
+     *
+     * A double-click, a retry, or a stale page submits close twice. Recording
+     * both writes consecutive closes with no reopen between them, which
+     * corrupts the close count and every interval derived from it. Only a
+     * transition is an event -- the same rule reopens already follow.
      */
     public function closed(Conversation $conversation, ?Model $actor, string $previousStatus): void
     {
+        if ($previousStatus === 'closed') {
+            return;
+        }
+
         $this->record($conversation, $actor, self::CLOSED, $previousStatus);
     }
 

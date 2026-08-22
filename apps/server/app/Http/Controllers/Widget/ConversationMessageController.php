@@ -108,7 +108,10 @@ class ConversationMessageController extends Controller
             // are atomic. Without this, two concurrent sends sharing a
             // client_message_id could both pass the lookup before either row is
             // visible and both create a message.
-            Conversation::query()->whereKey($conversation->getKey())->lockForUpdate()->first();
+            // Keep the locked row. Reading status off the pre-lock instance means
+            // two concurrent sends on a closed conversation both see "closed"
+            // and both record a reopen, for one transition.
+            $locked = Conversation::query()->whereKey($conversation->getKey())->lockForUpdate()->first();
 
             if ($clientMessageId !== null) {
                 $existing = $conversation->messages()
@@ -136,7 +139,7 @@ class ConversationMessageController extends Controller
             // reference throws and rolls the whole send back.
             $binder->bind($conversation, $message, $attachmentIds, $visitor);
 
-            $previousStatus = (string) $conversation->status;
+            $previousStatus = (string) ($locked?->status ?? $conversation->status);
 
             $conversation->forceFill([
                 'status' => 'open',

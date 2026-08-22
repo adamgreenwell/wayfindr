@@ -80,8 +80,16 @@ when that actor is a `Visitor`. `audit_events.actor` is already a nullable morph
 and `ticket.visitor_replied` already records a visitor as an actor, so this
 needs no new shape.
 
-A reply to an already-open conversation writes nothing. Only a transition is an
-event.
+A reply to an already-open conversation writes nothing, and neither does a close
+submitted against an already-closed conversation. **Only a transition is an
+event.** Double-clicks, retries and stale pages are ordinary, and consecutive
+closes with no reopen between them would corrupt the close count and every
+interval derived from it.
+
+The status a transition is judged against must come from the **locked** row.
+Two concurrent visitor messages on a closed conversation otherwise both read
+"closed" from their own pre-lock instance and both record a reopen, for one
+transition.
 
 ### 3. `closed_at` stays as it is
 
@@ -124,9 +132,17 @@ product that promises purge means purge, and it means reporting totals can
 legitimately decrease. Reporting must not treat that as corruption.
 
 **Conversation lifecycle writes add rows to a table the account audit page
-already reads.** Those pages will show conversation closes and reopens, which is
-new but consistent — the page exists to show account activity, and this is
-account activity that was previously invisible.
+already reads.** Those pages show conversation closes and reopens, which is new
+but consistent — the page exists to show account activity, and this is account
+activity that was previously invisible.
+
+That page had to learn to name them. Its subject labels covered break-glass
+grants, users, sites and cobrowse sessions, and fell back to "Account" for
+anything else — so every new entry would have said an unnamed something was
+closed. It labels and searches conversations by **support code**, never by
+subject line: the page is exported, a subject is visitor-authored text, and a
+support code is a reference by construction. That is the same rule the
+break-glass and cobrowse labels already follow.
 
 **Two pre-existing scope discrepancies are now worth naming**, since a reporting
 surface would link into detail pages: `ConversationPolicy::view` and

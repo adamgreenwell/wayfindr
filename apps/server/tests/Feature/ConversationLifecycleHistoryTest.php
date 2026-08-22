@@ -150,3 +150,60 @@ test('lifecycle history is scoped to the account that owns it', function (): voi
     expect(AuditEvent::query()->where('account_id', $other->id)->count())->toBe(0)
         ->and(AuditEvent::query()->where('account_id', $w['account']->id)->count())->toBeGreaterThan(0);
 });
+
+test('a close submitted twice records one close', function (): void {
+    // A double-click, a retry, or a stale page. Two consecutive closes with no
+    // reopen between corrupts the count and every interval derived from it.
+    $w = lifecycleWorld();
+
+    foreach (range(1, 2) as $ignored) {
+        $this->actingAs($w['agent'])
+            ->post(route('dashboard.conversations.close', $w['conversation']->support_code))
+            ->assertRedirect();
+    }
+
+    expect(lifecycleActions())->toBe([ConversationLifecycleLog::CLOSED]);
+});
+
+test('the audit log names which conversation, and finds it by support code', function (): void {
+    // Without this every entry reads "Account": an admin sees that something
+    // was closed and cannot tell which of a thousand conversations it was.
+    $w = lifecycleWorld();
+
+    $this->actingAs($w['agent'])
+        ->post(route('dashboard.conversations.close', $w['conversation']->support_code))
+        ->assertRedirect();
+
+    $this->actingAs($w['agent'])
+        ->get(route('dashboard.account.audit.index'))
+        ->assertOk()
+        ->assertSee('Conversation '.$w['conversation']->support_code);
+
+    $this->actingAs($w['agent'])
+        ->get(route('dashboard.account.audit.index', ['audit_search' => $w['conversation']->support_code]))
+        ->assertOk()
+        ->assertSee('Conversation '.$w['conversation']->support_code);
+
+    $this->actingAs($w['agent'])
+        ->get(route('dashboard.account.audit.index', ['audit_search' => 'WF-NOTHINGLIKEIT']))
+        ->assertOk()
+        ->assertDontSee('Conversation '.$w['conversation']->support_code);
+});
+
+test('the audit log shows the code, never the visitor-authored subject', function (): void {
+    // This page is exported. A subject line is visitor-authored text; a support
+    // code is a reference by construction, which is the rule the break-glass
+    // and cobrowse labels already follow.
+    $w = lifecycleWorld();
+    $w['conversation']->forceFill(['subject' => 'My card number is 4111 1111 1111 1111'])->save();
+
+    $this->actingAs($w['agent'])
+        ->post(route('dashboard.conversations.close', $w['conversation']->support_code))
+        ->assertRedirect();
+
+    $this->actingAs($w['agent'])
+        ->get(route('dashboard.account.audit.index'))
+        ->assertOk()
+        ->assertSee('Conversation '.$w['conversation']->support_code)
+        ->assertDontSee('4111 1111 1111 1111');
+});
