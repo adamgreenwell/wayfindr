@@ -14,6 +14,7 @@
   var VERSION = '0.0.0';
   var STYLE_ID = 'wayfindr-widget-styles';
   var MESSAGE_SEND_ERROR = 'Message could not be sent. Your text is still here so you can try again.';
+  var INTAKE_PENDING_STATUS = 'Please answer the questions above first. Your message is still here.';
   var MESSAGE_REFRESH_ERROR = 'Messages could not be refreshed. Your current chat is still visible.';
   var MESSAGE_CONNECTION_TROUBLE = 'Having trouble reaching support. Your chat is still here; refresh will try again.';
   var ATTACHMENT_UPLOAD_ERROR = 'That file could not be attached.';
@@ -2394,6 +2395,18 @@
           // anybody is there, which is exactly what the away notice exists to
           // prevent.
           await bootstrapPromise;
+        }
+
+        // That answer may have opened the gate: it had not arrived when this
+        // send began, or the questions just changed under it. Either way they
+        // are unanswered now, and continuing would post empty answers or earn
+        // the 422. The composer is hidden behind the form but keeps its text,
+        // so the visitor answers and sends the same message again.
+        if (intakeGateHolds()) {
+          setComposerBusy(false);
+          status.textContent = INTAKE_PENDING_STATUS;
+
+          return;
         }
 
         // The first message creates the conversation (with the body as its

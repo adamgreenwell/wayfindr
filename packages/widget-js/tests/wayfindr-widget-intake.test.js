@@ -505,3 +505,34 @@ test('a stored code the server rejects still leads to the questions', async () =
   );
   assert.equal(widget.root.querySelector('.wayfindr-widget__form').hidden, true);
 });
+
+test('a message sent before the first answer lands waits for the questions', async () => {
+  // The composer is visible on open and bootstrap has not answered yet, so
+  // there is a window in which a fast visitor can submit through a gate that
+  // is about to close.
+  const boot = deferred();
+  const { widget, dom, sent } = widgetWith({ intake: ASKS_BOTH, holdBootstrap: boot.promise });
+
+  widget.root.querySelector('.wayfindr-widget__launcher').click();
+  await settle();
+
+  widget.root.querySelector('.wayfindr-widget__textarea').value = 'Is anybody there?';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+    new dom.window.Event('submit', { bubbles: true, cancelable: true })
+  );
+  await settle();
+
+  boot.release();
+  await settle();
+
+  assert.ok(
+    !sent.some((call) => call.url.endsWith('/api/conversations')),
+    'the send stops rather than posting empty answers to questions never shown'
+  );
+  assert.equal(widget.root.querySelector('.wayfindr-widget__intake').hidden, false);
+  assert.equal(
+    widget.root.querySelector('.wayfindr-widget__textarea').value,
+    'Is anybody there?',
+    'the message survives the wait'
+  );
+});
