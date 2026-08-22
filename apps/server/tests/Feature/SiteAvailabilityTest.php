@@ -100,7 +100,10 @@ test('a manual close overrides open hours and expires on its own', function (): 
 
     $during = SiteAvailability::for($site, CarbonImmutable::parse('2026-08-26 11:00', 'Europe/London'));
     expect($during->open)->toBeFalse()
-        ->and($during->opensAt?->toDateTimeString())->toBe('2026-08-27 09:00:00');
+        // The close ends inside Wednesday's hours, so the desk is back at 15:00
+        // -- not tomorrow morning. Promising tomorrow while answering in four
+        // hours sends the visitor away for nothing.
+        ->and($during->opensAt?->toDateTimeString())->toBe('2026-08-26 15:00:00');
 
     // Past the override, the schedule takes over again with no further action.
     expect(SiteAvailability::for($site, CarbonImmutable::parse('2026-08-26 15:30', 'Europe/London'))->open)->toBeTrue();
@@ -251,4 +254,92 @@ test('the site page shows the desk state and the form', function (): void {
         ->assertSee('Always open')
         ->assertSee('name="availability_timezone"', false)
         ->assertSee('name="availability_open[mon]"', false);
+});
+
+test('a manual close ending after hours waits for the next scheduled opening', function (): void {
+    // The other half of the same rule: an expiry outside open hours cannot be
+    // the reopening, because nobody is there at that moment either.
+    $site = siteWithHours(['closed_until' => '2026-08-26T21:00:00+01:00']);
+
+    $availability = SiteAvailability::for($site, CarbonImmutable::parse('2026-08-26 11:00', 'Europe/London'));
+
+    expect($availability->open)->toBeFalse()
+        ->and($availability->opensAt?->toDateTimeString())->toBe('2026-08-27 09:00:00');
+});
+
+test('a manual close ending exactly at opening time reopens then, not a day later', function (): void {
+    $site = siteWithHours(['closed_until' => '2026-08-27T09:00:00+01:00']);
+
+    $availability = SiteAvailability::for($site, CarbonImmutable::parse('2026-08-26 11:00', 'Europe/London'));
+
+    expect($availability->opensAt?->toDateTimeString())->toBe('2026-08-27 09:00:00');
+});
+
+test('clearing a day survives a validation error on another field', function (): void {
+    // An unchecked box sends nothing, so old() fell back to the SAVED value and
+    // re-checked what the operator had just cleared. Correcting the visible
+    // error and resubmitting then silently kept the day open.
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create([
+        'settings' => ['availability' => [
+            'enabled' => true,
+            'timezone' => 'UTC',
+            'weekdays' => ['mon' => ['09:00', '17:00'], 'tue' => ['09:00', '17:00']],
+        ]],
+    ]);
+
+    $response = $this->actingAs($admin)
+        ->from(route('dashboard.sites.show', $site))
+        ->put(route('dashboard.sites.availability.update', $site), [
+            'availability_enabled' => '1',
+            'availability_timezone' => 'UTC',
+            'availability_away_message' => str_repeat('x', 501),
+            // Monday cleared: the hidden partner input is what carries that.
+            'availability_open' => ['mon' => '0', 'tue' => '1'],
+            'availability_from' => ['mon' => '09:00', 'tue' => '09:00'],
+            'availability_to' => ['mon' => '17:00', 'tue' => '17:00'],
+        ]);
+
+    $response->assertSessionHasErrors('availability_away_message');
+
+    // The re-rendered form must show Monday closed, not silently reopen it.
+    $this->actingAs($admin)
+        ->get(route('dashboard.sites.show', $site))
+        ->assertOk();
+
+    expect(old('availability_open.mon'))->not->toBe(true);
+});
+
+test('an explicit off actually closes the day', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create([
+        'settings' => ['availability' => ['enabled' => true, 'weekdays' => ['mon' => ['09:00', '17:00']]]],
+    ]);
+
+    $this->actingAs($admin)->put(route('dashboard.sites.availability.update', $site), [
+        'availability_enabled' => '0',
+        'availability_timezone' => 'UTC',
+        'availability_open' => ['mon' => '0'],
+        'availability_from' => ['mon' => '09:00'],
+        'availability_to' => ['mon' => '17:00'],
+    ])->assertRedirect();
+
+    $stored = $site->fresh()->settings['availability'];
+
+    // "0" is a non-empty string; a naive cast keeps both of these true.
+    expect($stored['enabled'])->toBeFalse()
+        ->and($stored['weekdays']['mon'])->toBeNull();
+});
+
+test('the form submits an explicit off for every checkbox', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['settings' => []]);
+
+    $this->actingAs($admin)->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee('<input type="hidden" name="availability_enabled" value="0">', false)
+        ->assertSee('<input type="hidden" name="availability_open[mon]" value="0">', false);
 });

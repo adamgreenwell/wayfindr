@@ -57,7 +57,7 @@ final class SiteAvailability
         return new self(
             true,
             $open,
-            $open ? null : self::nextOpening($weekdays, $overridden ? $closedUntil : $at),
+            $open ? null : self::reopensAt($weekdays, $at, $overridden ? $closedUntil : null),
             $timezone,
             $open ? null : $awayMessage,
         );
@@ -98,6 +98,24 @@ final class SiteAvailability
     }
 
     /**
+     * When the desk is next reachable.
+     *
+     * A manual close ending inside open hours reopens at that moment, not at
+     * the next scheduled start -- otherwise the payload promises tomorrow while
+     * the desk is answering in ten minutes.
+     *
+     * @param  array<string, array{0: string, 1: string}|null>  $weekdays
+     */
+    private static function reopensAt(array $weekdays, CarbonImmutable $at, ?CarbonImmutable $closedUntil): ?CarbonImmutable
+    {
+        if ($closedUntil !== null && self::withinHours($weekdays, $closedUntil)) {
+            return $closedUntil;
+        }
+
+        return self::nextOpening($weekdays, $closedUntil ?? $at);
+    }
+
+    /**
      * @param  array<string, array{0: string, 1: string}|null>  $weekdays
      */
     private static function nextOpening(array $weekdays, CarbonImmutable $from): ?CarbonImmutable
@@ -114,7 +132,7 @@ final class SiteAvailability
 
             $opening = $day->setTime(0, 0)->addMinutes(self::minutes($hours[0]));
 
-            if ($opening->greaterThan($from)) {
+            if ($opening->greaterThanOrEqualTo($from)) {
                 return $opening;
             }
         }

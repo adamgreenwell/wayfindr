@@ -159,3 +159,72 @@ test('an unparseable return time is dropped rather than shown raw', async () => 
   assert.ok(text.includes('Closed.'));
   assert.ok(!text.includes('not-a-date'));
 });
+
+test('reopening the panel re-asks whether the desk is still open', async () => {
+  // A tab left sitting across closing time would otherwise still show the desk
+  // as open, and one opened while away would keep saying away after support
+  // came back. Both silent, both wrong exactly when the visitor decides to type.
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/',
+  });
+
+  let away = false;
+  let bootstraps = 0;
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_docs',
+    storage: memoryStorage({
+      'wayfindr:site_public_docs:anonymous-id': 'anon-docs',
+      'wayfindr:site_public_docs:visitor-token': 'visitor-token-docs',
+    }),
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    fetch: async (url) => {
+      if (url.endsWith('/api/widget/bootstrap')) {
+        bootstraps += 1;
+
+        return jsonResponse(200, {
+          data: {
+            site: {
+              public_key: 'site_public_docs',
+              settings: {},
+              color: 'blue',
+              availability: { away, message: 'Closed for the evening.', opens_at: null, timezone: 'UTC' },
+            },
+            visitor: { anonymous_id: 'anon-docs', token: 'visitor-token-docs' },
+          },
+        });
+      }
+
+      if (url.includes('/cobrowse')) {
+        return jsonResponse(200, { data: { cobrowse: { state: 'unavailable' } } });
+      }
+
+      return jsonResponse(200, { data: {} });
+    },
+  });
+
+  const launcher = widget.root.querySelector('.wayfindr-widget__launcher');
+  const panel = widget.root.querySelector('.wayfindr-widget__panel');
+
+  launcher.click();
+  await settle();
+
+  assert.equal(panel.querySelector('.wayfindr-widget__away').hidden, true);
+  const afterFirstOpen = bootstraps;
+
+  // Closing time passes while the tab sits there.
+  away = true;
+
+  widget.root.querySelector('.wayfindr-widget__close').click();
+  launcher.click();
+  await settle();
+
+  assert.ok(bootstraps > afterFirstOpen, 'reopening should re-ask the server');
+  assert.equal(panel.querySelector('.wayfindr-widget__away').hidden, false);
+});

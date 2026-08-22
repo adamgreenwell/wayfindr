@@ -42,6 +42,11 @@ switch somebody forgets on Monday.
 Editing the schedule does not clear it — reopening a desk somebody closed early
 is a separate decision from changing the hours.
 
+The reopening time reported to visitors is the *real* one. A close ending inside
+open hours reopens at that moment rather than at the next scheduled start,
+because promising tomorrow while the desk is answering in ten minutes sends
+somebody away for nothing.
+
 ## What the visitor sees
 
 The widget is told only what it needs: that the desk is away, the operator's
@@ -51,6 +56,12 @@ site's working pattern is not published to every visitor.
 Away state is derived on the server and rides the existing bootstrap response, so
 the widget needs no second request and no clock of its own — a visitor with a
 wrong system clock cannot make support look open.
+
+It is re-read **every time the panel is opened**, not once per page load. A tab
+left sitting since before closing time would otherwise still show the desk as
+open, and one opened while away would keep saying away long after support came
+back — both silent, and both wrong at exactly the moment somebody decided to
+type.
 
 The return time is rendered in the *visitor's* locale and timezone. They care
 what time it is where they are.

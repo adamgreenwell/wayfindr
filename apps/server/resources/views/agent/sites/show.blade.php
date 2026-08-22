@@ -760,6 +760,9 @@
 
                         <div class="field">
                             <label for="availability_enabled">
+                                {{-- Unchecked boxes send nothing, so old() would fall back to the
+                                     saved value and silently re-check a box just cleared. --}}
+                                <input type="hidden" name="availability_enabled" value="0">
                                 <input type="checkbox" id="availability_enabled" name="availability_enabled" value="1"
                                     @checked(old('availability_enabled', $availabilitySettings['enabled'] ?? false))>
                                 Keep support hours for this site
@@ -796,6 +799,7 @@
                                         <tr>
                                             <td>{{ ucfirst($day) }}</td>
                                             <td>
+                                                <input type="hidden" name="availability_open[{{ $day }}]" value="0">
                                                 <input type="checkbox" name="availability_open[{{ $day }}]" value="1"
                                                     aria-label="{{ ucfirst($day) }} open"
                                                     @checked(old('availability_open.'.$day, $availabilityWeekdays[$day]['open']))>

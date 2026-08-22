@@ -585,7 +585,10 @@ class AgentSiteController extends Controller
         $weekdays = [];
 
         foreach (SiteAvailability::DAYS as $day) {
-            $isOpen = (bool) ($validated['availability_open'][$day] ?? false);
+            // filter_var, not a cast: the hidden partner input submits the
+            // string "0", and (bool) "0" is false only by luck of PHP's rules
+            // while (bool) "false" would be true. Read it as a flag.
+            $isOpen = filter_var($validated['availability_open'][$day] ?? false, FILTER_VALIDATE_BOOL);
             $from = $validated['availability_from'][$day] ?? null;
             $to = $validated['availability_to'][$day] ?? null;
 
@@ -601,7 +604,7 @@ class AgentSiteController extends Controller
         $availability = is_array($settings['availability'] ?? null) ? $settings['availability'] : [];
 
         $settings['availability'] = [
-            'enabled' => (bool) ($validated['availability_enabled'] ?? false),
+            'enabled' => filter_var($validated['availability_enabled'] ?? false, FILTER_VALIDATE_BOOL),
             'timezone' => $validated['availability_timezone'],
             'weekdays' => $weekdays,
             'away_message' => trim((string) ($validated['availability_away_message'] ?? '')) ?: null,

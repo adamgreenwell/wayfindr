@@ -1965,7 +1965,12 @@
       // first-time visitor opened the panel on the brand fallback and watched
       // it change colour after they typed. Fetch it on open instead; a failure
       // here is silent by design, because the fallback is already correct.
-      if (wasHidden && !bootstrapped) {
+      // Bootstrap once for the things that do not change, but re-ask on every
+      // open. A tab left sitting since before closing time would otherwise
+      // still show the desk as open, and one opened while away would still say
+      // away long after support came back -- both silent, and both wrong at
+      // exactly the moment the visitor decided to type.
+      if (wasHidden) {
         client.bootstrap(location ? location.href : null, visitorContext).then(function (result) {
           bootstrapped = true;
           applyBootstrapResult(result);
