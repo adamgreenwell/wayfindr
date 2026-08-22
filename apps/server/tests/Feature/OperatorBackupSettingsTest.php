@@ -235,7 +235,16 @@ test('the backup job runs on the dedicated backups connection with a retry windo
 });
 
 test('a failed dispatch finalizes the run instead of leaving it running', function (): void {
-    config()->set('queue.default', 'no-such-connection'); // dispatch will throw
+    // Empty the whole connection table so the dispatch throws whichever
+    // connection it resolves to. Overriding queue.default alone does NOT reach
+    // this dispatch -- RunBackupJob pins itself to 'backups' in its constructor
+    // -- so the throw would come only from the backup queue's backend being
+    // unreachable: green on CI, red on any machine with Redis running. Naming
+    // 'backups' here instead would work today but silently stop forcing the
+    // failure if that pin ever moved, leaving the test to pass on whatever the
+    // default connection happened to do. With no connection configured at all,
+    // the QueueManager throws for the pinned name and the default alike.
+    config()->set('queue.connections', []); // dispatch will throw
 
     $this->actingAs(backupOperator())
         ->post(route('operator.settings.backups.run'))
