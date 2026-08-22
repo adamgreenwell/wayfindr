@@ -203,15 +203,29 @@
       throw new Error('Wayfindr requires fetch support.');
     }
 
+    var bootstrapTicket = 0;
+
     return {
       anonymousId: anonymousId,
       sitePublicKey: sitePublicKey,
       bootstrap: function (pageUrl, context) {
+        var ticket = ++bootstrapTicket;
+
         return postJson(fetcher, apiBaseUrl + '/api/widget/bootstrap', withVisitorContext({
           site_public_key: sitePublicKey,
           anonymous_id: anonymousId,
           page_url: pageUrl || null,
         }, context, visitorExternalId)).then(function (result) {
+          // Overlapping bootstraps finishing out of order would otherwise let
+          // an older answer restore obsolete masking rules -- and a stale mask
+          // is a field the visitor believes is protected. The client sequences
+          // its own state for the same reason the panel sequences its own:
+          // this applies to host pages calling bootstrap() directly too, which
+          // a caller-applied version would have left unguarded.
+          if (ticket !== bootstrapTicket) {
+            return result;
+          }
+
           var token = result && result.visitor ? result.visitor.token : null;
 
           if (token) {
@@ -491,6 +505,7 @@
       '    <strong>' + escapeHtml(options.title || 'Wayfindr Support') + '</strong>',
       '    <button class="wayfindr-widget__close" type="button" aria-label="Close support chat">&times;</button>',
       '  </header>',
+      '  <div class="wayfindr-widget__away" role="status" aria-live="polite" hidden></div>',
       '  <div class="wayfindr-widget__timeline-wrap">',
       '    <div class="wayfindr-widget__timeline" role="log" aria-live="polite" aria-relevant="additions text" aria-atomic="false" aria-label="Conversation messages" hidden></div>',
       '    <button class="wayfindr-widget__jump" type="button" hidden>New messages ↓</button>',
@@ -548,6 +563,10 @@
     var cobrowseAllow = rootEl.querySelector('.wayfindr-widget__cobrowse-allow');
     var cobrowseDecline = rootEl.querySelector('.wayfindr-widget__cobrowse-decline');
     var bootstrapped = false;
+    // Only the newest bootstrap may touch the panel; anything older is a stale
+    // answer that would overwrite it.
+    var bootstrapSequence = 0;
+    var bootstrapPromise = null;
     var supportCode = null;
     var conversationActivated = false;
     // The client persists the visitor identity per site; the widget persists
@@ -1964,14 +1983,51 @@
       // first-time visitor opened the panel on the brand fallback and watched
       // it change colour after they typed. Fetch it on open instead; a failure
       // here is silent by design, because the fallback is already correct.
-      if (wasHidden && !bootstrapped) {
-        client.bootstrap(location ? location.href : null, visitorContext).then(function (result) {
-          bootstrapped = true;
-          applySiteAccent(rootEl, siteAccentKey(result));
-        }, function () {});
+      // Bootstrap once for the things that do not change, but re-ask on every
+      // open. A tab left sitting since before closing time would otherwise
+      // still show the desk as open, and one opened while away would still say
+      // away long after support came back -- both silent, and both wrong at
+      // exactly the moment the visitor decided to type.
+      if (wasHidden) {
+        refreshFromBootstrap().catch(function () {});
       }
 
       scheduleRenderedReadReceipt();
+    }
+
+    // Re-ask the server, and let only the newest answer touch the panel.
+    //
+    // Closing and reopening before the first request finishes leaves both in
+    // flight. If they straddle a closing time and land out of order, the older
+    // "open" answer would erase the newer away notice and the visitor would
+    // keep the wrong state until they reopened again.
+    function refreshFromBootstrap() {
+      var seq = ++bootstrapSequence;
+
+      bootstrapPromise = client.bootstrap(location ? location.href : null, visitorContext).then(function (result) {
+        if (seq !== bootstrapSequence) {
+          return;
+        }
+
+        bootstrapped = true;
+        applyBootstrapResult(result);
+      });
+
+      // Opening the panel must not surface a failure: the fallback state is
+      // already correct to look at. SENDING is different -- a send that
+      // proceeds on a swallowed failure is a message posted without knowing
+      // whether anybody is there, which is the case this exists to prevent. So
+      // the rejection is kept on the promise the sender awaits, and only the
+      // opener ignores it.
+      bootstrapPromise.catch(function () {});
+
+      return bootstrapPromise;
+    }
+
+    // Everything a bootstrap answer tells the widget, applied in one place.
+    function applyBootstrapResult(result) {
+      applySiteAccent(rootEl, siteAccentKey(result));
+      applyAwayState(panel, siteAwayState(result));
     }
 
     function closePanel() {
@@ -2153,10 +2209,13 @@
         }
 
         if (!bootstrapped) {
-          applySiteAccent(rootEl, siteAccentKey(
-            await client.bootstrap(location ? location.href : null, visitorContext)
-          ));
-          bootstrapped = true;
+          await refreshFromBootstrap();
+        } else if (bootstrapPromise) {
+          // A refresh started when the panel opened may still be in flight.
+          // Sending before it lands means sending without knowing whether
+          // anybody is there, which is exactly what the away notice exists to
+          // prevent.
+          await bootstrapPromise;
         }
 
         // The first message creates the conversation (with the body as its
@@ -2241,10 +2300,7 @@
     async function resumeConversation(candidateCode) {
       try {
         if (!bootstrapped) {
-          applySiteAccent(rootEl, siteAccentKey(
-            await client.bootstrap(location ? location.href : null, visitorContext)
-          ));
-          bootstrapped = true;
+          await refreshFromBootstrap();
         }
 
         var result = await client.fetchMessages(candidateCode);
@@ -2633,6 +2689,90 @@
     }
 
     element.style.setProperty('--wf-site-accent', 'var(--wf-site-' + key + ')');
+  }
+
+  function siteAwayState(result) {
+    var availability = result && result.site ? result.site.availability : null;
+
+    if (!availability || availability.away !== true) {
+      return null;
+    }
+
+    return {
+      // Operator-authored copy: shown as typed, escaped, never interpreted.
+      message: typeof availability.message === 'string' && availability.message.trim()
+        ? availability.message.trim()
+        : null,
+      opensAt: typeof availability.opens_at === 'string' ? availability.opens_at : null,
+    };
+  }
+
+  function formatReturn(opensAt) {
+    if (!opensAt) {
+      return null;
+    }
+
+    var when = new Date(opensAt);
+
+    if (isNaN(when.getTime())) {
+      return null;
+    }
+
+    // Rendered in the visitor's own locale and zone: they care what time it is
+    // where they are, not where the desk is.
+    //
+    // A weekday alone is only unambiguous within the coming week. A site open
+    // one day a week returns exactly seven days out, and "Back Monday" read on
+    // a Monday evening names a time that has already passed. Past six days the
+    // date is included.
+    var options = { weekday: 'long', hour: 'numeric', minute: '2-digit' };
+
+    if (when.getTime() - Date.now() > 6 * 24 * 60 * 60 * 1000) {
+      options.day = 'numeric';
+      options.month = 'long';
+    }
+
+    try {
+      return when.toLocaleString(undefined, options);
+    } catch (error) {
+      return when.toISOString();
+    }
+  }
+
+  function applyAwayState(panelEl, away) {
+    if (!panelEl) {
+      return;
+    }
+
+    var el = panelEl.querySelector('.wayfindr-widget__away');
+
+    if (!el) {
+      return;
+    }
+
+    if (!away) {
+      el.hidden = true;
+      el.textContent = '';
+
+      return;
+    }
+
+    var lines = [];
+
+    if (away.message) {
+      lines.push(away.message);
+    } else {
+      lines.push('Support is away right now. Leave a message and we will reply when we are back.');
+    }
+
+    var back = formatReturn(away.opensAt);
+
+    if (back) {
+      lines.push('Back ' + back + '.');
+    }
+
+    el.textContent = lines.join(' ');
+    el.hidden = false;
   }
 
   function siteMaskSelectors(result) {
@@ -4246,6 +4386,7 @@
       '.wayfindr-widget__header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-paper)}',
       '.wayfindr-widget__close{border:0;background:transparent;color:var(--wf-muted);cursor:pointer;font:700 24px/1 var(--wf-font-sans);padding:0}',
       '.wayfindr-widget__timeline{display:grid;gap:10px;flex:1 1 auto;min-height:0;max-height:280px;overflow:auto;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-surface-2)}',
+      '.wayfindr-widget__away{margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:color-mix(in srgb, var(--wf-signal-hold) 12%, var(--wf-surface));color:color-mix(in srgb, var(--wf-signal-hold) 70%, var(--wf-ink));font-size:13px;line-height:1.4}',
       '.wayfindr-widget__notice{display:grid;gap:10px;margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-surface-2);color:var(--wf-muted);font-size:13px;line-height:1.4}',
       '.wayfindr-widget__notice[data-state="warning"]{background:color-mix(in srgb, var(--wf-signal-hold) 12%, var(--wf-surface));color:color-mix(in srgb, var(--wf-signal-hold) 70%, var(--wf-ink))}',
       '.wayfindr-widget__notice-copy{margin:0}',

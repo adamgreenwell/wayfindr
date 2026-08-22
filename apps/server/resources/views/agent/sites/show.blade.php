@@ -742,6 +742,106 @@
                 </div>
             </section>
 
+            <section class="section" aria-labelledby="support-hours-heading">
+                <div class="section-header">
+                    <div>
+                        <h2 id="support-hours-heading">When the desk is open</h2>
+                        <p class="lede">What a visitor sees when they arrive outside your hours.</p>
+                    </div>
+                    <span class="readiness-status" data-status="{{ $availability->open ? 'ready' : 'manual' }}">
+                        {{ $availability->scheduled ? ($availability->open ? 'Open now' : 'Away') : 'Always open' }}
+                    </span>
+                </div>
+
+                @if ($canUpdateSite)
+                    <form class="section-form" method="POST" action="{{ route('dashboard.sites.availability.update', $site) }}">
+                        @csrf
+                        @method('PUT')
+
+                        <div class="field">
+                            <label for="availability_enabled">
+                                {{-- Unchecked boxes send nothing, so old() would fall back to the
+                                     saved value and silently re-check a box just cleared. --}}
+                                <input type="hidden" name="availability_enabled" value="0">
+                                <input type="checkbox" id="availability_enabled" name="availability_enabled" value="1"
+                                    @checked(old('availability_enabled', $availabilitySettings['enabled'] ?? false))>
+                                Keep support hours for this site
+                            </label>
+                            <p class="field-help">
+                                Off means the widget behaves the same at 3pm Tuesday and 3am Sunday, which is how every
+                                site works until you turn this on.
+                            </p>
+                        </div>
+
+                        <div class="field">
+                            <label for="availability_timezone">Timezone</label>
+                            <select id="availability_timezone" name="availability_timezone">
+                                @foreach (DateTimeZone::listIdentifiers() as $identifier)
+                                    <option value="{{ $identifier }}"
+                                        @selected(old('availability_timezone', $availabilitySettings['timezone'] ?? config('app.timezone')) === $identifier)>
+                                        {{ $identifier }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            <p class="field-help">Hours are read in this zone, so they hold across daylight saving.</p>
+                            @error('availability_timezone')
+                                <p class="field-error">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr><th>Day</th><th>Open</th><th>From</th><th>To</th></tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (\App\Support\Sites\SiteAvailability::DAYS as $day)
+                                        <tr>
+                                            <td>{{ ucfirst($day) }}</td>
+                                            <td>
+                                                <input type="hidden" name="availability_open[{{ $day }}]" value="0">
+                                                <input type="checkbox" name="availability_open[{{ $day }}]" value="1"
+                                                    aria-label="{{ ucfirst($day) }} open"
+                                                    @checked(old('availability_open.'.$day, $availabilityWeekdays[$day]['open']))>
+                                            </td>
+                                            <td>
+                                                <input type="time" name="availability_from[{{ $day }}]"
+                                                    aria-label="{{ ucfirst($day) }} opens at"
+                                                    value="{{ old('availability_from.'.$day, $availabilityWeekdays[$day]['from']) }}">
+                                            </td>
+                                            <td>
+                                                <input type="time" name="availability_to[{{ $day }}]"
+                                                    aria-label="{{ ucfirst($day) }} closes at"
+                                                    value="{{ old('availability_to.'.$day, $availabilityWeekdays[$day]['to']) }}">
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="field">
+                            <label for="availability_away_message">What to tell a visitor who arrives out of hours</label>
+                            <textarea id="availability_away_message" name="availability_away_message" rows="3"
+                                placeholder="We are closed right now. Leave a message and we will reply when we are back.">{{ old('availability_away_message', $availabilitySettings['away_message'] ?? '') }}</textarea>
+                            <p class="field-help">
+                                Write this in your visitors' language. It is shown in the widget exactly as typed, so
+                                keep it free of anything private.
+                            </p>
+                            @error('availability_away_message')
+                                <p class="field-error">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <button class="button" type="submit">Save support hours</button>
+                    </form>
+                @else
+                    <div class="notice-copy">
+                        <p>Only an account admin can set support hours.</p>
+                    </div>
+                @endif
+            </section>
+
             <section class="section" aria-labelledby="privacy-settings-heading">
                 <div class="section-header">
                     <h2 id="privacy-settings-heading">Mask selectors</h2>

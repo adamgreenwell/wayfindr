@@ -16,8 +16,10 @@ use App\Support\ExternalIssueSyncStatus;
 use App\Support\OperatorReadiness;
 use App\Support\SiteInstallHealth;
 use App\Support\SitePurge;
+use App\Support\Sites\SiteAvailability;
 use App\Support\TicketExternalIssueState;
 use App\Support\WidgetRealtimeConfig;
+use DateTimeZone;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -146,6 +148,15 @@ class AgentSiteController extends Controller
             'canManageIntegrations' => Gate::forUser($agent)->allows('manageIntegrations', $site),
             'canManageSiteAccess' => Gate::forUser($agent)->allows('manageAccess', $site),
             'canUpdatePrivacy' => Gate::forUser($agent)->allows('updatePrivacy', $site),
+            'canUpdateSite' => Gate::forUser($agent)->allows('update', $site),
+            'availability' => SiteAvailability::for($site),
+            'availabilitySettings' => is_array($site->settings['availability'] ?? null)
+                ? $site->settings['availability']
+                : [],
+            // Normalised here so the form needs no logic. This view mixes both
+            // @php forms badly -- an inline @php() alongside its existing
+            // @php...@endphp blocks silently breaks everything after it.
+            'availabilityWeekdays' => $this->availabilityWeekdaysForForm($site),
             'dataResponsibility' => config('wayfindr.data_responsibility'),
             'externalIssueCapabilities' => ExternalIssueCapability::options(),
             'externalIssueHealth' => $externalIssueHealth,
@@ -520,6 +531,95 @@ class AgentSiteController extends Controller
      * Kept apart from update() so the privacy form and the details form cannot
      * blank each other's fields by omission.
      */
+    /**
+     * @return array<string, array{open: bool, from: string, to: string}>
+     */
+    private function availabilityWeekdaysForForm(Site $site): array
+    {
+        $stored = is_array($site->settings['availability']['weekdays'] ?? null)
+            ? $site->settings['availability']['weekdays']
+            : [];
+
+        $weekdays = [];
+
+        foreach (SiteAvailability::DAYS as $day) {
+            $hours = $stored[$day] ?? null;
+            $open = is_array($hours) && isset($hours[0], $hours[1]);
+
+            $weekdays[$day] = [
+                'open' => $open,
+                'from' => $open ? (string) $hours[0] : '09:00',
+                'to' => $open ? (string) $hours[1] : '17:00',
+            ];
+        }
+
+        return $weekdays;
+    }
+
+    /**
+     * Set when the support desk is open for this site.
+     *
+     * Its own method for the same reason updateDetails() is: one form must not
+     * be able to blank another's fields by omitting them.
+     */
+    public function updateAvailability(Request $request, Site $site): RedirectResponse
+    {
+        $this->authorizeSiteAbility($request, 'view', $site, 404);
+        $this->authorizeSiteAbility($request, 'update', $site);
+
+        $validated = $request->validate([
+            'availability_enabled' => ['nullable', 'boolean'],
+            'availability_timezone' => ['required', 'string', Rule::in(DateTimeZone::listIdentifiers())],
+            // Operator-authored, so an install in any language tells its own
+            // visitors why nobody is answering. Hardcoding this in the widget
+            // would make it an English string needing extraction later.
+            'availability_away_message' => ['nullable', 'string', 'max:500'],
+            'availability_open' => ['nullable', 'array'],
+            'availability_open.*' => ['nullable', 'string'],
+            'availability_from' => ['nullable', 'array'],
+            'availability_from.*' => ['nullable', 'date_format:H:i'],
+            'availability_to' => ['nullable', 'array'],
+            'availability_to.*' => ['nullable', 'date_format:H:i'],
+        ]);
+
+        $weekdays = [];
+
+        foreach (SiteAvailability::DAYS as $day) {
+            // filter_var, not a cast: the hidden partner input submits the
+            // string "0", and (bool) "0" is false only by luck of PHP's rules
+            // while (bool) "false" would be true. Read it as a flag.
+            $isOpen = filter_var($validated['availability_open'][$day] ?? false, FILTER_VALIDATE_BOOL);
+            $from = $validated['availability_from'][$day] ?? null;
+            $to = $validated['availability_to'][$day] ?? null;
+
+            // A day is only open if it carries a usable pair. SiteAvailability
+            // discards a malformed range anyway; rejecting it here means the
+            // operator sees the day is closed instead of believing otherwise.
+            $weekdays[$day] = $isOpen && is_string($from) && is_string($to) && $from < $to
+                ? [$from, $to]
+                : null;
+        }
+
+        $settings = $site->settings ?? [];
+        $availability = is_array($settings['availability'] ?? null) ? $settings['availability'] : [];
+
+        $settings['availability'] = [
+            'enabled' => filter_var($validated['availability_enabled'] ?? false, FILTER_VALIDATE_BOOL),
+            'timezone' => $validated['availability_timezone'],
+            'weekdays' => $weekdays,
+            'away_message' => trim((string) ($validated['availability_away_message'] ?? '')) ?: null,
+            // Preserved rather than rewritten: editing the schedule is not the
+            // same action as reopening a desk somebody closed early.
+            'closed_until' => $availability['closed_until'] ?? null,
+        ];
+
+        $site->forceFill(['settings' => $settings])->save();
+
+        return redirect()
+            ->route('dashboard.sites.show', $site)
+            ->with('status', 'Support hours saved.');
+    }
+
     public function updateDetails(Request $request, Site $site): RedirectResponse
     {
         $this->authorizeSiteAbility($request, 'view', $site, 404);
