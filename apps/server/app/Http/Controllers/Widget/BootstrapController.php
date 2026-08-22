@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Site;
 use App\Models\Visitor;
 use App\Support\Sites\SiteAvailability;
+use App\Support\Sites\SiteIntake;
 use App\Support\VisitorContextSanitizer;
 use App\Support\VisitorSessionToken;
 use App\Support\WidgetSiteResolver;
@@ -47,16 +48,24 @@ class BootstrapController extends Controller
                 'visitor' => [
                     'anonymous_id' => $visitor->anonymous_id,
                     'token' => $visitorSessionToken->issue($site, $visitor),
+                    // Whether the host app told us who this is, as the SERVER
+                    // sees it. The widget's own option can be set while the
+                    // value was rejected -- sanitised away, or already claimed
+                    // by another visitor -- and asking a logged-in customer for
+                    // their name is the fastest way to look unfinished.
+                    'identified' => $visitor->external_id !== null,
                 ],
             ],
         ], $visitor->wasRecentlyCreated ? 201 : 200);
     }
 
     /**
-     * @return array{name: string, domain: string|null, color: string, public_key: string, availability: array{away: bool, message: string|null, opens_at: string|null, timezone: string}, settings: array{mask_selectors: array<int, string>, mask_terms: array<int, string>}}
+     * @return array{name: string, domain: string|null, color: string, public_key: string, availability: array{away: bool, message: string|null, opens_at: string|null, timezone: string}, intake: array{asks: bool, intro: string|null, fields: array<string, string>}, settings: array{mask_selectors: array<int, string>, mask_terms: array<int, string>}}
      */
     private function sitePayload(Site $site): array
     {
+        $availability = SiteAvailability::for($site);
+
         return [
             'name' => $site->name,
             'domain' => $site->domain,
@@ -68,7 +77,11 @@ class BootstrapController extends Controller
             // Derived here rather than in the widget: the desk's timezone and
             // schedule are the server's to know, and sending them would let a
             // visitor's wrong clock decide whether support looks open.
-            'availability' => SiteAvailability::for($site)->toPayload(),
+            'availability' => $availability->toPayload(),
+            // What to ask before the conversation starts. Out of hours an email
+            // is promoted to required here, because it is the only way back to
+            // somebody -- the server applies the same promotion on the way in.
+            'intake' => SiteIntake::for($site)->toPayload(! $availability->open),
             'settings' => [
                 'mask_selectors' => $this->stringList($site->settings['mask_selectors'] ?? []),
                 'mask_terms' => $this->stringList($site->settings['mask_terms'] ?? []),

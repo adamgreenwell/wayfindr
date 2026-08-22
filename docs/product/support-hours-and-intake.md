@@ -83,6 +83,64 @@ It is shown exactly as typed, as text rather than markup. Two consequences:
 If no message is set, the widget says something plain and true rather than
 nothing at all.
 
+## Visitor intake
+
+An anonymous visitor — most traffic on most sites — used to start a conversation
+with no name, no email and no stated reason, and end it with no way to be
+reached about anything unresolved.
+
+`visitors.name` and `visitors.email` have existed since the first migration and
+were written by **nothing at all**. SDK identification writes `external_id` and
+only that, and an external ID is deliberately not an email. So the columns were
+there and the answer was never asked for.
+
+Configured under **Sites → the site → What to ask before a conversation starts**.
+Each of **name**, **email** and **reason** is off, optional, or required.
+
+### Where the answers go
+
+**Name and email go on the visitor**, so the next visit already knows them.
+**The reason goes on the conversation**, because the next one may be about
+something else entirely.
+
+A blank optional answer never erases what an earlier conversation captured.
+
+### The server decides, not the widget
+
+The widget is told what to draw. The server applies the rules on the way in:
+a required field is required, and **a field the site does not ask for is
+refused** rather than quietly stored. Otherwise the configuration would be
+advisory and anyone could post whatever they liked against a visitor.
+
+### Already-identified visitors are not asked again
+
+If the host app identified the visitor through the SDK, the form is skipped.
+Asking a signed-in customer for their email is the fastest way to make a widget
+feel unfinished.
+
+This uses the **server's** view of whether the visitor is identified, exposed on
+the bootstrap response. The widget's own option can be set while the value was
+rejected — sanitised away, or already claimed by another visitor — so trusting
+the client would ask the wrong people.
+
+### Out of hours, email is required
+
+Whatever the site normally asks, an email is required when the desk is away,
+because it is the only way back to somebody. The same promotion is applied on
+the server, not just in the form.
+
+This is what turns a visitor who arrives at 3am from lost into answerable.
+
+### Why this cannot ride on visitor context
+
+`VisitorContextSanitizer` strips anything resembling an email from
+`metadata.context` and from `external_id`, and should keep doing so: that channel
+carries whatever a host page happens to hold, which nobody consented to send.
+
+An address typed into a form that asked for it is a different thing. It gets its
+own field, and is recorded in the [data inventory](../privacy/data-inventory.md)
+as such.
+
 ## Why this is not the unattended-conversation alert
 
 `SendUnattendedConversationAlertsCommand` already notices that a conversation

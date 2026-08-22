@@ -17,6 +17,7 @@ use App\Support\OperatorReadiness;
 use App\Support\SiteInstallHealth;
 use App\Support\SitePurge;
 use App\Support\Sites\SiteAvailability;
+use App\Support\Sites\SiteIntake;
 use App\Support\TicketExternalIssueState;
 use App\Support\WidgetRealtimeConfig;
 use DateTimeZone;
@@ -157,6 +158,7 @@ class AgentSiteController extends Controller
             // @php forms badly -- an inline @php() alongside its existing
             // @php...@endphp blocks silently breaks everything after it.
             'availabilityWeekdays' => $this->availabilityWeekdaysForForm($site),
+            'intake' => SiteIntake::for($site),
             'dataResponsibility' => config('wayfindr.data_responsibility'),
             'externalIssueCapabilities' => ExternalIssueCapability::options(),
             'externalIssueHealth' => $externalIssueHealth,
@@ -554,6 +556,42 @@ class AgentSiteController extends Controller
         }
 
         return $weekdays;
+    }
+
+    /**
+     * Set what a visitor is asked before the conversation starts.
+     *
+     * Its own method for the same reason the others are: one form must not be
+     * able to blank another's fields by omitting them.
+     */
+    public function updateIntake(Request $request, Site $site): RedirectResponse
+    {
+        $this->authorizeSiteAbility($request, 'view', $site, 404);
+        $this->authorizeSiteAbility($request, 'update', $site);
+
+        $validated = $request->validate([
+            'intake_intro' => ['nullable', 'string', 'max:300'],
+            'intake_fields' => ['nullable', 'array'],
+            'intake_fields.*' => [Rule::in([SiteIntake::OFF, SiteIntake::OPTIONAL, SiteIntake::REQUIRED])],
+        ]);
+
+        $fields = [];
+
+        foreach (SiteIntake::FIELDS as $field) {
+            $fields[$field] = $validated['intake_fields'][$field] ?? SiteIntake::OFF;
+        }
+
+        $settings = $site->settings ?? [];
+        $settings['intake'] = [
+            'fields' => $fields,
+            'intro' => trim((string) ($validated['intake_intro'] ?? '')) ?: null,
+        ];
+
+        $site->forceFill(['settings' => $settings])->save();
+
+        return redirect()
+            ->route('dashboard.sites.show', $site)
+            ->with('status', 'Visitor intake saved.');
     }
 
     /**
