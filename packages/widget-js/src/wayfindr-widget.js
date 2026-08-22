@@ -549,6 +549,10 @@
     var cobrowseAllow = rootEl.querySelector('.wayfindr-widget__cobrowse-allow');
     var cobrowseDecline = rootEl.querySelector('.wayfindr-widget__cobrowse-decline');
     var bootstrapped = false;
+    // Only the newest bootstrap may touch the panel; anything older is a stale
+    // answer that would overwrite it.
+    var bootstrapSequence = 0;
+    var bootstrapPromise = null;
     var supportCode = null;
     var conversationActivated = false;
     // The client persists the visitor identity per site; the widget persists
@@ -1971,13 +1975,31 @@
       // away long after support came back -- both silent, and both wrong at
       // exactly the moment the visitor decided to type.
       if (wasHidden) {
-        client.bootstrap(location ? location.href : null, visitorContext).then(function (result) {
-          bootstrapped = true;
-          applyBootstrapResult(result);
-        }, function () {});
+        refreshFromBootstrap();
       }
 
       scheduleRenderedReadReceipt();
+    }
+
+    // Re-ask the server, and let only the newest answer touch the panel.
+    //
+    // Closing and reopening before the first request finishes leaves both in
+    // flight. If they straddle a closing time and land out of order, the older
+    // "open" answer would erase the newer away notice and the visitor would
+    // keep the wrong state until they reopened again.
+    function refreshFromBootstrap() {
+      var seq = ++bootstrapSequence;
+
+      bootstrapPromise = client.bootstrap(location ? location.href : null, visitorContext).then(function (result) {
+        if (seq !== bootstrapSequence) {
+          return;
+        }
+
+        bootstrapped = true;
+        applyBootstrapResult(result);
+      }, function () {});
+
+      return bootstrapPromise;
     }
 
     // Everything a bootstrap answer tells the widget, applied in one place.
@@ -2165,10 +2187,13 @@
         }
 
         if (!bootstrapped) {
-          applyBootstrapResult(
-            await client.bootstrap(location ? location.href : null, visitorContext)
-          );
-          bootstrapped = true;
+          await refreshFromBootstrap();
+        } else if (bootstrapPromise) {
+          // A refresh started when the panel opened may still be in flight.
+          // Sending before it lands means sending without knowing whether
+          // anybody is there, which is exactly what the away notice exists to
+          // prevent.
+          await bootstrapPromise;
         }
 
         // The first message creates the conversation (with the body as its

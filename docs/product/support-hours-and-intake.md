@@ -57,7 +57,11 @@ Away state is derived on the server and rides the existing bootstrap response, s
 the widget needs no second request and no clock of its own — a visitor with a
 wrong system clock cannot make support look open.
 
-It is re-read **every time the panel is opened**, not once per page load. A tab
+It is re-read **every time the panel is opened**, not once per page load, and
+**sending waits for that answer**. A tab reopened on a slow connection would
+otherwise let somebody type and send before the notice arrived, which is the one
+thing this exists to prevent. Only the newest answer may update the panel, so a
+slow earlier request cannot land afterwards and erase it. A tab
 left sitting since before closing time would otherwise still show the desk as
 open, and one opened while away would keep saying away long after support came
 back — both silent, and both wrong at exactly the moment somebody decided to

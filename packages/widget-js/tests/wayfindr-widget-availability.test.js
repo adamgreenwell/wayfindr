@@ -228,3 +228,176 @@ test('reopening the panel re-asks whether the desk is still open', async () => {
   assert.ok(bootstraps > afterFirstOpen, 'reopening should re-ask the server');
   assert.equal(panel.querySelector('.wayfindr-widget__away').hidden, false);
 });
+
+test('a stale bootstrap answer cannot overwrite a newer one', async () => {
+  // Closing and reopening before the first request lands leaves both in flight.
+  // If they straddle a closing time and finish out of order, the older "open"
+  // answer would erase the newer away notice.
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/',
+  });
+
+  const pending = [];
+  let away = false;
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_docs',
+    storage: memoryStorage({
+      'wayfindr:site_public_docs:anonymous-id': 'anon-docs',
+      'wayfindr:site_public_docs:visitor-token': 'visitor-token-docs',
+    }),
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    fetch: async (url) => {
+      if (url.endsWith('/api/widget/bootstrap') || url.endsWith('/api/bootstrap')) {
+        const snapshot = away;
+
+        return new Promise((resolve) => {
+          pending.push(() => resolve(jsonResponse(200, {
+            data: {
+              site: {
+                public_key: 'site_public_docs',
+                settings: {},
+                color: 'blue',
+                availability: { away: snapshot, message: 'Closed.', opens_at: null, timezone: 'UTC' },
+              },
+              visitor: { anonymous_id: 'anon-docs', token: 'visitor-token-docs' },
+            },
+          })));
+        });
+      }
+
+      if (url.includes('/cobrowse')) {
+        return jsonResponse(200, { data: { cobrowse: { state: 'unavailable' } } });
+      }
+
+      return jsonResponse(200, { data: {} });
+    },
+  });
+
+  const launcher = widget.root.querySelector('.wayfindr-widget__launcher');
+  const panel = widget.root.querySelector('.wayfindr-widget__panel');
+
+  // First open, while the desk is still open. Do not let it resolve yet.
+  launcher.click();
+  await settle();
+
+  // Closing time passes; reopen, which starts a second, newer request.
+  away = true;
+  widget.root.querySelector('.wayfindr-widget__close').click();
+  launcher.click();
+  await settle();
+
+  // The NEWER request lands first, then the stale one.
+  pending[1]();
+  await settle();
+  pending[0]();
+  await settle();
+
+  assert.equal(
+    panel.querySelector('.wayfindr-widget__away').hidden,
+    false,
+    'the stale open answer must not erase the newer away notice',
+  );
+});
+
+test('sending waits for a pending availability refresh', async () => {
+  // A tab reopened on a slow connection would otherwise let somebody type and
+  // send before the away notice arrived -- the one thing this exists to stop.
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/',
+  });
+
+  const calls = [];
+  let releaseBootstrap = null;
+  let holdBootstrap = false;
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_docs',
+    storage: memoryStorage({
+      'wayfindr:site_public_docs:anonymous-id': 'anon-docs',
+      'wayfindr:site_public_docs:visitor-token': 'visitor-token-docs',
+    }),
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    fetch: async (url) => {
+      if (url.includes('/cobrowse')) {
+        return jsonResponse(200, { data: { cobrowse: { state: 'unavailable' } } });
+      }
+
+      calls.push(url);
+
+      if (url.endsWith('/bootstrap')) {
+        const answer = jsonResponse(200, {
+          data: {
+            site: {
+              public_key: 'site_public_docs',
+              settings: {},
+              color: 'blue',
+              availability: { away: true, message: 'Closed for the evening.', opens_at: null, timezone: 'UTC' },
+            },
+            visitor: { anonymous_id: 'anon-docs', token: 'visitor-token-docs' },
+          },
+        });
+
+        if (!holdBootstrap) {
+          return answer;
+        }
+
+        return new Promise((resolve) => {
+          releaseBootstrap = () => resolve(answer);
+        });
+      }
+
+      if (url.endsWith('/api/conversations')) {
+        return jsonResponse(201, { data: { conversation: { support_code: 'WF-DOCS', status: 'open' } } });
+      }
+
+      return jsonResponse(200, { data: { message: { id: 1, body: 'hi' } } });
+    },
+  });
+
+  const launcher = widget.root.querySelector('.wayfindr-widget__launcher');
+
+  // First open resolves normally, so bootstrapped becomes true.
+  launcher.click();
+  await settle();
+  widget.root.querySelector('.wayfindr-widget__close').click();
+
+  // Reopen with the refresh held in flight.
+  holdBootstrap = true;
+  calls.length = 0;
+  launcher.click();
+  await settle();
+
+  // Type and send while the refresh is still pending.
+  const textarea = widget.root.querySelector('.wayfindr-widget__textarea');
+  textarea.value = 'Are you there?';
+  widget.root.querySelector('.wayfindr-widget__form').dispatchEvent(
+    new dom.window.Event('submit', { bubbles: true, cancelable: true })
+  );
+  await settle();
+
+  assert.ok(
+    !calls.some((url) => url.endsWith('/api/conversations')),
+    'the message must not be sent before the widget knows whether anybody is there',
+  );
+
+  releaseBootstrap();
+  await settle();
+
+  assert.ok(
+    calls.some((url) => url.endsWith('/api/conversations')),
+    'once availability is known the send proceeds',
+  );
+});
