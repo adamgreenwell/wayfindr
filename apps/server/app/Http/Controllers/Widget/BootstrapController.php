@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Widget;
 use App\Http\Controllers\Controller;
 use App\Models\Site;
 use App\Models\Visitor;
+use App\Support\Sites\SiteAvailability;
 use App\Support\VisitorContextSanitizer;
 use App\Support\VisitorSessionToken;
 use App\Support\WidgetSiteResolver;
@@ -52,7 +53,7 @@ class BootstrapController extends Controller
     }
 
     /**
-     * @return array{name: string, domain: string|null, color: string, public_key: string, settings: array{mask_selectors: array<int, string>, mask_terms: array<int, string>}}
+     * @return array{name: string, domain: string|null, color: string, public_key: string, availability: array{away: bool, message: string|null, opens_at: string|null, timezone: string}, settings: array{mask_selectors: array<int, string>, mask_terms: array<int, string>}}
      */
     private function sitePayload(Site $site): array
     {
@@ -64,6 +65,10 @@ class BootstrapController extends Controller
             // and an operator can recolour a site without a widget redeploy.
             'color' => $site->resolvedColor()->value,
             'public_key' => $site->public_key,
+            // Derived here rather than in the widget: the desk's timezone and
+            // schedule are the server's to know, and sending them would let a
+            // visitor's wrong clock decide whether support looks open.
+            'availability' => SiteAvailability::for($site)->toPayload(),
             'settings' => [
                 'mask_selectors' => $this->stringList($site->settings['mask_selectors'] ?? []),
                 'mask_terms' => $this->stringList($site->settings['mask_terms'] ?? []),

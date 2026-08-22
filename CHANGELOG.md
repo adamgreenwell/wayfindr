@@ -32,6 +32,8 @@ missed while skimming.
 
 **No operator action required.** Pull, restart, and migrations run themselves.
 
+### Added
+
 - **An agent who forgets their password can recover it.** There was no
   forgot-password flow at all: recovery meant asking somebody with production
   shell access to run a command against the database on your behalf.
@@ -43,6 +45,22 @@ missed while skimming.
   ⚠ **Operator action** if this install has never configured outbound mail: there
   is no recovery path without it, because the link is an email. `/operator` →
   **Mail** sets it up, and its test button confirms delivery before you need it.
+
+- **A site can have support hours.** Until now the widget behaved identically at
+  3pm Tuesday and 3am Sunday: a visitor arriving out of hours opened a
+  conversation, saw nothing suggesting anyone was away, and waited for a reply
+  that was not coming.
+
+  Set them under **Sites → the site → When the desk is open**: a timezone, hours
+  per weekday, and what to tell a visitor who arrives outside them. Out of hours
+  the widget says so before they start typing, and says when you are back.
+
+  **Sites without hours configured are unchanged** — always open, exactly as
+  before. Nothing to do unless you want hours.
+
+  The away message is yours to write, so it can be in your visitors' language. It
+  is shown to every visitor of that site, so keep it free of anything private;
+  the schedule itself is never sent to the widget.
 
 ### Fixed
 

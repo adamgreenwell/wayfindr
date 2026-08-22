@@ -148,6 +148,8 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.sites.tester');
     Route::put('/dashboard/sites/{site}', [AgentSiteController::class, 'update'])
         ->name('dashboard.sites.update');
+    Route::put('/dashboard/sites/{site}/availability', [AgentSiteController::class, 'updateAvailability'])
+        ->name('dashboard.sites.availability.update');
     Route::put('/dashboard/sites/{site}/details', [AgentSiteController::class, 'updateDetails'])
         ->name('dashboard.sites.details.update');
     Route::post('/dashboard/sites/{site}/archive', [AgentSiteController::class, 'archive'])
