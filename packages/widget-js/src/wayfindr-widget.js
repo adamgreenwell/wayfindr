@@ -243,13 +243,21 @@
         details = details || {};
         var externalId = normalizeVisitorExternalId(details.visitorExternalId) || visitorExternalId;
 
-        return postJson(fetcher, apiBaseUrl + '/api/conversations', withVisitorContext({
+        var payload = withVisitorContext({
           site_public_key: sitePublicKey,
           anonymous_id: anonymousId,
           visitor_token: requireVisitorToken(visitorToken),
           subject: details.subject || summarize(body),
           page_url: details.pageUrl || null,
-        }, details.context, externalId));
+        }, details.context, externalId);
+
+        // Only fields the site actually asked for. Sending a blank key for a
+        // field it does not ask for is refused by the server, and rightly.
+        Object.keys(details.intake || {}).forEach(function (key) {
+          payload[key] = details.intake[key];
+        });
+
+        return postJson(fetcher, apiBaseUrl + '/api/conversations', payload);
       },
       sendMessage: function (supportCode, body, clientMessageId, attachmentIds) {
         return postJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/messages', withoutNullValues({
@@ -506,6 +514,12 @@
       '    <button class="wayfindr-widget__close" type="button" aria-label="Close support chat">&times;</button>',
       '  </header>',
       '  <div class="wayfindr-widget__away" role="status" aria-live="polite" hidden></div>',
+      '  <form class="wayfindr-widget__intake" hidden>',
+      '    <p class="wayfindr-widget__intake-intro"></p>',
+      '    <div class="wayfindr-widget__intake-fields"></div>',
+      '    <p class="wayfindr-widget__intake-error" role="alert" hidden></p>',
+      '    <button class="wayfindr-widget__intake-submit" type="submit">Continue</button>',
+      '  </form>',
       '  <div class="wayfindr-widget__timeline-wrap">',
       '    <div class="wayfindr-widget__timeline" role="log" aria-live="polite" aria-relevant="additions text" aria-atomic="false" aria-label="Conversation messages" hidden></div>',
       '    <button class="wayfindr-widget__jump" type="button" hidden>New messages ↓</button>',
@@ -551,6 +565,10 @@
     var noticeRetry = rootEl.querySelector('.wayfindr-widget__notice-retry');
     var typing = rootEl.querySelector('.wayfindr-widget__typing');
     var connection = rootEl.querySelector('.wayfindr-widget__connection');
+    var intakeForm = rootEl.querySelector('.wayfindr-widget__intake');
+    var intakeIntro = rootEl.querySelector('.wayfindr-widget__intake-intro');
+    var intakeFields = rootEl.querySelector('.wayfindr-widget__intake-fields');
+    var intakeError = rootEl.querySelector('.wayfindr-widget__intake-error');
     var textarea = rootEl.querySelector('.wayfindr-widget__textarea');
     var attachmentsList = rootEl.querySelector('.wayfindr-widget__attachments');
     var fileInput = rootEl.querySelector('.wayfindr-widget__file-input');
@@ -563,6 +581,9 @@
     var cobrowseAllow = rootEl.querySelector('.wayfindr-widget__cobrowse-allow');
     var cobrowseDecline = rootEl.querySelector('.wayfindr-widget__cobrowse-decline');
     var bootstrapped = false;
+    var intakeState = null;
+    var intakeConfig = null;
+    var intakeAnswered = false;
     // Only the newest bootstrap may touch the panel; anything older is a stale
     // answer that would overwrite it.
     var bootstrapSequence = 0;
@@ -2020,7 +2041,105 @@
     function applyBootstrapResult(result) {
       applySiteAccent(rootEl, siteAccentKey(result));
       applyAwayState(panel, siteAwayState(result));
+      applyIntakeState(siteIntakeState(result));
     }
+
+    // The composer has never been gated before. It is gated now only until the
+    // questions the site asked are answered, and never once a conversation
+    // exists -- coming back to an existing thread must not meet a form.
+    function applyIntakeState(state) {
+      // Held separately from the gate decision. A resume can set supportCode
+      // after bootstrap answers, so the decision has to be re-derivable rather
+      // than taken once at whichever moment happened to come first.
+      intakeConfig = state;
+
+      refreshIntakeGate();
+    }
+
+    function refreshIntakeGate() {
+      intakeState = supportCode ? null : intakeConfig;
+
+      if (!intakeState || intakeAnswered) {
+        intakeForm.hidden = true;
+        setIntakeGate(false);
+
+        return;
+      }
+
+      intakeIntro.textContent = intakeState.intro || '';
+      intakeIntro.hidden = !intakeState.intro;
+      intakeFields.innerHTML = '';
+
+      intakeState.fields.forEach(function (field) {
+        // doc, not the global: the widget is initialised with a document so it
+        // can run under JSDOM and inside a host page that is not the top frame.
+        var label = doc.createElement('label');
+        var text = doc.createTextNode(
+          INTAKE_LABELS[field.name] + (field.required ? '' : ' (optional)')
+        );
+        var input = doc.createElement('input');
+
+        input.type = field.name === 'email' ? 'email' : 'text';
+        input.name = field.name;
+        input.required = field.required;
+        input.autocomplete = field.name === 'email' ? 'email' : (field.name === 'name' ? 'name' : 'off');
+
+        label.appendChild(text);
+        label.appendChild(input);
+        intakeFields.appendChild(label);
+      });
+
+      intakeForm.hidden = false;
+      setIntakeGate(true);
+    }
+
+    function setIntakeGate(gated) {
+      form.hidden = gated;
+    }
+
+    function intakeAnswers() {
+      var answers = {};
+
+      if (!intakeState) {
+        return answers;
+      }
+
+      intakeState.fields.forEach(function (field) {
+        var input = intakeFields.querySelector('[name="' + field.name + '"]');
+
+        answers['visitor_' + field.name] = input ? input.value : '';
+      });
+
+      return answers;
+    }
+
+    intakeForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      intakeError.hidden = true;
+
+      var missing = intakeState && intakeState.fields.some(function (field) {
+        var input = intakeFields.querySelector('[name="' + field.name + '"]');
+
+        return field.required && (!input || !input.value.trim());
+      });
+
+      if (missing) {
+        // The server enforces this too; answering here saves a round trip and
+        // is the only per-field feedback the widget has ever had.
+        intakeError.textContent = 'Please fill in the required fields.';
+        intakeError.hidden = false;
+
+        return;
+      }
+
+      intakeAnswered = true;
+      intakeForm.hidden = true;
+      setIntakeGate(false);
+
+      if (textarea) {
+        textarea.focus();
+      }
+    });
 
     function closePanel() {
       cancelPendingReadReceipt();
@@ -2217,10 +2336,12 @@
           var conversation = await client.startConversation(body, {
             pageUrl: location ? location.href : null,
             context: visitorContext,
+            intake: intakeAnswers(),
           });
 
           applyConversationStatus(conversation);
           supportCode = conversation.support_code;
+          refreshIntakeGate();
           storageSet(widgetStorage, supportCodeStorageKey(options.sitePublicKey), supportCode);
           // Don't activate (polling/realtime/refresh) until the message actually
           // sends — a failed first send leaves the conversation dormant, as
@@ -2298,6 +2419,7 @@
         var result = await client.fetchMessages(candidateCode);
 
         supportCode = candidateCode;
+        refreshIntakeGate();
         applyConversationStatus(result.conversation);
         renderMessages(result.messages || []);
         renderAgentTyping(result.agent_typing);
@@ -2755,6 +2877,45 @@
 
     el.textContent = lines.join(' ');
     el.hidden = false;
+  }
+
+  var INTAKE_FIELDS = ['name', 'email', 'reason'];
+
+  var INTAKE_LABELS = { name: 'Your name', email: 'Your email', reason: 'What is this about?' };
+
+  function siteIntakeState(result) {
+    var site = result && result.site ? result.site : null;
+    var intake = site ? site.intake : null;
+
+    if (!intake || intake.asks !== true || !intake.fields) {
+      return null;
+    }
+
+    // The host app already told us who this is, so asking again is the fastest
+    // way to look unfinished. This is the SERVER's view: the widget's own
+    // option can be set while the value was rejected.
+    if (result && result.visitor && result.visitor.identified === true) {
+      return null;
+    }
+
+    var fields = [];
+
+    INTAKE_FIELDS.forEach(function (name) {
+      var mode = intake.fields[name];
+
+      if (mode === 'optional' || mode === 'required') {
+        fields.push({ name: name, required: mode === 'required' });
+      }
+    });
+
+    if (!fields.length) {
+      return null;
+    }
+
+    return {
+      fields: fields,
+      intro: typeof intake.intro === 'string' && intake.intro.trim() ? intake.intro.trim() : null,
+    };
   }
 
   function siteMaskSelectors(result) {
@@ -4368,6 +4529,12 @@
       '.wayfindr-widget__header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-paper)}',
       '.wayfindr-widget__close{border:0;background:transparent;color:var(--wf-muted);cursor:pointer;font:700 24px/1 var(--wf-font-sans);padding:0}',
       '.wayfindr-widget__timeline{display:grid;gap:10px;flex:1 1 auto;min-height:0;max-height:280px;overflow:auto;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-surface-2)}',
+      '.wayfindr-widget__intake{display:grid;gap:10px;margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-surface-2)}',
+      '.wayfindr-widget__intake-intro{margin:0;color:var(--wf-muted);font-size:13px;line-height:1.4}',
+      '.wayfindr-widget__intake-fields{display:grid;gap:8px}',
+      '.wayfindr-widget__intake label{display:grid;gap:4px;color:var(--wf-muted);font-size:12px}',
+      '.wayfindr-widget__intake input{min-width:0;padding:8px 10px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);font:inherit;font-size:13px}',
+      '.wayfindr-widget__intake-error{margin:0;color:var(--wf-signal-attention);font-size:12px}',
       '.wayfindr-widget__away{margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:color-mix(in srgb, var(--wf-signal-hold) 12%, var(--wf-surface));color:color-mix(in srgb, var(--wf-signal-hold) 70%, var(--wf-ink));font-size:13px;line-height:1.4}',
       '.wayfindr-widget__notice{display:grid;gap:10px;margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-surface-2);color:var(--wf-muted);font-size:13px;line-height:1.4}',
       '.wayfindr-widget__notice[data-state="warning"]{background:color-mix(in srgb, var(--wf-signal-hold) 12%, var(--wf-surface));color:color-mix(in srgb, var(--wf-signal-hold) 70%, var(--wf-ink))}',
