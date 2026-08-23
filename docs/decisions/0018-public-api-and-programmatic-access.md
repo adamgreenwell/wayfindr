@@ -84,6 +84,14 @@ token with no site restriction sees the account's sites; a restricted token sees
 the intersection, and the intersection can only narrow. An integration that
 watches one site should not be a credential for all of them.
 
+The ceiling on all of it is the issuer: **a token can never reach further than
+the person who created it.** Site access binds an admin as much as an agent —
+`rbac-waypoints` is explicit that no role bypasses it because a controller
+checked only `account_id`, and that elevated cross-site views must be an
+explicit decision. Issuing a token is not that decision. So an admin who does
+not support every site gets a token pinned to the sites they do, and asking for
+sites they cannot see grants nothing rather than everything.
+
 Whether a token is restricted is **stored on the token**, not inferred from
 whether any site rows remain attached to it. Sites can be archived and purged,
 and the join rows go with them — so a token restricted to one site would

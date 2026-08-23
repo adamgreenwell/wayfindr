@@ -20,10 +20,12 @@ Two settings on the form are worth spending a moment on:
 
 - **Expires after.** Left empty, the token never expires, which means noticing
   it becomes nobody's job. Pick a horizon you will actually revisit.
-- **Restrict to sites.** Tick none and the token reaches every site on the
-  account. An integration that watches one site should not be a credential for
-  all of them. If every site a token was restricted to is later purged, the
-  token reaches **nothing** — it does not fall back to the whole account.
+- **Restrict to sites.** Tick none and the token reaches every site you support
+  — which is every site on the account if you support them all, and only yours
+  if you do not (see below). An integration that watches one site should not be
+  a credential for all of them. If every site a token was restricted to is later
+  purged, the token reaches **nothing** — it does not fall back to the whole
+  account.
 
 A token can never reach further than the person issuing it. If you do not
 support every site on the account, a token you issue is pinned to the sites you
