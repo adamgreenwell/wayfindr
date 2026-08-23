@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Widget;
 
 use App\Http\Controllers\Controller;
+use App\Models\Article;
 use App\Models\Site;
 use App\Models\Visitor;
 use App\Support\Sites\SiteAvailability;
@@ -88,6 +89,14 @@ class BootstrapController extends Controller
             // is promoted to required here, because it is the only way back to
             // somebody -- the server applies the same promotion on the way in.
             'intake' => SiteIntake::for($site)->toPayload(! $availability->open, $known),
+            // Whether this desk has written anything a visitor could find.
+            // Carried here rather than discovered by a search on every open:
+            // bootstrap already runs then, and a search box that never finds
+            // anything is worse than no search box.
+            'articles' => ['available' => Article::query()
+                ->where('account_id', $site->account_id)
+                ->published()
+                ->exists()],
             'settings' => [
                 'mask_selectors' => $this->stringList($site->settings['mask_selectors'] ?? []),
                 'mask_terms' => $this->stringList($site->settings['mask_terms'] ?? []),

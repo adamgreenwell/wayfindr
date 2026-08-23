@@ -106,3 +106,23 @@ test('an archived site stops answering, exactly as it stops serving everything e
 
     $this->getJson(route('widget.articles.index', ['site_public_key' => 'site_public_kb']))->assertNotFound();
 });
+
+test('bootstrap says whether there is anything to search for', function (): void {
+    // Carried on the answer the widget already asks for, so offering the search
+    // costs no extra request -- and a desk with nothing written never grows a
+    // box that finds nothing.
+    $site = articleSite();
+
+    $available = fn () => $this->postJson('/api/widget/bootstrap', [
+        'site_public_key' => 'site_public_kb',
+        'anonymous_id' => 'anon-kb',
+    ])->assertSuccessful()->json('data.site.articles.available');
+
+    expect($available())->toBeFalse();
+
+    $article = Article::factory()->for($site->account)->create();
+    expect($available())->toBeFalse('a draft is not something a visitor can find');
+
+    $article->forceFill(['published_at' => now()->subMinute()])->save();
+    expect($available())->toBeTrue();
+});
