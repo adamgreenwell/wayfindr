@@ -3,6 +3,14 @@
 use App\Support\ReleaseIdentity;
 
 return [
+
+    'mail' => [
+        // Shared with the mail provider that posts inbound messages. Empty
+        // means the channel is off, and the endpoint answers 404 rather than
+        // standing open.
+        'inbound_secret' => env('WAYFINDR_INBOUND_MAIL_SECRET', ''),
+    ],
+
     'documentation' => [
         'forge_url' => env('WAYFINDR_FORGE_DOCS_URL', 'https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/laravel-forge.md'),
         'runtime_requirements_url' => env('WAYFINDR_RUNTIME_REQUIREMENTS_DOCS_URL', 'https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/runtime-requirements.md'),

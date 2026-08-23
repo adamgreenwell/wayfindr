@@ -201,3 +201,66 @@ test('provider field names are read without a class per provider', function (): 
         ->and($mailgun->body)->toBe('Sent through Mailgun.')
         ->and(Conversation::query()->count())->toBe(2);
 });
+
+function signedPost($test, array $payload, ?string $secret = 'inbound-secret')
+{
+    $body = json_encode($payload);
+
+    // CONTENT_TYPE, not HTTP_CONTENT_TYPE: the framework reads the former when
+    // deciding whether to parse the body as JSON, and without it $request->all()
+    // is empty and every delivery looks like one with no sender.
+    $server = ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'];
+
+    if ($secret !== null) {
+        $server['HTTP_X_WAYFINDR_SIGNATURE'] = 'sha256='.hash_hmac('sha256', $body, $secret);
+    }
+
+    return $test->call('POST', route('mail.inbound'), [], [], [], $server, $body);
+}
+
+test('a signed delivery becomes a conversation', function (): void {
+    config()->set('wayfindr.mail.inbound_secret', 'inbound-secret');
+    mailSite();
+
+    signedPost($this, mailPayload())->assertOk()->assertJson(['message' => 'Accepted.']);
+
+    expect(Conversation::query()->count())->toBe(1);
+});
+
+test('an unsigned or wrongly signed delivery writes nothing', function (): void {
+    config()->set('wayfindr.mail.inbound_secret', 'inbound-secret');
+    mailSite();
+
+    signedPost($this, mailPayload(), null)->assertStatus(401);
+    signedPost($this, mailPayload(), 'the-wrong-secret')->assertStatus(401);
+
+    expect(Conversation::query()->count())->toBe(0);
+});
+
+test('the endpoint is closed until an operator configures a secret', function (): void {
+    // An open endpoint that writes conversations is worse than one somebody has
+    // to switch on, so an unconfigured install refuses rather than accepts.
+    config()->set('wayfindr.mail.inbound_secret', '');
+    mailSite();
+
+    signedPost($this, mailPayload(), null)->assertNotFound();
+
+    expect(Conversation::query()->count())->toBe(0);
+});
+
+test('a delivery Wayfindr cannot use is accepted rather than retried forever', function (): void {
+    // A provider retries on a failure code. Mail for a site that does not exist
+    // would retry until the provider gave up, so it is answered 200 and dropped.
+    config()->set('wayfindr.mail.inbound_secret', 'inbound-secret');
+    mailSite();
+
+    signedPost($this, mailPayload(['to' => 'nobody@northwind.test']))
+        ->assertOk()
+        ->assertJson(['message' => 'Ignored.']);
+
+    signedPost($this, ['to' => 'support@northwind.test', 'text' => 'no sender'])
+        ->assertOk()
+        ->assertJson(['message' => 'Ignored.']);
+
+    expect(Conversation::query()->count())->toBe(0);
+});
