@@ -704,3 +704,17 @@ test('an answer with no episode at all is refused', function (): void {
 
     expect(ConversationRating::query()->count())->toBe(0);
 });
+
+test('the reporting index leads on the column the reports filter by', function (): void {
+    // Structural, because a missing index is invisible in a test suite with
+    // three rows in it: correctness is identical and only a long-lived install
+    // feels the difference. The failure mode is a fixed 7/30/90-day view
+    // getting slower every quarter, which nobody attributes to an index
+    // because the query never changed.
+    $indexes = collect(DB::select("PRAGMA index_list('conversation_ratings')"))
+        ->map(fn (object $index): array => collect(DB::select('PRAGMA index_info('.$index->name.')'))
+            ->pluck('name')
+            ->all());
+
+    expect($indexes)->toContain(['site_id', 'episode_closed_at']);
+});

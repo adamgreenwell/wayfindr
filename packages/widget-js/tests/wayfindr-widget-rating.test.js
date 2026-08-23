@@ -64,6 +64,7 @@ function widgetWith({
   const sent = [];
   let answered = false;
   let episode = 'episode-1';
+  let ratingCalls = 0;
 
   const widget = Wayfindr.init({
     document: dom.window.document,
@@ -91,8 +92,15 @@ function widgetWith({
       // through to `{ data: {} }` looks like a successful no-op, and the test
       // then passes while the widget silently does nothing.
       if (url.includes('/rating')) {
-        if (holdRating) {
-          await holdRating;
+        // A promise per call, so a test can hold several rating requests open
+        // at once -- a stale one and the live one -- and settle them in
+        // whichever order it wants to model.
+        ratingCalls += 1;
+
+        const held = typeof holdRating === 'function' ? holdRating(ratingCalls) : (ratingCalls === 1 ? holdRating : null);
+
+        if (held) {
+          await held;
         }
 
         if (ratingStatus === 201) {
@@ -443,4 +451,67 @@ test('a failure that lands late does not warn over a newer close', async () => {
   assert.equal(prompt(widget).hidden, false);
   assert.equal(statusEl.hidden, true, 'the stale failure must not be shown over the new question');
   assert.equal(statusEl.textContent, '');
+});
+
+test('the whole form freezes while an answer is in flight', async () => {
+  // Only disabling send is not enough: the request has already captured the
+  // score and comment, so leaving the controls live lets the visitor change
+  // what they SEE to something never sent -- and be thanked for it.
+  const release = deferred();
+  const { widget } = widgetWith({ holdRating: release.promise });
+  await openPanel(widget);
+
+  score(widget, 'good').click();
+  widget.root.querySelector('.wayfindr-widget__rating').dispatchEvent(new widget.root.ownerDocument.defaultView.Event('submit', { cancelable: true }));
+  await settle();
+
+  assert.equal(widget.root.querySelector('.wayfindr-widget__rating-send').disabled, true);
+  assert.equal(widget.root.querySelector('.wayfindr-widget__rating-comment').disabled, true);
+  assert.equal(score(widget, 'bad').disabled, true);
+
+  release.release(null);
+  await settle();
+});
+
+test('a stale request settling does not unfreeze a newer answer in flight', async () => {
+  // Both outstanding at once: a stale one for a superseded close and the live
+  // one for the close on screen. If the stale settle re-enables the form, the
+  // visitor can send the current close twice and whichever response lands last
+  // is the one stored.
+  const first = deferred();
+  const second = deferred();
+  const { widget, sent } = widgetWith({
+    holdRating: (call) => (call === 1 ? first.promise : second.promise),
+    ratedAfterAnswer: false,
+  });
+  await openPanel(widget);
+
+  score(widget, 'good').click();
+  widget.root.querySelector('.wayfindr-widget__rating').dispatchEvent(new widget.root.ownerDocument.defaultView.Event('submit', { cancelable: true }));
+  await settle();
+
+  // A newer close arrives while that is still on the wire.
+  widget.mockEpisode('episode-later');
+  widget.root.querySelector('.wayfindr-widget__refresh').click();
+  await settle();
+
+  // The visitor answers the new one -- allowed, even though the old request
+  // has not come back.
+  score(widget, 'bad').click();
+  widget.root.querySelector('.wayfindr-widget__rating').dispatchEvent(new widget.root.ownerDocument.defaultView.Event('submit', { cancelable: true }));
+  await settle();
+
+  const before = sent.filter((entry) => entry.url.includes('/rating')).length;
+
+  // Now the STALE one settles.
+  first.release(null);
+  await settle();
+
+  assert.equal(widget.root.querySelector('.wayfindr-widget__rating-send').disabled, true, 'the live answer is still in flight');
+
+  // Submitting again must send nothing.
+  widget.root.querySelector('.wayfindr-widget__rating').dispatchEvent(new widget.root.ownerDocument.defaultView.Event('submit', { cancelable: true }));
+  await settle();
+
+  assert.equal(sent.filter((entry) => entry.url.includes('/rating')).length, before);
 });

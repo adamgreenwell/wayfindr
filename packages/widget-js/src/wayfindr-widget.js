@@ -1028,6 +1028,11 @@
     // both report awaiting -- so an unsubmitted draft would reappear against
     // different work, already ready to send.
     var ratingEpisode = null;
+    // The episode whose answer is currently in flight, or null. Keyed on the
+    // episode rather than a plain boolean, because two requests CAN be
+    // outstanding at once: a stale one for a close that has since been
+    // superseded, and the live one for the close now on screen.
+    var ratingInFlight = null;
     var helpDebounce = null;
     var cobrowseAllow = rootEl.querySelector('.wayfindr-widget__cobrowse-allow');
     var cobrowseDecline = rootEl.querySelector('.wayfindr-widget__cobrowse-decline');
@@ -2972,11 +2977,31 @@
       ratingIntro.textContent = ratingConfig.intro || t('rating.intro');
       ratingLabel.textContent = t('rating.comment');
       ratingSend.textContent = t('rating.send');
-      ratingSend.disabled = ratingScore === null;
 
       [].forEach.call(rating.querySelectorAll('.wayfindr-widget__rating-score'), function (button) {
         button.textContent = t('rating.' + button.getAttribute('data-score'));
         button.setAttribute('aria-pressed', button.getAttribute('data-score') === ratingScore ? 'true' : 'false');
+      });
+
+      applyRatingFormState();
+    }
+
+    /**
+     * Enable or freeze the whole form, not just the send button.
+     *
+     * While an answer is in flight the request has already captured the score
+     * and comment, so leaving the controls live lets the visitor change what
+     * they see to something that was never sent -- and then be thanked for it
+     * when the response lands.
+     */
+    function applyRatingFormState() {
+      var busy = ratingInFlight !== null && ratingInFlight === ratingEpisode;
+
+      ratingSend.disabled = busy || ratingScore === null;
+      ratingComment.disabled = busy;
+
+      [].forEach.call(rating.querySelectorAll('.wayfindr-widget__rating-score'), function (button) {
+        button.disabled = busy;
       });
     }
 
@@ -2997,7 +3022,13 @@
         return;
       }
 
-      ratingSend.disabled = true;
+      // One answer in flight per close. Not a plain "already submitting"
+      // guard: a stale request for a superseded close may still be running,
+      // and the visitor must be able to answer the close actually in front of
+      // them while it does.
+      if (ratingInFlight === ratingEpisode) {
+        return;
+      }
 
       // Which close this request is about, captured now. A poll can land a
       // newer close while the request is in flight, and marking the widget
@@ -3005,6 +3036,9 @@
       // never about -- leaving the visitor unable to answer it until some later
       // poll happens to restore it, or not at all if polling is failing.
       var submittedEpisode = ratingEpisode;
+
+      ratingInFlight = submittedEpisode;
+      applyRatingFormState();
 
       client.rateConversation(supportCode, ratingScore, ratingComment.value.trim(), submittedEpisode).then(function () {
         if (submittedEpisode !== ratingEpisode) {
@@ -3029,7 +3063,15 @@
         ratingStatus.textContent = t('rating.failed');
         ratingStatus.hidden = false;
       }).then(function () {
-        ratingSend.disabled = ratingScore === null;
+        // Only the request that owns the flag clears it. A stale one settling
+        // must not unfreeze a form whose own answer is still on the wire, or
+        // the visitor can send the current close twice and whichever response
+        // lands last is the one stored.
+        if (ratingInFlight === submittedEpisode) {
+          ratingInFlight = null;
+        }
+
+        applyRatingFormState();
       });
     });
 

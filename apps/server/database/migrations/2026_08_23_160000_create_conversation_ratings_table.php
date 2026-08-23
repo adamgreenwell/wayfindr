@@ -56,7 +56,14 @@ return new class extends Migration
             // twice, and the second answer does not erase the first. Absence
             // of a row is what "unrated" means, so an average can never be
             // computed over conversations nobody answered about.
-            $table->index(['site_id', 'rated_at']);
+            // Indexed on the column the REPORTS filter by. Both
+            // `SupportReport::satisfaction()` and `comments()` constrain the
+            // window with `episode_closed_at`, so an index leading on
+            // `rated_at` leaves the planner the `site_id` prefix and a scan of
+            // every rating that site has ever collected -- a fixed 7/30/90-day
+            // view getting slower every quarter, which is the shape of slowness
+            // nobody attributes to an index because the query never changed.
+            $table->index(['site_id', 'episode_closed_at']);
             $table->index(['conversation_id', 'rated_at']);
         });
     }
