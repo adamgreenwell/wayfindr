@@ -57,6 +57,18 @@ than from preference:
 
 A `api_tokens` table holding a **SHA-256 hash** of the token, never the token
 itself; the plaintext is shown once at creation and is unrecoverable after.
+
+"Unrecoverable" is a claim about every store, not only the tokens table. The
+plaintext must not be written anywhere in readable form on its way to that one
+screen either — the default session driver is the operator's database, so
+flashing it across a redirect put a working credential in the `sessions` table
+and undid the guarantee from a direction the sentence above does not cover. It
+is encrypted before it goes near the session, behind the same app key that
+external provider credentials sit behind.
+
+The constraint this sets for later work: **no surface may show an existing
+token again.** Re-displaying one would require storing something reversible,
+and there is no version of that which keeps this promise.
 Alongside it: an owning account, a name, an abilities list, `expires_at`,
 `last_used_at`, and `revoked_at`.
 
