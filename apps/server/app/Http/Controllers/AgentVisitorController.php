@@ -34,8 +34,14 @@ class AgentVisitorController extends Controller
         $agent = $request->user();
         $account = $agent->account()->firstOrFail();
 
-        $presence = (string) $request->query('presence', 'all');
-        $presence = in_array($presence, VisitorPresence::states(), true) ? $presence : 'all';
+        // Read before narrowing, exactly as the search and site filters below
+        // do. Casting first meant `?presence[]=active` raised an "Array to
+        // string conversion" warning, which Laravel turns into an
+        // ErrorException -- a 500 from a query string anybody can type.
+        $presence = $request->query('presence', 'all');
+        $presence = is_string($presence) && in_array($presence, VisitorPresence::states(), true)
+            ? $presence
+            : 'all';
 
         $search = $request->query('search', '');
         $search = is_string($search) ? mb_substr(trim($search), 0, 120) : '';

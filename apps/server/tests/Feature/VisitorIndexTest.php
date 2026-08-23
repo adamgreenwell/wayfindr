@@ -163,6 +163,20 @@ test('an unknown presence value is ignored rather than emptying the list', funct
         ->assertSee('Avery Lane');
 });
 
+test('a presence value that is not even a string is ignored too', function (): void {
+    // `?presence[]=active` casts an array to string, which is a PHP warning that
+    // Laravel raises as an ErrorException -- a 500 from a query string anybody
+    // can type. The two filters beside it in the same method already guard with
+    // is_string(); this one did not.
+    $w = visitorIndexWorld();
+    Visitor::factory()->for($w['site'])->create(['name' => 'Avery Lane', 'last_seen_at' => now()]);
+
+    $this->actingAs($w['agent'])
+        ->get(route('dashboard.visitors.index', ['presence' => ['active']]))
+        ->assertOk()
+        ->assertSee('Avery Lane');
+});
+
 test('the list counts the conversations a visitor has had', function (): void {
     $w = visitorIndexWorld();
     $visitor = Visitor::factory()->for($w['site'])->create(['name' => 'Avery Lane']);
