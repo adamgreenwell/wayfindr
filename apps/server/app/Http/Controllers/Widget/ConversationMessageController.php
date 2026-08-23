@@ -141,11 +141,25 @@ class ConversationMessageController extends Controller
 
             $previousStatus = (string) ($locked?->status ?? $conversation->status);
 
-            $conversation->forceFill([
+            // Written through the LOCKED instance, exactly as the agent
+            // transition path is. Eloquent compares against the attributes THIS
+            // request read: a send that loaded "open", then waited behind an
+            // agent's close, finds "open" unchanged and omits both status and
+            // closed_at from the update -- leaving the row closed while the
+            // call below records a reopen that never happened. A history that
+            // reports transitions the database never made is worse than the
+            // absence this PR set out to fix.
+            $target = $locked ?? $conversation;
+
+            $target->forceFill([
                 'status' => 'open',
                 'closed_at' => null,
                 'last_message_at' => $message->created_at,
             ])->save();
+
+            // Keep the caller's instance honest: the response reports this
+            // status back to the widget.
+            $conversation->setRawAttributes($target->getAttributes(), true);
 
             // A visitor replying to a closed conversation is the reopen that
             // matters most: it means the resolution did not hold. It used to

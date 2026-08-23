@@ -8,6 +8,7 @@ use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Support\Conversations\ConversationLifecycleLog;
+use App\Support\VisitorConversationResolver;
 use App\Support\VisitorSessionToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -225,6 +226,14 @@ test('the audit log shows the code, never the visitor-authored subject', functio
 // in the test process never reaches the controller. A test that cannot fail is
 // worse than an admission that there isn't one.
 //
+// UPDATE: (2) IS now covered for the WIDGET path, at the bottom of this file.
+// The difference is dependency injection, not concurrency -- the widget
+// controller takes its VisitorConversationResolver from the container, so a
+// decorator can hand it a genuinely stale instance and close the row in the
+// gap. The staleness was always the bug; the race was only one way to produce
+// it. The agent path still resists this for the reason above: it loads its own
+// copy, and nothing in the test process can get between that and the lock.
+//
 // What is covered is the transition guard ("a close submitted twice records one
 // close") and the atomicity ("a failed lifecycle write takes the status change
 // down with it"). The lock, and writing through the locked instance, are what
@@ -246,4 +255,62 @@ test('a failed lifecycle write takes the status change down with it', function (
     }
 
     expect($w['conversation']->fresh()->status)->toBe('open');
+});
+
+test('a visitor reply that lost the race to a close still opens the row it reports open', function (): void {
+    // The widget path CAN be tested where the agent path could not, and the
+    // difference is dependency injection: the controller takes its resolver
+    // from the container, so a decorator can hand it a genuinely stale
+    // instance. No second connection and no real concurrency needed -- the
+    // staleness IS the bug, and the race was only ever a way to produce it.
+    //
+    // Sequence: the resolver reads the conversation as open, an agent closes it
+    // in the gap, then the send proceeds on the instance already handed over.
+    $site = Site::factory()->create(['public_key' => 'site_public_race']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-race']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-RACE1',
+        'status' => 'open',
+        'closed_at' => null,
+    ]);
+
+    $token = $this->postJson('/api/widget/bootstrap', [
+        'site_public_key' => 'site_public_race',
+        'anonymous_id' => 'anon-race',
+    ])->assertSuccessful()->json('data.visitor.token');
+
+    $this->app->extend(VisitorConversationResolver::class, fn ($resolver) => new class($resolver) extends VisitorConversationResolver
+    {
+        public function __construct(private $inner) {}
+
+        public function resolve($request, string $supportCode, string $sitePublicKey, string $anonymousId): Conversation
+        {
+            $conversation = $this->inner->resolve($request, $supportCode, $sitePublicKey, $anonymousId);
+
+            // The close lands after this request read the row and before it
+            // reaches the lock. Written straight to the database so the handed
+            // -over instance keeps the "open" it was loaded with.
+            Conversation::query()->whereKey($conversation->getKey())->update([
+                'status' => 'closed',
+                'closed_at' => now(),
+            ]);
+
+            return $conversation;
+        }
+    });
+
+    $this->postJson('/api/conversations/WF-RACE1/messages', [
+        'site_public_key' => 'site_public_race',
+        'anonymous_id' => 'anon-race',
+        'visitor_token' => $token,
+        'body' => 'This is still broken.',
+    ])->assertCreated();
+
+    // Written through the pre-lock instance, Eloquent sees "open" unchanged and
+    // omits status and closed_at entirely -- leaving the row closed while the
+    // line below happily records a reopen. A history that reports transitions
+    // the database never made is worse than the absence this ADR set out to fix.
+    expect($conversation->fresh()->status)->toBe('open')
+        ->and($conversation->fresh()->closed_at)->toBeNull()
+        ->and(lifecycleActions())->toBe([ConversationLifecycleLog::REOPENED]);
 });
