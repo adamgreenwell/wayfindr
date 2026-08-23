@@ -1890,6 +1890,13 @@ test('renders the embedded conversation timeline and refreshes replies', async (
     fetch: async (url, options) => {
       calls.push({ url, options });
 
+      // Answered explicitly, because some of these handlers end in a stateful
+      // catch-all and a new endpoint falling into it consumes a turn of the
+      // sequence they depend on.
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, { data: { appearance: null } });
+      }
+
       if (url.endsWith('/api/widget/bootstrap')) {
         return jsonResponse(201, {
           data: {
@@ -3200,6 +3207,13 @@ test('polls active conversations so agent replies appear when realtime is unavai
     cobrowseStatusPollMs: 0,
     messagePollMs: 10,
     fetch: async (url, options) => {
+      // Answered explicitly, because some of these handlers end in a stateful
+      // catch-all and a new endpoint falling into it consumes a turn of the
+      // sequence they depend on.
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, { data: { appearance: null } });
+      }
+
       if (url.endsWith('/api/widget/bootstrap')) {
         return jsonResponse(201, {
           data: {
@@ -4228,6 +4242,13 @@ test('appends live agent messages from the realtime subscription', async () => {
       },
     },
     fetch: async (url) => {
+      // Answered explicitly, because some of these handlers end in a stateful
+      // catch-all and a new endpoint falling into it consumes a turn of the
+      // sequence they depend on.
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, { data: { appearance: null } });
+      }
+
       if (url.endsWith('/api/widget/bootstrap')) {
         return jsonResponse(201, {
           data: {
@@ -4456,6 +4477,13 @@ test('renders live support typing updates from the realtime subscription', async
       },
     },
     fetch: async (url) => {
+      // Answered explicitly, because some of these handlers end in a stateful
+      // catch-all and a new endpoint falling into it consumes a turn of the
+      // sequence they depend on.
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, { data: { appearance: null } });
+      }
+
       if (url.endsWith('/api/widget/bootstrap')) {
         return jsonResponse(201, {
           data: {
@@ -5003,6 +5031,13 @@ test('marks the launcher while cobrowse is active so closed-panel sharing stays 
     mutationFlushMs: 0,
     cobrowseStatusPollMs: 0,
     fetch: async (url) => {
+      // Answered explicitly, because some of these handlers end in a stateful
+      // catch-all and a new endpoint falling into it consumes a turn of the
+      // sequence they depend on.
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, { data: { appearance: null } });
+      }
+
       if (url.endsWith('/api/widget/bootstrap')) {
         return jsonResponse(201, {
           data: {
@@ -5086,6 +5121,13 @@ test('reports skipped-only widget mutation batches when the client payload budge
     storage: memoryStorage(),
     fetch: async (url, options) => {
       calls.push({ url, options });
+
+      // Answered explicitly, because some of these handlers end in a stateful
+      // catch-all and a new endpoint falling into it consumes a turn of the
+      // sequence they depend on.
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, { data: { appearance: null } });
+      }
 
       if (url.endsWith('/api/widget/bootstrap')) {
         return jsonResponse(201, {
@@ -5229,6 +5271,13 @@ test('renders calm visitor cobrowse copy from the status payload', async () => {
     cobrowseStatusPollMs: 0,
     storage: memoryStorage(),
     fetch: async (url) => {
+      // Answered explicitly, because some of these handlers end in a stateful
+      // catch-all and a new endpoint falling into it consumes a turn of the
+      // sequence they depend on.
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, { data: { appearance: null } });
+      }
+
       if (url.endsWith('/api/widget/bootstrap')) {
         return jsonResponse(201, {
           data: {
@@ -5336,6 +5385,13 @@ test('resyncs a sanitized cobrowse snapshot after skipped mutation pressure', as
     storage: memoryStorage(),
     fetch: async (url, options) => {
       calls.push({ url, options });
+
+      // Answered explicitly, because some of these handlers end in a stateful
+      // catch-all and a new endpoint falling into it consumes a turn of the
+      // sequence they depend on.
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, { data: { appearance: null } });
+      }
 
       if (url.endsWith('/api/widget/bootstrap')) {
         return jsonResponse(201, {
@@ -5470,6 +5526,13 @@ test('shows calm visitor copy while cobrowse catches up after mutation pressure'
     mutationPayloadMaxBytes: 500,
     storage: memoryStorage(),
     fetch: async (url, options) => {
+      // Answered explicitly, because some of these handlers end in a stateful
+      // catch-all and a new endpoint falling into it consumes a turn of the
+      // sequence they depend on.
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, { data: { appearance: null } });
+      }
+
       if (url.endsWith('/api/widget/bootstrap')) {
         return jsonResponse(201, {
           data: {
@@ -5621,6 +5684,13 @@ test('responds once to an agent cobrowse resync request with fresh page state an
     storage: memoryStorage(),
     fetch: async (url, options) => {
       calls.push({ url, options });
+
+      // Answered explicitly, because some of these handlers end in a stateful
+      // catch-all and a new endpoint falling into it consumes a turn of the
+      // sequence they depend on.
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, { data: { appearance: null } });
+      }
 
       if (url.endsWith('/api/widget/bootstrap')) {
         return jsonResponse(201, {
@@ -5816,6 +5886,13 @@ test('stops retrying one failing agent cobrowse resync request after the configu
     storage: memoryStorage(),
     fetch: async (url, options) => {
       calls.push({ url, options });
+
+      // Answered explicitly, because some of these handlers end in a stateful
+      // catch-all and a new endpoint falling into it consumes a turn of the
+      // sequence they depend on.
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, { data: { appearance: null } });
+      }
 
       if (url.endsWith('/api/widget/bootstrap')) {
         return jsonResponse(201, {
@@ -6015,6 +6092,13 @@ test('resets bounded agent cobrowse resync retry attempts for a new request id',
     fetch: async (url, options) => {
       calls.push({ url, options });
 
+      // Answered explicitly, because some of these handlers end in a stateful
+      // catch-all and a new endpoint falling into it consumes a turn of the
+      // sequence they depend on.
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, { data: { appearance: null } });
+      }
+
       if (url.endsWith('/api/widget/bootstrap')) {
         return jsonResponse(201, {
           data: {
@@ -6211,6 +6295,13 @@ test('caps queued widget mutation records before flushing under pressure', async
     fetch: async (url, options) => {
       calls.push({ url, options });
 
+      // Answered explicitly, because some of these handlers end in a stateful
+      // catch-all and a new endpoint falling into it consumes a turn of the
+      // sequence they depend on.
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, { data: { appearance: null } });
+      }
+
       if (url.endsWith('/api/widget/bootstrap')) {
         return jsonResponse(201, {
           data: {
@@ -6345,6 +6436,13 @@ test('preserves skipped mutation counts that arrive while a report is in flight'
     mutationQueueMaxRecords: 1,
     storage: memoryStorage(),
     fetch: async (url, options) => {
+      // Answered explicitly, because some of these handlers end in a stateful
+      // catch-all and a new endpoint falling into it consumes a turn of the
+      // sequence they depend on.
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, { data: { appearance: null } });
+      }
+
       if (url.endsWith('/api/widget/bootstrap')) {
         return jsonResponse(201, {
           data: {
@@ -6489,6 +6587,13 @@ test('declines a widget cobrowse request without starting page sharing', async (
     fetch: async (url, options) => {
       calls.push({ url, options });
 
+      // Answered explicitly, because some of these handlers end in a stateful
+      // catch-all and a new endpoint falling into it consumes a turn of the
+      // sequence they depend on.
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, { data: { appearance: null } });
+      }
+
       if (url.endsWith('/api/widget/bootstrap')) {
         return jsonResponse(201, {
           data: {
@@ -6601,6 +6706,13 @@ test('clears active widget cobrowse notice when support ends the session', async
     cobrowseStatusPollMs: 0,
     storage: memoryStorage(),
     fetch: async (url) => {
+      // Answered explicitly, because some of these handlers end in a stateful
+      // catch-all and a new endpoint falling into it consumes a turn of the
+      // sequence they depend on.
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, { data: { appearance: null } });
+      }
+
       if (url.endsWith('/api/widget/bootstrap')) {
         return jsonResponse(201, {
           data: {

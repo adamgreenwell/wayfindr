@@ -18,6 +18,7 @@ use App\Support\SiteInstallHealth;
 use App\Support\SitePurge;
 use App\Support\Sites\SiteAvailability;
 use App\Support\Sites\SiteIntake;
+use App\Support\Sites\WidgetAppearance;
 use App\Support\Sites\WidgetLanguage;
 use App\Support\TicketExternalIssueState;
 use App\Support\WidgetRealtimeConfig;
@@ -151,6 +152,7 @@ class AgentSiteController extends Controller
             'canManageSiteAccess' => Gate::forUser($agent)->allows('manageAccess', $site),
             'canUpdatePrivacy' => Gate::forUser($agent)->allows('updatePrivacy', $site),
             'canUpdateSite' => Gate::forUser($agent)->allows('update', $site),
+            'appearance' => WidgetAppearance::for($site),
             'availability' => SiteAvailability::for($site),
             'availabilitySettings' => is_array($site->settings['availability'] ?? null)
                 ? $site->settings['availability']
@@ -760,6 +762,46 @@ class AgentSiteController extends Controller
         $settings['availability'] = $availability;
 
         $site->forceFill(['settings' => $settings])->save();
+    }
+
+    /**
+     * What this site's widget looks like and says to its own visitors.
+     *
+     * Its own method for the reason updateAvailability() is: one form must not
+     * be able to blank another's fields by omitting them.
+     */
+    public function updateAppearance(Request $request, Site $site): RedirectResponse
+    {
+        $this->authorizeSiteAbility($request, 'view', $site, 404);
+        $this->authorizeSiteAbility($request, 'update', $site);
+
+        $validated = $request->validate([
+            'widget_accent' => ['nullable', 'string', 'max:9'],
+            'widget_position' => ['required', 'string', Rule::in(WidgetAppearance::POSITIONS)],
+            'widget_greeting' => ['nullable', 'string', 'max:120'],
+            'widget_placeholder' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        $accent = trim((string) ($validated['widget_accent'] ?? ''));
+
+        if ($accent !== '' && ($rejection = WidgetAppearance::accentRejection($accent)) !== null) {
+            throw ValidationException::withMessages(['widget_accent' => $rejection]);
+        }
+
+        $settings = $site->settings ?? [];
+
+        $settings['appearance'] = [
+            'accent' => $accent === '' ? null : $accent,
+            'position' => $validated['widget_position'],
+            'greeting' => trim((string) ($validated['widget_greeting'] ?? '')) ?: null,
+            'placeholder' => trim((string) ($validated['widget_placeholder'] ?? '')) ?: null,
+        ];
+
+        $site->forceFill(['settings' => $settings])->save();
+
+        return redirect()
+            ->route('dashboard.sites.show', $site)
+            ->with('status', 'Widget appearance saved.');
     }
 
     public function updateDetails(Request $request, Site $site): RedirectResponse

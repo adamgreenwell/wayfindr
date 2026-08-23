@@ -3,6 +3,7 @@
 use App\Http\Controllers\Integrations\GitHubWebhookController;
 use App\Http\Controllers\Integrations\GitLabWebhookController;
 use App\Http\Controllers\Integrations\JiraWebhookController;
+use App\Http\Controllers\Widget\AppearanceController;
 use App\Http\Controllers\Widget\ArticleController;
 use App\Http\Controllers\Widget\BootstrapController;
 use App\Http\Controllers\Widget\BroadcastAuthController;
@@ -25,6 +26,8 @@ Route::post('/widget/broadcasting/auth', BroadcastAuthController::class)
     ->middleware('throttle:widget-broadcast-auth')
     ->name('widget.broadcasting.auth');
 Route::middleware('throttle:widget-bootstrap')->group(function (): void {
+    Route::get('/widget/appearance', AppearanceController::class)
+        ->name('widget.appearance');
     Route::get('/widget/articles', [ArticleController::class, 'index'])
         ->name('widget.articles.index');
     Route::get('/widget/articles/{slug}', [ArticleController::class, 'show'])
