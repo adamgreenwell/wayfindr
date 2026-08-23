@@ -55,6 +55,12 @@ final class ResolutionEpisodes
     private const UNKNOWN = 'unknown';
 
     /**
+     * On hold. Distinct from closed, and the distinction is only visible
+     * because `ticket.pending` is on record.
+     */
+    private const PENDING = 'pending';
+
+    /**
      * @param  list<int>  $subjectIds
      * @param  callable(list<int>): Collection<int, mixed>  $openedAt  Creation
      *                                                                 times for one chunk of ids. A callable rather than a prepared map,
@@ -74,6 +80,7 @@ final class ResolutionEpisodes
         callable $openedAt,
         ReportingWindow $window,
         ?CarbonImmutable $recordingBeganAt,
+        ?string $pendingAction = null,
     ): array {
         $durations = [];
         $unmeasurable = 0;
@@ -88,7 +95,7 @@ final class ResolutionEpisodes
             $events = AuditEvent::query()
                 ->where('subject_type', $morphClass)
                 ->whereIn('subject_id', $chunk)
-                ->whereIn('action', [$closedAction, $reopenedAction])
+                ->whereIn('action', array_values(array_filter([$closedAction, $reopenedAction, $pendingAction])))
                 ->orderBy('subject_id')
                 ->orderBy('occurred_at')
                 ->orderBy('id')
@@ -122,11 +129,26 @@ final class ResolutionEpisodes
                     $at = CarbonImmutable::parse($event->occurred_at);
                     $inWindow = $at->betweenIncluded($window->start, $window->end);
 
+                    // Being put on hold settles a state that was unknown, which
+                    // is the whole reason for reading these. History recorded
+                    // before the write-path guard existed wrote `reopened` for
+                    // an un-hold, and from UNKNOWN that is indistinguishable
+                    // from a genuine reopen -- unless the `pending` that
+                    // preceded it is also on record, which it is.
+                    if ($pendingAction !== null && $event->action === $pendingAction) {
+                        $state = self::PENDING;
+
+                        continue;
+                    }
+
                     if ($event->action === $reopenedAction) {
-                        // Only from closed, or from unknown -- a reopen proves
-                        // the subject had been closed, so it settles the state
-                        // either way. From open it reopens nothing.
-                        if ($state === self::OPEN) {
+                        // Only from closed, or from unknown. From OPEN it
+                        // reopens nothing, and from PENDING it is an un-hold --
+                        // which the current write path records as its own
+                        // action, but older history recorded as a reopen.
+                        if ($state === self::OPEN || $state === self::PENDING) {
+                            $state = self::OPEN;
+
                             continue;
                         }
 
@@ -142,7 +164,9 @@ final class ResolutionEpisodes
                     }
 
                     // A close while already closed is the duplicate submission,
-                    // not a second resolution.
+                    // not a second resolution. Closing from PENDING is real --
+                    // a ticket on hold can be resolved without being reopened
+                    // first.
                     if ($state === self::CLOSED) {
                         continue;
                     }

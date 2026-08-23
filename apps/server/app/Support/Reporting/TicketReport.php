@@ -35,6 +35,12 @@ final class TicketReport
 
     public const REOPENED = 'ticket.reopened';
 
+    /**
+     * Read only to tell an un-hold from a reopen in history written before the
+     * write path distinguished them. Never reported as a lifecycle figure.
+     */
+    public const PENDING = 'ticket.pending';
+
     public const REPLY_SENT = 'ticket.reply_sent';
 
     /** @var array<string, mixed> */
@@ -151,6 +157,7 @@ final class TicketReport
                 fn (array $chunk) => Ticket::query()->whereIn('id', $chunk)->pluck('created_at', 'id'),
                 $this->window,
                 $this->historyBeganAt(),
+                self::PENDING,
             );
         });
     }

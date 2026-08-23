@@ -60,8 +60,15 @@ resolution, not two. And a reopen that reopens nothing is not a resolution that
 failed: the ticket interface offers the same **Reopen** control for a closed
 ticket and a pending one, so taking a ticket off hold used to be recorded as a
 reopen, which both claimed a failed resolution and restarted the clock at the
-un-hold. Off-hold is now its own event, and history already recorded is read
-correctly rather than rewritten.
+un-hold. Off-hold is now its own event.
+
+History already recorded is read correctly rather than rewritten, which is why
+the ticket walk also reads `ticket.pending`. For a ticket older than the
+recording boundary the state at the boundary is unknown, and from unknown a
+reopen normally *proves* the ticket had been closed — except where a `pending`
+sits immediately before it, which proves the opposite. Without that, every
+historical un-hold on an upgraded install would still be counted as a failed
+resolution.
 
 ## Medians, not averages
 

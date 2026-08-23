@@ -400,3 +400,71 @@ test('a ticket selected only by its reopen still has duplicate closes normalised
         ->and($resolution['closed'])->toBe(2)
         ->and(ticketReportFor($w)->volume()['closed_total'])->toBe(2);
 });
+
+test('a historical un-hold recorded as a reopen is not counted as one', function (): void {
+    // Before the write-path guard, taking a PENDING ticket off hold wrote
+    // `ticket.reopened`. On an upgraded install that history exists, and for a
+    // ticket older than the recording boundary the walk starts in UNKNOWN --
+    // where a reopen looks exactly like a genuine one.
+    //
+    // The `ticket.pending` that preceded it is on record and settles it.
+    $w = ticketReportWorld();
+    stamp('reporting.ticket_lifecycle_recording_began_at', now()->subDays(10));
+
+    $ticket = Ticket::factory()->for($w['account'])->for($w['site'])->create([
+        'created_at' => now()->subDays(90),
+    ]);
+
+    ticketEvent($ticket, $w['agent'], TicketReport::PENDING, now()->subDays(6));
+    ticketEvent($ticket, $w['agent'], TicketReport::REOPENED, now()->subDays(5));
+    ticketEvent($ticket, $w['agent'], TicketReport::CLOSED, now()->subDay());
+
+    $resolution = ticketReportFor($w)->resolution();
+
+    expect($resolution['reopened'])->toBe(0)
+        // The close still counts, and is still unmeasurable: the ticket
+        // predates the boundary and nothing since has established a start.
+        ->and($resolution['closed'])->toBe(1)
+        ->and($resolution['unmeasurable'])->toBe(1)
+        ->and($resolution['summary']->count)->toBe(0);
+});
+
+test('a genuine reopen from unknown state is still counted', function (): void {
+    // The other half: without a pending on record, a reopen from UNKNOWN does
+    // prove the ticket had been closed, and narrowing must not swallow it.
+    $w = ticketReportWorld();
+    stamp('reporting.ticket_lifecycle_recording_began_at', now()->subDays(10));
+
+    $ticket = Ticket::factory()->for($w['account'])->for($w['site'])->create([
+        'created_at' => now()->subDays(90),
+    ]);
+
+    ticketEvent($ticket, $w['agent'], TicketReport::REOPENED, now()->subDays(5));
+    ticketEvent($ticket, $w['agent'], TicketReport::CLOSED, now()->subDay());
+
+    $resolution = ticketReportFor($w)->resolution();
+
+    expect($resolution['reopened'])->toBe(1)
+        // And the reopen established a start, so this close IS measurable.
+        ->and($resolution['summary']->count)->toBe(1)
+        ->and($resolution['unmeasurable'])->toBe(0);
+});
+
+test('a ticket closed straight out of pending is a normal resolution', function (): void {
+    // Pending is not closed. A ticket resolved while on hold, without being
+    // reopened first, resolves normally.
+    $w = ticketReportWorld();
+
+    $ticket = Ticket::factory()->for($w['account'])->for($w['site'])->create([
+        'created_at' => now()->subDays(5),
+    ]);
+
+    ticketEvent($ticket, $w['agent'], TicketReport::PENDING, now()->subDays(3));
+    ticketEvent($ticket, $w['agent'], TicketReport::CLOSED, now()->subDay());
+
+    $resolution = ticketReportFor($w)->resolution();
+
+    expect($resolution['closed'])->toBe(1)
+        ->and($resolution['summary']->count)->toBe(1)
+        ->and($resolution['reopened'])->toBe(0);
+});
