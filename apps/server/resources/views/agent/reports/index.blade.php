@@ -55,9 +55,9 @@
             <div class="notice-copy">
                 <p><strong>Conversations opened</strong> and <strong>first response times</strong> are recoverable from the whole history of this install.</p>
                 @if ($historyBeganAt)
-                    <p><strong>Closes, resolution times and reopens</strong> are read from lifecycle records that began on {{ $historyBeganAt->toFormattedDayDateString() }}. Anything before that is unrecorded rather than absent &mdash; conversations were closed, but nothing was keeping the sequence, and it cannot be reconstructed after the fact.</p>
+                    <p><strong>Closes, resolution times and reopens</strong> are read from lifecycle records, which this install began keeping on {{ $historyBeganAt->toFormattedDayDateString() }}. Anything before that is unrecorded rather than absent &mdash; conversations were closed, but nothing was keeping the sequence, and it cannot be reconstructed after the fact.</p>
                 @else
-                    <p><strong>Closes, resolution times and reopens</strong> read from lifecycle records, and none have been written for this account yet. They begin the first time a conversation is closed or reopened.</p>
+                    <p><strong>Closes, resolution times and reopens</strong> are read from lifecycle records, and this install has not stamped when it started keeping them. Run outstanding migrations; until then these figures cover only what happens to be on record.</p>
                 @endif
                 <p>Purging a site removes its history along with everything else, so a total can legitimately fall.</p>
             </div>
@@ -88,8 +88,11 @@
                             @foreach ($chart['days'] as $day)
                                 <div class="chart__day" title="{{ $day['label'] }}: {{ $day['opened'] }} opened, {{ $day['closed'] }} closed">
                                     <div class="chart__bars">
-                                        <div class="chart__bar chart__bar--opened" style="height: {{ $chart['max'] > 0 ? round(($day['opened'] / $chart['max']) * 100, 2) : 0 }}%"></div>
-                                        <div class="chart__bar chart__bar--closed" style="height: {{ $chart['max'] > 0 ? round(($day['closed'] / $chart['max']) * 100, 2) : 0 }}%"></div>
+                                        {{-- A day with nothing on it gets no bar at all. The minimum
+                                             height that keeps a single conversation visible would
+                                             otherwise draw a sliver on every empty day. --}}
+                                        <div class="chart__bar chart__bar--opened @if ($day['opened'] === 0) chart__bar--none @endif" style="height: {{ round(($day['opened'] / $chart['max']) * 100, 2) }}%"></div>
+                                        <div class="chart__bar chart__bar--closed @if ($day['closed'] === 0) chart__bar--none @endif" style="height: {{ round(($day['closed'] / $chart['max']) * 100, 2) }}%"></div>
                                     </div>
                                 </div>
                             @endforeach
@@ -176,6 +179,13 @@
                                     <td>{{ $resolution['summary']->p90Label() }}</td>
                                     <td class="lede">The slowest tenth took at least this long.</td>
                                 </tr>
+                                @if ($resolution['unmeasurable'] > 0)
+                                    <tr>
+                                        <th scope="row">Counted but not measured</th>
+                                        <td>{{ $resolution['unmeasurable'] }}</td>
+                                        <td class="lede">Closed before this install started recording reopens, so how long the work took cannot be established. Counted as closes above; left out of the two figures here rather than inflating them.</td>
+                                    </tr>
+                                @endif
                                 <tr>
                                     <th scope="row">Reopened</th>
                                     <td>{{ $resolution['reopened'] }}</td>

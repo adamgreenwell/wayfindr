@@ -1623,6 +1623,13 @@
             min-height: 1px;
         }
 
+        /* ...but a day with none must. Without this the minimum above draws a
+           sliver on every empty day, so a quiet week reads as a busy one. */
+        .chart__bar--none {
+            min-height: 0;
+            border: 0;
+        }
+
         .chart__bar--opened {
             background: var(--wf-brand);
         }

@@ -4,6 +4,7 @@ use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\OperatorSetting;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
@@ -12,6 +13,18 @@ use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+/**
+ * The install fact a migration stamps once. Tests state it, because in a test
+ * the migration runs at "now" while fixtures are back-dated.
+ */
+function stampRecordingStart(CarbonImmutable $at): void
+{
+    OperatorSetting::query()->updateOrCreate(
+        ['key' => 'reporting.lifecycle_recording_began_at'],
+        ['value' => $at->toDateTimeString()],
+    );
+}
 
 function reportPageWorld(AccountRole $role = AccountRole::Admin): array
 {
@@ -44,14 +57,17 @@ test('an admin sees the report with its three sections', function (): void {
         ->assertSee('data-tab-panel="agents"', false);
 });
 
-test('the report says lifecycle recording has not started yet', function (): void {
+test('an empty closed series is explained rather than left to be guessed at', function (): void {
     $world = reportPageWorld();
 
-    // Nothing has ever been closed, so the closed series is empty for a reason
-    // a reader cannot guess from a flat line.
+    stampRecordingStart(CarbonImmutable::now()->subDays(3));
+
+    // Nothing has ever been closed. The flat line is real, but a reader cannot
+    // tell a quiet month from an unrecorded one without the date.
     $this->actingAs($world['agent'])->get('/dashboard/reports')
         ->assertOk()
-        ->assertSee('none have been written for this account yet', false);
+        ->assertSee('this install began keeping on', false)
+        ->assertSee(CarbonImmutable::now()->subDays(3)->toFormattedDayDateString(), false);
 });
 
 test('the report dates the start of lifecycle recording once it exists', function (): void {
@@ -69,9 +85,11 @@ test('the report dates the start of lifecycle recording once it exists', functio
         'occurred_at' => CarbonImmutable::now()->subDays(2),
     ]);
 
+    stampRecordingStart(CarbonImmutable::now()->subDays(2));
+
     $this->actingAs($world['agent'])->get('/dashboard/reports?report_days=30')
         ->assertOk()
-        ->assertSee('lifecycle records that began on', false)
+        ->assertSee('this install began keeping on', false)
         ->assertSee(CarbonImmutable::now()->subDays(2)->toFormattedDayDateString(), false);
 });
 
@@ -174,4 +192,33 @@ test('reports are absent from the sidebar for a non-admin agent', function (): v
         ->assertOk()
         // route() renders an absolute URL, so match the tail.
         ->assertSee('/dashboard/reports"', false);
+});
+
+test('a day with nothing on it draws no bar', function (): void {
+    $world = reportPageWorld();
+    stampRecordingStart(CarbonImmutable::now()->subDays(30));
+
+    // One busy day in an otherwise empty week.
+    for ($i = 0; $i < 3; $i++) {
+        Conversation::factory()->for($world['site'])->for($world['visitor'])->create([
+            'status' => 'open',
+            'created_at' => CarbonImmutable::now()->subDays(3)->setTime(9 + $i, 0),
+        ]);
+    }
+
+    $html = $this->actingAs($world['agent'])->get('/dashboard/reports?report_days=7')->assertOk()->getContent();
+
+    preg_match_all('/<div class="chart__bar chart__bar--(opened|closed)([^"]*)" style="height: ([\d.]+)%"/', $html, $matches, PREG_SET_ORDER);
+
+    expect($matches)->toHaveCount(14);
+
+    foreach ($matches as $bar) {
+        $isZero = (float) $bar[3] === 0.0;
+        $marked = str_contains($bar[2], 'chart__bar--none');
+
+        // The minimum height that keeps a single conversation visible would
+        // otherwise draw a sliver on every empty day, so a quiet week would
+        // read as a busy one.
+        expect($marked)->toBe($isZero);
+    }
 });

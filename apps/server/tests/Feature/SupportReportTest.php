@@ -4,6 +4,7 @@ use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\OperatorSetting;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
@@ -17,8 +18,26 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
+/**
+ * Declare when lifecycle recording became trustworthy.
+ *
+ * A migration stamps this once per install. In a test the migration runs at
+ * "now" while fixtures are back-dated, which is the opposite of production, so
+ * every test states the boundary it means instead of inheriting one.
+ */
+function recordingBeganAt(CarbonImmutable $at): void
+{
+    OperatorSetting::query()->updateOrCreate(
+        ['key' => 'reporting.lifecycle_recording_began_at'],
+        ['value' => $at->toDateTimeString()],
+    );
+}
+
 function reportWorld(): array
 {
+    // No stamp: an install that held no conversations when recording began has
+    // nothing predating the log, so everything is measurable. Tests about the
+    // boundary stamp one.
     $account = Account::factory()->create();
     $site = Site::factory()->for($account)->create();
     $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
@@ -164,8 +183,52 @@ test('a reclosed conversation is measured from its reopen, not its original open
     // the second close with the day between them would describe work nobody did.
     expect($resolution['summary']->count)->toBe(2)
         ->and($resolution['summary']->median)->toBe(2700)
+        ->and($resolution['unmeasurable'])->toBe(0)
         ->and($resolution['reopened'])->toBe(1)
         ->and($resolution['reopened_by_visitor'])->toBe(1);
+});
+
+test('a close whose episode start predates recording is counted, not measured', function (): void {
+    $world = reportWorld();
+
+    // Recording became trustworthy five days ago. Anything older than that may
+    // have been closed and reopened while nothing was writing it down.
+    recordingBeganAt(CarbonImmutable::now()->subDays(5));
+
+    $recent = conversationOpenedAt($world, CarbonImmutable::now()->subDays(4), 'closed');
+    lifecycleEventAt($recent, ConversationLifecycleLog::CLOSED, CarbonImmutable::now()->subDays(4)->addHour());
+
+    // Measuring this one from its creation would charge the close with eighty
+    // days of work that was already finished, and quietly drag the median up.
+    $ancient = conversationOpenedAt($world, CarbonImmutable::now()->subDays(80), 'closed');
+    lifecycleEventAt($ancient, ConversationLifecycleLog::CLOSED, CarbonImmutable::now()->subDays(2));
+
+    $resolution = reportFor($world, 7)->resolution();
+
+    expect($resolution['summary']->count)->toBe(1)
+        ->and($resolution['summary']->median)->toBe(3600)
+        ->and($resolution['unmeasurable'])->toBe(1)
+        // The close is still real, and still counted as volume.
+        ->and(reportFor($world, 7)->volume()['closed_total'])->toBe(2);
+});
+
+test('a reopen makes an old conversation measurable again', function (): void {
+    $world = reportWorld();
+
+    recordingBeganAt(CarbonImmutable::now()->subDays(5));
+
+    // Created long before recording, but reopened after it -- so the stretch
+    // ending in this close is fully on the record even though the conversation
+    // is not.
+    $conversation = conversationOpenedAt($world, CarbonImmutable::now()->subDays(80), 'closed');
+    lifecycleEventAt($conversation, ConversationLifecycleLog::REOPENED, CarbonImmutable::now()->subDays(3), ['previous_status' => 'closed', 'actor' => 'visitor']);
+    lifecycleEventAt($conversation, ConversationLifecycleLog::CLOSED, CarbonImmutable::now()->subDays(3)->addMinutes(45));
+
+    $resolution = reportFor($world, 7)->resolution();
+
+    expect($resolution['summary']->count)->toBe(1)
+        ->and($resolution['summary']->median)->toBe(2700)
+        ->and($resolution['unmeasurable'])->toBe(0);
 });
 
 test('a reopen older than the window still starts the episode it began', function (): void {
@@ -208,20 +271,24 @@ test('agent activity attributes replies and closes, and survives a removed agent
 test('the report says when recording began, so a flat line is not read as calm', function (): void {
     $world = reportWorld();
 
-    expect(reportFor($world)->historyBeganAt())->toBeNull()
-        ->and(reportFor($world)->historyIsPartial())->toBeTrue();
+    // An install with no stamp has no unrecorded past to warn about.
+    expect(reportFor($world, 90)->historyBeganAt())->toBeNull()
+        ->and(reportFor($world, 90)->historyIsPartial())->toBeFalse();
 
-    $conversation = conversationOpenedAt($world, CarbonImmutable::now()->subDays(5), 'closed');
-    lifecycleEventAt($conversation, ConversationLifecycleLog::CLOSED, CarbonImmutable::now()->subDays(4));
+    recordingBeganAt(CarbonImmutable::now()->subDays(4));
 
-    $report = reportFor($world, 30);
+    expect(reportFor($world, 30)->historyBeganAt()?->toDateString())
+        ->toBe(CarbonImmutable::now()->subDays(4)->toDateString())
+        // A thirty-day window reaches back past the start of recording, so the
+        // page has to say the earlier part is unrecorded rather than quiet.
+        ->and(reportFor($world, 30)->historyIsPartial())->toBeTrue()
+        // A seven-day window still reaches past four days.
+        ->and(reportFor($world, 7)->historyIsPartial())->toBeTrue();
 
-    expect($report->historyBeganAt()?->toDateString())->toBe(CarbonImmutable::now()->subDays(4)->toDateString())
-        // Recording began four days ago; a thirty-day window reaches past it.
-        ->and($report->historyIsPartial())->toBeTrue();
+    // Recording that started before the window covers the whole of it.
+    recordingBeganAt(CarbonImmutable::now()->subDays(60));
 
-    expect(reportFor($world, 7)->historyIsPartial())->toBeTrue()
-        ->and(reportFor($world, 30)->volume()['closed_total'])->toBe(1);
+    expect(reportFor($world, 30)->historyIsPartial())->toBeFalse();
 });
 
 test('duration summaries interpolate rather than flattering the faster half', function (): void {
@@ -291,4 +358,24 @@ test('an archived site keeps its history, because archiving destroys nothing', f
     // Tidying a site out of service must not rewrite last month's numbers --
     // purging is the operation that removes history, and it is meant to.
     expect(reportFor($world)->volume()['opened_total'])->toBe(1);
+});
+
+test('a fresh install is left empty, because restore reads any row as populated', function (): void {
+    // wayfindr:restore refuses to overwrite a non-empty database without
+    // --force, and counts every table rather than just the content ones. A
+    // migration that stamped the recording boundary unconditionally would leave
+    // a brand-new install non-empty and break restore-into-a-fresh-install --
+    // the disaster-recovery path.
+    expect(OperatorSetting::query()->where('key', 'reporting.lifecycle_recording_began_at')->exists())
+        ->toBeFalse();
+
+    $world = reportWorld();
+
+    // And with no stamp, nothing predates recording, so closes are measurable
+    // rather than silently set aside.
+    $conversation = conversationOpenedAt($world, CarbonImmutable::now()->subDays(3), 'closed');
+    lifecycleEventAt($conversation, ConversationLifecycleLog::CLOSED, CarbonImmutable::now()->subDays(3)->addHour());
+
+    expect(reportFor($world, 7)->resolution()['summary']->count)->toBe(1)
+        ->and(reportFor($world, 7)->resolution()['unmeasurable'])->toBe(0);
 });

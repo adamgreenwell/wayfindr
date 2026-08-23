@@ -53,9 +53,34 @@ Before that, `conversations.closed_at` was a current-state column that was nulle
 on every reopen, so the previous answer was destroyed each time. None of it can
 be backfilled.
 
-The page says so directly, and names the date recording began for that account.
+The page says so directly, and names the date this install began keeping them.
 A flat line before that date is an absence of records, not an absence of work,
 and only that date can tell the two apart.
+
+### The date is stamped, not inferred
+
+A migration writes it once, into `operator_settings` under
+`reporting.lifecycle_recording_began_at` — an install fact rather than anything
+an operator configures.
+
+It cannot be derived. The obvious proxy, the earliest lifecycle event on record,
+is circular: that event belongs to a conversation created *before* it, so the
+first close on any install could never be measured, and the boundary would move
+every time old history was purged.
+
+### Closes that are counted but not measured
+
+A conversation created before that date may have been closed and reopened
+several times while nothing was writing it down. Measuring such a close from the
+conversation's creation would charge it with stretches of work that were already
+finished — silently inflating the median and the p90 while the page presented
+the figure as measured.
+
+Those closes are counted as volume and set aside from the durations, and the
+Resolution table names how many. A smaller sample the page admits to is better
+than a larger one that is wrong. A reopen recorded after the boundary makes the
+conversation measurable again, however old it is, because the stretch ending in
+that close is fully on the record even when the conversation is not.
 
 ## What it deliberately does not do
 

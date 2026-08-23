@@ -7,6 +7,7 @@ namespace App\Support\Reporting;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\OperatorSetting;
 use App\Models\User;
 use App\Support\Conversations\ConversationLifecycleLog;
 use App\Support\UnattendedConversationAlertCollector;
@@ -34,6 +35,13 @@ use Illuminate\Database\Eloquent\Builder;
  */
 final class SupportReport
 {
+    /**
+     * Where the instant lifecycle recording became trustworthy is stamped.
+     *
+     * @see database/migrations/2026_08_23_000000_record_when_conversation_lifecycle_recording_began.php
+     */
+    private const RECORDING_BEGAN_KEY = 'reporting.lifecycle_recording_began_at';
+
     /** @var array<string, mixed> */
     private array $memo = [];
 
@@ -147,13 +155,20 @@ final class SupportReport
      * This is the payoff of recording the sequence instead of a `reopen_count`
      * column -- the column could not answer it.
      *
-     * @return array{summary: DurationSummary, reopened: int, reopened_by_visitor: int}
+     * Closes whose episode start predates recording are counted but not
+     * measured: a conversation older than the lifecycle log may have been
+     * closed and reopened before anything was written down, and measuring from
+     * its creation would silently charge this close with work that was already
+     * finished. {@see self::resolution()} reports how many were set aside so a
+     * shorter sample is visible rather than a longer one being wrong.
+     *
+     * @return array{summary: DurationSummary, unmeasurable: int, reopened: int, reopened_by_visitor: int}
      */
     public function resolution(): array
     {
         return $this->once('resolution', function (): array {
             if ($this->scope->isEmpty()) {
-                return ['summary' => DurationSummary::empty(), 'reopened' => 0, 'reopened_by_visitor' => 0];
+                return ['summary' => DurationSummary::empty(), 'unmeasurable' => 0, 'reopened' => 0, 'reopened_by_visitor' => 0];
             }
 
             $conversationIds = $this->lifecycleEventsInWindow(ConversationLifecycleLog::CLOSED)
@@ -164,6 +179,9 @@ final class SupportReport
                 ->all();
 
             $durations = [];
+            $unmeasurable = 0;
+
+            $recordingBegan = $this->historyBeganAt();
 
             // The reopen that starts an episode can be older than the window,
             // so the walk needs each conversation's whole history -- but only
@@ -193,18 +211,40 @@ final class SupportReport
 
                     $episodeStart = CarbonImmutable::parse($start);
 
+                    // Whether the creation time can be trusted as an episode
+                    // start. A conversation that predates recording may have
+                    // been closed and reopened before anything was written
+                    // down, in which case measuring from creation charges this
+                    // close with stretches of work that were already resolved.
+                    // Once a reopen has been seen, the episode start is known
+                    // regardless of how old the conversation is.
+                    $episodeStartIsKnown = $recordingBegan === null
+                        || $episodeStart->greaterThanOrEqualTo($recordingBegan);
+
                     foreach ($conversationEvents as $event) {
                         $at = CarbonImmutable::parse($event->occurred_at);
 
                         if ($event->action === ConversationLifecycleLog::REOPENED) {
                             $episodeStart = $at;
+                            $episodeStartIsKnown = true;
 
                             continue;
                         }
 
-                        if ($at->betweenIncluded($this->window->start, $this->window->end)) {
-                            $durations[] = max(0, $at->getTimestamp() - $episodeStart->getTimestamp());
+                        if (! $at->betweenIncluded($this->window->start, $this->window->end)) {
+                            continue;
                         }
+
+                        if (! $episodeStartIsKnown) {
+                            // Counted as a close, never as a duration. An
+                            // inflated median is invisible; a smaller sample
+                            // that the page names is not.
+                            $unmeasurable++;
+
+                            continue;
+                        }
+
+                        $durations[] = max(0, $at->getTimestamp() - $episodeStart->getTimestamp());
                     }
                 }
             }
@@ -213,6 +253,7 @@ final class SupportReport
 
             return [
                 'summary' => DurationSummary::fromSeconds($durations),
+                'unmeasurable' => $unmeasurable,
                 'reopened' => (clone $reopened)->count(),
                 // `audit_events.metadata` is a real json column, so a JSON path
                 // filter is safe here -- unlike `notifications.data`, which is
@@ -343,15 +384,22 @@ final class SupportReport
     public function historyBeganAt(): ?CarbonImmutable
     {
         return $this->once('history_began_at', function (): ?CarbonImmutable {
-            if ($this->scope->isEmpty()) {
-                return null;
-            }
+            // An install fact, stamped once when the recording release was
+            // migrated. It cannot be derived from the events themselves: the
+            // earliest event belongs to a conversation created before it, so
+            // using it as the boundary would declare the first close on every
+            // install unmeasurable and would move every time old history was
+            // purged.
+            $stamped = OperatorSetting::query()
+                ->where('key', self::RECORDING_BEGAN_KEY)
+                ->value('value');
 
-            $earliest = $this->scopedAuditEvents()
-                ->whereIn('action', [ConversationLifecycleLog::CLOSED, ConversationLifecycleLog::REOPENED])
-                ->min('occurred_at');
-
-            return $earliest === null ? null : CarbonImmutable::parse($earliest);
+            // Null is a real answer, not a missing one: it means this install
+            // held no conversations when recording began, so nothing predates
+            // the log and every close is measurable.
+            return is_string($stamped) && $stamped !== ''
+                ? CarbonImmutable::parse($stamped)
+                : null;
         });
     }
 
@@ -362,7 +410,7 @@ final class SupportReport
     {
         $began = $this->historyBeganAt();
 
-        return $began === null || $began->greaterThan($this->window->start);
+        return $began !== null && $began->greaterThan($this->window->start);
     }
 
     /**
