@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Support\Reporting\ReportingScope;
 use App\Support\Reporting\ReportingWindow;
 use App\Support\Reporting\SupportReport;
+use App\Support\Reporting\TicketReport;
 use App\Support\SpreadsheetSafeCsv;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -31,6 +32,7 @@ class AgentReportController extends Controller
         $account = $agent->account()->firstOrFail();
 
         [$scope, $window, $report] = $this->report($request, $account, $agent);
+        $tickets = new TicketReport($scope, $window);
 
         $volume = $report->volume();
         $firstResponse = $report->firstResponse();
@@ -54,6 +56,15 @@ class AgentReportController extends Controller
             'historyBeganAt' => $report->historyBeganAt(),
             'historyIsPartial' => $report->historyIsPartial(),
             'reportQuery' => $this->reportQueryParams($window, $scope->requestedSiteId),
+            // The half with the deeper history. Ticket lifecycle has been
+            // audited since May; conversation lifecycle since August, so these
+            // figures carry no recording-start caveat and must not borrow the
+            // one above them.
+            'ticketVolume' => $ticketVolume = $tickets->volume(),
+            'ticketChart' => $this->chart($ticketVolume, $window),
+            'ticketResolution' => $tickets->resolution(),
+            'ticketHistoryBeganAt' => $tickets->historyBeganAt(),
+            'ticketAgentActivity' => $tickets->agentActivity(),
         ]);
     }
 

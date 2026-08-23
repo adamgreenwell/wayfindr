@@ -1176,6 +1176,10 @@
                                         Ticket reopened
                                         @break
 
+                                    @case('ticket.unheld')
+                                        Ticket taken off hold
+                                        @break
+
                                     @case('ticket.note_added')
                                         Internal note added
                                         @break

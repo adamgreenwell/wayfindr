@@ -2,6 +2,7 @@
     $reportTabs = [
         ['id' => 'volume', 'label' => 'Volume'],
         ['id' => 'speed', 'label' => 'Speed'],
+        ['id' => 'tickets', 'label' => 'Tickets'],
         ['id' => 'agents', 'label' => 'Agents'],
         // Its own tab, not a row under Speed. Every other tab answers how fast
         // the desk moved; this one answers whether that helped, and a desk can
@@ -210,6 +211,218 @@
                                     <td>{{ $resolution['reopened_by_visitor'] }}</td>
                                     <td class="lede">The visitor came back rather than an agent reopening it &mdash; the clearest signal the answer did not land.</td>
                                 </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
+            </section>
+        </x-tab-panel>
+
+        <x-tab-panel id="tickets">
+            <section class="section" aria-labelledby="report-ticket-volume-heading">
+                <div class="section-header">
+                    <div>
+                        <h2 id="report-ticket-volume-heading">Ticket volume</h2>
+                        <p class="lede">
+                            {{ $ticketVolume['opened_total'] }} created ·
+                            {{ $ticketVolume['closed_total'] }} closed ·
+                            {{ $ticketVolume['open_now'] }} open now
+                        </p>
+                    </div>
+                </div>
+
+                @if ($ticketVolume['opened_total'] === 0 && $ticketVolume['closed_total'] === 0)
+                    <div class="notice-copy">
+                        @if ($ticketHistoryBeganAt && $window->start->lessThan($ticketHistoryBeganAt))
+                            {{-- The resolution section below already refuses to
+                                 claim nothing was closed when the range reaches
+                                 back past the boundary. Saying it plainly here
+                                 put two answers to the same question on one
+                                 tab. --}}
+                            <p>
+                                No ticket was created in this period, and no close is on record for it. This
+                                install began recording ticket closes on
+                                {{ $ticketHistoryBeganAt->toFormattedDayDateString() }}, and the range selected
+                                reaches back before that &mdash; tickets closed earlier left no trace to count.
+                            </p>
+                        @else
+                            <p>No ticket was created or closed in this period.</p>
+                        @endif
+                    </div>
+                @else
+                    {{-- The same chart the conversation tab draws, INCLUDING its
+                         scrolling wrapper. Its classes are the ones with CSS
+                         behind them; a second set invented here would render as
+                         an unstyled column of divs, and omitting `chart-scroll`
+                         makes ninety days of bars widen the whole page instead
+                         of scrolling inside their own box. --}}
+                    <div class="chart-scroll">
+                        <div
+                            class="chart"
+                            role="img"
+                            aria-label="Tickets per day. {{ $ticketVolume['opened_total'] }} created and {{ $ticketVolume['closed_total'] }} closed over the {{ $window->days }} days ending {{ $window->end->toFormattedDayDateString() }}. The busiest day had {{ $ticketChart['max'] }}."
+                        >
+                            @foreach ($ticketChart['days'] as $day)
+                                <div class="chart__day" title="{{ $day['label'] }}: {{ $day['opened'] }} created, {{ $day['closed'] }} closed">
+                                    <div class="chart__bars">
+                                        <div class="chart__bar chart__bar--opened @if ($day['opened'] === 0) chart__bar--none @endif" style="height: {{ $ticketChart['max'] === 0 ? 0 : round(($day['opened'] / $ticketChart['max']) * 100, 2) }}%"></div>
+                                        <div class="chart__bar chart__bar--closed @if ($day['closed'] === 0) chart__bar--none @endif" style="height: {{ $ticketChart['max'] === 0 ? 0 : round(($day['closed'] / $ticketChart['max']) * 100, 2) }}%"></div>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                        </div>
+                    <p class="chart-legend">
+                        <span class="chart-key chart-key--opened"></span> Created
+                        <span class="chart-key chart-key--closed"></span> Closed
+                        <span class="lede">Tallest day: {{ $ticketChart['max'] }}</span>
+                    </p>
+                @endif
+            </section>
+
+            <section class="section" aria-labelledby="report-ticket-resolution-heading">
+                <div class="section-header">
+                    <div>
+                        <h2 id="report-ticket-resolution-heading">Ticket resolution</h2>
+                        <p class="lede">
+                            {{ $ticketResolution['summary']->count }}
+                            {{ $ticketResolution['summary']->count === 1 ? 'close' : 'closes' }} measured
+                        </p>
+                    </div>
+                </div>
+
+                @if ($ticketResolution['summary']->count === 0 && $ticketResolution['unmeasurable'] > 0)
+                    {{-- Same shape as the conversation half: an upgraded install
+                         whose ticket closes all predate the boundary lands here,
+                         and "nothing was closed" would be false. --}}
+                    <div class="notice-copy">
+                        <p>
+                            {{ $ticketResolution['unmeasurable'] }} {{ $ticketResolution['unmeasurable'] === 1 ? 'ticket was' : 'tickets were' }} closed in this period, but
+                            {{ $ticketResolution['unmeasurable'] === 1 ? 'it' : 'they' }} opened before this install started recording ticket reopens, so how long the work took cannot be established.
+                            Resolution times will appear as tickets opened since then are closed.
+                        </p>
+                        @if ($ticketResolution['reopened'] > 0)
+                            <p>
+                                {{ $ticketResolution['reopened'] }} {{ $ticketResolution['reopened'] === 1 ? 'ticket was' : 'tickets were' }} reopened in this period &mdash;
+                                {{ $ticketResolution['reopened'] === 1 ? 'a resolution' : 'resolutions' }} that did not hold. That is countable even where the durations are not.
+                            </p>
+                        @endif
+                    </div>
+                @elseif ($ticketResolution['summary']->count === 0)
+                    {{-- A reopen needs no close to be worth reporting. A ticket
+                         closed before the range and reopened inside it is a
+                         resolution that did not hold, and it stays open -- so
+                         it never reaches the table below, and the figure the
+                         backend now counts correctly would still be invisible
+                         on the page. --}}
+                    @if ($ticketResolution['reopened'] > 0)
+                        <div class="table-wrap">
+                            <table>
+                                <tbody>
+                                    <tr>
+                                        <th scope="row">Reopened</th>
+                                        <td>{{ $ticketResolution['reopened'] }}</td>
+                                        <td class="lede">A resolution that did not hold. Nothing closed in this period, so there is no resolution time to report alongside it.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    @endif
+
+                    <div class="notice-copy">
+                        @if ($ticketHistoryBeganAt && $window->start->lessThan($ticketHistoryBeganAt))
+                            {{-- The window reaches back past the boundary, so
+                                 "nothing was closed" is a claim this install
+                                 cannot make: closes before it are unknowable,
+                                 not absent. --}}
+                            <p>
+                                No ticket close is on record in this period. This install began recording ticket
+                                closes on {{ $ticketHistoryBeganAt->toFormattedDayDateString() }}, and the range
+                                selected reaches back before that &mdash; tickets closed earlier left no trace to
+                                count, so this is not the same as nothing having happened.
+                            </p>
+                        @else
+                            <p>No ticket was closed in this period.</p>
+                        @endif
+                    </div>
+                @else
+                    <div class="table-wrap">
+                        <table>
+                            <tbody>
+                                <tr>
+                                    <th scope="row">Median</th>
+                                    <td>{{ $ticketResolution['summary']->medianLabel() }}</td>
+                                    <td class="lede">Half of tickets were resolved faster than this.</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">90th percentile</th>
+                                    <td>{{ $ticketResolution['summary']->p90Label() }}</td>
+                                    <td class="lede">The slowest tenth took at least this long.</td>
+                                </tr>
+                                @if ($ticketResolution['unmeasurable'] > 0)
+                                    <tr>
+                                        <th scope="row">Counted but not measured</th>
+                                        <td>{{ $ticketResolution['unmeasurable'] }}</td>
+                                        <td class="lede">Opened before this install started recording ticket reopens, so how long the work took cannot be established. Left out of the two figures above rather than inflating them.</td>
+                                    </tr>
+                                @endif
+                                <tr>
+                                    <th scope="row">Reopened</th>
+                                    <td>{{ $ticketResolution['reopened'] }}</td>
+                                    <td class="lede">A resolution that did not hold. Each reopen starts a new episode, so a ticket closed three times contributes three resolutions rather than one long one.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                @endif
+
+                @if ($ticketHistoryBeganAt)
+                    <div class="notice-copy">
+                        <p>
+                            {{-- States this install's own date and nothing about how it compares to the
+                                 conversation one. On an install upgraded from before ticket auditing
+                                 existed the migration stamps today, which can be the same day as the
+                                 conversation boundary -- so "long before" would be false exactly where a
+                                 reader most needs the figure to be trustworthy. --}}
+                            This install began recording ticket closes and reopens on
+                            {{ $ticketHistoryBeganAt->toFormattedDayDateString() }}. A ticket opened before
+                            then may have been closed and reopened while nothing was writing it down, so it
+                            is counted as a close and left out of the times here.
+                        </p>
+                    </div>
+                @endif
+            </section>
+
+            <section class="section" aria-labelledby="report-ticket-agents-heading">
+                <div class="section-header">
+                    <div>
+                        <h2 id="report-ticket-agents-heading">Who carried the ticket work</h2>
+                    </div>
+                </div>
+
+                @if ($ticketAgentActivity === [])
+                    <div class="notice-copy">
+                        <p>No ticket replies or closes in this period.</p>
+                    </div>
+                @else
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Agent</th>
+                                    <th scope="col">Replies sent</th>
+                                    <th scope="col">Tickets closed</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($ticketAgentActivity as $row)
+                                    <tr>
+                                        <td>{{ $row['name'] }}</td>
+                                        <td>{{ $row['replies'] }}</td>
+                                        <td>{{ $row['closes'] }}</td>
+                                    </tr>
+                                @endforeach
                             </tbody>
                         </table>
                     </div>

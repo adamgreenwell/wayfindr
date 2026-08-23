@@ -9,8 +9,8 @@ what the surface shows and, more usefully, what it cannot.
 
 ## What it reports
 
-Four sections, over a selectable range of 7, 30 or 90 days, filterable to a
-single site.
+Five tabs, over a selectable range of 7, 30 or 90 days, filterable to a single
+site.
 
 **Volume.** Conversations opened and closed per day, and the number open right
 now. Every day in the range is drawn whether or not anything happened on it — a
@@ -19,6 +19,11 @@ like an afternoon.
 
 **Speed.** First-response and resolution time as median and 90th percentile,
 plus how often resolutions did not hold.
+
+**Tickets.** The same three questions asked of the ticket half of the desk:
+volume, resolution time and reopens, and who carried the work. It has its own
+tab rather than doubling the conversation figures, because the two halves have
+different histories — see below.
 
 **Agents.** Replies sent and conversations closed per agent.
 
@@ -30,6 +35,55 @@ from being reported over people who said nothing.
 
 Both the daily series and the agent table export as CSV, following the account
 audit page's export conventions.
+
+## Two halves with different memories
+
+Conversation lifecycle events began on 22 August; ticket closes and reopens have
+been audited since 24 May. So an install that has been *running* since May can
+describe a full quarter of ticket work while its conversation tabs are still
+accumulating, and reading them as one dataset would be wrong.
+
+That is a fact about the product rather than about your install. An install
+upgraded from before ticket auditing existed has no ticket events older than the
+upgrade, and its two boundaries can be the same day.
+
+Each half therefore states **its own recording boundary**, stamped at migration
+time, and reports closes it cannot measure as *counted but not measured* rather
+than folding an unknowable duration into a median.
+
+The page states each boundary as a date and says nothing about how they compare,
+because the comparison is not reliably true. On an install created after ticket
+auditing existed the ticket boundary is much older; on one upgraded from before
+it, the migration has nothing earlier to point at and stamps the date it ran —
+which can be the same day as the conversation boundary.
+
+## Only a transition counts
+
+Both halves read their lifecycle log as a state machine rather than a list of
+actions, because the log is not a clean alternation of close and reopen.
+
+A close submitted twice — a double-click, a retry, a stale page — is one
+resolution, not two. And a reopen that reopens nothing is not a resolution that
+failed: the ticket interface offers the same **Reopen** control for a closed
+ticket and a pending one, so taking a ticket off hold used to be recorded as a
+reopen, which both claimed a failed resolution and restarted the clock at the
+un-hold. Off-hold is now its own event.
+
+History already recorded is read correctly rather than rewritten, which is why
+the ticket walk also reads `ticket.pending`. That does two jobs.
+
+For a ticket older than the recording boundary the state at the boundary is
+unknown, and from unknown a reopen normally *proves* the ticket had been closed
+— except where a `pending` sits immediately before it, which proves the
+opposite. Without that, every historical un-hold on an upgraded install would
+still be counted as a failed resolution.
+
+And a hold that begins while a ticket is **closed** is a reopen in substance,
+whatever the log calls it: the ticket left the closed state and went back to
+work. Marking a ticket pending is only offered for open tickets, so this comes
+from a stale form — but it still un-closes the ticket, and reading it as a plain
+hold would leave the resolution looking like it held while every later duration
+ran from the original start.
 
 ## Medians, not averages
 

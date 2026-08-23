@@ -91,6 +91,31 @@ missed while skimming.
   mind replaces the answer rather than adding one, so a small number of
   responses cannot be swamped. A conversation that is reopened and closed again
   is asked afresh, because that is a genuinely different question.
+- **Reports cover tickets, not just conversations.** The reports page described
+  conversations only, while the ticket half of the desk went unreported &mdash;
+  the half that, on an install running since May, has a full quarter of history
+  where conversations have weeks. Tickets now get their own tab: volume, resolution
+  times, reopens, and who carried the work, in the same shapes the conversation
+  tab uses. Both halves now measure a resolution through one shared walk, so
+  they cannot drift apart on what "resolution time" means &mdash; a ticket
+  closed three times contributes three resolutions rather than one long one.
+  Each half states its own recording boundary and reports closes it cannot
+  measure as *counted but not measured*, rather than folding an unknowable
+  duration into the median.
+
+  Ticket lifecycle now records only **transitions**, the rule conversations have
+  followed since ADR 0015. Closing a ticket twice &mdash; a double-click, a
+  retry, a stale page &mdash; used to write two closes, making one resolution
+  contribute two durations. And the same **Reopen** control serves a closed
+  ticket and a pending one, so taking a ticket off hold was recorded as a
+  reopen: it claimed a resolution had failed when none was ever reached, and
+  restarted the resolution clock at the un-hold, hiding every hour before the
+  ticket went on hold. Off-hold is now its own event, shown in the ticket's
+  activity as *Ticket taken off hold*. A stale **Mark pending** submitted against
+  an already-closed ticket un-closed it while recording only the hold, so the
+  resolution looked like it held; leaving *closed* now records the reopen it
+  performs whichever control did it. History already recorded is read correctly
+  rather than rewritten.
 
 - **A site can have support hours.** Until now the widget behaved identically at
   3pm Tuesday and 3am Sunday: a visitor arriving out of hours opened a

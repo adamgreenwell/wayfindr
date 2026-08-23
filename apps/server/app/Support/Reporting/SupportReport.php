@@ -179,76 +179,18 @@ final class SupportReport
                 ->map(fn (int|string $id): int => (int) $id)
                 ->all();
 
-            $durations = [];
-            $unmeasurable = 0;
-
-            $recordingBegan = $this->historyBeganAt();
-
-            // The reopen that starts an episode can be older than the window,
-            // so the walk needs each conversation's whole history -- but only
-            // for conversations that actually closed inside it. Chunked because
-            // a quarter of closes is an unbounded number of bind parameters.
-            foreach (array_chunk($conversationIds, 500) as $chunk) {
-                $openedAt = Conversation::query()
-                    ->whereIn('id', $chunk)
-                    ->pluck('created_at', 'id');
-
-                $events = AuditEvent::query()
-                    ->where('subject_type', (new Conversation)->getMorphClass())
-                    ->whereIn('subject_id', $chunk)
-                    ->whereIn('action', [ConversationLifecycleLog::CLOSED, ConversationLifecycleLog::REOPENED])
-                    ->orderBy('subject_id')
-                    ->orderBy('occurred_at')
-                    ->orderBy('id')
-                    ->toBase()
-                    ->get(['subject_id', 'action', 'occurred_at']);
-
-                foreach ($events->groupBy('subject_id') as $subjectId => $conversationEvents) {
-                    $start = $openedAt[(int) $subjectId] ?? null;
-
-                    if ($start === null) {
-                        continue;
-                    }
-
-                    $episodeStart = CarbonImmutable::parse($start);
-
-                    // Whether the creation time can be trusted as an episode
-                    // start. A conversation that predates recording may have
-                    // been closed and reopened before anything was written
-                    // down, in which case measuring from creation charges this
-                    // close with stretches of work that were already resolved.
-                    // Once a reopen has been seen, the episode start is known
-                    // regardless of how old the conversation is.
-                    $episodeStartIsKnown = $recordingBegan === null
-                        || $episodeStart->greaterThanOrEqualTo($recordingBegan);
-
-                    foreach ($conversationEvents as $event) {
-                        $at = CarbonImmutable::parse($event->occurred_at);
-
-                        if ($event->action === ConversationLifecycleLog::REOPENED) {
-                            $episodeStart = $at;
-                            $episodeStartIsKnown = true;
-
-                            continue;
-                        }
-
-                        if (! $at->betweenIncluded($this->window->start, $this->window->end)) {
-                            continue;
-                        }
-
-                        if (! $episodeStartIsKnown) {
-                            // Counted as a close, never as a duration. An
-                            // inflated median is invisible; a smaller sample
-                            // that the page names is not.
-                            $unmeasurable++;
-
-                            continue;
-                        }
-
-                        $durations[] = max(0, $at->getTimestamp() - $episodeStart->getTimestamp());
-                    }
-                }
-            }
+            // The walk itself lives in ResolutionEpisodes, shared with the
+            // ticket half of this page. Two implementations of "measure from
+            // the reopen that started it" is how the two come to disagree.
+            ['durations' => $durations, 'unmeasurable' => $unmeasurable] = ResolutionEpisodes::walk(
+                (new Conversation)->getMorphClass(),
+                ConversationLifecycleLog::CLOSED,
+                ConversationLifecycleLog::REOPENED,
+                $conversationIds,
+                fn (array $chunk) => Conversation::query()->whereIn('id', $chunk)->pluck('created_at', 'id'),
+                $this->window,
+                $this->historyBeganAt(),
+            );
 
             $reopened = $this->lifecycleEventsInWindow(ConversationLifecycleLog::REOPENED);
 
