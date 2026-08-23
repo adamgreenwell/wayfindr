@@ -9,8 +9,8 @@ what the surface shows and, more usefully, what it cannot.
 
 ## What it reports
 
-Four sections, over a selectable range of 7, 30 or 90 days, filterable to a
-single site.
+Five tabs, over a selectable range of 7, 30 or 90 days, filterable to a single
+site.
 
 **Volume.** Conversations opened and closed per day, and the number open right
 now. Every day in the range is drawn whether or not anything happened on it — a
@@ -22,6 +22,11 @@ plus how often resolutions did not hold.
 
 **Agents.** Replies sent and conversations closed per agent.
 
+**Tickets.** The same three questions asked of the ticket half of the desk:
+volume, resolution time and reopens, and who carried the work. It has its own
+tab rather than doubling the conversation figures, because the two halves have
+different histories — see below.
+
 **Satisfaction.** Whether it helped, from the visitors who answered — and what
 they wrote. Every other tab reports how fast the desk moved; a desk can improve
 all of those while getting worse at helping people. See
@@ -30,6 +35,33 @@ from being reported over people who said nothing.
 
 Both the daily series and the agent table export as CSV, following the account
 audit page's export conventions.
+
+## Two halves with different memories
+
+Conversation lifecycle events began on 22 August; ticket closes and reopens have
+been audited since 24 May. So on most installs the ticket tab can describe a
+full quarter while the conversation tabs are still accumulating, and reading
+them as one dataset would be wrong.
+
+Each half therefore states **its own recording boundary**, stamped at migration
+time, and reports closes it cannot measure as *counted but not measured* rather
+than folding an unknowable duration into a median. The ticket boundary is
+usually much older than the conversation one. Neither is infinite: an install
+upgraded from before ticket auditing existed has tickets whose earlier closes
+were never written down.
+
+## Only a transition counts
+
+Both halves read their lifecycle log as a state machine rather than a list of
+actions, because the log is not a clean alternation of close and reopen.
+
+A close submitted twice — a double-click, a retry, a stale page — is one
+resolution, not two. And a reopen that reopens nothing is not a resolution that
+failed: the ticket interface offers the same **Reopen** control for a closed
+ticket and a pending one, so taking a ticket off hold used to be recorded as a
+reopen, which both claimed a failed resolution and restarted the clock at the
+un-hold. Off-hold is now its own event, and history already recorded is read
+correctly rather than rewritten.
 
 ## Medians, not averages
 
