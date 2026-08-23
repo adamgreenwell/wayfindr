@@ -742,6 +742,73 @@
                 </div>
             </section>
 
+            <section class="section" aria-labelledby="widget-appearance-heading">
+                <div class="section-header">
+                    <div>
+                        <h2 id="widget-appearance-heading">What the widget looks like</h2>
+                        <p class="lede">The only part of Wayfindr your visitors ever see.</p>
+                    </div>
+                    <span class="readiness-status" data-status="{{ $appearance->accent ? 'ready' : 'manual' }}">
+                        {{ $appearance->accent ? 'Branded' : 'Wayfindr default' }}
+                    </span>
+                </div>
+
+                @if ($canUpdateSite)
+                    <form class="section-form" method="POST" action="{{ route('dashboard.sites.appearance.update', $site) }}">
+                        @csrf
+                        @method('PUT')
+
+                        <div class="field">
+                            <label for="widget_accent">Accent colour</label>
+                            <input type="text" id="widget_accent" name="widget_accent" maxlength="9"
+                                placeholder="#7C3AED" value="{{ old('widget_accent', $appearance->accent) }}">
+                            <p class="field-hint">
+                                Your brand colour, not the
+                                <a href="#site-colour-heading">colour agents recognise this site by</a> —
+                                one is what visitors see, the other is how your desk tells sites apart.
+                                @if ($appearance->accent)
+                                    Rendered as <code>{{ $appearance->accentLight }}</code> on light backgrounds
+                                    and <code>{{ $appearance->accentDark }}</code> on dark ones, so it stays legible in both.
+                                @else
+                                    Leave it empty to keep Wayfindr's.
+                                @endif
+                            </p>
+                            @error('widget_accent')
+                                <p class="field-error">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <div class="field">
+                            <label for="widget_position">Launcher position</label>
+                            <select id="widget_position" name="widget_position">
+                                <option value="right" @selected(old('widget_position', $appearance->position) === 'right')>Bottom right</option>
+                                <option value="left" @selected(old('widget_position', $appearance->position) === 'left')>Bottom left</option>
+                            </select>
+                            <p class="field-hint">Move it if it collides with something already in that corner.</p>
+                        </div>
+
+                        <div class="field">
+                            <label for="widget_greeting">Greeting</label>
+                            <input type="text" id="widget_greeting" name="widget_greeting" maxlength="120"
+                                placeholder="How can we help?" value="{{ old('widget_greeting', $appearance->greeting) }}">
+                        </div>
+
+                        <div class="field">
+                            <label for="widget_placeholder">Composer placeholder</label>
+                            <input type="text" id="widget_placeholder" name="widget_placeholder" maxlength="120"
+                                placeholder="Type your message..." value="{{ old('widget_placeholder', $appearance->placeholder) }}">
+                            <p class="field-hint">Both are shown as typed. A site that sets neither uses the widget's own copy, in the visitor's language.</p>
+                        </div>
+
+                        <button class="button" type="submit">Save appearance</button>
+                    </form>
+                @else
+                    <div class="notice-copy">
+                        <p>Only an account admin can change how the widget looks.</p>
+                    </div>
+                @endif
+            </section>
+
             <section class="section" aria-labelledby="support-hours-heading">
                 <div class="section-header">
                     <div>

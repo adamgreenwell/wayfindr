@@ -2565,9 +2565,50 @@
       // would show the visitor the wrong language for a frame.
       applyLocale(siteLocale(result));
       applySiteAccent(rootEl, siteAccentKey(result));
+      applyAppearance(siteAppearance(result));
       applyAwayState(panel, siteAwayState(result), t);
       applyIntakeState(siteIntakeState(result));
       applyHelpAvailability(siteHasArticles(result));
+    }
+
+    /**
+     * What this site looks like and says to its own visitors.
+     *
+     * Set as custom properties rather than by rewriting rules: --wf-brand is
+     * already read by 22 of them, so pointing that one token at the operator's
+     * colour recolours every button, link and focus ring at once -- and leaving
+     * it alone keeps Wayfindr's exactly as before.
+     */
+    function applyAppearance(appearance) {
+      if (!appearance) {
+        return;
+      }
+
+      if (appearance.accent) {
+        // Both renderings, chosen by the theme in CSS rather than here. The
+        // widget does not know which theme it is in -- the media query and the
+        // data-wf-theme attribute do, and they already disagree deliberately.
+        rootEl.style.setProperty('--wf-brand-configured', appearance.accent);
+        rootEl.style.setProperty('--wf-brand-configured-dark', appearance.accent_dark || appearance.accent);
+        rootEl.style.setProperty('--wf-brand-ink-configured', appearance.accent_ink || '#FFFFFF');
+        rootEl.style.setProperty('--wf-brand-ink-configured-dark', appearance.accent_ink_dark || appearance.accent_ink || '#FFFFFF');
+      }
+
+      rootEl.setAttribute('data-wf-launcher', appearance.position === 'left' ? 'left' : 'right');
+
+      // Operator copy wins over the catalogue, and the catalogue over nothing.
+      // A host-page option still outranks both: it is the most specific answer.
+      if (!options.title && appearance.greeting) {
+        var heading = rootEl.querySelector('.wayfindr-widget__header strong');
+
+        if (heading) {
+          heading.textContent = appearance.greeting;
+        }
+      }
+
+      if (!options.placeholder && appearance.placeholder) {
+        textarea.setAttribute('placeholder', appearance.placeholder);
+      }
     }
 
     /**
@@ -3728,6 +3769,12 @@
    */
   function intakeFieldLabel(t, field) {
     return t('intake.field.' + field);
+  }
+
+  function siteAppearance(result) {
+    var site = (result && result.site) || {};
+
+    return site.appearance && typeof site.appearance === 'object' ? site.appearance : null;
   }
 
   function siteHasArticles(result) {
@@ -5371,15 +5418,20 @@
     style.textContent = [
       // wayfindr:tokens:start
       // Generated from packages/design-tokens/tokens.json by scripts/generate-design-tokens.php. Do not edit by hand -- run `make design-tokens`.
-      '.wayfindr-widget{--wf-paper:#F1F1EE;--wf-surface:#FFFFFF;--wf-surface-2:#E9E9E4;--wf-ink:#16181A;--wf-ink-invert:#F1F1EE;--wf-muted:#6A6E71;--wf-rule:#DCDCD6;--wf-rule-firm:#C4C4BD;--wf-brand:#0D6F68;--wf-signal-rest:#8C9194;--wf-signal-go:#1E7A4C;--wf-signal-hold:#C98A06;--wf-signal-stop:#C3352B;--wf-site-red:#C3352B;--wf-site-blue:#2D4EA2;--wf-site-ochre:#C98A06;--wf-site-pine:#1E7A4C;--wf-site-violet:#6B4E9B;--wf-site-rust:#B5542A;--wf-font-sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;--wf-font-cond:"IBM Plex Sans Condensed","IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;--wf-font-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;--wf-text-display:2.05rem;--wf-text-title:1.3rem;--wf-text-body:0.97rem;--wf-text-ui:0.875rem;--wf-text-label:0.75rem;--wf-text-code:0.86rem;--wf-space-1:4px;--wf-space-2:8px;--wf-space-3:12px;--wf-space-4:16px;--wf-space-5:24px;--wf-space-6:32px;--wf-space-7:48px;--wf-radius:2px;--wf-radius-full:999px;--wf-border:1px;--wf-rail:3px;--wf-row-min:34px}',
-      '@media (prefers-color-scheme:dark){.wayfindr-widget:not([data-wf-theme="light"]){--wf-paper:#141517;--wf-surface:#1B1D20;--wf-surface-2:#24272A;--wf-ink:#ECECE8;--wf-ink-invert:#16181A;--wf-muted:#9BA0A3;--wf-rule:#2E3134;--wf-rule-firm:#3D4145;--wf-brand:#3FA69D;--wf-signal-rest:#7E8386;--wf-signal-go:#4CA97A;--wf-signal-hold:#E0A72A;--wf-signal-stop:#E2685C;--wf-site-red:#D54C43;--wf-site-blue:#5578D0;--wf-site-ochre:#A57105;--wf-site-pine:#238C57;--wf-site-violet:#896EB6;--wf-site-rust:#C65C2E}}',
-      '.wayfindr-widget[data-wf-theme="dark"]{--wf-paper:#141517;--wf-surface:#1B1D20;--wf-surface-2:#24272A;--wf-ink:#ECECE8;--wf-ink-invert:#16181A;--wf-muted:#9BA0A3;--wf-rule:#2E3134;--wf-rule-firm:#3D4145;--wf-brand:#3FA69D;--wf-signal-rest:#7E8386;--wf-signal-go:#4CA97A;--wf-signal-hold:#E0A72A;--wf-signal-stop:#E2685C;--wf-site-red:#D54C43;--wf-site-blue:#5578D0;--wf-site-ochre:#A57105;--wf-site-pine:#238C57;--wf-site-violet:#896EB6;--wf-site-rust:#C65C2E}',
+      '.wayfindr-widget{--wf-paper:#F1F1EE;--wf-surface:#FFFFFF;--wf-surface-2:#E9E9E4;--wf-ink:#16181A;--wf-ink-invert:var(--wf-brand-ink-configured,#F1F1EE);--wf-muted:#6A6E71;--wf-rule:#DCDCD6;--wf-rule-firm:#C4C4BD;--wf-brand:var(--wf-brand-configured,#0D6F68);--wf-signal-rest:#8C9194;--wf-signal-go:#1E7A4C;--wf-signal-hold:#C98A06;--wf-signal-stop:#C3352B;--wf-site-red:#C3352B;--wf-site-blue:#2D4EA2;--wf-site-ochre:#C98A06;--wf-site-pine:#1E7A4C;--wf-site-violet:#6B4E9B;--wf-site-rust:#B5542A;--wf-font-sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;--wf-font-cond:"IBM Plex Sans Condensed","IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;--wf-font-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;--wf-text-display:2.05rem;--wf-text-title:1.3rem;--wf-text-body:0.97rem;--wf-text-ui:0.875rem;--wf-text-label:0.75rem;--wf-text-code:0.86rem;--wf-space-1:4px;--wf-space-2:8px;--wf-space-3:12px;--wf-space-4:16px;--wf-space-5:24px;--wf-space-6:32px;--wf-space-7:48px;--wf-radius:2px;--wf-radius-full:999px;--wf-border:1px;--wf-rail:3px;--wf-row-min:34px}',
+      '@media (prefers-color-scheme:dark){.wayfindr-widget:not([data-wf-theme="light"]){--wf-paper:#141517;--wf-surface:#1B1D20;--wf-surface-2:#24272A;--wf-ink:#ECECE8;--wf-ink-invert:var(--wf-brand-ink-configured-dark,#16181A);--wf-muted:#9BA0A3;--wf-rule:#2E3134;--wf-rule-firm:#3D4145;--wf-brand:var(--wf-brand-configured-dark,#3FA69D);--wf-signal-rest:#7E8386;--wf-signal-go:#4CA97A;--wf-signal-hold:#E0A72A;--wf-signal-stop:#E2685C;--wf-site-red:#D54C43;--wf-site-blue:#5578D0;--wf-site-ochre:#A57105;--wf-site-pine:#238C57;--wf-site-violet:#896EB6;--wf-site-rust:#C65C2E}}',
+      '.wayfindr-widget[data-wf-theme="dark"]{--wf-paper:#141517;--wf-surface:#1B1D20;--wf-surface-2:#24272A;--wf-ink:#ECECE8;--wf-ink-invert:var(--wf-brand-ink-configured-dark,#16181A);--wf-muted:#9BA0A3;--wf-rule:#2E3134;--wf-rule-firm:#3D4145;--wf-brand:var(--wf-brand-configured-dark,#3FA69D);--wf-signal-rest:#7E8386;--wf-signal-go:#4CA97A;--wf-signal-hold:#E0A72A;--wf-signal-stop:#E2685C;--wf-site-red:#D54C43;--wf-site-blue:#5578D0;--wf-site-ochre:#A57105;--wf-site-pine:#238C57;--wf-site-violet:#896EB6;--wf-site-rust:#C65C2E}',
       // wayfindr:tokens:end
       '.wayfindr-widget{position:fixed;inset-inline-end:20px;bottom:20px;z-index:2147483000;font-family:var(--wf-font-sans);color:var(--wf-ink)}',
       '.wayfindr-widget *{box-sizing:border-box}',
       '.wayfindr-widget [hidden]{display:none!important}',
       '.wayfindr-widget__launcher,.wayfindr-widget__send{border:0;border-radius:999px;background:var(--wf-brand);color:var(--wf-ink-invert);box-shadow:0 12px 30px rgba(8,37,34,.18);cursor:pointer;font:700 14px/1 var(--wf-font-sans)}',
       '.wayfindr-widget__launcher{position:relative;min-height:48px;padding:0 18px}',
+      // Logical properties, so a left-positioned launcher still follows an
+      // RTL language rather than fighting it -- see the widget language work.
+      // No issue number here on purpose: the token guard scans this block for
+      // hardcoded colours and reads a bare hash-774 as a three-digit hex.
+      '.wayfindr-widget[data-wf-launcher="left"]{inset-inline-end:auto;inset-inline-start:20px}',
       '.wayfindr-widget__launcher[data-cobrowse-active="true"]::after{content:"";position:absolute;top:-3px;inset-inline-end:-3px;width:14px;height:14px;border-radius:999px;background:var(--wf-signal-hold);border:2px solid var(--wf-surface);box-shadow:0 0 0 2px color-mix(in srgb, var(--wf-signal-hold) 35%, transparent)}',
       '.wayfindr-widget__send{min-height:40px;padding:0 14px;border-radius:6px}',
       '.wayfindr-widget__launcher:hover,.wayfindr-widget__send:hover{background:color-mix(in srgb, var(--wf-brand) 80%, var(--wf-ink))}',

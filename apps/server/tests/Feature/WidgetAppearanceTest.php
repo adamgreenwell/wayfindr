@@ -1,7 +1,13 @@
 <?php
 
+use App\Enums\AccountRole;
+use App\Models\Account;
 use App\Models\Site;
+use App\Models\User;
 use App\Support\Sites\WidgetAppearance;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+
+uses(RefreshDatabase::class);
 
 /**
  * The widget's accent was a fixed Wayfindr teal in 22 rules while the site's
@@ -100,4 +106,92 @@ test('copy is trimmed, bounded, and empty means unset', function (): void {
     expect(appearanceFor(['greeting' => '  Hello there  '])->greeting)->toBe('Hello there')
         ->and(appearanceFor(['greeting' => '   '])->greeting)->toBeNull()
         ->and(mb_strlen(appearanceFor(['placeholder' => str_repeat('x', 400)])->placeholder))->toBe(120);
+});
+
+test('an admin sets the appearance and the widget is told about it', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['public_key' => 'site_public_brand', 'settings' => []]);
+
+    $this->actingAs($admin)
+        ->put(route('dashboard.sites.appearance.update', $site), [
+            'widget_accent' => '#7C3AED',
+            'widget_position' => 'left',
+            'widget_greeting' => 'How can we help?',
+            'widget_placeholder' => 'Ask us anything',
+        ])
+        ->assertRedirect();
+
+    $payload = $this->postJson('/api/widget/bootstrap', [
+        'site_public_key' => 'site_public_brand',
+        'anonymous_id' => 'anon-brand',
+    ])->assertSuccessful()->json('data.site.appearance');
+
+    expect($payload['accent'])->toBe('#7C3AED')
+        ->and($payload['accent_dark'])->not->toBe('#7C3AED', 'rendered for the dark panel too')
+        ->and($payload['accent_ink'])->toBe('#FFFFFF')
+        ->and($payload['position'])->toBe('left')
+        ->and($payload['greeting'])->toBe('How can we help?')
+        ->and($payload['placeholder'])->toBe('Ask us anything');
+});
+
+test('saving the appearance does not disturb the schedule beside it', function (): void {
+    // The mirror of updateAvailability() preserving what it does not own.
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['settings' => [
+        'availability' => ['enabled' => true, 'timezone' => 'UTC', 'weekdays' => ['mon' => ['09:00', '17:00']]],
+        'mask_selectors' => ['[data-secret]'],
+    ]]);
+
+    $this->actingAs($admin)
+        ->put(route('dashboard.sites.appearance.update', $site), ['widget_position' => 'right'])
+        ->assertRedirect();
+
+    $settings = $site->fresh()->settings;
+
+    expect($settings['availability']['weekdays']['mon'])->toBe(['09:00', '17:00'])
+        ->and($settings['mask_selectors'])->toBe(['[data-secret]'])
+        ->and($settings['appearance']['position'])->toBe('right');
+});
+
+test('a colour that is not a colour is refused with something actionable', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['settings' => []]);
+
+    $this->actingAs($admin)
+        ->put(route('dashboard.sites.appearance.update', $site), [
+            'widget_accent' => 'plum',
+            'widget_position' => 'right',
+        ])
+        ->assertSessionHasErrors('widget_accent');
+
+    expect($site->fresh()->settings['appearance'] ?? null)->toBeNull();
+});
+
+test('a plain agent cannot restyle what every visitor sees', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+    $site = Site::factory()->for($account)->create(['settings' => []]);
+
+    $this->actingAs($agent)
+        ->put(route('dashboard.sites.appearance.update', $site), ['widget_position' => 'left'])
+        ->assertForbidden();
+
+    expect($site->fresh()->settings['appearance'] ?? null)->toBeNull();
+});
+
+test('the site page offers the form and names both colours apart', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['settings' => []]);
+
+    $this->actingAs($admin)->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee('What the widget looks like')
+        ->assertSee('name="widget_accent"', false)
+        ->assertSee('Wayfindr default')
+        // The distinction is the whole point of having two.
+        ->assertSee('how your desk tells sites apart');
 });
