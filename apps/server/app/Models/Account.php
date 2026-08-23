@@ -34,6 +34,11 @@ class Account extends Model
         return $this->hasMany(TicketLabel::class);
     }
 
+    public function articles(): HasMany
+    {
+        return $this->hasMany(Article::class);
+    }
+
     public function replyTemplates(): HasMany
     {
         return $this->hasMany(ReplyTemplate::class);
