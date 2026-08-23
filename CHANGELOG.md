@@ -111,8 +111,11 @@ missed while skimming.
   reopen: it claimed a resolution had failed when none was ever reached, and
   restarted the resolution clock at the un-hold, hiding every hour before the
   ticket went on hold. Off-hold is now its own event, shown in the ticket's
-  activity as *Ticket taken off hold*. History already recorded is read
-  correctly rather than rewritten.
+  activity as *Ticket taken off hold*. A stale **Mark pending** submitted against
+  an already-closed ticket un-closed it while recording only the hold, so the
+  resolution looked like it held; leaving *closed* now records the reopen it
+  performs whichever control did it. History already recorded is read correctly
+  rather than rewritten.
 
 - **A site can have support hours.** Until now the widget behaved identically at
   3pm Tuesday and 3am Sunday: a visitor arriving out of hours opened a

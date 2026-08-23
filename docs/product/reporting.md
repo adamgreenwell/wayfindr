@@ -63,12 +63,20 @@ reopen, which both claimed a failed resolution and restarted the clock at the
 un-hold. Off-hold is now its own event.
 
 History already recorded is read correctly rather than rewritten, which is why
-the ticket walk also reads `ticket.pending`. For a ticket older than the
-recording boundary the state at the boundary is unknown, and from unknown a
-reopen normally *proves* the ticket had been closed — except where a `pending`
-sits immediately before it, which proves the opposite. Without that, every
-historical un-hold on an upgraded install would still be counted as a failed
-resolution.
+the ticket walk also reads `ticket.pending`. That does two jobs.
+
+For a ticket older than the recording boundary the state at the boundary is
+unknown, and from unknown a reopen normally *proves* the ticket had been closed
+— except where a `pending` sits immediately before it, which proves the
+opposite. Without that, every historical un-hold on an upgraded install would
+still be counted as a failed resolution.
+
+And a hold that begins while a ticket is **closed** is a reopen in substance,
+whatever the log calls it: the ticket left the closed state and went back to
+work. Marking a ticket pending is only offered for open tickets, so this comes
+from a stale form — but it still un-closes the ticket, and reading it as a plain
+hold would leave the resolution looking like it held while every later duration
+ran from the original start.
 
 ## Medians, not averages
 
