@@ -47,6 +47,7 @@ class ApiToken extends Model
         'token_hash',
         'last_four',
         'abilities',
+        'restricts_sites',
         'last_used_at',
         'expires_at',
         'revoked_at',
@@ -56,6 +57,7 @@ class ApiToken extends Model
     {
         return [
             'abilities' => 'array',
+            'restricts_sites' => 'boolean',
             'last_used_at' => 'immutable_datetime',
             'expires_at' => 'immutable_datetime',
             'revoked_at' => 'immutable_datetime',

@@ -29,14 +29,13 @@ class VisitorController extends Controller
             'cursor' => ['nullable', 'string'],
         ]);
 
-        $siteIds = $scope->siteIds();
-
-        if (isset($validated['site_id'])) {
-            $siteIds = in_array($validated['site_id'], $siteIds, true) ? [$validated['site_id']] : [];
-        }
-
         $visitors = Visitor::query()
-            ->whereIn('site_id', $siteIds)
+            ->whereIn('site_id', $scope->siteIdsQuery())
+            ->when(isset($validated['site_id']), fn ($query) => $query->whereIn(
+                'site_id',
+                // Narrows only, never widens.
+                $scope->includesSite((int) $validated['site_id']) ? [(int) $validated['site_id']] : [],
+            ))
             // Exact matches, not searches. `external_id` and `email` are how an
             // integration finds the person it already knows about; a partial
             // match here would be a way to enumerate an account's customers.
@@ -57,7 +56,7 @@ class VisitorController extends Controller
         $scope = ApiScope::fromRequest($request);
 
         $found = Visitor::query()
-            ->whereIn('site_id', $scope->siteIds())
+            ->whereIn('site_id', $scope->siteIdsQuery())
             ->whereKey($visitor)
             ->firstOrFail();
 

@@ -273,6 +273,8 @@ class AgentAccountAuditController extends Controller
             'agent.reactivated' => 'Agent reactivated',
             'agent.role_changed' => 'Agent role changed',
             'site_access.updated' => 'Site access updated',
+            'api_token.created' => 'API token issued',
+            'api_token.revoked' => 'API token revoked',
             // Without these the default arm headline-cases the raw action
             // and the account reads "Break Glass Resource Viewed" in its
             // own audit log -- the most user-facing place the old term had.

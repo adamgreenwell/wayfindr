@@ -5,8 +5,8 @@ namespace App\Support\Api;
 use App\Http\Middleware\AuthenticateApiToken;
 use App\Models\ApiToken;
 use App\Models\Site;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
-use Illuminate\Support\Collection;
 use LogicException;
 
 /**
@@ -24,12 +24,8 @@ use LogicException;
  */
 final class ApiScope
 {
-    /**
-     * @param  list<int>  $siteIds
-     */
     private function __construct(
         public readonly ApiToken $token,
-        private readonly array $siteIds,
     ) {}
 
     public static function fromRequest(Request $request): self
@@ -43,17 +39,63 @@ final class ApiScope
             throw new LogicException('ApiScope requires a request authenticated by an API token.');
         }
 
-        return new self($token, self::resolveSiteIds($token));
+        return new self($token);
     }
 
     /**
-     * The sites this token may read, already intersected with its account.
+     * The reachable sites as a SUBQUERY, for filtering with.
+     *
+     * Not an array of ids. Loading them and passing them to `whereIn` costs one
+     * bind parameter per site, so an agency account with enough sites exceeds
+     * the driver's parameter limit and every endpoint fails outright -- the
+     * same unbounded-`whereIn` shape that had to be fixed in the ticket
+     * reporting walk. A subquery is one parameter regardless, and saves the
+     * round trip that loaded the ids.
+     *
+     * @return Builder<Site>
+     */
+    public function siteIdsQuery(): Builder
+    {
+        $query = Site::query()
+            ->select('sites.id')
+            ->where('sites.account_id', $this->token->account_id);
+
+        // Intersected in SQL, never trusted. A restriction row could name a
+        // site that has since moved account or been purged, and the account is
+        // the boundary that must hold regardless of what the pivot says.
+        if ($this->isRestricted()) {
+            $query->whereIn('sites.id', $this->token->sites()->select('sites.id'));
+        }
+
+        return $query;
+    }
+
+    /**
+     * Whether one site is inside this token's reach.
+     *
+     * An `exists` rather than a lookup in a loaded list, for the same reason
+     * the filter is a subquery.
+     */
+    public function includesSite(int $siteId): bool
+    {
+        return $this->siteIdsQuery()->whereKey($siteId)->exists();
+    }
+
+    /**
+     * The reachable site ids as a list.
+     *
+     * Only for `/me`, where the list IS the answer somebody asked for. Every
+     * other caller wants `siteIdsQuery()`.
      *
      * @return list<int>
      */
     public function siteIds(): array
     {
-        return $this->siteIds;
+        return $this->siteIdsQuery()
+            ->pluck('sites.id')
+            ->map(fn (int|string $id): int => (int) $id)
+            ->values()
+            ->all();
     }
 
     public function accountId(): int
@@ -62,37 +104,19 @@ final class ApiScope
     }
 
     /**
-     * True when the token can reach nothing -- an account with no sites, or a
-     * restriction naming only sites that have since been purged.
+     * Whether this token was restricted to specific sites at all.
+     *
+     * Read from the token's own flag, never inferred from whether pivot rows
+     * exist. A restricted token whose only site is purged has NO reach -- the
+     * cascade removes the pivot row, and treating that as "unrestricted" would
+     * hand it the whole account.
+     *
+     * A token with no restriction reaches its ACCOUNT's sites, not nothing:
+     * the natural way to create one is without picking sites, and that must
+     * not silently produce a credential returning empty lists forever.
      */
-    public function isEmpty(): bool
+    private function isRestricted(): bool
     {
-        return $this->siteIds === [];
-    }
-
-    /**
-     * @return list<int>
-     */
-    private static function resolveSiteIds(ApiToken $token): array
-    {
-        /** @var Collection<int, int> $accountSiteIds */
-        $accountSiteIds = Site::query()
-            ->where('account_id', $token->account_id)
-            ->pluck('id');
-
-        $restrictedTo = $token->sites()->pluck('sites.id');
-
-        if ($restrictedTo->isEmpty()) {
-            return $accountSiteIds->map(fn (int|string $id): int => (int) $id)->values()->all();
-        }
-
-        // Intersected, never trusted. A restriction row could name a site that
-        // has since moved account or been purged, and the account is the
-        // boundary that must hold regardless.
-        return $accountSiteIds
-            ->intersect($restrictedTo)
-            ->map(fn (int|string $id): int => (int) $id)
-            ->values()
-            ->all();
+        return (bool) $this->token->restricts_sites;
     }
 }

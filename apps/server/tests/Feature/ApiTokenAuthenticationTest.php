@@ -108,6 +108,7 @@ test('me reports the token reach, not the account reach', function (): void {
     $hidden = Site::factory()->for($account)->create();
 
     $issued = issueToken(['account' => $account]);
+    $issued['token']->forceFill(['restricts_sites' => true])->save();
     $issued['token']->sites()->attach($reachable->id);
 
     $body = apiGet($this, $issued['plain'], '/api/v1/me')->assertOk()->json('data');
@@ -128,4 +129,57 @@ test('an unrestricted token reaches its account sites, not nothing', function ()
 
     expect(apiGet($this, $issued['plain'], '/api/v1/me')->json('data.site_ids'))
         ->toBe($sites->pluck('id')->all());
+});
+
+test('probing with bad tokens is rate limited, not unbounded', function (): void {
+    // The gap this closes: a request with a bad token was refused by auth and
+    // never reached any throttle, so probing was unbounded -- every attempt
+    // costing an indexed lookup with nothing to slow it down or make it
+    // visible.
+    config()->set('wayfindr.api_failed_auth_per_minute', 3);
+
+    foreach (range(1, 3) as $i) {
+        $this->getJson('/api/v1/me', ['Authorization' => 'Bearer wfk_'.str_repeat('c', 40)])
+            ->assertStatus(401);
+    }
+
+    $this->getJson('/api/v1/me', ['Authorization' => 'Bearer wfk_'.str_repeat('c', 40)])
+        ->assertStatus(429);
+});
+
+test('a valid token is limited by its own budget, not by the IP one', function (): void {
+    // Two tokens on one host must not throttle each other, which is the whole
+    // reason the per-token limit is keyed on the token. This failed until
+    // AuthenticateApiToken was marked `AuthenticatesRequests`: without that it
+    // is unprioritised, the route throttle sorts ahead of it, and the limiter
+    // keys on a token that has not been resolved yet.
+    config()->set('wayfindr.api_failed_auth_per_minute', 100);
+    config()->set('wayfindr.api_rate_limit', 2);
+
+    $first = issueToken();
+    $second = issueToken();
+
+    apiGet($this, $first['plain'], '/api/v1/me')->assertOk();
+    apiGet($this, $first['plain'], '/api/v1/me')->assertOk();
+    apiGet($this, $first['plain'], '/api/v1/me')->assertStatus(429);
+
+    // The second token has spent nothing, despite sharing the IP.
+    apiGet($this, $second['plain'], '/api/v1/me')->assertOk();
+});
+
+test('a genuine token with the wrong ability does not spend the failure budget', function (): void {
+    // A misconfigured integration is not somebody hunting for a token that
+    // works, and locking it out of the address it shares would punish the wrong
+    // problem.
+    config()->set('wayfindr.api_failed_auth_per_minute', 2);
+
+    $issued = issueToken(['abilities' => []]);
+
+    foreach (range(1, 5) as $i) {
+        apiGet($this, $issued['plain'], '/api/v1/me')->assertStatus(403);
+    }
+
+    // The budget is untouched, so an unknown token still gets the ordinary
+    // refusal rather than a 429.
+    apiGet($this, 'wfk_'.str_repeat('d', 40), '/api/v1/me')->assertStatus(401);
 });

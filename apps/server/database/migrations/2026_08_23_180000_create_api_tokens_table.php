@@ -31,6 +31,16 @@ return new class extends Migration
             // deployment config.
             $table->string('last_four', 4);
             $table->json('abilities');
+            // Whether this token was restricted to specific sites AT ALL,
+            // recorded separately from the pivot rows that say which.
+            //
+            // Inferring it from "are there any pivot rows" looks equivalent and
+            // is not: sites can be purged, the pivot cascades, and a token
+            // restricted to one site would silently inherit the whole account
+            // the moment that site was deleted -- a privilege escalation
+            // triggered by an unrelated admin action, with nothing in the
+            // token's own history to show it happened.
+            $table->boolean('restricts_sites')->default(false);
             $table->timestamp('last_used_at')->nullable();
             $table->timestamp('expires_at')->nullable();
             $table->timestamp('revoked_at')->nullable();

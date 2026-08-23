@@ -8,6 +8,7 @@ use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -151,6 +152,7 @@ test('a token restricted to one site cannot read the account other sites', funct
     $otherVisitor = Visitor::factory()->for($otherSite)->create();
     Conversation::factory()->for($otherSite)->for($otherVisitor)->create(['support_code' => 'WF-OTHER1']);
 
+    $w['token']->forceFill(['restricts_sites' => true])->save();
     $w['token']->sites()->attach($w['site']->id);
 
     $codes = collect(readGet($this, $w, '/api/v1/conversations')->assertOk()->json('data'))->pluck('support_code');
@@ -223,6 +225,7 @@ test('a restriction naming a site outside the account grants nothing', function 
 
     // The pivot is attached directly, exactly as a stale or tampered row would
     // look. The dashboard would never offer this.
+    $w['token']->forceFill(['restricts_sites' => true])->save();
     $w['token']->sites()->attach($other['site']->id);
 
     expect(readGet($this, $w, '/api/v1/me')->assertOk()->json('data.site_ids'))->toBe([]);
@@ -230,4 +233,51 @@ test('a restriction naming a site outside the account grants nothing', function 
     readGet($this, $w, '/api/v1/conversations/WF-THEIR1')->assertNotFound();
 
     expect(readGet($this, $w, '/api/v1/conversations')->assertOk()->json('data'))->toBe([]);
+});
+
+test('scoping does not bind one parameter per site', function (): void {
+    // An agency account can have hundreds of sites. Loading their ids and
+    // passing them to whereIn costs one bind parameter each, and past the
+    // driver limit every endpoint fails outright rather than being slow -- the
+    // same shape that had to be fixed in the ticket reporting walk. Behaviour
+    // is identical either way, so only the parameter count shows it.
+    $w = readWorld();
+
+    $sites = [];
+
+    for ($i = 0; $i < 800; $i++) {
+        $sites[] = [
+            'account_id' => $w['account']->id,
+            'name' => 'Site '.$i,
+            'public_key' => 'site_public_bulk_'.$i,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+    }
+
+    DB::table('sites')->insert($sites);
+
+    $widest = 0;
+
+    DB::listen(function ($query) use (&$widest): void {
+        $widest = max($widest, count($query->bindings));
+    });
+
+    readGet($this, $w, '/api/v1/conversations')->assertOk();
+    readGet($this, $w, '/api/v1/tickets')->assertOk();
+    readGet($this, $w, '/api/v1/visitors')->assertOk();
+
+    expect($widest)->toBeLessThan(20);
+
+    // And again RESTRICTED, because that is a second whereIn on a second list
+    // of ids -- and the first version of this test used an unrestricted token,
+    // so the restriction branch never ran and the mutation survived.
+    $w['token']->forceFill(['restricts_sites' => true])->save();
+    $w['token']->sites()->sync(DB::table('sites')->where('account_id', $w['account']->id)->pluck('id'));
+
+    $widest = 0;
+
+    readGet($this, $w, '/api/v1/conversations')->assertOk();
+
+    expect($widest)->toBeLessThan(20);
 });

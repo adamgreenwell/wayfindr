@@ -30,7 +30,14 @@ class ConversationController extends Controller
         ]);
 
         $conversations = Conversation::query()
-            ->whereIn('site_id', $this->siteIds($scope, $validated['site_id'] ?? null))
+            ->whereIn('site_id', $scope->siteIdsQuery())
+            ->when(isset($validated['site_id']), fn ($query) => $query->whereIn(
+                'site_id',
+                // Can only narrow. Asking for a site the token cannot reach
+                // matches nothing rather than being ignored -- an ignored
+                // filter is a silent scope escalation.
+                $scope->includesSite((int) $validated['site_id']) ? [(int) $validated['site_id']] : [],
+            ))
             ->when(isset($validated['status']), fn ($query) => $query->where('status', $validated['status']))
             // Newest first, with `id` breaking ties: cursor pagination needs a
             // total order, and `created_at` alone is not one.
@@ -74,23 +81,8 @@ class ConversationController extends Controller
         // caller that a support code exists but is not theirs confirms it
         // exists, and support codes are short enough to guess at.
         return Conversation::query()
-            ->whereIn('site_id', $scope->siteIds())
+            ->whereIn('site_id', $scope->siteIdsQuery())
             ->where('support_code', $supportCode)
             ->firstOrFail();
-    }
-
-    /**
-     * @return list<int>
-     */
-    private function siteIds(ApiScope $scope, ?int $requested): array
-    {
-        if ($requested === null) {
-            return $scope->siteIds();
-        }
-
-        // A site filter can only narrow. Asking for a site the token cannot
-        // reach returns nothing rather than everything -- the failure mode of
-        // "unknown filter is ignored" is a silent scope escalation.
-        return in_array($requested, $scope->siteIds(), true) ? [$requested] : [];
     }
 }

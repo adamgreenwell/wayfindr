@@ -118,6 +118,9 @@ Route::post('/integrations/jira/webhook/{connection}', JiraWebhookController::cl
 |
 */
 Route::prefix('v1')
+    // The per-token limit only. Failed authentication is bounded inside the
+    // middleware, because middleware priority sorts this one ahead of any
+    // throttle placed before it.
     ->middleware([AuthenticateApiToken::class.':'.ApiToken::ABILITY_READ, 'throttle:api-token'])
     ->name('api.v1.')
     ->group(function (): void {

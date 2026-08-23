@@ -3,6 +3,7 @@
 use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\ApiToken;
+use App\Models\AuditEvent;
 use App\Models\Site;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -117,10 +118,17 @@ test('revoking keeps the row and stops the token', function (): void {
         ->and(ApiToken::query()->firstOrFail()->revoked_at)->not->toBeNull();
 });
 
-test('an agent cannot issue or revoke tokens', function (): void {
+test('an agent cannot see, issue or revoke tokens', function (): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
     $token = ApiToken::factory()->create(['account_id' => $account->id]);
+
+    // Reading the list is admin-only too, not just changing it: the list names
+    // the sites each token reaches, and an agent with restricted site access
+    // would learn the names of sites that 404 for them everywhere else.
+    $this->actingAs($agent)
+        ->get(route('dashboard.account.api-tokens.index'))
+        ->assertForbidden();
 
     $this->actingAs($agent)
         ->post(route('dashboard.account.api-tokens.store'), ['name' => 'Nope', 'abilities' => ['read']])
@@ -171,4 +179,78 @@ test('the account hub links to API tokens, so the page is reachable', function (
         ->assertOk()
         ->assertSee(route('dashboard.account.api-tokens.index'), false)
         ->assertSee('API tokens');
+});
+
+test('a restricted token whose only site is purged reaches nothing', function (): void {
+    // The escalation this closes: the pivot cascades when a site is purged, so
+    // inferring "restricted" from "has pivot rows" hands a one-site token the
+    // whole account the moment that site is deleted -- triggered by an
+    // unrelated admin action, with nothing in the token's history to show it.
+    $w = tokenAdmin();
+    $second = Site::factory()->for($w['account'])->create(['name' => 'Second']);
+
+    $plain = $this->actingAs($w['admin'])
+        ->post(route('dashboard.account.api-tokens.store'), [
+            'name' => 'One site only',
+            'abilities' => ['read'],
+            'site_ids' => [$w['site']->id],
+        ])
+        ->getSession()->get('issued_api_token');
+
+    expect($this->getJson('/api/v1/me', ['Authorization' => 'Bearer '.$plain])->json('data.site_ids'))
+        ->toBe([$w['site']->id]);
+
+    $w['site']->delete();
+
+    // Not the account's remaining sites. Nothing.
+    expect($this->getJson('/api/v1/me', ['Authorization' => 'Bearer '.$plain])->json('data.site_ids'))
+        ->toBe([])
+        ->and($second->exists())->toBeTrue();
+});
+
+test('issuing and revoking a token are both audited', function (): void {
+    // ADR 0018 says issuance and revocation are audited like any other account
+    // event. The first version of this promised it and did not do it.
+    $w = tokenAdmin();
+
+    $this->actingAs($w['admin'])
+        ->post(route('dashboard.account.api-tokens.store'), ['name' => 'Audited', 'abilities' => ['read']]);
+
+    $token = ApiToken::query()->firstOrFail();
+
+    $this->actingAs($w['admin'])->delete(route('dashboard.account.api-tokens.destroy', $token));
+
+    $events = AuditEvent::query()->whereIn('action', ['api_token.created', 'api_token.revoked'])->get();
+
+    expect($events)->toHaveCount(2)
+        ->and($events->pluck('actor_id')->unique()->all())->toBe([$w['admin']->id])
+        ->and($events->pluck('subject_id')->unique()->all())->toBe([$token->id]);
+});
+
+test('the audit record of a token is not a copy of it', function (): void {
+    // The audit log is exportable.
+    $w = tokenAdmin();
+
+    $plain = $this->actingAs($w['admin'])
+        ->post(route('dashboard.account.api-tokens.store'), ['name' => 'Audited', 'abilities' => ['read']])
+        ->getSession()->get('issued_api_token');
+
+    $event = AuditEvent::query()->where('action', 'api_token.created')->firstOrFail();
+    $token = ApiToken::query()->firstOrFail();
+
+    expect(json_encode($event->metadata))->not->toContain($plain)
+        ->and(json_encode($event->metadata))->not->toContain($token->token_hash);
+});
+
+test('the audit log names the API token actions rather than headline-casing them', function (): void {
+    $w = tokenAdmin();
+
+    $this->actingAs($w['admin'])
+        ->post(route('dashboard.account.api-tokens.store'), ['name' => 'Named', 'abilities' => ['read']]);
+
+    $this->actingAs($w['admin'])
+        ->get(route('dashboard.account.audit.index'))
+        ->assertOk()
+        ->assertSee('API token issued')
+        ->assertDontSee('Api Token Created');
 });

@@ -25,18 +25,17 @@ class TicketController extends Controller
             'cursor' => ['nullable', 'string'],
         ]);
 
-        $siteIds = $scope->siteIds();
-
-        if (isset($validated['site_id'])) {
-            $siteIds = in_array($validated['site_id'], $siteIds, true) ? [$validated['site_id']] : [];
-        }
-
         $tickets = Ticket::query()
             // Account AND site. The account filter is redundant while site ids
             // derive from it, and it stays because the day somebody changes how
             // sites are scoped is the day redundancy earns its keep.
             ->where('account_id', $scope->accountId())
-            ->whereIn('site_id', $siteIds)
+            ->whereIn('site_id', $scope->siteIdsQuery())
+            ->when(isset($validated['site_id']), fn ($query) => $query->whereIn(
+                'site_id',
+                // Narrows only, never widens.
+                $scope->includesSite((int) $validated['site_id']) ? [(int) $validated['site_id']] : [],
+            ))
             ->when(isset($validated['status']), fn ($query) => $query->where('status', $validated['status']))
             ->orderByDesc('created_at')
             ->orderByDesc('id')
@@ -51,7 +50,7 @@ class TicketController extends Controller
 
         $found = Ticket::query()
             ->where('account_id', $scope->accountId())
-            ->whereIn('site_id', $scope->siteIds())
+            ->whereIn('site_id', $scope->siteIdsQuery())
             ->whereKey($ticket)
             ->firstOrFail();
 

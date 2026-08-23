@@ -151,15 +151,17 @@ class AppServiceProvider extends ServiceProvider
         // Per token, not per IP (ADR 0018). An integration runs from one host,
         // so an IP limit would make two tokens on the same server throttle each
         // other; and a token moving between hosts would carry no history at
-        // all. Falls back to the IP only for an unauthenticated request, which
-        // by definition has no token to key on.
+        // all.
+        //
+        // This runs AFTER authentication, so the token is always present -- an
+        // unauthenticated request never reaches it. The first version of this
+        // carried an IP fallback for that case, which was unreachable code
+        // describing something that cannot happen.
         RateLimiter::for('api-token', function (Request $request): Limit {
             $token = $request->attributes->get(AuthenticateApiToken::ATTRIBUTE);
             $limit = max(1, (int) config('wayfindr.api_rate_limit', 120));
 
-            return Limit::perMinute($limit)->by(
-                'api-token:'.($token instanceof ApiToken ? (string) $token->getKey() : (string) $request->ip()),
-            );
+            return Limit::perMinute($limit)->by('api-token:'.($token instanceof ApiToken ? (string) $token->getKey() : 'unauthenticated'));
         });
 
         RateLimiter::for('integrations-webhook', function (Request $request): Limit {

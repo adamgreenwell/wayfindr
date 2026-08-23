@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\ApiToken;
+use App\Models\AuditEvent;
+use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -23,6 +25,13 @@ class AgentAccountApiTokenController extends Controller
         $agent = $request->user();
         $account = $agent->account()->firstOrFail();
 
+        // Admin-only to READ, not merely to change. The list names the sites
+        // each token reaches, and an agent whose site access is restricted
+        // would otherwise learn the names of sites that 404 for them
+        // everywhere else. Filtering the relationship would hide the names and
+        // still leak the count, and no non-admin needs this page.
+        abort_unless($agent->isAdmin(), 403);
+
         return view('agent.account.api-tokens', [
             'agent' => $agent,
             'account' => $account,
@@ -31,7 +40,6 @@ class AgentAccountApiTokenController extends Controller
             // agent cannot restrict a token to a site they cannot themselves
             // see, because the picker would leak the site's name.
             'sites' => $account->sites()->visibleToAgent($agent)->orderBy('name')->get(),
-            'canManageTokens' => $agent->isAdmin(),
             // Shown once, immediately after creation, and never again.
             'issuedToken' => $request->session()->get('issued_api_token'),
         ]);
@@ -78,6 +86,18 @@ class AgentAccountApiTokenController extends Controller
 
         $token->sites()->sync($siteIds);
 
+        // Recorded on the token, not inferred from the rows just synced. If
+        // every one of those sites is later purged this token reaches nothing,
+        // which is what the operator asked for.
+        $token->forceFill(['restricts_sites' => $siteIds->isNotEmpty()])->save();
+
+        $this->audit($agent, $token, 'api_token.created', [
+            'name' => $token->name,
+            'abilities' => $token->abilities,
+            'expires_at' => $token->expires_at?->toJSON(),
+            'restricted_site_ids' => $siteIds->all(),
+        ]);
+
         return redirect()
             ->route('dashboard.account.api-tokens.index')
             // Flashed rather than rendered from the model, because the model
@@ -101,8 +121,36 @@ class AgentAccountApiTokenController extends Controller
         // after somebody turns it off.
         $apiToken->forceFill(['revoked_at' => now()])->save();
 
+        // Who turned it off, and when. Revoking a standing credential for
+        // support transcripts is exactly the kind of act an account needs to
+        // attribute afterwards -- and ADR 0018 says issuance and revocation are
+        // audited, which the first version of this did not honour.
+        $this->audit($agent, $apiToken, 'api_token.revoked', [
+            'name' => $apiToken->name,
+            'last_used_at' => $apiToken->last_used_at?->toJSON(),
+        ]);
+
         return redirect()
             ->route('dashboard.account.api-tokens.index')
             ->with('status', 'API token revoked.');
+    }
+
+    /**
+     * @param  array<string, mixed>  $metadata
+     */
+    private function audit(User $actor, ApiToken $token, string $action, array $metadata): void
+    {
+        AuditEvent::query()->create([
+            'account_id' => $actor->account_id,
+            'actor_type' => $actor->getMorphClass(),
+            'actor_id' => $actor->id,
+            'subject_type' => $token->getMorphClass(),
+            'subject_id' => $token->id,
+            'action' => $action,
+            // Never the token or its hash. The audit log is exportable, and a
+            // record that a credential existed must not be a copy of it.
+            'metadata' => $metadata,
+            'occurred_at' => now(),
+        ]);
     }
 }

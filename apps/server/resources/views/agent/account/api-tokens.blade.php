@@ -49,9 +49,7 @@
                             <th scope="col">Reaches</th>
                             <th scope="col">Last used</th>
                             <th scope="col">State</th>
-                            @if ($canManageTokens)
-                                <th scope="col">Action</th>
-                            @endif
+                            <th scope="col">Action</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -89,17 +87,15 @@
                                         Active
                                     @endif
                                 </td>
-                                @if ($canManageTokens)
-                                    <td>
-                                        @unless ($token->isRevoked())
-                                            <form method="POST" action="{{ route('dashboard.account.api-tokens.destroy', $token) }}">
-                                                @csrf
-                                                @method('DELETE')
-                                                <button class="button secondary" type="submit">Revoke</button>
-                                            </form>
-                                        @endunless
-                                    </td>
-                                @endif
+                                <td>
+                                    @unless ($token->isRevoked())
+                                        <form method="POST" action="{{ route('dashboard.account.api-tokens.destroy', $token) }}">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button class="button secondary" type="submit">Revoke</button>
+                                        </form>
+                                    @endunless
+                                </td>
                             </tr>
                         @endforeach
                     </tbody>
@@ -118,7 +114,6 @@
             <span class="lede">Read-only for now</span>
         </div>
 
-        @if ($canManageTokens)
             <form class="section-form" method="POST" action="{{ route('dashboard.account.api-tokens.store') }}">
                 @csrf
 
@@ -169,11 +164,6 @@
 
                 <button class="button" type="submit">Issue token</button>
             </form>
-        @else
-            <div class="notice-copy">
-                <p>Only an account admin can issue or revoke API tokens.</p>
-            </div>
-        @endif
 
         <div class="notice-copy">
             <p>

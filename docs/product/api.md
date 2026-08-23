@@ -22,7 +22,12 @@ Two settings on the form are worth spending a moment on:
   it becomes nobody's job. Pick a horizon you will actually revisit.
 - **Restrict to sites.** Tick none and the token reaches every site on the
   account. An integration that watches one site should not be a credential for
-  all of them.
+  all of them. If every site a token was restricted to is later purged, the
+  token reaches **nothing** — it does not fall back to the whole account.
+
+Issuing and revoking a token are both recorded in the account audit log, with
+who did it. Revoking keeps the row rather than deleting it: what the credential
+existed for and when it was last used is the part worth keeping afterwards.
 
 ## Making a request
 
@@ -112,7 +117,13 @@ person behind it, so the two do not compose in either direction.
 runs from one host, so an IP limit would make two tokens on the same server
 throttle each other.
 
-Over the limit returns `429`.
+Separately, **failed** authentication attempts are limited to 60 per minute per
+address (`WAYFINDR_API_FAILED_AUTH_PER_MINUTE`). Only failures count, so a
+working integration never encounters it however much traffic it sends. A token
+that authenticates but lacks an ability does not count either — that is a
+misconfigured integration, not somebody hunting for a credential that works.
+
+Over either limit returns `429`.
 
 ## Errors
 

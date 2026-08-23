@@ -24,6 +24,7 @@ class ApiTokenFactory extends Factory
             'token_hash' => $generated['hash'],
             'last_four' => $generated['last_four'],
             'abilities' => [ApiToken::ABILITY_READ],
+            'restricts_sites' => false,
             'last_used_at' => null,
             'expires_at' => null,
             'revoked_at' => null,

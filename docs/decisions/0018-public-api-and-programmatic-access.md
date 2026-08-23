@@ -84,6 +84,14 @@ token with no site restriction sees the account's sites; a restricted token sees
 the intersection, and the intersection can only narrow. An integration that
 watches one site should not be a credential for all of them.
 
+Whether a token is restricted is **stored on the token**, not inferred from
+whether any site rows remain attached to it. Sites can be archived and purged,
+and the join rows go with them — so a token restricted to one site would
+otherwise inherit the entire account the moment that site was deleted. That is a
+privilege escalation performed by an admin doing something else entirely, with
+nothing in the token's own record to show it happened. A restricted token whose
+sites are all gone reaches nothing.
+
 Abilities are coarse and deny-by-default: `read` grants the read surface,
 individual write abilities are named, and anything not granted is refused.
 
@@ -116,6 +124,19 @@ A named throttle per token id, alongside the existing named limiters rather than
 inside them. The widget's limits protect a visitor's browser from a mistake; a
 token's limits protect an account's data from a script, which is a different
 question with a different answer.
+
+Two details that are forced rather than chosen. The authentication middleware
+implements `AuthenticatesRequests` — an empty marker interface whose only effect
+is Laravel's middleware priority, where it sits immediately before
+`ThrottleRequests`. Without it, the route's throttle sorts *ahead* of
+authentication and the per-token limiter keys on a token that has not been
+resolved yet, so every token behind one address silently shares one bucket.
+
+For the same reason, **failed authentication is bounded inside that middleware**
+rather than by a throttle placed before it: a throttle placed before it does not
+stay before it. Only failures spend that budget, so a working integration never
+touches it however much traffic it sends, and an address probing for a valid
+token stops costing lookups.
 
 ### Read first, and less than the dashboard can do
 
