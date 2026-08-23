@@ -119,27 +119,32 @@ final class TicketReport
                 return ['durations' => [], 'unmeasurable' => 0, 'closes' => [], 'reopens' => []];
             }
 
-            // Every ticket with a close OR a reopen on record in the window.
+            // Every ticket with a close, a reopen OR a hold on record in the
+            // window -- anything that could turn out to be an episode boundary
+            // once the walk has read the history around it.
             //
-            // Closes alone is not enough, and getting that wrong is invisible:
-            // a ticket closed before the range, reopened inside it, and still
-            // open at the end has no in-window close, so it would never enter
-            // the walk and its reopen would go uncounted -- a resolution that
-            // demonstrably did not hold, reported as zero. That is the most
-            // interesting event the report has, and the raw reopen query this
-            // walk replaced did count it.
+            // Getting this wrong is invisible, which is why it is the whole
+            // list rather than the obvious one. Closes alone misses a ticket
+            // closed before the range and reopened inside it that stays open:
+            // no in-window close, so it never enters the walk and a resolution
+            // that demonstrably did not hold is reported as zero. Adding
+            // reopens still misses the history the un-hold guard exists for --
+            // a stale "Mark pending" against a closed ticket wrote only
+            // `ticket.pending`, so a ticket that leaves the range still pending
+            // has nothing else to be found by, and the CLOSED-to-PENDING
+            // normalisation is unreachable for exactly the case it was written
+            // for.
             //
-            // A ticket whose only in-window close turns out to be a duplicate
-            // still contributes nothing, because the walk decides that from its
-            // history rather than from why it was selected.
+            // Selecting a ticket does not make anything count: the walk decides
+            // that from its history rather than from why it was picked, so a
+            // duplicate close is still one close and a hold from OPEN is still
+            // not a reopen.
             /** @var list<int> $ticketIds */
-            $ticketIds = $this->eventsInWindow(self::CLOSED)
-                ->toBase()
-                ->distinct()
-                ->pluck('subject_id')
-                ->merge(
-                    $this->eventsInWindow(self::REOPENED)->toBase()->distinct()->pluck('subject_id'),
-                )
+            $ticketIds = collect([self::CLOSED, self::REOPENED, self::PENDING])
+                ->flatMap(fn (string $action) => $this->eventsInWindow($action)
+                    ->toBase()
+                    ->distinct()
+                    ->pluck('subject_id'))
                 ->map(fn (int|string $id): int => (int) $id)
                 ->unique()
                 ->values()

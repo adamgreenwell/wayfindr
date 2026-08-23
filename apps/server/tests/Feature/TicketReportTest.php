@@ -556,3 +556,42 @@ test('a hold that begins while open is still not a reopen', function (): void {
         // Measured from creation, because nothing reopened it.
         ->and($resolution['summary']->median)->toBeGreaterThan(8 * 24 * 3600);
 });
+
+test('a ticket that leaves the range still pending has its reopen counted', function (): void {
+    // The history the un-hold guard exists for: a stale "Mark pending" against
+    // a closed ticket wrote only `ticket.pending`. If that ticket never closes
+    // again there is no close and no reopen to find it by, so seeding the walk
+    // from those two alone left the CLOSED-to-PENDING normalisation unreachable
+    // for exactly the case it was written for.
+    $w = ticketReportWorld();
+    $ticket = Ticket::factory()->for($w['account'])->for($w['site'])->create([
+        'created_at' => now()->subDays(90),
+        'status' => 'pending',
+    ]);
+
+    ticketEvent($ticket, $w['agent'], TicketReport::CLOSED, now()->subDays(60));
+    ticketEvent($ticket, $w['agent'], TicketReport::PENDING, now()->subDays(3));
+
+    $resolution = ticketReportFor($w)->resolution();
+
+    expect($resolution['reopened'])->toBe(1)
+        ->and($resolution['closed'])->toBe(0);
+});
+
+test('a hold on a ticket that was never closed adds nothing', function (): void {
+    // Widening the seed must not widen what counts. This ticket is selected by
+    // its hold and contributes no reopen, because a hold from OPEN is not one.
+    $w = ticketReportWorld();
+    $ticket = Ticket::factory()->for($w['account'])->for($w['site'])->create([
+        'created_at' => now()->subDays(10),
+        'status' => 'pending',
+    ]);
+
+    ticketEvent($ticket, $w['agent'], TicketReport::PENDING, now()->subDays(2));
+
+    $resolution = ticketReportFor($w)->resolution();
+
+    expect($resolution['reopened'])->toBe(0)
+        ->and($resolution['closed'])->toBe(0)
+        ->and($resolution['summary']->count)->toBe(0);
+});
