@@ -282,8 +282,34 @@
                             {{ $ticketResolution['unmeasurable'] === 1 ? 'it' : 'they' }} opened before this install started recording ticket reopens, so how long the work took cannot be established.
                             Resolution times will appear as tickets opened since then are closed.
                         </p>
+                        @if ($ticketResolution['reopened'] > 0)
+                            <p>
+                                {{ $ticketResolution['reopened'] }} {{ $ticketResolution['reopened'] === 1 ? 'ticket was' : 'tickets were' }} reopened in this period &mdash;
+                                {{ $ticketResolution['reopened'] === 1 ? 'a resolution' : 'resolutions' }} that did not hold. That is countable even where the durations are not.
+                            </p>
+                        @endif
                     </div>
                 @elseif ($ticketResolution['summary']->count === 0)
+                    {{-- A reopen needs no close to be worth reporting. A ticket
+                         closed before the range and reopened inside it is a
+                         resolution that did not hold, and it stays open -- so
+                         it never reaches the table below, and the figure the
+                         backend now counts correctly would still be invisible
+                         on the page. --}}
+                    @if ($ticketResolution['reopened'] > 0)
+                        <div class="table-wrap">
+                            <table>
+                                <tbody>
+                                    <tr>
+                                        <th scope="row">Reopened</th>
+                                        <td>{{ $ticketResolution['reopened'] }}</td>
+                                        <td class="lede">A resolution that did not hold. Nothing closed in this period, so there is no resolution time to report alongside it.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    @endif
+
                     <div class="notice-copy">
                         @if ($ticketHistoryBeganAt && $window->start->lessThan($ticketHistoryBeganAt))
                             {{-- The window reaches back past the boundary, so

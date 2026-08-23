@@ -468,3 +468,47 @@ test('a ticket closed straight out of pending is a normal resolution', function 
         ->and($resolution['summary']->count)->toBe(1)
         ->and($resolution['reopened'])->toBe(0);
 });
+
+test('a reopen with no close in the range is visible on the page, not just in the figures', function (): void {
+    // The backend counted this correctly and the page did not render it: with
+    // no measured close the view showed only the "nothing closed" notice and
+    // skipped the table the Reopened row lives in. The test that proved the
+    // count asked the report object and never rendered anything.
+    $w = ticketReportWorld();
+    $ticket = Ticket::factory()->for($w['account'])->for($w['site'])->create([
+        'created_at' => now()->subDays(90),
+        'status' => 'open',
+    ]);
+
+    ticketEvent($ticket, $w['agent'], TicketReport::CLOSED, now()->subDays(60));
+    ticketEvent($ticket, $w['agent'], TicketReport::REOPENED, now()->subDays(3));
+
+    $this->actingAs($w['agent'])
+        ->get(route('dashboard.reports.index', ['report_days' => 30]))
+        ->assertOk()
+        ->assertSee('Reopened')
+        ->assertSee('A resolution that did not hold. Nothing closed in this period');
+});
+
+test('reopens are named even when every close in range is unmeasurable', function (): void {
+    // The other branch with the same gap: closes exist, none can be measured,
+    // and a reopen is still countable.
+    $w = ticketReportWorld();
+    stamp('reporting.ticket_lifecycle_recording_began_at', now()->subDays(10));
+
+    $old = Ticket::factory()->for($w['account'])->for($w['site'])->create(['created_at' => now()->subDays(90)]);
+    ticketEvent($old, $w['agent'], TicketReport::CLOSED, now()->subDays(2));
+
+    $other = Ticket::factory()->for($w['account'])->for($w['site'])->create([
+        'created_at' => now()->subDays(90),
+        'status' => 'open',
+    ]);
+    ticketEvent($other, $w['agent'], TicketReport::CLOSED, now()->subDays(40));
+    ticketEvent($other, $w['agent'], TicketReport::REOPENED, now()->subDays(3));
+
+    $this->actingAs($w['agent'])
+        ->get(route('dashboard.reports.index', ['report_days' => 30]))
+        ->assertOk()
+        ->assertSee('reopened in this period')
+        ->assertSee('countable even where the durations are not');
+});
