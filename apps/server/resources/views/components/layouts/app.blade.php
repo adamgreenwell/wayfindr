@@ -1623,13 +1623,6 @@
             min-height: 1px;
         }
 
-        /* ...but a day with none must. Without this the minimum above draws a
-           sliver on every empty day, so a quiet week reads as a busy one. */
-        .chart__bar--none {
-            min-height: 0;
-            border: 0;
-        }
-
         .chart__bar--opened {
             background: var(--wf-brand);
         }
@@ -1638,6 +1631,19 @@
             border: 1px solid var(--wf-brand);
             border-bottom: 0;
             background: transparent;
+        }
+
+        /* ...but a day with none must draw nothing. Without this the minimum
+           above leaves a sliver on every empty day, so a quiet week reads as a
+           busy one.
+
+           Deliberately doubled up on the block class, and deliberately after
+           the variant rules: at equal specificity `--closed` came later and put
+           its 1px border back, so the sliver survived a fix that looked
+           correct in the markup. */
+        .chart__bar.chart__bar--none {
+            min-height: 0;
+            border: 0;
         }
 
         .chart-legend {

@@ -163,7 +163,17 @@
                     <h2 id="report-resolution-heading">Resolution</h2>
                     <span class="lede">{{ $resolution['summary']->count }} {{ $resolution['summary']->count === 1 ? 'close' : 'closes' }} measured</span>
                 </div>
-                @if ($resolution['summary']->isEmpty())
+                @if ($resolution['summary']->isEmpty() && $resolution['unmeasurable'] > 0)
+                    {{-- An upgraded install whose closes are all older than the
+                         recording boundary lands here. Saying "nothing was
+                         closed" would be false, and would hide the explanation
+                         in exactly the case that needs it most. --}}
+                    <p class="empty">
+                        {{ $resolution['unmeasurable'] }} {{ $resolution['unmeasurable'] === 1 ? 'conversation was' : 'conversations were' }} closed in this period, but
+                        {{ $resolution['unmeasurable'] === 1 ? 'it' : 'they' }} opened before this install started recording reopens, so how long the work took cannot be established.
+                        Resolution times will appear as conversations opened since then are closed.
+                    </p>
+                @elseif ($resolution['summary']->isEmpty())
                     <p class="empty">No conversation was closed in this period.</p>
                 @else
                     <div class="table-wrap">

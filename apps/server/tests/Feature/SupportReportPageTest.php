@@ -221,4 +221,44 @@ test('a day with nothing on it draws no bar', function (): void {
         // read as a busy one.
         expect($marked)->toBe($isZero);
     }
+
+    // Marking the element is not the same as the browser drawing nothing, and
+    // asserting only the marker is how the first version of this fix passed
+    // while the sliver survived: at equal specificity `--closed` came after
+    // `--none` and put its 1px border back. The override has to win the
+    // cascade, so it is both more specific and later.
+    $none = strpos($html, '.chart__bar.chart__bar--none');
+    $closed = strpos($html, '.chart__bar--closed {');
+
+    expect($none)->not->toBeFalse()
+        ->and($closed)->not->toBeFalse()
+        ->and($none)->toBeGreaterThan($closed);
+});
+
+test('an all-legacy sample explains itself instead of claiming nothing closed', function (): void {
+    $world = reportPageWorld();
+
+    stampRecordingStart(CarbonImmutable::now()->subDays(2));
+
+    // Closed inside the window, but opened long before recording began, so the
+    // duration cannot be established.
+    $ancient = Conversation::factory()->for($world['site'])->for($world['visitor'])->create([
+        'status' => 'closed',
+        'created_at' => CarbonImmutable::now()->subDays(90),
+    ]);
+    $ancient->auditEvents()->create([
+        'account_id' => $world['account']->id,
+        'site_id' => $world['site']->id,
+        'action' => ConversationLifecycleLog::CLOSED,
+        'metadata' => ['previous_status' => 'open', 'actor' => 'agent'],
+        'occurred_at' => CarbonImmutable::now()->subDay(),
+    ]);
+
+    // Every close in range is unmeasurable, so the summary is empty. Saying
+    // "no conversation was closed" would be false, and would hide the
+    // explanation in the one case that most needs it.
+    $this->actingAs($world['agent'])->get('/dashboard/reports?report_days=7')
+        ->assertOk()
+        ->assertDontSee('No conversation was closed in this period', false)
+        ->assertSee('opened before this install started recording reopens', false);
 });
