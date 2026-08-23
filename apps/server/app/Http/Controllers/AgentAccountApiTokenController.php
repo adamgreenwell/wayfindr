@@ -39,7 +39,13 @@ class AgentAccountApiTokenController extends Controller
             // Same visibility rule the rest of the account pages follow: an
             // agent cannot restrict a token to a site they cannot themselves
             // see, because the picker would leak the site's name.
+            // The picker offers servable sites only: restricting a NEW token
+            // to an archived site is not a thing anyone means to do.
             'sites' => $account->sites()->visibleToAgent($agent)->orderBy('name')->get(),
+            // What this admin may be shown of each token's reach. A token can
+            // legitimately reach sites its viewer cannot, and naming those
+            // would leak exactly what site access hides.
+            'visibleSiteIds' => $account->sites()->visibleToAgentIncludingArchived($agent)->pluck('id')->all(),
             // Shown once, immediately after creation, and never again.
             'issuedToken' => $request->session()->get('issued_api_token'),
         ]);
@@ -88,7 +94,12 @@ class AgentAccountApiTokenController extends Controller
         // Without this an admin who cannot see every site could issue an
         // unrestricted token and read, through the API, exactly the
         // conversations the dashboard hides from them.
-        $visibleSiteIds = $account->sites()->visibleToAgent($agent)->pluck('id');
+        // INCLUDING archived, on both sides. `visibleToAgent()` filters to
+        // servable sites, so an account with one archived site made every
+        // admin look site-limited -- pinning tokens to servable sites only and
+        // costing them the archived history that ADR 0018 says a read surface
+        // keeps.
+        $visibleSiteIds = $account->sites()->visibleToAgentIncludingArchived($agent)->pluck('id');
         $accountSiteIds = $account->sites()->pluck('id');
         $requested = $validated['site_ids'] ?? [];
         $askedForSpecificSites = $request->has('site_ids');

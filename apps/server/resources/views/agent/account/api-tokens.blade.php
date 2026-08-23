@@ -64,6 +64,14 @@
                                 </td>
                                 <td><code>{{ $token->displayHint() }}</code></td>
                                 <td>
+                                    @php
+                                        // Site access restricts an admin too, so a token can reach sites
+                                        // its viewer cannot -- and naming those here would leak exactly
+                                        // what site access hides. Named where the viewer supports them,
+                                        // acknowledged without names where they do not.
+                                        $namedSites = $token->sites->whereIn('id', $visibleSiteIds);
+                                        $hiddenSiteCount = $token->sites->count() - $namedSites->count();
+                                    @endphp
                                     @if ($token->restricts_sites && $token->sites->isEmpty())
                                         {{-- Restricted, and every site it named has been purged. Reaches
                                              nothing -- the opposite of what an empty relationship means
@@ -72,7 +80,9 @@
                                     @elseif ($token->sites->isEmpty())
                                         <span class="lede">Every site on this account</span>
                                     @else
-                                        <span class="lede">{{ $token->sites->pluck('name')->join(', ') }}</span>
+                                        <span class="lede">
+                                            {{ $namedSites->pluck('name')->join(', ') }}@if ($namedSites->isNotEmpty() && $hiddenSiteCount > 0), @endif@if ($hiddenSiteCount > 0)sites you do not support@endif
+                                        </span>
                                     @endif
                                     <span class="lede">{{ $token->abilities === [] ? 'No abilities' : implode(', ', $token->abilities) }}</span>
                                 </td>

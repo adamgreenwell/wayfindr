@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Account;
+use App\Models\ApiToken;
 use App\Models\AuditEvent;
 use App\Models\BreakGlassGrant;
 use App\Models\CobrowseSession;
@@ -240,6 +241,13 @@ class AgentAccountAuditController extends Controller
                             ->orWhereLike('domain', $searchPattern))
                         ->orWhereHasMorph('subject', [Conversation::class], fn (Builder $query) => $query
                             ->whereLike('support_code', $searchPattern))
+                        // The token's name and last four are what the subject
+                        // column shows, so the search has to reach them --
+                        // otherwise an account with several credentials can see
+                        // which one an event concerns but cannot filter to it.
+                        ->orWhereHasMorph('subject', [ApiToken::class], fn (Builder $query) => $query
+                            ->whereLike('name', $searchPattern)
+                            ->orWhereLike('last_four', $searchPattern))
                         ->orWhereHasMorph('subject', [CobrowseSession::class], fn (Builder $query) => $query
                             ->whereHas('conversation', fn (Builder $query) => $query->whereLike('support_code', $searchPattern)))
                         // Break-glass subjects surface their reference-safe
@@ -323,6 +331,14 @@ class AgentAccountAuditController extends Controller
 
         if ($event->subject instanceof Site) {
             return $event->subject->name;
+        }
+
+        if ($event->subject instanceof ApiToken) {
+            // Name plus the last four, which is what the token list shows and
+            // what an operator matches against their deployment config. A
+            // reference by construction: enough to say WHICH credential, never
+            // enough to use it, and safe in an export.
+            return 'API token '.$event->subject->name.' ('.$event->subject->displayHint().')';
         }
 
         if ($event->subject instanceof Conversation) {

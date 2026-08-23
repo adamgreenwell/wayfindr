@@ -348,3 +348,73 @@ test('an expired token is not counted as active', function (): void {
         ->assertSee('1 active')
         ->assertDontSee('2 active');
 });
+
+test('the token list does not name sites the viewing admin cannot support', function (): void {
+    // Site access restricts an admin too -- the issuance path now says so
+    // explicitly -- so the admin-only gate does not by itself close the leak.
+    // A token can legitimately reach sites its viewer cannot, and naming them
+    // here would publish exactly what site access hides.
+    $account = Account::factory()->create();
+    $w = tokenAdmin($account);
+    $hidden = Site::factory()->for($account)->create(['name' => 'Zzarquon Holdings']);
+
+    $somebodyElse = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+    $hidden->supportAgents()->syncWithoutDetaching($somebodyElse->id);
+
+    $token = ApiToken::factory()->create([
+        'account_id' => $account->id,
+        'name' => 'Reaches both',
+        'restricts_sites' => true,
+    ]);
+    $token->sites()->attach([$w['site']->id, $hidden->id]);
+
+    $this->actingAs($w['admin'])
+        ->get(route('dashboard.account.api-tokens.index'))
+        ->assertOk()
+        ->assertSee('Docs')
+        ->assertSee('sites you do not support')
+        ->assertDontSee('Zzarquon Holdings');
+});
+
+test('an archived site does not make a full-access admin look site-limited', function (): void {
+    // `visibleToAgent()` filters to servable sites, so one archived site on the
+    // account made every admin appear restricted -- pinning their tokens to
+    // servable sites and costing them the archived history ADR 0018 keeps
+    // readable on purpose.
+    $account = Account::factory()->create();
+    $w = tokenAdmin($account);
+    $archived = Site::factory()->for($account)->create(['archived_at' => now()]);
+
+    $plain = $this->actingAs($w['admin'])
+        ->post(route('dashboard.account.api-tokens.store'), ['name' => 'Wide', 'abilities' => ['read']])
+        ->getSession()->get('issued_api_token');
+
+    $token = ApiToken::query()->firstOrFail();
+
+    expect($token->restricts_sites)->toBeFalse()
+        ->and($this->getJson('/api/v1/me', ['Authorization' => 'Bearer '.$plain])->json('data.site_ids'))
+        ->toContain($archived->id);
+});
+
+test('an audit record names which token it concerns, and can be searched for it', function (): void {
+    // With several credentials, "Account" as the subject cannot answer the only
+    // question the record exists to answer.
+    $w = tokenAdmin();
+
+    $this->actingAs($w['admin'])
+        ->post(route('dashboard.account.api-tokens.store'), ['name' => 'Reporting sync', 'abilities' => ['read']]);
+    $this->actingAs($w['admin'])
+        ->post(route('dashboard.account.api-tokens.store'), ['name' => 'Billing export', 'abilities' => ['read']]);
+
+    $this->actingAs($w['admin'])
+        ->get(route('dashboard.account.audit.index'))
+        ->assertOk()
+        ->assertSee('API token Reporting sync')
+        ->assertSee('API token Billing export');
+
+    $this->actingAs($w['admin'])
+        ->get(route('dashboard.account.audit.index', ['audit_search' => 'Billing export']))
+        ->assertOk()
+        ->assertSee('API token Billing export')
+        ->assertDontSee('API token Reporting sync');
+});
