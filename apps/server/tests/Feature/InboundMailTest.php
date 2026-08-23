@@ -1,13 +1,17 @@
 <?php
 
+use App\Enums\AccountRole;
+use App\Mail\ConversationReplyMessage;
 use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\Site;
+use App\Models\User;
 use App\Models\Visitor;
 use App\Support\Mail\InboundMailRouter;
 use App\Support\Mail\InboundMessage;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Mail;
 
 uses(RefreshDatabase::class);
 
@@ -263,4 +267,71 @@ test('a delivery Wayfindr cannot use is accepted rather than retried forever', f
         ->assertJson(['message' => 'Ignored.']);
 
     expect(Conversation::query()->count())->toBe(0);
+});
+
+test('an agent replying to an email conversation sends an email back', function (): void {
+    Mail::fake();
+    $site = mailSite();
+    $inbound = deliver(mailPayload());
+
+    $agent = User::factory()->for($site->account)->create(['account_role' => AccountRole::Admin]);
+    $site->supportAgents()->syncWithoutDetaching($agent->id);
+
+    $this->actingAs($agent)
+        ->post(route('dashboard.conversations.messages.store', $inbound->conversation->support_code), [
+            'body' => 'We have found it and it ships today.',
+        ])
+        ->assertRedirect();
+
+    Mail::assertQueued(ConversationReplyMessage::class, function (ConversationReplyMessage $mail): bool {
+        return $mail->hasTo('ada@example.test');
+    });
+
+    // The Message-ID it was sent as is on the row, so the visitor's reply can
+    // be threaded against it.
+    $reply = $inbound->conversation->fresh()->messages()->where('sender_type', User::class)->firstOrFail();
+
+    expect($reply->email_message_id)->not->toBeNull();
+});
+
+test('a widget conversation is not also emailed', function (): void {
+    // The visitor is already being answered where they are.
+    Mail::fake();
+    $site = mailSite();
+    $visitor = Visitor::factory()->for($site)->create(['email' => 'inwidget@example.test']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create(['status' => 'open']);
+
+    $agent = User::factory()->for($site->account)->create(['account_role' => AccountRole::Admin]);
+    $site->supportAgents()->syncWithoutDetaching($agent->id);
+
+    $this->actingAs($agent)
+        ->post(route('dashboard.conversations.messages.store', $conversation->support_code), ['body' => 'Hello.'])
+        ->assertRedirect();
+
+    Mail::assertNothingQueued();
+});
+
+test('the visitor’s reply threads onto the agent’s email', function (): void {
+    Mail::fake();
+    $site = mailSite();
+    $inbound = deliver(mailPayload());
+
+    $agent = User::factory()->for($site->account)->create(['account_role' => AccountRole::Admin]);
+    $site->supportAgents()->syncWithoutDetaching($agent->id);
+
+    $this->actingAs($agent)
+        ->post(route('dashboard.conversations.messages.store', $inbound->conversation->support_code), ['body' => 'Shipping today.'])
+        ->assertRedirect();
+
+    $sentId = $inbound->conversation->fresh()->messages()
+        ->where('sender_type', User::class)->firstOrFail()->email_message_id;
+
+    $back = deliver(mailPayload([
+        'message_id' => '<third@example.test>',
+        'in_reply_to' => $sentId,
+        'text' => 'Thank you.',
+    ]));
+
+    expect($back->conversation_id)->toBe($inbound->conversation_id)
+        ->and(Conversation::query()->count())->toBe(1);
 });

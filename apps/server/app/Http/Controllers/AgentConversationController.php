@@ -15,6 +15,7 @@ use App\Support\CobrowseConsentState;
 use App\Support\CobrowseResyncRequestPolicy;
 use App\Support\Conversations\ConversationLifecycleLog;
 use App\Support\Conversations\ConversationQueueQuery;
+use App\Support\Mail\ConversationReplyMailer;
 use App\Support\ReplyTemplateOptions;
 use App\Support\TicketCategory;
 use App\Support\TicketPriority;
@@ -323,6 +324,11 @@ class AgentConversationController extends Controller
             // Bind the agent's own pending uploads to this reply. A bad
             // reference throws and rolls the whole send back.
             $binder->bind($conversation, $message, $attachmentIds, $agent);
+
+            // A conversation that arrived by email is answered by email. One
+            // that arrived in the widget is already being answered there, and
+            // mailing as well would be the product talking over itself.
+            app(ConversationReplyMailer::class)->send($message);
 
             $previousStatus = (string) $conversation->status;
 
