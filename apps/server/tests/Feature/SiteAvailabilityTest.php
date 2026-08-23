@@ -437,3 +437,75 @@ test('a desk closed early asks a visitor for an email, exactly as being out of h
         ->and($response->json('data.site.intake.fields.email'))->toBe('required')
         ->and($response->json('data.site.intake.asks'))->toBeTrue();
 });
+test('an admin can close the desk early and reopen it', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['settings' => ['availability' => [
+        'enabled' => true,
+        'timezone' => 'UTC',
+        'weekdays' => ['mon' => ['09:00', '17:00']],
+    ]]]);
+
+    $this->actingAs($admin)
+        ->post(route('dashboard.sites.availability.close', $site), ['closure' => 'hour'])
+        ->assertRedirect();
+
+    expect($site->fresh()->settings['availability']['closed_until'])->not->toBeNull()
+        // The schedule this action deliberately does not touch.
+        ->and($site->fresh()->settings['availability']['weekdays']['mon'])->toBe(['09:00', '17:00'])
+        ->and($site->fresh()->settings['availability']['enabled'])->toBeTrue();
+
+    $this->actingAs($admin)
+        ->delete(route('dashboard.sites.availability.reopen', $site))
+        ->assertRedirect();
+
+    expect($site->fresh()->settings['availability']['closed_until'])->toBeNull()
+        ->and($site->fresh()->settings['availability']['weekdays']['mon'])->toBe(['09:00', '17:00']);
+});
+
+test('closing the desk does not blank a schedule that was never configured', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['settings' => ['mask_selectors' => []]]);
+
+    $this->actingAs($admin)
+        ->post(route('dashboard.sites.availability.close', $site), ['closure' => 'today'])
+        ->assertRedirect();
+
+    // Settings outside availability are somebody else's, and this action writes
+    // one key.
+    expect($site->fresh()->settings['mask_selectors'])->toBe([])
+        ->and($site->fresh()->settings['availability']['closed_until'])->not->toBeNull();
+});
+
+test('an unknown closure length is rejected rather than stored', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['settings' => []]);
+
+    $this->actingAs($admin)
+        ->post(route('dashboard.sites.availability.close', $site), ['closure' => 'forever'])
+        ->assertSessionHasErrors('closure');
+
+    expect($site->fresh()->settings['availability']['closed_until'] ?? null)->toBeNull();
+});
+
+test('a plain agent cannot close or reopen the desk', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+    $site = Site::factory()->for($account)->create(['settings' => ['availability' => [
+        'closed_until' => '2026-09-01T09:00:00+00:00',
+    ]]]);
+
+    $this->actingAs($agent)
+        ->post(route('dashboard.sites.availability.close', $site), ['closure' => 'hour'])
+        ->assertForbidden();
+
+    $this->actingAs($agent)
+        ->delete(route('dashboard.sites.availability.reopen', $site))
+        ->assertForbidden();
+
+    // Neither refused request may have moved anything.
+    expect($site->fresh()->settings['availability']['closed_until'])->toBe('2026-09-01T09:00:00+00:00');
+});
+
