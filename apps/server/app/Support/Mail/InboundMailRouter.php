@@ -2,6 +2,7 @@
 
 namespace App\Support\Mail;
 
+use App\Events\ConversationMessageCreated;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\Site;
@@ -45,7 +46,18 @@ final class InboundMailRouter
             return null;
         }
 
-        return DB::transaction(function () use ($site, $message): ConversationMessage {
+        // A delivery already accepted is answered with what it produced the
+        // first time. Providers retry on a timeout or a lost response, and a
+        // retry that inserts again duplicates a reply -- or, for a first email
+        // with no thread to join, opens a second conversation about the same
+        // question.
+        $seen = $this->alreadyAccepted($site, $message);
+
+        if ($seen !== null) {
+            return $seen;
+        }
+
+        $stored = DB::transaction(function () use ($site, $message): ConversationMessage {
             $visitor = $this->visitor($site, $message);
             $conversation = $this->conversation($site, $visitor, $message);
 
@@ -80,6 +92,29 @@ final class InboundMailRouter
 
             return $stored;
         });
+
+        // After the commit, exactly as the widget path does it. The listeners
+        // notify eligible agents and reopen pending tickets, and dispatching
+        // inside the transaction would have them read rows nothing else can see
+        // yet -- or act on a message a rollback then removed.
+        event(new ConversationMessageCreated($stored));
+
+        return $stored;
+    }
+
+    /**
+     * The message this delivery already produced, if it has been seen.
+     */
+    private function alreadyAccepted(Site $site, InboundMessage $message): ?ConversationMessage
+    {
+        if ($message->messageId === null) {
+            return null;
+        }
+
+        return ConversationMessage::query()
+            ->where('email_message_id', $message->messageId)
+            ->whereHas('conversation', fn ($query) => $query->where('site_id', $site->id))
+            ->first();
     }
 
     private function site(InboundMessage $message): ?Site

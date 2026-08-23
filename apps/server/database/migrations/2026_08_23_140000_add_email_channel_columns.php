@@ -26,7 +26,13 @@ return new class extends Migration
             // customer who edits the subject starts a second conversation
             // about the thing they are already discussing.
             $table->string('email_message_id')->nullable()->after('metadata');
-            $table->index('email_message_id');
+            // Unique, not merely indexed. A provider retries after a timeout or
+            // a lost 200, and without this a retry inserts the message again --
+            // or, for a first email with no thread to join, opens a SECOND
+            // conversation about the same question. A Message-ID is unique by
+            // RFC, and the router only ever accepts a message for one site, so
+            // uniqueness across the table is the honest constraint.
+            $table->unique('email_message_id');
         });
     }
 
@@ -38,7 +44,7 @@ return new class extends Migration
         });
 
         Schema::table('conversation_messages', function (Blueprint $table): void {
-            $table->dropIndex(['email_message_id']);
+            $table->dropUnique(['email_message_id']);
             $table->dropColumn('email_message_id');
         });
     }

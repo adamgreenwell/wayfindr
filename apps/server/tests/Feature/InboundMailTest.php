@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\AccountRole;
+use App\Events\ConversationMessageCreated;
 use App\Mail\ConversationReplyMessage;
 use App\Models\Account;
 use App\Models\Conversation;
@@ -8,10 +9,14 @@ use App\Models\ConversationMessage;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\Attachments\AttachmentUploadService;
 use App\Support\Mail\InboundMailRouter;
 use App\Support\Mail\InboundMessage;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
 
@@ -334,4 +339,105 @@ test('the visitor’s reply threads onto the agent’s email', function (): void
 
     expect($back->conversation_id)->toBe($inbound->conversation_id)
         ->and(Conversation::query()->count())->toBe(1);
+});
+
+test('a provider retrying a delivery does not say it twice', function (): void {
+    // Providers retry after a timeout or a lost 200. A retry that inserts again
+    // duplicates a reply -- or, for a first email with no thread to join, opens
+    // a SECOND conversation about the same question.
+    mailSite();
+
+    $first = deliver(mailPayload());
+    $again = deliver(mailPayload());
+
+    expect(Conversation::query()->count())->toBe(1)
+        ->and(ConversationMessage::query()->count())->toBe(1)
+        ->and($again->id)->toBe($first->id);
+});
+
+test('an inbound message wakes the same listeners a widget message does', function (): void {
+    // Without the event, email rows appear and nobody is told: no agent alert,
+    // no realtime broadcast, and pending tickets stay pending.
+    Event::fake([ConversationMessageCreated::class]);
+    mailSite();
+
+    $stored = deliver(mailPayload());
+
+    Event::assertDispatched(
+        ConversationMessageCreated::class,
+        fn (ConversationMessageCreated $event): bool => $event->message->is($stored),
+    );
+});
+
+test('an admin sets the address mail arrives at', function (): void {
+    // The column existed and no form populated it, so every delivery was
+    // ignored unless somebody edited the database.
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['inbound_address' => null]);
+
+    $this->actingAs($admin)
+        ->put(route('dashboard.sites.inbound-address.update', $site), ['inbound_address' => '  Support@Northwind.test '])
+        ->assertRedirect();
+
+    // Normalised, or Support@x and support@x are two addresses to the database
+    // and one to every mail server.
+    expect($site->fresh()->inbound_address)->toBe('support@northwind.test');
+
+    expect(deliver(mailPayload())?->conversation->site_id)->toBe($site->id);
+});
+
+test('two sites cannot claim the same address', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    Site::factory()->for($account)->create(['inbound_address' => 'support@northwind.test']);
+    $second = Site::factory()->for($account)->create(['inbound_address' => null]);
+
+    $this->actingAs($admin)
+        ->put(route('dashboard.sites.inbound-address.update', $second), ['inbound_address' => 'SUPPORT@northwind.test'])
+        ->assertSessionHasErrors('inbound_address');
+
+    expect($second->fresh()->inbound_address)->toBeNull();
+});
+
+test('a plain agent cannot redirect a site’s mail', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+    $site = Site::factory()->for($account)->create(['inbound_address' => null]);
+
+    $this->actingAs($agent)
+        ->put(route('dashboard.sites.inbound-address.update', $site), ['inbound_address' => 'mine@example.test'])
+        ->assertForbidden();
+
+    expect($site->fresh()->inbound_address)->toBeNull();
+});
+
+test('the files an agent attaches travel with the emailed reply', function (): void {
+    // Otherwise the agent is told the reply was sent while the visitor receives
+    // none of it -- and an attachment-only reply arrives as just a signature.
+    Mail::fake();
+    Storage::fake('attachments');
+    $site = mailSite();
+    $inbound = deliver(mailPayload());
+
+    $agent = User::factory()->for($site->account)->create(['account_role' => AccountRole::Admin]);
+    $site->supportAgents()->syncWithoutDetaching($agent->id);
+
+    $attachment = app(AttachmentUploadService::class)->store(
+        $inbound->conversation,
+        UploadedFile::fake()->createWithContent('label.pdf', '%PDF-1.4 fake'),
+        $agent,
+    );
+
+    $this->actingAs($agent)
+        ->post(route('dashboard.conversations.messages.store', $inbound->conversation->support_code), [
+            'body' => 'Here is the label.',
+            'attachment_ids' => [$attachment->id],
+        ])
+        ->assertRedirect();
+
+    Mail::assertQueued(
+        ConversationReplyMessage::class,
+        fn (ConversationReplyMessage $mail): bool => count($mail->attachments()) === 1,
+    );
 });

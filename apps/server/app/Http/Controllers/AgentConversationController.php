@@ -325,11 +325,6 @@ class AgentConversationController extends Controller
             // reference throws and rolls the whole send back.
             $binder->bind($conversation, $message, $attachmentIds, $agent);
 
-            // A conversation that arrived by email is answered by email. One
-            // that arrived in the widget is already being answered there, and
-            // mailing as well would be the product talking over itself.
-            app(ConversationReplyMailer::class)->send($message);
-
             $previousStatus = (string) $conversation->status;
 
             $conversation->forceFill([
@@ -352,6 +347,12 @@ class AgentConversationController extends Controller
         $conversation->markReadFor($agent);
 
         event(new ConversationMessageCreated($message));
+
+        // After the commit, beside the event and for the same reason. The
+        // shipped queues set after_commit to false, so a worker could pick this
+        // up while the message row is still invisible to it -- and a rollback
+        // would otherwise leave an email queued for a reply that never existed.
+        app(ConversationReplyMailer::class)->send($message);
 
         return redirect()
             ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))

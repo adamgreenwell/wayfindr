@@ -6,6 +6,7 @@ use App\Models\ConversationMessage;
 use App\Models\Site;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
+use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
@@ -59,5 +60,28 @@ class ConversationReplyMessage extends Mailable
     public function content(): Content
     {
         return new Content(text: 'mail.conversation-reply');
+    }
+
+    /**
+     * The files the agent attached to this reply.
+     *
+     * Without these the agent is told the reply was sent while the visitor
+     * receives none of it -- and an attachment-only reply arrives as nothing
+     * but a signature.
+     *
+     * Streamed from the private disk the upload pipeline wrote them to (ADR
+     * 0007); the visitor never gets a URL into that store.
+     *
+     * @return list<Attachment>
+     */
+    public function attachments(): array
+    {
+        return $this->message->attachments
+            ->map(fn ($attachment) => Attachment::fromStorageDisk(
+                $attachment->storage_disk,
+                $attachment->storage_key,
+            )->as($attachment->original_filename)->withMime($attachment->mime_type))
+            ->values()
+            ->all();
     }
 }

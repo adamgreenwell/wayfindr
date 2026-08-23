@@ -770,6 +770,43 @@ class AgentSiteController extends Controller
      * Its own method for the reason updateAvailability() is: one form must not
      * be able to blank another's fields by omitting them.
      */
+    /**
+     * The address visitors write to for this site.
+     *
+     * Its own action, like the schedule and the appearance beside it: one form
+     * must not be able to blank another's fields by omitting them. Without this
+     * the column existed and nothing ever populated it, so every delivery was
+     * ignored and the channel was unreachable without editing the database.
+     */
+    public function updateInboundAddress(Request $request, Site $site): RedirectResponse
+    {
+        $this->authorizeSiteAbility($request, 'view', $site, 404);
+        $this->authorizeSiteAbility($request, 'update', $site);
+
+        $validated = $request->validate([
+            'inbound_address' => ['nullable', 'string', 'email:filter', 'max:255'],
+        ]);
+
+        // Normalised before the uniqueness check, or Support@x and support@x
+        // are two addresses to the database and one to every mail server.
+        $address = strtolower(trim((string) ($validated['inbound_address'] ?? '')));
+
+        if ($address !== '' && Site::query()
+            ->whereKeyNot($site->getKey())
+            ->whereRaw('LOWER(inbound_address) = ?', [$address])
+            ->exists()) {
+            throw ValidationException::withMessages([
+                'inbound_address' => 'Another site already receives mail at that address.',
+            ]);
+        }
+
+        $site->forceFill(['inbound_address' => $address === '' ? null : $address])->save();
+
+        return redirect()
+            ->route('dashboard.sites.show', $site)
+            ->with('status', $address === '' ? 'Inbound email turned off.' : 'Inbound email address saved.');
+    }
+
     public function updateAppearance(Request $request, Site $site): RedirectResponse
     {
         $this->authorizeSiteAbility($request, 'view', $site, 404);
