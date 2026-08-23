@@ -513,18 +513,29 @@ class AgentTicketController extends Controller
         ]);
 
         $pendingNote = trim((string) ($validated['pending_note'] ?? ''));
+        $previousStatus = (string) $ticket->status;
+        $metadata = $pendingNote === '' ? [] : ['pending_note' => $pendingNote];
 
         $ticket->forceFill([
             'status' => 'pending',
             'closed_at' => null,
         ])->save();
 
-        $this->recordActivity(
-            $ticket,
-            $agent,
-            'ticket.pending',
-            $pendingNote === '' ? [] : ['pending_note' => $pendingNote],
-        );
+        // Leaving `closed` is a REOPEN, whichever button did it. The form is
+        // only offered for open tickets, so this is a stale or crafted submit
+        // -- but it still un-closes the ticket, and recording only the hold
+        // would leave the resolution looking like it held while the ticket
+        // quietly went back to work. Every duration measured afterwards would
+        // run from the original start.
+        if ($previousStatus === 'closed') {
+            $this->recordActivity($ticket, $agent, 'ticket.reopened', $metadata);
+        }
+
+        // Only a transition is an event: a ticket already on hold does not go
+        // on hold again.
+        if ($previousStatus !== 'pending') {
+            $this->recordActivity($ticket, $agent, 'ticket.pending', $metadata);
+        }
 
         return $this->redirectAfterUpdate($ticket, $request, 'Ticket marked pending.');
     }

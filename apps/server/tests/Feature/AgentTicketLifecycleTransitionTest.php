@@ -119,3 +119,35 @@ test('reopening a closed ticket twice records one reopen', function (): void {
     expect(array_filter(ticketTransitionActions($w['ticket']), fn (string $a): bool => $a === 'ticket.reopened'))
         ->toHaveCount(1);
 });
+
+test('marking a closed ticket pending records the reopen it performs', function (): void {
+    // The form is only offered for open tickets, so this is a stale or crafted
+    // submit -- but it still un-closes the ticket, and recording only the hold
+    // would leave the resolution looking like it held.
+    $w = ticketTransitionWorld('closed');
+
+    $this->actingAs($w['agent'])->post(route('dashboard.tickets.pending', $w['ticket']), []);
+
+    expect(ticketTransitionActions($w['ticket']))->toContain('ticket.reopened')
+        ->and(ticketTransitionActions($w['ticket']))->toContain('ticket.pending')
+        ->and($w['ticket']->fresh()->status)->toBe('pending')
+        ->and($w['ticket']->fresh()->closed_at)->toBeNull();
+});
+
+test('marking an open ticket pending records only the hold', function (): void {
+    $w = ticketTransitionWorld('open');
+
+    $this->actingAs($w['agent'])->post(route('dashboard.tickets.pending', $w['ticket']), []);
+
+    expect(ticketTransitionActions($w['ticket']))->not->toContain('ticket.reopened')
+        ->and(ticketTransitionActions($w['ticket']))->toContain('ticket.pending');
+});
+
+test('marking a pending ticket pending again records nothing', function (): void {
+    $w = ticketTransitionWorld('pending');
+
+    $this->actingAs($w['agent'])->post(route('dashboard.tickets.pending', $w['ticket']), []);
+
+    expect(array_filter(ticketTransitionActions($w['ticket']), fn (string $a): bool => $a === 'ticket.pending'))
+        ->toHaveCount(0);
+});

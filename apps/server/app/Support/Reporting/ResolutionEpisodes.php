@@ -136,6 +136,22 @@ final class ResolutionEpisodes
                     // from a genuine reopen -- unless the `pending` that
                     // preceded it is also on record, which it is.
                     if ($pendingAction !== null && $event->action === $pendingAction) {
+                        // A hold beginning while CLOSED is a reopen in
+                        // substance -- the subject left the closed state -- and
+                        // history written before the write path recorded that
+                        // has only the hold to show for it. Counting it starts
+                        // a new episode, so the close that follows is measured
+                        // from here rather than from a start several
+                        // resolutions old.
+                        if ($state === self::CLOSED) {
+                            $episodeStart = $at;
+                            $episodeStartIsKnown = true;
+
+                            if ($inWindow) {
+                                $reopens[] = self::entry($at, $event);
+                            }
+                        }
+
                         $state = self::PENDING;
 
                         continue;

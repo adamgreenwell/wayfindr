@@ -512,3 +512,47 @@ test('reopens are named even when every close in range is unmeasurable', functio
         ->assertSee('reopened in this period')
         ->assertSee('countable even where the durations are not');
 });
+
+test('a hold that begins while closed starts a new episode', function (): void {
+    // History written before the write path recorded the reopen: a stale
+    // "Mark pending" against a closed ticket un-closed it and left only
+    // `ticket.pending` behind. Without treating that as a reopen, the next
+    // close is a second resolution measured from the ORIGINAL start -- a
+    // duration covering work that was already finished, with no failed
+    // resolution reported anywhere.
+    $w = ticketReportWorld();
+    $ticket = Ticket::factory()->for($w['account'])->for($w['site'])->create([
+        'created_at' => now()->subDays(20),
+    ]);
+
+    ticketEvent($ticket, $w['agent'], TicketReport::CLOSED, now()->subDays(15));
+    ticketEvent($ticket, $w['agent'], TicketReport::PENDING, now()->subDays(2));
+    ticketEvent($ticket, $w['agent'], TicketReport::CLOSED, now()->subDay());
+
+    $resolution = ticketReportFor($w)->resolution();
+
+    expect($resolution['reopened'])->toBe(1)
+        ->and($resolution['closed'])->toBe(2)
+        ->and($resolution['summary']->count)->toBe(2)
+        // The second episode ran from the hold, one day -- not from creation,
+        // nineteen.
+        ->and($resolution['summary']->median)->toBeLessThan(15 * 24 * 3600);
+});
+
+test('a hold that begins while open is still not a reopen', function (): void {
+    // The ordinary flow must not be swept up by the fix above.
+    $w = ticketReportWorld();
+    $ticket = Ticket::factory()->for($w['account'])->for($w['site'])->create([
+        'created_at' => now()->subDays(10),
+    ]);
+
+    ticketEvent($ticket, $w['agent'], TicketReport::PENDING, now()->subDays(5));
+    ticketEvent($ticket, $w['agent'], TicketReport::CLOSED, now()->subDay());
+
+    $resolution = ticketReportFor($w)->resolution();
+
+    expect($resolution['reopened'])->toBe(0)
+        ->and($resolution['summary']->count)->toBe(1)
+        // Measured from creation, because nothing reopened it.
+        ->and($resolution['summary']->median)->toBeGreaterThan(8 * 24 * 3600);
+});
