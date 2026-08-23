@@ -361,8 +361,12 @@
                 @if ($ticketHistoryBeganAt)
                     <div class="notice-copy">
                         <p>
-                            Ticket closes and reopens have been recorded since long before the conversation
-                            ones &mdash; on this install, since
+                            {{-- States this install's own date and nothing about how it compares to the
+                                 conversation one. On an install upgraded from before ticket auditing
+                                 existed the migration stamps today, which can be the same day as the
+                                 conversation boundary -- so "long before" would be false exactly where a
+                                 reader most needs the figure to be trustworthy. --}}
+                            This install began recording ticket closes and reopens on
                             {{ $ticketHistoryBeganAt->toFormattedDayDateString() }}. A ticket opened before
                             then may have been closed and reopened while nothing was writing it down, so it
                             is counted as a close and left out of the times here.

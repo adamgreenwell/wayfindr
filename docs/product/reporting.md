@@ -45,10 +45,13 @@ them as one dataset would be wrong.
 
 Each half therefore states **its own recording boundary**, stamped at migration
 time, and reports closes it cannot measure as *counted but not measured* rather
-than folding an unknowable duration into a median. The ticket boundary is
-usually much older than the conversation one. Neither is infinite: an install
-upgraded from before ticket auditing existed has tickets whose earlier closes
-were never written down.
+than folding an unknowable duration into a median.
+
+The page states each boundary as a date and says nothing about how they compare,
+because the comparison is not reliably true. On an install created after ticket
+auditing existed the ticket boundary is much older; on one upgraded from before
+it, the migration has nothing earlier to point at and stamps the date it ran —
+which can be the same day as the conversation boundary.
 
 ## Only a transition counts
 

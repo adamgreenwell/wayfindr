@@ -336,7 +336,10 @@ test('an empty ticket history does not claim nothing was closed when it cannot k
     $this->actingAs($w['agent'])
         ->get(route('dashboard.reports.index', ['report_days' => 30]))
         ->assertOk()
-        ->assertSee('Ticket closes and reopens have been recorded since long before')
+        // States this install's own date, without a claim about how it compares
+        // to the conversation boundary -- which can be the same day.
+        ->assertSee('This install began recording ticket closes and reopens on')
+        ->assertDontSee('long before the conversation')
         ->assertSee('No ticket close is on record in this period')
         ->assertDontSee('No ticket was closed in this period.');
 });
@@ -594,4 +597,17 @@ test('a hold on a ticket that was never closed adds nothing', function (): void 
     expect($resolution['reopened'])->toBe(0)
         ->and($resolution['closed'])->toBe(0)
         ->and($resolution['summary']->count)->toBe(0);
+});
+
+test('tickets are indexed for the date range the reports scan', function (): void {
+    // Structural, because a missing index is invisible in a suite with a
+    // handful of rows: correctness is identical and only a long-lived install
+    // feels it. `volume()` runs on every load of the page whichever tab is
+    // selected, so this one compounds faster than most.
+    $indexes = collect(DB::select("PRAGMA index_list('tickets')"))
+        ->map(fn (object $index): array => collect(DB::select('PRAGMA index_info('.$index->name.')'))
+            ->pluck('name')
+            ->all());
+
+    expect($indexes)->toContain(['site_id', 'created_at']);
 });
