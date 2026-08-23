@@ -16,6 +16,7 @@ use App\Http\Controllers\AgentDashboardController;
 use App\Http\Controllers\AgentExternalIssueProviderConnectionController;
 use App\Http\Controllers\AgentProfileController;
 use App\Http\Controllers\AgentReplyTemplateController;
+use App\Http\Controllers\AgentReportController;
 use App\Http\Controllers\AgentSiteController;
 use App\Http\Controllers\AgentSiteExternalIssueProjectController;
 use App\Http\Controllers\AgentSupportCodeLookupController;
@@ -94,6 +95,10 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.account.audit.index');
     Route::get('/dashboard/account/audit/export', [AgentAccountAuditController::class, 'export'])
         ->name('dashboard.account.audit.export');
+    Route::get('/dashboard/reports', [AgentReportController::class, 'index'])
+        ->name('dashboard.reports.index');
+    Route::get('/dashboard/reports/export', [AgentReportController::class, 'export'])
+        ->name('dashboard.reports.export');
     Route::get('/dashboard/account/labels', [AgentTicketLabelController::class, 'index'])
         ->name('dashboard.account.labels.index');
     Route::post('/dashboard/account/labels', [AgentTicketLabelController::class, 'store'])
