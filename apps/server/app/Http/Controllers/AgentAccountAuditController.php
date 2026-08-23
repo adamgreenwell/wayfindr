@@ -6,6 +6,7 @@ use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\BreakGlassGrant;
 use App\Models\CobrowseSession;
+use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
@@ -243,6 +244,8 @@ class AgentAccountAuditController extends Controller
                         ->orWhereHasMorph('subject', [Site::class], fn (Builder $query) => $query
                             ->whereLike('name', $searchPattern)
                             ->orWhereLike('domain', $searchPattern))
+                        ->orWhereHasMorph('subject', [Conversation::class], fn (Builder $query) => $query
+                            ->whereLike('support_code', $searchPattern))
                         ->orWhereHasMorph('subject', [CobrowseSession::class], fn (Builder $query) => $query
                             ->whereHas('conversation', fn (Builder $query) => $query->whereLike('support_code', $searchPattern)))
                         // Break-glass subjects surface their reference-safe
@@ -324,6 +327,14 @@ class AgentAccountAuditController extends Controller
 
         if ($event->subject instanceof Site) {
             return $event->subject->name;
+        }
+
+        if ($event->subject instanceof Conversation) {
+            // The support code, not the subject line: a subject is visitor-
+            // authored text and this page is exported. The code is a reference
+            // by construction, which is the same rule the break-glass labels
+            // and the cobrowse rows already follow.
+            return 'Conversation '.$event->subject->support_code;
         }
 
         if ($event->subject instanceof CobrowseSession) {

@@ -13,11 +13,13 @@ use App\Support\Attachments\AttachmentBinder;
 use App\Support\CobrowseAuditTrail;
 use App\Support\CobrowseConsentState;
 use App\Support\CobrowseResyncRequestPolicy;
+use App\Support\Conversations\ConversationLifecycleLog;
 use App\Support\Conversations\ConversationQueueQuery;
 use App\Support\ReplyTemplateOptions;
 use App\Support\TicketCategory;
 use App\Support\TicketPriority;
 use App\Support\VisitorContextSanitizer;
+use Carbon\CarbonInterface;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -322,6 +324,8 @@ class AgentConversationController extends Controller
             // reference throws and rolls the whole send back.
             $binder->bind($conversation, $message, $attachmentIds, $agent);
 
+            $previousStatus = (string) $conversation->status;
+
             $conversation->forceFill([
                 'assigned_agent_id' => $conversation->assigned_agent_id ?: $agent->id,
                 'status' => 'open',
@@ -329,6 +333,11 @@ class AgentConversationController extends Controller
                 'last_message_at' => $message->created_at,
                 'metadata' => $this->metadataWithoutAgentTypingSignal($conversation, $agent),
             ])->save();
+
+            // Replying to a closed conversation reopens it. That was silent
+            // before -- indistinguishable from any other message.
+            app(ConversationLifecycleLog::class)
+                ->replyReopenedIfClosed($conversation, $agent, $previousStatus);
 
             return $message;
         });
@@ -386,30 +395,81 @@ class AgentConversationController extends Controller
         return $metadata;
     }
 
-    public function close(Request $request, string $supportCode): RedirectResponse
+    /**
+     * Move a conversation to a status, and report what it was.
+     *
+     * The status is read from the locked row rather than from the instance the
+     * request loaded, so concurrent transitions serialise: the second one sees
+     * what the first actually did and records nothing.
+     */
+    private function transitionStatus(
+        Conversation $conversation,
+        string $status,
+        ?CarbonInterface $closedAt,
+        callable $record,
+    ): void {
+        DB::transaction(function () use ($conversation, $status, $closedAt, $record): void {
+            $locked = Conversation::query()->whereKey($conversation->getKey())->lockForUpdate()->first();
+            $previousStatus = (string) ($locked?->status ?? $conversation->status);
+
+            // Written through the LOCKED instance, not the one this request
+            // loaded before it waited. Eloquent compares against the original
+            // attributes it read: a reopen that loaded "open", then waited
+            // behind a close, would find "open" unchanged and omit status from
+            // the update -- leaving the row closed while the callback recorded
+            // a reopen that never happened.
+            $target = $locked ?? $conversation;
+
+            $target->forceFill([
+                'status' => $status,
+                'closed_at' => $closedAt,
+            ])->save();
+
+            // Keep the caller's instance honest about what is now stored.
+            $conversation->setRawAttributes($target->getAttributes(), true);
+
+            // Written while the lock is still held. Committing the status first
+            // and recording after lets a reopen that grabs the released lock
+            // insert its event ahead of the close's -- a reopen->close sequence
+            // for a conversation that ended up open, which is worse than no
+            // history at all. It also means a failed insert cannot leave a
+            // status change with nothing recording it.
+            $record($previousStatus);
+        });
+    }
+
+    public function close(Request $request, string $supportCode, ConversationLifecycleLog $lifecycle): RedirectResponse
     {
         $agent = $request->user();
         $conversation = $this->conversationForAgent($agent, $supportCode, 'updateStatus');
 
-        $conversation->forceFill([
-            'status' => 'closed',
-            'closed_at' => now(),
-        ])->save();
+        // Read and write under one lock. The transition guard alone only stops
+        // sequential retries: two concurrent closes both read "open" from their
+        // own instance and both record a close, which is the duplicate the
+        // guard exists to prevent.
+        $this->transitionStatus(
+            $conversation,
+            'closed',
+            now(),
+            fn (string $previousStatus) => $lifecycle->closed($conversation, $agent, $previousStatus),
+        );
 
         return redirect()
             ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
             ->with('status', 'Conversation closed.');
     }
 
-    public function reopen(Request $request, string $supportCode): RedirectResponse
+    public function reopen(Request $request, string $supportCode, ConversationLifecycleLog $lifecycle): RedirectResponse
     {
         $agent = $request->user();
         $conversation = $this->conversationForAgent($agent, $supportCode, 'updateStatus');
 
-        $conversation->forceFill([
-            'status' => 'open',
-            'closed_at' => null,
-        ])->save();
+        $this->transitionStatus(
+            $conversation,
+            'open',
+            null,
+            fn (string $previousStatus) => $lifecycle->replyReopenedIfClosed($conversation, $agent, $previousStatus),
+        );
 
         return redirect()
             ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
