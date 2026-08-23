@@ -2,6 +2,7 @@
     $reportTabs = [
         ['id' => 'volume', 'label' => 'Volume'],
         ['id' => 'speed', 'label' => 'Speed'],
+        ['id' => 'tickets', 'label' => 'Tickets'],
         ['id' => 'agents', 'label' => 'Agents'],
         // Its own tab, not a row under Speed. Every other tab answers how fast
         // the desk moved; this one answers whether that helped, and a desk can
@@ -210,6 +211,133 @@
                                     <td>{{ $resolution['reopened_by_visitor'] }}</td>
                                     <td class="lede">The visitor came back rather than an agent reopening it &mdash; the clearest signal the answer did not land.</td>
                                 </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
+            </section>
+        </x-tab-panel>
+
+        <x-tab-panel id="tickets">
+            <section class="section" aria-labelledby="report-ticket-volume-heading">
+                <div class="section-header">
+                    <div>
+                        <h2 id="report-ticket-volume-heading">Ticket volume</h2>
+                        <p class="lede">
+                            {{ $ticketVolume['opened_total'] }} created ·
+                            {{ $ticketVolume['closed_total'] }} closed ·
+                            {{ $ticketVolume['open_now'] }} open now
+                        </p>
+                    </div>
+                </div>
+
+                @if ($ticketVolume['opened_total'] === 0 && $ticketVolume['closed_total'] === 0)
+                    <div class="notice-copy">
+                        <p>No ticket was created or closed in this period.</p>
+                    </div>
+                @else
+                    {{-- The same chart the conversation tab draws. Its classes
+                         are the ones with CSS behind them; a second set invented
+                         here would render as an unstyled column of divs. --}}
+                    <div
+                        class="chart"
+                        role="img"
+                        aria-label="Tickets per day. {{ $ticketVolume['opened_total'] }} created and {{ $ticketVolume['closed_total'] }} closed over the {{ $window->days }} days ending {{ $window->end->toFormattedDayDateString() }}. The busiest day had {{ $ticketChart['max'] }}."
+                    >
+                        @foreach ($ticketChart['days'] as $day)
+                            <div class="chart__day" title="{{ $day['label'] }}: {{ $day['opened'] }} created, {{ $day['closed'] }} closed">
+                                <div class="chart__bars">
+                                    <div class="chart__bar chart__bar--opened @if ($day['opened'] === 0) chart__bar--none @endif" style="height: {{ $ticketChart['max'] === 0 ? 0 : round(($day['opened'] / $ticketChart['max']) * 100, 2) }}%"></div>
+                                    <div class="chart__bar chart__bar--closed @if ($day['closed'] === 0) chart__bar--none @endif" style="height: {{ $ticketChart['max'] === 0 ? 0 : round(($day['closed'] / $ticketChart['max']) * 100, 2) }}%"></div>
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                    <p class="chart-legend">
+                        <span class="chart-key chart-key--opened"></span> Created
+                        <span class="chart-key chart-key--closed"></span> Closed
+                        <span class="lede">Tallest day: {{ $ticketChart['max'] }}</span>
+                    </p>
+                @endif
+            </section>
+
+            <section class="section" aria-labelledby="report-ticket-resolution-heading">
+                <div class="section-header">
+                    <div>
+                        <h2 id="report-ticket-resolution-heading">Ticket resolution</h2>
+                        <p class="lede">
+                            {{ $ticketResolution['closed'] }}
+                            {{ $ticketResolution['closed'] === 1 ? 'close' : 'closes' }} measured
+                        </p>
+                    </div>
+                </div>
+
+                @if ($ticketResolution['summary']->count === 0)
+                    <div class="notice-copy">
+                        <p>No ticket was closed in this period.</p>
+                    </div>
+                @else
+                    <div class="table-wrap">
+                        <table>
+                            <tbody>
+                                <tr>
+                                    <th scope="row">Median</th>
+                                    <td>{{ $ticketResolution['summary']->medianLabel() }}</td>
+                                    <td class="lede">Half of tickets were resolved faster than this.</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">90th percentile</th>
+                                    <td>{{ $ticketResolution['summary']->p90Label() }}</td>
+                                    <td class="lede">The slowest tenth took at least this long.</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Reopened</th>
+                                    <td>{{ $ticketResolution['reopened'] }}</td>
+                                    <td class="lede">A resolution that did not hold. Each reopen starts a new episode, so a ticket closed three times contributes three resolutions rather than one long one.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="notice-copy">
+                        <p>
+                            These figures carry <strong>no recording-start caveat</strong>. Ticket closes and
+                            reopens have been recorded since long before the conversation ones, so every close
+                            in this period is measurable.
+                        </p>
+                    </div>
+                @endif
+            </section>
+
+            <section class="section" aria-labelledby="report-ticket-agents-heading">
+                <div class="section-header">
+                    <div>
+                        <h2 id="report-ticket-agents-heading">Who carried the ticket work</h2>
+                    </div>
+                </div>
+
+                @if ($ticketAgentActivity === [])
+                    <div class="notice-copy">
+                        <p>No ticket replies or closes in this period.</p>
+                    </div>
+                @else
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Agent</th>
+                                    <th scope="col">Replies sent</th>
+                                    <th scope="col">Tickets closed</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($ticketAgentActivity as $row)
+                                    <tr>
+                                        <td>{{ $row['name'] }}</td>
+                                        <td>{{ $row['replies'] }}</td>
+                                        <td>{{ $row['closes'] }}</td>
+                                    </tr>
+                                @endforeach
                             </tbody>
                         </table>
                     </div>
