@@ -19,6 +19,37 @@ public APIs, dashboard flows, commands, authorization, and persistence behavior.
 Use architecture tests for durable project rules that should stay true across
 many future slices.
 
+## Database Drivers in Tests
+
+The suite runs on SQLite (`phpunit.xml` pins `DB_CONNECTION=sqlite`,
+`DB_DATABASE=:memory:`) and CI installs `pdo_sqlite` with no database service
+container. Every documented install runs PostgreSQL.
+
+**So a query that is valid only on PostgreSQL passes CI and fails in
+production, and one that is valid only on SQLite passes CI and fails
+everywhere.** This is the sharpest edge in the repository's test setup, because
+the failure is invisible in the place you would look for it.
+
+Two rules follow, and the code that already obeys them is worth copying:
+
+- **No date truncation or grouping in SQL.** `date_trunc` is PostgreSQL,
+  `strftime` is SQLite, and there is no portable third spelling. Reporting
+  streams rows and buckets them in PHP instead — see
+  `App\Support\Reporting\ReportingWindow`.
+- **Raw SQL wraps its identifiers through the grammar.**
+  `ConversationQueueQuery::whereLiteralLike()` is the house technique: build the
+  expression with `$query->getQuery()->getGrammar()->wrap($column)` so quoting
+  follows the driver.
+
+There is no `getDriverName()` branching anywhere in `apps/server/app`, and
+adding some would mean CI could only ever exercise one side of the branch.
+Prefer a portable expression, or move the work into PHP.
+
+A related trap that has already bitten: `notifications.data` is a `text` column,
+so a JSON-path `where` breaks on PostgreSQL while SQLite tolerates it.
+`audit_events.metadata` is a real `json` column and does support JSON paths. The
+column type decides, not the table's appearance.
+
 ## Public-Info Boundary Check
 
 Run the repository boundary guard from the root before opening a pull request:

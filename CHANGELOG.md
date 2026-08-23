@@ -83,6 +83,33 @@ missed while skimming.
 
   Sites that configure nothing ask nothing, exactly as before.
 
+- **Reports.** Wayfindr shipped 39 controllers and none of them answered "are we
+  getting faster, and who is carrying the queue?". Five were dedicated to
+  operator settings and none to whether support delivered through the product was
+  working.
+
+  **Reports** in the sidebar, for admins and owners: conversations opened and
+  closed per day, first-response and resolution time, how often a resolution did
+  not hold, and replies and closes per agent. Range of 7, 30 or 90 days, one site
+  or all of them, and CSV for the daily series and the agent table.
+
+  Times are reported as a median and a 90th percentile rather than an average.
+  Support work is long-tailed — most replies are quick and a few take a day — so
+  an average sits in the gap between the two and describes neither.
+
+  **Two of the numbers are older than the others, and the page says which.**
+  Conversations opened and first-response times reach back through the whole life
+  of your install. Closes, resolution times and reopens are read from the
+  lifecycle records described below, so they begin the day that release was
+  installed — before it, closes overwrote each other and nothing can recover
+  them. The page names that date rather than drawing a flat line you might read
+  as a quiet month.
+
+  Archived sites still count toward history: archiving takes a site out of
+  service without destroying anything, and tidying one up should not rewrite last
+  quarter's numbers. Purging still removes its history, and that is what purging
+  is for.
+
 - **Conversation closes and reopens are recorded.** They were not, and the
   consequence was quiet: `closed_at` holds only the most recent close, so it is
   overwritten every time a conversation comes back. A visitor replying to a

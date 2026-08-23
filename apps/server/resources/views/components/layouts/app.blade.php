@@ -1578,6 +1578,96 @@
             overflow-x: auto;
         }
 
+        /*
+         * The first chart in the product, and deliberately the plainest thing
+         * that answers the question (ADR 0014). Bars are divs rather than SVG:
+         * the shape is one rectangle per day, and CSS already knows how to lay
+         * that out responsively without a viewBox to keep in sync.
+         *
+         * Opened is filled, closed is outlined -- the pair stays distinguishable
+         * in monochrome, at a glance, and for a reader who does not separate the
+         * two hues.
+         */
+        .chart-scroll {
+            overflow-x: auto;
+        }
+
+        .chart {
+            display: flex;
+            align-items: flex-end;
+            gap: var(--wf-space-1);
+            min-height: 140px;
+            padding-top: var(--wf-space-3);
+            border-bottom: 1px solid var(--wf-rule-firm);
+        }
+
+        .chart__day {
+            flex: 1 0 14px;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            height: 140px;
+        }
+
+        .chart__bars {
+            display: flex;
+            align-items: flex-end;
+            gap: 1px;
+            width: 100%;
+            height: 100%;
+        }
+
+        .chart__bar {
+            flex: 1;
+            /* A day with one conversation must not vanish into the axis. */
+            min-height: 1px;
+        }
+
+        .chart__bar--opened {
+            background: var(--wf-brand);
+        }
+
+        .chart__bar--closed {
+            border: 1px solid var(--wf-brand);
+            border-bottom: 0;
+            background: transparent;
+        }
+
+        /* ...but a day with none must draw nothing. Without this the minimum
+           above leaves a sliver on every empty day, so a quiet week reads as a
+           busy one.
+
+           Deliberately doubled up on the block class, and deliberately after
+           the variant rules: at equal specificity `--closed` came later and put
+           its 1px border back, so the sliver survived a fix that looked
+           correct in the markup. */
+        .chart__bar.chart__bar--none {
+            min-height: 0;
+            border: 0;
+        }
+
+        .chart-legend {
+            display: flex;
+            align-items: center;
+            gap: var(--wf-space-2);
+            font-size: var(--wf-text-ui);
+            color: var(--wf-muted);
+        }
+
+        .chart-key {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+        }
+
+        .chart-key--opened {
+            background: var(--wf-brand);
+        }
+
+        .chart-key--closed {
+            border: 1px solid var(--wf-brand);
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;
@@ -2661,6 +2751,13 @@
                 ['label' => 'Alerts', 'icon' => 'alerts', 'href' => route('dashboard.alerts.index'), 'active' => request()->routeIs('dashboard.alerts.*')],
                 ['label' => 'Visitors', 'icon' => 'visitors', 'href' => route('dashboard.visitors.index'), 'active' => request()->routeIs('dashboard.visitors.*')],
             ];
+
+            // Reporting is account-wide by nature -- it aggregates across every
+            // site an agent can see -- so it is admin-only, matching the audit
+            // page whose records it reads.
+            if ($agent->isAdmin()) {
+                $workItems[] = ['label' => 'Reports', 'icon' => 'reports', 'href' => route('dashboard.reports.index'), 'active' => request()->routeIs('dashboard.reports.*')];
+            }
 
             $manageItems = [
                 ['label' => 'Sites', 'icon' => 'sites', 'href' => route('dashboard.sites.index'), 'active' => request()->routeIs('dashboard.sites.*')],
