@@ -105,6 +105,13 @@ A conversation or ticket outside the token's reach returns **404, not 403**.
 Telling a caller that a support code exists but is not theirs confirms it
 exists, and support codes are short.
 
+**Archived sites are still readable.** Archiving takes a site out of service —
+its widget stops serving and it stops accepting inbound mail — but it does not
+delete what happened on it, and the dashboard still shows that history. An API
+that dropped archived sites would make a year of transcripts vanish from an
+integration the day somebody tidied up. **Purging** is the operation that
+removes data, and it removes it from here too.
+
 **Operator access grants do not extend to tokens.** A break-glass grant widens
 what a *person* can see, under an approval trail, for a bounded window
 ([ADR 0008](../decisions/0008-platform-operator-break-glass.md)). A token has no

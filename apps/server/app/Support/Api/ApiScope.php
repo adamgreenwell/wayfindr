@@ -56,6 +56,16 @@ final class ApiScope
      */
     public function siteIdsQuery(): Builder
     {
+        // Archived sites INCLUDED, matching `ReportingScope`. Archiving takes
+        // a site out of service; it does not delete what happened on it, and a
+        // read surface that dropped an archived site would make a year of
+        // transcripts vanish from an integration the day somebody tidied up.
+        // Purging is the operation that removes data, and it removes these rows
+        // too.
+        //
+        // The write surface will need the opposite rule -- an archived site
+        // stops accepting new work, exactly as the inbound mail router already
+        // refuses it.
         $query = Site::query()
             ->select('sites.id')
             ->where('sites.account_id', $this->token->account_id);

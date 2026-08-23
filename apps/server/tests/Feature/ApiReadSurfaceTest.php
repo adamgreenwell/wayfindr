@@ -281,3 +281,38 @@ test('scoping does not bind one parameter per site', function (): void {
 
     expect($widest)->toBeLessThan(20);
 });
+
+test('archiving a site does not make its history disappear from the API', function (): void {
+    // Archiving takes a site out of service; it does not delete what happened
+    // on it. A read surface that dropped archived sites would make a year of
+    // transcripts vanish from an integration the day somebody tidied up --
+    // and the dashboard would still be showing them.
+    //
+    // Matches ReportingScope, which includes archived sites for the same
+    // reason. Purging is the operation that removes data.
+    $w = readWorld();
+
+    $w['site']->forceFill(['archived_at' => now()])->save();
+
+    $codes = collect(readGet($this, $w, '/api/v1/conversations')->assertOk()->json('data'))->pluck('support_code');
+
+    expect($codes->all())->toBe(['WF-MINE01'])
+        ->and(readGet($this, $w, '/api/v1/me')->json('data.site_ids'))->toBe([$w['site']->id]);
+
+    readGet($this, $w, '/api/v1/conversations/WF-MINE01')->assertOk();
+});
+
+test('purging a site does remove it from the API', function (): void {
+    // The distinction the test above depends on: archive hides a site from
+    // service, purge destroys its data. If purge did not clear the API too,
+    // "purged" would mean something different to an integration than it does
+    // to the dashboard.
+    $w = readWorld();
+
+    $w['site']->delete();
+
+    expect(readGet($this, $w, '/api/v1/conversations')->assertOk()->json('data'))->toBe([])
+        ->and(readGet($this, $w, '/api/v1/me')->json('data.site_ids'))->toBe([]);
+
+    readGet($this, $w, '/api/v1/conversations/WF-MINE01')->assertNotFound();
+});

@@ -95,6 +95,17 @@ sites are all gone reaches nothing.
 Abilities are coarse and deny-by-default: `read` grants the read surface,
 individual write abilities are named, and anything not granted is refused.
 
+**Archived sites remain readable**, matching `ReportingScope` rather than the
+widget and inbound-mail paths, which refuse them. The difference is what the
+surface is for: archiving takes a site out of *service*, and a read surface is
+not service. Dropping archived sites here would make a year of transcripts
+vanish from an integration the day somebody tidied up, while the dashboard
+carried on showing them. Purge is the operation that removes data.
+
+The write surface will need the opposite rule, and this is the reason to state
+the read rule explicitly rather than let it be inferred: an archived site stops
+accepting new work.
+
 ### Break-glass grants do not extend to tokens
 
 A break-glass grant widens what a *person* can see, under an approval trail,
