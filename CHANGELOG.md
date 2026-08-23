@@ -62,6 +62,27 @@ missed while skimming.
   is shown to every visitor of that site, so keep it free of anything private;
   the schedule itself is never sent to the widget.
 
+- **You can ask a visitor who they are before the conversation starts.** An
+  anonymous visitor — most traffic on most sites — started with no name, no email
+  and no stated reason, and ended with no way to be reached about anything
+  unresolved. `name` and `email` have been columns on the visitor record since the
+  first release and nothing ever filled them in.
+
+  Under **Sites → the site → What to ask before a conversation starts**, each of
+  name, email and reason can be off, optional, or required. Name and email are
+  remembered for the visitor's next visit; the reason belongs to the conversation
+  it was given for.
+
+  **A question already answered is not asked again** — a stored name or email
+  turns that field off on the next visit, and a stored address also satisfies the
+  out-of-hours rule. The reason is asked each time, because it belongs to the
+  conversation it was given for.
+
+  **Out of hours an email is required**, whatever you otherwise ask, because it
+  is the only way back to somebody who arrived at 3am.
+
+  Sites that configure nothing ask nothing, exactly as before.
+
 ### Fixed
 
 - **The installer no longer sends you to the old readiness address.** Its closing

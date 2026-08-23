@@ -842,6 +842,73 @@
                 @endif
             </section>
 
+            <section class="section" aria-labelledby="visitor-intake-heading">
+                <div class="section-header">
+                    <div>
+                        <h2 id="visitor-intake-heading">What to ask before a conversation starts</h2>
+                        <p class="lede">An anonymous visitor leaves no way to reach them once the chat ends.</p>
+                    </div>
+                    <span class="lede">{{ $intake->asks() ? 'Asking' : 'Asking nothing' }}</span>
+                </div>
+
+                @if ($canUpdateSite)
+                    <form class="section-form" method="POST" action="{{ route('dashboard.sites.intake.update', $site) }}">
+                        @csrf
+                        @method('PUT')
+
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr><th>Ask for</th><th>Off</th><th>Optional</th><th>Required</th></tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (\App\Support\Sites\SiteIntake::FIELDS as $field)
+                                        <tr>
+                                            <td>{{ ucfirst($field) }}</td>
+                                            @foreach ([\App\Support\Sites\SiteIntake::OFF, \App\Support\Sites\SiteIntake::OPTIONAL, \App\Support\Sites\SiteIntake::REQUIRED] as $mode)
+                                                <td>
+                                                    <input type="radio" name="intake_fields[{{ $field }}]" value="{{ $mode }}"
+                                                        aria-label="{{ ucfirst($field) }} {{ $mode }}"
+                                                        @checked(old('intake_fields.'.$field, $intake->fields[$field]) === $mode)>
+                                                </td>
+                                            @endforeach
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <p class="field-help">
+                            A visitor who has already answered is not asked again: a name or email you hold turns
+                            that question off on their next conversation, and a stored address also covers the
+                            out-of-hours rule. A reason is asked every time, because it belongs to the conversation.
+                        </p>
+                        <p class="field-help">
+                            Being identified through the SDK does not by itself skip these questions. That
+                            identifier is supplied by your own page and could be set by anyone, so it cannot
+                            switch off something you made required. Out of hours an email is always asked for
+                            unless you already have one.
+                        </p>
+
+                        <div class="field">
+                            <label for="intake_intro">What to say above the form</label>
+                            <textarea id="intake_intro" name="intake_intro" rows="2"
+                                placeholder="Tell us who you are so we can get back to you.">{{ old('intake_intro', $intake->intro) }}</textarea>
+                            <p class="field-help">Written in your visitors' language, and shown to all of them.</p>
+                            @error('intake_intro')
+                                <p class="field-error">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <button class="button" type="submit">Save visitor intake</button>
+                    </form>
+                @else
+                    <div class="notice-copy">
+                        <p>Only an account admin can change what visitors are asked.</p>
+                    </div>
+                @endif
+            </section>
+
             <section class="section" aria-labelledby="privacy-settings-heading">
                 <div class="section-header">
                     <h2 id="privacy-settings-heading">Mask selectors</h2>
