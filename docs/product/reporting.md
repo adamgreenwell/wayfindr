@@ -39,9 +39,13 @@ audit page's export conventions.
 ## Two halves with different memories
 
 Conversation lifecycle events began on 22 August; ticket closes and reopens have
-been audited since 24 May. So on most installs the ticket tab can describe a
-full quarter while the conversation tabs are still accumulating, and reading
-them as one dataset would be wrong.
+been audited since 24 May. So an install that has been *running* since May can
+describe a full quarter of ticket work while its conversation tabs are still
+accumulating, and reading them as one dataset would be wrong.
+
+That is a fact about the product rather than about your install. An install
+upgraded from before ticket auditing existed has no ticket events older than the
+upgrade, and its two boundaries can be the same day.
 
 Each half therefore states **its own recording boundary**, stamped at migration
 time, and reports closes it cannot measure as *counted but not measured* rather

@@ -14,8 +14,14 @@ use Illuminate\Database\Eloquent\Builder;
  *
  * Reports launched covering conversations only, whose lifecycle events began
  * on 22 August. Ticket lifecycle -- `ticket.closed`, `ticket.reopened` -- has
- * been audited since 24 May, so this half can describe a full quarter on
- * installs where the conversation half is still accumulating.
+ * been audited since 24 May, so an install that has been RUNNING since then can
+ * describe a full quarter of ticket work while its conversation half is still
+ * accumulating.
+ *
+ * That is a fact about the product, not about every install. One upgraded from
+ * before ticket auditing existed has no ticket events older than the upgrade,
+ * and its boundary can land on the same day as the conversation one -- which is
+ * why nothing here asserts an order between the two.
  *
  * This has its OWN recording boundary, and the first version wrongly claimed
  * it needed none. "Ticket events predate every install that has tickets" is
