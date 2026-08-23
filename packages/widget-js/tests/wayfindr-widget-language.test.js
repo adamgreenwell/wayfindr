@@ -31,7 +31,7 @@ async function settle() {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
-function widgetSpeaking({ requested, browser, siteLocale } = {}) {
+function widgetSpeaking({ requested, browser, siteLocale, siteRef, cobrowse, supportCode, intake } = {}) {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
     url: 'https://shop.example.test/',
   });
@@ -42,6 +42,16 @@ function widgetSpeaking({ requested, browser, siteLocale } = {}) {
     site.locale = siteLocale;
   }
 
+  if (intake) {
+    site.intake = intake;
+  }
+
+  // Lets a test change what the NEXT bootstrap answers -- an operator editing
+  // the site default while a panel is already open.
+  if (siteRef) {
+    siteRef.site = site;
+  }
+
   return Wayfindr.init({
     document: dom.window.document,
     location: dom.window.location,
@@ -50,10 +60,10 @@ function widgetSpeaking({ requested, browser, siteLocale } = {}) {
     apiBaseUrl: 'http://127.0.0.1:8000',
     sitePublicKey: 'site_public_shop',
     locale: requested,
-    storage: memoryStorage({
+    storage: memoryStorage(Object.assign({
       'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
       'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
-    }),
+    }, supportCode ? { 'wayfindr:site_public_shop:support-code': supportCode } : {})),
     mutationFlushMs: 0,
     cobrowseStatusPollMs: 0,
     messagePollMs: 0,
@@ -64,12 +74,20 @@ function widgetSpeaking({ requested, browser, siteLocale } = {}) {
         });
       }
 
+      if (url.includes('/cobrowse-consent')) {
+        return jsonResponse(200, { data: { cobrowse: { state: 'granted', consent: 'granted' } } });
+      }
+
       if (url.includes('/cobrowse')) {
-        return jsonResponse(200, { data: { cobrowse: { state: 'unavailable' } } });
+        return jsonResponse(200, { data: { cobrowse: { state: cobrowse || 'unavailable', requested_by: 'Sam' } } });
       }
 
       if (url.includes('/messages')) {
-        return jsonResponse(200, { data: { conversation: { support_code: 'WF-SHOP', status: 'open' }, messages: [] } });
+        return jsonResponse(200, { data: { conversation: { support_code: 'WF-SHOP', status: 'open' }, messages: [], message: { id: 1 } } });
+      }
+
+      if (url.endsWith('/api/conversations')) {
+        return jsonResponse(201, { data: { conversation: { support_code: 'WF-SHOP', status: 'open' } } });
       }
 
       return jsonResponse(200, { data: {} });
@@ -265,4 +283,87 @@ test('the panel anchors to the inline edge, so it flips with direction', () => {
   // Physical `right` would leave an Arabic widget pinned to the wrong corner.
   assert.ok(styles.includes('inset-inline-end:20px'), 'the launcher should anchor to the inline edge');
   assert.ok(!/\.wayfindr-widget\{position:fixed;right:/.test(styles), 'no physical right on the root');
+});
+
+// Three ways the widget could end up speaking two languages at once. All of
+// them are the same shape: the language is settled once, and something drawn
+// before or after that moment never hears about it.
+
+test('an operator clearing the site default stops the widget speaking it', async () => {
+  const ref = {};
+  const widget = widgetSpeaking({ siteLocale: 'de', siteRef: ref });
+
+  await widget.open();
+  await settle();
+  assert.equal(widget.root.lang, 'de');
+
+  // "Follow the visitor's browser" again: the next bootstrap carries null.
+  ref.site.locale = null;
+
+  widget.close();
+  await widget.open();
+  await settle();
+
+  assert.equal(widget.root.lang, 'en', 'a removed default must be cleared, not remembered');
+  assert.equal(chrome(widget).launcher.textContent, 'Chat with support');
+});
+
+test('every control the panel was drawn with is retranslated, not just some', async () => {
+  const widget = widgetSpeaking({ siteLocale: 'de' });
+
+  // The panel is built in English, because nothing has said German yet -- the
+  // site default only arrives with the bootstrap that opening triggers.
+  await widget.open();
+  await settle();
+
+  assert.equal(widget.root.lang, 'de');
+
+  const intakeSubmit = widget.root.querySelector('.wayfindr-widget__intake-submit');
+  const cobrowseDecline = widget.root.querySelector('.wayfindr-widget__cobrowse-decline');
+
+  assert.equal(chrome(widget).notice.textContent, 'Noch keine Nachrichten. Schreiben Sie uns, der Support sieht Ihre Nachricht hier.');
+  assert.equal(intakeSubmit.textContent, 'Weiter');
+  assert.equal(cobrowseDecline.textContent, 'Ablehnen');
+});
+
+test('a cobrowse decision answers in the language the panel is speaking', async () => {
+  // A conversation already exists, so the cobrowse controls are reachable
+  // without creating one first.
+  const widget = widgetSpeaking({ siteLocale: 'de', cobrowse: 'requested', supportCode: 'WF-SHOP' });
+
+  await widget.open();
+  await settle();
+  await widget.refreshCobrowseStatus();
+  await settle();
+
+  assert.equal(widget.root.lang, 'de');
+
+  widget.root.querySelector('.wayfindr-widget__cobrowse-allow').click();
+  await settle();
+
+  assert.equal(
+    widget.root.querySelector('.wayfindr-widget__status').textContent,
+    'Einwilligung zum Cobrowsing erteilt.',
+    'the outcome of a decision must not switch back to English'
+  );
+});
+
+test('the intake questions are drawn in the language, not translated after', async () => {
+  // The panel applies the language BEFORE it applies the intake state, so the
+  // form is built in the right language rather than corrected into it. That
+  // ordering is the whole reason these labels need no retranslation pass --
+  // reverse it and the questions render in English behind a German panel.
+  const widget = widgetSpeaking({
+    siteLocale: 'de',
+    intake: { asks: true, intro: null, fields: { name: 'required', email: 'optional', reason: 'off' } },
+  });
+
+  await widget.open();
+  await settle();
+
+  const fields = widget.root.querySelector('.wayfindr-widget__intake-fields');
+
+  assert.equal(widget.root.lang, 'de');
+  assert.equal(fields.querySelector('[name="name"]').parentNode.firstChild.nodeValue, 'Ihr Name');
+  assert.equal(fields.querySelector('[name="email"]').parentNode.firstChild.nodeValue, 'Ihre E-Mail-Adresse (optional)');
 });

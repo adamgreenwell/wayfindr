@@ -1026,7 +1026,11 @@
      * the visitor did not ask for.
      */
     function applyLocale(siteDefault) {
-      localePreferences.siteDefault = siteDefault || localePreferences.siteDefault;
+      // Assigned, not merged. `||` kept the last language an operator had set
+      // after they chose "follow the visitor's browser" again, so a panel left
+      // open went on speaking a default that no longer existed -- and bootstrap
+      // is refreshed on every open precisely so settings like this take effect.
+      localePreferences.siteDefault = siteDefault;
 
       var next = resolveLocale(localePreferences);
 
@@ -1082,7 +1086,32 @@
       refreshLabel = t('form.refresh');
       send.textContent = composerBusy ? t('status.sending') : sendLabel;
       refresh.textContent = refreshBusy ? t('status.refreshing') : refreshLabel;
+
+      var intakeSubmit = rootEl.querySelector('.wayfindr-widget__intake-submit');
+
+      if (intakeSubmit) {
+        intakeSubmit.textContent = t('intake.submit');
+      }
+
+      // The intake QUESTIONS need nothing here: applyBootstrapResult applies
+      // the language before it applies the intake state, so the form is rebuilt
+      // in the new language two lines later. Only the submit button above
+      // survives that rebuild, because it lives in the panel template.
+
+      // These regions each have a rule deciding what belongs in them, and
+      // calling it again is how they get retranslated without a second copy of
+      // that decision living here.
+      renderCobrowseConsent();
+
+      // Only the states that rule owns. A transient notice -- a send failure,
+      // a retry offer -- is not this function's to rewrite.
+      var noticeState = notice.hidden ? null : notice.getAttribute('data-state');
+
+      if (noticeState === 'empty' || noticeState === 'closed') {
+        renderConversationNotice();
+      }
     }
+
 
     function showNotice(state, copy, options) {
       options = options || {};
@@ -1566,6 +1595,9 @@
 
       cobrowse.hidden = !supportCode || (!requested && !granted);
       cobrowseAllow.textContent = t(granted ? 'cobrowse.stop' : 'cobrowse.allow');
+      // Its sibling was already kept current here; this one was drawn once with
+      // the panel and never spoken to again.
+      cobrowseDecline.textContent = t('cobrowse.decline');
       cobrowseDecline.hidden = granted;
       cobrowseCopy.textContent = granted
         ? (cobrowseVisitorNotice || t('cobrowse.active'))
@@ -2021,7 +2053,7 @@
           stopMutationStream();
         }
 
-        status.textContent = cobrowseGranted ? 'Cobrowse consent granted.' : 'Cobrowse consent revoked.';
+        status.textContent = t(cobrowseGranted ? 'cobrowse.granted' : 'cobrowse.revoked');
       } catch (error) {
         status.textContent = errorText(error, 'cobrowse.consentFailed');
       } finally {
