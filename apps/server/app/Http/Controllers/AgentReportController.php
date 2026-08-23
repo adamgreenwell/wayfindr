@@ -63,6 +63,7 @@ class AgentReportController extends Controller
             'ticketVolume' => $ticketVolume = $tickets->volume(),
             'ticketChart' => $this->chart($ticketVolume, $window),
             'ticketResolution' => $tickets->resolution(),
+            'ticketHistoryBeganAt' => $tickets->historyBeganAt(),
             'ticketAgentActivity' => $tickets->agentActivity(),
         ]);
     }

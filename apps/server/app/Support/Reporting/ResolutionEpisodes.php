@@ -24,7 +24,11 @@ final class ResolutionEpisodes
 {
     /**
      * @param  list<int>  $subjectIds
-     * @param  Collection<int, mixed>  $openedAt  Subject id => creation time.
+     * @param  callable(list<int>): Collection<int, mixed>  $openedAt  Creation
+     *                                                                 times for one chunk of ids. A callable rather than a prepared map,
+     *                                                                 because loading every creation time up front is one bind parameter per
+     *                                                                 subject and a busy quarter exceeds the driver's limit -- the page then
+     *                                                                 fails outright rather than being slow.
      * @param  CarbonImmutable|null  $recordingBeganAt  When this install's
      *                                                  history for THIS kind of subject became trustworthy, or null when it
      *                                                  always was. Tickets predate the reporting work; conversations do not.
@@ -35,7 +39,7 @@ final class ResolutionEpisodes
         string $closedAction,
         string $reopenedAction,
         array $subjectIds,
-        Collection $openedAt,
+        callable $openedAt,
         ReportingWindow $window,
         ?CarbonImmutable $recordingBeganAt,
     ): array {
@@ -45,6 +49,8 @@ final class ResolutionEpisodes
         // Chunked because a quarter of closes is an unbounded number of bind
         // parameters.
         foreach (array_chunk($subjectIds, 500) as $chunk) {
+            $created = $openedAt($chunk);
+
             $events = AuditEvent::query()
                 ->where('subject_type', $morphClass)
                 ->whereIn('subject_id', $chunk)
@@ -56,7 +62,7 @@ final class ResolutionEpisodes
                 ->get(['subject_id', 'action', 'occurred_at']);
 
             foreach ($events->groupBy('subject_id') as $subjectId => $subjectEvents) {
-                $start = $openedAt[(int) $subjectId] ?? null;
+                $start = $created[(int) $subjectId] ?? null;
 
                 if ($start === null) {
                     continue;

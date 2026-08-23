@@ -3,8 +3,10 @@
 namespace App\Support\Reporting;
 
 use App\Models\AuditEvent;
+use App\Models\OperatorSetting;
 use App\Models\Ticket;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -15,11 +17,17 @@ use Illuminate\Database\Eloquent\Builder;
  * been audited since 24 May, so this half can describe a full quarter on
  * installs where the conversation half is still accumulating.
  *
- * **No recording-start caveat applies here**, and that is the substantive
- * difference from SupportReport. `reporting.lifecycle_recording_began_at`
- * exists because conversation events are new; ticket events predate every
- * install that has tickets at all, so every close is measurable and the page
- * must not inherit an explanation that is not true of it.
+ * This has its OWN recording boundary, and the first version wrongly claimed
+ * it needed none. "Ticket events predate every install that has tickets" is
+ * true of installs created after ticket auditing existed and false of every
+ * install upgraded from before it -- where a ticket closed and reopened while
+ * nothing was writing `ticket.reopened`, then closed again inside a window, is
+ * measured from its original creation and inflates the median with work that
+ * was already finished.
+ *
+ * It is usually much older than the conversation one, which is the honest
+ * version of the original claim: this half still has the deeper history, it
+ * simply does not have infinite history.
  */
 final class TicketReport
 {
@@ -86,13 +94,13 @@ final class TicketReport
     }
 
     /**
-     * @return array{summary: DurationSummary, reopened: int, closed: int}
+     * @return array{summary: DurationSummary, reopened: int, closed: int, unmeasurable: int}
      */
     public function resolution(): array
     {
         return $this->once('resolution', function (): array {
             if ($this->scope->isEmpty()) {
-                return ['summary' => DurationSummary::empty(), 'reopened' => 0, 'closed' => 0];
+                return ['summary' => DurationSummary::empty(), 'reopened' => 0, 'closed' => 0, 'unmeasurable' => 0];
             }
 
             /** @var list<int> $ticketIds */
@@ -103,24 +111,23 @@ final class TicketReport
                 ->map(fn (int|string $id): int => (int) $id)
                 ->all();
 
-            $openedAt = Ticket::query()->whereIn('id', $ticketIds)->pluck('created_at', 'id');
-
             // The same walk the conversation half uses, so a ticket closed
             // three times contributes three resolutions rather than one long
             // one -- and the two halves cannot drift apart on what a resolution
-            // measures. Null recording start: ticket history has no floor.
-            ['durations' => $durations] = ResolutionEpisodes::walk(
+            // measures.
+            ['durations' => $durations, 'unmeasurable' => $unmeasurable] = ResolutionEpisodes::walk(
                 (new Ticket)->getMorphClass(),
                 self::CLOSED,
                 self::REOPENED,
                 $ticketIds,
-                $openedAt,
+                fn (array $chunk) => Ticket::query()->whereIn('id', $chunk)->pluck('created_at', 'id'),
                 $this->window,
-                null,
+                $this->historyBeganAt(),
             );
 
             return [
                 'summary' => DurationSummary::fromSeconds($durations),
+                'unmeasurable' => $unmeasurable,
                 'reopened' => $this->eventsInWindow(self::REOPENED)->count(),
                 'closed' => $this->eventsInWindow(self::CLOSED)->count(),
             ];
@@ -142,19 +149,23 @@ final class TicketReport
                 return [];
             }
 
+            // Counted in SQL, exactly as the conversation half counts. Reading
+            // every row back to tally them in PHP means a quarter of ticket
+            // activity crosses the wire to produce one integer per agent.
             $counts = [];
 
             foreach ([self::REPLY_SENT => 'replies', self::CLOSED => 'closes'] as $action => $key) {
-                $rows = $this->eventsInWindow($action)
+                $tallies = $this->eventsInWindow($action)
                     ->where('actor_type', User::class)
                     ->whereNotNull('actor_id')
-                    ->toBase()
-                    ->get(['actor_id']);
+                    ->selectRaw('actor_id, count(*) as aggregate')
+                    ->groupBy('actor_id')
+                    ->pluck('aggregate', 'actor_id');
 
-                foreach ($rows as $row) {
-                    $id = (int) $row->actor_id;
+                foreach ($tallies as $actorId => $aggregate) {
+                    $id = (int) $actorId;
                     $counts[$id] ??= ['replies' => 0, 'closes' => 0];
-                    $counts[$id][$key]++;
+                    $counts[$id][$key] = (int) $aggregate;
                 }
             }
 
@@ -178,6 +189,22 @@ final class TicketReport
             usort($rows, fn (array $a, array $b): int => ($b['replies'] + $b['closes']) <=> ($a['replies'] + $a['closes']));
 
             return $rows;
+        });
+    }
+
+    /**
+     * When this install's ticket history became trustworthy, or null when it
+     * always was -- an install with no tickets at the time has nothing that
+     * predates the boundary.
+     */
+    public function historyBeganAt(): ?CarbonImmutable
+    {
+        return $this->once('history', function (): ?CarbonImmutable {
+            $value = OperatorSetting::query()
+                ->where('key', 'reporting.ticket_lifecycle_recording_began_at')
+                ->value('value');
+
+            return is_string($value) && $value !== '' ? CarbonImmutable::parse($value) : null;
         });
     }
 

@@ -91,6 +91,17 @@ missed while skimming.
   mind replaces the answer rather than adding one, so a small number of
   responses cannot be swamped. A conversation that is reopened and closed again
   is asked afresh, because that is a genuinely different question.
+- **Reports cover tickets, not just conversations.** The reports page described
+  conversations only, while the ticket half of the desk &mdash; the half with the
+  longer history, since ticket closes and reopens have been audited far longer
+  &mdash; went unreported. Tickets now get their own tab: volume, resolution
+  times, reopens, and who carried the work, in the same shapes the conversation
+  tab uses. Both halves now measure a resolution through one shared walk, so
+  they cannot drift apart on what "resolution time" means &mdash; a ticket
+  closed three times contributes three resolutions rather than one long one.
+  Each half states its own recording boundary and reports closes it cannot
+  measure as *counted but not measured*, rather than folding an unknowable
+  duration into the median.
 
 - **A site can have support hours.** Until now the widget behaved identically at
   3pm Tuesday and 3am Sunday: a visitor arriving out of hours opened a

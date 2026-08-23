@@ -182,16 +182,12 @@ final class SupportReport
             // The walk itself lives in ResolutionEpisodes, shared with the
             // ticket half of this page. Two implementations of "measure from
             // the reopen that started it" is how the two come to disagree.
-            $openedAt = Conversation::query()
-                ->whereIn('id', $conversationIds)
-                ->pluck('created_at', 'id');
-
             ['durations' => $durations, 'unmeasurable' => $unmeasurable] = ResolutionEpisodes::walk(
                 (new Conversation)->getMorphClass(),
                 ConversationLifecycleLog::CLOSED,
                 ConversationLifecycleLog::REOPENED,
                 $conversationIds,
-                $openedAt,
+                fn (array $chunk) => Conversation::query()->whereIn('id', $chunk)->pluck('created_at', 'id'),
                 $this->window,
                 $this->historyBeganAt(),
             );

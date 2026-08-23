@@ -8,6 +8,9 @@ use App\Models\User;
 use App\Support\Reporting\ReportingScope;
 use App\Support\Reporting\ReportingWindow;
 use App\Support\Reporting\TicketReport;
+use Carbon\Carbon;
+use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface as DateTimeInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -38,6 +41,16 @@ function ticketEvent(Ticket $ticket, User $agent, string $action, $at): void
         'action' => $action,
         'metadata' => [],
         'occurred_at' => $at,
+    ]);
+}
+
+function stamp(string $key, DateTimeInterface $at): void
+{
+    DB::table('operator_settings')->insert([
+        'key' => $key,
+        'value' => CarbonImmutable::instance(Carbon::instance($at))->toDateTimeString(),
+        'created_at' => now(),
+        'updated_at' => now(),
     ]);
 }
 
@@ -82,22 +95,64 @@ test('resolution is measured from the reopen that started it, not from creation'
     expect(ticketReportFor($w)->resolution()['summary']->median)->toBeLessThan(2 * 24 * 3600);
 });
 
-test('ticket history carries no recording-start caveat', function (): void {
-    // reporting.lifecycle_recording_began_at exists because CONVERSATION events
-    // are new. Ticket events predate every install that has tickets, so a close
-    // on an old ticket is measurable and must not be dropped as unmeasurable.
+test('the conversation boundary does not apply to tickets', function (): void {
+    // Two separate keys, deliberately. The conversation boundary is recent and
+    // the ticket one is usually much older, so reading the wrong one would drop
+    // months of measurable ticket work.
     $w = ticketReportWorld();
-    DB::table('operator_settings')->insert([
-        'key' => 'reporting.lifecycle_recording_began_at',
-        'value' => now()->subDay()->toDateTimeString(),
-        'created_at' => now(),
-        'updated_at' => now(),
-    ]);
+    stamp('reporting.lifecycle_recording_began_at', now()->subDay());
 
     $ticket = Ticket::factory()->for($w['account'])->for($w['site'])->create(['created_at' => now()->subDays(20)]);
     ticketEvent($ticket, $w['agent'], TicketReport::CLOSED, now()->subHours(2));
 
     expect(ticketReportFor($w)->resolution()['summary']->count)->toBe(1);
+});
+
+test('a ticket older than this install\'s ticket recording is counted, not measured', function (): void {
+    // The first version of this report claimed tickets needed no boundary at
+    // all. False on an upgraded install: this ticket may have been closed and
+    // reopened while nothing was writing ticket.reopened, and measuring from
+    // creation charges the close with work that was already finished.
+    $w = ticketReportWorld();
+    stamp('reporting.ticket_lifecycle_recording_began_at', now()->subDays(10));
+
+    $ticket = Ticket::factory()->for($w['account'])->for($w['site'])->create(['created_at' => now()->subDays(60)]);
+    ticketEvent($ticket, $w['agent'], TicketReport::CLOSED, now()->subHours(2));
+
+    $resolution = ticketReportFor($w)->resolution();
+
+    expect($resolution['summary']->count)->toBe(0)
+        ->and($resolution['unmeasurable'])->toBe(1)
+        // Still a close. Dropping it from the total would understate the work.
+        ->and($resolution['closed'])->toBe(1);
+});
+
+test('a reopen after the boundary makes an old ticket measurable again', function (): void {
+    // The reopen IS the episode start, so however old the ticket is, everything
+    // needed to measure this close is on record.
+    $w = ticketReportWorld();
+    stamp('reporting.ticket_lifecycle_recording_began_at', now()->subDays(10));
+
+    $ticket = Ticket::factory()->for($w['account'])->for($w['site'])->create(['created_at' => now()->subDays(60)]);
+    ticketEvent($ticket, $w['agent'], TicketReport::REOPENED, now()->subDays(2));
+    ticketEvent($ticket, $w['agent'], TicketReport::CLOSED, now()->subDay());
+
+    $resolution = ticketReportFor($w)->resolution();
+
+    expect($resolution['summary']->count)->toBe(1)
+        ->and($resolution['unmeasurable'])->toBe(0)
+        ->and($resolution['summary']->median)->toBeLessThan(2 * 24 * 3600);
+});
+
+test('a ticket opened after the boundary is measured normally', function (): void {
+    $w = ticketReportWorld();
+    stamp('reporting.ticket_lifecycle_recording_began_at', now()->subDays(30));
+
+    $ticket = Ticket::factory()->for($w['account'])->for($w['site'])->create(['created_at' => now()->subDays(3)]);
+    ticketEvent($ticket, $w['agent'], TicketReport::CLOSED, now()->subDays(2));
+
+    expect(ticketReportFor($w)->resolution()['unmeasurable'])->toBe(0)
+        ->and(ticketReportFor($w)->resolution()['summary']->count)->toBe(1);
 });
 
 test('volume counts what opened and what closed in the window', function (): void {
@@ -156,9 +211,65 @@ test('the reports page shows the ticket half it used to ignore', function (): vo
         ->assertSee('Ticket volume')
         ->assertSee('Ticket resolution')
         ->assertSee('Who carried the ticket work')
-        // The caveat that belongs to the conversation half must not be
-        // repeated over figures it is not true of.
-        ->assertSee('no recording-start caveat')
+        // The ticket half states its OWN boundary. It must not repeat the
+        // conversation date, and it must not claim to have no boundary.
+        ->assertDontSee('no recording-start caveat')
         // And the chart uses the classes that have CSS behind them.
         ->assertSee('chart__bar chart__bar--opened', false);
+});
+
+test('no query binds more ids than the chunk size, however many tickets closed', function (): void {
+    // The invariant the 500-chunk loop exists for. It has no visible effect on
+    // a small install -- a report that loads every creation time up front
+    // returns the same numbers -- so it survived a refactor that hoisted the
+    // creation lookup out of the loop and only failed on a busy quarter, where
+    // the driver refuses the statement and the page 500s.
+    $w = ticketReportWorld();
+
+    $tickets = [];
+
+    for ($i = 0; $i < 1200; $i++) {
+        $tickets[] = [
+            'account_id' => $w['account']->id,
+            'site_id' => $w['site']->id,
+            'status' => 'closed',
+            'priority' => 'normal',
+            'subject' => 'Ticket '.$i,
+            'created_at' => now()->subDays(5),
+            'updated_at' => now()->subDays(5),
+        ];
+    }
+
+    DB::table('tickets')->insert($tickets);
+
+    $events = [];
+
+    foreach (DB::table('tickets')->pluck('id') as $id) {
+        $events[] = [
+            'account_id' => $w['account']->id,
+            'site_id' => $w['site']->id,
+            'actor_type' => User::class,
+            'actor_id' => $w['agent']->id,
+            'subject_type' => (new Ticket)->getMorphClass(),
+            'subject_id' => $id,
+            'action' => TicketReport::CLOSED,
+            'occurred_at' => now()->subDays(4),
+            'created_at' => now()->subDays(4),
+            'updated_at' => now()->subDays(4),
+        ];
+    }
+
+    DB::table('audit_events')->insert($events);
+
+    $widest = 0;
+
+    DB::listen(function ($query) use (&$widest): void {
+        $widest = max($widest, count($query->bindings));
+    });
+
+    $resolution = ticketReportFor($w)->resolution();
+
+    // Every ticket is still measured -- the chunking must not lose any.
+    expect($resolution['summary']->count)->toBe(1200)
+        ->and($widest)->toBeLessThanOrEqual(510);
 });

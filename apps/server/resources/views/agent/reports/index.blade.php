@@ -266,13 +266,24 @@
                     <div>
                         <h2 id="report-ticket-resolution-heading">Ticket resolution</h2>
                         <p class="lede">
-                            {{ $ticketResolution['closed'] }}
-                            {{ $ticketResolution['closed'] === 1 ? 'close' : 'closes' }} measured
+                            {{ $ticketResolution['summary']->count }}
+                            {{ $ticketResolution['summary']->count === 1 ? 'close' : 'closes' }} measured
                         </p>
                     </div>
                 </div>
 
-                @if ($ticketResolution['summary']->count === 0)
+                @if ($ticketResolution['summary']->count === 0 && $ticketResolution['unmeasurable'] > 0)
+                    {{-- Same shape as the conversation half: an upgraded install
+                         whose ticket closes all predate the boundary lands here,
+                         and "nothing was closed" would be false. --}}
+                    <div class="notice-copy">
+                        <p>
+                            {{ $ticketResolution['unmeasurable'] }} {{ $ticketResolution['unmeasurable'] === 1 ? 'ticket was' : 'tickets were' }} closed in this period, but
+                            {{ $ticketResolution['unmeasurable'] === 1 ? 'it' : 'they' }} opened before this install started recording ticket reopens, so how long the work took cannot be established.
+                            Resolution times will appear as tickets opened since then are closed.
+                        </p>
+                    </div>
+                @elseif ($ticketResolution['summary']->count === 0)
                     <div class="notice-copy">
                         <p>No ticket was closed in this period.</p>
                     </div>
@@ -290,6 +301,13 @@
                                     <td>{{ $ticketResolution['summary']->p90Label() }}</td>
                                     <td class="lede">The slowest tenth took at least this long.</td>
                                 </tr>
+                                @if ($ticketResolution['unmeasurable'] > 0)
+                                    <tr>
+                                        <th scope="row">Counted but not measured</th>
+                                        <td>{{ $ticketResolution['unmeasurable'] }}</td>
+                                        <td class="lede">Opened before this install started recording ticket reopens, so how long the work took cannot be established. Left out of the two figures above rather than inflating them.</td>
+                                    </tr>
+                                @endif
                                 <tr>
                                     <th scope="row">Reopened</th>
                                     <td>{{ $ticketResolution['reopened'] }}</td>
@@ -299,13 +317,17 @@
                         </table>
                     </div>
 
-                    <div class="notice-copy">
-                        <p>
-                            These figures carry <strong>no recording-start caveat</strong>. Ticket closes and
-                            reopens have been recorded since long before the conversation ones, so every close
-                            in this period is measurable.
-                        </p>
-                    </div>
+                    @if ($ticketHistoryBeganAt)
+                        <div class="notice-copy">
+                            <p>
+                                Ticket closes and reopens have been recorded since long before the conversation
+                                ones &mdash; on this install, since
+                                {{ $ticketHistoryBeganAt->toFormattedDayDateString() }}. A ticket opened before
+                                then may have been closed and reopened while nothing was writing it down, so it
+                                is counted as a close and left out of the times above.
+                            </p>
+                        </div>
+                    @endif
                 @endif
             </section>
 
