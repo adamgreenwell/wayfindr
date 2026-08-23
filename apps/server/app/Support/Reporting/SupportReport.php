@@ -7,6 +7,7 @@ namespace App\Support\Reporting;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\ConversationRating;
 use App\Models\OperatorSetting;
 use App\Models\User;
 use App\Support\Conversations\ConversationLifecycleLog;
@@ -260,6 +261,53 @@ final class SupportReport
                 // TEXT and breaks the same query on PostgreSQL.
                 'reopened_by_visitor' => (clone $reopened)->where('metadata->actor', 'visitor')->count(),
             ];
+        });
+    }
+
+    /**
+     * What visitors said about how it went.
+     *
+     * The only figure on this page that measures whether support WORKED. The
+     * rest describe how fast it moved, and a desk can improve every one of them
+     * while getting worse at helping people.
+     *
+     * `answered` and `closed` are both returned deliberately. A response rate
+     * on CSAT is low everywhere, and a non-response is NOT a neutral score --
+     * reporting an average without saying how few people answered is how a
+     * satisfied-looking number gets built out of four replies.
+     *
+     * @return array{good: int, ok: int, bad: int, answered: int, closed: int, positive: float|null}
+     */
+    public function satisfaction(): array
+    {
+        return $this->once('satisfaction', function (): array {
+            $empty = ['good' => 0, 'ok' => 0, 'bad' => 0, 'answered' => 0, 'closed' => 0, 'positive' => null];
+
+            if ($this->scope->isEmpty()) {
+                return $empty;
+            }
+
+            $counts = ConversationRating::query()
+                ->whereIn('site_id', $this->scope->countableSiteIds())
+                ->whereBetween('rated_at', [$this->window->start, $this->window->end])
+                ->toBase()
+                ->get(['score']);
+
+            $tally = $empty;
+
+            foreach ($counts as $row) {
+                if (array_key_exists((string) $row->score, $tally)) {
+                    $tally[(string) $row->score]++;
+                }
+            }
+
+            $tally['answered'] = $tally['good'] + $tally['ok'] + $tally['bad'];
+            $tally['closed'] = $this->lifecycleEventsInWindow(ConversationLifecycleLog::CLOSED)->count();
+            $tally['positive'] = $tally['answered'] === 0
+                ? null
+                : round(($tally['good'] / $tally['answered']) * 100, 1);
+
+            return $tally;
         });
     }
 

@@ -78,6 +78,14 @@
       'help.none': 'Nothing matches that yet. Send a message and support will answer.',
       'help.back': 'Back to results',
       'help.failed': 'Could not search just now.',
+      'rating.intro': 'How did that go?',
+      'rating.good': 'Good',
+      'rating.ok': 'Okay',
+      'rating.bad': 'Badly',
+      'rating.comment': 'Anything you would like to add? (optional)',
+      'rating.send': 'Send',
+      'rating.thanks': 'Thank you — that helps.',
+      'rating.failed': 'That could not be sent.',
       'intake.optional': '{label} (optional)',
       'intake.checkDetails': 'Please check the details above.',
       'intake.required': 'Please fill in the required fields.',
@@ -154,6 +162,14 @@
       'help.none': 'Dazu gibt es noch nichts. Schreiben Sie uns, der Support antwortet.',
       'help.back': 'Zurück zu den Ergebnissen',
       'help.failed': 'Suche gerade nicht möglich.',
+      'rating.intro': 'Wie ist es gelaufen?',
+      'rating.good': 'Gut',
+      'rating.ok': 'Ganz okay',
+      'rating.bad': 'Schlecht',
+      'rating.comment': 'Möchten Sie noch etwas ergänzen? (optional)',
+      'rating.send': 'Senden',
+      'rating.thanks': 'Vielen Dank — das hilft uns.',
+      'rating.failed': 'Das konnte nicht gesendet werden.',
       'intake.optional': '{label} (optional)',
       'intake.checkDetails': 'Bitte prüfen Sie die Angaben oben.',
       'intake.required': 'Bitte füllen Sie die Pflichtfelder aus.',
@@ -661,6 +677,15 @@
           site_public_key: sitePublicKey,
         }));
       },
+      rateConversation: function (supportCode, score, comment) {
+        return postJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/rating', {
+          site_public_key: sitePublicKey,
+          anonymous_id: anonymousId,
+          visitor_token: requireVisitorToken(visitorToken),
+          score: score,
+          comment: comment || null,
+        });
+      },
       searchArticles: function (query) {
         return getJson(fetcher, apiBaseUrl + '/api/widget/articles?' + toQueryString({
           site_public_key: sitePublicKey,
@@ -873,6 +898,7 @@
     var mount = resolveMount(doc, options.mount);
     var panelId = 'wayfindr-support-panel-' + (++widgetInstanceCount);
     var helpId = panelId + '-help';
+    var ratingId = panelId + '-rating';
     var cobrowseCopyId = panelId + '-cobrowse-copy';
     var rootEl = doc.createElement('div');
     rootEl.className = 'wayfindr-widget';
@@ -913,6 +939,18 @@
       '    <p class="wayfindr-widget__notice-copy">' + escapeHtml(t('notice.emptyVisitor')) + '</p>',
       '    <button class="wayfindr-widget__notice-retry" type="button" hidden>' + escapeHtml(t('notice.retry')) + '</button>',
       '  </div>',
+      '  <form class="wayfindr-widget__rating" hidden>',
+      '    <p class="wayfindr-widget__rating-intro"></p>',
+      '    <div class="wayfindr-widget__rating-scores">',
+      '      <button class="wayfindr-widget__rating-score" type="button" data-score="good"></button>',
+      '      <button class="wayfindr-widget__rating-score" type="button" data-score="ok"></button>',
+      '      <button class="wayfindr-widget__rating-score" type="button" data-score="bad"></button>',
+      '    </div>',
+      '    <label class="wayfindr-widget__rating-label" for="' + escapeHtml(ratingId) + '"></label>',
+      '    <textarea class="wayfindr-widget__rating-comment" id="' + escapeHtml(ratingId) + '" rows="2" maxlength="1000"></textarea>',
+      '    <button class="wayfindr-widget__rating-send" type="submit"></button>',
+      '    <p class="wayfindr-widget__rating-status" role="status" aria-live="polite" hidden></p>',
+      '  </form>',
       '  <p class="wayfindr-widget__typing" role="status" aria-live="polite" aria-atomic="true" hidden></p>',
       '  <p class="wayfindr-widget__connection" role="status" aria-live="polite" aria-atomic="true" hidden></p>',
       '  <form class="wayfindr-widget__form">',
@@ -972,6 +1010,15 @@
     var helpBack = rootEl.querySelector('.wayfindr-widget__help-back');
     var helpBlocks = rootEl.querySelector('.wayfindr-widget__help-blocks');
     var helpSequence = 0;
+    var rating = rootEl.querySelector('.wayfindr-widget__rating');
+    var ratingIntro = rootEl.querySelector('.wayfindr-widget__rating-intro');
+    var ratingLabel = rootEl.querySelector('.wayfindr-widget__rating-label');
+    var ratingComment = rootEl.querySelector('.wayfindr-widget__rating-comment');
+    var ratingSend = rootEl.querySelector('.wayfindr-widget__rating-send');
+    var ratingStatus = rootEl.querySelector('.wayfindr-widget__rating-status');
+    var ratingConfig = null;
+    var ratingScore = null;
+    var ratingAnswered = false;
     var helpDebounce = null;
     var cobrowseAllow = rootEl.querySelector('.wayfindr-widget__cobrowse-allow');
     var cobrowseDecline = rootEl.querySelector('.wayfindr-widget__cobrowse-decline');
@@ -1153,6 +1200,11 @@
       helpInput.setAttribute('placeholder', t('help.placeholder'));
       helpBack.textContent = t('help.back');
 
+      // The rating prompt is persistent chrome too. Leaving it out is the
+      // omission that left three controls speaking English behind a German
+      // panel two releases ago.
+      renderRatingPrompt();
+
       // The intake QUESTIONS need nothing here: applyBootstrapResult applies
       // the language before it applies the intake state, so the form is rebuilt
       // in the new language two lines later. Only the submit button above
@@ -1197,6 +1249,11 @@
       }
 
       conversationStatus = String(conversation.status).toLowerCase();
+
+      // The prompt exists to be asked once the conversation is closed, and this
+      // is the only place that learns it closed -- whether from a poll, a
+      // realtime frame, or a resume.
+      renderRatingPrompt();
     }
 
     function renderConversationNotice() {
@@ -2580,6 +2637,8 @@
       applyAwayState(panel, siteAwayState(result), t);
       applyIntakeState(siteIntakeState(result));
       applyHelpAvailability(siteHasArticles(result));
+      ratingConfig = siteRatingPrompt(result);
+      renderRatingPrompt();
     }
 
     /**
@@ -2860,6 +2919,65 @@
         }
       });
     }
+
+    /**
+     * Ask how it went, once, after the conversation is closed.
+     *
+     * Only where the operator turned it on, only when there is a conversation
+     * to be asked about, and never twice: a visitor who has answered is done,
+     * and a widget that keeps asking is one they stop reading.
+     */
+    function renderRatingPrompt() {
+      var shouldAsk = Boolean(ratingConfig && ratingConfig.asks)
+        && supportCode !== null
+        && conversationStatus === 'closed'
+        && ! ratingAnswered;
+
+      rating.hidden = ! shouldAsk;
+
+      if (! shouldAsk) {
+        return;
+      }
+
+      ratingIntro.textContent = ratingConfig.intro || t('rating.intro');
+      ratingLabel.textContent = t('rating.comment');
+      ratingSend.textContent = t('rating.send');
+
+      [].forEach.call(rating.querySelectorAll('.wayfindr-widget__rating-score'), function (button) {
+        button.textContent = t('rating.' + button.getAttribute('data-score'));
+        button.setAttribute('aria-pressed', button.getAttribute('data-score') === ratingScore ? 'true' : 'false');
+      });
+    }
+
+    [].forEach.call(rootEl.querySelectorAll('.wayfindr-widget__rating-score'), function (button) {
+      button.addEventListener('click', function () {
+        ratingScore = button.getAttribute('data-score');
+        renderRatingPrompt();
+      });
+    });
+
+    rating.addEventListener('submit', function (event) {
+      event.preventDefault();
+
+      // A score is the answer; the comment is optional and usually empty.
+      if (ratingScore === null || supportCode === null) {
+        return;
+      }
+
+      ratingSend.disabled = true;
+
+      client.rateConversation(supportCode, ratingScore, ratingComment.value.trim()).then(function () {
+        ratingAnswered = true;
+        rating.hidden = true;
+        status.textContent = t('rating.thanks');
+      }).catch(function (error) {
+        reportSuppressed('conversation rating', error);
+        ratingStatus.textContent = t('rating.failed');
+        ratingStatus.hidden = false;
+      }).then(function () {
+        ratingSend.disabled = false;
+      });
+    });
 
     function showHelpResults() {
       helpArticle.hidden = true;
@@ -3847,6 +3965,16 @@
     var site = (result && result.site) || {};
 
     return site.appearance && typeof site.appearance === 'object' ? site.appearance : null;
+  }
+
+  function siteRatingPrompt(result) {
+    var prompt = (result && result.site && result.site.rating) || null;
+
+    return prompt && typeof prompt === 'object' ? {
+      asks: prompt.asks === true,
+      // Operator copy: shown as typed, escaped, never interpreted.
+      intro: typeof prompt.intro === 'string' && prompt.intro.trim() ? prompt.intro.trim() : null,
+    } : null;
   }
 
   function siteHasArticles(result) {

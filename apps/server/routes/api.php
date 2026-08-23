@@ -17,6 +17,7 @@ use App\Http\Controllers\Widget\CobrowseTelemetryController;
 use App\Http\Controllers\Widget\ConversationAttachmentController;
 use App\Http\Controllers\Widget\ConversationController;
 use App\Http\Controllers\Widget\ConversationMessageController;
+use App\Http\Controllers\Widget\ConversationRatingController;
 use App\Http\Controllers\Widget\ConversationTypingController;
 use Illuminate\Support\Facades\Route;
 
@@ -62,6 +63,8 @@ Route::middleware('throttle:widget-message')->group(function (): void {
         ->name('conversations.messages.store');
     Route::post('/conversations/{supportCode}/typing', ConversationTypingController::class)
         ->name('conversations.typing.store');
+    Route::post('/conversations/{supportCode}/rating', ConversationRatingController::class)
+        ->name('conversations.rating.store');
 });
 
 Route::middleware('throttle:widget-attachment-upload')->group(function (): void {

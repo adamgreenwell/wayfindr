@@ -8,6 +8,7 @@ use App\Models\Site;
 use App\Models\Visitor;
 use App\Support\Sites\SiteAvailability;
 use App\Support\Sites\SiteIntake;
+use App\Support\Sites\SiteRatingPrompt;
 use App\Support\Sites\WidgetAppearance;
 use App\Support\Sites\WidgetLanguage;
 use App\Support\VisitorContextSanitizer;
@@ -93,6 +94,8 @@ class BootstrapController extends Controller
             // What this site looks like and says. Absent keys mean "as it always
             // was", so a site that configures nothing renders unchanged.
             'appearance' => WidgetAppearance::for($site)->toPayload(),
+            // Whether this site asks how it went once a conversation closes.
+            'rating' => SiteRatingPrompt::for($site)->toPayload(),
             // Whether this desk has written anything a visitor could find.
             // Carried here rather than discovered by a search on every open:
             // bootstrap already runs then, and a search box that never finds

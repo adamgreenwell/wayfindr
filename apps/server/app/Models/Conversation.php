@@ -80,6 +80,11 @@ class Conversation extends Model
         return $supportCode;
     }
 
+    public function ratings(): HasMany
+    {
+        return $this->hasMany(ConversationRating::class);
+    }
+
     public function messages(): HasMany
     {
         return $this->hasMany(ConversationMessage::class);
