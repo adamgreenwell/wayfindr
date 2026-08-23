@@ -9,7 +9,7 @@ what the surface shows and, more usefully, what it cannot.
 
 ## What it reports
 
-Three sections, over a selectable range of 7, 30 or 90 days, filterable to a
+Four sections, over a selectable range of 7, 30 or 90 days, filterable to a
 single site.
 
 **Volume.** Conversations opened and closed per day, and the number open right
@@ -21,6 +21,12 @@ like an afternoon.
 plus how often resolutions did not hold.
 
 **Agents.** Replies sent and conversations closed per agent.
+
+**Satisfaction.** Whether it helped, from the visitors who answered — and what
+they wrote. Every other tab reports how fast the desk moved; a desk can improve
+all of those while getting worse at helping people. See
+[asking whether it helped](satisfaction.md) for the rules that keep a percentage
+from being reported over people who said nothing.
 
 Both the daily series and the agent table export as CSV, following the account
 audit page's export conventions.
