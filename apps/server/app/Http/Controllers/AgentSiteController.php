@@ -658,6 +658,80 @@ class AgentSiteController extends Controller
             ->with('status', 'Support hours saved.');
     }
 
+    /**
+     * Close the desk early, without touching the schedule.
+     *
+     * Separate from updateAvailability() because they are different actions by
+     * different people at different moments: one is configuration, this is
+     * "something came up, we are stepping out". Folding it into the schedule
+     * form would mean an operational close required editing hours nobody meant
+     * to change.
+     */
+    public function closeAvailability(Request $request, Site $site): RedirectResponse
+    {
+        $this->authorizeSiteAbility($request, 'view', $site, 404);
+        $this->authorizeSiteAbility($request, 'update', $site);
+
+        $validated = $request->validate([
+            'closure' => ['required', 'string', Rule::in(SiteAvailability::CLOSURES)],
+        ]);
+
+        $endsAt = SiteAvailability::closureEndsAt($site, $validated['closure']);
+
+        if ($endsAt === null) {
+            return redirect()
+                ->route('dashboard.sites.show', $site)
+                ->with('status', 'The desk was left open.');
+        }
+
+        $this->storeClosure($site, $endsAt->toIso8601String());
+
+        // Report when the desk is BACK, which is not always when the close
+        // expires: one ending outside opening hours hands back to the schedule
+        // rather than to that moment. "Rest of today" ends at closing time, so
+        // it is outside hours by definition and the two always differ.
+        $reopens = SiteAvailability::for($site)->opensAt;
+
+        return redirect()
+            ->route('dashboard.sites.show', $site)
+            ->with('status', $reopens === null
+                ? 'Desk closed. The schedule has no opening to return to.'
+                : 'Desk closed. Support is back at '.$reopens->format('H:i').' on '.$reopens->format('j M').'.');
+    }
+
+    /**
+     * Hand the desk back before the close would have expired.
+     */
+    public function reopenAvailability(Request $request, Site $site): RedirectResponse
+    {
+        $this->authorizeSiteAbility($request, 'view', $site, 404);
+        $this->authorizeSiteAbility($request, 'update', $site);
+
+        $this->storeClosure($site, null);
+
+        return redirect()
+            ->route('dashboard.sites.show', $site)
+            ->with('status', 'Desk reopened.');
+    }
+
+    /**
+     * Write only `closed_until`, leaving the rest of the schedule alone.
+     *
+     * The mirror of updateAvailability() preserving this field: neither action
+     * may quietly rewrite the other's, or closing early would blank the hours
+     * and reopening would restore a schedule nobody asked for.
+     */
+    private function storeClosure(Site $site, ?string $closedUntil): void
+    {
+        $settings = $site->settings ?? [];
+        $availability = is_array($settings['availability'] ?? null) ? $settings['availability'] : [];
+
+        $availability['closed_until'] = $closedUntil;
+        $settings['availability'] = $availability;
+
+        $site->forceFill(['settings' => $settings])->save();
+    }
+
     public function updateDetails(Request $request, Site $site): RedirectResponse
     {
         $this->authorizeSiteAbility($request, 'view', $site, 404);

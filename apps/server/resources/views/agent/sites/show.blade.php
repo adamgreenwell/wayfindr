@@ -749,11 +749,56 @@
                         <p class="lede">What a visitor sees when they arrive outside your hours.</p>
                     </div>
                     <span class="readiness-status" data-status="{{ $availability->open ? 'ready' : 'manual' }}">
-                        {{ $availability->scheduled ? ($availability->open ? 'Open now' : 'Away') : 'Always open' }}
+                        @if ($availability->closedUntil)
+                            Closed early
+                        @elseif ($availability->scheduled)
+                            {{ $availability->open ? 'Open now' : 'Away' }}
+                        @else
+                            Always open
+                        @endif
                     </span>
                 </div>
 
                 @if ($canUpdateSite)
+                    <div class="desk-closure">
+                        @if ($availability->closedUntil)
+                            <p class="desk-closure-state">
+                                Desk closed early.
+                                @if ($availability->opensAt)
+                                    Visitors are told support is back at
+                                    {{ $availability->opensAt->format('H:i') }}
+                                    on {{ $availability->opensAt->format('j M') }}.
+                                @else
+                                    The schedule has no opening to return to, so visitors
+                                    are not promised a time.
+                                @endif
+                            </p>
+
+                            <form method="POST" action="{{ route('dashboard.sites.availability.reopen', $site) }}">
+                                @csrf
+                                @method('DELETE')
+                                <button class="button" type="submit">Reopen now</button>
+                            </form>
+                        @else
+                            <p class="desk-closure-state">
+                                Close the desk early without changing the schedule. Every choice
+                                expires on its own.
+                            </p>
+
+                            <form class="desk-closure-actions" method="POST"
+                                action="{{ route('dashboard.sites.availability.close', $site) }}">
+                                @csrf
+                                <button class="button secondary" type="submit" name="closure" value="hour">For an hour</button>
+                                <button class="button secondary" type="submit" name="closure" value="today">Rest of today</button>
+                                <button class="button secondary" type="submit" name="closure" value="tomorrow">Until tomorrow</button>
+                            </form>
+                        @endif
+
+                        @error('closure')
+                            <p class="field-error">{{ $message }}</p>
+                        @enderror
+                    </div>
+
                     <form class="section-form" method="POST" action="{{ route('dashboard.sites.availability.update', $site) }}">
                         @csrf
                         @method('PUT')

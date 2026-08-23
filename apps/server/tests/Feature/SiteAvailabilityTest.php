@@ -343,3 +343,272 @@ test('the form submits an explicit off for every checkbox', function (): void {
         ->assertSee('<input type="hidden" name="availability_enabled" value="0">', false)
         ->assertSee('<input type="hidden" name="availability_open[mon]" value="0">', false);
 });
+
+// Closing the desk early: the mechanism has always been here and nothing could
+// reach it. These cover the write path, and the one behaviour change the switch
+// needed -- a desk with no schedule can now be closed too.
+
+test('an unscheduled desk can still be closed, and reopens when the close expires', function (): void {
+    // The case that needed the change. A site with no hours had no way to say
+    // "stepping out", because the unscheduled branch never read closed_until.
+    $site = Site::factory()->create(['settings' => ['availability' => [
+        'closed_until' => '2026-08-26T15:00:00+00:00',
+        'away_message' => 'Back shortly.',
+    ]]]);
+
+    $during = SiteAvailability::for($site, CarbonImmutable::parse('2026-08-26 11:00', 'UTC'));
+
+    expect($during->open)->toBeFalse()
+        ->and($during->scheduled)->toBeFalse('no hours were configured, and closing early must not invent any')
+        // Nothing to hand back to, so it reopens exactly when it expires.
+        ->and($during->opensAt?->toDateTimeString())->toBe('2026-08-26 15:00:00')
+        ->and($during->awayMessage)->toBe('Back shortly.');
+
+    expect(SiteAvailability::for($site, CarbonImmutable::parse('2026-08-26 15:30', 'UTC'))->open)->toBeTrue();
+});
+
+test('an unscheduled desk with no manual close is still always open', function (): void {
+    // The guard on the change above: reading closed_until in that branch must
+    // not turn absence of configuration into "closed".
+    $site = Site::factory()->create(['settings' => ['availability' => ['timezone' => 'UTC']]]);
+
+    expect(SiteAvailability::for($site)->open)->toBeTrue();
+});
+
+test('every closure preset ends on its own', function (): void {
+    $site = siteWithHours();
+    $wednesdayMorning = CarbonImmutable::parse('2026-08-26 11:00', 'Europe/London');
+
+    $ends = fn (string $preset) => SiteAvailability::closureEndsAt($site, $preset, $wednesdayMorning)?->toDateTimeString();
+
+    expect($ends('hour'))->toBe('2026-08-26 12:00:00')
+        // The rest of today is today's CLOSING time, not midnight: the desk was
+        // going to shut at 17:00 anyway.
+        ->and($ends('today'))->toBe('2026-08-26 17:00:00')
+        // And tomorrow means the next time anybody is actually there.
+        ->and($ends('tomorrow'))->toBe('2026-08-27 09:00:00');
+});
+
+test('a closure preset never reaches backwards or past the weekend', function (): void {
+    $site = siteWithHours();
+
+    // Friday evening, already past closing. "The rest of today" has no working
+    // day left to run to, so it falls to midnight rather than a time gone by.
+    expect(SiteAvailability::closureEndsAt($site, 'today', CarbonImmutable::parse('2026-08-28 19:00', 'Europe/London'))?->toDateTimeString())
+        ->toBe('2026-08-29 00:00:00');
+
+    // "Until tomorrow" on a Friday means Monday, because Saturday has no hours.
+    expect(SiteAvailability::closureEndsAt($site, 'tomorrow', CarbonImmutable::parse('2026-08-28 11:00', 'Europe/London'))?->toDateTimeString())
+        ->toBe('2026-08-31 09:00:00');
+});
+
+test('an unscheduled desk falls back to plain midnight', function (): void {
+    $site = Site::factory()->create(['settings' => ['availability' => ['timezone' => 'UTC']]]);
+    $at = CarbonImmutable::parse('2026-08-26 11:00', 'UTC');
+
+    expect(SiteAvailability::closureEndsAt($site, 'today', $at)?->toDateTimeString())->toBe('2026-08-27 00:00:00')
+        ->and(SiteAvailability::closureEndsAt($site, 'tomorrow', $at)?->toDateTimeString())->toBe('2026-08-27 00:00:00')
+        ->and(SiteAvailability::closureEndsAt($site, 'hour', $at)?->toDateTimeString())->toBe('2026-08-26 12:00:00');
+});
+
+test('a desk closed early asks a visitor for an email, exactly as being out of hours does', function (): void {
+    // The point of the whole feature, and it comes free: both routes to "away"
+    // meet at the same boolean, so a manual close promotes email to required
+    // without intake knowing a manual close exists.
+    //
+    // Deliberately an UNSCHEDULED site, which could not be closed at all before
+    // this slice -- so this covers the new path rather than the old one.
+    $site = Site::factory()->create([
+        'public_key' => 'site_public_shut',
+        'settings' => [
+            'availability' => ['closed_until' => CarbonImmutable::now()->addHour()->toIso8601String()],
+            'intake' => ['fields' => ['name' => 'off', 'email' => 'off', 'reason' => 'off']],
+        ],
+    ]);
+
+    $response = $this->postJson('/api/widget/bootstrap', [
+        'site_public_key' => 'site_public_shut',
+        'anonymous_id' => 'anon-shut-1',
+    ]);
+
+    $response->assertSuccessful();
+
+    expect($response->json('data.site.availability.away'))->toBeTrue()
+        ->and($response->json('data.site.intake.fields.email'))->toBe('required')
+        ->and($response->json('data.site.intake.asks'))->toBeTrue();
+});
+test('an admin can close the desk early and reopen it', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['settings' => ['availability' => [
+        'enabled' => true,
+        'timezone' => 'UTC',
+        'weekdays' => ['mon' => ['09:00', '17:00']],
+    ]]]);
+
+    $this->actingAs($admin)
+        ->post(route('dashboard.sites.availability.close', $site), ['closure' => 'hour'])
+        ->assertRedirect();
+
+    expect($site->fresh()->settings['availability']['closed_until'])->not->toBeNull()
+        // The schedule this action deliberately does not touch.
+        ->and($site->fresh()->settings['availability']['weekdays']['mon'])->toBe(['09:00', '17:00'])
+        ->and($site->fresh()->settings['availability']['enabled'])->toBeTrue();
+
+    $this->actingAs($admin)
+        ->delete(route('dashboard.sites.availability.reopen', $site))
+        ->assertRedirect();
+
+    expect($site->fresh()->settings['availability']['closed_until'])->toBeNull()
+        ->and($site->fresh()->settings['availability']['weekdays']['mon'])->toBe(['09:00', '17:00']);
+});
+
+test('closing the desk does not blank a schedule that was never configured', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['settings' => ['mask_selectors' => []]]);
+
+    $this->actingAs($admin)
+        ->post(route('dashboard.sites.availability.close', $site), ['closure' => 'today'])
+        ->assertRedirect();
+
+    // Settings outside availability are somebody else's, and this action writes
+    // one key.
+    expect($site->fresh()->settings['mask_selectors'])->toBe([])
+        ->and($site->fresh()->settings['availability']['closed_until'])->not->toBeNull();
+});
+
+test('an unknown closure length is rejected rather than stored', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['settings' => []]);
+
+    $this->actingAs($admin)
+        ->post(route('dashboard.sites.availability.close', $site), ['closure' => 'forever'])
+        ->assertSessionHasErrors('closure');
+
+    expect($site->fresh()->settings['availability']['closed_until'] ?? null)->toBeNull();
+});
+
+test('a plain agent cannot close or reopen the desk', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+    $site = Site::factory()->for($account)->create(['settings' => ['availability' => [
+        'closed_until' => '2026-09-01T09:00:00+00:00',
+    ]]]);
+
+    $this->actingAs($agent)
+        ->post(route('dashboard.sites.availability.close', $site), ['closure' => 'hour'])
+        ->assertForbidden();
+
+    $this->actingAs($agent)
+        ->delete(route('dashboard.sites.availability.reopen', $site))
+        ->assertForbidden();
+
+    // Neither refused request may have moved anything.
+    expect($site->fresh()->settings['availability']['closed_until'])->toBe('2026-09-01T09:00:00+00:00');
+});
+
+test('the site page offers to close the desk, and to undo it', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['settings' => []]);
+
+    $this->actingAs($admin)->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee('Close the desk early without changing the schedule.')
+        ->assertSee('name="closure" value="hour"', false)
+        ->assertSee('Always open');
+
+    $site->forceFill(['settings' => ['availability' => [
+        'closed_until' => CarbonImmutable::now()->addHours(2)->toIso8601String(),
+    ]]])->save();
+
+    $this->actingAs($admin)->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee('Reopen now')
+        // The pill said "Always open" about a desk somebody had just shut.
+        ->assertSee('Closed early')
+        ->assertDontSee('name="closure" value="hour"', false);
+});
+
+test('the dashboard reports when the desk is back, not when the close expires', function (): void {
+    // These differ whenever a close expires outside opening hours, and
+    // "rest of today" does that BY DEFINITION -- it ends at closing time, which
+    // is the first moment the schedule is shut. So this was wrong every single
+    // time that preset was used, not in some edge case.
+    //
+    // The domain had it right all along: reopensAt() hands back to the schedule.
+    // Only the copy above it disagreed.
+    $this->travelTo(CarbonImmutable::parse('2026-08-26 11:00', 'Europe/London'));
+
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['settings' => ['availability' => [
+        'enabled' => true,
+        'timezone' => 'Europe/London',
+        'weekdays' => [
+            'mon' => ['09:00', '17:00'], 'tue' => ['09:00', '17:00'], 'wed' => ['09:00', '17:00'],
+            'thu' => ['09:00', '17:00'], 'fri' => ['09:00', '17:00'], 'sat' => null, 'sun' => null,
+        ],
+    ]]]);
+
+    $this->actingAs($admin)
+        ->post(route('dashboard.sites.availability.close', $site), ['closure' => 'today'])
+        ->assertRedirect()
+        // Thursday morning, because Wednesday 17:00 is when the desk shuts anyway.
+        ->assertSessionHas('status', fn (string $status): bool => str_contains($status, '09:00')
+            && str_contains($status, '27 Aug')
+            && ! str_contains($status, '17:00'));
+});
+
+test('the site page names the reopening, not the moment the close runs out', function (): void {
+    // Deliberately NOT reached through the close request. That redirect flashes
+    // the reopening time, and the page renders the flash -- so a page assertion
+    // made after a POST passes on the banner even when the panel beneath it is
+    // wrong. Asked for directly, the only source of this date is the panel.
+    $this->travelTo(CarbonImmutable::parse('2026-08-26 11:00', 'Europe/London'));
+
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['settings' => ['availability' => [
+        'enabled' => true,
+        'timezone' => 'Europe/London',
+        'weekdays' => [
+            'mon' => ['09:00', '17:00'], 'tue' => ['09:00', '17:00'], 'wed' => ['09:00', '17:00'],
+            'thu' => ['09:00', '17:00'], 'fri' => ['09:00', '17:00'], 'sat' => null, 'sun' => null,
+        ],
+        // Expires at Wednesday's closing time, so the desk is back Thursday.
+        'closed_until' => '2026-08-26T17:00:00+01:00',
+    ]]]);
+
+    // The times themselves are useless as assertions -- 17:00 and 09:00 each
+    // appear seven or eight times in the schedule inputs. The DATE is the tell,
+    // and appears nowhere else on the page.
+    $this->actingAs($admin)->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee('27 Aug')
+        ->assertDontSee('26 Aug');
+});
+
+test('a desk with no opening to return to says so rather than promising one', function (): void {
+    // Every day closed and a manual close on top: reopensAt() has nothing to
+    // offer, so the page must not print an empty time or fall back to the
+    // expiry it just stopped trusting.
+    $this->travelTo(CarbonImmutable::parse('2026-08-26 11:00', 'UTC'));
+
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['settings' => ['availability' => [
+        'enabled' => true,
+        'timezone' => 'UTC',
+        'weekdays' => array_fill_keys(SiteAvailability::DAYS, null),
+        'closed_until' => '2026-08-26T15:00:00+00:00',
+    ]]]);
+
+    expect(SiteAvailability::for($site)->opensAt)->toBeNull();
+
+    $this->actingAs($admin)->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee('no opening to return to');
+});
