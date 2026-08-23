@@ -22,36 +22,47 @@ final class SiteAvailability
 {
     public const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
+    /** How long "close the desk early" can mean. Every one of them expires. */
+    public const CLOSURES = ['hour', 'today', 'tomorrow'];
+
     private function __construct(
         public readonly bool $scheduled,
         public readonly bool $open,
         public readonly ?CarbonImmutable $opensAt,
         public readonly string $timezone,
         public readonly ?string $awayMessage,
+        // Set only while a manual close is holding the desk shut, so the
+        // dashboard can offer to undo the thing somebody did rather than
+        // explain the schedule back to them.
+        public readonly ?CarbonImmutable $closedUntil = null,
     ) {}
 
     public static function for(Site $site, ?CarbonInterface $now = null): self
     {
-        $config = is_array($site->settings['availability'] ?? null)
-            ? $site->settings['availability']
-            : [];
-
+        $config = self::config($site);
         $timezone = self::timezone($config['timezone'] ?? null);
 
-        // A site with no schedule behaves exactly as it did before this existed:
-        // always open. Absence of configuration must never read as "closed", or
-        // enabling the feature would silently shut every existing desk.
-        if (($config['enabled'] ?? false) !== true) {
-            return new self(false, true, null, $timezone, null);
-        }
-
         $at = CarbonImmutable::instance($now ?? CarbonImmutable::now())->setTimezone($timezone);
-        $weekdays = self::weekdays($config['weekdays'] ?? []);
         $awayMessage = self::text($config['away_message'] ?? null);
 
         $closedUntil = self::closedUntil($config['closed_until'] ?? null, $timezone);
         $overridden = $closedUntil !== null && $closedUntil->greaterThan($at);
 
+        // A site with no schedule behaves exactly as it did before this existed:
+        // always open. Absence of configuration must never read as "closed", or
+        // enabling the feature would silently shut every existing desk.
+        //
+        // A manual close is the PRESENCE of configuration rather than its
+        // absence, so it still holds here -- and an unscheduled desk is where
+        // "I am stepping out" has nowhere else to be said. With no hours to
+        // hand back to, it reopens exactly when it expires.
+        if (($config['enabled'] ?? false) !== true) {
+            return $overridden
+                ? new self(false, false, $closedUntil, $timezone, $awayMessage, $closedUntil)
+                : new self(false, true, null, $timezone, null);
+        }
+
+        $weekdays = self::weekdays($config['weekdays'] ?? []);
         $open = ! $overridden && self::withinHours($weekdays, $at);
 
         return new self(
@@ -60,7 +71,72 @@ final class SiteAvailability
             $open ? null : self::reopensAt($weekdays, $at, $overridden ? $closedUntil : null),
             $timezone,
             $open ? null : $awayMessage,
+            $overridden ? $closedUntil : null,
         );
+    }
+
+    /**
+     * When a "close the desk early" choice ends, in the site's own zone.
+     *
+     * The presets exist so the common case is one click at the moment somebody
+     * is already leaving. Every one of them ends on its own, because a manual
+     * close with no expiry is the flag nobody remembers on Monday and the desk
+     * stays dark until a visitor complains.
+     */
+    public static function closureEndsAt(Site $site, string $preset, ?CarbonInterface $now = null): ?CarbonImmutable
+    {
+        if (! in_array($preset, self::CLOSURES, true)) {
+            return null;
+        }
+
+        $config = self::config($site);
+        $timezone = self::timezone($config['timezone'] ?? null);
+        $at = CarbonImmutable::instance($now ?? CarbonImmutable::now())->setTimezone($timezone);
+
+        // An unscheduled desk has no weekdays to consult, and both day-based
+        // presets fall back to plain midnight for it.
+        $weekdays = ($config['enabled'] ?? false) === true
+            ? self::weekdays($config['weekdays'] ?? [])
+            : self::weekdays([]);
+
+        $tomorrow = $at->addDay()->startOfDay();
+
+        return match ($preset) {
+            'hour' => $at->addHour(),
+            'today' => self::endOfWorkingDay($weekdays, $at),
+            // Reuses the schedule rule rather than restating it, so "back
+            // tomorrow" cannot disagree with what the payload promises.
+            'tomorrow' => self::nextOpening($weekdays, $tomorrow) ?? $tomorrow,
+        };
+    }
+
+    /**
+     * The rest of today: today's closing time where there is one, midnight
+     * otherwise. A desk already past closing gets midnight too, because the
+     * rest of today cannot reach backwards.
+     *
+     * @param  array<string, array{0: string, 1: string}|null>  $weekdays
+     */
+    private static function endOfWorkingDay(array $weekdays, CarbonImmutable $at): CarbonImmutable
+    {
+        $hours = $weekdays[self::DAYS[$at->dayOfWeekIso - 1]] ?? null;
+        $midnight = $at->addDay()->startOfDay();
+
+        if ($hours === null) {
+            return $midnight;
+        }
+
+        $closes = $at->setTime(0, 0)->addMinutes(self::minutes($hours[1]));
+
+        return $closes->greaterThan($at) ? $closes : $midnight;
+    }
+
+    /** @return array<string, mixed> */
+    private static function config(Site $site): array
+    {
+        return is_array($site->settings['availability'] ?? null)
+            ? $site->settings['availability']
+            : [];
     }
 
     /**

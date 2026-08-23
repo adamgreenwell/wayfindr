@@ -343,3 +343,97 @@ test('the form submits an explicit off for every checkbox', function (): void {
         ->assertSee('<input type="hidden" name="availability_enabled" value="0">', false)
         ->assertSee('<input type="hidden" name="availability_open[mon]" value="0">', false);
 });
+
+// Closing the desk early: the mechanism has always been here and nothing could
+// reach it. These cover the write path, and the one behaviour change the switch
+// needed -- a desk with no schedule can now be closed too.
+
+test('an unscheduled desk can still be closed, and reopens when the close expires', function (): void {
+    // The case that needed the change. A site with no hours had no way to say
+    // "stepping out", because the unscheduled branch never read closed_until.
+    $site = Site::factory()->create(['settings' => ['availability' => [
+        'closed_until' => '2026-08-26T15:00:00+00:00',
+        'away_message' => 'Back shortly.',
+    ]]]);
+
+    $during = SiteAvailability::for($site, CarbonImmutable::parse('2026-08-26 11:00', 'UTC'));
+
+    expect($during->open)->toBeFalse()
+        ->and($during->scheduled)->toBeFalse('no hours were configured, and closing early must not invent any')
+        // Nothing to hand back to, so it reopens exactly when it expires.
+        ->and($during->opensAt?->toDateTimeString())->toBe('2026-08-26 15:00:00')
+        ->and($during->awayMessage)->toBe('Back shortly.');
+
+    expect(SiteAvailability::for($site, CarbonImmutable::parse('2026-08-26 15:30', 'UTC'))->open)->toBeTrue();
+});
+
+test('an unscheduled desk with no manual close is still always open', function (): void {
+    // The guard on the change above: reading closed_until in that branch must
+    // not turn absence of configuration into "closed".
+    $site = Site::factory()->create(['settings' => ['availability' => ['timezone' => 'UTC']]]);
+
+    expect(SiteAvailability::for($site)->open)->toBeTrue();
+});
+
+test('every closure preset ends on its own', function (): void {
+    $site = siteWithHours();
+    $wednesdayMorning = CarbonImmutable::parse('2026-08-26 11:00', 'Europe/London');
+
+    $ends = fn (string $preset) => SiteAvailability::closureEndsAt($site, $preset, $wednesdayMorning)?->toDateTimeString();
+
+    expect($ends('hour'))->toBe('2026-08-26 12:00:00')
+        // The rest of today is today's CLOSING time, not midnight: the desk was
+        // going to shut at 17:00 anyway.
+        ->and($ends('today'))->toBe('2026-08-26 17:00:00')
+        // And tomorrow means the next time anybody is actually there.
+        ->and($ends('tomorrow'))->toBe('2026-08-27 09:00:00');
+});
+
+test('a closure preset never reaches backwards or past the weekend', function (): void {
+    $site = siteWithHours();
+
+    // Friday evening, already past closing. "The rest of today" has no working
+    // day left to run to, so it falls to midnight rather than a time gone by.
+    expect(SiteAvailability::closureEndsAt($site, 'today', CarbonImmutable::parse('2026-08-28 19:00', 'Europe/London'))?->toDateTimeString())
+        ->toBe('2026-08-29 00:00:00');
+
+    // "Until tomorrow" on a Friday means Monday, because Saturday has no hours.
+    expect(SiteAvailability::closureEndsAt($site, 'tomorrow', CarbonImmutable::parse('2026-08-28 11:00', 'Europe/London'))?->toDateTimeString())
+        ->toBe('2026-08-31 09:00:00');
+});
+
+test('an unscheduled desk falls back to plain midnight', function (): void {
+    $site = Site::factory()->create(['settings' => ['availability' => ['timezone' => 'UTC']]]);
+    $at = CarbonImmutable::parse('2026-08-26 11:00', 'UTC');
+
+    expect(SiteAvailability::closureEndsAt($site, 'today', $at)?->toDateTimeString())->toBe('2026-08-27 00:00:00')
+        ->and(SiteAvailability::closureEndsAt($site, 'tomorrow', $at)?->toDateTimeString())->toBe('2026-08-27 00:00:00')
+        ->and(SiteAvailability::closureEndsAt($site, 'hour', $at)?->toDateTimeString())->toBe('2026-08-26 12:00:00');
+});
+
+test('a desk closed early asks a visitor for an email, exactly as being out of hours does', function (): void {
+    // The point of the whole feature, and it comes free: both routes to "away"
+    // meet at the same boolean, so a manual close promotes email to required
+    // without intake knowing a manual close exists.
+    //
+    // Deliberately an UNSCHEDULED site, which could not be closed at all before
+    // this slice -- so this covers the new path rather than the old one.
+    $site = Site::factory()->create([
+        'public_key' => 'site_public_shut',
+        'settings' => [
+            'availability' => ['closed_until' => CarbonImmutable::now()->addHour()->toIso8601String()],
+            'intake' => ['fields' => ['name' => 'off', 'email' => 'off', 'reason' => 'off']],
+        ],
+    ]);
+
+    $response = $this->postJson('/api/widget/bootstrap', [
+        'site_public_key' => 'site_public_shut',
+        'anonymous_id' => 'anon-shut-1',
+    ]);
+
+    $response->assertSuccessful();
+
+    expect($response->json('data.site.availability.away'))->toBeTrue()
+        ->and($response->json('data.site.intake.fields.email'))->toBe('required')
+        ->and($response->json('data.site.intake.asks'))->toBeTrue();
+});
