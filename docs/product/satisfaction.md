@@ -70,6 +70,13 @@ column set, and an answer about it would be counted with no close to count
 against it — the same *1 of 0 closes answered* the cohort rule exists to
 prevent, arriving through a different door.
 
+**An answer is bound to the close it was shown for.** The widget sends the
+episode it is displaying, and the server refuses an answer whose close is no
+longer the current one. Otherwise a conversation reopened and closed again
+between the prompt appearing and the answer arriving would have that answer
+attributed to the *new* close — and that new prompt marked answered, so nobody
+would ever be asked about it.
+
 **A rating nobody asked for is refused.** The endpoint is reachable without the
 widget, so it checks rather than assumes: an answer for a site whose operator
 switched collection off is rejected, and so is an answer about a conversation

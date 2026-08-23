@@ -198,6 +198,8 @@ test('answering sends the score and the comment, and the question goes away', as
   assert.equal(posted.body.score, 'bad');
   assert.equal(posted.body.comment, 'Nobody read my question.');
   assert.equal(posted.body.visitor_token, 'visitor-token-docs');
+  // Bound to the close it was shown for, so the server never has to guess.
+  assert.equal(posted.body.episode, 'episode-1');
   assert.equal(prompt(widget).hidden, true);
 });
 

@@ -677,13 +677,17 @@
           site_public_key: sitePublicKey,
         }));
       },
-      rateConversation: function (supportCode, score, comment) {
+      rateConversation: function (supportCode, score, comment, episode) {
         return postJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/rating', {
           site_public_key: sitePublicKey,
           anonymous_id: anonymousId,
           visitor_token: requireVisitorToken(visitorToken),
           score: score,
           comment: comment || null,
+          // Which close this answer is about. The server refuses it if the
+          // conversation has since been reopened and closed again, rather than
+          // attributing an answer about finished work to newer work.
+          episode: episode,
         });
       },
       searchArticles: function (query) {
@@ -2986,14 +2990,16 @@
     rating.addEventListener('submit', function (event) {
       event.preventDefault();
 
-      // A score is the answer; the comment is optional and usually empty.
-      if (ratingScore === null || supportCode === null) {
+      // A score is the answer; the comment is optional and usually empty. The
+      // episode has to be known too -- an answer the server cannot tie to a
+      // specific close is one it would have to guess about.
+      if (ratingScore === null || supportCode === null || ratingEpisode === null) {
         return;
       }
 
       ratingSend.disabled = true;
 
-      client.rateConversation(supportCode, ratingScore, ratingComment.value.trim()).then(function () {
+      client.rateConversation(supportCode, ratingScore, ratingComment.value.trim(), ratingEpisode).then(function () {
         ratingAnswered = true;
         rating.hidden = true;
         status.textContent = t('rating.thanks');

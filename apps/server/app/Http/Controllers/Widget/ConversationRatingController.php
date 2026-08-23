@@ -41,6 +41,8 @@ class ConversationRatingController extends Controller
             'visitor_token' => ['nullable', 'string', 'max:4096'],
             'score' => ['required', 'string', Rule::in(ConversationRating::SCORES)],
             'comment' => ['nullable', 'string', 'max:1000'],
+            // Which close the visitor was looking at when they answered.
+            'episode' => ['required', 'string', 'max:64'],
         ]);
 
         $conversation = $conversations->resolve(
@@ -66,6 +68,17 @@ class ConversationRatingController extends Controller
         if ($episode === null) {
             throw ValidationException::withMessages([
                 'score' => 'This conversation is still open, so there is nothing to rate yet.',
+            ]);
+        }
+
+        // The answer is bound to the close it was SHOWN for. Without this the
+        // server silently picks the latest close, so a conversation reopened
+        // and closed again between the widget's last refresh and this request
+        // has the old score and comment attributed to the new close -- and that
+        // new prompt marked answered, so nobody is ever asked about it.
+        if (! hash_equals((string) $conversation->currentCloseEpisodeToken(), $validated['episode'])) {
+            throw ValidationException::withMessages([
+                'episode' => 'This conversation has changed since the question was asked.',
             ]);
         }
 

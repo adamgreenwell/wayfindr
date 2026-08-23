@@ -51,14 +51,19 @@ function ratingWorld(): array
     return compact('site', 'visitor', 'conversation');
 }
 
-function postRating($test, string $token, string $score, ?string $comment = null)
+function postRating($test, string $token, string $score, ?string $comment = null, ?string $episode = null)
 {
+    // Defaults to the close currently on record, which is what the widget would
+    // have been shown. Pass one explicitly to model a stale answer.
+    $episode ??= Conversation::query()->where('support_code', 'WF-RATE1')->firstOrFail()->currentCloseEpisodeToken();
+
     return $test->postJson(route('conversations.rating.store', 'WF-RATE1'), array_filter([
         'site_public_key' => 'site_public_rate',
         'anonymous_id' => 'anon-rate',
         'visitor_token' => $token,
         'score' => $score,
         'comment' => $comment,
+        'episode' => $episode,
     ], fn (mixed $value): bool => $value !== null));
 }
 
@@ -101,6 +106,7 @@ test('a visitor says how it went', function (): void {
         'visitor_token' => $token,
         'score' => 'bad',
         'comment' => '  Took three days.  ',
+        'episode' => $w['conversation']->currentCloseEpisodeToken(),
     ])->assertCreated();
 
     $rating = ConversationRating::query()->firstOrFail();
@@ -114,13 +120,16 @@ test('a visitor says how it went', function (): void {
 test('a stranger cannot score somebody else’s conversation', function (): void {
     // A support code appears in emails and in a visitor's own transcript, so an
     // endpoint that took only the code would let anybody rate anything.
-    ratingWorld();
+    $w = ratingWorld();
 
     $this->postJson(route('conversations.rating.store', 'WF-RATE1'), [
         'site_public_key' => 'site_public_rate',
         'anonymous_id' => 'someone-else',
         'visitor_token' => 'not-a-real-token',
         'score' => 'good',
+        // A well-formed request in every other respect, so the refusal is
+        // demonstrably the token rather than a missing field.
+        'episode' => $w['conversation']->currentCloseEpisodeToken(),
         // 401 rather than 403: the token is what identifies the visitor, so a bad
         // one is unauthenticated rather than forbidden -- and it must not confirm
         // that the support code exists.
@@ -656,4 +665,42 @@ test('two closes inside one second are two episodes, not one', function (): void
         ->and(ConversationRating::query()->orderBy('id')->pluck('score')->all())->toBe(['bad', 'good'])
         // And they are distinguished by the event, since the times are equal.
         ->and(ConversationRating::query()->distinct()->count('episode_closed_at'))->toBe(1);
+});
+
+test('an answer about a close that is no longer current is refused', function (): void {
+    // The race: the conversation is reopened and closed again between the
+    // widget's last refresh and the POST. Without binding the answer to the
+    // close it was SHOWN for, the server picks the latest close, attributes an
+    // answer about finished work to newer work, and marks that new prompt
+    // answered -- so nobody is ever asked about it.
+    $w = ratingWorld();
+    $token = ratingToken($this);
+
+    $stale = $w['conversation']->currentCloseEpisodeToken();
+
+    reopenAndCloseConversation($w['conversation'], now()->addMinutes(10));
+
+    expect($w['conversation']->fresh()->currentCloseEpisodeToken())->not->toBe($stale);
+
+    postRating($this, $token, 'good', null, $stale)->assertStatus(422);
+
+    expect(ConversationRating::query()->count())->toBe(0)
+        // And the new close is still waiting to be asked about.
+        ->and($w['conversation']->fresh()->isAwaitingRating())->toBeTrue();
+});
+
+test('an answer with no episode at all is refused', function (): void {
+    // Otherwise the binding is optional, and the race stays open for anything
+    // that does not bother to send it.
+    $w = ratingWorld();
+    $token = ratingToken($this);
+
+    $this->postJson(route('conversations.rating.store', 'WF-RATE1'), [
+        'site_public_key' => 'site_public_rate',
+        'anonymous_id' => 'anon-rate',
+        'visitor_token' => $token,
+        'score' => 'good',
+    ])->assertStatus(422);
+
+    expect(ConversationRating::query()->count())->toBe(0);
 });
