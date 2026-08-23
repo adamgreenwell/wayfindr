@@ -35,6 +35,7 @@ use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -513,29 +514,30 @@ class AgentTicketController extends Controller
         ]);
 
         $pendingNote = trim((string) ($validated['pending_note'] ?? ''));
-        $previousStatus = (string) $ticket->status;
         $metadata = $pendingNote === '' ? [] : ['pending_note' => $pendingNote];
 
-        $ticket->forceFill([
-            'status' => 'pending',
-            'closed_at' => null,
-        ])->save();
+        $this->transitionTicketStatus(
+            $ticket,
+            fn (): array => ['status' => 'pending', 'closed_at' => null],
+            function (string $previousStatus) use ($ticket, $agent, $metadata): void {
 
-        // Leaving `closed` is a REOPEN, whichever button did it. The form is
-        // only offered for open tickets, so this is a stale or crafted submit
-        // -- but it still un-closes the ticket, and recording only the hold
-        // would leave the resolution looking like it held while the ticket
-        // quietly went back to work. Every duration measured afterwards would
-        // run from the original start.
-        if ($previousStatus === 'closed') {
-            $this->recordActivity($ticket, $agent, 'ticket.reopened', $metadata);
-        }
+                // Leaving `closed` is a REOPEN, whichever button did it. The form is
+                // only offered for open tickets, so this is a stale or crafted submit
+                // -- but it still un-closes the ticket, and recording only the hold
+                // would leave the resolution looking like it held while the ticket
+                // quietly went back to work. Every duration measured afterwards would
+                // run from the original start.
+                if ($previousStatus === 'closed') {
+                    $this->recordActivity($ticket, $agent, 'ticket.reopened', $metadata);
+                }
 
-        // Only a transition is an event: a ticket already on hold does not go
-        // on hold again.
-        if ($previousStatus !== 'pending') {
-            $this->recordActivity($ticket, $agent, 'ticket.pending', $metadata);
-        }
+                // Only a transition is an event: a ticket already on hold does
+                // not go on hold again.
+                if ($previousStatus !== 'pending') {
+                    $this->recordActivity($ticket, $agent, 'ticket.pending', $metadata);
+                }
+            },
+        );
 
         return $this->redirectAfterUpdate($ticket, $request, 'Ticket marked pending.');
     }
@@ -551,27 +553,33 @@ class AgentTicketController extends Controller
         ]);
 
         $resolutionNote = trim((string) ($validated['resolution_note'] ?? ''));
-        $wasClosed = $ticket->status === 'closed';
 
-        $ticket->forceFill([
-            'status' => 'closed',
+        $this->transitionTicketStatus(
+            $ticket,
             // A ticket already closed keeps the moment it was actually closed.
-            'closed_at' => $wasClosed ? $ticket->closed_at : now(),
-        ])->save();
+            fn (string $previous, Ticket $locked): array => [
+                'status' => 'closed',
+                'closed_at' => $previous === 'closed' ? $locked->closed_at : now(),
+            ],
+            // Only a TRANSITION is an event -- the rule conversation lifecycle
+            // already follows. A double-click, a retry, or a stale page submits
+            // close twice; recording both writes consecutive closes with no
+            // reopen between them, which makes one resolution contribute two
+            // durations to the report and inflates every close count derived
+            // from the log.
+            function (string $previous) use ($ticket, $agent, $resolutionNote): void {
+                if ($previous === 'closed') {
+                    return;
+                }
 
-        // Only a TRANSITION is an event -- the rule conversation lifecycle
-        // already follows. A double-click, a retry, or a stale page submits
-        // close twice; recording both writes consecutive closes with no reopen
-        // between them, which makes one resolution contribute two durations to
-        // the report and inflates every close count derived from the log.
-        if (! $wasClosed) {
-            $this->recordActivity(
-                $ticket,
-                $agent,
-                'ticket.closed',
-                $resolutionNote === '' ? [] : ['resolution_note' => $resolutionNote],
-            );
-        }
+                $this->recordActivity(
+                    $ticket,
+                    $agent,
+                    'ticket.closed',
+                    $resolutionNote === '' ? [] : ['resolution_note' => $resolutionNote],
+                );
+            },
+        );
 
         return $this->redirectAfterUpdate($ticket, $request, 'Ticket closed.');
     }
@@ -587,38 +595,39 @@ class AgentTicketController extends Controller
         ]);
 
         $reopenNote = trim((string) ($validated['reopen_note'] ?? ''));
-        $previousStatus = (string) $ticket->status;
 
-        $ticket->forceFill([
-            'status' => 'open',
-            'closed_at' => null,
-        ])->save();
+        $this->transitionTicketStatus(
+            $ticket,
+            fn (): array => ['status' => 'open', 'closed_at' => null],
+            function (string $previousStatus) use ($ticket, $agent, $reopenNote): void {
 
-        // The same control reopens a CLOSED ticket and un-holds a PENDING one,
-        // and only the first is a reopen. `open -> pending -> reopen -> close`
-        // is the ordinary flow, not an edge case: recording a reopen there
-        // claims a resolution failed when none was ever reached, and restarts
-        // the resolution clock at the un-hold, hiding every hour before the
-        // ticket was put on hold.
-        //
-        // And an ALREADY-OPEN ticket transitioned from nothing, so it records
-        // nothing. A retried submit or a stale form would otherwise write an
-        // un-hold for a hold that never happened -- the same duplicate-event
-        // bug the close path has a guard for, reintroduced one branch over.
-        $action = match ($previousStatus) {
-            'closed' => 'ticket.reopened',
-            'pending' => 'ticket.unheld',
-            default => null,
-        };
+                // The same control reopens a CLOSED ticket and un-holds a PENDING one,
+                // and only the first is a reopen. `open -> pending -> reopen -> close`
+                // is the ordinary flow, not an edge case: recording a reopen there
+                // claims a resolution failed when none was ever reached, and restarts
+                // the resolution clock at the un-hold, hiding every hour before the
+                // ticket was put on hold.
+                //
+                // And an ALREADY-OPEN ticket transitioned from nothing, so it records
+                // nothing. A retried submit or a stale form would otherwise write an
+                // un-hold for a hold that never happened -- the same duplicate-event
+                // bug the close path has a guard for, reintroduced one branch over.
+                $action = match ($previousStatus) {
+                    'closed' => 'ticket.reopened',
+                    'pending' => 'ticket.unheld',
+                    default => null,
+                };
 
-        if ($action !== null) {
-            $this->recordActivity(
-                $ticket,
-                $agent,
-                $action,
-                $reopenNote === '' ? [] : ['reopen_note' => $reopenNote],
-            );
-        }
+                if ($action !== null) {
+                    $this->recordActivity(
+                        $ticket,
+                        $agent,
+                        $action,
+                        $reopenNote === '' ? [] : ['reopen_note' => $reopenNote],
+                    );
+                }
+            },
+        );
 
         return $this->redirectAfterUpdate($ticket, $request, 'Ticket reopened.');
     }
@@ -1596,6 +1605,50 @@ class AgentTicketController extends Controller
         }
 
         return $changes;
+    }
+
+    /**
+     * Change a ticket's status under a row lock, and record it while held.
+     *
+     * The same shape `AgentConversationController::transitionStatus()` uses,
+     * and for the same reasons -- which is the point: these guards decide what
+     * the reports count, so the two halves cannot afford different concurrency
+     * behaviour.
+     *
+     * Read-check-write on a request-bound model is not enough. Two agents
+     * submitting at once both evaluate the status they loaded before either
+     * save lands, so two closes both record `ticket.closed` and overwrite
+     * `closed_at` -- and a concurrent close and reopen can leave the row closed
+     * with only a reopen on record, which is a report contradicting the ticket
+     * in front of you.
+     *
+     * @param  callable(string, Ticket): array<string, mixed>  $attributes  What to write, given the LOCKED previous status.
+     * @param  callable(string): void  $record  What to log, given the same.
+     */
+    private function transitionTicketStatus(Ticket $ticket, callable $attributes, callable $record): void
+    {
+        DB::transaction(function () use ($ticket, $attributes, $record): void {
+            $locked = Ticket::query()->whereKey($ticket->getKey())->lockForUpdate()->first();
+            $previousStatus = (string) ($locked?->status ?? $ticket->status);
+
+            // Written through the LOCKED instance, not the one this request
+            // loaded before it waited. Eloquent diffs against the attributes it
+            // originally read, so a reopen that loaded "open" and then queued
+            // behind a close would find "open" unchanged, omit status from the
+            // update, and leave the row closed while recording a reopen.
+            $target = $locked ?? $ticket;
+
+            $target->forceFill($attributes($previousStatus, $target))->save();
+
+            // Keep the caller's instance honest about what is now stored.
+            $ticket->setRawAttributes($target->getAttributes(), true);
+
+            // Recorded while the lock is still held. Committing the status and
+            // logging afterwards lets the next writer take the lock and insert
+            // its event first -- a reopen before the close that preceded it,
+            // for a ticket that ended up open.
+            $record($previousStatus);
+        });
     }
 
     private function recordActivity(Ticket $ticket, User $agent, string $action, array $metadata = []): void

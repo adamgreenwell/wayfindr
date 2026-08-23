@@ -1,10 +1,12 @@
 <?php
 
 use App\Models\Account;
+use App\Models\AuditEvent;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -150,4 +152,64 @@ test('marking a pending ticket pending again records nothing', function (): void
 
     expect(array_filter(ticketTransitionActions($w['ticket']), fn (string $a): bool => $a === 'ticket.pending'))
         ->toHaveCount(0);
+});
+
+test('a status change and its event are one transaction', function (): void {
+    // Recorded while the lock is still held. Committing the status first and
+    // logging after lets the next writer take the lock and insert its event
+    // ahead -- a reopen before the close that preceded it, for a ticket that
+    // ended up open. SQLite compiles `lockForUpdate` to nothing, so what is
+    // provable here is the transaction; the lock itself is guarded structurally.
+    $w = ticketTransitionWorld();
+
+    $levels = [];
+
+    AuditEvent::creating(function () use (&$levels): void {
+        $levels[] = DB::transactionLevel();
+    });
+
+    $this->actingAs($w['agent'])->post(route('dashboard.tickets.close', $w['ticket']), []);
+
+    expect($levels)->not->toBeEmpty()
+        ->and(array_filter($levels, fn (int $level): bool => $level < 1))->toBeEmpty();
+});
+
+test('every ticket status write goes through the locking transition', function (): void {
+    // Structural, in the style of the repository's other invariant checks: the
+    // guards decide what the reports count, so a future edit that writes
+    // `status` directly would reintroduce the read-check-write race without
+    // failing a behavioural test -- SQLite cannot show the race at all.
+    $source = file_get_contents(dirname(__DIR__, 2).'/app/Http/Controllers/AgentTicketController.php');
+
+    expect($source)->not->toBeFalse();
+
+    // Comments stripped first: the docblock explaining this rule names the very
+    // things it looks for.
+    $code = '';
+
+    foreach (token_get_all((string) $source) as $token) {
+        if (is_array($token) && in_array($token[0], [T_COMMENT, T_DOC_COMMENT], true)) {
+            continue;
+        }
+
+        $code .= is_array($token) ? $token[1] : $token;
+    }
+
+    expect($code)->toContain('lockForUpdate()');
+
+    // Each lifecycle action routes through the helper rather than writing the
+    // status itself. Counting `'status' => ...` across the file would be
+    // simpler and wrong: this controller also writes a CONVERSATION status when
+    // an agent replies from the ticket view.
+    foreach (['close', 'reopen', 'pending'] as $action) {
+        $start = strpos($code, 'public function '.$action.'(');
+
+        expect($start)->not->toBeFalse();
+
+        $next = strpos($code, 'public function ', $start + 1);
+        $body = substr($code, $start, $next === false ? null : $next - $start);
+
+        expect($body)->toContain('$this->transitionTicketStatus(')
+            ->and($body)->not->toContain("->forceFill(['status'");
+    }
 });
