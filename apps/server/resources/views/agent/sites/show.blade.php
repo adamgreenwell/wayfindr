@@ -763,9 +763,15 @@
                     <div class="desk-closure">
                         @if ($availability->closedUntil)
                             <p class="desk-closure-state">
-                                Closed until {{ $availability->closedUntil->format('H:i') }}
-                                on {{ $availability->closedUntil->format('j M') }}.
-                                It reopens then on its own.
+                                Desk closed early.
+                                @if ($availability->opensAt)
+                                    Visitors are told support is back at
+                                    {{ $availability->opensAt->format('H:i') }}
+                                    on {{ $availability->opensAt->format('j M') }}.
+                                @else
+                                    The schedule has no opening to return to, so visitors
+                                    are not promised a time.
+                                @endif
                             </p>
 
                             <form method="POST" action="{{ route('dashboard.sites.availability.reopen', $site) }}">

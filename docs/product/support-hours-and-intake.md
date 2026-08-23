@@ -58,6 +58,14 @@ What each one means is read off the schedule rather than restated:
 gone, and "until tomorrow" on a Friday means Monday, because the next opening is
 the one the schedule actually names.
 
+**When the close expires is not always when the desk is back**, and the
+dashboard reports the latter. A close ending outside opening hours hands back to
+the schedule rather than to that moment — and "rest of today" ends at closing
+time, so it is outside hours by definition and the two always differ. Choosing
+it at 11:00 on a Wednesday puts the desk back at 09:00 on Thursday, not at 17:00
+that afternoon. A desk whose schedule has no opening at all is told plainly that
+visitors are not promised a time.
+
 Editing the schedule does not clear it — reopening a desk somebody closed early
 is a separate decision from changing the hours. The reverse holds too: closing
 early writes only `closed_until` and leaves the schedule untouched.

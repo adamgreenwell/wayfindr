@@ -686,9 +686,17 @@ class AgentSiteController extends Controller
 
         $this->storeClosure($site, $endsAt->toIso8601String());
 
+        // Report when the desk is BACK, which is not always when the close
+        // expires: one ending outside opening hours hands back to the schedule
+        // rather than to that moment. "Rest of today" ends at closing time, so
+        // it is outside hours by definition and the two always differ.
+        $reopens = SiteAvailability::for($site)->opensAt;
+
         return redirect()
             ->route('dashboard.sites.show', $site)
-            ->with('status', 'Desk closed until '.$endsAt->format('H:i').' on '.$endsAt->format('j M').'.');
+            ->with('status', $reopens === null
+                ? 'Desk closed. The schedule has no opening to return to.'
+                : 'Desk closed. Support is back at '.$reopens->format('H:i').' on '.$reopens->format('j M').'.');
     }
 
     /**

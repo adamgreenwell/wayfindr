@@ -531,3 +531,84 @@ test('the site page offers to close the desk, and to undo it', function (): void
         ->assertSee('Closed early')
         ->assertDontSee('name="closure" value="hour"', false);
 });
+
+test('the dashboard reports when the desk is back, not when the close expires', function (): void {
+    // These differ whenever a close expires outside opening hours, and
+    // "rest of today" does that BY DEFINITION -- it ends at closing time, which
+    // is the first moment the schedule is shut. So this was wrong every single
+    // time that preset was used, not in some edge case.
+    //
+    // The domain had it right all along: reopensAt() hands back to the schedule.
+    // Only the copy above it disagreed.
+    $this->travelTo(CarbonImmutable::parse('2026-08-26 11:00', 'Europe/London'));
+
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['settings' => ['availability' => [
+        'enabled' => true,
+        'timezone' => 'Europe/London',
+        'weekdays' => [
+            'mon' => ['09:00', '17:00'], 'tue' => ['09:00', '17:00'], 'wed' => ['09:00', '17:00'],
+            'thu' => ['09:00', '17:00'], 'fri' => ['09:00', '17:00'], 'sat' => null, 'sun' => null,
+        ],
+    ]]]);
+
+    $this->actingAs($admin)
+        ->post(route('dashboard.sites.availability.close', $site), ['closure' => 'today'])
+        ->assertRedirect()
+        // Thursday morning, because Wednesday 17:00 is when the desk shuts anyway.
+        ->assertSessionHas('status', fn (string $status): bool => str_contains($status, '09:00')
+            && str_contains($status, '27 Aug')
+            && ! str_contains($status, '17:00'));
+});
+
+test('the site page names the reopening, not the moment the close runs out', function (): void {
+    // Deliberately NOT reached through the close request. That redirect flashes
+    // the reopening time, and the page renders the flash -- so a page assertion
+    // made after a POST passes on the banner even when the panel beneath it is
+    // wrong. Asked for directly, the only source of this date is the panel.
+    $this->travelTo(CarbonImmutable::parse('2026-08-26 11:00', 'Europe/London'));
+
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['settings' => ['availability' => [
+        'enabled' => true,
+        'timezone' => 'Europe/London',
+        'weekdays' => [
+            'mon' => ['09:00', '17:00'], 'tue' => ['09:00', '17:00'], 'wed' => ['09:00', '17:00'],
+            'thu' => ['09:00', '17:00'], 'fri' => ['09:00', '17:00'], 'sat' => null, 'sun' => null,
+        ],
+        // Expires at Wednesday's closing time, so the desk is back Thursday.
+        'closed_until' => '2026-08-26T17:00:00+01:00',
+    ]]]);
+
+    // The times themselves are useless as assertions -- 17:00 and 09:00 each
+    // appear seven or eight times in the schedule inputs. The DATE is the tell,
+    // and appears nowhere else on the page.
+    $this->actingAs($admin)->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee('27 Aug')
+        ->assertDontSee('26 Aug');
+});
+
+test('a desk with no opening to return to says so rather than promising one', function (): void {
+    // Every day closed and a manual close on top: reopensAt() has nothing to
+    // offer, so the page must not print an empty time or fall back to the
+    // expiry it just stopped trusting.
+    $this->travelTo(CarbonImmutable::parse('2026-08-26 11:00', 'UTC'));
+
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['settings' => ['availability' => [
+        'enabled' => true,
+        'timezone' => 'UTC',
+        'weekdays' => array_fill_keys(SiteAvailability::DAYS, null),
+        'closed_until' => '2026-08-26T15:00:00+00:00',
+    ]]]);
+
+    expect(SiteAvailability::for($site)->opensAt)->toBeNull();
+
+    $this->actingAs($admin)->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee('no opening to return to');
+});
