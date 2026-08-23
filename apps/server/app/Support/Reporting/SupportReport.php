@@ -287,17 +287,21 @@ final class SupportReport
                 return $empty;
             }
 
+            // Counted in SQL. Reading every rating back to tally three
+            // integers puts a quarter of responses on the wire to produce a
+            // number that fits in a tweet.
             $counts = ConversationRating::query()
                 ->whereIn('site_id', $this->scope->countableSiteIds())
                 ->whereBetween('rated_at', [$this->window->start, $this->window->end])
-                ->toBase()
-                ->get(['score']);
+                ->selectRaw('score, count(*) as aggregate')
+                ->groupBy('score')
+                ->pluck('aggregate', 'score');
 
             $tally = $empty;
 
-            foreach ($counts as $row) {
-                if (array_key_exists((string) $row->score, $tally)) {
-                    $tally[(string) $row->score]++;
+            foreach ($counts as $score => $aggregate) {
+                if (array_key_exists((string) $score, $tally)) {
+                    $tally[(string) $score] = (int) $aggregate;
                 }
             }
 
@@ -308,6 +312,49 @@ final class SupportReport
                 : round(($tally['good'] / $tally['answered']) * 100, 1);
 
             return $tally;
+        });
+    }
+
+    /**
+     * What people actually said, most recent first.
+     *
+     * The score says whether it went badly; only this says why. Collecting a
+     * comment and never showing it anywhere would be worse than not asking for
+     * one -- the visitor spent effort answering a question nobody reads.
+     *
+     * Labelled by support code rather than subject line, the same rule the
+     * audit page follows: a subject is visitor-authored text, a support code is
+     * a reference by construction.
+     *
+     * @return list<array{score: string, comment: string, support_code: string, rated_at: CarbonImmutable}>
+     */
+    public function comments(int $limit = 25): array
+    {
+        return $this->once('comments:'.$limit, function () use ($limit): array {
+            if ($this->scope->isEmpty()) {
+                return [];
+            }
+
+            return ConversationRating::query()
+                ->join('conversations', 'conversations.id', '=', 'conversation_ratings.conversation_id')
+                ->whereIn('conversation_ratings.site_id', $this->scope->countableSiteIds())
+                ->whereBetween('conversation_ratings.rated_at', [$this->window->start, $this->window->end])
+                ->whereNotNull('conversation_ratings.comment')
+                ->orderByDesc('conversation_ratings.rated_at')
+                ->limit($limit)
+                ->get([
+                    'conversation_ratings.score',
+                    'conversation_ratings.comment',
+                    'conversation_ratings.rated_at',
+                    'conversations.support_code',
+                ])
+                ->map(fn (ConversationRating $rating): array => [
+                    'score' => (string) $rating->score,
+                    'comment' => (string) $rating->comment,
+                    'support_code' => (string) $rating->support_code,
+                    'rated_at' => CarbonImmutable::parse($rating->rated_at),
+                ])
+                ->all();
         });
     }
 

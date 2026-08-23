@@ -2942,6 +2942,7 @@
       ratingIntro.textContent = ratingConfig.intro || t('rating.intro');
       ratingLabel.textContent = t('rating.comment');
       ratingSend.textContent = t('rating.send');
+      ratingSend.disabled = ratingScore === null;
 
       [].forEach.call(rating.querySelectorAll('.wayfindr-widget__rating-score'), function (button) {
         button.textContent = t('rating.' + button.getAttribute('data-score'));
@@ -2975,7 +2976,7 @@
         ratingStatus.textContent = t('rating.failed');
         ratingStatus.hidden = false;
       }).then(function () {
-        ratingSend.disabled = false;
+        ratingSend.disabled = ratingScore === null;
       });
     });
 
@@ -5652,6 +5653,23 @@
       '.wayfindr-widget__intake label{display:grid;gap:4px;color:var(--wf-muted);font-size:12px}',
       '.wayfindr-widget__intake input{min-width:0;padding:8px 10px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);font:inherit;font-size:13px}',
       '.wayfindr-widget__intake-error{margin:0;color:var(--wf-signal-attention);font-size:12px}',
+      // The rating prompt sits where the composer would be, in the same
+      // surface the intake form uses -- it is a question the desk is asking,
+      // not a message in the transcript.
+      '.wayfindr-widget__rating{display:grid;gap:10px;margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-surface-2)}',
+      '.wayfindr-widget__rating-intro{margin:0;color:var(--wf-ink);font-size:13px;line-height:1.4}',
+      '.wayfindr-widget__rating-scores{display:flex;gap:8px}',
+      '.wayfindr-widget__rating-score{flex:1 1 0;min-width:0;min-height:34px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);cursor:pointer;padding:0 8px;font:700 13px/1 var(--wf-font-sans)}',
+      '.wayfindr-widget__rating-score:hover{border-color:var(--wf-brand);color:var(--wf-brand)}',
+      // The chosen answer has to be visible without colour alone carrying it,
+      // so the border thickens as well as changing hue.
+      '.wayfindr-widget__rating-score[aria-pressed="true"]{border-color:var(--wf-brand);background:color-mix(in srgb, var(--wf-brand) 12%, var(--wf-surface));color:var(--wf-brand);box-shadow:inset 0 0 0 1px var(--wf-brand)}',
+      '.wayfindr-widget__rating-label{margin:0;color:var(--wf-muted);font-size:12px}',
+      '.wayfindr-widget__rating-comment{min-width:0;padding:8px 10px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);font:inherit;font-size:13px;resize:vertical}',
+      '.wayfindr-widget__rating-send{justify-self:start;min-height:34px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);cursor:pointer;padding:0 12px;font:700 13px/1 var(--wf-font-sans)}',
+      '.wayfindr-widget__rating-send:hover:not(:disabled){border-color:var(--wf-brand);color:var(--wf-brand)}',
+      '.wayfindr-widget__rating-send:disabled{opacity:0.55;cursor:default}',
+      '.wayfindr-widget__rating-status{margin:0;color:var(--wf-signal-stop);font-size:12px}',
       '.wayfindr-widget__away{margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:color-mix(in srgb, var(--wf-signal-hold) 12%, var(--wf-surface));color:color-mix(in srgb, var(--wf-signal-hold) 70%, var(--wf-ink));font-size:13px;line-height:1.4}',
       '.wayfindr-widget__notice{display:grid;gap:10px;margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-surface-2);color:var(--wf-muted);font-size:13px;line-height:1.4}',
       '.wayfindr-widget__notice[data-state="warning"]{background:color-mix(in srgb, var(--wf-signal-hold) 12%, var(--wf-surface));color:color-mix(in srgb, var(--wf-signal-hold) 70%, var(--wf-ink))}',
