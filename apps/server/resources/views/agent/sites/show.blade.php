@@ -887,6 +887,49 @@
                 @endif
             </section>
 
+            <section class="section" aria-labelledby="widget-language-heading">
+                <div class="section-header">
+                    <div>
+                        <h2 id="widget-language-heading">What language the widget speaks</h2>
+                        <p class="lede">A default for visitors whose own browser has not answered.</p>
+                    </div>
+                    <span class="lede">{{ $widgetLocale ? ($widgetLanguages[$widgetLocale] ?? $widgetLocale) : 'Following the visitor' }}</span>
+                </div>
+
+                <div class="notice-copy">
+                    <p>The widget already follows each visitor's browser language, and falls back to English. This setting only decides what a visitor sees when their browser has asked for a language Wayfindr does not carry.</p>
+                    <p>Your own words &mdash; the away message and the intake introduction &mdash; are shown exactly as you wrote them whatever this is set to.</p>
+                </div>
+
+                @if ($canUpdateSite)
+                    <form class="section-form" method="POST" action="{{ route('dashboard.sites.language.update', $site) }}">
+                        @csrf
+                        @method('PUT')
+                        <div class="meta-grid">
+                            <div class="meta-item">
+                                <label class="meta-label" for="widget_locale">Default language</label>
+                                <select id="widget_locale" name="widget_locale">
+                                    <option value="" @selected(old('widget_locale', $widgetLocale) === null || old('widget_locale', $widgetLocale) === '')>Follow the visitor's browser</option>
+                                    @foreach ($widgetLanguages as $code => $label)
+                                        <option value="{{ $code }}" @selected(old('widget_locale', $widgetLocale) === $code)>{{ $label }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="meta-item">
+                                <span class="meta-label">Widget language</span>
+                                <button class="button" type="submit">Save language</button>
+                            </div>
+                        </div>
+                    </form>
+                @else
+                    <p class="lede">Only an account admin can change this.</p>
+                @endif
+
+                <div class="notice-copy">
+                    <p>If your own application knows which language a visitor reads &mdash; because they chose it, or because they are signed in &mdash; tell the widget directly by adding <code>data-wayfindr-locale="de"</code> to the install snippet. That outranks both this setting and the browser, because your application knows better than either.</p>
+                </div>
+            </section>
+
             <section class="section" aria-labelledby="visitor-intake-heading">
                 <div class="section-header">
                     <div>

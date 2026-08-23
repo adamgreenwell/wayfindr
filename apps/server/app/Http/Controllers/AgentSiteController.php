@@ -18,6 +18,7 @@ use App\Support\SiteInstallHealth;
 use App\Support\SitePurge;
 use App\Support\Sites\SiteAvailability;
 use App\Support\Sites\SiteIntake;
+use App\Support\Sites\WidgetLanguage;
 use App\Support\TicketExternalIssueState;
 use App\Support\WidgetRealtimeConfig;
 use DateTimeZone;
@@ -159,6 +160,8 @@ class AgentSiteController extends Controller
             // @php...@endphp blocks silently breaks everything after it.
             'availabilityWeekdays' => $this->availabilityWeekdaysForForm($site),
             'intake' => SiteIntake::for($site),
+            'widgetLocale' => WidgetLanguage::for($site),
+            'widgetLanguages' => WidgetLanguage::options(),
             'dataResponsibility' => config('wayfindr.data_responsibility'),
             'externalIssueCapabilities' => ExternalIssueCapability::options(),
             'externalIssueHealth' => $externalIssueHealth,
@@ -592,6 +595,33 @@ class AgentSiteController extends Controller
         return redirect()
             ->route('dashboard.sites.show', $site)
             ->with('status', 'Visitor intake saved.');
+    }
+
+    /**
+     * Choose the language this site's widget speaks by default.
+     *
+     * Its own method for the same reason the others are: one form must not be
+     * able to blank another's fields by omitting them.
+     */
+    public function updateLanguage(Request $request, Site $site): RedirectResponse
+    {
+        $this->authorizeSiteAbility($request, 'view', $site, 404);
+        $this->authorizeSiteAbility($request, 'update', $site);
+
+        $validated = $request->validate([
+            'widget_locale' => ['nullable', 'string', Rule::in(array_keys(WidgetLanguage::SUPPORTED))],
+        ]);
+
+        $settings = $site->settings ?? [];
+        // Null rather than an empty string, so "not configured" is one value
+        // and the widget can tell it from a language it does not carry.
+        $settings['locale'] = WidgetLanguage::sanitize($validated['widget_locale'] ?? null);
+
+        $site->forceFill(['settings' => $settings])->save();
+
+        return redirect()
+            ->route('dashboard.sites.show', $site)
+            ->with('status', 'Widget language saved.');
     }
 
     /**
