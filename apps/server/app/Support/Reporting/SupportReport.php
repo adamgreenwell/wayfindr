@@ -292,7 +292,12 @@ final class SupportReport
             // number that fits in a tweet.
             $counts = ConversationRating::query()
                 ->whereIn('site_id', $this->scope->countableSiteIds())
-                ->whereBetween('rated_at', [$this->window->start, $this->window->end])
+                // Filtered by the CLOSE being answered, not by when the answer
+                // arrived. Answers and closes have to be the same cohort or the
+                // page reports things like "1 of 0 closes answered": a visitor
+                // who answers just after a boundary would otherwise be counted
+                // without the close they were answering about.
+                ->whereBetween('episode_closed_at', [$this->window->start, $this->window->end])
                 ->selectRaw('score, count(*) as aggregate')
                 ->groupBy('score')
                 ->pluck('aggregate', 'score');
@@ -338,7 +343,8 @@ final class SupportReport
             return ConversationRating::query()
                 ->join('conversations', 'conversations.id', '=', 'conversation_ratings.conversation_id')
                 ->whereIn('conversation_ratings.site_id', $this->scope->countableSiteIds())
-                ->whereBetween('conversation_ratings.rated_at', [$this->window->start, $this->window->end])
+                // Same cohort as the figures above it, for the same reason.
+                ->whereBetween('conversation_ratings.episode_closed_at', [$this->window->start, $this->window->end])
                 ->whereNotNull('conversation_ratings.comment')
                 ->orderByDesc('conversation_ratings.rated_at')
                 ->limit($limit)

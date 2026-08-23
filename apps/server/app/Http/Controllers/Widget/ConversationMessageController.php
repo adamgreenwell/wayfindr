@@ -61,6 +61,12 @@ class ConversationMessageController extends Controller
                 'conversation' => [
                     'support_code' => $conversation->support_code,
                     'status' => $conversation->status,
+                    // Whether the close currently on the table has been
+                    // answered. The widget cannot know this on its own: its
+                    // memory is lost on reload, so it would ask again about a
+                    // close already rated, and it survives a genuine reopen, so
+                    // it would stay silent about the next one.
+                    'rated' => $conversation->currentCloseEpisodeIsRated(),
                 ],
                 'messages' => $messages,
                 'agent_typing' => $conversation->agentTypingPayload(),

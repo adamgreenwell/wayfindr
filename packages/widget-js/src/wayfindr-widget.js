@@ -1244,6 +1244,15 @@
     }
 
     function applyConversationStatus(conversation) {
+      // The server settles whether THIS close has been answered. Widget memory
+      // cannot: it is lost on reload, so the visitor would be asked again about
+      // a close they already rated, and it survives a genuine reopen, so they
+      // would never be asked about the next one. Absent from a payload that
+      // does not carry it, the local answer stands.
+      if (conversation && typeof conversation.rated === 'boolean') {
+        ratingAnswered = conversation.rated;
+      }
+
       if (!conversation || !conversation.status) {
         return;
       }

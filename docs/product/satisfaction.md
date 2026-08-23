@@ -39,10 +39,23 @@ second data point, not a correction — the same conversation going well and lat
 badly is exactly the signal worth keeping. Within one closed episode, though, a
 visitor changing their mind *replaces* what they said: one answer per close.
 
+Each row records `episode_closed_at`, the close it answers, and the table is
+**unique on `(conversation_id, episode_closed_at)`**. The bound is a database
+rule rather than a check the endpoint performs, because a check that reads and
+then writes loses the race: two concurrent requests both see no row and both
+insert.
+
 That bound matters more than it looks. Response rates for this kind of question
 are low, so the denominator is small, and a small denominator is cheap to swamp
 — a script holding a visitor token posting the same score two hundred times must
 not move the aggregate two hundred times.
+
+**A rating nobody asked for is refused.** The endpoint is reachable without the
+widget, so it checks rather than assumes: an answer for a site whose operator
+switched collection off is rejected, and so is an answer about a conversation
+that has never closed. Otherwise the promise this page makes — that ratings are
+written only after an enabled prompt, about a finished stretch of work — would
+hold for the widget and not for the API.
 
 ## Never a percentage nobody answered for
 
@@ -50,6 +63,10 @@ The reports page has a **Satisfaction** tab. Its rules:
 
 - **Every percentage is a share of the people who answered**, never of the
   closes. People who said nothing are not counted as satisfied.
+- **An answer belongs to the period its close belongs to**, not to the moment it
+  arrived. Filtering answers by arrival time while counting closes by close time
+  puts them in different cohorts, and a visitor answering shortly after a
+  boundary then produces output like *1 of 0 closes answered*.
 - **Nobody answering is not a score.** With no answers the tab says so in words.
   A `0%` sitting where a score goes reads to anyone skimming as "everybody said
   it went badly", which is the opposite of the truth.

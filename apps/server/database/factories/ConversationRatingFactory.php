@@ -22,6 +22,10 @@ class ConversationRatingFactory extends Factory
             'score' => $this->faker->randomElement(ConversationRating::SCORES),
             'comment' => null,
             'rated_at' => now(),
+            // Defaults to the same moment, so a factory-made rating lands in
+            // the same reporting window a reader would expect it to. Override
+            // it to place the CLOSE being answered somewhere else.
+            'episode_closed_at' => now(),
         ];
     }
 }

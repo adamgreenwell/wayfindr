@@ -34,12 +34,20 @@ function widgetWith({
   status = 'closed',
   locale = null,
   ratingStatus = 201,
+  // What the SERVER says about the close currently on the table. The widget
+  // must not decide this for itself.
+  rated = false,
+  // A real server reports the close as rated once it has been answered. Set
+  // this false to model the other case: the conversation was reopened and
+  // closed again, so the close now on the table is a NEW one and unanswered.
+  ratedAfterAnswer = true,
 } = {}) {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
     url: 'https://docs.example.test/',
   });
 
   const sent = [];
+  let answered = false;
 
   const widget = Wayfindr.init({
     document: dom.window.document,
@@ -67,6 +75,10 @@ function widgetWith({
       // through to `{ data: {} }` looks like a successful no-op, and the test
       // then passes while the widget silently does nothing.
       if (url.includes('/rating')) {
+        if (ratingStatus === 201) {
+          answered = true;
+        }
+
         return ratingStatus === 201
           ? jsonResponse(201, { data: { rating: { score: 'good' } } })
           : jsonResponse(ratingStatus, { message: 'No.' });
@@ -90,7 +102,15 @@ function widgetWith({
 
       if (url.includes('/messages')) {
         return jsonResponse(200, {
-          data: { conversation: { support_code: 'WF-DOCS', status }, messages: [], message: { id: 1 } },
+          data: {
+            conversation: {
+              support_code: 'WF-DOCS',
+              status,
+              rated: answered ? ratedAfterAnswer : rated,
+            },
+            messages: [],
+            message: { id: 1 },
+          },
         });
       }
 
@@ -175,7 +195,8 @@ test('answering sends the score and the comment, and the question goes away', as
 
 test('a visitor who has answered is not asked again', async () => {
   // A widget that keeps asking is one they stop reading -- and the answer they
-  // already gave is the one that counts.
+  // already gave is the one that counts. The server reports this close as
+  // answered from here on, which is what a reload would also see.
   const { widget } = widgetWith();
   await openPanel(widget);
 
@@ -236,4 +257,32 @@ test('operator wording is written as text, never as markup', async () => {
 
   assert.equal(intro.querySelector('img'), null);
   assert.equal(intro.textContent, '<img src=x onerror="alert(1)">');
+});
+
+test('a close the server says is already rated is not asked about again', async () => {
+  // The reload case. Widget memory is gone, so without the server saying so the
+  // visitor is asked a second time about a close they already answered.
+  const { widget } = widgetWith({ rated: true });
+  await openPanel(widget);
+
+  assert.equal(prompt(widget).hidden, true);
+});
+
+test('a close the server says is unrated is asked about, whatever happened before', async () => {
+  // The genuine-reopen case, from the other side: after answering, a reopen and
+  // a new close is a new question, and only the server knows that happened.
+  const { widget } = widgetWith({ ratedAfterAnswer: false });
+  await openPanel(widget);
+
+  score(widget, 'good').click();
+  widget.root.querySelector('.wayfindr-widget__rating').dispatchEvent(new widget.root.ownerDocument.defaultView.Event('submit', { cancelable: true }));
+  await settle();
+
+  assert.equal(prompt(widget).hidden, true);
+
+  // Refresh re-reads, and the server reports a NEW close, unanswered.
+  widget.root.querySelector('.wayfindr-widget__refresh').click();
+  await settle();
+
+  assert.equal(prompt(widget).hidden, false);
 });

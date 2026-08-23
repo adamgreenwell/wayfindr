@@ -15,6 +15,7 @@ use App\Support\Reporting\SupportReport;
 use App\Support\SitePurge;
 use App\Support\Sites\SiteRatingPrompt;
 use Carbon\CarbonInterface as DateTimeInterface;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -26,7 +27,12 @@ uses(RefreshDatabase::class);
  */
 function ratingWorld(): array
 {
-    $site = Site::factory()->for(Account::factory())->create(['public_key' => 'site_public_rate']);
+    $site = Site::factory()->for(Account::factory())->create([
+        'public_key' => 'site_public_rate',
+        // The desk is asking. Every test below posts an answer, and an answer
+        // to a question nobody asked is now refused.
+        'settings' => ['rating' => ['enabled' => true]],
+    ]);
     $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-rate']);
     $conversation = Conversation::factory()->for($site)->for($visitor)->create([
         'support_code' => 'WF-RATE1',
@@ -192,10 +198,17 @@ test('the report never averages over people who did not answer', function (): vo
     $site = Site::factory()->for($account)->create();
     $site->supportAgents()->syncWithoutDetaching($agent->id);
 
-    $conversation = Conversation::factory()->for($site)->for(Visitor::factory()->for($site))->create();
-
+    // Three people, three conversations. One conversation cannot carry three
+    // answers about the same close any more -- that is the ballot-box bound,
+    // and a test that models it would be describing something impossible.
     foreach (['good', 'good', 'bad'] as $score) {
-        ConversationRating::factory()->for($conversation)->for($site)->create(['score' => $score, 'rated_at' => now()->subDay()]);
+        $conversation = Conversation::factory()->for($site)->for(Visitor::factory()->for($site))->create();
+
+        ConversationRating::factory()->for($conversation)->for($site)->create([
+            'score' => $score,
+            'rated_at' => now()->subDay(),
+            'episode_closed_at' => now()->subDay(),
+        ]);
     }
 
     $report = new SupportReport(
@@ -434,4 +447,103 @@ test('a comment is visitor-authored text and is escaped like any other', functio
 
     expect($html)->toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
         ->and($html)->not->toContain('<script>alert(1)</script>');
+});
+
+test('a site that turned the prompt off does not collect ratings anyway', function (): void {
+    // The endpoint is reachable without the widget. An operator who explicitly
+    // switched collection off must not find scores in their reports.
+    $w = ratingWorld();
+    $w['site']->forceFill(['settings' => ['rating' => ['enabled' => false]]])->save();
+    $token = ratingToken($this);
+
+    postRating($this, $token, 'good')->assertStatus(422);
+
+    expect(ConversationRating::query()->count())->toBe(0);
+});
+
+test('an open conversation cannot be rated', function (): void {
+    // There is no finished stretch of work to answer about, so a score here is
+    // a number nobody was ever asked for.
+    $w = ratingWorld();
+    $w['conversation']->forceFill(['status' => 'open', 'closed_at' => null])->save();
+    $token = ratingToken($this);
+
+    postRating($this, $token, 'bad')->assertStatus(422);
+
+    expect(ConversationRating::query()->count())->toBe(0);
+});
+
+test('one answer per close is a database rule, not a read-then-write', function (): void {
+    // Two concurrent requests both see no row and both insert, and the bound
+    // that keeps a small denominator from being swamped stops holding. The
+    // unique index is what makes it hold; this asserts the index exists and
+    // bites, because the controller alone cannot.
+    $w = ratingWorld();
+    $episode = $w['conversation']->currentCloseEpisodeAt();
+
+    ConversationRating::factory()->for($w['conversation'])->for($w['site'])->create([
+        'score' => 'good',
+        'episode_closed_at' => $episode,
+    ]);
+
+    expect(fn () => ConversationRating::factory()->for($w['conversation'])->for($w['site'])->create([
+        'score' => 'bad',
+        'episode_closed_at' => $episode,
+    ]))->toThrow(QueryException::class);
+});
+
+test('an answer is counted against the close it answers, not the moment it arrived', function (): void {
+    // Otherwise a visitor who answers just after a window boundary is counted
+    // without the close they answered about, and the page reports "1 of 0
+    // closes answered".
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create();
+    $site->supportAgents()->syncWithoutDetaching($agent->id);
+
+    $conversation = Conversation::factory()->for($site)->for(Visitor::factory()->for($site))->create();
+
+    // The close is far outside a 7-day window; the answer arrived inside it.
+    ConversationRating::factory()->for($conversation)->for($site)->create([
+        'score' => 'good',
+        // With a comment, so the comments list is tested on the cohort filter
+        // rather than on whether a comment exists at all.
+        'comment' => 'Answered late, about a close from last month.',
+        'episode_closed_at' => now()->subDays(40),
+        'rated_at' => now()->subHour(),
+    ]);
+
+    $report = new SupportReport(
+        ReportingScope::for($account, $agent, null),
+        ReportingWindow::fromRequestValue('7'),
+    );
+
+    expect($report->satisfaction()['answered'])->toBe(0)
+        ->and($report->satisfaction()['positive'])->toBeNull()
+        ->and($report->comments())->toBe([]);
+});
+
+test('the widget is told whether this close has already been answered', function (): void {
+    // Widget memory cannot answer this: it is lost on reload, so the visitor
+    // would be asked again about a close they already rated, and it survives a
+    // genuine reopen, so they would never be asked about the next one.
+    $w = ratingWorld();
+    $token = ratingToken($this);
+
+    $read = fn () => $this->getJson(route('conversations.messages.index', 'WF-RATE1').'?'.http_build_query([
+        'site_public_key' => 'site_public_rate',
+        'anonymous_id' => 'anon-rate',
+        'visitor_token' => $token,
+    ]));
+
+    expect($read()->json('data.conversation.rated'))->toBeFalse();
+
+    postRating($this, $token, 'good')->assertCreated();
+
+    expect($read()->json('data.conversation.rated'))->toBeTrue();
+
+    // A genuine reopen and close is a new question, and the widget is told so.
+    reopenAndCloseConversation($w['conversation'], now()->addMinutes(10));
+
+    expect($read()->json('data.conversation.rated'))->toBeFalse();
 });

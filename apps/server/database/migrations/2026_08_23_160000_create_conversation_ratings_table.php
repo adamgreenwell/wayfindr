@@ -20,7 +20,20 @@ return new class extends Migration
             // requiring it would cost most of the responses.
             $table->text('comment')->nullable();
             $table->timestamp('rated_at');
+            // WHICH close this answers. A conversation closed, reopened and
+            // closed again is two questions and two answers; the same close
+            // asked twice is one person changing their mind.
+            //
+            // Stored rather than derived because it has two jobs a derived
+            // value cannot do: the unique index below makes "one answer per
+            // close" a database rule rather than a read-then-write race, and
+            // reporting filters on it so the answers and the closes they refer
+            // to are the same cohort -- otherwise a visitor answering just
+            // after a window boundary produces "1 of 0 closes answered".
+            $table->timestamp('episode_closed_at')->nullable();
             $table->timestamps();
+
+            $table->unique(['conversation_id', 'episode_closed_at']);
 
             // A row per rating rather than a column on the conversation: a
             // conversation closed, reopened and closed again can be rated

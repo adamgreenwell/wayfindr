@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use App\Support\Conversations\ConversationLifecycleLog;
 use Carbon\Carbon;
+use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Database\Factories\ConversationFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -78,6 +80,40 @@ class Conversation extends Model
         } while (self::query()->where('support_code', $supportCode)->exists());
 
         return $supportCode;
+    }
+
+    /**
+     * The close a rating would be answering, or null if nothing has closed.
+     *
+     * Null is a refusal, not a default: a conversation that was never closed
+     * has no stretch of work to rate, and accepting an answer about one would
+     * put a score in the report that nobody was ever asked for.
+     */
+    public function currentCloseEpisodeAt(): ?CarbonImmutable
+    {
+        $closedAt = AuditEvent::query()
+            ->where('subject_type', $this->getMorphClass())
+            ->where('subject_id', $this->id)
+            ->where('action', ConversationLifecycleLog::CLOSED)
+            ->max('occurred_at');
+
+        $closedAt ??= $this->closed_at;
+
+        return $closedAt === null ? null : CarbonImmutable::parse($closedAt);
+    }
+
+    /**
+     * Whether the close currently on the table has already been answered.
+     *
+     * Asked of the server rather than remembered by the widget: widget memory
+     * is lost on reload, so it would ask again about a close already rated, and
+     * it survives a genuine reopen, so it would stay silent about the next one.
+     */
+    public function currentCloseEpisodeIsRated(): bool
+    {
+        $episode = $this->currentCloseEpisodeAt();
+
+        return $episode !== null && $this->ratings()->where('episode_closed_at', $episode)->exists();
     }
 
     public function ratings(): HasMany
