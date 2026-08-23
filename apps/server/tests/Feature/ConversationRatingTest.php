@@ -36,9 +36,17 @@ function ratingWorld(): array
     $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-rate']);
     $conversation = Conversation::factory()->for($site)->for($visitor)->create([
         'support_code' => 'WF-RATE1',
-        'status' => 'closed',
-        'closed_at' => now(),
+        'status' => 'open',
     ]);
+
+    // Closed the way the desk closes it, so the lifecycle event exists. The
+    // first version of this helper set `closed_at` directly and recorded
+    // nothing -- which is the shape of a conversation closed BEFORE lifecycle
+    // recording began, not the shape of one closed today, and every test in
+    // this file inherited it.
+    app(ConversationLifecycleLog::class)->closed($conversation->fresh(), null, 'open');
+
+    $conversation->forceFill(['status' => 'closed', 'closed_at' => now()])->save();
 
     return compact('site', 'visitor', 'conversation');
 }
@@ -461,16 +469,37 @@ test('a site that turned the prompt off does not collect ratings anyway', functi
     expect(ConversationRating::query()->count())->toBe(0);
 });
 
-test('an open conversation cannot be rated', function (): void {
-    // There is no finished stretch of work to answer about, so a score here is
-    // a number nobody was ever asked for.
+test('a conversation that has never closed cannot be rated', function (): void {
+    // No finished stretch of work to answer about, so a score here is a number
+    // nobody was ever asked for.
     $w = ratingWorld();
-    $w['conversation']->forceFill(['status' => 'open', 'closed_at' => null])->save();
     $token = ratingToken($this);
+
+    AuditEvent::query()
+        ->where('subject_id', $w['conversation']->id)
+        ->where('action', ConversationLifecycleLog::CLOSED)
+        ->delete();
+
+    $w['conversation']->forceFill(['status' => 'open', 'closed_at' => null])->save();
 
     postRating($this, $token, 'bad')->assertStatus(422);
 
     expect(ConversationRating::query()->count())->toBe(0);
+});
+
+test('a conversation reopened after closing can still be rated for that close', function (): void {
+    // Deliberate, and the reason the episode is the LAST RECORDED close rather
+    // than the current status: an agent can reopen between the prompt appearing
+    // and the visitor answering it. Losing real feedback to a timing accident
+    // is worse than attributing it to the wrong episode.
+    $w = ratingWorld();
+    $token = ratingToken($this);
+
+    $w['conversation']->forceFill(['status' => 'open', 'closed_at' => null])->save();
+
+    postRating($this, $token, 'bad')->assertCreated();
+
+    expect(ConversationRating::query()->count())->toBe(1);
 });
 
 test('one answer per close is a database rule, not a read-then-write', function (): void {
@@ -523,7 +552,7 @@ test('an answer is counted against the close it answers, not the moment it arriv
         ->and($report->comments())->toBe([]);
 });
 
-test('the widget is told whether this close has already been answered', function (): void {
+test('the widget is told whether an answer is being waited for', function (): void {
     // Widget memory cannot answer this: it is lost on reload, so the visitor
     // would be asked again about a close they already rated, and it survives a
     // genuine reopen, so they would never be asked about the next one.
@@ -536,16 +565,16 @@ test('the widget is told whether this close has already been answered', function
         'visitor_token' => $token,
     ]));
 
-    expect($read()->json('data.conversation.rated'))->toBeFalse();
+    expect($read()->json('data.conversation.awaiting_rating'))->toBeTrue();
 
     postRating($this, $token, 'good')->assertCreated();
 
-    expect($read()->json('data.conversation.rated'))->toBeTrue();
+    expect($read()->json('data.conversation.awaiting_rating'))->toBeFalse();
 
     // A genuine reopen and close is a new question, and the widget is told so.
     reopenAndCloseConversation($w['conversation'], now()->addMinutes(10));
 
-    expect($read()->json('data.conversation.rated'))->toBeFalse();
+    expect($read()->json('data.conversation.awaiting_rating'))->toBeTrue();
 });
 
 test('a rating cannot exist without the close it answers', function (): void {
@@ -562,4 +591,35 @@ test('a rating cannot exist without the close it answers', function (): void {
         'rated_at' => now(),
         'episode_closed_at' => null,
     ]))->toThrow(QueryException::class);
+});
+
+test('a close that was never recorded cannot be rated', function (): void {
+    // On an upgraded install a conversation closed before lifecycle recording
+    // still has closed_at but no conversation.closed event. Accepting an answer
+    // about it would count an answer whose close the denominator cannot see --
+    // "1 of 0 closes answered" arriving through a different door than the
+    // cohort filter closes.
+    $w = ratingWorld();
+    $token = ratingToken($this);
+
+    // The legacy shape: closed_at set, no lifecycle event on record.
+    AuditEvent::query()
+        ->where('subject_id', $w['conversation']->id)
+        ->where('action', ConversationLifecycleLog::CLOSED)
+        ->delete();
+
+    expect($w['conversation']->currentCloseEpisodeAt())->toBeNull();
+
+    postRating($this, $token, 'good')->assertStatus(422);
+
+    expect(ConversationRating::query()->count())->toBe(0);
+
+    // And the widget is not shown a prompt the endpoint would refuse.
+    $read = $this->getJson(route('conversations.messages.index', 'WF-RATE1').'?'.http_build_query([
+        'site_public_key' => 'site_public_rate',
+        'anonymous_id' => 'anon-rate',
+        'visitor_token' => $token,
+    ]));
+
+    expect($read->json('data.conversation.awaiting_rating'))->toBeFalse();
 });

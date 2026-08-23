@@ -1244,13 +1244,27 @@
     }
 
     function applyConversationStatus(conversation) {
-      // The server settles whether THIS close has been answered. Widget memory
-      // cannot: it is lost on reload, so the visitor would be asked again about
-      // a close they already rated, and it survives a genuine reopen, so they
-      // would never be asked about the next one. Absent from a payload that
-      // does not carry it, the local answer stands.
-      if (conversation && typeof conversation.rated === 'boolean') {
-        ratingAnswered = conversation.rated;
+      // The server settles whether an answer is being waited for. Widget
+      // memory cannot: it is lost on reload, so the visitor would be asked
+      // again about a close they already rated, and it survives a genuine
+      // reopen, so they would never be asked about the next one. Absent from a
+      // payload that does not carry it, the local answer stands.
+      if (conversation && typeof conversation.awaiting_rating === 'boolean') {
+        var wasAnswered = ratingAnswered;
+
+        ratingAnswered = ! conversation.awaiting_rating;
+
+        // A NEW close is a new question, so it must arrive with an empty form.
+        // Otherwise the previous episode's score is still selected and its
+        // comment still typed, the send button is already enabled, and one tap
+        // copies an answer about different work into this close -- without the
+        // visitor choosing anything.
+        if (wasAnswered && ! ratingAnswered) {
+          ratingScore = null;
+          ratingComment.value = '';
+          ratingStatus.hidden = true;
+          ratingStatus.textContent = '';
+        }
       }
 
       if (!conversation || !conversation.status) {

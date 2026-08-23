@@ -56,6 +56,13 @@ are low, so the denominator is small, and a small denominator is cheap to swamp
 — a script holding a visitor token posting the same score two hundred times must
 not move the aggregate two hundred times.
 
+The close must be one the reports can **count**: a recorded
+`conversation.closed` event, never the `closed_at` column. On an upgraded
+install a conversation closed before lifecycle recording began still has that
+column set, and an answer about it would be counted with no close to count
+against it — the same *1 of 0 closes answered* the cohort rule exists to
+prevent, arriving through a different door.
+
 **A rating nobody asked for is refused.** The endpoint is reachable without the
 widget, so it checks rather than assumes: an answer for a site whose operator
 switched collection off is rejected, and so is an answer about a conversation

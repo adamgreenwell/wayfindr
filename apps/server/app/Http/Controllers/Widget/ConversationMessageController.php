@@ -61,12 +61,17 @@ class ConversationMessageController extends Controller
                 'conversation' => [
                     'support_code' => $conversation->support_code,
                     'status' => $conversation->status,
-                    // Whether the close currently on the table has been
-                    // answered. The widget cannot know this on its own: its
-                    // memory is lost on reload, so it would ask again about a
-                    // close already rated, and it survives a genuine reopen, so
-                    // it would stay silent about the next one.
-                    'rated' => $conversation->currentCloseEpisodeIsRated(),
+                    // Whether this conversation is waiting for an answer: a
+                    // RECORDED close that has not been rated. One field rather
+                    // than two, because the widget's question is one question,
+                    // and the two ways of answering no -- already rated, or no
+                    // ratable close at all -- must both silence the prompt.
+                    //
+                    // The widget cannot work this out alone: its memory is lost
+                    // on reload, so it would ask again about a close already
+                    // rated, and it survives a genuine reopen, so it would stay
+                    // silent about the next one.
+                    'awaiting_rating' => $conversation->isAwaitingRating(),
                 ],
                 'messages' => $messages,
                 'agent_typing' => $conversation->agentTypingPayload(),

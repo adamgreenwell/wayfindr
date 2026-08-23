@@ -83,11 +83,21 @@ class Conversation extends Model
     }
 
     /**
-     * The close a rating would be answering, or null if nothing has closed.
+     * The close a rating would be answering, or null if there is not one.
      *
      * Null is a refusal, not a default: a conversation that was never closed
      * has no stretch of work to rate, and accepting an answer about one would
      * put a score in the report that nobody was ever asked for.
+     *
+     * **A RECORDED close, never `closed_at`.** The fallback is tempting and
+     * wrong: on an upgraded install a conversation closed before lifecycle
+     * recording began still has `closed_at`, but `SupportReport::satisfaction()`
+     * builds its denominator from lifecycle events alone. An answer about such
+     * a close would be counted with no close to count against it -- the "1 of 0
+     * closes answered" the cohort alignment exists to prevent, arriving through
+     * a different door.
+     *
+     * An episode is only created from a close the denominator can count.
      */
     public function currentCloseEpisodeAt(): ?CarbonImmutable
     {
@@ -97,23 +107,21 @@ class Conversation extends Model
             ->where('action', ConversationLifecycleLog::CLOSED)
             ->max('occurred_at');
 
-        $closedAt ??= $this->closed_at;
-
         return $closedAt === null ? null : CarbonImmutable::parse($closedAt);
     }
 
     /**
-     * Whether the close currently on the table has already been answered.
+     * Whether this conversation is waiting for the visitor to say how it went.
      *
-     * Asked of the server rather than remembered by the widget: widget memory
-     * is lost on reload, so it would ask again about a close already rated, and
-     * it survives a genuine reopen, so it would stay silent about the next one.
+     * True only where there is a recorded close AND it has not been answered,
+     * so the two ways of answering no collapse into one -- a widget shown a
+     * prompt the endpoint would refuse is worse than one that never asks.
      */
-    public function currentCloseEpisodeIsRated(): bool
+    public function isAwaitingRating(): bool
     {
         $episode = $this->currentCloseEpisodeAt();
 
-        return $episode !== null && $this->ratings()->where('episode_closed_at', $episode)->exists();
+        return $episode !== null && ! $this->ratings()->where('episode_closed_at', $episode)->exists();
     }
 
     public function ratings(): HasMany

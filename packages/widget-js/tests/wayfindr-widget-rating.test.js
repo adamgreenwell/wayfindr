@@ -34,8 +34,9 @@ function widgetWith({
   status = 'closed',
   locale = null,
   ratingStatus = 201,
-  // What the SERVER says about the close currently on the table. The widget
-  // must not decide this for itself.
+  // What the SERVER says about the close currently on the table: has it been
+  // answered already (or is there no ratable close at all). The widget must not
+  // decide this for itself.
   rated = false,
   // A real server reports the close as rated once it has been answered. Set
   // this false to model the other case: the conversation was reopened and
@@ -106,7 +107,7 @@ function widgetWith({
             conversation: {
               support_code: 'WF-DOCS',
               status,
-              rated: answered ? ratedAfterAnswer : rated,
+              awaiting_rating: answered ? ! ratedAfterAnswer : ! rated,
             },
             messages: [],
             message: { id: 1 },
@@ -285,4 +286,43 @@ test('a close the server says is unrated is asked about, whatever happened befor
   await settle();
 
   assert.equal(prompt(widget).hidden, false);
+});
+
+test('a new close arrives with an empty form, not the previous answer', async () => {
+  // Rate one close, get reopened and closed again. The prompt reappears
+  // because the server says so -- and it must not reappear with the old score
+  // still selected and the old comment still typed, because the send button
+  // would already be enabled and one tap would copy an answer about different
+  // work into this close.
+  const { widget, sent } = widgetWith({ ratedAfterAnswer: false });
+  await openPanel(widget);
+
+  score(widget, 'bad').click();
+  widget.root.querySelector('.wayfindr-widget__rating-comment').value = 'About the FIRST close.';
+  widget.root.querySelector('.wayfindr-widget__rating').dispatchEvent(new widget.root.ownerDocument.defaultView.Event('submit', { cancelable: true }));
+  await settle();
+
+  widget.root.querySelector('.wayfindr-widget__refresh').click();
+  await settle();
+
+  assert.equal(prompt(widget).hidden, false, 'the new close should be asked about');
+  assert.equal(widget.root.querySelector('.wayfindr-widget__rating-comment').value, '');
+  assert.equal(score(widget, 'bad').getAttribute('aria-pressed'), 'false');
+  assert.equal(widget.root.querySelector('.wayfindr-widget__rating-send').disabled, true);
+
+  // And submitting without choosing sends nothing at all.
+  widget.root.querySelector('.wayfindr-widget__rating').dispatchEvent(new widget.root.ownerDocument.defaultView.Event('submit', { cancelable: true }));
+  await settle();
+
+  assert.equal(sent.filter((entry) => entry.url.includes('/rating')).length, 1);
+});
+
+test('a conversation with no ratable close is not asked about', async () => {
+  // On an upgraded install a conversation closed before lifecycle recording has
+  // no recorded close, so there is nothing the endpoint would accept. Showing
+  // the prompt and then refusing the answer is worse than never asking.
+  const { widget } = widgetWith({ rated: true });
+  await openPanel(widget);
+
+  assert.equal(prompt(widget).hidden, true);
 });
