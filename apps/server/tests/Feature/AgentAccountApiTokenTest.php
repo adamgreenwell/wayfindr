@@ -254,3 +254,97 @@ test('the audit log names the API token actions rather than headline-casing them
         ->assertSee('API token issued')
         ->assertDontSee('Api Token Created');
 });
+
+test('an admin cannot issue a token that reaches further than they can', function (): void {
+    // The escalation: site access restricts an admin too, and issuing a token
+    // is not the "explicit elevated view" rbac-waypoints reserves. Without this
+    // an admin who cannot see every site issues an unrestricted token and reads
+    // through the API exactly what the dashboard hides from them.
+    $account = Account::factory()->create();
+    $w = tokenAdmin($account);
+    $hidden = Site::factory()->for($account)->create(['name' => 'Hidden']);
+
+    $somebodyElse = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+    $hidden->supportAgents()->syncWithoutDetaching($somebodyElse->id);
+
+    // No site_ids at all -- the "account-wide" path.
+    $plain = $this->actingAs($w['admin'])
+        ->post(route('dashboard.account.api-tokens.store'), ['name' => 'Wide', 'abilities' => ['read']])
+        ->getSession()->get('issued_api_token');
+
+    $reach = $this->getJson('/api/v1/me', ['Authorization' => 'Bearer '.$plain])->json('data.site_ids');
+
+    expect($reach)->toBe([$w['site']->id])
+        ->and($reach)->not->toContain($hidden->id)
+        ->and(ApiToken::query()->firstOrFail()->restricts_sites)->toBeTrue();
+});
+
+test('an admin who can see the whole account still gets an account-wide token', function (): void {
+    // The narrowing above must not turn every token into a pinned list, or a
+    // site added next month silently falls outside every existing credential.
+    $w = tokenAdmin();
+
+    $this->actingAs($w['admin'])
+        ->post(route('dashboard.account.api-tokens.store'), ['name' => 'Wide', 'abilities' => ['read']]);
+
+    expect(ApiToken::query()->firstOrFail()->restricts_sites)->toBeFalse();
+});
+
+test('asking for sites you cannot see grants nothing, not everything', function (): void {
+    // The edge that turns a narrowing request into a widening one: every
+    // submitted id is filtered out, the list comes back empty, and an empty
+    // list read as "unrestricted" hands back the whole account.
+    $account = Account::factory()->create();
+    $w = tokenAdmin($account);
+    $hidden = Site::factory()->for($account)->create(['name' => 'Hidden']);
+
+    $somebodyElse = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+    $hidden->supportAgents()->syncWithoutDetaching($somebodyElse->id);
+
+    $plain = $this->actingAs($w['admin'])
+        ->post(route('dashboard.account.api-tokens.store'), [
+            'name' => 'Only the hidden one',
+            'abilities' => ['read'],
+            'site_ids' => [$hidden->id],
+        ])
+        ->getSession()->get('issued_api_token');
+
+    expect($this->getJson('/api/v1/me', ['Authorization' => 'Bearer '.$plain])->json('data.site_ids'))
+        ->toBe([]);
+});
+
+test('a restricted token whose sites are purged says so, rather than claiming the account', function (): void {
+    // The flag says restricted and the relationship is empty, which for an
+    // UNRESTRICTED token means "every site". Reading the relationship alone
+    // told the admin the exact opposite of the credential's real reach.
+    $w = tokenAdmin();
+
+    $token = ApiToken::factory()->create([
+        'account_id' => $w['account']->id,
+        'name' => 'Was one site',
+        'restricts_sites' => true,
+    ]);
+
+    $this->actingAs($w['admin'])
+        ->get(route('dashboard.account.api-tokens.index'))
+        ->assertOk()
+        ->assertSee('every site it was limited to has been purged')
+        ->assertDontSee('Every site on this account');
+
+    expect($token->fresh()->restricts_sites)->toBeTrue();
+});
+
+test('an expired token is not counted as active', function (): void {
+    // The same row is labelled Expired in the table and refused at
+    // authentication, so counting it as active contradicts the page itself.
+    $w = tokenAdmin();
+
+    ApiToken::factory()->expired()->create(['account_id' => $w['account']->id, 'name' => 'Old']);
+    ApiToken::factory()->create(['account_id' => $w['account']->id, 'name' => 'Live']);
+
+    $this->actingAs($w['admin'])
+        ->get(route('dashboard.account.api-tokens.index'))
+        ->assertOk()
+        ->assertSee('1 active')
+        ->assertDontSee('2 active');
+});

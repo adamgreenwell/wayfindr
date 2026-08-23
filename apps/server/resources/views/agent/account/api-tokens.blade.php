@@ -1,7 +1,10 @@
 <x-layouts.app title="API tokens" :agent="$agent" :account="$account">
     <x-page-header title="API tokens" subtitle="Programmatic access to this account's support data, for integrations you or somebody else builds." :back-href="route('dashboard.account.show')" back-label="Back to account">
         <x-slot:actions>
-            <span class="lede">{{ $tokens->whereNull('revoked_at')->count() }} active</span>
+            {{-- Usable, not merely un-revoked. A token past its expiry is refused
+                 at authentication and labelled Expired in the table below, so
+                 counting it as active contradicts the same page. --}}
+            <span class="lede">{{ $tokens->filter->isUsable()->count() }} active</span>
         </x-slot:actions>
     </x-page-header>
 
@@ -61,7 +64,12 @@
                                 </td>
                                 <td><code>{{ $token->displayHint() }}</code></td>
                                 <td>
-                                    @if ($token->sites->isEmpty())
+                                    @if ($token->restricts_sites && $token->sites->isEmpty())
+                                        {{-- Restricted, and every site it named has been purged. Reaches
+                                             nothing -- the opposite of what an empty relationship means
+                                             for an unrestricted token. --}}
+                                        <span class="lede">No sites &mdash; every site it was limited to has been purged</span>
+                                    @elseif ($token->sites->isEmpty())
                                         <span class="lede">Every site on this account</span>
                                     @else
                                         <span class="lede">{{ $token->sites->pluck('name')->join(', ') }}</span>

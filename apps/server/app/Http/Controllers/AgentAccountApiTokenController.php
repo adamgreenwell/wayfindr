@@ -77,19 +77,42 @@ class AgentAccountApiTokenController extends Controller
                 : null,
         ]);
 
-        // Intersected with what this agent can see, so a site id typed into the
-        // form cannot restrict-and-thereby-reach anything they could not.
-        $siteIds = $account->sites()
-            ->visibleToAgent($agent)
-            ->whereIn('id', $validated['site_ids'] ?? [])
-            ->pluck('id');
+        // **A token can never reach more than the person issuing it.**
+        //
+        // Site access restricts an admin as well as an agent -- `rbac-waypoints`
+        // is explicit that no role bypasses it because a controller checked
+        // only `account_id`, and "owner and admin may eventually need elevated
+        // views across all sites, but that must be explicit". Issuing a token
+        // is not that explicit decision.
+        //
+        // Without this an admin who cannot see every site could issue an
+        // unrestricted token and read, through the API, exactly the
+        // conversations the dashboard hides from them.
+        $visibleSiteIds = $account->sites()->visibleToAgent($agent)->pluck('id');
+        $accountSiteIds = $account->sites()->pluck('id');
+        $requested = $validated['site_ids'] ?? [];
+        $askedForSpecificSites = $request->has('site_ids');
+
+        if ($askedForSpecificSites) {
+            // Intersected, so a site id typed into the form cannot reach
+            // anything the issuer could not. An empty result means the token
+            // reaches NOTHING -- asking for less must never hand back more,
+            // which is what falling through to "unrestricted" would do.
+            $siteIds = $visibleSiteIds->intersect($requested)->values();
+            $restricted = true;
+        } else {
+            // Account-wide, but only if the issuer can actually see the whole
+            // account. Otherwise the token is pinned to their own reach.
+            $restricted = $visibleSiteIds->count() !== $accountSiteIds->count();
+            $siteIds = $restricted ? $visibleSiteIds->values() : collect();
+        }
 
         $token->sites()->sync($siteIds);
 
         // Recorded on the token, not inferred from the rows just synced. If
         // every one of those sites is later purged this token reaches nothing,
         // which is what the operator asked for.
-        $token->forceFill(['restricts_sites' => $siteIds->isNotEmpty()])->save();
+        $token->forceFill(['restricts_sites' => $restricted])->save();
 
         $this->audit($agent, $token, 'api_token.created', [
             'name' => $token->name,
@@ -103,7 +126,9 @@ class AgentAccountApiTokenController extends Controller
             // Flashed rather than rendered from the model, because the model
             // does not have it: this is the only moment the plaintext exists.
             ->with('issued_api_token', $generated['plain'])
-            ->with('status', 'API token created. Copy it now — it cannot be shown again.');
+            ->with('status', $restricted && ! $askedForSpecificSites
+                ? 'API token created, limited to the sites you support. Copy it now — it cannot be shown again.'
+                : 'API token created. Copy it now — it cannot be shown again.');
     }
 
     public function destroy(Request $request, ApiToken $apiToken): RedirectResponse
