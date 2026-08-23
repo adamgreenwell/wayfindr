@@ -13,11 +13,318 @@
 
   var VERSION = '0.0.0';
   var STYLE_ID = 'wayfindr-widget-styles';
-  var MESSAGE_SEND_ERROR = 'Message could not be sent. Your text is still here so you can try again.';
-  var INTAKE_PENDING_STATUS = 'Please answer the questions above first. Your message is still here.';
-  var MESSAGE_REFRESH_ERROR = 'Messages could not be refreshed. Your current chat is still visible.';
-  var MESSAGE_CONNECTION_TROUBLE = 'Having trouble reaching support. Your chat is still here; refresh will try again.';
-  var ATTACHMENT_UPLOAD_ERROR = 'That file could not be attached.';
+  // Everything a visitor can read, in every language this widget speaks.
+  //
+  // Catalogues are inlined rather than fetched or bundled per locale, and that
+  // is deliberate. The widget has no build step and is served from source by a
+  // Laravel controller, so a separate locale file would be one more artifact
+  // that has to reach the Docker image -- exactly how the vendored realtime
+  // client once went missing and left the widget silently degraded. A string
+  // that ships inside the only file being served cannot fail to arrive.
+  //
+  // The cost is size, and it is bounded: a catalogue is roughly 3 KB. If this
+  // ever grows past a handful of languages, `WidgetScriptController` already
+  // splices content into the response and can splice one catalogue instead --
+  // the seam is this object and nothing else.
+  //
+  // `en` is the source of truth. Every other catalogue must carry exactly the
+  // same keys, which a test enforces rather than trusting review to notice.
+  var MESSAGES = {
+    en: {
+      'launcher.label': 'Chat with support',
+      'launcher.sharingAria': '{label} — sharing this page with support',
+      'panel.aria': 'Support chat',
+      'header.title': 'Wayfindr Support',
+      'header.close': 'Close support chat',
+      'timeline.aria': 'Conversation messages',
+      'timeline.jump': 'New messages ↓',
+      'notice.emptyVisitor': 'No messages yet. Send a message and support will see it here.',
+      'notice.emptyAgent': 'No messages yet. Replies will show up here.',
+      'notice.closed': 'This conversation was closed. Send a new message to reopen it.',
+      'notice.retry': 'Try again',
+      'form.label': 'How can we help?',
+      'form.placeholder': 'Type your message...',
+      'form.send': 'Send message',
+      'form.refresh': 'Refresh',
+      'attachments.aria': 'Files to send',
+      'attachment.attachAria': 'Attach a file',
+      'attachment.attach': 'Attach',
+      'attachment.uploading': 'Uploading…',
+      'attachment.remove': 'Remove {filename}',
+      'attachment.fallbackName': 'Attachment',
+      'sender.support': 'Support',
+      'sender.visitor': 'Visitor',
+      'receipt.aria': 'Visitor message sent to support',
+      'receipt.label': 'Sent to support',
+      'connection.connected': 'Live updates connected.',
+      'connection.reconnecting': 'Live updates reconnecting. Refresh still works.',
+      'connection.polling': 'Using periodic refresh for updates.',
+      'connection.trouble': 'Having trouble reaching support. Your chat is still here; refresh will try again.',
+      'status.sending': 'Sending...',
+      'status.refreshing': 'Refreshing...',
+      'status.refreshed': 'Messages refreshed.',
+      'status.waitingUploads': 'Waiting for uploads to finish…',
+      'status.messageSent': 'Message sent. Support code {code}.',
+      'status.conversationRestored': 'Conversation restored. Support code {code}.',
+      'error.send': 'Message could not be sent. Your text is still here so you can try again.',
+      'error.refresh': 'Messages could not be refreshed. Your current chat is still visible.',
+      'error.attachment': 'That file could not be attached.',
+      'error.requestFailed': 'Wayfindr request failed with status {status}.',
+      'intake.pending': 'Please answer the questions above first. Your message is still here.',
+      'intake.submit': 'Continue',
+      'intake.optional': '{label} (optional)',
+      'intake.checkDetails': 'Please check the details above.',
+      'intake.required': 'Please fill in the required fields.',
+      'intake.field.name': 'Your name',
+      'intake.field.email': 'Your email',
+      'intake.field.reason': 'What is this about?',
+      'cobrowse.aria': 'Cobrowse request',
+      'cobrowse.request': 'Support wants to view this page with sensitive fields masked.',
+      'cobrowse.requestFrom': '{requester} wants to view this page with sensitive fields masked.',
+      'cobrowse.allow': 'Allow cobrowse',
+      'cobrowse.decline': 'Decline',
+      'cobrowse.stop': 'Stop cobrowse',
+      'cobrowse.active': 'Cobrowse is active. Sensitive fields stay masked.',
+      'cobrowse.catchingUp': 'Wayfindr is catching up with recent page changes. Sensitive fields stay masked.',
+      'cobrowse.granting': 'Granting cobrowse consent...',
+      'cobrowse.revoking': 'Revoking cobrowse consent...',
+      'cobrowse.granted': 'Cobrowse consent granted.',
+      'cobrowse.revoked': 'Cobrowse consent revoked.',
+      'cobrowse.stoppedBySupport': 'Cobrowse stopped by support.',
+      'cobrowse.stopped': 'Cobrowse stopped.',
+      'cobrowse.declined': 'Cobrowse request declined.',
+      'cobrowse.consentFailed': 'Wayfindr could not update cobrowse consent.',
+      'cobrowse.statusFailed': 'Wayfindr could not refresh cobrowse status.',
+      'date.today': 'Today',
+      'date.yesterday': 'Yesterday',
+      'away.default': 'Support is away right now. Leave a message and we will reply when we are back.',
+      'away.back': 'Back {when}.',
+    },
+    de: {
+      'launcher.label': 'Chat mit dem Support',
+      'launcher.sharingAria': '{label} – diese Seite wird mit dem Support geteilt',
+      'panel.aria': 'Support-Chat',
+      'header.title': 'Wayfindr Support',
+      'header.close': 'Support-Chat schließen',
+      'timeline.aria': 'Nachrichtenverlauf',
+      'timeline.jump': 'Neue Nachrichten ↓',
+      'notice.emptyVisitor': 'Noch keine Nachrichten. Schreiben Sie uns, der Support sieht Ihre Nachricht hier.',
+      'notice.emptyAgent': 'Noch keine Nachrichten. Antworten erscheinen hier.',
+      'notice.closed': 'Diese Unterhaltung wurde geschlossen. Senden Sie eine neue Nachricht, um sie wieder zu öffnen.',
+      'notice.retry': 'Erneut versuchen',
+      'form.label': 'Wie können wir helfen?',
+      'form.placeholder': 'Nachricht eingeben …',
+      'form.send': 'Nachricht senden',
+      'form.refresh': 'Aktualisieren',
+      'attachments.aria': 'Dateien zum Senden',
+      'attachment.attachAria': 'Datei anhängen',
+      'attachment.attach': 'Anhängen',
+      'attachment.uploading': 'Wird hochgeladen …',
+      'attachment.remove': '{filename} entfernen',
+      'attachment.fallbackName': 'Anhang',
+      'sender.support': 'Support',
+      'sender.visitor': 'Besucher',
+      'receipt.aria': 'Besuchernachricht an den Support gesendet',
+      'receipt.label': 'An den Support gesendet',
+      'connection.connected': 'Live-Aktualisierung verbunden.',
+      'connection.reconnecting': 'Live-Aktualisierung verbindet neu. Aktualisieren funktioniert weiterhin.',
+      'connection.polling': 'Aktualisierung erfolgt in regelmäßigen Abständen.',
+      'connection.trouble': 'Der Support ist gerade schwer erreichbar. Ihr Chat bleibt erhalten; beim Aktualisieren versuchen wir es erneut.',
+      'status.sending': 'Wird gesendet …',
+      'status.refreshing': 'Wird aktualisiert …',
+      'status.refreshed': 'Nachrichten aktualisiert.',
+      'status.waitingUploads': 'Warten auf den Abschluss der Uploads …',
+      'status.messageSent': 'Nachricht gesendet. Support-Code {code}.',
+      'status.conversationRestored': 'Unterhaltung wiederhergestellt. Support-Code {code}.',
+      'error.send': 'Die Nachricht konnte nicht gesendet werden. Ihr Text ist noch da, Sie können es erneut versuchen.',
+      'error.refresh': 'Die Nachrichten konnten nicht aktualisiert werden. Ihr Chat ist weiterhin sichtbar.',
+      'error.attachment': 'Diese Datei konnte nicht angehängt werden.',
+      'error.requestFailed': 'Wayfindr-Anfrage fehlgeschlagen mit Status {status}.',
+      'intake.pending': 'Bitte beantworten Sie zuerst die Fragen oben. Ihre Nachricht bleibt erhalten.',
+      'intake.submit': 'Weiter',
+      'intake.optional': '{label} (optional)',
+      'intake.checkDetails': 'Bitte prüfen Sie die Angaben oben.',
+      'intake.required': 'Bitte füllen Sie die Pflichtfelder aus.',
+      'intake.field.name': 'Ihr Name',
+      'intake.field.email': 'Ihre E-Mail-Adresse',
+      'intake.field.reason': 'Worum geht es?',
+      'cobrowse.aria': 'Cobrowsing-Anfrage',
+      'cobrowse.request': 'Der Support möchte diese Seite ansehen. Sensible Felder bleiben maskiert.',
+      'cobrowse.requestFrom': '{requester} möchte diese Seite ansehen. Sensible Felder bleiben maskiert.',
+      'cobrowse.allow': 'Cobrowsing erlauben',
+      'cobrowse.decline': 'Ablehnen',
+      'cobrowse.stop': 'Cobrowsing beenden',
+      'cobrowse.active': 'Cobrowsing ist aktiv. Sensible Felder bleiben maskiert.',
+      'cobrowse.catchingUp': 'Wayfindr holt die letzten Seitenänderungen nach. Sensible Felder bleiben maskiert.',
+      'cobrowse.granting': 'Einwilligung wird erteilt …',
+      'cobrowse.revoking': 'Einwilligung wird widerrufen …',
+      'cobrowse.granted': 'Einwilligung zum Cobrowsing erteilt.',
+      'cobrowse.revoked': 'Einwilligung zum Cobrowsing widerrufen.',
+      'cobrowse.stoppedBySupport': 'Cobrowsing wurde vom Support beendet.',
+      'cobrowse.stopped': 'Cobrowsing beendet.',
+      'cobrowse.declined': 'Cobrowsing-Anfrage abgelehnt.',
+      'cobrowse.consentFailed': 'Wayfindr konnte die Cobrowsing-Einwilligung nicht aktualisieren.',
+      'cobrowse.statusFailed': 'Wayfindr konnte den Cobrowsing-Status nicht aktualisieren.',
+      'date.today': 'Heute',
+      'date.yesterday': 'Gestern',
+      'away.default': 'Der Support ist gerade nicht erreichbar. Hinterlassen Sie eine Nachricht, wir melden uns, sobald wir zurück sind.',
+      'away.back': 'Zurück {when}.',
+    },
+  };
+
+  var DEFAULT_LOCALE = 'en';
+
+  // Scripts whose languages run right to left. Kept as a list because the
+  // browser will not tell us: `Intl.Locale.textInfo` is recent enough that the
+  // browsers this widget still supports do not all have it, and a widget that
+  // renders backwards is worse than one carrying a short list.
+  var RTL_LANGUAGES = ['ar', 'ckb', 'dv', 'fa', 'he', 'ps', 'sd', 'ug', 'ur', 'yi'];
+
+  function normaliseLocale(value) {
+    return typeof value === 'string' ? value.trim().toLowerCase().replace(/_/g, '-') : '';
+  }
+
+  function baseLanguage(locale) {
+    return normaliseLocale(locale).split('-')[0];
+  }
+
+  /**
+   * The catalogue that best answers a locale tag, or null.
+   *
+   * `de-AT` falls back to `de` rather than to English: a regional variant we do
+   * not carry is still that language.
+   */
+  function matchCatalogue(value) {
+    var wanted = normaliseLocale(value);
+
+    if (!wanted) {
+      return null;
+    }
+
+    if (MESSAGES[wanted]) {
+      return wanted;
+    }
+
+    var base = baseLanguage(wanted);
+
+    return MESSAGES[base] ? base : null;
+  }
+
+  /**
+   * Which language this visitor reads.
+   *
+   * In order: what the host page asked for, then what the visitor's own browser
+   * says, then the site's configured default, then English.
+   *
+   * The browser outranks the site default on purpose. The default is the
+   * operator's guess at who visits; the browser is the visitor answering for
+   * themselves. The host page outranks both because an application that has
+   * signed someone in knows better than either.
+   */
+  function resolveLocale(preferences) {
+    var candidates = [preferences.requested]
+      .concat(preferences.navigatorLanguages || [])
+      .concat([preferences.siteDefault]);
+
+    for (var index = 0; index < candidates.length; index++) {
+      var match = matchCatalogue(candidates[index]);
+
+      if (match) {
+        return match;
+      }
+    }
+
+    return DEFAULT_LOCALE;
+  }
+
+  function navigatorLanguages(nav) {
+    if (!nav) {
+      return [];
+    }
+
+    if (Array.isArray(nav.languages) && nav.languages.length) {
+      return nav.languages;
+    }
+
+    return nav.language ? [nav.language] : [];
+  }
+
+  /**
+   * The locale as Intl wants it, or nothing.
+   *
+   * Passing `undefined` makes Intl use the browser's locale, which is the right
+   * fallback: it is still a language the visitor reads, just not the one the
+   * widget is speaking.
+   */
+  function localeTags(locale) {
+    var tag = normaliseLocale(locale);
+
+    return tag ? [tag] : undefined;
+  }
+
+  /**
+   * One decimal place, in the visitor's convention.
+   *
+   * A German visitor reads 1,4 MB rather than 1.4 MB, and toFixed() cannot say
+   * so. Falls back to toFixed() where Intl is missing, because a file size in
+   * the wrong convention still beats no file size.
+   */
+  function formatDecimal(locale, value) {
+    try {
+      return new Intl.NumberFormat(localeTags(locale), {
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1,
+      }).format(value);
+    } catch (error) {
+      reportSuppressed('number formatting', error);
+
+      return value.toFixed(1);
+    }
+  }
+
+  function isRtlLocale(locale) {
+    return RTL_LANGUAGES.indexOf(baseLanguage(locale)) !== -1;
+  }
+
+  /**
+   * A translator bound to one widget instance.
+   *
+   * Instance-scoped rather than module-scoped because two widgets can share a
+   * page, and a module-level current locale would make the second one silently
+   * retranslate the first.
+   */
+  function createTranslator(locale) {
+    var active = matchCatalogue(locale) || DEFAULT_LOCALE;
+
+    function t(key, params) {
+      var template = MESSAGES[active][key];
+
+      if (typeof template !== 'string') {
+        template = MESSAGES[DEFAULT_LOCALE][key];
+      }
+
+      // Missing from English too means the key is wrong, which is a bug rather
+      // than a translation gap. Showing it beats showing nothing.
+      if (typeof template !== 'string') {
+        return key;
+      }
+
+      if (!params) {
+        return template;
+      }
+
+      return template.replace(/\{(\w+)\}/g, function (whole, name) {
+        return Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : whole;
+      });
+    }
+
+    t.locale = active;
+    t.isRtl = isRtlLocale(active);
+    t.direction = t.isRtl ? 'rtl' : 'ltr';
+
+    return t;
+  }
+
   // The file picker's accept hint (mobile shows the camera for image/*). The
   // server enforces the real allowlist by sniffing bytes regardless of this.
   var ATTACHMENT_ACCEPT = 'image/*,application/pdf,text/plain,.txt,.log';
@@ -484,6 +791,19 @@
       throw new Error('Wayfindr requires a browser document.');
     }
 
+    // Resolved before anything is drawn. The chrome is built once, at init,
+    // and bootstrap has not happened yet -- so a locale that only arrived with
+    // the site payload would show every visitor an English launcher first and
+    // correct it afterwards. The site's configured default is folded in later
+    // by applyLocale(), and only matters when neither the host page nor the
+    // browser has said anything.
+    var localePreferences = {
+      requested: options.locale,
+      navigatorLanguages: navigatorLanguages(options.navigator || (root ? root.navigator : null)),
+      siteDefault: null,
+    };
+    var t = createTranslator(resolveLocale(localePreferences));
+
     var client = createClient({
       apiBaseUrl: options.apiBaseUrl,
       sitePublicKey: options.sitePublicKey,
@@ -502,51 +822,76 @@
 
     injectStyles(doc);
 
+    /**
+     * What to show a visitor for a failure.
+     *
+     * A server-authored message is shown as the server wrote it. A failure the
+     * widget generated carries a key instead, so it can be said in the
+     * visitor's language rather than leaking an English sentence into an
+     * otherwise translated panel.
+     */
+    function errorText(error, fallbackKey) {
+      if (error && error.wayfindrKey) {
+        return t(error.wayfindrKey, error.wayfindrParams);
+      }
+
+      if (error && typeof error.message === 'string' && error.message) {
+        return error.message;
+      }
+
+      return t(fallbackKey);
+    }
+
     var mount = resolveMount(doc, options.mount);
     var panelId = 'wayfindr-support-panel-' + (++widgetInstanceCount);
     var cobrowseCopyId = panelId + '-cobrowse-copy';
     var rootEl = doc.createElement('div');
     rootEl.className = 'wayfindr-widget';
+    // Set on the widget rather than the page: a German widget on an English
+    // site is ordinary, and an Arabic one has to lay out right-to-left inside a
+    // left-to-right host without touching the host's own direction.
+    rootEl.lang = t.locale;
+    rootEl.dir = t.direction;
     rootEl.innerHTML = [
-      '<button class="wayfindr-widget__launcher" type="button" aria-controls="' + escapeHtml(panelId) + '" aria-expanded="false">' + escapeHtml(options.launcherLabel || 'Chat with support') + '</button>',
-      '<section id="' + escapeHtml(panelId) + '" class="wayfindr-widget__panel" aria-label="Support chat" hidden>',
+      '<button class="wayfindr-widget__launcher" type="button" aria-controls="' + escapeHtml(panelId) + '" aria-expanded="false">' + escapeHtml(options.launcherLabel || t('launcher.label')) + '</button>',
+      '<section id="' + escapeHtml(panelId) + '" class="wayfindr-widget__panel" aria-label="' + escapeHtml(t('panel.aria')) + '" hidden>',
       '  <header class="wayfindr-widget__header">',
-      '    <strong>' + escapeHtml(options.title || 'Wayfindr Support') + '</strong>',
-      '    <button class="wayfindr-widget__close" type="button" aria-label="Close support chat">&times;</button>',
+      '    <strong>' + escapeHtml(options.title || t('header.title')) + '</strong>',
+      '    <button class="wayfindr-widget__close" type="button" aria-label="' + escapeHtml(t('header.close')) + '">&times;</button>',
       '  </header>',
       '  <div class="wayfindr-widget__away" role="status" aria-live="polite" hidden></div>',
       '  <form class="wayfindr-widget__intake" hidden>',
       '    <p class="wayfindr-widget__intake-intro"></p>',
       '    <div class="wayfindr-widget__intake-fields"></div>',
       '    <p class="wayfindr-widget__intake-error" role="alert" hidden></p>',
-      '    <button class="wayfindr-widget__intake-submit" type="submit">Continue</button>',
+      '    <button class="wayfindr-widget__intake-submit" type="submit">' + escapeHtml(t('intake.submit')) + '</button>',
       '  </form>',
       '  <div class="wayfindr-widget__timeline-wrap">',
-      '    <div class="wayfindr-widget__timeline" role="log" aria-live="polite" aria-relevant="additions text" aria-atomic="false" aria-label="Conversation messages" hidden></div>',
-      '    <button class="wayfindr-widget__jump" type="button" hidden>New messages ↓</button>',
+      '    <div class="wayfindr-widget__timeline" role="log" aria-live="polite" aria-relevant="additions text" aria-atomic="false" aria-label="' + escapeHtml(t('timeline.aria')) + '" hidden></div>',
+      '    <button class="wayfindr-widget__jump" type="button" hidden>' + escapeHtml(t('timeline.jump')) + '</button>',
       '  </div>',
       '  <div class="wayfindr-widget__notice" data-state="empty" role="status" aria-live="polite" aria-atomic="true">',
-      '    <p class="wayfindr-widget__notice-copy">No messages yet. Send a message and support will see it here.</p>',
-      '    <button class="wayfindr-widget__notice-retry" type="button" hidden>Try again</button>',
+      '    <p class="wayfindr-widget__notice-copy">' + escapeHtml(t('notice.emptyVisitor')) + '</p>',
+      '    <button class="wayfindr-widget__notice-retry" type="button" hidden>' + escapeHtml(t('notice.retry')) + '</button>',
       '  </div>',
       '  <p class="wayfindr-widget__typing" role="status" aria-live="polite" aria-atomic="true" hidden></p>',
       '  <p class="wayfindr-widget__connection" role="status" aria-live="polite" aria-atomic="true" hidden></p>',
       '  <form class="wayfindr-widget__form">',
-      '    <label class="wayfindr-widget__label" for="wayfindr-message">How can we help?</label>',
-      '    <textarea id="wayfindr-message" class="wayfindr-widget__textarea" name="message" rows="4" placeholder="' + escapeHtml(options.placeholder || 'Type your message...') + '"></textarea>',
-      '    <ul class="wayfindr-widget__attachments" aria-label="Files to send" hidden></ul>',
+      '    <label class="wayfindr-widget__label" for="wayfindr-message">' + escapeHtml(t('form.label')) + '</label>',
+      '    <textarea id="wayfindr-message" class="wayfindr-widget__textarea" name="message" rows="4" placeholder="' + escapeHtml(options.placeholder || t('form.placeholder')) + '"></textarea>',
+      '    <ul class="wayfindr-widget__attachments" aria-label="' + escapeHtml(t('attachments.aria')) + '" hidden></ul>',
       '    <input class="wayfindr-widget__file-input" type="file" accept="' + escapeHtml(ATTACHMENT_ACCEPT) + '" multiple hidden aria-hidden="true" tabindex="-1">',
       '    <div class="wayfindr-widget__actions">',
-      '      <button class="wayfindr-widget__attach" type="button" aria-label="Attach a file"><span aria-hidden="true">📎</span> Attach</button>',
-      '      <button class="wayfindr-widget__send" type="submit">Send message</button>',
-      '      <button class="wayfindr-widget__refresh" type="button" hidden>Refresh</button>',
+      '      <button class="wayfindr-widget__attach" type="button" aria-label="' + escapeHtml(t('attachment.attachAria')) + '"><span aria-hidden="true">📎</span> ' + escapeHtml(t('attachment.attach')) + '</button>',
+      '      <button class="wayfindr-widget__send" type="submit">' + escapeHtml(t('form.send')) + '</button>',
+      '      <button class="wayfindr-widget__refresh" type="button" hidden>' + escapeHtml(t('form.refresh')) + '</button>',
       '    </div>',
       '  </form>',
-      '  <div class="wayfindr-widget__cobrowse" role="group" aria-label="Cobrowse request" aria-describedby="' + escapeHtml(cobrowseCopyId) + '" hidden>',
-      '    <p id="' + escapeHtml(cobrowseCopyId) + '" class="wayfindr-widget__cobrowse-copy" role="status" aria-live="polite" aria-atomic="true">Support wants to view this page with sensitive fields masked.</p>',
+      '  <div class="wayfindr-widget__cobrowse" role="group" aria-label="' + escapeHtml(t('cobrowse.aria')) + '" aria-describedby="' + escapeHtml(cobrowseCopyId) + '" hidden>',
+      '    <p id="' + escapeHtml(cobrowseCopyId) + '" class="wayfindr-widget__cobrowse-copy" role="status" aria-live="polite" aria-atomic="true">' + escapeHtml(t('cobrowse.request')) + '</p>',
       '    <div class="wayfindr-widget__cobrowse-actions">',
-      '      <button class="wayfindr-widget__cobrowse-allow" type="button">Allow cobrowse</button>',
-      '      <button class="wayfindr-widget__cobrowse-decline" type="button">Decline</button>',
+      '      <button class="wayfindr-widget__cobrowse-allow" type="button">' + escapeHtml(t('cobrowse.allow')) + '</button>',
+      '      <button class="wayfindr-widget__cobrowse-decline" type="button">' + escapeHtml(t('cobrowse.decline')) + '</button>',
       '    </div>',
       '  </div>',
       '  <p class="wayfindr-widget__status" role="status" aria-live="polite" aria-atomic="true"></p>',
@@ -661,8 +1006,83 @@
     var pendingClientMessageId = null;
     var pendingClientMessageBody = null;
     var noticeRetryAction = null;
+    // Captured from the rendered chrome rather than hardcoded, so the busy
+    // states restore whatever the button actually says -- including a host's
+    // own label and a retranslated one.
     var sendLabel = send.textContent;
     var refreshLabel = refresh.textContent;
+
+    /**
+     * Adopt the site's configured language, if it turns out to matter.
+     *
+     * Bootstrap is the first time the widget learns what the operator set as
+     * the site default, and that only wins when neither the host page nor the
+     * visitor's browser has already answered -- so most of the time this
+     * changes nothing and returns early.
+     *
+     * When it does change, the chrome is retranslated in place rather than
+     * rebuilt. Rebuilding would throw away the transcript, the composer's
+     * contents and any in-flight upload, which is a poor trade for a language
+     * the visitor did not ask for.
+     */
+    function applyLocale(siteDefault) {
+      localePreferences.siteDefault = siteDefault || localePreferences.siteDefault;
+
+      var next = resolveLocale(localePreferences);
+
+      if (next === t.locale) {
+        return;
+      }
+
+      t = createTranslator(next);
+      rootEl.lang = t.locale;
+      rootEl.dir = t.direction;
+
+      // A label the host page supplied is the host page's to own; only the
+      // widget's own defaults are retranslated.
+      if (!options.launcherLabel) {
+        launcher.textContent = t('launcher.label');
+      }
+
+      if (!options.title) {
+        var heading = rootEl.querySelector('.wayfindr-widget__header strong');
+
+        if (heading) {
+          heading.textContent = t('header.title');
+        }
+      }
+
+      if (!options.placeholder) {
+        textarea.setAttribute('placeholder', t('form.placeholder'));
+      }
+
+      panel.setAttribute('aria-label', t('panel.aria'));
+      close.setAttribute('aria-label', t('header.close'));
+      timeline.setAttribute('aria-label', t('timeline.aria'));
+      jump.textContent = t('timeline.jump');
+      noticeRetry.textContent = t('notice.retry');
+      attachmentsList.setAttribute('aria-label', t('attachments.aria'));
+      attachButton.setAttribute('aria-label', t('attachment.attachAria'));
+      cobrowse.setAttribute('aria-label', t('cobrowse.aria'));
+
+      var attachText = attachButton.querySelector('span');
+
+      if (attachText && attachText.nextSibling) {
+        attachText.nextSibling.textContent = ' ' + t('attachment.attach');
+      }
+
+      var formLabel = rootEl.querySelector('.wayfindr-widget__label');
+
+      if (formLabel) {
+        formLabel.textContent = t('form.label');
+      }
+
+      // Re-captured, or the busy state would restore the previous language.
+      sendLabel = t('form.send');
+      refreshLabel = t('form.refresh');
+      send.textContent = composerBusy ? t('status.sending') : sendLabel;
+      refresh.textContent = refreshBusy ? t('status.refreshing') : refreshLabel;
+    }
 
     function showNotice(state, copy, options) {
       options = options || {};
@@ -692,15 +1112,15 @@
 
     function renderConversationNotice() {
       if (conversationStatus === 'closed') {
-        showNotice('closed', 'This conversation was closed. Send a new message to reopen it.');
+        showNotice('closed', t('notice.closed'));
 
         return;
       }
 
       if (messages.length === 0) {
         showNotice('empty', supportCode
-          ? 'No messages yet. Replies will show up here.'
-          : 'No messages yet. Send a message and support will see it here.');
+          ? t('notice.emptyAgent')
+          : t('notice.emptyVisitor'));
       } else {
         hideNotice();
       }
@@ -776,7 +1196,7 @@
         var dayKey = messageDayKey(message.created_at);
 
         if (dayKey && dayKey !== previousDayKey) {
-          var separator = createDaySeparator(doc, message.created_at);
+          var separator = createDaySeparator(doc, message.created_at, t);
 
           if (separator) {
             timeline.appendChild(separator);
@@ -792,7 +1212,7 @@
         var name = doc.createElement('strong');
         var body = doc.createElement('p');
         var time = createMessageTime(doc, message.created_at);
-        var delivery = createMessageDelivery(doc, senderKind);
+        var delivery = createMessageDelivery(doc, senderKind, t);
         var grouped = shouldGroupMessage(message, messages[index - 1]);
 
         item.className = 'wayfindr-widget__message wayfindr-widget__message--' + senderKind;
@@ -807,7 +1227,7 @@
 
         meta.className = 'wayfindr-widget__message-meta';
         name.className = 'wayfindr-widget__message-name';
-        name.textContent = sender.name || (senderKind === 'agent' ? 'Support' : 'Visitor');
+        name.textContent = sender.name || t(senderKind === 'agent' ? 'sender.support' : 'sender.visitor');
         body.className = 'wayfindr-widget__message-body';
 
         meta.appendChild(name);
@@ -963,13 +1383,13 @@
       var normalized = String(state || '').toLowerCase();
 
       if (normalized === 'connected' || normalized === 'live') {
-        connection.textContent = 'Live updates connected.';
+        connection.textContent = t('connection.connected');
       } else if (normalized === 'connecting' || normalized === 'reconnecting') {
-        connection.textContent = 'Live updates reconnecting. Refresh still works.';
+        connection.textContent = t('connection.reconnecting');
       } else if (normalized === 'trouble') {
-        connection.textContent = MESSAGE_CONNECTION_TROUBLE;
+        connection.textContent = t('connection.trouble');
       } else {
-        connection.textContent = 'Using periodic refresh for updates.';
+        connection.textContent = t('connection.polling');
       }
 
       if (normalized !== 'trouble') {
@@ -992,7 +1412,7 @@
     }
 
     function clearConnectionTrouble() {
-      if (connection.textContent !== MESSAGE_CONNECTION_TROUBLE) {
+      if (connection.textContent !== t('connection.trouble')) {
         return;
       }
 
@@ -1141,15 +1561,15 @@
     function renderCobrowseConsent() {
       var requested = cobrowseState === 'requested';
       var granted = cobrowseState === 'granted';
-      var requester = cobrowseRequestedBy || 'Support';
+      var requester = cobrowseRequestedBy || t('sender.support');
       var wasHidden = cobrowse.hidden;
 
       cobrowse.hidden = !supportCode || (!requested && !granted);
-      cobrowseAllow.textContent = granted ? 'Stop cobrowse' : 'Allow cobrowse';
+      cobrowseAllow.textContent = t(granted ? 'cobrowse.stop' : 'cobrowse.allow');
       cobrowseDecline.hidden = granted;
       cobrowseCopy.textContent = granted
-        ? (cobrowseVisitorNotice || 'Cobrowse is active. Sensitive fields stay masked.')
-        : requester + ' wants to view this page with sensitive fields masked.';
+        ? (cobrowseVisitorNotice || t('cobrowse.active'))
+        : t('cobrowse.requestFrom', { requester: requester });
 
       // The cobrowse controls live inside the panel, so a visitor who grants
       // cobrowse and then closes the panel would otherwise lose any sign that
@@ -1158,7 +1578,7 @@
       if (launcher) {
         if (granted) {
           launcher.setAttribute('data-cobrowse-active', 'true');
-          launcher.setAttribute('aria-label', launcher.textContent + ' — sharing this page with support');
+          launcher.setAttribute('aria-label', t('launcher.sharingAria', { label: launcher.textContent }));
         } else {
           launcher.removeAttribute('data-cobrowse-active');
           launcher.removeAttribute('aria-label');
@@ -1203,9 +1623,9 @@
       handleCobrowseResyncRequest(nextCobrowse.resync);
 
       if ((previousGranted || previousState === 'requested') && cobrowseState === 'ended') {
-        status.textContent = 'Cobrowse stopped by support.';
+        status.textContent = t('cobrowse.stoppedBySupport');
       } else if ((previousGranted || previousState === 'requested') && cobrowseState === 'revoked') {
-        status.textContent = previousGranted ? 'Cobrowse stopped.' : 'Cobrowse request declined.';
+        status.textContent = t(previousGranted ? 'cobrowse.stopped' : 'cobrowse.declined');
       }
     }
 
@@ -1517,7 +1937,7 @@
       }
 
       lastCobrowsePressureResyncAt = nowMs;
-      cobrowseCopy.textContent = 'Wayfindr is catching up with recent page changes. Sensitive fields stay masked.';
+      cobrowseCopy.textContent = t('cobrowse.catchingUp');
 
       try {
         var snapshot = createCobrowseSnapshot(doc, {
@@ -1557,7 +1977,7 @@
 
       cobrowseAllow.disabled = true;
       cobrowseDecline.disabled = true;
-      status.textContent = nextGranted ? 'Granting cobrowse consent...' : 'Revoking cobrowse consent...';
+      status.textContent = t(nextGranted ? 'cobrowse.granting' : 'cobrowse.revoking');
 
       try {
         var result = await client.setCobrowseConsent(supportCode, nextGranted);
@@ -1603,7 +2023,7 @@
 
         status.textContent = cobrowseGranted ? 'Cobrowse consent granted.' : 'Cobrowse consent revoked.';
       } catch (error) {
-        status.textContent = error.message || 'Wayfindr could not update cobrowse consent.';
+        status.textContent = errorText(error, 'cobrowse.consentFailed');
       } finally {
         cobrowseResumeInFlight = false;
         cobrowseAllow.disabled = false;
@@ -1627,7 +2047,7 @@
         return result;
       } catch (error) {
         if (!options.silent) {
-          status.textContent = error.message || 'Wayfindr could not refresh cobrowse status.';
+          status.textContent = errorText(error, 'cobrowse.statusFailed');
         }
 
         return null;
@@ -1684,7 +2104,7 @@
       }
 
       if (!options.silent) {
-        status.textContent = 'Refreshing...';
+        status.textContent = t('status.refreshing');
       }
 
       try {
@@ -1695,14 +2115,14 @@
         clearConnectionTrouble();
 
         if (!options.silent) {
-          status.textContent = 'Messages refreshed.';
+          status.textContent = t('status.refreshed');
         }
       } catch (error) {
         renderConnectionTrouble();
 
         if (!options.silent) {
-          status.textContent = MESSAGE_REFRESH_ERROR;
-          showNotice('warning', MESSAGE_REFRESH_ERROR, {
+          status.textContent = t('error.refresh');
+          showNotice('warning', t('error.refresh'), {
             retry: true,
           });
         }
@@ -1720,7 +2140,7 @@
       attachButton.disabled = composerBusy;
       // Re-render chips so their remove buttons reflect the busy state.
       renderPendingAttachments();
-      send.textContent = composerBusy ? 'Sending...' : sendLabel;
+      send.textContent = composerBusy ? t('status.sending') : sendLabel;
 
       if (noticeRetryAction) {
         noticeRetry.disabled = composerBusy;
@@ -1731,7 +2151,7 @@
       refreshBusy = Boolean(nextBusy);
       refresh.setAttribute('aria-busy', refreshBusy ? 'true' : 'false');
       refresh.disabled = refreshBusy;
-      refresh.textContent = refreshBusy ? 'Refreshing...' : refreshLabel;
+      refresh.textContent = refreshBusy ? t('status.refreshing') : refreshLabel;
       noticeRetry.disabled = refreshBusy;
     }
 
@@ -1774,9 +2194,9 @@
         stateEl.className = 'wayfindr-widget__attach-chip-state';
 
         if (attachment.status === 'uploading') {
-          stateEl.textContent = 'Uploading…';
+          stateEl.textContent = t('attachment.uploading');
         } else if (attachment.status === 'error') {
-          stateEl.textContent = attachment.error || ATTACHMENT_UPLOAD_ERROR;
+          stateEl.textContent = attachment.error || t('error.attachment');
         } else {
           stateEl.textContent = formatAttachmentSize(attachment.size);
         }
@@ -1786,7 +2206,7 @@
         var removeEl = doc.createElement('button');
         removeEl.type = 'button';
         removeEl.className = 'wayfindr-widget__attach-chip-remove';
-        removeEl.setAttribute('aria-label', 'Remove ' + attachment.filename);
+        removeEl.setAttribute('aria-label', t('attachment.remove', { filename: attachment.filename }));
         removeEl.textContent = '×';
         // A send in flight captured the current attachment ids already; removing
         // one mid-send would desync the chips and reset the idempotency key.
@@ -1852,7 +2272,7 @@
         }
 
         if (!attachment || !attachment.id) {
-          throw new Error(ATTACHMENT_UPLOAD_ERROR);
+          throw new Error(t('error.attachment'));
         }
 
         entry.status = 'ready';
@@ -1868,7 +2288,7 @@
           entry.status = 'error';
           entry.error = (error && typeof error.status === 'number' && error.status >= 400 && error.status < 500 && error.message)
             ? error.message
-            : ATTACHMENT_UPLOAD_ERROR;
+            : t('error.attachment');
           renderPendingAttachments();
         }
 
@@ -1944,7 +2364,7 @@
         var img = doc.createElement('img');
         img.className = 'wayfindr-widget__attachment-image';
         img.setAttribute('src', url);
-        img.setAttribute('alt', attachment.filename || 'Attachment');
+        img.setAttribute('alt', attachment.filename || t('attachment.fallbackName'));
         img.setAttribute('loading', 'lazy');
         link.appendChild(img);
 
@@ -1962,7 +2382,7 @@
 
       var label = doc.createElement('span');
       label.className = 'wayfindr-widget__attachment-name';
-      label.textContent = attachment.filename || 'Attachment';
+      label.textContent = attachment.filename || t('attachment.fallbackName');
       link.appendChild(label);
 
       if (attachment.size_bytes) {
@@ -1979,7 +2399,7 @@
       bytes = Number(bytes) || 0;
 
       if (bytes >= 1024 * 1024) {
-        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        return formatDecimal(t.locale, bytes / (1024 * 1024)) + ' MB';
       }
 
       if (bytes >= 1024) {
@@ -2054,8 +2474,11 @@
 
     // Everything a bootstrap answer tells the widget, applied in one place.
     function applyBootstrapResult(result) {
+      // Language first: everything below renders copy, and rendering it twice
+      // would show the visitor the wrong language for a frame.
+      applyLocale(siteLocale(result));
       applySiteAccent(rootEl, siteAccentKey(result));
-      applyAwayState(panel, siteAwayState(result));
+      applyAwayState(panel, siteAwayState(result), t);
       applyIntakeState(siteIntakeState(result));
     }
 
@@ -2116,7 +2539,7 @@
         // can run under JSDOM and inside a host page that is not the top frame.
         var label = doc.createElement('label');
         var text = doc.createTextNode(
-          INTAKE_LABELS[field.name] + (field.required ? '' : ' (optional)')
+          field.required ? intakeFieldLabel(t, field.name) : t('intake.optional', { label: intakeFieldLabel(t, field.name) })
         );
         var input = doc.createElement('input');
 
@@ -2158,7 +2581,7 @@
       intakeAnsweredSignature = '';
       refreshIntakeGate();
 
-      intakeError.textContent = error.message || 'Please check the details above.';
+      intakeError.textContent = errorText(error, 'intake.checkDetails');
       intakeError.hidden = false;
 
       return true;
@@ -2193,7 +2616,7 @@
       if (missing) {
         // The server enforces this too; answering here saves a round trip and
         // is the only per-field feedback the widget has ever had.
-        intakeError.textContent = 'Please fill in the required fields.';
+        intakeError.textContent = t('intake.required');
         intakeError.hidden = false;
 
         return;
@@ -2349,7 +2772,7 @@
       // An upload still in flight would leave its chip out of the send; wait for
       // it to finish (or be removed) rather than send a partial set.
       if (hasUploadingAttachments()) {
-        status.textContent = 'Waiting for uploads to finish…';
+        status.textContent = t('status.waitingUploads');
 
         return;
       }
@@ -2364,7 +2787,7 @@
       }
 
       setComposerBusy(true);
-      status.textContent = 'Sending...';
+      status.textContent = t('status.sending');
 
       // Reuse the same idempotency key while retrying the same draft, so a lost
       // response on the first attempt does not create a duplicate message when
@@ -2410,7 +2833,7 @@
         // so the visitor answers and sends the same message again.
         if (intakeGateHolds()) {
           setComposerBusy(false);
-          status.textContent = INTAKE_PENDING_STATUS;
+          status.textContent = t('intake.pending');
 
           return;
         }
@@ -2457,8 +2880,8 @@
           return;
         }
 
-        status.textContent = MESSAGE_SEND_ERROR;
-        showNotice('warning', MESSAGE_SEND_ERROR, {
+        status.textContent = t('error.send');
+        showNotice('warning', t('error.send'), {
           retry: true,
           onRetry: retryComposerSend,
         });
@@ -2484,14 +2907,14 @@
         pendingClientMessageBody = null;
         await refreshMessages({ silent: true });
         await refreshCobrowseStatus({ silent: true });
-        status.textContent = 'Message sent. Support code ' + supportCode + '.';
+        status.textContent = t('status.messageSent', { code: supportCode });
       } catch (error) {
         reportSuppressed('post-send update', error);
 
         // Still a success as far as the visitor is concerned: the transcript
         // may be a beat behind, and the poll scheduled by activateConversation
         // catches it up.
-        status.textContent = 'Message sent. Support code ' + supportCode + '.';
+        status.textContent = t('status.messageSent', { code: supportCode });
       } finally {
         setComposerBusy(false);
       }
@@ -2518,7 +2941,7 @@
         renderAgentTyping(result.agent_typing);
         renderConversationNotice();
         activateConversation();
-        status.textContent = 'Conversation restored. Support code ' + supportCode + '.';
+        status.textContent = t('status.conversationRestored', { code: supportCode });
         await refreshCobrowseStatus({ silent: true });
       } catch (error) {
         if (error && typeof error.status === 'number' && error.status >= 400 && error.status < 500) {
@@ -2751,7 +3174,7 @@
     return date ? dayKeyFromDate(date) : null;
   }
 
-  function createDaySeparator(doc, value) {
+  function createDaySeparator(doc, value, t) {
     var date = parseMessageDate(value);
 
     if (!date) {
@@ -2765,29 +3188,29 @@
     var label = doc.createElement('time');
     label.className = 'wayfindr-widget__day-label';
     label.dateTime = dayKeyFromDate(date);
-    label.textContent = formatDayLabel(date);
+    label.textContent = formatDayLabel(date, t);
 
     separator.appendChild(label);
 
     return separator;
   }
 
-  function formatDayLabel(date) {
+  function formatDayLabel(date, t) {
     var today = new Date();
     var todayKey = dayKeyFromDate(today);
     var yesterdayKey = dayKeyFromDate(new Date(today.getTime() - 24 * 60 * 60 * 1000));
     var key = dayKeyFromDate(date);
 
     if (key === todayKey) {
-      return 'Today';
+      return t('date.today');
     }
 
     if (key === yesterdayKey) {
-      return 'Yesterday';
+      return t('date.yesterday');
     }
 
     try {
-      return date.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+      return date.toLocaleDateString(localeTags(t.locale), { year: 'numeric', month: 'long', day: 'numeric' });
     } catch (error) {
       return dayKeyFromDate(date);
     }
@@ -2797,15 +3220,15 @@
     return (value < 10 ? '0' : '') + value;
   }
 
-  function createMessageDelivery(doc, senderKind) {
+  function createMessageDelivery(doc, senderKind, t) {
     if (senderKind !== 'visitor') {
       return null;
     }
 
     var delivery = doc.createElement('span');
     delivery.className = 'wayfindr-widget__message-delivery';
-    delivery.setAttribute('aria-label', 'Visitor message sent to support');
-    delivery.textContent = 'Sent to support';
+    delivery.setAttribute('aria-label', t('receipt.aria'));
+    delivery.textContent = t('receipt.label');
 
     return delivery;
   }
@@ -2890,6 +3313,19 @@
   // constrains it, and that is exactly why a second check is cheap.
   var SITE_COLORS = ['red', 'blue', 'ochre', 'pine', 'violet', 'rust'];
 
+  /**
+   * The language the operator configured for this site, if any.
+   *
+   * Only a hint: {@see resolveLocale} puts it behind the host page and the
+   * visitor's own browser, because it is the operator's guess at who visits
+   * rather than an answer from the visitor.
+   */
+  function siteLocale(result) {
+    var site = result && result.site ? result.site : null;
+
+    return site && typeof site.locale === 'string' ? site.locale : null;
+  }
+
   function siteAccentKey(result) {
     var key = result && result.site ? result.site.color : null;
 
@@ -2920,7 +3356,7 @@
     };
   }
 
-  function formatReturn(opensAt) {
+  function formatReturn(opensAt, locale) {
     if (!opensAt) {
       return null;
     }
@@ -2946,13 +3382,13 @@
     }
 
     try {
-      return when.toLocaleString(undefined, options);
+      return when.toLocaleString(localeTags(locale), options);
     } catch (error) {
       return when.toISOString();
     }
   }
 
-  function applyAwayState(panelEl, away) {
+  function applyAwayState(panelEl, away, t) {
     if (!panelEl) {
       return;
     }
@@ -2975,13 +3411,13 @@
     if (away.message) {
       lines.push(away.message);
     } else {
-      lines.push('Support is away right now. Leave a message and we will reply when we are back.');
+      lines.push(t('away.default'));
     }
 
-    var back = formatReturn(away.opensAt);
+    var back = formatReturn(away.opensAt, t.locale);
 
     if (back) {
-      lines.push('Back ' + back + '.');
+      lines.push(t('away.back', { when: back }));
     }
 
     el.textContent = lines.join(' ');
@@ -2990,7 +3426,16 @@
 
   var INTAKE_FIELDS = ['name', 'email', 'reason'];
 
-  var INTAKE_LABELS = { name: 'Your name', email: 'Your email', reason: 'What is this about?' };
+  /**
+   * The question a field asks, in the visitor's language.
+   *
+   * Keyed off the field name the server sends, which never changes with the
+   * locale -- the wire format stays English so a translated widget and an
+   * untranslated server still agree about what is being asked.
+   */
+  function intakeFieldLabel(t, field) {
+    return t('intake.field.' + field);
+  }
 
   function siteIntakeState(result) {
     var site = result && result.site ? result.site : null;
@@ -4484,7 +4929,16 @@
   // Carry the HTTP status on the error so callers can tell a server rejection
   // (a stale or foreign reference) from a transient network failure.
   function responseError(response, data) {
-    var error = new Error(data.message || 'Wayfindr request failed with status ' + response.status + '.');
+    // A server-authored message is the server's copy and is shown as-is. Our
+    // own generic failure carries a key instead, so the widget can say it in
+    // the visitor's language rather than leaking an English sentence.
+    var serverMessage = typeof data.message === 'string' && data.message ? data.message : null;
+    var error = new Error(serverMessage || 'Wayfindr request failed with status ' + response.status + '.');
+
+    if (!serverMessage) {
+      error.wayfindrKey = 'error.requestFailed';
+      error.wayfindrParams = { status: response.status };
+    }
     error.status = response.status;
 
     return error;
@@ -4622,12 +5076,12 @@
       '@media (prefers-color-scheme:dark){.wayfindr-widget:not([data-wf-theme="light"]){--wf-paper:#141517;--wf-surface:#1B1D20;--wf-surface-2:#24272A;--wf-ink:#ECECE8;--wf-ink-invert:#16181A;--wf-muted:#9BA0A3;--wf-rule:#2E3134;--wf-rule-firm:#3D4145;--wf-brand:#3FA69D;--wf-signal-rest:#7E8386;--wf-signal-go:#4CA97A;--wf-signal-hold:#E0A72A;--wf-signal-stop:#E2685C;--wf-site-red:#D54C43;--wf-site-blue:#5578D0;--wf-site-ochre:#A57105;--wf-site-pine:#238C57;--wf-site-violet:#896EB6;--wf-site-rust:#C65C2E}}',
       '.wayfindr-widget[data-wf-theme="dark"]{--wf-paper:#141517;--wf-surface:#1B1D20;--wf-surface-2:#24272A;--wf-ink:#ECECE8;--wf-ink-invert:#16181A;--wf-muted:#9BA0A3;--wf-rule:#2E3134;--wf-rule-firm:#3D4145;--wf-brand:#3FA69D;--wf-signal-rest:#7E8386;--wf-signal-go:#4CA97A;--wf-signal-hold:#E0A72A;--wf-signal-stop:#E2685C;--wf-site-red:#D54C43;--wf-site-blue:#5578D0;--wf-site-ochre:#A57105;--wf-site-pine:#238C57;--wf-site-violet:#896EB6;--wf-site-rust:#C65C2E}',
       // wayfindr:tokens:end
-      '.wayfindr-widget{position:fixed;right:20px;bottom:20px;z-index:2147483000;font-family:var(--wf-font-sans);color:var(--wf-ink)}',
+      '.wayfindr-widget{position:fixed;inset-inline-end:20px;bottom:20px;z-index:2147483000;font-family:var(--wf-font-sans);color:var(--wf-ink)}',
       '.wayfindr-widget *{box-sizing:border-box}',
       '.wayfindr-widget [hidden]{display:none!important}',
       '.wayfindr-widget__launcher,.wayfindr-widget__send{border:0;border-radius:999px;background:var(--wf-brand);color:var(--wf-ink-invert);box-shadow:0 12px 30px rgba(8,37,34,.18);cursor:pointer;font:700 14px/1 var(--wf-font-sans)}',
       '.wayfindr-widget__launcher{position:relative;min-height:48px;padding:0 18px}',
-      '.wayfindr-widget__launcher[data-cobrowse-active="true"]::after{content:"";position:absolute;top:-3px;right:-3px;width:14px;height:14px;border-radius:999px;background:var(--wf-signal-hold);border:2px solid var(--wf-surface);box-shadow:0 0 0 2px color-mix(in srgb, var(--wf-signal-hold) 35%, transparent)}',
+      '.wayfindr-widget__launcher[data-cobrowse-active="true"]::after{content:"";position:absolute;top:-3px;inset-inline-end:-3px;width:14px;height:14px;border-radius:999px;background:var(--wf-signal-hold);border:2px solid var(--wf-surface);box-shadow:0 0 0 2px color-mix(in srgb, var(--wf-signal-hold) 35%, transparent)}',
       '.wayfindr-widget__send{min-height:40px;padding:0 14px;border-radius:6px}',
       '.wayfindr-widget__launcher:hover,.wayfindr-widget__send:hover{background:color-mix(in srgb, var(--wf-brand) 80%, var(--wf-ink))}',
       '.wayfindr-widget__send:disabled{cursor:wait;opacity:.7}',
@@ -4704,7 +5158,7 @@
       '.wayfindr-widget__cobrowse-decline:hover{border-color:var(--wf-brand);color:var(--wf-brand)}',
       '.wayfindr-widget__cobrowse-allow:disabled,.wayfindr-widget__cobrowse-decline:disabled{cursor:wait;opacity:.7}',
       '.wayfindr-widget__status{min-height:20px;margin:0;padding:0 16px 16px;color:var(--wf-muted);font-size:13px}',
-      '@media (max-width:480px){.wayfindr-widget{right:12px;bottom:12px}.wayfindr-widget__panel{width:calc(100vw - 24px);max-height:calc(100dvh - 24px)}}',
+      '@media (max-width:480px){.wayfindr-widget{inset-inline-end:12px;bottom:12px}.wayfindr-widget__panel{width:calc(100vw - 24px);max-height:calc(100dvh - 24px)}}',
     ].join('');
 
     doc.head.appendChild(style);
@@ -4733,6 +5187,10 @@
       visitorExternalId: script.dataset.wayfindrVisitorExternalId,
       launcherLabel: script.dataset.wayfindrLauncherLabel,
       title: script.dataset.wayfindrTitle,
+      // The host page's answer, and the only one that outranks the visitor's
+      // own browser: an application that has signed someone in knows which
+      // language they chose.
+      locale: script.dataset.wayfindrLocale,
       reverb: reverbOptionsFromScript(script),
     });
   }
@@ -4757,6 +5215,17 @@
     createCobrowseSnapshot: createCobrowseSnapshot,
     createCobrowseMutationBatch: createCobrowseMutationBatch,
     init: init,
+    // Exposed so the catalogues can be checked against each other rather than
+    // by reading them: a locale missing one key looks translated and says one
+    // sentence in English, which is precisely what survives review.
+    messages: MESSAGES,
+    locales: Object.keys(MESSAGES),
+    // Which way a language runs. Public because a host page embedding the
+    // widget in its own layout needs the same answer, and because the widget
+    // itself cannot demonstrate it until an RTL catalogue ships.
+    textDirection: function (locale) {
+      return isRtlLocale(locale) ? 'rtl' : 'ltr';
+    },
     normalizeApiBaseUrl: normalizeApiBaseUrl,
     resolveAnonymousId: resolveAnonymousId,
   };
