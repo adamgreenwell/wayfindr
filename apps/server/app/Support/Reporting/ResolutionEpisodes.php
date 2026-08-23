@@ -19,9 +19,41 @@ use Illuminate\Support\Collection;
  * exactly this risk: "a second implementation of 'measure from the reopen that
  * started it' is how the two halves come to disagree" -- and two halves of one
  * page disagreeing about resolution time is worse than one of them missing.
+ *
+ * ## Only a transition counts
+ *
+ * The log is not a clean alternation of close and reopen, and reading it as one
+ * produces confident nonsense:
+ *
+ * - **Consecutive closes.** A double-click, a retry or a stale page submits
+ *   close twice, and ticket closes had no write-time guard until this change.
+ *   Treating the second as a close makes one resolution contribute two
+ *   durations and inflates every count taken from the log.
+ * - **Reopens that reopen nothing.** The ticket UI offers the same Reopen
+ *   control for a CLOSED ticket and a PENDING one, so `open -> pending ->
+ *   reopen -> close` was recorded as a reopen. That claims a resolution failed
+ *   when none was ever reached, and restarts the clock at the un-hold, hiding
+ *   every hour before the ticket went on hold.
+ *
+ * So the walk tracks state rather than reacting to actions: a close ends an
+ * episode only while the subject is open, and a reopen starts one only while it
+ * is closed. Anything else is a duplicate or an unrelated status change and is
+ * passed over. Write-time guards now prevent both, but history already recorded
+ * cannot be rewritten -- it is read correctly instead.
  */
 final class ResolutionEpisodes
 {
+    private const OPEN = 'open';
+
+    private const CLOSED = 'closed';
+
+    /**
+     * The subject predates this install's recording, so its state at the
+     * boundary is genuinely unknown -- not assumed open, which would measure a
+     * close against a creation time that may be several resolutions stale.
+     */
+    private const UNKNOWN = 'unknown';
+
     /**
      * @param  list<int>  $subjectIds
      * @param  callable(list<int>): Collection<int, mixed>  $openedAt  Creation
@@ -31,8 +63,8 @@ final class ResolutionEpisodes
      *                                                                 fails outright rather than being slow.
      * @param  CarbonImmutable|null  $recordingBeganAt  When this install's
      *                                                  history for THIS kind of subject became trustworthy, or null when it
-     *                                                  always was. Tickets predate the reporting work; conversations do not.
-     * @return array{durations: list<int>, unmeasurable: int}
+     *                                                  always was. Tickets and conversations each have their own boundary.
+     * @return array{durations: list<int>, unmeasurable: int, closes: list<array{at: CarbonImmutable, actor_type: ?string, actor_id: ?int}>, reopens: list<array{at: CarbonImmutable, actor_type: ?string, actor_id: ?int}>}
      */
     public static function walk(
         string $morphClass,
@@ -45,6 +77,8 @@ final class ResolutionEpisodes
     ): array {
         $durations = [];
         $unmeasurable = 0;
+        $closes = [];
+        $reopens = [];
 
         // Chunked because a quarter of closes is an unbounded number of bind
         // parameters.
@@ -59,7 +93,7 @@ final class ResolutionEpisodes
                 ->orderBy('occurred_at')
                 ->orderBy('id')
                 ->toBase()
-                ->get(['subject_id', 'action', 'occurred_at']);
+                ->get(['subject_id', 'action', 'occurred_at', 'actor_type', 'actor_id']);
 
             foreach ($events->groupBy('subject_id') as $subjectId => $subjectEvents) {
                 $start = $created[(int) $subjectId] ?? null;
@@ -74,24 +108,52 @@ final class ResolutionEpisodes
                 // A subject that predates recording may have been closed and
                 // reopened before anything was written down, in which case
                 // measuring from creation charges this close with stretches of
-                // work that were already resolved. Once a reopen has been seen,
-                // the episode start is known however old the subject is.
+                // work that were already resolved.
                 $episodeStartIsKnown = $recordingBeganAt === null
                     || $episodeStart->greaterThanOrEqualTo($recordingBeganAt);
 
+                // Everything is created open. A subject older than the boundary
+                // may have closed since, unrecorded, so its state is unknown --
+                // and a close arriving in that state is counted without being
+                // measured, exactly as an unknown start is.
+                $state = $episodeStartIsKnown ? self::OPEN : self::UNKNOWN;
+
                 foreach ($subjectEvents as $event) {
                     $at = CarbonImmutable::parse($event->occurred_at);
+                    $inWindow = $at->betweenIncluded($window->start, $window->end);
 
                     if ($event->action === $reopenedAction) {
+                        // Only from closed, or from unknown -- a reopen proves
+                        // the subject had been closed, so it settles the state
+                        // either way. From open it reopens nothing.
+                        if ($state === self::OPEN) {
+                            continue;
+                        }
+
+                        $state = self::OPEN;
                         $episodeStart = $at;
                         $episodeStartIsKnown = true;
 
+                        if ($inWindow) {
+                            $reopens[] = self::entry($at, $event);
+                        }
+
                         continue;
                     }
 
-                    if (! $at->betweenIncluded($window->start, $window->end)) {
+                    // A close while already closed is the duplicate submission,
+                    // not a second resolution.
+                    if ($state === self::CLOSED) {
                         continue;
                     }
+
+                    $state = self::CLOSED;
+
+                    if (! $inWindow) {
+                        continue;
+                    }
+
+                    $closes[] = self::entry($at, $event);
 
                     if (! $episodeStartIsKnown) {
                         // Counted as a close, never as a duration. An inflated
@@ -107,6 +169,23 @@ final class ResolutionEpisodes
             }
         }
 
-        return ['durations' => $durations, 'unmeasurable' => $unmeasurable];
+        return [
+            'durations' => $durations,
+            'unmeasurable' => $unmeasurable,
+            'closes' => $closes,
+            'reopens' => $reopens,
+        ];
+    }
+
+    /**
+     * @return array{at: CarbonImmutable, actor_type: ?string, actor_id: ?int}
+     */
+    private static function entry(CarbonImmutable $at, mixed $event): array
+    {
+        return [
+            'at' => $at,
+            'actor_type' => $event->actor_type === null ? null : (string) $event->actor_type,
+            'actor_id' => $event->actor_id === null ? null : (int) $event->actor_id,
+        ];
     }
 }

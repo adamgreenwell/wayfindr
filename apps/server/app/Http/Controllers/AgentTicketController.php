@@ -540,18 +540,27 @@ class AgentTicketController extends Controller
         ]);
 
         $resolutionNote = trim((string) ($validated['resolution_note'] ?? ''));
+        $wasClosed = $ticket->status === 'closed';
 
         $ticket->forceFill([
             'status' => 'closed',
-            'closed_at' => now(),
+            // A ticket already closed keeps the moment it was actually closed.
+            'closed_at' => $wasClosed ? $ticket->closed_at : now(),
         ])->save();
 
-        $this->recordActivity(
-            $ticket,
-            $agent,
-            'ticket.closed',
-            $resolutionNote === '' ? [] : ['resolution_note' => $resolutionNote],
-        );
+        // Only a TRANSITION is an event -- the rule conversation lifecycle
+        // already follows. A double-click, a retry, or a stale page submits
+        // close twice; recording both writes consecutive closes with no reopen
+        // between them, which makes one resolution contribute two durations to
+        // the report and inflates every close count derived from the log.
+        if (! $wasClosed) {
+            $this->recordActivity(
+                $ticket,
+                $agent,
+                'ticket.closed',
+                $resolutionNote === '' ? [] : ['resolution_note' => $resolutionNote],
+            );
+        }
 
         return $this->redirectAfterUpdate($ticket, $request, 'Ticket closed.');
     }
@@ -567,16 +576,23 @@ class AgentTicketController extends Controller
         ]);
 
         $reopenNote = trim((string) ($validated['reopen_note'] ?? ''));
+        $wasClosed = $ticket->status === 'closed';
 
         $ticket->forceFill([
             'status' => 'open',
             'closed_at' => null,
         ])->save();
 
+        // The same control reopens a CLOSED ticket and un-holds a PENDING one,
+        // and only the first is a reopen. `open -> pending -> reopen -> close`
+        // is the ordinary flow, not an edge case: recording a reopen there
+        // claims a resolution failed when none was ever reached, and restarts
+        // the resolution clock at the un-hold, hiding every hour before the
+        // ticket was put on hold.
         $this->recordActivity(
             $ticket,
             $agent,
-            'ticket.reopened',
+            $wasClosed ? 'ticket.reopened' : 'ticket.unheld',
             $reopenNote === '' ? [] : ['reopen_note' => $reopenNote],
         );
 
@@ -1413,6 +1429,7 @@ class AgentTicketController extends Controller
             'ticket.pending',
             'ticket.closed',
             'ticket.reopened',
+            'ticket.unheld',
             'ticket.assignee_updated',
             'ticket.escalated',
             'ticket.label_added',
@@ -1441,6 +1458,7 @@ class AgentTicketController extends Controller
             'ticket.pending',
             'ticket.closed',
             'ticket.reopened',
+            'ticket.unheld',
             'ticket.assignee_updated',
             'ticket.escalated',
             'ticket.label_added',
@@ -1466,6 +1484,7 @@ class AgentTicketController extends Controller
             'ticket.closed' => 'Ticket closed',
             'ticket.pending' => 'Ticket marked pending',
             'ticket.reopened' => 'Ticket reopened',
+            'ticket.unheld' => 'Ticket taken off hold',
             'ticket.visitor_replied' => 'Visitor replied',
             'ticket.label_added' => 'Label added: '.data_get($activity->metadata, 'label_name'),
             'ticket.label_removed' => 'Label removed: '.data_get($activity->metadata, 'label_name'),
@@ -1501,6 +1520,7 @@ class AgentTicketController extends Controller
             'ticket.pending' => data_get($activity->metadata, 'pending_note'),
             'ticket.closed' => data_get($activity->metadata, 'resolution_note'),
             'ticket.reopened' => data_get($activity->metadata, 'reopen_note'),
+            'ticket.unheld' => data_get($activity->metadata, 'reopen_note'),
             'ticket.escalated' => data_get($activity->metadata, 'reason'),
             default => null,
         };

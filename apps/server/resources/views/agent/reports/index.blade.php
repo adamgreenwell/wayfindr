@@ -285,7 +285,20 @@
                     </div>
                 @elseif ($ticketResolution['summary']->count === 0)
                     <div class="notice-copy">
-                        <p>No ticket was closed in this period.</p>
+                        @if ($ticketHistoryBeganAt && $window->start->lessThan($ticketHistoryBeganAt))
+                            {{-- The window reaches back past the boundary, so
+                                 "nothing was closed" is a claim this install
+                                 cannot make: closes before it are unknowable,
+                                 not absent. --}}
+                            <p>
+                                No ticket close is on record in this period. This install began recording ticket
+                                closes on {{ $ticketHistoryBeganAt->toFormattedDayDateString() }}, and the range
+                                selected reaches back before that &mdash; tickets closed earlier left no trace to
+                                count, so this is not the same as nothing having happened.
+                            </p>
+                        @else
+                            <p>No ticket was closed in this period.</p>
+                        @endif
                     </div>
                 @else
                     <div class="table-wrap">
@@ -317,17 +330,18 @@
                         </table>
                     </div>
 
-                    @if ($ticketHistoryBeganAt)
-                        <div class="notice-copy">
-                            <p>
-                                Ticket closes and reopens have been recorded since long before the conversation
-                                ones &mdash; on this install, since
-                                {{ $ticketHistoryBeganAt->toFormattedDayDateString() }}. A ticket opened before
-                                then may have been closed and reopened while nothing was writing it down, so it
-                                is counted as a close and left out of the times above.
-                            </p>
-                        </div>
-                    @endif
+                @endif
+
+                @if ($ticketHistoryBeganAt)
+                    <div class="notice-copy">
+                        <p>
+                            Ticket closes and reopens have been recorded since long before the conversation
+                            ones &mdash; on this install, since
+                            {{ $ticketHistoryBeganAt->toFormattedDayDateString() }}. A ticket opened before
+                            then may have been closed and reopened while nothing was writing it down, so it
+                            is counted as a close and left out of the times here.
+                        </p>
+                    </div>
                 @endif
             </section>
 

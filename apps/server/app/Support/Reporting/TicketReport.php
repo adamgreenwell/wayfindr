@@ -75,8 +75,11 @@ final class TicketReport
                 }
             }
 
-            foreach ($this->eventsInWindow(self::CLOSED)->toBase()->cursor() as $row) {
-                $key = $this->window->bucketKey(new \DateTimeImmutable((string) $row->occurred_at));
+            // From the walk, not from raw rows: a day showing two closes for
+            // one ticket that was closed once is the same lie as an inflated
+            // median, just harder to notice on a chart.
+            foreach ($this->episodes()['closes'] as $close) {
+                $key = $this->window->bucketKey($close['at']->toDateTimeImmutable());
 
                 if (array_key_exists($key, $closed)) {
                     $closed[$key]++;
@@ -94,15 +97,25 @@ final class TicketReport
     }
 
     /**
-     * @return array{summary: DurationSummary, reopened: int, closed: int, unmeasurable: int}
+     * Every lifecycle figure on this tab, from one normalised walk.
+     *
+     * Deliberately not four separate queries. Counting `ticket.closed` rows
+     * directly is what made the volume, resolution and agent figures disagree
+     * with each other: a double-submitted close is two rows and one resolution,
+     * and only the walk knows which is which.
+     *
+     * @return array{durations: list<int>, unmeasurable: int, closes: list<array{at: CarbonImmutable, actor_type: ?string, actor_id: ?int}>, reopens: list<array{at: CarbonImmutable, actor_type: ?string, actor_id: ?int}>}
      */
-    public function resolution(): array
+    private function episodes(): array
     {
-        return $this->once('resolution', function (): array {
+        return $this->once('episodes', function (): array {
             if ($this->scope->isEmpty()) {
-                return ['summary' => DurationSummary::empty(), 'reopened' => 0, 'closed' => 0, 'unmeasurable' => 0];
+                return ['durations' => [], 'unmeasurable' => 0, 'closes' => [], 'reopens' => []];
             }
 
+            // Every ticket with a close ON RECORD in the window. A ticket whose
+            // only in-window close turns out to be a duplicate contributes
+            // nothing once the walk has read its history, which is the point.
             /** @var list<int> $ticketIds */
             $ticketIds = $this->eventsInWindow(self::CLOSED)
                 ->toBase()
@@ -115,7 +128,7 @@ final class TicketReport
             // three times contributes three resolutions rather than one long
             // one -- and the two halves cannot drift apart on what a resolution
             // measures.
-            ['durations' => $durations, 'unmeasurable' => $unmeasurable] = ResolutionEpisodes::walk(
+            return ResolutionEpisodes::walk(
                 (new Ticket)->getMorphClass(),
                 self::CLOSED,
                 self::REOPENED,
@@ -124,12 +137,25 @@ final class TicketReport
                 $this->window,
                 $this->historyBeganAt(),
             );
+        });
+    }
+
+    /**
+     * @return array{summary: DurationSummary, reopened: int, closed: int, unmeasurable: int}
+     */
+    public function resolution(): array
+    {
+        return $this->once('resolution', function (): array {
+            $episodes = $this->episodes();
 
             return [
-                'summary' => DurationSummary::fromSeconds($durations),
-                'unmeasurable' => $unmeasurable,
-                'reopened' => $this->eventsInWindow(self::REOPENED)->count(),
-                'closed' => $this->eventsInWindow(self::CLOSED)->count(),
+                'summary' => DurationSummary::fromSeconds($episodes['durations']),
+                'unmeasurable' => $episodes['unmeasurable'],
+                // Genuine transitions, not rows. A reopen recorded when a
+                // PENDING ticket was taken off hold resolved nothing and is not
+                // reported as a resolution that failed.
+                'reopened' => count($episodes['reopens']),
+                'closed' => count($episodes['closes']),
             ];
         });
     }
@@ -149,24 +175,33 @@ final class TicketReport
                 return [];
             }
 
-            // Counted in SQL, exactly as the conversation half counts. Reading
-            // every row back to tally them in PHP means a quarter of ticket
-            // activity crosses the wire to produce one integer per agent.
             $counts = [];
 
-            foreach ([self::REPLY_SENT => 'replies', self::CLOSED => 'closes'] as $action => $key) {
-                $tallies = $this->eventsInWindow($action)
-                    ->where('actor_type', User::class)
-                    ->whereNotNull('actor_id')
-                    ->selectRaw('actor_id, count(*) as aggregate')
-                    ->groupBy('actor_id')
-                    ->pluck('aggregate', 'actor_id');
+            // Replies are counted in SQL, exactly as the conversation half
+            // counts them: a reply is a reply, with no transition to normalise.
+            $replies = $this->eventsInWindow(self::REPLY_SENT)
+                ->where('actor_type', User::class)
+                ->whereNotNull('actor_id')
+                ->selectRaw('actor_id, count(*) as aggregate')
+                ->groupBy('actor_id')
+                ->pluck('aggregate', 'actor_id');
 
-                foreach ($tallies as $actorId => $aggregate) {
-                    $id = (int) $actorId;
-                    $counts[$id] ??= ['replies' => 0, 'closes' => 0];
-                    $counts[$id][$key] = (int) $aggregate;
+            foreach ($replies as $actorId => $aggregate) {
+                $id = (int) $actorId;
+                $counts[$id] ??= ['replies' => 0, 'closes' => 0];
+                $counts[$id]['replies'] = (int) $aggregate;
+            }
+
+            // Closes come from the walk, so an agent who double-clicked is not
+            // credited with two closes -- and the column adds up to the same
+            // total the resolution section reports.
+            foreach ($this->episodes()['closes'] as $close) {
+                if ($close['actor_type'] !== User::class || $close['actor_id'] === null) {
+                    continue;
                 }
+
+                $counts[$close['actor_id']] ??= ['replies' => 0, 'closes' => 0];
+                $counts[$close['actor_id']]['closes']++;
             }
 
             // Deactivated agents stay listed: they did the work, and a total

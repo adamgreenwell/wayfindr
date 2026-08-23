@@ -103,6 +103,17 @@ missed while skimming.
   measure as *counted but not measured*, rather than folding an unknowable
   duration into the median.
 
+  Ticket lifecycle now records only **transitions**, the rule conversations have
+  followed since ADR 0015. Closing a ticket twice &mdash; a double-click, a
+  retry, a stale page &mdash; used to write two closes, making one resolution
+  contribute two durations. And the same **Reopen** control serves a closed
+  ticket and a pending one, so taking a ticket off hold was recorded as a
+  reopen: it claimed a resolution had failed when none was ever reached, and
+  restarted the resolution clock at the un-hold, hiding every hour before the
+  ticket went on hold. Off-hold is now its own event, shown in the ticket's
+  activity as *Ticket taken off hold*. History already recorded is read
+  correctly rather than rewritten.
+
 - **A site can have support hours.** Until now the widget behaved identically at
   3pm Tuesday and 3am Sunday: a visitor arriving out of hours opened a
   conversation, saw nothing suggesting anyone was away, and waited for a reply

@@ -85,14 +85,63 @@ test('a ticket closed three times contributes three resolutions', function (): v
 test('resolution is measured from the reopen that started it, not from creation', function (): void {
     $w = ticketReportWorld();
     $ticket = Ticket::factory()->for($w['account'])->for($w['site'])->create([
-        'created_at' => now()->subDays(30),
+        'created_at' => now()->subDays(60),
+    ]);
+
+    // The close that the reopen undid is older than the window, which is the
+    // ordinary case: the episode being measured began before the range the
+    // reader selected, and only its close falls inside.
+    ticketEvent($ticket, $w['agent'], TicketReport::CLOSED, now()->subDays(50));
+    ticketEvent($ticket, $w['agent'], TicketReport::REOPENED, now()->subDays(2));
+    ticketEvent($ticket, $w['agent'], TicketReport::CLOSED, now()->subDay());
+
+    $resolution = ticketReportFor($w)->resolution();
+
+    // One day, not fifty-nine.
+    expect($resolution['summary']->median)->toBeLessThan(2 * 24 * 3600)
+        // And the close outside the window is not counted as one inside it.
+        ->and($resolution['closed'])->toBe(1);
+});
+
+test('taking a pending ticket off hold is not a resolution that failed', function (): void {
+    // The ticket UI offers one Reopen control for a CLOSED ticket and a PENDING
+    // one, so `open -> pending -> reopen -> close` recorded a reopen. Counting
+    // it claims a resolution failed when none was reached, and restarts the
+    // clock at the un-hold -- hiding every hour before the ticket went on hold.
+    $w = ticketReportWorld();
+    $ticket = Ticket::factory()->for($w['account'])->for($w['site'])->create([
+        'created_at' => now()->subDays(10),
     ]);
 
     ticketEvent($ticket, $w['agent'], TicketReport::REOPENED, now()->subDays(2));
     ticketEvent($ticket, $w['agent'], TicketReport::CLOSED, now()->subDay());
 
-    // One day, not twenty-nine.
-    expect(ticketReportFor($w)->resolution()['summary']->median)->toBeLessThan(2 * 24 * 3600);
+    $resolution = ticketReportFor($w)->resolution();
+
+    expect($resolution['reopened'])->toBe(0)
+        // Nine days: the whole time the ticket was open, hold included. Not one.
+        ->and($resolution['summary']->median)->toBeGreaterThan(8 * 24 * 3600);
+});
+
+test('a close submitted twice is one resolution, not two', function (): void {
+    // A double-click, a retry, or a stale page. Ticket closes had no write-time
+    // guard until this change, so real installs have these in their history.
+    $w = ticketReportWorld();
+    $ticket = Ticket::factory()->for($w['account'])->for($w['site'])->create([
+        'created_at' => now()->subDays(5),
+    ]);
+
+    ticketEvent($ticket, $w['agent'], TicketReport::CLOSED, now()->subDays(2));
+    ticketEvent($ticket, $w['agent'], TicketReport::CLOSED, now()->subDays(2)->addSeconds(3));
+
+    $resolution = ticketReportFor($w)->resolution();
+
+    expect($resolution['closed'])->toBe(1)
+        ->and($resolution['summary']->count)->toBe(1)
+        // The chart and the agent table have to agree with that total, or the
+        // tab contradicts itself.
+        ->and(ticketReportFor($w)->volume()['closed_total'])->toBe(1)
+        ->and(ticketReportFor($w)->agentActivity()[0]['closes'])->toBe(1);
 });
 
 test('the conversation boundary does not apply to tickets', function (): void {
@@ -272,4 +321,38 @@ test('no query binds more ids than the chunk size, however many tickets closed',
     // Every ticket is still measured -- the chunking must not lose any.
     expect($resolution['summary']->count)->toBe(1200)
         ->and($widest)->toBeLessThanOrEqual(510);
+});
+
+test('an empty ticket history does not claim nothing was closed when it cannot know', function (): void {
+    // The caveat used to be nested under the branch that had a measurable
+    // close, so precisely the case that needed it -- an upgraded install whose
+    // window reaches back past its boundary, with nothing on record -- got the
+    // flat assertion that no ticket was closed.
+    $w = ticketReportWorld();
+    stamp('reporting.ticket_lifecycle_recording_began_at', now()->subDays(3));
+
+    Ticket::factory()->for($w['account'])->for($w['site'])->create(['created_at' => now()->subDays(90)]);
+
+    $this->actingAs($w['agent'])
+        ->get(route('dashboard.reports.index', ['report_days' => 30]))
+        ->assertOk()
+        ->assertSee('Ticket closes and reopens have been recorded since long before')
+        ->assertSee('No ticket close is on record in this period')
+        ->assertDontSee('No ticket was closed in this period.');
+});
+
+test('a window entirely inside the recorded history says plainly that nothing closed', function (): void {
+    // The caveat is a statement about what this install cannot know. Showing it
+    // when the whole window is on record would make an honest empty period look
+    // like missing data.
+    $w = ticketReportWorld();
+    stamp('reporting.ticket_lifecycle_recording_began_at', now()->subDays(200));
+
+    Ticket::factory()->for($w['account'])->for($w['site'])->create(['created_at' => now()->subDays(5)]);
+
+    $this->actingAs($w['agent'])
+        ->get(route('dashboard.reports.index', ['report_days' => 30]))
+        ->assertOk()
+        ->assertSee('No ticket was closed in this period.')
+        ->assertDontSee('No ticket close is on record in this period');
 });

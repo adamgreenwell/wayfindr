@@ -399,6 +399,7 @@ class Ticket extends Model
             'ticket.pending' => data_get($event->metadata, 'pending_note'),
             'ticket.closed' => data_get($event->metadata, 'resolution_note'),
             'ticket.reopened' => data_get($event->metadata, 'reopen_note'),
+            'ticket.unheld' => data_get($event->metadata, 'reopen_note'),
             'ticket.escalated' => data_get($event->metadata, 'reason'),
             default => null,
         };
@@ -412,6 +413,7 @@ class Ticket extends Model
             'ticket.pending' => 'Ticket marked pending',
             'ticket.closed' => 'Ticket closed',
             'ticket.reopened' => 'Ticket reopened',
+            'ticket.unheld' => 'Ticket taken off hold',
             'ticket.escalated' => 'Ticket escalated',
             default => 'Lifecycle update',
         };
@@ -453,6 +455,7 @@ class Ticket extends Model
                 'ticket.pending',
                 'ticket.closed',
                 'ticket.reopened',
+                'ticket.unheld',
                 'ticket.escalated',
             ]));
     }
