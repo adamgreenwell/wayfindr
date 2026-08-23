@@ -96,3 +96,26 @@ test('taking a ticket off hold is shown in its activity, not silently dropped', 
         ->assertSee('Ticket taken off hold')
         ->assertSee('Customer came back with the serial number.');
 });
+
+test('reopening an already-open ticket records nothing', function (): void {
+    // A retried submit or a stale form. The close path has a guard for exactly
+    // this and the reopen path did not -- it wrote an un-hold for a hold that
+    // never happened, which is the same duplicate-event bug one branch over.
+    $w = ticketTransitionWorld('open');
+
+    $this->actingAs($w['agent'])->post(route('dashboard.tickets.reopen', $w['ticket']), []);
+
+    expect(ticketTransitionActions($w['ticket']))->not->toContain('ticket.unheld')
+        ->and(ticketTransitionActions($w['ticket']))->not->toContain('ticket.reopened');
+});
+
+test('reopening a closed ticket twice records one reopen', function (): void {
+    $w = ticketTransitionWorld('closed');
+
+    foreach (range(1, 3) as $ignored) {
+        $this->actingAs($w['agent'])->post(route('dashboard.tickets.reopen', $w['ticket']), []);
+    }
+
+    expect(array_filter(ticketTransitionActions($w['ticket']), fn (string $a): bool => $a === 'ticket.reopened'))
+        ->toHaveCount(1);
+});

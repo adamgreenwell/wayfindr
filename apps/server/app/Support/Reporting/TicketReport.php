@@ -113,15 +113,30 @@ final class TicketReport
                 return ['durations' => [], 'unmeasurable' => 0, 'closes' => [], 'reopens' => []];
             }
 
-            // Every ticket with a close ON RECORD in the window. A ticket whose
-            // only in-window close turns out to be a duplicate contributes
-            // nothing once the walk has read its history, which is the point.
+            // Every ticket with a close OR a reopen on record in the window.
+            //
+            // Closes alone is not enough, and getting that wrong is invisible:
+            // a ticket closed before the range, reopened inside it, and still
+            // open at the end has no in-window close, so it would never enter
+            // the walk and its reopen would go uncounted -- a resolution that
+            // demonstrably did not hold, reported as zero. That is the most
+            // interesting event the report has, and the raw reopen query this
+            // walk replaced did count it.
+            //
+            // A ticket whose only in-window close turns out to be a duplicate
+            // still contributes nothing, because the walk decides that from its
+            // history rather than from why it was selected.
             /** @var list<int> $ticketIds */
             $ticketIds = $this->eventsInWindow(self::CLOSED)
                 ->toBase()
                 ->distinct()
                 ->pluck('subject_id')
+                ->merge(
+                    $this->eventsInWindow(self::REOPENED)->toBase()->distinct()->pluck('subject_id'),
+                )
                 ->map(fn (int|string $id): int => (int) $id)
+                ->unique()
+                ->values()
                 ->all();
 
             // The same walk the conversation half uses, so a ticket closed

@@ -356,3 +356,47 @@ test('a window entirely inside the recorded history says plainly that nothing cl
         ->assertSee('No ticket was closed in this period.')
         ->assertDontSee('No ticket close is on record in this period');
 });
+
+test('a reopen still open at the end of the range is counted', function (): void {
+    // The regression the normalised walk introduced: reopens used to come from
+    // their own query and now come from the walk, which was seeded only from
+    // in-window CLOSES. A ticket closed before the range, reopened inside it,
+    // and still open at the end has no in-window close -- so it never entered
+    // the walk and the most interesting event the report has was reported as
+    // zero.
+    $w = ticketReportWorld();
+    $ticket = Ticket::factory()->for($w['account'])->for($w['site'])->create([
+        'created_at' => now()->subDays(90),
+        'status' => 'open',
+    ]);
+
+    ticketEvent($ticket, $w['agent'], TicketReport::CLOSED, now()->subDays(60));
+    ticketEvent($ticket, $w['agent'], TicketReport::REOPENED, now()->subDays(3));
+
+    $resolution = ticketReportFor($w)->resolution();
+
+    expect($resolution['reopened'])->toBe(1)
+        // Still open, so nothing resolved -- the reopen is the whole story.
+        ->and($resolution['closed'])->toBe(0)
+        ->and($resolution['summary']->count)->toBe(0);
+});
+
+test('a ticket selected only by its reopen still has duplicate closes normalised', function (): void {
+    // Widening the selection must not widen what counts. The walk decides from
+    // history, not from why the ticket was selected.
+    $w = ticketReportWorld();
+    $ticket = Ticket::factory()->for($w['account'])->for($w['site'])->create([
+        'created_at' => now()->subDays(20),
+    ]);
+
+    ticketEvent($ticket, $w['agent'], TicketReport::CLOSED, now()->subDays(10));
+    ticketEvent($ticket, $w['agent'], TicketReport::REOPENED, now()->subDays(5));
+    ticketEvent($ticket, $w['agent'], TicketReport::CLOSED, now()->subDays(4));
+    ticketEvent($ticket, $w['agent'], TicketReport::CLOSED, now()->subDays(4)->addSeconds(2));
+
+    $resolution = ticketReportFor($w)->resolution();
+
+    expect($resolution['reopened'])->toBe(1)
+        ->and($resolution['closed'])->toBe(2)
+        ->and(ticketReportFor($w)->volume()['closed_total'])->toBe(2);
+});

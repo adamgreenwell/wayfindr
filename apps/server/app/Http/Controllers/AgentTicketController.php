@@ -576,7 +576,7 @@ class AgentTicketController extends Controller
         ]);
 
         $reopenNote = trim((string) ($validated['reopen_note'] ?? ''));
-        $wasClosed = $ticket->status === 'closed';
+        $previousStatus = (string) $ticket->status;
 
         $ticket->forceFill([
             'status' => 'open',
@@ -589,12 +589,25 @@ class AgentTicketController extends Controller
         // claims a resolution failed when none was ever reached, and restarts
         // the resolution clock at the un-hold, hiding every hour before the
         // ticket was put on hold.
-        $this->recordActivity(
-            $ticket,
-            $agent,
-            $wasClosed ? 'ticket.reopened' : 'ticket.unheld',
-            $reopenNote === '' ? [] : ['reopen_note' => $reopenNote],
-        );
+        //
+        // And an ALREADY-OPEN ticket transitioned from nothing, so it records
+        // nothing. A retried submit or a stale form would otherwise write an
+        // un-hold for a hold that never happened -- the same duplicate-event
+        // bug the close path has a guard for, reintroduced one branch over.
+        $action = match ($previousStatus) {
+            'closed' => 'ticket.reopened',
+            'pending' => 'ticket.unheld',
+            default => null,
+        };
+
+        if ($action !== null) {
+            $this->recordActivity(
+                $ticket,
+                $agent,
+                $action,
+                $reopenNote === '' ? [] : ['reopen_note' => $reopenNote],
+            );
+        }
 
         return $this->redirectAfterUpdate($ticket, $request, 'Ticket reopened.');
     }
