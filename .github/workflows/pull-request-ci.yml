@@ -44,6 +44,8 @@ jobs:
 
       - name: Run the Pest suite
         working-directory: apps/server
+        env:
+          WAYFINDR_EXPECTED_DB_DRIVER: sqlite
         run: composer test
 
       - name: Validate the authored release manifest
@@ -53,6 +55,68 @@ jobs:
             --version="$release_version" \
             --commit="${GITHUB_SHA}" \
             --out="${RUNNER_TEMP}/release-manifest.json"
+
+  php-application-postgres:
+    name: PHP application (PostgreSQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # The suite's own default is SQLite and every documented install runs
+    # PostgreSQL, so without this job a query valid on only one of them ships
+    # green. `notifications.data` being TEXT already caught the codebase out
+    # once -- a JSON-path `where` breaks on PostgreSQL and SQLite tolerates it --
+    # and that was found by reading, not by a test.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: wayfindr
+          POSTGRES_PASSWORD: wayfindr
+          POSTGRES_DB: wayfindr_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U wayfindr"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - name: Check out the source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up PHP 8.4
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.4"
+          extensions: gd, intl, mbstring, pcntl, pdo_pgsql, pdo_sqlite, sockets, zip
+          tools: composer:v2
+          coverage: none
+
+      - name: Install locked PHP dependencies
+        working-directory: apps/server
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Prepare the local test environment
+        run: cp apps/server/.env.example apps/server/.env
+
+      - name: Run the Pest suite against PostgreSQL
+        working-directory: apps/server
+        # phpunit.xml pins DB_CONNECTION=sqlite, and its <env> entries do not
+        # override a variable already present in the environment -- which is
+        # what makes this work at all. WAYFINDR_EXPECTED_DB_DRIVER makes the
+        # suite assert that for itself, because a guard outside the suite reads
+        # .env (which names pgsql) rather than the test configuration, and so
+        # reports success no matter what the tests actually ran on.
+        env:
+          DB_CONNECTION: pgsql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_DATABASE: wayfindr_test
+          DB_USERNAME: wayfindr
+          DB_PASSWORD: wayfindr
+          WAYFINDR_EXPECTED_DB_DRIVER: pgsql
+        run: composer test
 
   widget-and-assets:
     name: Widget and assets
