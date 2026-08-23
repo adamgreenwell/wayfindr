@@ -39,8 +39,14 @@ second data point, not a correction — the same conversation going well and lat
 badly is exactly the signal worth keeping. Within one closed episode, though, a
 visitor changing their mind *replaces* what they said: one answer per close.
 
-Each row records `episode_closed_at`, the close it answers, and the table is
-**unique on `(conversation_id, episode_closed_at)`**. The bound is a database
+Each row records `episode_closed_at`, the close it answers. The column is **not
+nullable** and the table is **unique on `(conversation_id, episode_closed_at)`**.
+
+Not nullable matters twice over: reporting filters on that column, so a
+null-episode row would sit in the table and appear in no report ever — data that
+is silently invisible rather than absent — and PostgreSQL treats nulls as
+distinct in a unique index, so the bound below would not hold for exactly those
+rows. The bound is a database
 rule rather than a check the endpoint performs, because a check that reads and
 then writes loses the race: two concurrent requests both see no row and both
 insert.

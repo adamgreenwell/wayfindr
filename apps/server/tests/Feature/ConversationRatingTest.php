@@ -547,3 +547,19 @@ test('the widget is told whether this close has already been answered', function
 
     expect($read()->json('data.conversation.rated'))->toBeFalse();
 });
+
+test('a rating cannot exist without the close it answers', function (): void {
+    // Reporting filters on episode_closed_at, so a null-episode row would sit
+    // in the table and appear in no report ever. Enforced by the schema rather
+    // than only by the endpoint, because a row that is invisible to every
+    // report is worse than a row that was refused.
+    $w = ratingWorld();
+
+    expect(fn () => ConversationRating::query()->create([
+        'conversation_id' => $w['conversation']->id,
+        'site_id' => $w['site']->id,
+        'score' => 'good',
+        'rated_at' => now(),
+        'episode_closed_at' => null,
+    ]))->toThrow(QueryException::class);
+});

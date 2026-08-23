@@ -30,7 +30,14 @@ return new class extends Migration
             // reporting filters on it so the answers and the closes they refer
             // to are the same cohort -- otherwise a visitor answering just
             // after a window boundary produces "1 of 0 closes answered".
-            $table->timestamp('episode_closed_at')->nullable();
+            // NOT nullable, which makes "a rating is about a close" a schema
+            // rule rather than a controller rule. Two things go wrong if it is
+            // nullable: reporting filters on this column, so a null-episode row
+            // exists in the table and appears in no report ever -- data that is
+            // silently invisible rather than absent -- and PostgreSQL treats
+            // nulls as distinct in a unique index, so the one-answer-per-close
+            // bound below would not hold for exactly those rows.
+            $table->timestamp('episode_closed_at');
             $table->timestamps();
 
             $table->unique(['conversation_id', 'episode_closed_at']);
