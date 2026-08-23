@@ -29,6 +29,15 @@ async function settle() {
   }
 }
 
+// A promise somebody else decides when to settle, so a test can hold a response
+// open and act in the window it leaves.
+function deferred() {
+  let release;
+  const promise = new Promise((resolve) => { release = resolve; });
+
+  return { promise, release };
+}
+
 function widgetWith({
   rating = { asks: true, intro: null },
   status = 'closed',
@@ -45,6 +54,8 @@ function widgetWith({
   // Which close the server says is current. Changing it after an answer is how
   // a reopen-and-close is modelled.
   episodeAfterAnswer = 'episode-2',
+  // A promise the test settles, so it can act while a rating POST is in flight.
+  holdRating = null,
 } = {}) {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
     url: 'https://docs.example.test/',
@@ -80,6 +91,10 @@ function widgetWith({
       // through to `{ data: {} }` looks like a successful no-op, and the test
       // then passes while the widget silently does nothing.
       if (url.includes('/rating')) {
+        if (holdRating) {
+          await holdRating;
+        }
+
         if (ratingStatus === 201) {
           answered = true;
         }
@@ -373,4 +388,59 @@ test('the same close does not clear a draft the visitor is still typing', async 
 
   assert.equal(widget.root.querySelector('.wayfindr-widget__rating-comment').value, 'Half a thought');
   assert.equal(score(widget, 'ok').getAttribute('aria-pressed'), 'true');
+});
+
+test('an answer that lands late does not hide a newer close', async () => {
+  // The POST is accepted for the close on screen, and a poll observes a NEWER
+  // close before the response arrives. Marking the widget answered on the way
+  // back hides a prompt this answer was never about, and the visitor cannot
+  // answer it until some later poll happens to restore it -- or never, if
+  // polling is failing.
+  const release = deferred();
+  const { widget } = widgetWith({ holdRating: release.promise, ratedAfterAnswer: false });
+  await openPanel(widget);
+
+  score(widget, 'good').click();
+  widget.root.querySelector('.wayfindr-widget__rating').dispatchEvent(new widget.root.ownerDocument.defaultView.Event('submit', { cancelable: true }));
+  await settle();
+
+  // While that is in flight, the conversation is reopened and closed again.
+  widget.mockEpisode('episode-later');
+  widget.root.querySelector('.wayfindr-widget__refresh').click();
+  await settle();
+
+  assert.equal(prompt(widget).hidden, false, 'the newer close should be asked about');
+
+  release.release(null);
+  await settle();
+
+  // The late response must not have hidden it.
+  assert.equal(prompt(widget).hidden, false);
+  assert.equal(widget.root.querySelector('.wayfindr-widget__rating-comment').value, '');
+});
+
+test('a failure that lands late does not warn over a newer close', async () => {
+  // The other direction of the same race. A refusal for a close that is no
+  // longer on screen is not this prompt's refusal, and saying so over a fresh
+  // question tells the visitor their new answer failed before they gave one.
+  const release = deferred();
+  const { widget } = widgetWith({ holdRating: release.promise, ratingStatus: 422 });
+  await openPanel(widget);
+
+  score(widget, 'good').click();
+  widget.root.querySelector('.wayfindr-widget__rating').dispatchEvent(new widget.root.ownerDocument.defaultView.Event('submit', { cancelable: true }));
+  await settle();
+
+  widget.mockEpisode('episode-later');
+  widget.root.querySelector('.wayfindr-widget__refresh').click();
+  await settle();
+
+  release.release(null);
+  await settle();
+
+  const statusEl = widget.root.querySelector('.wayfindr-widget__rating-status');
+
+  assert.equal(prompt(widget).hidden, false);
+  assert.equal(statusEl.hidden, true, 'the stale failure must not be shown over the new question');
+  assert.equal(statusEl.textContent, '');
 });

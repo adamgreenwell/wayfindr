@@ -2999,12 +2999,33 @@
 
       ratingSend.disabled = true;
 
-      client.rateConversation(supportCode, ratingScore, ratingComment.value.trim(), ratingEpisode).then(function () {
+      // Which close this request is about, captured now. A poll can land a
+      // newer close while the request is in flight, and marking the widget
+      // answered on the way back would hide a prompt for work this answer was
+      // never about -- leaving the visitor unable to answer it until some later
+      // poll happens to restore it, or not at all if polling is failing.
+      var submittedEpisode = ratingEpisode;
+
+      client.rateConversation(supportCode, ratingScore, ratingComment.value.trim(), submittedEpisode).then(function () {
+        if (submittedEpisode !== ratingEpisode) {
+          status.textContent = t('rating.thanks');
+
+          return;
+        }
+
         ratingAnswered = true;
         rating.hidden = true;
         status.textContent = t('rating.thanks');
       }).catch(function (error) {
         reportSuppressed('conversation rating', error);
+
+        // A failure for a close that is no longer on screen is not this
+        // prompt's failure, and saying so over a fresh question is worse than
+        // saying nothing.
+        if (submittedEpisode !== ratingEpisode) {
+          return;
+        }
+
         ratingStatus.textContent = t('rating.failed');
         ratingStatus.hidden = false;
       }).then(function () {
