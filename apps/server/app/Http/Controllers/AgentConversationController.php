@@ -15,6 +15,7 @@ use App\Support\CobrowseConsentState;
 use App\Support\CobrowseResyncRequestPolicy;
 use App\Support\Conversations\ConversationLifecycleLog;
 use App\Support\Conversations\ConversationQueueQuery;
+use App\Support\Mail\ConversationReplyMailer;
 use App\Support\ReplyTemplateOptions;
 use App\Support\TicketCategory;
 use App\Support\TicketPriority;
@@ -346,6 +347,12 @@ class AgentConversationController extends Controller
         $conversation->markReadFor($agent);
 
         event(new ConversationMessageCreated($message));
+
+        // After the commit, beside the event and for the same reason. The
+        // shipped queues set after_commit to false, so a worker could pick this
+        // up while the message row is still invisible to it -- and a rollback
+        // would otherwise leave an email queued for a reply that never existed.
+        app(ConversationReplyMailer::class)->send($message);
 
         return redirect()
             ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))

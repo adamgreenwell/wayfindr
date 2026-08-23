@@ -742,6 +742,44 @@
                 </div>
             </section>
 
+            <section class="section" aria-labelledby="inbound-email-heading">
+                <div class="section-header">
+                    <div>
+                        <h2 id="inbound-email-heading">Email to this site</h2>
+                        <p class="lede">Mail sent here becomes a conversation, and replies thread back into it.</p>
+                    </div>
+                    <span class="readiness-status" data-status="{{ $site->inbound_address ? 'ready' : 'manual' }}">
+                        {{ $site->inbound_address ? 'Receiving' : 'Not receiving' }}
+                    </span>
+                </div>
+
+                @if ($canUpdateSite)
+                    <form class="section-form" method="POST" action="{{ route('dashboard.sites.inbound-address.update', $site) }}">
+                        @csrf
+                        @method('PUT')
+
+                        <div class="field">
+                            <label for="inbound_address">Address</label>
+                            <input type="email" id="inbound_address" name="inbound_address" maxlength="255"
+                                placeholder="support@example.com" value="{{ old('inbound_address', $site->inbound_address) }}">
+                            <p class="field-hint">
+                                Point your mail provider's inbound route at Wayfindr, then put the address it
+                                receives on here. Leave it empty to stop accepting mail for this site.
+                            </p>
+                            @error('inbound_address')
+                                <p class="field-error">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <button class="button" type="submit">Save address</button>
+                    </form>
+                @else
+                    <div class="notice-copy">
+                        <p>Only an account admin can change where this site receives mail.</p>
+                    </div>
+                @endif
+            </section>
+
             <section class="section" aria-labelledby="widget-appearance-heading">
                 <div class="section-header">
                     <div>

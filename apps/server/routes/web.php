@@ -172,6 +172,8 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.sites.language.update');
     Route::put('/dashboard/sites/{site}/availability', [AgentSiteController::class, 'updateAvailability'])
         ->name('dashboard.sites.availability.update');
+    Route::put('/dashboard/sites/{site}/inbound-address', [AgentSiteController::class, 'updateInboundAddress'])
+        ->name('dashboard.sites.inbound-address.update');
     Route::put('/dashboard/sites/{site}/appearance', [AgentSiteController::class, 'updateAppearance'])
         ->name('dashboard.sites.appearance.update');
     Route::post('/dashboard/sites/{site}/availability/close', [AgentSiteController::class, 'closeAvailability'])

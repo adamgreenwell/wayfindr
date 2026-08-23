@@ -3,6 +3,7 @@
 use App\Http\Controllers\Integrations\GitHubWebhookController;
 use App\Http\Controllers\Integrations\GitLabWebhookController;
 use App\Http\Controllers\Integrations\JiraWebhookController;
+use App\Http\Controllers\Mail\InboundMailController;
 use App\Http\Controllers\Widget\AppearanceController;
 use App\Http\Controllers\Widget\ArticleController;
 use App\Http\Controllers\Widget\BootstrapController;
@@ -76,6 +77,10 @@ Route::middleware('throttle:widget-attachment')->group(function (): void {
         ->whereNumber('attachment')
         ->name('conversations.attachments.show');
 });
+
+Route::post('/mail/inbound', InboundMailController::class)
+    ->middleware('throttle:integrations-webhook')
+    ->name('mail.inbound');
 
 Route::post('/integrations/github/webhook/{connection}', GitHubWebhookController::class)
     ->middleware('throttle:integrations-webhook')

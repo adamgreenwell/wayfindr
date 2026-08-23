@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
-#[Fillable(['conversation_id', 'sender_type', 'sender_id', 'type', 'body', 'metadata', 'seen_at'])]
+#[Fillable(['conversation_id', 'sender_type', 'sender_id', 'type', 'body', 'metadata', 'seen_at', 'email_message_id'])]
 class ConversationMessage extends Model
 {
     /** @use HasFactory<ConversationMessageFactory> */
