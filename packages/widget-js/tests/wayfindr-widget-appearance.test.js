@@ -186,3 +186,210 @@ test('the brand token actually reads the configured one, in both themes', async 
   assert.equal((css.match(/--wf-brand:var\(--wf-brand-configured-dark,/g) || []).length, 2);
   assert.equal((css.match(/--wf-ink-invert:var\(--wf-brand-ink-configured/g) || []).length, 3);
 });
+
+test('the launcher is in the right corner before anybody clicks it', async () => {
+  // The launcher is drawn at init and bootstrap does not run until the panel
+  // opens, so a left-configured launcher sat on the right on every fresh load.
+  // Worst in the case the setting exists for: the right corner already covered,
+  // and the visitor unable to reach the launcher to open it at all.
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/',
+  });
+  const asked = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    fetch: async (url) => {
+      asked.push(url);
+
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, {
+          data: { appearance: { accent: null, position: 'left', greeting: null, placeholder: null } },
+        });
+      }
+
+      return jsonResponse(200, { data: {} });
+    },
+  });
+
+  await settle();
+
+  assert.equal(widget.root.getAttribute('data-wf-launcher'), 'left');
+  // And it did NOT reach for bootstrap, which would create a visitor record for
+  // somebody who has only loaded a page (ADR 0016).
+  assert.equal(asked.some((url) => url.includes('/api/widget/bootstrap')), false);
+});
+
+test('a remembered appearance costs a returning visitor nothing', async () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/',
+  });
+  const asked = [];
+  const stored = new Map([
+    ['wayfindr:site_public_shop:appearance', JSON.stringify({ accent: null, position: 'left', greeting: null, placeholder: null })],
+  ]);
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (stored.has(k) ? stored.get(k) : null),
+      setItem: (k, v) => stored.set(k, v),
+      removeItem: (k) => stored.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    fetch: async (url) => {
+      asked.push(url);
+
+      return jsonResponse(200, { data: {} });
+    },
+  });
+
+  await settle();
+
+  assert.equal(widget.root.getAttribute('data-wf-launcher'), 'left');
+  assert.equal(asked.length, 0, 'nothing was asked for');
+});
+
+test('clearing a setting clears it, rather than leaving the last one', async () => {
+  // Bootstrap is refreshed on every open precisely so a settings change takes
+  // effect. A truthy-only assignment left a long-lived tab branded with a
+  // colour the operator had removed -- the same shape as the site-default
+  // language bug one release ago.
+  const { widget } = widgetLooking({
+    appearance: {
+      accent: '#7C3AED', accent_dark: '#8243EE', accent_ink: '#FFFFFF', accent_ink_dark: '#FFFFFF',
+      position: 'right', greeting: 'Branded greeting', placeholder: null,
+    },
+  });
+
+  await widget.open();
+  await settle();
+
+  assert.equal(prop(widget, '--wf-brand-configured'), '#7C3AED');
+  assert.equal(widget.root.querySelector('.wayfindr-widget__header strong').textContent, 'Branded greeting');
+
+  // The operator clears both; the next bootstrap says so.
+  widget.client.bootstrap = async () => ({
+    site: { public_key: 'site_public_shop', settings: {}, appearance: { accent: null, position: 'right', greeting: null, placeholder: null } },
+    visitor: { anonymous_id: 'a', token: 't' },
+  });
+
+  widget.close();
+  await widget.open();
+  await settle();
+
+  assert.equal(prop(widget, '--wf-brand-configured'), '', 'the accent is gone, not remembered');
+  // Back to the widget's own header copy, in the visitor's language.
+  assert.equal(widget.root.querySelector('.wayfindr-widget__header strong').textContent, 'Wayfindr Support');
+});
+
+test('the answer is remembered, so the next page load asks nothing', async () => {
+  const stored = new Map();
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/',
+  });
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (stored.has(k) ? stored.get(k) : null),
+      setItem: (k, v) => stored.set(k, v),
+      removeItem: (k) => stored.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    fetch: async (url) => {
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, {
+          data: { appearance: { accent: null, position: 'left', greeting: null, placeholder: null } },
+        });
+      }
+
+      return jsonResponse(200, { data: {} });
+    },
+  });
+
+  await settle();
+
+  const remembered = stored.get('wayfindr:site_public_shop:appearance');
+
+  assert.ok(remembered, 'the answer was written down');
+  assert.equal(JSON.parse(remembered).position, 'left');
+  assert.equal(widget.root.getAttribute('data-wf-launcher'), 'left');
+});
+
+test('bootstrap’s answer replaces what was remembered', async () => {
+  // Two places write the cache: the init read, and every bootstrap. The second
+  // is what keeps a stale corner from surviving an operator's change, so it
+  // needs its own cover -- the init test cannot see it.
+  const stored = new Map([
+    ['wayfindr:site_public_shop:appearance', JSON.stringify({ accent: null, position: 'left', greeting: null, placeholder: null })],
+  ]);
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/',
+  });
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (stored.has(k) ? stored.get(k) : null),
+      setItem: (k, v) => stored.set(k, v),
+      removeItem: (k) => stored.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    fetch: async (url) => {
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return jsonResponse(200, {
+          data: {
+            site: {
+              public_key: 'site_public_shop', settings: {},
+              // The operator moved it back.
+              appearance: { accent: null, position: 'right', greeting: null, placeholder: null },
+            },
+            visitor: { anonymous_id: 'a', token: 't' },
+          },
+        });
+      }
+
+      return jsonResponse(200, { data: {} });
+    },
+  });
+
+  await settle();
+  assert.equal(widget.root.getAttribute('data-wf-launcher'), 'left', 'the remembered corner first');
+
+  await widget.open();
+  await settle();
+
+  assert.equal(widget.root.getAttribute('data-wf-launcher'), 'right');
+  assert.equal(
+    JSON.parse(stored.get('wayfindr:site_public_shop:appearance')).position,
+    'right',
+    'and the next page load starts from the new answer',
+  );
+});

@@ -656,6 +656,11 @@
 
         return getJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/messages?' + toQueryString(params));
       },
+      fetchAppearance: function () {
+        return getJson(fetcher, apiBaseUrl + '/api/widget/appearance?' + toQueryString({
+          site_public_key: sitePublicKey,
+        }));
+      },
       searchArticles: function (query) {
         return getJson(fetcher, apiBaseUrl + '/api/widget/articles?' + toQueryString({
           site_public_key: sitePublicKey,
@@ -2565,7 +2570,13 @@
       // would show the visitor the wrong language for a frame.
       applyLocale(siteLocale(result));
       applySiteAccent(rootEl, siteAccentKey(result));
-      applyAppearance(siteAppearance(result));
+      var appearance = siteAppearance(result);
+
+      applyAppearance(appearance);
+
+      if (appearance) {
+        rememberAppearance(appearance);
+      }
       applyAwayState(panel, siteAwayState(result), t);
       applyIntakeState(siteIntakeState(result));
       applyHelpAvailability(siteHasArticles(result));
@@ -2584,6 +2595,19 @@
         return;
       }
 
+      // Cleared before applied. Bootstrap is refreshed on every open precisely
+      // so a settings change takes effect, and a truthy-only assignment left a
+      // long-lived tab branded with a colour the operator had removed -- the
+      // same shape as the site-default language bug one release ago.
+      [
+        '--wf-brand-configured',
+        '--wf-brand-configured-dark',
+        '--wf-brand-ink-configured',
+        '--wf-brand-ink-configured-dark',
+      ].forEach(function (name) {
+        rootEl.style.removeProperty(name);
+      });
+
       if (appearance.accent) {
         // Both renderings, chosen by the theme in CSS rather than here. The
         // widget does not know which theme it is in -- the media query and the
@@ -2598,16 +2622,62 @@
 
       // Operator copy wins over the catalogue, and the catalogue over nothing.
       // A host-page option still outranks both: it is the most specific answer.
-      if (!options.title && appearance.greeting) {
+      // Falling back to t() rather than leaving the previous value is what makes
+      // clearing the copy take effect.
+      if (!options.title) {
         var heading = rootEl.querySelector('.wayfindr-widget__header strong');
 
         if (heading) {
-          heading.textContent = appearance.greeting;
+          heading.textContent = appearance.greeting || t('header.title');
         }
       }
 
-      if (!options.placeholder && appearance.placeholder) {
-        textarea.setAttribute('placeholder', appearance.placeholder);
+      if (!options.placeholder) {
+        textarea.setAttribute('placeholder', appearance.placeholder || t('form.placeholder'));
+      }
+    }
+
+    /**
+     * Learn the launcher's corner before anybody sees it.
+     *
+     * The launcher is drawn at init and bootstrap does not run until the panel
+     * opens, so a left-configured launcher sat on the right on every fresh
+     * load. Worst in the case the setting exists for: the right corner already
+     * occupied, and the visitor unable to reach the launcher at all.
+     *
+     * The last answer is remembered, so a returning visitor pays nothing and a
+     * first-time one pays a single read that creates no visitor record.
+     */
+    function applyStoredAppearance() {
+      var cached = storageGet(widgetStorage, appearanceStorageKey(options.sitePublicKey));
+
+      if (cached) {
+        try {
+          applyAppearance(JSON.parse(cached));
+
+          return;
+        } catch (error) {
+          storageRemove(widgetStorage, appearanceStorageKey(options.sitePublicKey));
+        }
+      }
+
+      client.fetchAppearance().then(function (result) {
+        var appearance = (result && result.appearance) || null;
+
+        if (appearance) {
+          applyAppearance(appearance);
+          rememberAppearance(appearance);
+        }
+      }).catch(function () {
+        // The default corner is a fine answer to a failed lookup.
+      });
+    }
+
+    function rememberAppearance(appearance) {
+      try {
+        storageSet(widgetStorage, appearanceStorageKey(options.sitePublicKey), JSON.stringify(appearance));
+      } catch (error) {
+        // A full or unavailable store just means asking again next time.
       }
     }
 
@@ -3289,6 +3359,8 @@
         refreshIntakeGate();
       }
     }
+
+    applyStoredAppearance();
 
     if (storedSupportCode) {
       resumePromise = resumeConversation(storedSupportCode);
@@ -5191,6 +5263,10 @@
 
   function visitorTokenStorageKey(sitePublicKey) {
     return 'wayfindr:' + sitePublicKey + ':visitor-token';
+  }
+
+  function appearanceStorageKey(sitePublicKey) {
+    return 'wayfindr:' + sitePublicKey + ':appearance';
   }
 
   function supportCodeStorageKey(sitePublicKey) {

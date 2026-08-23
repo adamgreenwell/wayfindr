@@ -58,8 +58,8 @@ final class WidgetAppearance
         // Wayfindr already does for its own accent (#0D6F68 light, #3FA69D
         // dark). Demanding a single hex clear both grounds would have rejected
         // that very pair, and every brand that is not mid-grey with it.
-        $light = $accent === null ? null : self::readableOn($accent, self::SURFACE_LIGHT);
-        $dark = $accent === null ? null : self::readableOn($accent, self::SURFACE_DARK);
+        $light = $accent === null ? null : self::rendered($accent, self::SURFACE_LIGHT);
+        $dark = $accent === null ? null : self::rendered($accent, self::SURFACE_DARK);
 
         return new self(
             $accent,
@@ -116,6 +116,52 @@ final class WidgetAppearance
      * navy, not a default blue. A colour already clear enough is returned
      * untouched, which is the common case.
      */
+    /**
+     * The colour as it will actually be painted on that surface.
+     *
+     * Two constraints, and both have to hold at once: the accent must be
+     * visible against the panel, and SOMETHING readable must sit on top of it.
+     * Satisfying them separately does not work -- moving a colour to clear the
+     * panel can walk it straight into the band where neither white nor black
+     * reaches 4.5:1, which is what #777777 does.
+     */
+    private static function rendered(string $hex, string $surface): string
+    {
+        $candidate = self::readableOn($hex, $surface);
+
+        if (self::inkContrast($candidate) >= self::MIN_INK_CONTRAST) {
+            return $candidate;
+        }
+
+        // Mid-luminance: neither ink reaches the floor. Walk both ways and take
+        // the first that satisfies both, so the colour moves as little as it
+        // has to.
+        [$h, $sat, $l] = self::toHsl($candidate);
+
+        for ($i = 1; $i <= 50; $i++) {
+            foreach ([$l + ($i * 0.02), $l - ($i * 0.02)] as $lightness) {
+                if ($lightness < 0.0 || $lightness > 1.0) {
+                    continue;
+                }
+
+                $next = self::fromHsl($h, $sat, $lightness);
+
+                if (self::contrast($next, $surface) >= self::MIN_SURFACE_CONTRAST
+                    && self::inkContrast($next) >= self::MIN_INK_CONTRAST) {
+                    return $next;
+                }
+            }
+        }
+
+        return $candidate;
+    }
+
+    /** How readable the better of white or near-black is on this colour. */
+    private static function inkContrast(string $hex): float
+    {
+        return max(self::contrast($hex, '#FFFFFF'), self::contrast($hex, '#141517'));
+    }
+
     private static function readableOn(string $hex, string $surface): string
     {
         if (self::contrast($hex, $surface) >= self::MIN_SURFACE_CONTRAST) {

@@ -195,3 +195,36 @@ test('the site page offers the form and names both colours apart', function (): 
         // The distinction is the whole point of having two.
         ->assertSee('how your desk tells sites apart');
 });
+
+test('text on the accent actually reaches the floor the class declares', function (): void {
+    // MIN_INK_CONTRAST was declared and never enforced: picking whichever of
+    // white or near-black contrasts better is not the same as reaching 4.5:1.
+    // #777777 tops out at 4.478 against white, and was shipped as-is.
+    $contrast = function (string $a, string $b): float {
+        $luminance = function (string $hex): float {
+            $channels = [];
+
+            foreach ([1, 3, 5] as $offset) {
+                $value = (float) (hexdec(substr($hex, $offset, 2)) / 255);
+                $channels[] = $value <= 0.03928 ? $value / 12.92 : (($value + 0.055) / 1.055) ** 2.4;
+            }
+
+            return (0.2126 * $channels[0]) + (0.7152 * $channels[1]) + (0.0722 * $channels[2]);
+        };
+
+        $one = $luminance($a);
+        $two = $luminance($b);
+
+        return $one > $two ? ($one + 0.05) / ($two + 0.05) : ($two + 0.05) / ($one + 0.05);
+    };
+
+    // The mid-luminance band, where neither ink is comfortable.
+    foreach (['#777777', '#787878', '#7A7A7A', '#808080', '#6E6E6E', '#8A8A8A'] as $hex) {
+        $appearance = appearanceFor(['accent' => $hex]);
+
+        expect($contrast($appearance->accentLight, $appearance->accentInkLight))
+            ->toBeGreaterThanOrEqual(WidgetAppearance::MIN_INK_CONTRAST, "light text on {$hex}")
+            ->and($contrast($appearance->accentDark, $appearance->accentInkDark))
+            ->toBeGreaterThanOrEqual(WidgetAppearance::MIN_INK_CONTRAST, "dark text on {$hex}");
+    }
+});
