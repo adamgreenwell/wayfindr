@@ -83,6 +83,19 @@ missed while skimming.
 
   Sites that configure nothing ask nothing, exactly as before.
 
+- **Conversation closes and reopens are recorded.** They were not, and the
+  consequence was quiet: `closed_at` holds only the most recent close, so it is
+  overwritten every time a conversation comes back. A visitor replying to a
+  closed conversation — the clearest signal that a resolution did not hold —
+  reopened it silently, indistinguishable from any other message.
+
+  Closes and reopens now appear in your account audit log, with who caused them
+  and what the conversation was before. Tickets already recorded theirs.
+
+  This is groundwork for reporting ([#742](https://github.com/adamgreenwell/wayfindr/issues/742)),
+  and it ships first for a reason: **history cannot be backfilled.** Every
+  release without it is a period no future report can describe.
+
 - **A list of the visitors you have heard from.** A visitor profile page existed
   with no way to reach it except from a conversation or a support-code lookup, so
   you could ask "tell me about this visitor" but not "who has been in touch".
