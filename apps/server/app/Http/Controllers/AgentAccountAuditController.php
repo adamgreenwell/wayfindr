@@ -10,6 +10,7 @@ use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\SpreadsheetSafeCsv;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -193,23 +194,16 @@ class AgentAccountAuditController extends Controller
      */
     private function auditCsvRow(array $event): array
     {
-        return [
-            $this->spreadsheetSafeCsvValue($event['occurred_at']),
-            $this->spreadsheetSafeCsvValue($event['action']),
-            $this->spreadsheetSafeCsvValue($event['label']),
-            $this->spreadsheetSafeCsvValue($event['actor']),
-            $this->spreadsheetSafeCsvValue($event['subject']),
-            $this->spreadsheetSafeCsvValue($event['site']),
-        ];
-    }
-
-    private function spreadsheetSafeCsvValue(string $value): string
-    {
-        if (preg_match('/^\s*[=+\-@]/u', $value) === 1) {
-            return "'".$value;
-        }
-
-        return $value;
+        // Listed rather than passed straight through: the column order is the
+        // header's order, not whatever order the keys happen to be built in.
+        return SpreadsheetSafeCsv::row([
+            $event['occurred_at'],
+            $event['action'],
+            $event['label'],
+            $event['actor'],
+            $event['subject'],
+            $event['site'],
+        ]);
     }
 
     /**
