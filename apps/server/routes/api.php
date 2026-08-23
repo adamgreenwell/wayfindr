@@ -3,6 +3,7 @@
 use App\Http\Controllers\Integrations\GitHubWebhookController;
 use App\Http\Controllers\Integrations\GitLabWebhookController;
 use App\Http\Controllers\Integrations\JiraWebhookController;
+use App\Http\Controllers\Widget\ArticleController;
 use App\Http\Controllers\Widget\BootstrapController;
 use App\Http\Controllers\Widget\BroadcastAuthController;
 use App\Http\Controllers\Widget\CobrowseConsentController;
@@ -23,6 +24,14 @@ Route::post('/widget/bootstrap', BootstrapController::class)
 Route::post('/widget/broadcasting/auth', BroadcastAuthController::class)
     ->middleware('throttle:widget-broadcast-auth')
     ->name('widget.broadcasting.auth');
+Route::middleware('throttle:widget-bootstrap')->group(function (): void {
+    Route::get('/widget/articles', [ArticleController::class, 'index'])
+        ->name('widget.articles.index');
+    Route::get('/widget/articles/{slug}', [ArticleController::class, 'show'])
+        ->where('slug', '[A-Za-z0-9-]+')
+        ->name('widget.articles.show');
+});
+
 Route::post('/conversations', [ConversationController::class, 'store'])
     ->middleware('throttle:widget-conversation')
     ->name('conversations.store');

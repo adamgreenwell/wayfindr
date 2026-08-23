@@ -328,6 +328,13 @@
                         <span class="management-action">Open</span>
                     </a>
                     @if ($canManageAccountSettings)
+                        <a class="management-link" href="{{ route('dashboard.account.articles.index') }}">
+                            <span>
+                                <strong>Articles</strong>
+                                <span class="lede">Answers a visitor can search for themselves, before they ask.</span>
+                            </span>
+                            <span class="management-action">Manage</span>
+                        </a>
                         <a class="management-link" href="{{ route('dashboard.account.reply-templates.index') }}">
                             <span>
                                 <strong>Reply templates</strong>

@@ -72,6 +72,12 @@
       'error.requestFailed': 'Wayfindr request failed with status {status}.',
       'intake.pending': 'Please answer the questions above first. Your message is still here.',
       'intake.submit': 'Continue',
+      'help.label': 'Find an answer',
+      'help.placeholder': 'Search help',
+      'help.searching': 'Searching…',
+      'help.none': 'Nothing matches that yet. Send a message and support will answer.',
+      'help.back': 'Back to results',
+      'help.failed': 'Could not search just now.',
       'intake.optional': '{label} (optional)',
       'intake.checkDetails': 'Please check the details above.',
       'intake.required': 'Please fill in the required fields.',
@@ -142,6 +148,12 @@
       'error.requestFailed': 'Wayfindr-Anfrage fehlgeschlagen mit Status {status}.',
       'intake.pending': 'Bitte beantworten Sie zuerst die Fragen oben. Ihre Nachricht bleibt erhalten.',
       'intake.submit': 'Weiter',
+      'help.label': 'Antwort finden',
+      'help.placeholder': 'Hilfe durchsuchen',
+      'help.searching': 'Wird gesucht …',
+      'help.none': 'Dazu gibt es noch nichts. Schreiben Sie uns, der Support antwortet.',
+      'help.back': 'Zurück zu den Ergebnissen',
+      'help.failed': 'Suche gerade nicht möglich.',
       'intake.optional': '{label} (optional)',
       'intake.checkDetails': 'Bitte prüfen Sie die Angaben oben.',
       'intake.required': 'Bitte füllen Sie die Pflichtfelder aus.',
@@ -644,6 +656,17 @@
 
         return getJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/messages?' + toQueryString(params));
       },
+      searchArticles: function (query) {
+        return getJson(fetcher, apiBaseUrl + '/api/widget/articles?' + toQueryString({
+          site_public_key: sitePublicKey,
+          q: query || '',
+        }));
+      },
+      fetchArticle: function (slug) {
+        return getJson(fetcher, apiBaseUrl + '/api/widget/articles/' + encodeURIComponent(slug) + '?' + toQueryString({
+          site_public_key: sitePublicKey,
+        }));
+      },
       fetchCobrowseStatus: function (supportCode) {
         return getJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/cobrowse?' + toQueryString({
           site_public_key: sitePublicKey,
@@ -844,6 +867,7 @@
 
     var mount = resolveMount(doc, options.mount);
     var panelId = 'wayfindr-support-panel-' + (++widgetInstanceCount);
+    var helpId = panelId + '-help';
     var cobrowseCopyId = panelId + '-cobrowse-copy';
     var rootEl = doc.createElement('div');
     rootEl.className = 'wayfindr-widget';
@@ -866,6 +890,16 @@
       '    <p class="wayfindr-widget__intake-error" role="alert" hidden></p>',
       '    <button class="wayfindr-widget__intake-submit" type="submit">' + escapeHtml(t('intake.submit')) + '</button>',
       '  </form>',
+      '  <div class="wayfindr-widget__help" hidden>',
+      '    <label class="wayfindr-widget__help-label" for="' + escapeHtml(helpId) + '">' + escapeHtml(t('help.label')) + '</label>',
+      '    <input class="wayfindr-widget__help-input" id="' + escapeHtml(helpId) + '" type="search" autocomplete="off" placeholder="' + escapeHtml(t('help.placeholder')) + '">',
+      '    <p class="wayfindr-widget__help-status" role="status" aria-live="polite" hidden></p>',
+      '    <ul class="wayfindr-widget__help-results" hidden></ul>',
+      '    <div class="wayfindr-widget__help-article" hidden>',
+      '      <button class="wayfindr-widget__help-back" type="button">' + escapeHtml(t('help.back')) + '</button>',
+      '      <div class="wayfindr-widget__help-blocks"></div>',
+      '    </div>',
+      '  </div>',
       '  <div class="wayfindr-widget__timeline-wrap">',
       '    <div class="wayfindr-widget__timeline" role="log" aria-live="polite" aria-relevant="additions text" aria-atomic="false" aria-label="' + escapeHtml(t('timeline.aria')) + '" hidden></div>',
       '    <button class="wayfindr-widget__jump" type="button" hidden>' + escapeHtml(t('timeline.jump')) + '</button>',
@@ -924,6 +958,16 @@
     var refresh = rootEl.querySelector('.wayfindr-widget__refresh');
     var cobrowse = rootEl.querySelector('.wayfindr-widget__cobrowse');
     var cobrowseCopy = rootEl.querySelector('.wayfindr-widget__cobrowse-copy');
+    var help = rootEl.querySelector('.wayfindr-widget__help');
+    var helpLabel = rootEl.querySelector('.wayfindr-widget__help-label');
+    var helpInput = rootEl.querySelector('.wayfindr-widget__help-input');
+    var helpStatus = rootEl.querySelector('.wayfindr-widget__help-status');
+    var helpResults = rootEl.querySelector('.wayfindr-widget__help-results');
+    var helpArticle = rootEl.querySelector('.wayfindr-widget__help-article');
+    var helpBack = rootEl.querySelector('.wayfindr-widget__help-back');
+    var helpBlocks = rootEl.querySelector('.wayfindr-widget__help-blocks');
+    var helpSequence = 0;
+    var helpDebounce = null;
     var cobrowseAllow = rootEl.querySelector('.wayfindr-widget__cobrowse-allow');
     var cobrowseDecline = rootEl.querySelector('.wayfindr-widget__cobrowse-decline');
     var bootstrapped = false;
@@ -992,6 +1036,9 @@
     var lastReadReceiptMessageId = null;
     var readReceiptBusy = false;
     var cobrowseStatusPollMs = typeof options.cobrowseStatusPollMs === 'number' ? Math.max(0, options.cobrowseStatusPollMs) : DEFAULT_COBROWSE_PAYLOAD_BUDGET.statusPollMs;
+    // Debounced so a search is one request per pause in typing rather than one
+    // per keystroke. Configurable mainly so tests need not wait on a timer.
+    var helpSearchDebounceMs = typeof options.helpSearchDebounceMs === 'number' ? Math.max(0, options.helpSearchDebounceMs) : 250;
     var cobrowseStatusTimer = null;
     var typingSignalThrottleMs = typeof options.typingSignalThrottleMs === 'number' ? Math.max(0, options.typingSignalThrottleMs) : 5000;
     var lastTypingSignalAt = 0;
@@ -1092,6 +1139,14 @@
       if (intakeSubmit) {
         intakeSubmit.textContent = t('intake.submit');
       }
+
+      // The help chrome is drawn with the panel and outlives every search, so
+      // it needs the same treatment as the intake submit button above -- the
+      // exact omission that left three controls speaking English behind a
+      // German panel last time.
+      helpLabel.textContent = t('help.label');
+      helpInput.setAttribute('placeholder', t('help.placeholder'));
+      helpBack.textContent = t('help.back');
 
       // The intake QUESTIONS need nothing here: applyBootstrapResult applies
       // the language before it applies the intake state, so the form is rebuilt
@@ -2512,6 +2567,24 @@
       applySiteAccent(rootEl, siteAccentKey(result));
       applyAwayState(panel, siteAwayState(result), t);
       applyIntakeState(siteIntakeState(result));
+      applyHelpAvailability(siteHasArticles(result));
+    }
+
+    /**
+     * Offer the search only where there is something to find.
+     *
+     * Read from the bootstrap answer rather than discovered by running an empty
+     * search on every open: that would be a request per open purely to decide
+     * whether to draw a box, and bootstrap is already being asked.
+     */
+    function applyHelpAvailability(available) {
+      help.hidden = !available;
+
+      if (!available) {
+        helpResults.innerHTML = '';
+        helpArticle.hidden = true;
+        helpStatus.hidden = true;
+      }
     }
 
     // The composer has never been gated before. It is gated now only until the
@@ -2591,6 +2664,194 @@
       intakeForm.hidden = false;
       setIntakeGate(true);
     }
+
+    /**
+     * Build a run of inline text as an element.
+     *
+     * Every branch produces a node with its text assigned, never a string of
+     * markup -- the same rule message bodies and intake labels already follow.
+     * A run whose shape is unrecognised falls through to plain text rather than
+     * being skipped, so unknown formatting loses its emphasis, not its words.
+     */
+    function buildSpan(span) {
+      var text = String(span && span.text != null ? span.text : '');
+
+      if (span && span.href) {
+        var link = doc.createElement('a');
+
+        link.href = span.href;
+        link.textContent = text;
+        // The destination came from the server, which already refused every
+        // scheme but http, https and mailto. These are the belt: a help article
+        // opening in the host page would navigate the visitor away from the
+        // site they came to for help.
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer nofollow';
+
+        return link;
+      }
+
+      var el = doc.createElement(span && span.strong ? 'strong' : (span && span.code ? 'code' : 'span'));
+
+      el.textContent = text;
+
+      return el;
+    }
+
+    function appendSpans(parent, spans) {
+      (spans || []).forEach(function (span) {
+        parent.appendChild(buildSpan(span));
+      });
+    }
+
+    /**
+     * Build an article. A block type this version does not know renders as
+     * nothing, which is the direction that failure should go: an older widget
+     * meeting a newer article shows less of it, never markup it cannot judge.
+     */
+    function renderArticleBlocks(blocks) {
+      helpBlocks.innerHTML = '';
+
+      (blocks || []).forEach(function (block) {
+        if (!block || typeof block !== 'object') {
+          return;
+        }
+
+        if (block.type === 'heading') {
+          var heading = doc.createElement('h3');
+
+          heading.textContent = String(block.text || '');
+          helpBlocks.appendChild(heading);
+
+          return;
+        }
+
+        if (block.type === 'paragraph') {
+          var para = doc.createElement('p');
+
+          appendSpans(para, block.spans);
+          helpBlocks.appendChild(para);
+
+          return;
+        }
+
+        if (block.type === 'list') {
+          var list = doc.createElement('ul');
+
+          (block.items || []).forEach(function (item) {
+            var li = doc.createElement('li');
+
+            appendSpans(li, item);
+            list.appendChild(li);
+          });
+
+          helpBlocks.appendChild(list);
+        }
+      });
+    }
+
+    function showHelpResults() {
+      helpArticle.hidden = true;
+      helpResults.hidden = helpResults.children.length === 0;
+    }
+
+    function openArticle(slug) {
+      // Sequenced on the same counter as the search. The results stay on screen
+      // while a fetch is in flight, so a visitor can click a second answer
+      // before the first arrives -- and the slower request landing last would
+      // replace the article they actually chose.
+      var ticket = ++helpSequence;
+
+      client.fetchArticle(slug).then(function (result) {
+        if (ticket !== helpSequence) {
+          return;
+        }
+
+        var article = (result && result.article) || {};
+
+        renderArticleBlocks(article.blocks);
+        helpResults.hidden = true;
+        helpArticle.hidden = false;
+        helpStatus.hidden = true;
+      }).catch(function (error) {
+        if (ticket !== helpSequence) {
+          return;
+        }
+
+        reportSuppressed('article fetch', error);
+        helpStatus.textContent = t('help.failed');
+        helpStatus.hidden = false;
+      });
+    }
+
+    function renderHelpResults(articles) {
+      helpResults.innerHTML = '';
+
+      articles.forEach(function (article) {
+        var item = doc.createElement('li');
+        var button = doc.createElement('button');
+
+        button.type = 'button';
+        button.className = 'wayfindr-widget__help-result';
+        button.textContent = String(article.title || '');
+        button.addEventListener('click', function () {
+          openArticle(String(article.slug || ''));
+        });
+
+        item.appendChild(button);
+        helpResults.appendChild(item);
+      });
+
+      showHelpResults();
+    }
+
+    /**
+     * Ask the server what matches.
+     *
+     * Sequenced like every other read here: an earlier search finishing after a
+     * later one would otherwise leave the visitor looking at results for a
+     * question they have already moved on from.
+     */
+    function searchHelp(query) {
+      var ticket = ++helpSequence;
+
+      helpStatus.textContent = t('help.searching');
+      helpStatus.hidden = false;
+
+      client.searchArticles(query).then(function (result) {
+        if (ticket !== helpSequence) {
+          return;
+        }
+
+        var articles = (result && result.articles) || [];
+
+        renderHelpResults(articles);
+        helpStatus.textContent = articles.length === 0 && query !== '' ? t('help.none') : '';
+        helpStatus.hidden = helpStatus.textContent === '';
+      }).catch(function (error) {
+        if (ticket !== helpSequence) {
+          return;
+        }
+
+        reportSuppressed('article search', error);
+        helpStatus.textContent = t('help.failed');
+        helpStatus.hidden = false;
+      });
+    }
+
+    helpInput.addEventListener('input', function () {
+      if (helpDebounce) {
+        clearTimeout(helpDebounce);
+      }
+
+      var query = helpInput.value.trim();
+
+      helpDebounce = setTimeout(function () {
+        searchHelp(query);
+      }, helpSearchDebounceMs);
+    });
+
+    helpBack.addEventListener('click', showHelpResults);
 
     function setIntakeGate(gated) {
       form.hidden = gated;
@@ -3467,6 +3728,12 @@
    */
   function intakeFieldLabel(t, field) {
     return t('intake.field.' + field);
+  }
+
+  function siteHasArticles(result) {
+    var site = (result && result.site) || {};
+
+    return Boolean(site.articles && site.articles.available);
   }
 
   function siteIntakeState(result) {
@@ -5184,6 +5451,20 @@
       '.wayfindr-widget__cobrowse{display:grid;gap:8px;padding:0 16px 16px}',
       '.wayfindr-widget__cobrowse-copy{margin:0;color:var(--wf-muted);font-size:13px;line-height:1.35}',
       '.wayfindr-widget__cobrowse-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}',
+      '.wayfindr-widget__help{display:flex;flex-direction:column;gap:6px;padding:12px 16px;border-bottom:1px solid var(--wf-rule)}',
+      '.wayfindr-widget__help-label{color:var(--wf-muted);font:700 11px/1 var(--wf-font-sans);letter-spacing:.06em;text-transform:uppercase}',
+      '.wayfindr-widget__help-input{min-height:36px;padding:0 10px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-paper);color:var(--wf-ink);font:400 14px/1 var(--wf-font-sans)}',
+      '.wayfindr-widget__help-status{margin:0;color:var(--wf-muted);font-size:12px;line-height:1.4}',
+      '.wayfindr-widget__help-results{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:2px}',
+      '.wayfindr-widget__help-result{width:100%;text-align:left;padding:8px 10px;border:0;border-radius:6px;background:transparent;color:var(--wf-ink);cursor:pointer;font:500 14px/1.3 var(--wf-font-sans)}',
+      '.wayfindr-widget__help-result:hover{color:var(--wf-brand)}',
+      '.wayfindr-widget__help-back{align-self:flex-start;padding:0;border:0;background:none;color:var(--wf-brand);cursor:pointer;font:500 12px/1 var(--wf-font-sans);text-decoration:underline}',
+      '.wayfindr-widget__help-blocks{color:var(--wf-ink);font-size:14px;line-height:1.5}',
+      '.wayfindr-widget__help-blocks h3{margin:10px 0 4px;font-size:14px}',
+      '.wayfindr-widget__help-blocks p{margin:0 0 8px}',
+      '.wayfindr-widget__help-blocks ul{margin:0 0 8px;padding-left:18px}',
+      '.wayfindr-widget__help-blocks a{color:var(--wf-brand)}',
+      '.wayfindr-widget__help-blocks code{font-family:var(--wf-font-mono);font-size:13px}',
       '.wayfindr-widget__cobrowse-allow,.wayfindr-widget__cobrowse-decline{min-height:36px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);cursor:pointer;padding:0 12px;font:700 13px/1 var(--wf-font-sans)}',
       '.wayfindr-widget__cobrowse-allow{background:var(--wf-brand);border-color:var(--wf-brand);color:var(--wf-ink-invert)}',
       '.wayfindr-widget__cobrowse-allow:hover{background:color-mix(in srgb, var(--wf-brand) 80%, var(--wf-ink));border-color:color-mix(in srgb, var(--wf-brand) 80%, var(--wf-ink));color:var(--wf-ink-invert)}',

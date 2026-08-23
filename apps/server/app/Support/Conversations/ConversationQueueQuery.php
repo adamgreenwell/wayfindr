@@ -6,6 +6,7 @@ namespace App\Support\Conversations;
 
 use App\Models\Conversation;
 use App\Models\User;
+use App\Support\LiteralLike;
 use App\Support\Visitors\VisitorPresence;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -100,17 +101,16 @@ final class ConversationQueueQuery
 
     public static function searchPattern(string $search): string
     {
-        return '%'.str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $search).'%';
+        return LiteralLike::pattern($search);
     }
 
+    /**
+     * Kept as a thin forward so the call sites below read as they always have.
+     * The rule itself moved to App\Support\LiteralLike when a second caller
+     * (knowledge articles) needed it.
+     */
     private static function whereLiteralLike(Builder $query, string $column, string $pattern, string $boolean = 'and'): void
     {
-        $wrappedColumn = $query->getQuery()->getGrammar()->wrap($column);
-
-        $query->whereRaw(
-            'LOWER('.$wrappedColumn.') LIKE LOWER(?) ESCAPE ?',
-            [$pattern, '\\'],
-            $boolean,
-        );
+        LiteralLike::where($query, $column, $pattern, $boolean);
     }
 }

@@ -8,6 +8,7 @@ use App\Http\Controllers\AgentAccountBreakGlassController;
 use App\Http\Controllers\AgentAccountController;
 use App\Http\Controllers\AgentAccountIntegrationsController;
 use App\Http\Controllers\AgentAlertController;
+use App\Http\Controllers\AgentArticleController;
 use App\Http\Controllers\AgentConversationAttachmentController;
 use App\Http\Controllers\AgentConversationController;
 use App\Http\Controllers\AgentConversationQueueController;
@@ -107,6 +108,18 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.account.labels.update');
     Route::delete('/dashboard/account/labels/{ticketLabel}', [AgentTicketLabelController::class, 'destroy'])
         ->name('dashboard.account.labels.destroy');
+    Route::get('/dashboard/account/articles', [AgentArticleController::class, 'index'])
+        ->name('dashboard.account.articles.index');
+    Route::post('/dashboard/account/articles', [AgentArticleController::class, 'store'])
+        ->name('dashboard.account.articles.store');
+    Route::get('/dashboard/account/articles/{article}', [AgentArticleController::class, 'show'])
+        ->name('dashboard.account.articles.show');
+    Route::put('/dashboard/account/articles/{article}', [AgentArticleController::class, 'update'])
+        ->name('dashboard.account.articles.update');
+    Route::post('/dashboard/account/articles/{article}/publish', [AgentArticleController::class, 'publish'])
+        ->name('dashboard.account.articles.publish');
+    Route::delete('/dashboard/account/articles/{article}', [AgentArticleController::class, 'destroy'])
+        ->name('dashboard.account.articles.destroy');
     Route::get('/dashboard/account/reply-templates', [AgentReplyTemplateController::class, 'index'])
         ->name('dashboard.account.reply-templates.index');
     Route::post('/dashboard/account/reply-templates', [AgentReplyTemplateController::class, 'store'])
