@@ -34,6 +34,17 @@ missed while skimming.
 
 ### Added
 
+- **The dashboard has started learning other languages.** Nothing visible
+  changes yet, and that is deliberate: the sign-in screens and the navigation
+  rail now read their words from translation files rather than having them
+  written into the page, with German alongside English. Every other screen is
+  still English, so no language selector is offered &mdash; a console that is
+  German in the sidebar and English behind it is worse than one that is honestly
+  English throughout.
+
+  The page also now says which way its language runs, so a right-to-left console
+  can lay out correctly once one exists.
+
 - **The widget speaks the visitor's language.** Every word in the chat box was
   English, hardcoded. A visitor did not choose Wayfindr and cannot be asked to
   read a language they do not speak &mdash; they arrived on somebody's website

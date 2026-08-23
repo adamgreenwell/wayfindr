@@ -1,14 +1,14 @@
-<x-layouts.app title="Agent Login">
+<x-layouts.app :title="__('signin.login.title')">
     <main class="auth-page">
         <section class="panel" aria-labelledby="login-heading">
-            <h1 id="login-heading">Agent Login</h1>
-            <p class="lede">Sign in to your Wayfindr support workspace.</p>
+            <h1 id="login-heading">{{ __('signin.login.title') }}</h1>
+            <p class="lede">{{ __('signin.login.lede') }}</p>
 
             <form method="POST" action="{{ route('login.store') }}">
                 @csrf
 
                 <div class="field">
-                    <label for="email">Email</label>
+                    <label for="email">{{ __('signin.login.email') }}</label>
                     <input
                         id="email"
                         name="email"
@@ -24,7 +24,7 @@
                 </div>
 
                 <div class="field">
-                    <label for="password">Password</label>
+                    <label for="password">{{ __('signin.login.password') }}</label>
                     <input
                         id="password"
                         name="password"
@@ -39,13 +39,13 @@
 
                 <label class="check-row" for="remember">
                     <input id="remember" name="remember" type="checkbox" value="1">
-                    Remember this browser
+                    {{ __('signin.login.remember') }}
                 </label>
 
-                <button class="button full" type="submit">Sign in</button>
+                <button class="button full" type="submit">{{ __('signin.login.submit') }}</button>
             </form>
 
-            <p><a class="text-link" href="{{ route('password.request') }}">Forgotten your password?</a></p>
+            <p><a class="text-link" href="{{ route('password.request') }}">{{ __('signin.login.forgot') }}</a></p>
         </section>
     </main>
 </x-layouts.app>

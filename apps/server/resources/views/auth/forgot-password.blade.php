@@ -1,8 +1,8 @@
-<x-layouts.app title="Reset your password">
+<x-layouts.app :title="__('signin.forgot.title')">
     <main class="auth-page">
         <section class="panel" aria-labelledby="forgot-heading">
-            <h1 id="forgot-heading">Reset your password</h1>
-            <p class="lede">We will email you a link to set a new one.</p>
+            <h1 id="forgot-heading">{{ __('signin.forgot.title') }}</h1>
+            <p class="lede">{{ __('signin.forgot.lede') }}</p>
 
             @if (session('status'))
                 <div class="notice-copy">
@@ -14,7 +14,7 @@
                 @csrf
 
                 <div class="field">
-                    <label for="email">Email</label>
+                    <label for="email">{{ __('signin.forgot.email') }}</label>
                     <input
                         id="email"
                         name="email"
@@ -29,7 +29,7 @@
                     @enderror
                 </div>
 
-                <button class="button full" type="submit">Email me a reset link</button>
+                <button class="button full" type="submit">{{ __('signin.forgot.submit') }}</button>
             </form>
 
             <p class="field-help">
@@ -37,7 +37,7 @@
                 your colleagues receive mail either, ask your operator to check the mail settings.
             </p>
 
-            <p><a class="text-link" href="{{ route('login') }}">Back to sign in</a></p>
+            <p><a class="text-link" href="{{ route('login') }}">{{ __('signin.forgot.back') }}</a></p>
         </section>
     </main>
 </x-layouts.app>

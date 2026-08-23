@@ -8,7 +8,9 @@
 ])
 
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+{{-- Direction alongside language: a right-to-left console has to lay out
+     right-to-left, and nothing in the product answered that before. --}}
+<html lang="{{ \App\Support\Locales::tag() }}" dir="{{ \App\Support\Locales::direction() }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -2745,27 +2747,27 @@
     @if ($agent && $account)
         @php
             $workItems = [
-                ['label' => 'Dashboard', 'icon' => 'dashboard', 'href' => route('dashboard'), 'active' => request()->routeIs('dashboard')],
-                ['label' => 'Conversations', 'icon' => 'conversations', 'href' => route('dashboard.conversations.index'), 'active' => request()->routeIs('dashboard.conversations.*')],
-                ['label' => 'Tickets', 'icon' => 'tickets', 'href' => route('dashboard.tickets.index'), 'active' => request()->routeIs('dashboard.tickets.*')],
-                ['label' => 'Alerts', 'icon' => 'alerts', 'href' => route('dashboard.alerts.index'), 'active' => request()->routeIs('dashboard.alerts.*')],
-                ['label' => 'Visitors', 'icon' => 'visitors', 'href' => route('dashboard.visitors.index'), 'active' => request()->routeIs('dashboard.visitors.*')],
+                ['label' => __('nav.items.dashboard'), 'icon' => 'dashboard', 'href' => route('dashboard'), 'active' => request()->routeIs('dashboard')],
+                ['label' => __('nav.items.conversations'), 'icon' => 'conversations', 'href' => route('dashboard.conversations.index'), 'active' => request()->routeIs('dashboard.conversations.*')],
+                ['label' => __('nav.items.tickets'), 'icon' => 'tickets', 'href' => route('dashboard.tickets.index'), 'active' => request()->routeIs('dashboard.tickets.*')],
+                ['label' => __('nav.items.alerts'), 'icon' => 'alerts', 'href' => route('dashboard.alerts.index'), 'active' => request()->routeIs('dashboard.alerts.*')],
+                ['label' => __('nav.items.visitors'), 'icon' => 'visitors', 'href' => route('dashboard.visitors.index'), 'active' => request()->routeIs('dashboard.visitors.*')],
             ];
 
             // Reporting is account-wide by nature -- it aggregates across every
             // site an agent can see -- so it is admin-only, matching the audit
             // page whose records it reads.
             if ($agent->isAdmin()) {
-                $workItems[] = ['label' => 'Reports', 'icon' => 'reports', 'href' => route('dashboard.reports.index'), 'active' => request()->routeIs('dashboard.reports.*')];
+                $workItems[] = ['label' => __('nav.items.reports'), 'icon' => 'reports', 'href' => route('dashboard.reports.index'), 'active' => request()->routeIs('dashboard.reports.*')];
             }
 
             $manageItems = [
-                ['label' => 'Sites', 'icon' => 'sites', 'href' => route('dashboard.sites.index'), 'active' => request()->routeIs('dashboard.sites.*')],
-                ['label' => 'Account', 'icon' => 'account', 'href' => route('dashboard.account.show'), 'active' => request()->routeIs('dashboard.account.*')],
+                ['label' => __('nav.items.sites'), 'icon' => 'sites', 'href' => route('dashboard.sites.index'), 'active' => request()->routeIs('dashboard.sites.*')],
+                ['label' => __('nav.items.account'), 'icon' => 'account', 'href' => route('dashboard.account.show'), 'active' => request()->routeIs('dashboard.account.*')],
             ];
 
             if ($agent->isPlatformOperator()) {
-                $manageItems[] = ['label' => 'Operator', 'icon' => 'operator', 'href' => route('operator.dashboard'), 'active' => request()->routeIs('operator.*')];
+                $manageItems[] = ['label' => __('nav.items.operator'), 'icon' => 'operator', 'href' => route('operator.dashboard'), 'active' => request()->routeIs('operator.*')];
             }
 
             // The breadcrumb names where you are. The active navigation item is
@@ -2782,7 +2784,7 @@
                 </a>
 
                 <nav class="wf-nav" aria-label="Primary navigation">
-                    <p class="wf-nav-heading">Work</p>
+                    <p class="wf-nav-heading">{{ __('nav.groups.work') }}</p>
                     @foreach ($workItems as $item)
                         <a class="wf-nav-link" href="{{ $item['href'] }}" @if ($item['active']) aria-current="page" @endif>
                             <x-icon :name="$item['icon']" />
@@ -2790,7 +2792,7 @@
                         </a>
                     @endforeach
 
-                    <p class="wf-nav-heading">Manage</p>
+                    <p class="wf-nav-heading">{{ __('nav.groups.manage') }}</p>
                     @foreach ($manageItems as $item)
                         <a class="wf-nav-link" href="{{ $item['href'] }}" @if ($item['active']) aria-current="page" @endif>
                             <x-icon :name="$item['icon']" />
@@ -2813,7 +2815,7 @@
 
                     <form class="wf-signout" method="POST" action="{{ route('logout') }}">
                         @csrf
-                        <button type="submit">Sign out</button>
+                        <button type="submit">{{ __('nav.sign_out') }}</button>
                     </form>
                 </div>
             </aside>
@@ -2834,8 +2836,8 @@
 
                     <form class="wf-topbar-search" method="GET" action="{{ route('dashboard.support-code.lookup') }}" aria-label="Find support trail">
                         <label class="sr-only" for="shell_support_code">Support code, ticket, or visitor ID</label>
-                        <input id="shell_support_code" name="support_code" type="search" placeholder="Support code, ticket, visitor" autocomplete="off">
-                        <button type="submit">Find</button>
+                        <input id="shell_support_code" name="support_code" type="search" placeholder="{{ __('nav.search.placeholder') }}" autocomplete="off">
+                        <button type="submit">{{ __('nav.search.submit') }}</button>
                     </form>
                 </header>
 

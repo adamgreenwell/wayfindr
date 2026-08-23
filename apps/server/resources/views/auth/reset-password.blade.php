@@ -1,15 +1,15 @@
-<x-layouts.app title="Choose a new password">
+<x-layouts.app :title="__('signin.reset.title')">
     <main class="auth-page">
         <section class="panel" aria-labelledby="reset-heading">
-            <h1 id="reset-heading">Choose a new password</h1>
-            <p class="lede">This also signs you out everywhere else.</p>
+            <h1 id="reset-heading">{{ __('signin.reset.title') }}</h1>
+            <p class="lede">{{ __('signin.reset.lede') }}</p>
 
             <form method="POST" action="{{ route('password.update') }}">
                 @csrf
                 <input type="hidden" name="token" value="{{ $token }}">
 
                 <div class="field">
-                    <label for="email">Email</label>
+                    <label for="email">{{ __('signin.reset.email') }}</label>
                     <input
                         id="email"
                         name="email"
@@ -24,7 +24,7 @@
                 </div>
 
                 <div class="field">
-                    <label for="password">New password</label>
+                    <label for="password">{{ __('signin.reset.password') }}</label>
                     <input
                         id="password"
                         name="password"
@@ -39,7 +39,7 @@
                 </div>
 
                 <div class="field">
-                    <label for="password_confirmation">Confirm new password</label>
+                    <label for="password_confirmation">{{ __('signin.reset.confirm') }}</label>
                     <input
                         id="password_confirmation"
                         name="password_confirmation"
@@ -49,7 +49,7 @@
                     >
                 </div>
 
-                <button class="button full" type="submit">Set new password</button>
+                <button class="button full" type="submit">{{ __('signin.reset.submit') }}</button>
             </form>
         </section>
     </main>
