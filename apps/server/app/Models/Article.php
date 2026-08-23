@@ -23,6 +23,16 @@ class Article extends Model
     /** @use HasFactory<ArticleFactory> */
     use HasFactory;
 
+    protected static function booted(): void
+    {
+        // On the model rather than in the controller, so search text cannot
+        // drift from the body no matter who writes one -- a seeder, a console
+        // command, or a future importer.
+        static::saving(function (Article $article): void {
+            $article->search_text = ArticleDocument::text((string) $article->body);
+        });
+    }
+
     protected function casts(): array
     {
         return [

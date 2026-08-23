@@ -31,7 +31,15 @@ async function settle() {
   }
 }
 
-function widgetWithHelp({ available = true, articles = [], blocks = [] } = {}) {
+function deferred() {
+  let release;
+  const promise = new Promise((resolve) => { release = resolve; });
+
+  return { promise, release };
+}
+
+function widgetWithHelp({ available = true, articles = [], blocks = [], articleBlocks = null, holdFirstArticle = null } = {}) {
+  let articleFetches = 0;
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
     url: 'https://shop.example.test/',
   });
@@ -70,7 +78,17 @@ function widgetWithHelp({ available = true, articles = [], blocks = [] } = {}) {
       }
 
       if (url.includes('/api/widget/articles/')) {
-        return jsonResponse(200, { data: { article: { slug: 'refunds', title: 'Refunds', blocks } } });
+        articleFetches += 1;
+
+        const slug = url.split('/api/widget/articles/')[1].split('?')[0];
+
+        if (articleFetches === 1 && holdFirstArticle) {
+          await holdFirstArticle;
+        }
+
+        const body = articleBlocks && articleBlocks[slug] ? articleBlocks[slug] : blocks;
+
+        return jsonResponse(200, { data: { article: { slug, title: slug, blocks: body } } });
       }
 
       if (url.includes('/api/widget/articles')) {
@@ -228,4 +246,86 @@ test('markup inside an article is shown as the characters it is, not run', async
   assert.match(article.textContent, /<script>alert\(1\)<\/script>/);
   assert.match(article.textContent, /<img src=x onerror=alert\(2\)>/);
   assert.match(article.textContent, /<b>not bold<\/b>/);
+});
+
+test('a slower article cannot replace the one the visitor chose after it', async () => {
+  // The results stay on screen while a fetch is in flight, so a second click is
+  // ordinary rather than exotic -- and the first request landing last would
+  // show an answer to a question the visitor already moved on from.
+  const slow = deferred();
+  const { widget, dom } = widgetWithHelp({
+    articles: [{ slug: 'slow', title: 'Slow answer' }, { slug: 'fast', title: 'Fast answer' }],
+    holdFirstArticle: slow.promise,
+    articleBlocks: {
+      slow: [{ type: 'paragraph', spans: [{ text: 'The stale one.' }] }],
+      fast: [{ type: 'paragraph', spans: [{ text: 'The chosen one.' }] }],
+    },
+  });
+
+  await widget.open();
+  await settle();
+
+  const input = q(widget, '.wayfindr-widget__help-input');
+  input.value = 'answer';
+  input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  await settle();
+
+  const [first, second] = widget.root.querySelectorAll('.wayfindr-widget__help-result');
+
+  first.click();
+  await new Promise((resolve) => setImmediate(resolve));
+  second.click();
+  await settle();
+
+  // Now let the first request finish, last.
+  slow.release();
+  await settle();
+
+  assert.match(q(widget, '.wayfindr-widget__help-blocks').textContent, /The chosen one\./);
+  assert.doesNotMatch(q(widget, '.wayfindr-widget__help-blocks').textContent, /The stale one\./);
+});
+
+test('the help chrome speaks the language the rest of the panel switched to', async () => {
+  // The help label, placeholder and back button are drawn with the panel and
+  // outlive every search, so they need what the intake submit button needs.
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/',
+  });
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: memoryStorage({}),
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    helpSearchDebounceMs: 0,
+    fetch: async (url) => {
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return jsonResponse(200, {
+          data: {
+            site: { public_key: 'site_public_shop', settings: {}, locale: 'de', articles: { available: true } },
+            visitor: { anonymous_id: 'anon-shop', token: 'visitor-token-shop' },
+          },
+        });
+      }
+
+      return jsonResponse(200, { data: {} });
+    },
+  });
+
+  // Drawn in English: the site default only arrives with the bootstrap.
+  assert.equal(widget.root.querySelector('.wayfindr-widget__help-label').textContent, 'Find an answer');
+
+  await widget.open();
+  await settle();
+
+  assert.equal(widget.root.lang, 'de');
+  assert.equal(widget.root.querySelector('.wayfindr-widget__help-label').textContent, 'Antwort finden');
+  assert.equal(widget.root.querySelector('.wayfindr-widget__help-input').getAttribute('placeholder'), 'Hilfe durchsuchen');
+  assert.equal(widget.root.querySelector('.wayfindr-widget__help-back').textContent, 'Zurück zu den Ergebnissen');
 });

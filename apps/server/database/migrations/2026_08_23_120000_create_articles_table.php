@@ -17,6 +17,14 @@ return new class extends Migration
             $table->string('title', 160);
             $table->string('slug', 180);
             $table->text('body');
+            // What a reader sees, kept beside what the author wrote.
+            //
+            // Searching the Markdown source misses any phrase that crosses
+            // formatting: "within 14 days" is stored as "within **14 days**"
+            // and would never match. Rendering every article per query was the
+            // alternative considered and rejected; deriving it once on save
+            // costs a column and makes search agree with the page.
+            $table->text('search_text');
             // Draft is the default. An article half-written is the normal state
             // of an article, and a knowledge base that publishes on save is one
             // nobody drafts in.

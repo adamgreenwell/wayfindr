@@ -126,3 +126,24 @@ test('bootstrap says whether there is anything to search for', function (): void
     $article->forceFill(['published_at' => now()->subMinute()])->save();
     expect($available())->toBeTrue();
 });
+
+test('a phrase a visitor can see is findable even when formatting splits it', function (): void {
+    // "within 14 days" is stored as "within **14 days**". Searching the source
+    // silently misses every phrase that crosses emphasis, a link, or code --
+    // and misses it in exactly the articles careful enough to use formatting.
+    $site = articleSite();
+    Article::factory()->for($site->account)->published()->create([
+        'title' => 'Policy',
+        'body' => 'We refund within **14 days** of [delivery](https://example.test/x).',
+    ]);
+
+    $find = fn (string $q) => $this->getJson(route('widget.articles.index', [
+        'site_public_key' => 'site_public_kb', 'q' => $q,
+    ]))->assertOk()->json('data.articles.*.title');
+
+    expect($find('within 14 days'))->toBe(['Policy'])
+        ->and($find('of delivery'))->toBe(['Policy'])
+        // And never on syntax the reader is not shown.
+        ->and($find('**'))->toBe([])
+        ->and($find('https://example.test'))->toBe([]);
+});

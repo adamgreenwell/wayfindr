@@ -45,12 +45,11 @@ class ArticleController extends Controller
 
                 $query->where(function (Builder $query) use ($pattern): void {
                     LiteralLike::where($query, 'title', $pattern);
-                    // The body is Markdown, so a search for "14 days" would miss
-                    // an article that writes it as "**14 days**". Matched on the
-                    // source anyway, because narrowing on the rendered text
-                    // would mean rendering every article on every keystroke --
-                    // and the title is what the reader is shown either way.
-                    LiteralLike::where($query, 'body', $pattern, 'or');
+                    // The rendered text, not the Markdown source. "within 14
+                    // days" is written "within **14 days**", and a visitor who
+                    // searches the phrase they can see on the page should find
+                    // it. Derived once on save rather than per query.
+                    LiteralLike::where($query, 'search_text', $pattern, 'or');
                 });
             })
             ->orderByDesc('published_at')

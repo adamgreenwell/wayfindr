@@ -959,6 +959,7 @@
     var cobrowse = rootEl.querySelector('.wayfindr-widget__cobrowse');
     var cobrowseCopy = rootEl.querySelector('.wayfindr-widget__cobrowse-copy');
     var help = rootEl.querySelector('.wayfindr-widget__help');
+    var helpLabel = rootEl.querySelector('.wayfindr-widget__help-label');
     var helpInput = rootEl.querySelector('.wayfindr-widget__help-input');
     var helpStatus = rootEl.querySelector('.wayfindr-widget__help-status');
     var helpResults = rootEl.querySelector('.wayfindr-widget__help-results');
@@ -1138,6 +1139,14 @@
       if (intakeSubmit) {
         intakeSubmit.textContent = t('intake.submit');
       }
+
+      // The help chrome is drawn with the panel and outlives every search, so
+      // it needs the same treatment as the intake submit button above -- the
+      // exact omission that left three controls speaking English behind a
+      // German panel last time.
+      helpLabel.textContent = t('help.label');
+      helpInput.setAttribute('placeholder', t('help.placeholder'));
+      helpBack.textContent = t('help.back');
 
       // The intake QUESTIONS need nothing here: applyBootstrapResult applies
       // the language before it applies the intake state, so the form is rebuilt
@@ -2747,7 +2756,17 @@
     }
 
     function openArticle(slug) {
+      // Sequenced on the same counter as the search. The results stay on screen
+      // while a fetch is in flight, so a visitor can click a second answer
+      // before the first arrives -- and the slower request landing last would
+      // replace the article they actually chose.
+      var ticket = ++helpSequence;
+
       client.fetchArticle(slug).then(function (result) {
+        if (ticket !== helpSequence) {
+          return;
+        }
+
         var article = (result && result.article) || {};
 
         renderArticleBlocks(article.blocks);
@@ -2755,6 +2774,10 @@
         helpArticle.hidden = false;
         helpStatus.hidden = true;
       }).catch(function (error) {
+        if (ticket !== helpSequence) {
+          return;
+        }
+
         reportSuppressed('article fetch', error);
         helpStatus.textContent = t('help.failed');
         helpStatus.hidden = false;

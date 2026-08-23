@@ -146,3 +146,25 @@ test('the preview builds elements rather than printing markup', function (): voi
         ->assertDontSee('href="javascript:', false)
         ->assertSee('bad');
 });
+
+test('an admin can reach articles from the account page', function (): void {
+    // The feature was complete and unreachable: every link to the authoring
+    // pages was on the authoring pages. A visitor-facing feature nobody can
+    // find the door to is not shipped.
+    $w = articleWorld();
+
+    $this->actingAs($w['admin'])
+        ->get(route('dashboard.account.show'))
+        ->assertOk()
+        ->assertSee(route('dashboard.account.articles.index'), false);
+});
+
+test('an agent who cannot manage the account is not shown the door', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.account.show'))
+        ->assertOk()
+        ->assertDontSee(route('dashboard.account.articles.index'), false);
+});
