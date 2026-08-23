@@ -662,8 +662,20 @@
                 <div class="meta-grid">
                     <div class="meta-item">
                         <span class="meta-label">Visitor</span>
-                        <span class="meta-value">{{ $visitorContext['anonymous_id'] }}</span>
+                        <span class="meta-value">{{ $visitorContext['name'] ?: $visitorContext['anonymous_id'] }}</span>
                     </div>
+                    @if ($visitorContext['email'])
+                        <div class="meta-item">
+                            <span class="meta-label">Email</span>
+                            <span class="meta-value">{{ $visitorContext['email'] }}</span>
+                        </div>
+                    @endif
+                    @if ($visitorContext['reason'])
+                        <div class="meta-item">
+                            <span class="meta-label">What this is about</span>
+                            <span class="meta-value">{{ $visitorContext['reason'] }}</span>
+                        </div>
+                    @endif
                     <div class="meta-item">
                         <span class="meta-label">Host visitor ID</span>
                         <span class="meta-value">{{ $visitorContext['external_id'] ?? 'Not provided' }}</span>

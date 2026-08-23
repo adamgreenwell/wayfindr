@@ -761,6 +761,12 @@ class AgentConversationController extends Controller
         return [
             'anonymous_id' => $visitor?->anonymous_id ?? 'Unknown visitor',
             'external_id' => $visitorContextSanitizer->sanitizeIdentifier($visitor?->external_id),
+            // What the visitor typed into the pre-chat form, if the site asked.
+            // Collecting an answer nobody can see makes the field pointless, so
+            // this is part of the same feature rather than a follow-up.
+            'name' => $visitor?->name,
+            'email' => $visitor?->email,
+            'reason' => $this->contextString($conversationMetadata['reason'] ?? null),
             'last_seen_at' => $visitor?->last_seen_at,
             'presence' => [
                 'state' => $visitor?->presenceState() ?? 'unknown',

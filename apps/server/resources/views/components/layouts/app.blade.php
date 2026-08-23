@@ -1632,6 +1632,32 @@
             font-weight: 700;
         }
 
+        /* Closing the desk early is an operational act, not configuration, so
+           it sits above the schedule form and is separated from it rather than
+           reading as its first field. */
+        .desk-closure {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px 16px;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--wf-border);
+        }
+
+        .desk-closure-state {
+            flex: 1 1 16rem;
+            margin: 0;
+            color: var(--wf-muted);
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .desk-closure-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
         .section-form {
             padding: 20px;
         }

@@ -14,6 +14,7 @@
   var VERSION = '0.0.0';
   var STYLE_ID = 'wayfindr-widget-styles';
   var MESSAGE_SEND_ERROR = 'Message could not be sent. Your text is still here so you can try again.';
+  var INTAKE_PENDING_STATUS = 'Please answer the questions above first. Your message is still here.';
   var MESSAGE_REFRESH_ERROR = 'Messages could not be refreshed. Your current chat is still visible.';
   var MESSAGE_CONNECTION_TROUBLE = 'Having trouble reaching support. Your chat is still here; refresh will try again.';
   var ATTACHMENT_UPLOAD_ERROR = 'That file could not be attached.';
@@ -243,13 +244,21 @@
         details = details || {};
         var externalId = normalizeVisitorExternalId(details.visitorExternalId) || visitorExternalId;
 
-        return postJson(fetcher, apiBaseUrl + '/api/conversations', withVisitorContext({
+        var payload = withVisitorContext({
           site_public_key: sitePublicKey,
           anonymous_id: anonymousId,
           visitor_token: requireVisitorToken(visitorToken),
           subject: details.subject || summarize(body),
           page_url: details.pageUrl || null,
-        }, details.context, externalId));
+        }, details.context, externalId);
+
+        // Only fields the site actually asked for. Sending a blank key for a
+        // field it does not ask for is refused by the server, and rightly.
+        Object.keys(details.intake || {}).forEach(function (key) {
+          payload[key] = details.intake[key];
+        });
+
+        return postJson(fetcher, apiBaseUrl + '/api/conversations', payload);
       },
       sendMessage: function (supportCode, body, clientMessageId, attachmentIds) {
         return postJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/messages', withoutNullValues({
@@ -506,6 +515,12 @@
       '    <button class="wayfindr-widget__close" type="button" aria-label="Close support chat">&times;</button>',
       '  </header>',
       '  <div class="wayfindr-widget__away" role="status" aria-live="polite" hidden></div>',
+      '  <form class="wayfindr-widget__intake" hidden>',
+      '    <p class="wayfindr-widget__intake-intro"></p>',
+      '    <div class="wayfindr-widget__intake-fields"></div>',
+      '    <p class="wayfindr-widget__intake-error" role="alert" hidden></p>',
+      '    <button class="wayfindr-widget__intake-submit" type="submit">Continue</button>',
+      '  </form>',
       '  <div class="wayfindr-widget__timeline-wrap">',
       '    <div class="wayfindr-widget__timeline" role="log" aria-live="polite" aria-relevant="additions text" aria-atomic="false" aria-label="Conversation messages" hidden></div>',
       '    <button class="wayfindr-widget__jump" type="button" hidden>New messages ↓</button>',
@@ -551,6 +566,10 @@
     var noticeRetry = rootEl.querySelector('.wayfindr-widget__notice-retry');
     var typing = rootEl.querySelector('.wayfindr-widget__typing');
     var connection = rootEl.querySelector('.wayfindr-widget__connection');
+    var intakeForm = rootEl.querySelector('.wayfindr-widget__intake');
+    var intakeIntro = rootEl.querySelector('.wayfindr-widget__intake-intro');
+    var intakeFields = rootEl.querySelector('.wayfindr-widget__intake-fields');
+    var intakeError = rootEl.querySelector('.wayfindr-widget__intake-error');
     var textarea = rootEl.querySelector('.wayfindr-widget__textarea');
     var attachmentsList = rootEl.querySelector('.wayfindr-widget__attachments');
     var fileInput = rootEl.querySelector('.wayfindr-widget__file-input');
@@ -563,6 +582,10 @@
     var cobrowseAllow = rootEl.querySelector('.wayfindr-widget__cobrowse-allow');
     var cobrowseDecline = rootEl.querySelector('.wayfindr-widget__cobrowse-decline');
     var bootstrapped = false;
+    var intakeState = null;
+    var intakeConfig = null;
+    var intakeAnswered = false;
+    var intakeAnsweredSignature = '';
     // Only the newest bootstrap may touch the panel; anything older is a stale
     // answer that would overwrite it.
     var bootstrapSequence = 0;
@@ -575,6 +598,11 @@
     var widgetStorage = resolveStorageOption(options);
     var storedSupportCode = storageGet(widgetStorage, supportCodeStorageKey(options.sitePublicKey));
     var resumePromise = null;
+    // A stored conversation is being restored. supportCode is not set until
+    // that lands, so a bootstrap answer arriving first would read the visitor
+    // as brand new and put the form in front of somebody who already has a
+    // thread -- answers they would then watch be discarded when it restored.
+    var resumePending = Boolean(storedSupportCode);
     var conversationStatus = null;
     var messages = [];
     // A fingerprint of the last rendered message list so a poll that brings no
@@ -2028,7 +2056,158 @@
     function applyBootstrapResult(result) {
       applySiteAccent(rootEl, siteAccentKey(result));
       applyAwayState(panel, siteAwayState(result));
+      applyIntakeState(siteIntakeState(result));
     }
+
+    // The composer has never been gated before. It is gated now only until the
+    // questions the site asked are answered, and never once a conversation
+    // exists -- coming back to an existing thread must not meet a form.
+    function applyIntakeState(state) {
+      // Held separately from the gate decision. A resume can set supportCode
+      // after bootstrap answers, so the decision has to be re-derivable rather
+      // than taken once at whichever moment happened to come first.
+      intakeConfig = state;
+
+      refreshIntakeGate();
+    }
+
+    function intakeSignature(state) {
+      return state
+        ? state.fields.map(function (field) { return field.name + ':' + field.required; }).join('|')
+        : '';
+    }
+
+    // The one question every gate decision asks. The gate and the send path
+    // have to agree on it, and two spellings of it is how a send came to
+    // proceed straight through a gate that had just closed.
+    function intakeGateHolds() {
+      return Boolean(intakeState) && !intakeAnswered;
+    }
+
+    function refreshIntakeGate() {
+      // A resume counts as having a conversation. It has not set supportCode
+      // yet, but it is about to, and gating on the gap shows a form that is
+      // then taken away.
+      intakeState = (supportCode || resumePending) ? null : intakeConfig;
+
+      // Answering covers the questions that were ASKED. Crossing a closing
+      // time makes an email newly required, and treating the earlier answer as
+      // covering it hid a field the server now demands -- a 422 no amount of
+      // reopening could clear, because the flag never reset.
+      var signature = intakeSignature(intakeState);
+
+      if (signature !== intakeAnsweredSignature) {
+        intakeAnswered = false;
+      }
+
+      if (!intakeGateHolds()) {
+        intakeForm.hidden = true;
+        setIntakeGate(false);
+
+        return;
+      }
+
+      intakeIntro.textContent = intakeState.intro || '';
+      intakeIntro.hidden = !intakeState.intro;
+      intakeFields.innerHTML = '';
+
+      intakeState.fields.forEach(function (field) {
+        // doc, not the global: the widget is initialised with a document so it
+        // can run under JSDOM and inside a host page that is not the top frame.
+        var label = doc.createElement('label');
+        var text = doc.createTextNode(
+          INTAKE_LABELS[field.name] + (field.required ? '' : ' (optional)')
+        );
+        var input = doc.createElement('input');
+
+        input.type = field.name === 'email' ? 'email' : 'text';
+        input.name = field.name;
+        input.required = field.required;
+        input.autocomplete = field.name === 'email' ? 'email' : (field.name === 'name' ? 'name' : 'off');
+        // Matches the server's rule, so the ordinary case is caught here rather
+        // than as a 422 the visitor has to decipher.
+        input.maxLength = 255;
+
+        label.appendChild(text);
+        label.appendChild(input);
+        intakeFields.appendChild(label);
+      });
+
+      intakeForm.hidden = false;
+      setIntakeGate(true);
+    }
+
+    function setIntakeGate(gated) {
+      form.hidden = gated;
+    }
+
+    // Hand the form back when the server rejects what it collected.
+    //
+    // Browsers accept "a@b" as an email input and the server's email:filter
+    // does not, so a 422 here is ordinary rather than exotic. Treated as a
+    // generic send failure it was fatal: the only UI that could correct the
+    // answer was hidden, the answered flag stayed set, and Retry resent the
+    // same rejected values -- the visitor could not start a conversation at
+    // all without closing and reopening the panel.
+    function reopenIntakeForCorrection(error) {
+      if (!intakeState || !error || error.status !== 422) {
+        return false;
+      }
+
+      intakeAnswered = false;
+      intakeAnsweredSignature = '';
+      refreshIntakeGate();
+
+      intakeError.textContent = error.message || 'Please check the details above.';
+      intakeError.hidden = false;
+
+      return true;
+    }
+
+    function intakeAnswers() {
+      var answers = {};
+
+      if (!intakeState) {
+        return answers;
+      }
+
+      intakeState.fields.forEach(function (field) {
+        var input = intakeFields.querySelector('[name="' + field.name + '"]');
+
+        answers['visitor_' + field.name] = input ? input.value : '';
+      });
+
+      return answers;
+    }
+
+    intakeForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      intakeError.hidden = true;
+
+      var missing = intakeState && intakeState.fields.some(function (field) {
+        var input = intakeFields.querySelector('[name="' + field.name + '"]');
+
+        return field.required && (!input || !input.value.trim());
+      });
+
+      if (missing) {
+        // The server enforces this too; answering here saves a round trip and
+        // is the only per-field feedback the widget has ever had.
+        intakeError.textContent = 'Please fill in the required fields.';
+        intakeError.hidden = false;
+
+        return;
+      }
+
+      intakeAnswered = true;
+      intakeAnsweredSignature = intakeSignature(intakeState);
+      intakeForm.hidden = true;
+      setIntakeGate(false);
+
+      if (textarea) {
+        textarea.focus();
+      }
+    });
 
     function closePanel() {
       cancelPendingReadReceipt();
@@ -2208,7 +2387,13 @@
           resumePromise = null;
         }
 
-        if (!bootstrapped) {
+        // The rules behind the gate belong to the server and can change
+        // between the panel opening and this send -- a closing time crossed,
+        // an operator editing what the site asks. A conversation created on a
+        // stale copy earns a 422 the visitor cannot clear, because the form is
+        // rebuilt from the same stale rules that just failed. So the send that
+        // creates the conversation always asks again.
+        if (!supportCode || !bootstrapped) {
           await refreshFromBootstrap();
         } else if (bootstrapPromise) {
           // A refresh started when the panel opened may still be in flight.
@@ -2218,6 +2403,18 @@
           await bootstrapPromise;
         }
 
+        // That answer may have opened the gate: it had not arrived when this
+        // send began, or the questions just changed under it. Either way they
+        // are unanswered now, and continuing would post empty answers or earn
+        // the 422. The composer is hidden behind the form but keeps its text,
+        // so the visitor answers and sends the same message again.
+        if (intakeGateHolds()) {
+          setComposerBusy(false);
+          status.textContent = INTAKE_PENDING_STATUS;
+
+          return;
+        }
+
         // The first message creates the conversation (with the body as its
         // subject), so files staged before it existed have somewhere to go — no
         // empty conversation is created just by picking a file.
@@ -2225,10 +2422,12 @@
           var conversation = await client.startConversation(body, {
             pageUrl: location ? location.href : null,
             context: visitorContext,
+            intake: intakeAnswers(),
           });
 
           applyConversationStatus(conversation);
           supportCode = conversation.support_code;
+          refreshIntakeGate();
           storageSet(widgetStorage, supportCodeStorageKey(options.sitePublicKey), supportCode);
           // Don't activate (polling/realtime/refresh) until the message actually
           // sends — a failed first send leaves the conversation dormant, as
@@ -2250,12 +2449,19 @@
         sentMessage = await client.sendMessage(supportCode, body, pendingClientMessageId, readyIds.concat(stagedIds));
       } catch (error) {
         reportSuppressed('message send', error);
+        setComposerBusy(false);
+
+        // A rejected answer is correctable, and offering Retry instead would
+        // resend the same values from a form the visitor can no longer see.
+        if (reopenIntakeForCorrection(error)) {
+          return;
+        }
+
         status.textContent = MESSAGE_SEND_ERROR;
         showNotice('warning', MESSAGE_SEND_ERROR, {
           retry: true,
           onRetry: retryComposerSend,
         });
-        setComposerBusy(false);
 
         return;
       }
@@ -2306,6 +2512,7 @@
         var result = await client.fetchMessages(candidateCode);
 
         supportCode = candidateCode;
+        refreshIntakeGate();
         applyConversationStatus(result.conversation);
         renderMessages(result.messages || []);
         renderAgentTyping(result.agent_typing);
@@ -2317,6 +2524,12 @@
         if (error && typeof error.status === 'number' && error.status >= 400 && error.status < 500) {
           storageRemove(widgetStorage, supportCodeStorageKey(options.sitePublicKey));
         }
+      } finally {
+        // Settled either way, and only now can the gate tell the two apart: a
+        // restored conversation needs no form, while a rejected code means
+        // this visitor really is starting fresh and must be asked.
+        resumePending = false;
+        refreshIntakeGate();
       }
     }
 
@@ -2773,6 +2986,44 @@
 
     el.textContent = lines.join(' ');
     el.hidden = false;
+  }
+
+  var INTAKE_FIELDS = ['name', 'email', 'reason'];
+
+  var INTAKE_LABELS = { name: 'Your name', email: 'Your email', reason: 'What is this about?' };
+
+  function siteIntakeState(result) {
+    var site = result && result.site ? result.site : null;
+    var intake = site ? site.intake : null;
+
+    if (!intake || intake.asks !== true || !intake.fields) {
+      return null;
+    }
+
+    // No identification check here any more. The server sends the fields it
+    // will actually enforce, already accounting for identification and for the
+    // desk being away -- the widget draws what it is told. Deciding separately
+    // is what hid the form for fields the server still demanded, handing
+    // identified visitors a 422 they could do nothing about.
+
+    var fields = [];
+
+    INTAKE_FIELDS.forEach(function (name) {
+      var mode = intake.fields[name];
+
+      if (mode === 'optional' || mode === 'required') {
+        fields.push({ name: name, required: mode === 'required' });
+      }
+    });
+
+    if (!fields.length) {
+      return null;
+    }
+
+    return {
+      fields: fields,
+      intro: typeof intake.intro === 'string' && intake.intro.trim() ? intake.intro.trim() : null,
+    };
   }
 
   function siteMaskSelectors(result) {
@@ -4386,6 +4637,12 @@
       '.wayfindr-widget__header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-paper)}',
       '.wayfindr-widget__close{border:0;background:transparent;color:var(--wf-muted);cursor:pointer;font:700 24px/1 var(--wf-font-sans);padding:0}',
       '.wayfindr-widget__timeline{display:grid;gap:10px;flex:1 1 auto;min-height:0;max-height:280px;overflow:auto;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-surface-2)}',
+      '.wayfindr-widget__intake{display:grid;gap:10px;margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-surface-2)}',
+      '.wayfindr-widget__intake-intro{margin:0;color:var(--wf-muted);font-size:13px;line-height:1.4}',
+      '.wayfindr-widget__intake-fields{display:grid;gap:8px}',
+      '.wayfindr-widget__intake label{display:grid;gap:4px;color:var(--wf-muted);font-size:12px}',
+      '.wayfindr-widget__intake input{min-width:0;padding:8px 10px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);font:inherit;font-size:13px}',
+      '.wayfindr-widget__intake-error{margin:0;color:var(--wf-signal-attention);font-size:12px}',
       '.wayfindr-widget__away{margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:color-mix(in srgb, var(--wf-signal-hold) 12%, var(--wf-surface));color:color-mix(in srgb, var(--wf-signal-hold) 70%, var(--wf-ink));font-size:13px;line-height:1.4}',
       '.wayfindr-widget__notice{display:grid;gap:10px;margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-surface-2);color:var(--wf-muted);font-size:13px;line-height:1.4}',
       '.wayfindr-widget__notice[data-state="warning"]{background:color-mix(in srgb, var(--wf-signal-hold) 12%, var(--wf-surface));color:color-mix(in srgb, var(--wf-signal-hold) 70%, var(--wf-ink))}',
