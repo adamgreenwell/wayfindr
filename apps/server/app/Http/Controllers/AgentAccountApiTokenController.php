@@ -5,8 +5,10 @@ namespace App\Http\Controllers;
 use App\Models\ApiToken;
 use App\Models\AuditEvent;
 use App\Models\User;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
@@ -46,8 +48,11 @@ class AgentAccountApiTokenController extends Controller
             // legitimately reach sites its viewer cannot, and naming those
             // would leak exactly what site access hides.
             'visibleSiteIds' => $account->sites()->visibleToAgentIncludingArchived($agent)->pluck('id')->all(),
+            // So the form can say what "tick none" actually means for THIS
+            // admin, rather than promising account-wide reach they cannot give.
+            'accountSiteCount' => $account->sites()->count(),
             // Shown once, immediately after creation, and never again.
-            'issuedToken' => $request->session()->get('issued_api_token'),
+            'issuedToken' => $this->issuedToken($request),
         ]);
     }
 
@@ -136,7 +141,15 @@ class AgentAccountApiTokenController extends Controller
             ->route('dashboard.account.api-tokens.index')
             // Flashed rather than rendered from the model, because the model
             // does not have it: this is the only moment the plaintext exists.
-            ->with('issued_api_token', $generated['plain'])
+            //
+            // ENCRYPTED before it goes anywhere near the session. The default
+            // driver is `database` with `SESSION_ENCRYPT=false`, so flashing
+            // the plaintext writes a usable bearer credential into the
+            // `sessions` table -- recoverable from a database export, and
+            // flatly contradicting the hash-only guarantee this page makes.
+            // The app key is the same at-rest boundary provider credentials
+            // already sit behind.
+            ->with('issued_api_token', Crypt::encryptString($generated['plain']))
             ->with('status', $restricted && ! $askedForSpecificSites
                 ? 'API token created, limited to the sites you support. Copy it now — it cannot be shown again.'
                 : 'API token created. Copy it now — it cannot be shown again.');
@@ -188,5 +201,27 @@ class AgentAccountApiTokenController extends Controller
             'metadata' => $metadata,
             'occurred_at' => now(),
         ]);
+    }
+
+    /**
+     * The plaintext token to show once, if this request is the one that made it.
+     *
+     * Forgotten rather than reported when it cannot be decrypted: a rotated app
+     * key or a hand-edited session should show the page without its banner, not
+     * an error about a credential.
+     */
+    private function issuedToken(Request $request): ?string
+    {
+        $flashed = $request->session()->get('issued_api_token');
+
+        if (! is_string($flashed) || $flashed === '') {
+            return null;
+        }
+
+        try {
+            return Crypt::decryptString($flashed);
+        } catch (DecryptException) {
+            return null;
+        }
     }
 }

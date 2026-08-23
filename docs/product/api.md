@@ -12,7 +12,10 @@ for each limit are in [ADR 0018](../decisions/0018-public-api-and-programmatic-a
 
 The token is shown **once**, immediately after creation. Wayfindr stores a
 SHA-256 hash of it, not the token, so it cannot be recovered or resent — if you
-lose it, revoke it and issue another. The list afterwards shows only the last
+lose it, revoke it and issue another. It is not written to the session store in
+readable form on the way to that one screen either: the default session driver
+is your database, and a plaintext credential sitting there would undo the
+hash-only guarantee from a different direction. The list afterwards shows only the last
 four characters, which is enough to match a row to the credential in your
 deployment config and not enough to use it.
 

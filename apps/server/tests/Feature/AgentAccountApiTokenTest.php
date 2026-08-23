@@ -11,6 +11,18 @@ use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
+/**
+ * The plaintext token, decrypted the way the page does.
+ *
+ * The session carries ciphertext on purpose: the default driver is `database`,
+ * so flashing the plaintext would write a usable bearer credential into the
+ * `sessions` table, recoverable from a database export.
+ */
+function issuedPlaintext(?string $flashed): string
+{
+    return Crypt::decryptString((string) $flashed);
+}
+
 function tokenAdmin(?Account $account = null): array
 {
     $account ??= Account::factory()->create();
@@ -30,7 +42,7 @@ test('an admin issues a token and is shown it exactly once', function (): void {
         ])
         ->assertRedirect(route('dashboard.account.api-tokens.index'));
 
-    $plain = $response->getSession()->get('issued_api_token');
+    $plain = issuedPlaintext($response->getSession()->get('issued_api_token'));
 
     expect($plain)->toStartWith('wfk_');
 
@@ -50,9 +62,9 @@ test('an admin issues a token and is shown it exactly once', function (): void {
 test('the token is stored as a hash and never as itself', function (): void {
     $w = tokenAdmin();
 
-    $plain = $this->actingAs($w['admin'])
+    $plain = issuedPlaintext($this->actingAs($w['admin'])
         ->post(route('dashboard.account.api-tokens.store'), ['name' => 'Sync', 'abilities' => ['read']])
-        ->getSession()->get('issued_api_token');
+        ->getSession()->get('issued_api_token'));
 
     $row = DB::table('api_tokens')->first();
 
@@ -64,9 +76,9 @@ test('a token issued with no abilities can authenticate and read nothing', funct
     // Deny by default has to be a safe accident, not a broken one.
     $w = tokenAdmin();
 
-    $plain = $this->actingAs($w['admin'])
+    $plain = issuedPlaintext($this->actingAs($w['admin'])
         ->post(route('dashboard.account.api-tokens.store'), ['name' => 'Empty'])
-        ->getSession()->get('issued_api_token');
+        ->getSession()->get('issued_api_token'));
 
     $this->getJson('/api/v1/me', ['Authorization' => 'Bearer '.$plain])->assertStatus(403);
 });
@@ -99,9 +111,9 @@ test('a site restriction cannot name a site the issuing agent cannot see', funct
 test('revoking keeps the row and stops the token', function (): void {
     $w = tokenAdmin();
 
-    $plain = $this->actingAs($w['admin'])
+    $plain = issuedPlaintext($this->actingAs($w['admin'])
         ->post(route('dashboard.account.api-tokens.store'), ['name' => 'Sync', 'abilities' => ['read']])
-        ->getSession()->get('issued_api_token');
+        ->getSession()->get('issued_api_token'));
 
     $token = ApiToken::query()->firstOrFail();
 
@@ -189,13 +201,13 @@ test('a restricted token whose only site is purged reaches nothing', function ()
     $w = tokenAdmin();
     $second = Site::factory()->for($w['account'])->create(['name' => 'Second']);
 
-    $plain = $this->actingAs($w['admin'])
+    $plain = issuedPlaintext($this->actingAs($w['admin'])
         ->post(route('dashboard.account.api-tokens.store'), [
             'name' => 'One site only',
             'abilities' => ['read'],
             'site_ids' => [$w['site']->id],
         ])
-        ->getSession()->get('issued_api_token');
+        ->getSession()->get('issued_api_token'));
 
     expect($this->getJson('/api/v1/me', ['Authorization' => 'Bearer '.$plain])->json('data.site_ids'))
         ->toBe([$w['site']->id]);
@@ -231,9 +243,9 @@ test('the audit record of a token is not a copy of it', function (): void {
     // The audit log is exportable.
     $w = tokenAdmin();
 
-    $plain = $this->actingAs($w['admin'])
+    $plain = issuedPlaintext($this->actingAs($w['admin'])
         ->post(route('dashboard.account.api-tokens.store'), ['name' => 'Audited', 'abilities' => ['read']])
-        ->getSession()->get('issued_api_token');
+        ->getSession()->get('issued_api_token'));
 
     $event = AuditEvent::query()->where('action', 'api_token.created')->firstOrFail();
     $token = ApiToken::query()->firstOrFail();
@@ -268,9 +280,9 @@ test('an admin cannot issue a token that reaches further than they can', functio
     $hidden->supportAgents()->syncWithoutDetaching($somebodyElse->id);
 
     // No site_ids at all -- the "account-wide" path.
-    $plain = $this->actingAs($w['admin'])
+    $plain = issuedPlaintext($this->actingAs($w['admin'])
         ->post(route('dashboard.account.api-tokens.store'), ['name' => 'Wide', 'abilities' => ['read']])
-        ->getSession()->get('issued_api_token');
+        ->getSession()->get('issued_api_token'));
 
     $reach = $this->getJson('/api/v1/me', ['Authorization' => 'Bearer '.$plain])->json('data.site_ids');
 
@@ -301,13 +313,13 @@ test('asking for sites you cannot see grants nothing, not everything', function 
     $somebodyElse = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
     $hidden->supportAgents()->syncWithoutDetaching($somebodyElse->id);
 
-    $plain = $this->actingAs($w['admin'])
+    $plain = issuedPlaintext($this->actingAs($w['admin'])
         ->post(route('dashboard.account.api-tokens.store'), [
             'name' => 'Only the hidden one',
             'abilities' => ['read'],
             'site_ids' => [$hidden->id],
         ])
-        ->getSession()->get('issued_api_token');
+        ->getSession()->get('issued_api_token'));
 
     expect($this->getJson('/api/v1/me', ['Authorization' => 'Bearer '.$plain])->json('data.site_ids'))
         ->toBe([]);
@@ -385,9 +397,9 @@ test('an archived site does not make a full-access admin look site-limited', fun
     $w = tokenAdmin($account);
     $archived = Site::factory()->for($account)->create(['archived_at' => now()]);
 
-    $plain = $this->actingAs($w['admin'])
+    $plain = issuedPlaintext($this->actingAs($w['admin'])
         ->post(route('dashboard.account.api-tokens.store'), ['name' => 'Wide', 'abilities' => ['read']])
-        ->getSession()->get('issued_api_token');
+        ->getSession()->get('issued_api_token'));
 
     $token = ApiToken::query()->firstOrFail();
 
@@ -417,4 +429,63 @@ test('an audit record names which token it concerns, and can be searched for it'
         ->assertOk()
         ->assertSee('API token Billing export')
         ->assertDontSee('API token Reporting sync');
+});
+
+test('the plaintext token is never written to the session store', function (): void {
+    // The default driver is `database` with SESSION_ENCRYPT=false, so flashing
+    // the plaintext puts a usable bearer credential in the `sessions` table --
+    // recoverable from a database export, and flatly contradicting the
+    // hash-only guarantee this page makes in three places.
+    $w = tokenAdmin();
+
+    $response = $this->actingAs($w['admin'])
+        ->post(route('dashboard.account.api-tokens.store'), ['name' => 'Sync', 'abilities' => ['read']]);
+
+    $plain = issuedPlaintext($response->getSession()->get('issued_api_token'));
+
+    expect($plain)->toStartWith('wfk_')
+        // What actually sits in the session is ciphertext.
+        ->and($response->getSession()->get('issued_api_token'))->not->toContain($plain);
+
+    // And nothing anywhere in the serialised session carries it.
+    expect(json_encode($response->getSession()->all()))->not->toContain($plain);
+});
+
+test('a token that cannot be decrypted shows the page without its banner', function (): void {
+    // A rotated app key or a hand-edited session should not turn the token list
+    // into an error page.
+    $w = tokenAdmin();
+
+    $this->actingAs($w['admin'])
+        ->withSession(['issued_api_token' => 'not-decryptable'])
+        ->get(route('dashboard.account.api-tokens.index'))
+        ->assertOk()
+        ->assertDontSee('Copy this now');
+});
+
+test('a site-limited admin is told the token will be limited too', function (): void {
+    // The ADR and the API guide describe the issuer ceiling; the form where the
+    // decision is actually made promised account-wide reach, so an admin could
+    // deploy an integration expecting everything and silently get a subset.
+    $account = Account::factory()->create();
+    $w = tokenAdmin($account);
+    $hidden = Site::factory()->for($account)->create(['name' => 'Hidden']);
+
+    $somebodyElse = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+    $hidden->supportAgents()->syncWithoutDetaching($somebodyElse->id);
+
+    $this->actingAs($w['admin'])
+        ->get(route('dashboard.account.api-tokens.index'))
+        ->assertOk()
+        ->assertSee('reaches every site <strong>you support</strong>', false)
+        ->assertDontSee('reaches every site on this account');
+});
+
+test('an admin who sees everything is still promised the whole account', function (): void {
+    $w = tokenAdmin();
+
+    $this->actingAs($w['admin'])
+        ->get(route('dashboard.account.api-tokens.index'))
+        ->assertOk()
+        ->assertSee('reaches every site on this account');
 });
