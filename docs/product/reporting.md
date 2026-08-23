@@ -20,12 +20,12 @@ like an afternoon.
 **Speed.** First-response and resolution time as median and 90th percentile,
 plus how often resolutions did not hold.
 
-**Agents.** Replies sent and conversations closed per agent.
-
 **Tickets.** The same three questions asked of the ticket half of the desk:
 volume, resolution time and reopens, and who carried the work. It has its own
 tab rather than doubling the conversation figures, because the two halves have
 different histories — see below.
+
+**Agents.** Replies sent and conversations closed per agent.
 
 **Satisfaction.** Whether it helped, from the visitors who answered — and what
 they wrote. Every other tab reports how fast the desk moved; a desk can improve
