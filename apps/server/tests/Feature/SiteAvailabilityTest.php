@@ -509,3 +509,25 @@ test('a plain agent cannot close or reopen the desk', function (): void {
     expect($site->fresh()->settings['availability']['closed_until'])->toBe('2026-09-01T09:00:00+00:00');
 });
 
+test('the site page offers to close the desk, and to undo it', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['settings' => []]);
+
+    $this->actingAs($admin)->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee('Close the desk early without changing the schedule.')
+        ->assertSee('name="closure" value="hour"', false)
+        ->assertSee('Always open');
+
+    $site->forceFill(['settings' => ['availability' => [
+        'closed_until' => CarbonImmutable::now()->addHours(2)->toIso8601String(),
+    ]]])->save();
+
+    $this->actingAs($admin)->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee('Reopen now')
+        // The pill said "Always open" about a desk somebody had just shut.
+        ->assertSee('Closed early')
+        ->assertDontSee('name="closure" value="hour"', false);
+});

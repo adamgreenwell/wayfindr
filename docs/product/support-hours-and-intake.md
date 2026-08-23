@@ -39,8 +39,36 @@ moment it names. It is deliberately a time rather than a flag: closing early
 should recover on its own at the next scheduled opening rather than becoming a
 switch somebody forgets on Monday.
 
+An admin closes the desk from the site page, choosing from **for an hour**,
+**the rest of today**, or **until tomorrow**, and reopens it there too. The
+choices are presets rather than a date picker because the moment somebody
+reaches for this is the moment they are already leaving, and because every
+preset is guaranteed to expire — a free-form field invites a date that never
+arrives.
+
+What each one means is read off the schedule rather than restated:
+
+| Preset | Ends at | With no schedule |
+|---|---|---|
+| For an hour | One hour from now | Same |
+| Rest of today | Today's closing time | Midnight |
+| Until tomorrow | The next scheduled opening | Midnight |
+
+"Rest of today" past closing time falls to midnight rather than a time already
+gone, and "until tomorrow" on a Friday means Monday, because the next opening is
+the one the schedule actually names.
+
 Editing the schedule does not clear it — reopening a desk somebody closed early
-is a separate decision from changing the hours.
+is a separate decision from changing the hours. The reverse holds too: closing
+early writes only `closed_until` and leaves the schedule untouched.
+
+A site with **no** support hours can still be closed. That is arguably where it
+matters most — no schedule configured, somebody simply stepping out — and the
+early return for unscheduled sites reads `closed_until` before it decides. The
+rule it protects is unchanged: *absence* of configuration never reads as closed,
+and a manual close is the presence of configuration rather than its absence.
+With no hours to hand back to, such a desk reopens exactly when the close
+expires.
 
 The reopening time reported to visitors is the *real* one. A close ending inside
 open hours reopens at that moment rather than at the next scheduled start,
@@ -200,3 +228,7 @@ otherwise chase.
 - **Per-agent availability.** This is whether the *desk* is open, not who is at
   it. Agent presence belongs with routing.
 - **Pausing SLA outside hours.** Real, and it belongs with SLA policies.
+- **Closing the desk as a plain agent.** Closing early needs the same permission
+  as setting the hours, which is admin. An agent stepping out cannot currently
+  say so themselves. Widening that is a real question and a separate one, since
+  it changes who can make a site invisible to its visitors.
