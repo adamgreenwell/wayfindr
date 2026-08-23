@@ -64,6 +64,22 @@ class Conversation extends Model
         return $this->belongsTo(User::class, 'assigned_agent_id');
     }
 
+    /**
+     * A fresh, unused support code.
+     *
+     * Was private to the widget's ConversationController until email needed to
+     * open a conversation too. A second implementation of "what a support code
+     * looks like" is how two channels come to mint codes in different shapes.
+     */
+    public static function generateSupportCode(): string
+    {
+        do {
+            $supportCode = 'WF-'.Str::upper(Str::random(8));
+        } while (self::query()->where('support_code', $supportCode)->exists());
+
+        return $supportCode;
+    }
+
     public function messages(): HasMany
     {
         return $this->hasMany(ConversationMessage::class);

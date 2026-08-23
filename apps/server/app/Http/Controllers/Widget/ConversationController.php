@@ -61,7 +61,7 @@ class ConversationController extends Controller
         $conversation = Conversation::query()->create([
             'site_id' => $site->id,
             'visitor_id' => $visitor->id,
-            'support_code' => $this->generateSupportCode(),
+            'support_code' => Conversation::generateSupportCode(),
             'status' => 'open',
             'subject' => $validated['subject'] ?? null,
             'metadata' => array_filter([
@@ -114,15 +114,6 @@ class ConversationController extends Controller
         $text = is_string($value) ? trim($value) : '';
 
         return $text === '' ? null : $text;
-    }
-
-    private function generateSupportCode(): string
-    {
-        do {
-            $supportCode = 'WF-'.Str::upper(Str::random(8));
-        } while (Conversation::query()->where('support_code', $supportCode)->exists());
-
-        return $supportCode;
     }
 
     /**

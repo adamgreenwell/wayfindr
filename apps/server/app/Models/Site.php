@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
-#[Fillable(['account_id', 'name', 'domain', 'color', 'public_key', 'settings'])]
+#[Fillable(['account_id', 'name', 'domain', 'color', 'public_key', 'settings', 'inbound_address'])]
 class Site extends Model
 {
     /** @use HasFactory<SiteFactory> */
