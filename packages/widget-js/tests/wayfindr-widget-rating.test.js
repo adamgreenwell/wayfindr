@@ -42,6 +42,9 @@ function widgetWith({
   // this false to model the other case: the conversation was reopened and
   // closed again, so the close now on the table is a NEW one and unanswered.
   ratedAfterAnswer = true,
+  // Which close the server says is current. Changing it after an answer is how
+  // a reopen-and-close is modelled.
+  episodeAfterAnswer = 'episode-2',
 } = {}) {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
     url: 'https://docs.example.test/',
@@ -49,6 +52,7 @@ function widgetWith({
 
   const sent = [];
   let answered = false;
+  let episode = 'episode-1';
 
   const widget = Wayfindr.init({
     document: dom.window.document,
@@ -108,6 +112,7 @@ function widgetWith({
               support_code: 'WF-DOCS',
               status,
               awaiting_rating: answered ? ! ratedAfterAnswer : ! rated,
+              rating_episode: answered ? episodeAfterAnswer : episode,
             },
             messages: [],
             message: { id: 1 },
@@ -118,6 +123,8 @@ function widgetWith({
       return jsonResponse(200, { data: {} });
     },
   });
+
+  widget.mockEpisode = (next) => { episode = next; };
 
   return { widget, dom, sent };
 }
@@ -325,4 +332,43 @@ test('a conversation with no ratable close is not asked about', async () => {
   await openPanel(widget);
 
   assert.equal(prompt(widget).hidden, true);
+});
+
+test('an unsubmitted draft does not survive into the next close', async () => {
+  // The gap the boolean alone could not close: nothing was ever submitted, so
+  // `awaiting_rating` is true across BOTH episodes and the answered-to-
+  // unanswered transition never fires. The draft reappears against different
+  // work, already ready to send.
+  const { widget } = widgetWith();
+  await openPanel(widget);
+
+  score(widget, 'bad').click();
+  widget.root.querySelector('.wayfindr-widget__rating-comment').value = 'Typed about the FIRST close.';
+
+  // No submit. The conversation is reopened and closed again, so the server
+  // reports a different close, still awaiting an answer.
+  widget.mockEpisode('episode-9');
+  widget.root.querySelector('.wayfindr-widget__refresh').click();
+  await settle();
+
+  assert.equal(prompt(widget).hidden, false);
+  assert.equal(widget.root.querySelector('.wayfindr-widget__rating-comment').value, '');
+  assert.equal(score(widget, 'bad').getAttribute('aria-pressed'), 'false');
+  assert.equal(widget.root.querySelector('.wayfindr-widget__rating-send').disabled, true);
+});
+
+test('the same close does not clear a draft the visitor is still typing', async () => {
+  // The other direction: a poll or a refresh while the visitor is mid-answer
+  // must not wipe what they have entered.
+  const { widget } = widgetWith();
+  await openPanel(widget);
+
+  score(widget, 'ok').click();
+  widget.root.querySelector('.wayfindr-widget__rating-comment').value = 'Half a thought';
+
+  widget.root.querySelector('.wayfindr-widget__refresh').click();
+  await settle();
+
+  assert.equal(widget.root.querySelector('.wayfindr-widget__rating-comment').value, 'Half a thought');
+  assert.equal(score(widget, 'ok').getAttribute('aria-pressed'), 'true');
 });

@@ -26,6 +26,9 @@ class ConversationRatingFactory extends Factory
             // the same reporting window a reader would expect it to. Override
             // it to place the CLOSE being answered somewhere else.
             'episode_closed_at' => now(),
+            // Unique per rating by default, so a factory cannot accidentally
+            // create two answers about the same close.
+            'episode_event_id' => fake()->unique()->numberBetween(1, 1000000),
         ];
     }
 }

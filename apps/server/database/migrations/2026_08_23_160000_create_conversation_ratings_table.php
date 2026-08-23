@@ -38,9 +38,18 @@ return new class extends Migration
             // nulls as distinct in a unique index, so the one-answer-per-close
             // bound below would not hold for exactly those rows.
             $table->timestamp('episode_closed_at');
+            // WHICH close, as an identity rather than a time. A timestamp has
+            // second resolution, so a conversation closed, reopened and closed
+            // again inside one second gives two distinct episodes the same key
+            // -- the second answer would silently overwrite the first while
+            // reporting counted both closes. Rare, and rare is not never.
+            //
+            // No foreign key: `audit_events` is a log, and a cascade from it
+            // would let pruning the log delete answers the reports still count.
+            $table->unsignedBigInteger('episode_event_id');
             $table->timestamps();
 
-            $table->unique(['conversation_id', 'episode_closed_at']);
+            $table->unique(['conversation_id', 'episode_event_id']);
 
             // A row per rating rather than a column on the conversation: a
             // conversation closed, reopened and closed again can be rated

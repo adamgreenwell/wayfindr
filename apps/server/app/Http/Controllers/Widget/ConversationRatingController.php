@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ConversationRating;
 use App\Support\Sites\SiteRatingPrompt;
 use App\Support\VisitorConversationResolver;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -60,7 +61,7 @@ class ConversationRatingController extends Controller
             ]);
         }
 
-        $episode = $conversation->currentCloseEpisodeAt();
+        $episode = $conversation->currentCloseEpisode();
 
         if ($episode === null) {
             throw ValidationException::withMessages([
@@ -69,25 +70,29 @@ class ConversationRatingController extends Controller
         }
 
         $comment = trim((string) ($validated['comment'] ?? ''));
-        $existed = $conversation->ratings()->where('episode_closed_at', $episode)->exists();
+        $existed = $conversation->ratings()->where('episode_event_id', $episode->id)->exists();
 
         // Upserted against the unique index on (conversation_id,
-        // episode_closed_at). Reading first and then creating loses the race:
+        // episode_event_id). Reading first and then creating loses the race:
         // two concurrent requests both see no row, both insert, and the bound
         // that keeps a small denominator from being swamped quietly stops
         // holding.
+        //
+        // Keyed on the close EVENT, not its timestamp: two closes inside one
+        // second are two episodes, and only the row id distinguishes them.
         ConversationRating::query()->upsert(
             [[
                 'conversation_id' => $conversation->id,
                 'site_id' => $conversation->site_id,
-                'episode_closed_at' => $episode->toDateTimeString(),
+                'episode_event_id' => $episode->id,
+                'episode_closed_at' => CarbonImmutable::parse($episode->occurred_at)->toDateTimeString(),
                 'score' => $validated['score'],
                 'comment' => $comment === '' ? null : $comment,
                 'rated_at' => now()->toDateTimeString(),
                 'created_at' => now()->toDateTimeString(),
                 'updated_at' => now()->toDateTimeString(),
             ]],
-            ['conversation_id', 'episode_closed_at'],
+            ['conversation_id', 'episode_event_id'],
             ['score', 'comment', 'rated_at', 'updated_at'],
         );
 

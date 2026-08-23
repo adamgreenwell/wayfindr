@@ -508,16 +508,16 @@ test('one answer per close is a database rule, not a read-then-write', function 
     // unique index is what makes it hold; this asserts the index exists and
     // bites, because the controller alone cannot.
     $w = ratingWorld();
-    $episode = $w['conversation']->currentCloseEpisodeAt();
+    $episode = $w['conversation']->currentCloseEpisode();
 
     ConversationRating::factory()->for($w['conversation'])->for($w['site'])->create([
         'score' => 'good',
-        'episode_closed_at' => $episode,
+        'episode_event_id' => $episode->id,
     ]);
 
     expect(fn () => ConversationRating::factory()->for($w['conversation'])->for($w['site'])->create([
         'score' => 'bad',
-        'episode_closed_at' => $episode,
+        'episode_event_id' => $episode->id,
     ]))->toThrow(QueryException::class);
 });
 
@@ -590,6 +590,7 @@ test('a rating cannot exist without the close it answers', function (): void {
         'score' => 'good',
         'rated_at' => now(),
         'episode_closed_at' => null,
+        'episode_event_id' => 1,
     ]))->toThrow(QueryException::class);
 });
 
@@ -608,7 +609,7 @@ test('a close that was never recorded cannot be rated', function (): void {
         ->where('action', ConversationLifecycleLog::CLOSED)
         ->delete();
 
-    expect($w['conversation']->currentCloseEpisodeAt())->toBeNull();
+    expect($w['conversation']->currentCloseEpisode())->toBeNull();
 
     postRating($this, $token, 'good')->assertStatus(422);
 
@@ -622,4 +623,37 @@ test('a close that was never recorded cannot be rated', function (): void {
     ]));
 
     expect($read->json('data.conversation.awaiting_rating'))->toBeFalse();
+});
+
+test('two closes inside one second are two episodes, not one', function (): void {
+    // `episode_closed_at` has second resolution, so a conversation closed,
+    // reopened and closed again within a second gave both closes the same key:
+    // the second answer silently overwrote the first, while reporting counted
+    // both closes in the denominator. Rare is not never, and the identity is
+    // free -- the close event already has a row id.
+    $w = ratingWorld();
+    $token = ratingToken($this);
+
+    $at = now();
+
+    postRating($this, $token, 'bad')->assertCreated();
+
+    // Reopen and close again at the SAME second.
+    app(ConversationLifecycleLog::class)->reopened($w['conversation']->fresh(), null, 'closed');
+    $w['conversation']->forceFill(['status' => 'open', 'closed_at' => null])->save();
+    app(ConversationLifecycleLog::class)->closed($w['conversation']->fresh(), null, 'open');
+    $w['conversation']->forceFill(['status' => 'closed', 'closed_at' => $at])->save();
+
+    AuditEvent::query()
+        ->where('subject_id', $w['conversation']->id)
+        ->whereIn('action', [ConversationLifecycleLog::CLOSED, ConversationLifecycleLog::REOPENED])
+        ->update(['occurred_at' => $at]);
+
+    postRating($this, $token, 'good')->assertCreated();
+
+    // Two answers about two different closes, both kept.
+    expect(ConversationRating::query()->count())->toBe(2)
+        ->and(ConversationRating::query()->orderBy('id')->pluck('score')->all())->toBe(['bad', 'good'])
+        // And they are distinguished by the event, since the times are equal.
+        ->and(ConversationRating::query()->distinct()->count('episode_closed_at'))->toBe(1);
 });

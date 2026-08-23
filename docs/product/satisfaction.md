@@ -39,10 +39,17 @@ second data point, not a correction — the same conversation going well and lat
 badly is exactly the signal worth keeping. Within one closed episode, though, a
 visitor changing their mind *replaces* what they said: one answer per close.
 
-Each row records `episode_closed_at`, the close it answers. The column is **not
-nullable** and the table is **unique on `(conversation_id, episode_closed_at)`**.
+Each row records which close it answers: `episode_event_id`, the id of the
+`conversation.closed` audit event, alongside `episode_closed_at` for reporting.
+The table is **unique on `(conversation_id, episode_event_id)`**, and neither
+column is nullable.
 
-Not nullable matters twice over: reporting filters on that column, so a
+The identity is the event, not the time. A timestamp has second resolution, so a
+conversation closed, reopened and closed again inside one second would give two
+genuinely different episodes the same key — the second answer silently
+overwriting the first while reporting counted both closes.
+
+Not nullable matters twice over: reporting filters on `episode_closed_at`, so a
 null-episode row would sit in the table and appear in no report ever — data that
 is silently invisible rather than absent — and PostgreSQL treats nulls as
 distinct in a unique index, so the bound below would not hold for exactly those

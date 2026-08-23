@@ -1019,6 +1019,11 @@
     var ratingConfig = null;
     var ratingScore = null;
     var ratingAnswered = false;
+    // Which close the form on screen belongs to. Comparing the boolean alone
+    // cannot tell a NEW unanswered close from the previous unanswered one --
+    // both report awaiting -- so an unsubmitted draft would reappear against
+    // different work, already ready to send.
+    var ratingEpisode = null;
     var helpDebounce = null;
     var cobrowseAllow = rootEl.querySelector('.wayfindr-widget__cobrowse-allow');
     var cobrowseDecline = rootEl.querySelector('.wayfindr-widget__cobrowse-decline');
@@ -1250,21 +1255,19 @@
       // reopen, so they would never be asked about the next one. Absent from a
       // payload that does not carry it, the local answer stands.
       if (conversation && typeof conversation.awaiting_rating === 'boolean') {
-        var wasAnswered = ratingAnswered;
-
         ratingAnswered = ! conversation.awaiting_rating;
+      }
 
-        // A NEW close is a new question, so it must arrive with an empty form.
-        // Otherwise the previous episode's score is still selected and its
-        // comment still typed, the send button is already enabled, and one tap
-        // copies an answer about different work into this close -- without the
-        // visitor choosing anything.
-        if (wasAnswered && ! ratingAnswered) {
-          ratingScore = null;
-          ratingComment.value = '';
-          ratingStatus.hidden = true;
-          ratingStatus.textContent = '';
-        }
+      // A NEW close is a new question, so it must arrive with an empty form --
+      // whether or not the previous one was ever answered. Keyed on which close
+      // it is, because an abandoned draft and a submitted answer look identical
+      // from the boolean alone.
+      if (conversation && typeof conversation.rating_episode === 'string' && conversation.rating_episode !== ratingEpisode) {
+        ratingEpisode = conversation.rating_episode;
+        ratingScore = null;
+        ratingComment.value = '';
+        ratingStatus.hidden = true;
+        ratingStatus.textContent = '';
       }
 
       if (!conversation || !conversation.status) {

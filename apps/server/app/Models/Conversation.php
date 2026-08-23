@@ -4,7 +4,6 @@ namespace App\Models;
 
 use App\Support\Conversations\ConversationLifecycleLog;
 use Carbon\Carbon;
-use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Database\Factories\ConversationFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -99,15 +98,31 @@ class Conversation extends Model
      *
      * An episode is only created from a close the denominator can count.
      */
-    public function currentCloseEpisodeAt(): ?CarbonImmutable
+    public function currentCloseEpisode(): ?AuditEvent
     {
-        $closedAt = AuditEvent::query()
+        return AuditEvent::query()
             ->where('subject_type', $this->getMorphClass())
             ->where('subject_id', $this->id)
             ->where('action', ConversationLifecycleLog::CLOSED)
-            ->max('occurred_at');
+            // The event itself, not its timestamp: two closes a second apart
+            // are two episodes, and only the row id says so.
+            ->orderByDesc('occurred_at')
+            ->orderByDesc('id')
+            ->first();
+    }
 
-        return $closedAt === null ? null : CarbonImmutable::parse($closedAt);
+    /**
+     * A stable, opaque handle for the current close, safe to hand the widget.
+     *
+     * Hashed rather than the raw row id, which would publish how many audit
+     * events this install has written. The widget only ever compares it for
+     * equality.
+     */
+    public function currentCloseEpisodeToken(): ?string
+    {
+        $episode = $this->currentCloseEpisode();
+
+        return $episode === null ? null : substr(hash('sha256', 'rating-episode:'.$episode->id), 0, 16);
     }
 
     /**
@@ -119,9 +134,9 @@ class Conversation extends Model
      */
     public function isAwaitingRating(): bool
     {
-        $episode = $this->currentCloseEpisodeAt();
+        $episode = $this->currentCloseEpisode();
 
-        return $episode !== null && ! $this->ratings()->where('episode_closed_at', $episode)->exists();
+        return $episode !== null && ! $this->ratings()->where('episode_event_id', $episode->id)->exists();
     }
 
     public function ratings(): HasMany

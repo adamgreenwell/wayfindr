@@ -72,6 +72,12 @@ class ConversationMessageController extends Controller
                     // rated, and it survives a genuine reopen, so it would stay
                     // silent about the next one.
                     'awaiting_rating' => $conversation->isAwaitingRating(),
+                    // An opaque handle for WHICH close. The widget compares it
+                    // for equality and clears its form when it changes, which
+                    // is the only way to tell a new unanswered close from the
+                    // previous unanswered one -- both report awaiting, so a
+                    // draft would otherwise survive into different work.
+                    'rating_episode' => $conversation->currentCloseEpisodeToken(),
                 ],
                 'messages' => $messages,
                 'agent_typing' => $conversation->agentTypingPayload(),
