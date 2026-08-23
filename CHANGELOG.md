@@ -34,6 +34,35 @@ missed while skimming.
 
 ### Added
 
+- **The widget speaks the visitor's language.** Every word in the chat box was
+  English, hardcoded. A visitor did not choose Wayfindr and cannot be asked to
+  read a language they do not speak &mdash; they arrived on somebody's website
+  with a question.
+
+  The widget now carries a language catalogue, and **German ships complete**.
+  It picks a language before it draws anything: your own page's choice first (add
+  `data-wayfindr-locale="de"` to the install snippet if your app knows what the
+  visitor reads), then the visitor's own browser, then the site default under
+  **Sites &rarr; the site &rarr; What language the widget speaks**, then English.
+
+  The browser deliberately outranks the site default. The default is your guess
+  at who visits; the browser is the visitor answering for themselves.
+
+  **Nothing changes unless you want it to.** With no default configured the
+  widget follows each visitor's browser and falls back to English, exactly as
+  before. Your own words &mdash; the away message, the intake introduction, the
+  cobrowse notice &mdash; are shown as you wrote them, in whatever language you
+  wrote them.
+
+  The German translations were produced during development rather than by a
+  professional translator. They are consistent and grammatical; have a native
+  speaker read them before you promise German to a customer.
+
+  Right-to-left languages are prepared for but not shipped: the widget sets its
+  own text direction and its layout no longer assumes left-to-right, so an
+  Arabic or Hebrew catalogue can be added without touching the layout. The
+  dashboard is still English throughout.
+
 - **An agent who forgets their password can recover it.** There was no
   forgot-password flow at all: recovery meant asking somebody with production
   shell access to run a command against the database on your behalf.

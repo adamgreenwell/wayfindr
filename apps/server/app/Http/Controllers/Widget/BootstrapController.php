@@ -7,6 +7,7 @@ use App\Models\Site;
 use App\Models\Visitor;
 use App\Support\Sites\SiteAvailability;
 use App\Support\Sites\SiteIntake;
+use App\Support\Sites\WidgetLanguage;
 use App\Support\VisitorContextSanitizer;
 use App\Support\VisitorSessionToken;
 use App\Support\WidgetSiteResolver;
@@ -75,6 +76,10 @@ class BootstrapController extends Controller
             // and an operator can recolour a site without a widget redeploy.
             'color' => $site->resolvedColor()->value,
             'public_key' => $site->public_key,
+            // A default, not an instruction. The widget puts this behind the
+            // host page's own choice and the visitor's browser -- it decides
+            // only when nobody better has spoken.
+            'locale' => WidgetLanguage::for($site),
             // Derived here rather than in the widget: the desk's timezone and
             // schedule are the server's to know, and sending them would let a
             // visitor's wrong clock decide whether support looks open.
