@@ -233,26 +233,45 @@
 
                 @if ($ticketVolume['opened_total'] === 0 && $ticketVolume['closed_total'] === 0)
                     <div class="notice-copy">
-                        <p>No ticket was created or closed in this period.</p>
+                        @if ($ticketHistoryBeganAt && $window->start->lessThan($ticketHistoryBeganAt))
+                            {{-- The resolution section below already refuses to
+                                 claim nothing was closed when the range reaches
+                                 back past the boundary. Saying it plainly here
+                                 put two answers to the same question on one
+                                 tab. --}}
+                            <p>
+                                No ticket was created in this period, and no close is on record for it. This
+                                install began recording ticket closes on
+                                {{ $ticketHistoryBeganAt->toFormattedDayDateString() }}, and the range selected
+                                reaches back before that &mdash; tickets closed earlier left no trace to count.
+                            </p>
+                        @else
+                            <p>No ticket was created or closed in this period.</p>
+                        @endif
                     </div>
                 @else
-                    {{-- The same chart the conversation tab draws. Its classes
-                         are the ones with CSS behind them; a second set invented
-                         here would render as an unstyled column of divs. --}}
-                    <div
-                        class="chart"
-                        role="img"
-                        aria-label="Tickets per day. {{ $ticketVolume['opened_total'] }} created and {{ $ticketVolume['closed_total'] }} closed over the {{ $window->days }} days ending {{ $window->end->toFormattedDayDateString() }}. The busiest day had {{ $ticketChart['max'] }}."
-                    >
-                        @foreach ($ticketChart['days'] as $day)
-                            <div class="chart__day" title="{{ $day['label'] }}: {{ $day['opened'] }} created, {{ $day['closed'] }} closed">
-                                <div class="chart__bars">
-                                    <div class="chart__bar chart__bar--opened @if ($day['opened'] === 0) chart__bar--none @endif" style="height: {{ $ticketChart['max'] === 0 ? 0 : round(($day['opened'] / $ticketChart['max']) * 100, 2) }}%"></div>
-                                    <div class="chart__bar chart__bar--closed @if ($day['closed'] === 0) chart__bar--none @endif" style="height: {{ $ticketChart['max'] === 0 ? 0 : round(($day['closed'] / $ticketChart['max']) * 100, 2) }}%"></div>
+                    {{-- The same chart the conversation tab draws, INCLUDING its
+                         scrolling wrapper. Its classes are the ones with CSS
+                         behind them; a second set invented here would render as
+                         an unstyled column of divs, and omitting `chart-scroll`
+                         makes ninety days of bars widen the whole page instead
+                         of scrolling inside their own box. --}}
+                    <div class="chart-scroll">
+                        <div
+                            class="chart"
+                            role="img"
+                            aria-label="Tickets per day. {{ $ticketVolume['opened_total'] }} created and {{ $ticketVolume['closed_total'] }} closed over the {{ $window->days }} days ending {{ $window->end->toFormattedDayDateString() }}. The busiest day had {{ $ticketChart['max'] }}."
+                        >
+                            @foreach ($ticketChart['days'] as $day)
+                                <div class="chart__day" title="{{ $day['label'] }}: {{ $day['opened'] }} created, {{ $day['closed'] }} closed">
+                                    <div class="chart__bars">
+                                        <div class="chart__bar chart__bar--opened @if ($day['opened'] === 0) chart__bar--none @endif" style="height: {{ $ticketChart['max'] === 0 ? 0 : round(($day['opened'] / $ticketChart['max']) * 100, 2) }}%"></div>
+                                        <div class="chart__bar chart__bar--closed @if ($day['closed'] === 0) chart__bar--none @endif" style="height: {{ $ticketChart['max'] === 0 ? 0 : round(($day['closed'] / $ticketChart['max']) * 100, 2) }}%"></div>
+                                    </div>
                                 </div>
-                            </div>
-                        @endforeach
-                    </div>
+                            @endforeach
+                        </div>
+                        </div>
                     <p class="chart-legend">
                         <span class="chart-key chart-key--opened"></span> Created
                         <span class="chart-key chart-key--closed"></span> Closed

@@ -611,3 +611,37 @@ test('tickets are indexed for the date range the reports scan', function (): voi
 
     expect($indexes)->toContain(['site_id', 'created_at']);
 });
+
+test('the ticket chart scrolls inside its own box, not the page', function (): void {
+    // Ninety days of bars at a 14px minimum basis is wider than any common
+    // viewport. The conversation chart sits in `.chart-scroll`, which supplies
+    // the horizontal overflow; the ticket one was copied without it, so the
+    // whole report page scrolled sideways instead of just the chart.
+    $w = ticketReportWorld();
+    $ticket = Ticket::factory()->for($w['account'])->for($w['site'])->create(['created_at' => now()->subDay()]);
+    ticketEvent($ticket, $w['agent'], TicketReport::CLOSED, now()->subHours(2));
+
+    $html = $this->actingAs($w['agent'])
+        ->get(route('dashboard.reports.index', ['report_days' => 90]))
+        ->assertOk()
+        ->getContent();
+
+    // Two charts on the page, and each one inside a scroll wrapper.
+    expect(substr_count($html, 'class="chart"'))->toBe(substr_count($html, 'class="chart-scroll"'));
+});
+
+test('an empty ticket volume does not claim nothing happened when it cannot know', function (): void {
+    // The resolution section already refuses this claim when the range reaches
+    // back past the boundary. The volume notice above it went on making it, so
+    // one tab gave two answers to the same question.
+    $w = ticketReportWorld();
+    stamp('reporting.ticket_lifecycle_recording_began_at', now()->subDays(3));
+
+    Ticket::factory()->for($w['account'])->for($w['site'])->create(['created_at' => now()->subDays(90)]);
+
+    $this->actingAs($w['agent'])
+        ->get(route('dashboard.reports.index', ['report_days' => 30]))
+        ->assertOk()
+        ->assertSee('no close is on record for it')
+        ->assertDontSee('No ticket was created or closed in this period.');
+});
