@@ -135,9 +135,13 @@ throttle each other.
 
 Separately, **failed** authentication attempts are limited to 60 per minute per
 address (`WAYFINDR_API_FAILED_AUTH_PER_MINUTE`). Only failures count, so a
-working integration never encounters it however much traffic it sends. A token
-that authenticates but lacks an ability does not count either — that is a
-misconfigured integration, not somebody hunting for a credential that works.
+working integration never encounters it however much traffic it sends.
+
+A token that authenticates but lacks an ability does not spend *that* budget —
+it is a misconfigured integration, not somebody hunting for a credential that
+works — but it is still bounded, per token, on the same per-minute budget a
+working token gets. Otherwise a token with no abilities, which is a supported
+thing to create, would be an authenticated request path with no limit at all.
 
 Over either limit returns `429`.
 

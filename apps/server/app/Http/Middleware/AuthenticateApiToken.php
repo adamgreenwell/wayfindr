@@ -87,6 +87,30 @@ class AuthenticateApiToken implements AuthenticatesRequests
         }
 
         if ($ability !== null && ! $token->hasAbility($ability)) {
+            // Bounded here, because nothing downstream will do it. This
+            // middleware is prioritised ahead of `ThrottleRequests`, so a
+            // request refused for a missing ability never reaches the route's
+            // per-token limiter -- and it deliberately does not spend the
+            // failed-auth budget either, since the credential is genuine.
+            //
+            // Between those two decisions sat an unlimited path: a token with
+            // no abilities is a supported state, produced by leaving the form
+            // checkbox unticked, and every such request still cost an indexed
+            // lookup with nothing to slow it.
+            //
+            // Its own bucket rather than the route limiter's, which is keyed
+            // and hashed by the throttle middleware and not addressable from
+            // here. Same budget, so a misconfigured integration is bounded on
+            // the same terms as a working one.
+            $abilityKey = 'api-token-ability:'.$token->getKey();
+            $limit = max(1, (int) config('wayfindr.api_rate_limit', 120));
+
+            if (RateLimiter::tooManyAttempts($abilityKey, $limit)) {
+                return $this->refuse('Too many requests.', 429);
+            }
+
+            RateLimiter::hit($abilityKey);
+
             return $this->refuse('That API token does not have the '.$ability.' ability.', 403);
         }
 

@@ -183,3 +183,37 @@ test('a genuine token with the wrong ability does not spend the failure budget',
     // refusal rather than a 429.
     apiGet($this, 'wfk_'.str_repeat('d', 40), '/api/v1/me')->assertStatus(401);
 });
+
+test('a token with no abilities is rate limited, not unlimited', function (): void {
+    // The hole between two deliberate decisions: this middleware is prioritised
+    // ahead of the route throttle, so a 403 never reaches the per-token
+    // limiter -- and a 403 does not spend the failed-auth budget either,
+    // because the credential is genuine. A token with no abilities is a
+    // supported state, so that left an authenticated path with no bound at all.
+    config()->set('wayfindr.api_rate_limit', 3);
+    config()->set('wayfindr.api_failed_auth_per_minute', 100);
+
+    $issued = issueToken(['abilities' => []]);
+
+    foreach (range(1, 3) as $i) {
+        apiGet($this, $issued['plain'], '/api/v1/me')->assertStatus(403);
+    }
+
+    apiGet($this, $issued['plain'], '/api/v1/me')->assertStatus(429);
+});
+
+test('an ability refusal does not spend another token budget', function (): void {
+    // Bounded per token, so one misconfigured integration cannot throttle a
+    // working one that happens to share an account or an address.
+    config()->set('wayfindr.api_rate_limit', 2);
+    config()->set('wayfindr.api_failed_auth_per_minute', 100);
+
+    $broken = issueToken(['abilities' => []]);
+    $working = issueToken();
+
+    foreach (range(1, 3) as $i) {
+        apiGet($this, $broken['plain'], '/api/v1/me');
+    }
+
+    apiGet($this, $working['plain'], '/api/v1/me')->assertOk();
+});
