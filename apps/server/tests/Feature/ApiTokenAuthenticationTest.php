@@ -203,17 +203,24 @@ test('a token with no abilities is rate limited, not unlimited', function (): vo
 });
 
 test('an ability refusal does not spend another token budget', function (): void {
-    // Bounded per token, so one misconfigured integration cannot throttle a
-    // working one that happens to share an account or an address.
+    // Bounded per token, so one misconfigured integration cannot throttle
+    // another that happens to share an account or an address.
+    //
+    // BOTH tokens have to lack the ability. My first version paired a broken
+    // token with a working one, which never reaches this branch at all -- so it
+    // passed against a single shared bucket and the mutation survived.
     config()->set('wayfindr.api_rate_limit', 2);
     config()->set('wayfindr.api_failed_auth_per_minute', 100);
 
-    $broken = issueToken(['abilities' => []]);
-    $working = issueToken();
+    $exhausted = issueToken(['abilities' => []]);
+    $other = issueToken(['abilities' => []]);
 
-    foreach (range(1, 3) as $i) {
-        apiGet($this, $broken['plain'], '/api/v1/me');
+    foreach (range(1, 4) as $i) {
+        apiGet($this, $exhausted['plain'], '/api/v1/me');
     }
 
-    apiGet($this, $working['plain'], '/api/v1/me')->assertOk();
+    apiGet($this, $exhausted['plain'], '/api/v1/me')->assertStatus(429);
+
+    // The second is still merely misconfigured, not throttled.
+    apiGet($this, $other['plain'], '/api/v1/me')->assertStatus(403);
 });
