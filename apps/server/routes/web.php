@@ -174,6 +174,8 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.conversations.index');
     Route::get('/dashboard/conversations/{supportCode}', [AgentConversationController::class, 'show'])
         ->name('dashboard.conversations.show');
+    Route::get('/dashboard/visitors', [AgentVisitorController::class, 'index'])
+        ->name('dashboard.visitors.index');
     Route::get('/dashboard/visitors/{visitor}', [AgentVisitorController::class, 'show'])
         ->name('dashboard.visitors.show');
     Route::post('/dashboard/conversations/{supportCode}/close', [AgentConversationController::class, 'close'])

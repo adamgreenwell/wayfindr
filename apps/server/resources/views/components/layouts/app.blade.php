@@ -2659,6 +2659,7 @@
                 ['label' => 'Conversations', 'icon' => 'conversations', 'href' => route('dashboard.conversations.index'), 'active' => request()->routeIs('dashboard.conversations.*')],
                 ['label' => 'Tickets', 'icon' => 'tickets', 'href' => route('dashboard.tickets.index'), 'active' => request()->routeIs('dashboard.tickets.*')],
                 ['label' => 'Alerts', 'icon' => 'alerts', 'href' => route('dashboard.alerts.index'), 'active' => request()->routeIs('dashboard.alerts.*')],
+                ['label' => 'Visitors', 'icon' => 'visitors', 'href' => route('dashboard.visitors.index'), 'active' => request()->routeIs('dashboard.visitors.*')],
             ];
 
             $manageItems = [
