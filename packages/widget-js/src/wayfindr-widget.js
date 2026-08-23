@@ -78,6 +78,14 @@
       'help.none': 'Nothing matches that yet. Send a message and support will answer.',
       'help.back': 'Back to results',
       'help.failed': 'Could not search just now.',
+      'rating.intro': 'How did that go?',
+      'rating.good': 'Good',
+      'rating.ok': 'Okay',
+      'rating.bad': 'Badly',
+      'rating.comment': 'Anything you would like to add? (optional)',
+      'rating.send': 'Send',
+      'rating.thanks': 'Thank you — that helps.',
+      'rating.failed': 'That could not be sent.',
       'intake.optional': '{label} (optional)',
       'intake.checkDetails': 'Please check the details above.',
       'intake.required': 'Please fill in the required fields.',
@@ -154,6 +162,14 @@
       'help.none': 'Dazu gibt es noch nichts. Schreiben Sie uns, der Support antwortet.',
       'help.back': 'Zurück zu den Ergebnissen',
       'help.failed': 'Suche gerade nicht möglich.',
+      'rating.intro': 'Wie ist es gelaufen?',
+      'rating.good': 'Gut',
+      'rating.ok': 'Ganz okay',
+      'rating.bad': 'Schlecht',
+      'rating.comment': 'Möchten Sie noch etwas ergänzen? (optional)',
+      'rating.send': 'Senden',
+      'rating.thanks': 'Vielen Dank — das hilft uns.',
+      'rating.failed': 'Das konnte nicht gesendet werden.',
       'intake.optional': '{label} (optional)',
       'intake.checkDetails': 'Bitte prüfen Sie die Angaben oben.',
       'intake.required': 'Bitte füllen Sie die Pflichtfelder aus.',
@@ -661,6 +677,19 @@
           site_public_key: sitePublicKey,
         }));
       },
+      rateConversation: function (supportCode, score, comment, episode) {
+        return postJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/rating', {
+          site_public_key: sitePublicKey,
+          anonymous_id: anonymousId,
+          visitor_token: requireVisitorToken(visitorToken),
+          score: score,
+          comment: comment || null,
+          // Which close this answer is about. The server refuses it if the
+          // conversation has since been reopened and closed again, rather than
+          // attributing an answer about finished work to newer work.
+          episode: episode,
+        });
+      },
       searchArticles: function (query) {
         return getJson(fetcher, apiBaseUrl + '/api/widget/articles?' + toQueryString({
           site_public_key: sitePublicKey,
@@ -873,6 +902,7 @@
     var mount = resolveMount(doc, options.mount);
     var panelId = 'wayfindr-support-panel-' + (++widgetInstanceCount);
     var helpId = panelId + '-help';
+    var ratingId = panelId + '-rating';
     var cobrowseCopyId = panelId + '-cobrowse-copy';
     var rootEl = doc.createElement('div');
     rootEl.className = 'wayfindr-widget';
@@ -913,6 +943,18 @@
       '    <p class="wayfindr-widget__notice-copy">' + escapeHtml(t('notice.emptyVisitor')) + '</p>',
       '    <button class="wayfindr-widget__notice-retry" type="button" hidden>' + escapeHtml(t('notice.retry')) + '</button>',
       '  </div>',
+      '  <form class="wayfindr-widget__rating" hidden>',
+      '    <p class="wayfindr-widget__rating-intro"></p>',
+      '    <div class="wayfindr-widget__rating-scores">',
+      '      <button class="wayfindr-widget__rating-score" type="button" data-score="good"></button>',
+      '      <button class="wayfindr-widget__rating-score" type="button" data-score="ok"></button>',
+      '      <button class="wayfindr-widget__rating-score" type="button" data-score="bad"></button>',
+      '    </div>',
+      '    <label class="wayfindr-widget__rating-label" for="' + escapeHtml(ratingId) + '"></label>',
+      '    <textarea class="wayfindr-widget__rating-comment" id="' + escapeHtml(ratingId) + '" rows="2" maxlength="1000"></textarea>',
+      '    <button class="wayfindr-widget__rating-send" type="submit"></button>',
+      '    <p class="wayfindr-widget__rating-status" role="status" aria-live="polite" hidden></p>',
+      '  </form>',
       '  <p class="wayfindr-widget__typing" role="status" aria-live="polite" aria-atomic="true" hidden></p>',
       '  <p class="wayfindr-widget__connection" role="status" aria-live="polite" aria-atomic="true" hidden></p>',
       '  <form class="wayfindr-widget__form">',
@@ -972,6 +1014,25 @@
     var helpBack = rootEl.querySelector('.wayfindr-widget__help-back');
     var helpBlocks = rootEl.querySelector('.wayfindr-widget__help-blocks');
     var helpSequence = 0;
+    var rating = rootEl.querySelector('.wayfindr-widget__rating');
+    var ratingIntro = rootEl.querySelector('.wayfindr-widget__rating-intro');
+    var ratingLabel = rootEl.querySelector('.wayfindr-widget__rating-label');
+    var ratingComment = rootEl.querySelector('.wayfindr-widget__rating-comment');
+    var ratingSend = rootEl.querySelector('.wayfindr-widget__rating-send');
+    var ratingStatus = rootEl.querySelector('.wayfindr-widget__rating-status');
+    var ratingConfig = null;
+    var ratingScore = null;
+    var ratingAnswered = false;
+    // Which close the form on screen belongs to. Comparing the boolean alone
+    // cannot tell a NEW unanswered close from the previous unanswered one --
+    // both report awaiting -- so an unsubmitted draft would reappear against
+    // different work, already ready to send.
+    var ratingEpisode = null;
+    // The episode whose answer is currently in flight, or null. Keyed on the
+    // episode rather than a plain boolean, because two requests CAN be
+    // outstanding at once: a stale one for a close that has since been
+    // superseded, and the live one for the close now on screen.
+    var ratingInFlight = null;
     var helpDebounce = null;
     var cobrowseAllow = rootEl.querySelector('.wayfindr-widget__cobrowse-allow');
     var cobrowseDecline = rootEl.querySelector('.wayfindr-widget__cobrowse-decline');
@@ -1153,6 +1214,11 @@
       helpInput.setAttribute('placeholder', t('help.placeholder'));
       helpBack.textContent = t('help.back');
 
+      // The rating prompt is persistent chrome too. Leaving it out is the
+      // omission that left three controls speaking English behind a German
+      // panel two releases ago.
+      renderRatingPrompt();
+
       // The intake QUESTIONS need nothing here: applyBootstrapResult applies
       // the language before it applies the intake state, so the form is rebuilt
       // in the new language two lines later. Only the submit button above
@@ -1192,11 +1258,37 @@
     }
 
     function applyConversationStatus(conversation) {
+      // The server settles whether an answer is being waited for. Widget
+      // memory cannot: it is lost on reload, so the visitor would be asked
+      // again about a close they already rated, and it survives a genuine
+      // reopen, so they would never be asked about the next one. Absent from a
+      // payload that does not carry it, the local answer stands.
+      if (conversation && typeof conversation.awaiting_rating === 'boolean') {
+        ratingAnswered = ! conversation.awaiting_rating;
+      }
+
+      // A NEW close is a new question, so it must arrive with an empty form --
+      // whether or not the previous one was ever answered. Keyed on which close
+      // it is, because an abandoned draft and a submitted answer look identical
+      // from the boolean alone.
+      if (conversation && typeof conversation.rating_episode === 'string' && conversation.rating_episode !== ratingEpisode) {
+        ratingEpisode = conversation.rating_episode;
+        ratingScore = null;
+        ratingComment.value = '';
+        ratingStatus.hidden = true;
+        ratingStatus.textContent = '';
+      }
+
       if (!conversation || !conversation.status) {
         return;
       }
 
       conversationStatus = String(conversation.status).toLowerCase();
+
+      // The prompt exists to be asked once the conversation is closed, and this
+      // is the only place that learns it closed -- whether from a poll, a
+      // realtime frame, or a resume.
+      renderRatingPrompt();
     }
 
     function renderConversationNotice() {
@@ -2580,6 +2672,8 @@
       applyAwayState(panel, siteAwayState(result), t);
       applyIntakeState(siteIntakeState(result));
       applyHelpAvailability(siteHasArticles(result));
+      ratingConfig = siteRatingPrompt(result);
+      renderRatingPrompt();
     }
 
     /**
@@ -2860,6 +2954,130 @@
         }
       });
     }
+
+    /**
+     * Ask how it went, once, after the conversation is closed.
+     *
+     * Only where the operator turned it on, only when there is a conversation
+     * to be asked about, and never twice: a visitor who has answered is done,
+     * and a widget that keeps asking is one they stop reading.
+     */
+    function renderRatingPrompt() {
+      var shouldAsk = Boolean(ratingConfig && ratingConfig.asks)
+        && supportCode !== null
+        && conversationStatus === 'closed'
+        && ! ratingAnswered;
+
+      rating.hidden = ! shouldAsk;
+
+      if (! shouldAsk) {
+        return;
+      }
+
+      ratingIntro.textContent = ratingConfig.intro || t('rating.intro');
+      ratingLabel.textContent = t('rating.comment');
+      ratingSend.textContent = t('rating.send');
+
+      [].forEach.call(rating.querySelectorAll('.wayfindr-widget__rating-score'), function (button) {
+        button.textContent = t('rating.' + button.getAttribute('data-score'));
+        button.setAttribute('aria-pressed', button.getAttribute('data-score') === ratingScore ? 'true' : 'false');
+      });
+
+      applyRatingFormState();
+    }
+
+    /**
+     * Enable or freeze the whole form, not just the send button.
+     *
+     * While an answer is in flight the request has already captured the score
+     * and comment, so leaving the controls live lets the visitor change what
+     * they see to something that was never sent -- and then be thanked for it
+     * when the response lands.
+     */
+    function applyRatingFormState() {
+      var busy = ratingInFlight !== null && ratingInFlight === ratingEpisode;
+
+      ratingSend.disabled = busy || ratingScore === null;
+      ratingComment.disabled = busy;
+
+      [].forEach.call(rating.querySelectorAll('.wayfindr-widget__rating-score'), function (button) {
+        button.disabled = busy;
+      });
+    }
+
+    [].forEach.call(rootEl.querySelectorAll('.wayfindr-widget__rating-score'), function (button) {
+      button.addEventListener('click', function () {
+        ratingScore = button.getAttribute('data-score');
+        renderRatingPrompt();
+      });
+    });
+
+    rating.addEventListener('submit', function (event) {
+      event.preventDefault();
+
+      // A score is the answer; the comment is optional and usually empty. The
+      // episode has to be known too -- an answer the server cannot tie to a
+      // specific close is one it would have to guess about.
+      if (ratingScore === null || supportCode === null || ratingEpisode === null) {
+        return;
+      }
+
+      // One answer in flight per close. Not a plain "already submitting"
+      // guard: a stale request for a superseded close may still be running,
+      // and the visitor must be able to answer the close actually in front of
+      // them while it does.
+      if (ratingInFlight === ratingEpisode) {
+        return;
+      }
+
+      // Which close this request is about, captured now. A poll can land a
+      // newer close while the request is in flight, and marking the widget
+      // answered on the way back would hide a prompt for work this answer was
+      // never about -- leaving the visitor unable to answer it until some later
+      // poll happens to restore it, or not at all if polling is failing.
+      var submittedEpisode = ratingEpisode;
+
+      ratingInFlight = submittedEpisode;
+      applyRatingFormState();
+
+      client.rateConversation(supportCode, ratingScore, ratingComment.value.trim(), submittedEpisode).then(function () {
+        // Says nothing when the close it answered is no longer the one on
+        // screen. Thanking the visitor beside a fresh, unanswered question
+        // reads as an acknowledgement OF that question -- the same reason the
+        // failure branch below stays quiet. An earlier version of this thanked
+        // them anyway, reasoning that they had answered something; that holds
+        // only while their answer is still the one being asked about.
+        if (submittedEpisode !== ratingEpisode) {
+          return;
+        }
+
+        ratingAnswered = true;
+        rating.hidden = true;
+        status.textContent = t('rating.thanks');
+      }).catch(function (error) {
+        reportSuppressed('conversation rating', error);
+
+        // A failure for a close that is no longer on screen is not this
+        // prompt's failure, and saying so over a fresh question is worse than
+        // saying nothing.
+        if (submittedEpisode !== ratingEpisode) {
+          return;
+        }
+
+        ratingStatus.textContent = t('rating.failed');
+        ratingStatus.hidden = false;
+      }).then(function () {
+        // Only the request that owns the flag clears it. A stale one settling
+        // must not unfreeze a form whose own answer is still on the wire, or
+        // the visitor can send the current close twice and whichever response
+        // lands last is the one stored.
+        if (ratingInFlight === submittedEpisode) {
+          ratingInFlight = null;
+        }
+
+        applyRatingFormState();
+      });
+    });
 
     function showHelpResults() {
       helpArticle.hidden = true;
@@ -3847,6 +4065,16 @@
     var site = (result && result.site) || {};
 
     return site.appearance && typeof site.appearance === 'object' ? site.appearance : null;
+  }
+
+  function siteRatingPrompt(result) {
+    var prompt = (result && result.site && result.site.rating) || null;
+
+    return prompt && typeof prompt === 'object' ? {
+      asks: prompt.asks === true,
+      // Operator copy: shown as typed, escaped, never interpreted.
+      intro: typeof prompt.intro === 'string' && prompt.intro.trim() ? prompt.intro.trim() : null,
+    } : null;
   }
 
   function siteHasArticles(result) {
@@ -5524,6 +5752,23 @@
       '.wayfindr-widget__intake label{display:grid;gap:4px;color:var(--wf-muted);font-size:12px}',
       '.wayfindr-widget__intake input{min-width:0;padding:8px 10px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);font:inherit;font-size:13px}',
       '.wayfindr-widget__intake-error{margin:0;color:var(--wf-signal-attention);font-size:12px}',
+      // The rating prompt sits where the composer would be, in the same
+      // surface the intake form uses -- it is a question the desk is asking,
+      // not a message in the transcript.
+      '.wayfindr-widget__rating{display:grid;gap:10px;margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-surface-2)}',
+      '.wayfindr-widget__rating-intro{margin:0;color:var(--wf-ink);font-size:13px;line-height:1.4}',
+      '.wayfindr-widget__rating-scores{display:flex;gap:8px}',
+      '.wayfindr-widget__rating-score{flex:1 1 0;min-width:0;min-height:34px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);cursor:pointer;padding:0 8px;font:700 13px/1 var(--wf-font-sans)}',
+      '.wayfindr-widget__rating-score:hover{border-color:var(--wf-brand);color:var(--wf-brand)}',
+      // The chosen answer has to be visible without colour alone carrying it,
+      // so the border thickens as well as changing hue.
+      '.wayfindr-widget__rating-score[aria-pressed="true"]{border-color:var(--wf-brand);background:color-mix(in srgb, var(--wf-brand) 12%, var(--wf-surface));color:var(--wf-brand);box-shadow:inset 0 0 0 1px var(--wf-brand)}',
+      '.wayfindr-widget__rating-label{margin:0;color:var(--wf-muted);font-size:12px}',
+      '.wayfindr-widget__rating-comment{min-width:0;padding:8px 10px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);font:inherit;font-size:13px;resize:vertical}',
+      '.wayfindr-widget__rating-send{justify-self:start;min-height:34px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);cursor:pointer;padding:0 12px;font:700 13px/1 var(--wf-font-sans)}',
+      '.wayfindr-widget__rating-send:hover:not(:disabled){border-color:var(--wf-brand);color:var(--wf-brand)}',
+      '.wayfindr-widget__rating-send:disabled{opacity:0.55;cursor:default}',
+      '.wayfindr-widget__rating-status{margin:0;color:var(--wf-signal-stop);font-size:12px}',
       '.wayfindr-widget__away{margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:color-mix(in srgb, var(--wf-signal-hold) 12%, var(--wf-surface));color:color-mix(in srgb, var(--wf-signal-hold) 70%, var(--wf-ink));font-size:13px;line-height:1.4}',
       '.wayfindr-widget__notice{display:grid;gap:10px;margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-surface-2);color:var(--wf-muted);font-size:13px;line-height:1.4}',
       '.wayfindr-widget__notice[data-state="warning"]{background:color-mix(in srgb, var(--wf-signal-hold) 12%, var(--wf-surface));color:color-mix(in srgb, var(--wf-signal-hold) 70%, var(--wf-ink))}',

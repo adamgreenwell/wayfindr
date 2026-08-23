@@ -7,6 +7,7 @@ namespace App\Support\Reporting;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\ConversationRating;
 use App\Models\OperatorSetting;
 use App\Models\User;
 use App\Support\Conversations\ConversationLifecycleLog;
@@ -260,6 +261,106 @@ final class SupportReport
                 // TEXT and breaks the same query on PostgreSQL.
                 'reopened_by_visitor' => (clone $reopened)->where('metadata->actor', 'visitor')->count(),
             ];
+        });
+    }
+
+    /**
+     * What visitors said about how it went.
+     *
+     * The only figure on this page that measures whether support WORKED. The
+     * rest describe how fast it moved, and a desk can improve every one of them
+     * while getting worse at helping people.
+     *
+     * `answered` and `closed` are both returned deliberately. A response rate
+     * on CSAT is low everywhere, and a non-response is NOT a neutral score --
+     * reporting an average without saying how few people answered is how a
+     * satisfied-looking number gets built out of four replies.
+     *
+     * @return array{good: int, ok: int, bad: int, answered: int, closed: int, positive: float|null}
+     */
+    public function satisfaction(): array
+    {
+        return $this->once('satisfaction', function (): array {
+            $empty = ['good' => 0, 'ok' => 0, 'bad' => 0, 'answered' => 0, 'closed' => 0, 'positive' => null];
+
+            if ($this->scope->isEmpty()) {
+                return $empty;
+            }
+
+            // Counted in SQL. Reading every rating back to tally three
+            // integers puts a quarter of responses on the wire to produce a
+            // number that fits in a tweet.
+            $counts = ConversationRating::query()
+                ->whereIn('site_id', $this->scope->countableSiteIds())
+                // Filtered by the CLOSE being answered, not by when the answer
+                // arrived. Answers and closes have to be the same cohort or the
+                // page reports things like "1 of 0 closes answered": a visitor
+                // who answers just after a boundary would otherwise be counted
+                // without the close they were answering about.
+                ->whereBetween('episode_closed_at', [$this->window->start, $this->window->end])
+                ->selectRaw('score, count(*) as aggregate')
+                ->groupBy('score')
+                ->pluck('aggregate', 'score');
+
+            $tally = $empty;
+
+            foreach ($counts as $score => $aggregate) {
+                if (array_key_exists((string) $score, $tally)) {
+                    $tally[(string) $score] = (int) $aggregate;
+                }
+            }
+
+            $tally['answered'] = $tally['good'] + $tally['ok'] + $tally['bad'];
+            $tally['closed'] = $this->lifecycleEventsInWindow(ConversationLifecycleLog::CLOSED)->count();
+            $tally['positive'] = $tally['answered'] === 0
+                ? null
+                : round(($tally['good'] / $tally['answered']) * 100, 1);
+
+            return $tally;
+        });
+    }
+
+    /**
+     * What people actually said, most recent first.
+     *
+     * The score says whether it went badly; only this says why. Collecting a
+     * comment and never showing it anywhere would be worse than not asking for
+     * one -- the visitor spent effort answering a question nobody reads.
+     *
+     * Labelled by support code rather than subject line, the same rule the
+     * audit page follows: a subject is visitor-authored text, a support code is
+     * a reference by construction.
+     *
+     * @return list<array{score: string, comment: string, support_code: string, rated_at: CarbonImmutable}>
+     */
+    public function comments(int $limit = 25): array
+    {
+        return $this->once('comments:'.$limit, function () use ($limit): array {
+            if ($this->scope->isEmpty()) {
+                return [];
+            }
+
+            return ConversationRating::query()
+                ->join('conversations', 'conversations.id', '=', 'conversation_ratings.conversation_id')
+                ->whereIn('conversation_ratings.site_id', $this->scope->countableSiteIds())
+                // Same cohort as the figures above it, for the same reason.
+                ->whereBetween('conversation_ratings.episode_closed_at', [$this->window->start, $this->window->end])
+                ->whereNotNull('conversation_ratings.comment')
+                ->orderByDesc('conversation_ratings.rated_at')
+                ->limit($limit)
+                ->get([
+                    'conversation_ratings.score',
+                    'conversation_ratings.comment',
+                    'conversation_ratings.rated_at',
+                    'conversations.support_code',
+                ])
+                ->map(fn (ConversationRating $rating): array => [
+                    'score' => (string) $rating->score,
+                    'comment' => (string) $rating->comment,
+                    'support_code' => (string) $rating->support_code,
+                    'rated_at' => CarbonImmutable::parse($rating->rated_at),
+                ])
+                ->all();
         });
     }
 

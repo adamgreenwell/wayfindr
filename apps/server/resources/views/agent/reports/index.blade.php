@@ -3,6 +3,10 @@
         ['id' => 'volume', 'label' => 'Volume'],
         ['id' => 'speed', 'label' => 'Speed'],
         ['id' => 'agents', 'label' => 'Agents'],
+        // Its own tab, not a row under Speed. Every other tab answers how fast
+        // the desk moved; this one answers whether that helped, and a desk can
+        // improve all of the others while getting worse at this.
+        ['id' => 'satisfaction', 'label' => 'Satisfaction'],
     ];
 @endphp
 
@@ -251,6 +255,101 @@
                         Deactivated agents stay listed: they did the work, and a total that changes when someone leaves is not a total.
                         <a href="{{ route('dashboard.reports.export', $reportQuery + ['report_export' => 'agents']) }}">Export as CSV</a>
                     </p>
+                @endif
+            </section>
+        </x-tab-panel>
+
+        <x-tab-panel id="satisfaction">
+            <section class="section" aria-labelledby="report-satisfaction-heading">
+                <div class="section-header">
+                    <h2 id="report-satisfaction-heading">Whether it helped</h2>
+                    <span class="lede">{{ $satisfaction['answered'] }} of {{ $satisfaction['closed'] }} {{ $satisfaction['closed'] === 1 ? 'close' : 'closes' }} answered</span>
+                </div>
+                @if ($satisfaction['answered'] === 0)
+                    {{-- Never a zero or a dash where a percentage goes. Nobody
+                         answering is not the same as everybody answering badly,
+                         and a 0% here would be read as the second. --}}
+                    <p class="empty">
+                        @if ($satisfaction['closed'] === 0)
+                            No conversation was closed in this period, so nobody was asked.
+                        @else
+                            Nobody answered in this period. That is not a bad score &mdash; it is no score, and the
+                            two must not be read as the same thing. If your sites are not asking, turn the prompt
+                            on under <strong>Asking how it went</strong> in a site's settings.
+                        @endif
+                    </p>
+                @else
+                    <div class="table-wrap">
+                        <table>
+                            <tbody>
+                                <tr>
+                                    <th scope="row">Good</th>
+                                    <td>{{ $satisfaction['good'] }}</td>
+                                    <td class="lede">{{ $satisfaction['positive'] }}% of the people who answered.</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Ok</th>
+                                    <td>{{ $satisfaction['ok'] }}</td>
+                                    <td class="lede">Helped, but not a story anybody will tell.</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Bad</th>
+                                    <td>{{ $satisfaction['bad'] }}</td>
+                                    <td class="lede">The answer this whole tab exists to surface.</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Answered</th>
+                                    <td>{{ $satisfaction['answered'] }}</td>
+                                    <td class="lede">Out of {{ $satisfaction['closed'] }} {{ $satisfaction['closed'] === 1 ? 'close' : 'closes' }}. Every figure above is a share of this number, never of the closes &mdash; people who said nothing are not counted as satisfied.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    @if ($satisfaction['answered'] < 10)
+                        <p class="lede">
+                            Few enough answers that one more would move the percentage noticeably. Read it as a
+                            direction rather than a measurement.
+                        </p>
+                    @endif
+                @endif
+            </section>
+
+            <section class="section" aria-labelledby="report-comments-heading">
+                <div class="section-header">
+                    <h2 id="report-comments-heading">What people said</h2>
+                    <span class="lede">{{ count($ratingComments) }} {{ count($ratingComments) === 1 ? 'comment' : 'comments' }}</span>
+                </div>
+
+                @if ($ratingComments === [])
+                    <p class="empty">Nobody left a comment in this period. The comment box is optional, and most people skip it &mdash; a score with no words is still an answer.</p>
+                @else
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Score</th>
+                                    <th scope="col">What they said</th>
+                                    <th scope="col">Conversation</th>
+                                    <th scope="col">When</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($ratingComments as $comment)
+                                    <tr>
+                                        <td>{{ ucfirst($comment['score']) }}</td>
+                                        {{-- Visitor-authored, so escaped like any other visitor text and
+                                             never used as a link label. --}}
+                                        <td>{{ $comment['comment'] }}</td>
+                                        <td>
+                                            <a href="{{ route('dashboard.conversations.show', $comment['support_code']) }}">{{ $comment['support_code'] }}</a>
+                                        </td>
+                                        <td>{{ $comment['rated_at']->diffForHumans() }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="lede">The most recent {{ count($ratingComments) }}. A score tells you something went wrong; this is the only place that says what.</p>
                 @endif
             </section>
         </x-tab-panel>

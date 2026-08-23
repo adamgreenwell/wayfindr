@@ -87,6 +87,7 @@
                 }
 
                 $siteMapSections[] = ['label' => 'External issue routing', 'href' => '#external-issue-routing-heading'];
+                $siteMapSections[] = ['label' => 'Asking how it went', 'href' => '#rating-prompt-heading'];
                 $siteMapSections[] = ['label' => 'Data responsibility', 'href' => '#data-responsibility-heading'];
                 $siteMapSections[] = ['label' => 'Mask selectors', 'href' => '#privacy-settings-heading'];
             @endphp
@@ -1032,6 +1033,68 @@
 
                 <div class="notice-copy">
                     <p>If your own application knows which language a visitor reads &mdash; because they chose it, or because they are signed in &mdash; tell the widget directly by adding <code>data-wayfindr-locale="de"</code> to the install snippet. That outranks both this setting and the browser, because your application knows better than either.</p>
+                </div>
+            </section>
+
+            <section class="section" aria-labelledby="rating-prompt-heading">
+                <div class="section-header">
+                    <div>
+                        <h2 id="rating-prompt-heading">Asking how it went</h2>
+                        <p class="lede">Every other figure on the reports page says how fast your desk moved, not whether it helped.</p>
+                    </div>
+                    <span class="lede">{{ $ratingPrompt->enabled ? 'Asking' : 'Not asking' }}</span>
+                </div>
+
+                @if ($canUpdateSite)
+                    <form class="section-form" method="POST" action="{{ route('dashboard.sites.rating.update', $site) }}">
+                        @csrf
+                        @method('PUT')
+
+                        <div class="field">
+                            <label for="rating_enabled">
+                                {{-- Unchecked boxes send nothing, so old() would fall back to the
+                                     saved value and silently re-check a box just cleared. --}}
+                                <input type="hidden" name="rating_enabled" value="0">
+                                <input type="checkbox" id="rating_enabled" name="rating_enabled" value="1"
+                                    @checked(old('rating_enabled', $ratingPrompt->enabled))>
+                                Ask the visitor how it went when a conversation closes
+                            </label>
+                            <p class="field-help">
+                                Three answers &mdash; good, ok, bad &mdash; and an optional comment. Three rather
+                                than five: the signal worth having is <em>did this go badly</em>, and finer scales
+                                mostly add noise and translation problems.
+                            </p>
+                        </div>
+
+                        <div class="field">
+                            <label for="rating_intro">What to ask</label>
+                            <input type="text" id="rating_intro" name="rating_intro" maxlength="160"
+                                placeholder="How did we do?" value="{{ old('rating_intro', $ratingPrompt->intro) }}">
+                            <p class="field-help">Written in your visitors' language, and shown to all of them. Left empty, the widget asks in the visitor's own language.</p>
+                            @error('rating_intro')
+                                <p class="field-error">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <button class="button" type="submit">Save rating prompt</button>
+                    </form>
+                @else
+                    <div class="notice-copy">
+                        <p>Only an account admin can change whether visitors are asked.</p>
+                    </div>
+                @endif
+
+                <div class="notice-copy">
+                    <p>
+                        A visitor answers once per close. Changing their mind replaces the answer rather than
+                        adding one, so a small number of responses cannot be swamped &mdash; but a conversation
+                        that is reopened and closed again is asked afresh, because that is a genuinely
+                        different question.
+                    </p>
+                    <p>
+                        Comments are a visitor's own words and are kept under this site's retention rules like
+                        any other message. See <a class="text-link" href="#data-responsibility-heading">Data responsibility</a>.
+                    </p>
                 </div>
             </section>
 

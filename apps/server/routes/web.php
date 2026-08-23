@@ -168,6 +168,9 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.sites.update');
     Route::put('/dashboard/sites/{site}/intake', [AgentSiteController::class, 'updateIntake'])
         ->name('dashboard.sites.intake.update');
+
+    Route::put('/dashboard/sites/{site}/rating', [AgentSiteController::class, 'updateRating'])
+        ->name('dashboard.sites.rating.update');
     Route::put('/dashboard/sites/{site}/language', [AgentSiteController::class, 'updateLanguage'])
         ->name('dashboard.sites.language.update');
     Route::put('/dashboard/sites/{site}/availability', [AgentSiteController::class, 'updateAvailability'])

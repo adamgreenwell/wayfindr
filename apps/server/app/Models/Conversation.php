@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Conversations\ConversationLifecycleLog;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Database\Factories\ConversationFactory;
@@ -78,6 +79,69 @@ class Conversation extends Model
         } while (self::query()->where('support_code', $supportCode)->exists());
 
         return $supportCode;
+    }
+
+    /**
+     * The close a rating would be answering, or null if there is not one.
+     *
+     * Null is a refusal, not a default: a conversation that was never closed
+     * has no stretch of work to rate, and accepting an answer about one would
+     * put a score in the report that nobody was ever asked for.
+     *
+     * **A RECORDED close, never `closed_at`.** The fallback is tempting and
+     * wrong: on an upgraded install a conversation closed before lifecycle
+     * recording began still has `closed_at`, but `SupportReport::satisfaction()`
+     * builds its denominator from lifecycle events alone. An answer about such
+     * a close would be counted with no close to count against it -- the "1 of 0
+     * closes answered" the cohort alignment exists to prevent, arriving through
+     * a different door.
+     *
+     * An episode is only created from a close the denominator can count.
+     */
+    public function currentCloseEpisode(): ?AuditEvent
+    {
+        return AuditEvent::query()
+            ->where('subject_type', $this->getMorphClass())
+            ->where('subject_id', $this->id)
+            ->where('action', ConversationLifecycleLog::CLOSED)
+            // The event itself, not its timestamp: two closes a second apart
+            // are two episodes, and only the row id says so.
+            ->orderByDesc('occurred_at')
+            ->orderByDesc('id')
+            ->first();
+    }
+
+    /**
+     * A stable, opaque handle for the current close, safe to hand the widget.
+     *
+     * Hashed rather than the raw row id, which would publish how many audit
+     * events this install has written. The widget only ever compares it for
+     * equality.
+     */
+    public function currentCloseEpisodeToken(): ?string
+    {
+        $episode = $this->currentCloseEpisode();
+
+        return $episode === null ? null : substr(hash('sha256', 'rating-episode:'.$episode->id), 0, 16);
+    }
+
+    /**
+     * Whether this conversation is waiting for the visitor to say how it went.
+     *
+     * True only where there is a recorded close AND it has not been answered,
+     * so the two ways of answering no collapse into one -- a widget shown a
+     * prompt the endpoint would refuse is worse than one that never asks.
+     */
+    public function isAwaitingRating(): bool
+    {
+        $episode = $this->currentCloseEpisode();
+
+        return $episode !== null && ! $this->ratings()->where('episode_event_id', $episode->id)->exists();
+    }
+
+    public function ratings(): HasMany
+    {
+        return $this->hasMany(ConversationRating::class);
     }
 
     public function messages(): HasMany

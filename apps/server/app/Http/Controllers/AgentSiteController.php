@@ -18,6 +18,7 @@ use App\Support\SiteInstallHealth;
 use App\Support\SitePurge;
 use App\Support\Sites\SiteAvailability;
 use App\Support\Sites\SiteIntake;
+use App\Support\Sites\SiteRatingPrompt;
 use App\Support\Sites\WidgetAppearance;
 use App\Support\Sites\WidgetLanguage;
 use App\Support\TicketExternalIssueState;
@@ -162,6 +163,7 @@ class AgentSiteController extends Controller
             // @php...@endphp blocks silently breaks everything after it.
             'availabilityWeekdays' => $this->availabilityWeekdaysForForm($site),
             'intake' => SiteIntake::for($site),
+            'ratingPrompt' => SiteRatingPrompt::for($site),
             'widgetLocale' => WidgetLanguage::for($site),
             'widgetLanguages' => WidgetLanguage::options(),
             'dataResponsibility' => config('wayfindr.data_responsibility'),
@@ -569,6 +571,37 @@ class AgentSiteController extends Controller
      * Its own method for the same reason the others are: one form must not be
      * able to blank another's fields by omitting them.
      */
+    /**
+     * Whether this site asks a visitor how it went.
+     *
+     * Off until an operator turns it on, and phrased in the form as a question
+     * the desk asks rather than a metric it collects -- because that is what
+     * the visitor experiences. A prompt nobody chose to show is an interruption
+     * at the least welcome moment.
+     */
+    public function updateRating(Request $request, Site $site): RedirectResponse
+    {
+        $this->authorizeSiteAbility($request, 'view', $site, 404);
+        $this->authorizeSiteAbility($request, 'update', $site);
+
+        $validated = $request->validate([
+            'rating_enabled' => ['nullable', 'boolean'],
+            'rating_intro' => ['nullable', 'string', 'max:160'],
+        ]);
+
+        $settings = $site->settings ?? [];
+        $settings['rating'] = [
+            'enabled' => (bool) ($validated['rating_enabled'] ?? false),
+            'intro' => trim((string) ($validated['rating_intro'] ?? '')) ?: null,
+        ];
+
+        $site->forceFill(['settings' => $settings])->save();
+
+        return redirect()
+            ->route('dashboard.sites.show', $site)
+            ->with('status', 'Rating prompt saved.');
+    }
+
     public function updateIntake(Request $request, Site $site): RedirectResponse
     {
         $this->authorizeSiteAbility($request, 'view', $site, 404);

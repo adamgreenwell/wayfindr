@@ -75,6 +75,23 @@ missed while skimming.
   is no recovery path without it, because the link is an email. `/operator` →
   **Mail** sets it up, and its test button confirms delivery before you need it.
 
+- **The widget can ask whether it helped.** Every figure on the reports page
+  described how *fast* the desk moved &mdash; volume, response time, resolution
+  time. A team can improve every one of those while getting worse at helping
+  people, and Wayfindr would have shown that as unambiguous progress. A site can
+  now ask the visitor how it went when a conversation closes, with three answers
+  &mdash; good, ok, bad &mdash; and an optional comment, which is usually where
+  the actual information is. Off until an operator turns it on, under **Asking
+  how it went** in a site's settings.
+
+  Two things it deliberately does not do. It never reports a percentage of the
+  people who were *asked*, only of the people who *answered*: response rates are
+  low everywhere, a non-response is not a neutral score, and an average over
+  silence is fiction. And a visitor answers once per close &mdash; changing their
+  mind replaces the answer rather than adding one, so a small number of
+  responses cannot be swamped. A conversation that is reopened and closed again
+  is asked afresh, because that is a genuinely different question.
+
 - **A site can have support hours.** Until now the widget behaved identically at
   3pm Tuesday and 3am Sunday: a visitor arriving out of hours opened a
   conversation, saw nothing suggesting anyone was away, and waited for a reply

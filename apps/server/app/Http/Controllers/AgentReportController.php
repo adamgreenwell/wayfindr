@@ -47,6 +47,8 @@ class AgentReportController extends Controller
             'chart' => $this->chart($volume, $window),
             'firstResponse' => $firstResponse,
             'resolution' => $resolution,
+            'satisfaction' => $report->satisfaction(),
+            'ratingComments' => $report->comments(),
             'agentActivity' => $report->agentActivity(),
             'queueHealth' => $report->queueHealth(),
             'historyBeganAt' => $report->historyBeganAt(),
