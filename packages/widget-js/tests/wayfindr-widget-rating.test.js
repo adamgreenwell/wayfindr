@@ -419,12 +419,17 @@ test('an answer that lands late does not hide a newer close', async () => {
 
   assert.equal(prompt(widget).hidden, false, 'the newer close should be asked about');
 
+  const statusBefore = widget.root.querySelector('.wayfindr-widget__status').textContent;
+
   release.release(null);
   await settle();
 
   // The late response must not have hidden it.
   assert.equal(prompt(widget).hidden, false);
   assert.equal(widget.root.querySelector('.wayfindr-widget__rating-comment').value, '');
+
+  // Nor thanked the visitor beside a question they have not answered.
+  assert.equal(widget.root.querySelector('.wayfindr-widget__status').textContent, statusBefore);
 });
 
 test('a failure that lands late does not warn over a newer close', async () => {

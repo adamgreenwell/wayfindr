@@ -3041,9 +3041,13 @@
       applyRatingFormState();
 
       client.rateConversation(supportCode, ratingScore, ratingComment.value.trim(), submittedEpisode).then(function () {
+        // Says nothing when the close it answered is no longer the one on
+        // screen. Thanking the visitor beside a fresh, unanswered question
+        // reads as an acknowledgement OF that question -- the same reason the
+        // failure branch below stays quiet. An earlier version of this thanked
+        // them anyway, reasoning that they had answered something; that holds
+        // only while their answer is still the one being asked about.
         if (submittedEpisode !== ratingEpisode) {
-          status.textContent = t('rating.thanks');
-
           return;
         }
 

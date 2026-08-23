@@ -70,6 +70,11 @@ column set, and an answer about it would be counted with no close to count
 against it — the same *1 of 0 closes answered* the cohort rule exists to
 prevent, arriving through a different door.
 
+**A late response speaks only for the close it was about.** If the conversation
+is reopened and closed again while an answer is on its way, the response that
+comes back neither hides the new prompt nor acknowledges it — no thanks, no
+error. Both would describe a question the visitor has not answered yet.
+
 **An answer is bound to the close it was shown for.** The widget sends the
 episode it is displaying, and the server refuses an answer whose close is no
 longer the current one. Otherwise a conversation reopened and closed again
