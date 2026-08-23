@@ -6,6 +6,7 @@ namespace App\Support\Conversations;
 
 use App\Models\Conversation;
 use App\Models\User;
+use App\Support\Visitors\VisitorPresence;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -78,18 +79,11 @@ final class ConversationQueueQuery
 
     public static function applyPresence(Builder $query, string $presence): Builder
     {
-        $activeCutoff = now()->subMinutes(2);
-        $recentCutoff = now()->subMinutes(15);
-
-        return $query->whereHas('visitor', function (Builder $query) use ($activeCutoff, $presence, $recentCutoff): void {
-            match ($presence) {
-                'active' => $query->where('last_seen_at', '>=', $activeCutoff),
-                'recent' => $query->where('last_seen_at', '<', $activeCutoff)
-                    ->where('last_seen_at', '>=', $recentCutoff),
-                'quiet' => $query->where('last_seen_at', '<', $recentCutoff),
-                'not_reported' => $query->whereNull('last_seen_at'),
-                default => null,
-            };
+        // The cutoffs live in VisitorPresence. They were written here and in
+        // Visitor::presenceState() independently, which is exactly the second
+        // implementation this class exists to prevent.
+        return $query->whereHas('visitor', function (Builder $query) use ($presence): void {
+            VisitorPresence::constrain($query, $presence);
         });
     }
 

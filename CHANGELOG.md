@@ -83,6 +83,19 @@ missed while skimming.
 
   Sites that configure nothing ask nothing, exactly as before.
 
+- **A list of the visitors you have heard from.** A visitor profile page existed
+  with no way to reach it except from a conversation or a support-code lookup, so
+  you could ask "tell me about this visitor" but not "who has been in touch".
+  **Visitors** in the sidebar lists them, most recently seen first, with search by
+  name, email or identifier, and filters for site and how recently they were seen.
+
+  It lists people who **made contact** — Wayfindr records somebody when they open
+  the chat, send a message or start typing, and deliberately not when they load a
+  page. It is not a live board of everyone on your site, and whether it should ever
+  become one is an open question rather than a missing feature: watching visitors
+  who never got in touch is the opposite of the consent-based posture cobrowse
+  takes. See ADR 0016.
+
 ### Fixed
 
 - **The installer no longer sends you to the old readiness address.** Its closing

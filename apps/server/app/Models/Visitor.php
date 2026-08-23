@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Visitors\VisitorPresence;
 use Database\Factories\VisitorFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -51,19 +52,14 @@ class Visitor extends Model
 
     public function presenceState(): string
     {
-        if (! $this->last_seen_at) {
-            return 'unknown';
-        }
+        $state = VisitorPresence::stateFor($this->last_seen_at);
 
-        if ($this->last_seen_at->gte(now()->subMinutes(2))) {
-            return 'active';
-        }
-
-        if ($this->last_seen_at->gte(now()->subMinutes(15))) {
-            return 'recent';
-        }
-
-        return 'quiet';
+        // This surface has always called the null case "unknown" while the
+        // queue filter calls it "not_reported". The name is in the realtime
+        // presence payload and the views that read it, so it is translated
+        // here rather than changed underneath them; the cutoffs, which are the
+        // part that must not diverge, now live in one place.
+        return $state === VisitorPresence::NOT_REPORTED ? 'unknown' : $state;
     }
 
     public function presenceLabel(): string

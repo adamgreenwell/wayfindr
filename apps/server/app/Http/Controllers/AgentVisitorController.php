@@ -6,14 +6,95 @@ use App\Models\Conversation;
 use App\Models\Ticket;
 use App\Models\Visitor;
 use App\Support\VisitorContextSanitizer;
+use App\Support\Visitors\VisitorPresence;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 
 class AgentVisitorController extends Controller
 {
+    /**
+     * Everyone this desk has heard from, most recently seen first.
+     *
+     * A profile page existed with no way to reach it except from a conversation
+     * or a support-code lookup, so an agent could answer "tell me about this
+     * visitor" and not "who has been here".
+     *
+     * Deliberately scoped to visitors who made contact. Wayfindr records a
+     * visitor when the widget is opened, a conversation starts, a message moves,
+     * or somebody types -- never on page load -- so this lists people who
+     * reached out, not people who were watched. Whether it should ever mean the
+     * latter is ADR 0016, and undecided.
+     */
+    public function index(Request $request): View
+    {
+        $agent = $request->user();
+        $account = $agent->account()->firstOrFail();
+
+        $presence = (string) $request->query('presence', 'all');
+        $presence = in_array($presence, VisitorPresence::states(), true) ? $presence : 'all';
+
+        $search = $request->query('search', '');
+        $search = is_string($search) ? mb_substr(trim($search), 0, 120) : '';
+
+        $siteId = $request->query('site', '');
+        $visibleSites = $account->sites()->visibleToAgent($agent)->orderBy('name')->get();
+        $siteIds = $visibleSites->pluck('id')->map(fn ($id): int => (int) $id)->all();
+
+        // A site id from the query string can never widen the scope: it is
+        // checked against what this agent may already see.
+        $siteId = is_string($siteId) && ctype_digit($siteId) && in_array((int) $siteId, $siteIds, true)
+            ? (int) $siteId
+            : null;
+
+        $query = Visitor::query()
+            ->with('site')
+            ->whereIn('site_id', $siteIds)
+            // The hosted tester page creates real visitor rows. Without this an
+            // agent watches themselves browse, which Site::latestVisitor()
+            // already learned to exclude.
+            ->where('anonymous_id', 'not like', 'tester-site-%');
+
+        if ($siteId !== null) {
+            $query->where('site_id', $siteId);
+        }
+
+        if ($presence !== 'all') {
+            VisitorPresence::constrain($query, $presence);
+        }
+
+        if ($search !== '') {
+            $pattern = '%'.$search.'%';
+
+            $query->where(fn (Builder $inner) => $inner
+                ->whereLike('name', $pattern)
+                ->orWhereLike('email', $pattern)
+                ->orWhereLike('external_id', $pattern)
+                ->orWhereLike('anonymous_id', $pattern));
+        }
+
+        $visitors = $query
+            ->withCount('conversations')
+            ->orderByRaw('last_seen_at is null')
+            ->latest('last_seen_at')
+            ->latest('id')
+            ->paginate(25)
+            ->withQueryString();
+
+        return view('agent.visitors.index', [
+            'account' => $account,
+            'agent' => $agent,
+            'presence' => $presence,
+            'search' => $search,
+            'siteId' => $siteId,
+            'sites' => $visibleSites,
+            'visitors' => $visitors,
+        ]);
+    }
+
     public function show(Request $request, Visitor $visitor, VisitorContextSanitizer $visitorContextSanitizer): View
     {
         $agent = $request->user();
