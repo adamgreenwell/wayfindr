@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Http\Middleware\AuthenticateApiToken;
+use App\Models\ApiToken;
 use App\Policies\AlertPolicy;
 use App\Support\Attachments\Scanning\AttachmentScanner;
 use App\Support\Attachments\Scanning\ClamAvScanner;
@@ -146,6 +148,20 @@ class AppServiceProvider extends ServiceProvider
         // connection) and bursty; a generous per-connection ceiling keeps a
         // noisy or hostile source from flooding without blocking normal
         // issue-event traffic.
+        // Per token, not per IP (ADR 0018). An integration runs from one host,
+        // so an IP limit would make two tokens on the same server throttle each
+        // other; and a token moving between hosts would carry no history at
+        // all. Falls back to the IP only for an unauthenticated request, which
+        // by definition has no token to key on.
+        RateLimiter::for('api-token', function (Request $request): Limit {
+            $token = $request->attributes->get(AuthenticateApiToken::ATTRIBUTE);
+            $limit = max(1, (int) config('wayfindr.api_rate_limit', 120));
+
+            return Limit::perMinute($limit)->by(
+                'api-token:'.($token instanceof ApiToken ? (string) $token->getKey() : (string) $request->ip()),
+            );
+        });
+
         RateLimiter::for('integrations-webhook', function (Request $request): Limit {
             $connection = $request->route('connection');
             $key = $connection instanceof Model ? (string) $connection->getKey() : (string) $request->ip();

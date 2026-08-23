@@ -356,6 +356,13 @@
                             </span>
                             <span class="management-action">Open</span>
                         </a>
+                        <a class="management-link" href="{{ route('dashboard.account.api-tokens.index') }}">
+                            <span>
+                                <strong>API tokens</strong>
+                                <span class="lede">Programmatic read access to this account, for integrations you or somebody else builds.</span>
+                            </span>
+                            <span class="management-action">Manage</span>
+                        </a>
                         <a class="management-link" href="{{ route('dashboard.account.break-glass.index') }}">
                             <span>
                                 <strong>Operator access</strong>

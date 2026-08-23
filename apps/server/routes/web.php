@@ -3,6 +3,7 @@
 use App\Http\Controllers\AgentAccountAgentAccessController;
 use App\Http\Controllers\AgentAccountAgentController;
 use App\Http\Controllers\AgentAccountAgentRoleController;
+use App\Http\Controllers\AgentAccountApiTokenController;
 use App\Http\Controllers\AgentAccountAuditController;
 use App\Http\Controllers\AgentAccountBreakGlassController;
 use App\Http\Controllers\AgentAccountController;
@@ -84,6 +85,12 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.account.show');
     Route::get('/dashboard/account/integrations', [AgentAccountIntegrationsController::class, 'show'])
         ->name('dashboard.account.integrations');
+    Route::get('/dashboard/account/api-tokens', [AgentAccountApiTokenController::class, 'index'])
+        ->name('dashboard.account.api-tokens.index');
+    Route::post('/dashboard/account/api-tokens', [AgentAccountApiTokenController::class, 'store'])
+        ->name('dashboard.account.api-tokens.store');
+    Route::delete('/dashboard/account/api-tokens/{apiToken}', [AgentAccountApiTokenController::class, 'destroy'])
+        ->name('dashboard.account.api-tokens.destroy');
     Route::get('/dashboard/account/operator-access', [AgentAccountBreakGlassController::class, 'index'])
         ->name('dashboard.account.break-glass.index');
     Route::post('/dashboard/account/operator-access/{grant}/approve', [AgentAccountBreakGlassController::class, 'approve'])

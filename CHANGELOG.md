@@ -116,6 +116,30 @@ missed while skimming.
   resolution looked like it held; leaving *closed* now records the reopen it
   performs whichever control did it. History already recorded is read correctly
   rather than rewritten.
+- **A public API, so integrations do not all have to be built by us.** Every
+  route Wayfindr served was either the widget talking to its own backend or a
+  provider posting inbound &mdash; no authenticated public surface at all, which
+  meant every integration anyone would ever want was ours to write. There is now
+  a read-only, token-authenticated API under `/api/v1/`: conversations,
+  transcripts, tickets and visitors. Tokens are issued and revoked under
+  **Account → API tokens**, carry a last-used time so a live token can be told
+  from a forgotten one, and can be restricted to specific sites. See
+  [the API guide](docs/product/api.md) and
+  [ADR 0018](docs/decisions/0018-public-api-and-programmatic-access.md).
+
+  The limits are the interesting part. `metadata` and `anonymous_id` are never
+  published &mdash; the first is whatever somebody's website wrote into it, the
+  second is a browser-session handle rather than a person. A `site_id` filter can
+  only narrow, because "unknown filter is ignored" would be a silent scope
+  escalation. Records outside a token's reach return 404 rather than 403, since
+  403 confirms they exist. Operator access grants do not extend to tokens in
+  either direction: a grant is built around a person being accountable for
+  having looked, and a token has nobody behind it. And cobrowse is not reachable
+  at all.
+
+  Authentication is hand-rolled rather than pulling in Sanctum, whose
+  distinctive feature is a session mode this project does not use. Wayfindr's
+  dependencies stay at six.
 
 - **A site can have support hours.** Until now the widget behaved identically at
   3pm Tuesday and 3am Sunday: a visitor arriving out of hours opened a

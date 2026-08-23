@@ -1,5 +1,9 @@
 <?php
 
+use App\Http\Controllers\Api\V1\ConversationController as ApiConversationController;
+use App\Http\Controllers\Api\V1\TicketController as ApiTicketController;
+use App\Http\Controllers\Api\V1\TokenController as ApiTokenController;
+use App\Http\Controllers\Api\V1\VisitorController as ApiVisitorController;
 use App\Http\Controllers\Integrations\GitHubWebhookController;
 use App\Http\Controllers\Integrations\GitLabWebhookController;
 use App\Http\Controllers\Integrations\JiraWebhookController;
@@ -19,6 +23,8 @@ use App\Http\Controllers\Widget\ConversationController;
 use App\Http\Controllers\Widget\ConversationMessageController;
 use App\Http\Controllers\Widget\ConversationRatingController;
 use App\Http\Controllers\Widget\ConversationTypingController;
+use App\Http\Middleware\AuthenticateApiToken;
+use App\Models\ApiToken;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/widget/bootstrap', BootstrapController::class)
@@ -96,3 +102,34 @@ Route::post('/integrations/gitlab/webhook/{connection}', GitLabWebhookController
 Route::post('/integrations/jira/webhook/{connection}', JiraWebhookController::class)
     ->middleware('throttle:integrations-webhook')
     ->name('integrations.jira.webhook');
+
+/*
+|--------------------------------------------------------------------------
+| Public API v1
+|--------------------------------------------------------------------------
+|
+| The only routes in this file that are a public contract (ADR 0018).
+| Everything above is the widget talking to its own backend or a provider
+| posting inbound -- internal surfaces that happen to be reachable over HTTP,
+| and deliberately NOT frozen by this version.
+|
+| Read-only for now. Writes and outbound webhooks follow separately, and stay
+| narrower than the dashboard.
+|
+*/
+Route::prefix('v1')
+    ->middleware([AuthenticateApiToken::class.':'.ApiToken::ABILITY_READ, 'throttle:api-token'])
+    ->name('api.v1.')
+    ->group(function (): void {
+        Route::get('/me', ApiTokenController::class)->name('me');
+
+        Route::get('/conversations', [ApiConversationController::class, 'index'])->name('conversations.index');
+        Route::get('/conversations/{supportCode}', [ApiConversationController::class, 'show'])->name('conversations.show');
+        Route::get('/conversations/{supportCode}/messages', [ApiConversationController::class, 'messages'])->name('conversations.messages');
+
+        Route::get('/tickets', [ApiTicketController::class, 'index'])->name('tickets.index');
+        Route::get('/tickets/{ticket}', [ApiTicketController::class, 'show'])->whereNumber('ticket')->name('tickets.show');
+
+        Route::get('/visitors', [ApiVisitorController::class, 'index'])->name('visitors.index');
+        Route::get('/visitors/{visitor}', [ApiVisitorController::class, 'show'])->whereNumber('visitor')->name('visitors.show');
+    });
