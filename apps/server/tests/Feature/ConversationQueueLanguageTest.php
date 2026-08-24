@@ -401,15 +401,24 @@ test('the queue claims to be translated, so a screen reader is told the truth', 
     // direction.
     $world = conversationQueueLanguageWorld();
 
+    // The ROOT is the shell's language, which is still English. The page
+    // region carries the agent's.
     $this->actingAs($world['agents']['de'])
         ->get(route('dashboard.conversations.index'))
         ->assertOk()
-        ->assertSee('<html lang="de"', false);
+        ->assertSee('<html lang="en"', false)
+        ->assertSee('<main class="page" lang="de"', false)
+        // And the crumb, which on THIS surface takes the rail label -- shell
+        // copy, still English -- inside a page that is German. The queue is the
+        // first surface where those two differ, and the layout's branch for it
+        // was untestable until this PR.
+        ->assertSee('<span class="wf-crumb-current" lang="en">Conversations', false);
 
     $this->actingAs($world['agents']['en'])
         ->get(route('dashboard.conversations.index'))
         ->assertOk()
-        ->assertSee('<html lang="en"', false);
+        ->assertSee('<html lang="en"', false)
+        ->assertSee('<main class="page" lang="en"', false);
 });
 
 test('translating a model would put German on pages that are still English', function (): void {

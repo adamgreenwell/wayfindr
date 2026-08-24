@@ -225,6 +225,12 @@ Two strings escape `<main>` and have to say so themselves: the document
 surfaces with no rail item. Both are page copy standing in shell territory, and
 without a `lang` of their own a screen reader pronounces them as English.
 
+The breadcrumb is the subtler of the two, because **which** language it is
+depends on where its label came from: a rail item's label is shell copy and
+still English, while the fallback to the page title is the agent's. Those only
+differ on a surface that is extracted *and* has a rail item — the conversation
+queue is the first, rendering a German page under an English crumb.
+
 ### Sentences are translated whole, never assembled
 
 The queue used to build its summary as `'Showing '.$count.' after the '.$lane.'
