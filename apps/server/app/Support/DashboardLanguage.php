@@ -41,7 +41,18 @@ final class DashboardLanguage
      */
     public static function for(?User $agent): string
     {
-        return self::normalise($agent?->locale) ?? self::FALLBACK;
+        return self::normalise($agent?->locale)
+            // "Use the install default" has to mean the install's default. An
+            // operator who set APP_LOCALE=de and left every agent unset -- which
+            // is every agent on an upgraded install -- got English from a
+            // hard-coded fallback, so the option did the one thing it names.
+            //
+            // Read from our own config key, NOT from `app.locale`:
+            // `App::setLocale()` mutates that one, so after a request rendered
+            // for a German agent it says "de", and the next agent with no
+            // preference silently inherits a language they never chose.
+            ?? self::normalise(config('wayfindr.dashboard_locale'))
+            ?? self::FALLBACK;
     }
 
     /**

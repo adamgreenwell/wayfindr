@@ -40,6 +40,34 @@ return [
         'lede' => 'Your current support signal path',
     ],
 
+    'readiness_cards' => [
+        'dashboard_label' => 'Dashboard alerts',
+        'paused' => 'Paused',
+        'quiet_detail' => 'Quiet mode suppresses new dashboard and email alerts.',
+        'listening' => 'Listening',
+        'listening_detail' => 'You will receive dashboard alerts for eligible support work.',
+        'scope_label' => 'Alert scope',
+        'scope_assigned' => 'Assigned to me',
+        'scope_assigned_detail' => 'Only conversations and tickets assigned to you create new alerts.',
+        'scope_quiet' => 'Quiet mode',
+        'scope_quiet_detail' => 'Your scope is paused until quiet mode is turned off.',
+        'scope_all' => 'All support work',
+        'scope_all_detail' => 'Conversations and tickets you can support can create new alerts.',
+        'email_label' => 'Email delivery',
+        'email_off' => 'Dashboard only',
+        'email_off_detail' => 'Email alerts are off for your profile.',
+        'email_ready' => 'Ready',
+        'email_ready_detail' => 'Email alerts are enabled and outbound mail looks configured.',
+        'email_setup' => 'Needs setup',
+        'cadence_label' => 'Cadence',
+        'cadence_unattended' => 'Unattended only',
+        'cadence_immediate' => 'Immediate',
+        'cadence_immediate_detail' => 'New eligible alerts can notify immediately when email alerts are enabled.',
+        'cadence_digest' => 'Digest',
+        'cadence_digest_off_detail' => 'Digest preference is saved, but email alerts are off.',
+        'cadence_digest_detail' => 'Digest delivery is preferred. Latest digest: :latest.',
+    ],
+
     'alerts' => [
         'heading' => 'Alert preferences',
         'lede' => 'Keep support signals useful',
@@ -68,6 +96,16 @@ return [
             'unattended' => 'Email only when a visitor waits unseen',
             'digest' => 'Prefer digest delivery when available',
         ],
+    ],
+
+    'digest' => [
+        'no_alerts_message' => 'No digest-ready alerts found.',
+        'failed_message' => 'Digest email could not be queued.',
+        'never_message' => 'No digest run has been recorded yet.',
+        'queued_label' => 'Queued digest email',
+        'no_alerts_label' => 'No digest-ready alerts',
+        'failed_label' => 'Digest delivery failed',
+        'never_label' => 'Not run yet',
     ],
 
     'password' => [

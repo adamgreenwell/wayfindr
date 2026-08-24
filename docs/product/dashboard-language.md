@@ -1,8 +1,19 @@
 # The language the dashboard speaks
 
-Status: **in progress.** The plumbing is shipped and one surface — the agent
-profile page — is fully translated. The remaining views are being extracted
-surface by surface.
+Status: **in progress.** The plumbing is shipped and the agent profile page is
+translated, with one recorded exception below. The remaining views are being
+extracted surface by surface.
+
+### The recorded exception
+
+The profile page shows a mail-readiness sentence built by `OperatorReadiness`.
+That class holds the **operator console's** vocabulary — around a thousand lines
+of copy shared across that surface — so it extracts with the operator console
+rather than from a page-shaped change reaching into it. Until then, an agent
+reading the dashboard in German sees that one sentence in English.
+
+Written down rather than left to be discovered, because the failure mode of an
+extraction is precisely a page that looks finished and is not.
 
 Distinct from [ADR 0017](../decisions/0017-speaking-the-visitors-language.md),
 which is about the **widget** and therefore about visitors. This is about

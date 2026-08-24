@@ -40,6 +40,34 @@ return [
         'lede' => 'Ihr aktueller Weg für Support-Signale',
     ],
 
+    'readiness_cards' => [
+        'dashboard_label' => 'Dashboard-Benachrichtigungen',
+        'paused' => 'Pausiert',
+        'quiet_detail' => 'Der Ruhemodus unterdrückt neue Dashboard- und E-Mail-Benachrichtigungen.',
+        'listening' => 'Aktiv',
+        'listening_detail' => 'Sie erhalten Dashboard-Benachrichtigungen für infrage kommende Support-Arbeit.',
+        'scope_label' => 'Benachrichtigungsumfang',
+        'scope_assigned' => 'Mir zugewiesen',
+        'scope_assigned_detail' => 'Nur Ihnen zugewiesene Konversationen und Tickets erzeugen neue Benachrichtigungen.',
+        'scope_quiet' => 'Ruhemodus',
+        'scope_quiet_detail' => 'Ihr Umfang ist pausiert, bis der Ruhemodus ausgeschaltet wird.',
+        'scope_all' => 'Gesamte Support-Arbeit',
+        'scope_all_detail' => 'Konversationen und Tickets, die Sie betreuen können, können neue Benachrichtigungen erzeugen.',
+        'email_label' => 'E-Mail-Zustellung',
+        'email_off' => 'Nur Dashboard',
+        'email_off_detail' => 'E-Mail-Benachrichtigungen sind für Ihr Profil ausgeschaltet.',
+        'email_ready' => 'Bereit',
+        'email_ready_detail' => 'E-Mail-Benachrichtigungen sind aktiviert und der Postausgang scheint eingerichtet.',
+        'email_setup' => 'Einrichtung erforderlich',
+        'cadence_label' => 'Rhythmus',
+        'cadence_unattended' => 'Nur unbeantwortet',
+        'cadence_immediate' => 'Sofort',
+        'cadence_immediate_detail' => 'Neue infrage kommende Benachrichtigungen können sofort zugestellt werden, wenn E-Mail-Benachrichtigungen aktiviert sind.',
+        'cadence_digest' => 'Sammelmeldung',
+        'cadence_digest_off_detail' => 'Die Einstellung zur Sammelzustellung ist gespeichert, aber E-Mail-Benachrichtigungen sind ausgeschaltet.',
+        'cadence_digest_detail' => 'Sammelzustellung wird bevorzugt. Letzte Sammelmeldung: :latest.',
+    ],
+
     'alerts' => [
         'heading' => 'Benachrichtigungseinstellungen',
         'lede' => 'Halten Sie Support-Signale nützlich',
@@ -68,6 +96,16 @@ return [
             'unattended' => 'Nur per E-Mail, wenn ein Besucher ungesehen wartet',
             'digest' => 'Sammelzustellung bevorzugen, wenn verfügbar',
         ],
+    ],
+
+    'digest' => [
+        'no_alerts_message' => 'Keine für die Sammelmeldung geeigneten Benachrichtigungen gefunden.',
+        'failed_message' => 'Die Sammel-E-Mail konnte nicht eingereiht werden.',
+        'never_message' => 'Es wurde noch kein Sammellauf aufgezeichnet.',
+        'queued_label' => 'Sammel-E-Mail eingereiht',
+        'no_alerts_label' => 'Keine geeigneten Benachrichtigungen',
+        'failed_label' => 'Sammelzustellung fehlgeschlagen',
+        'never_label' => 'Noch nicht ausgeführt',
     ],
 
     'password' => [

@@ -210,9 +210,9 @@ class User extends Authenticatable
         if (! is_string($message) || trim($message) === '') {
             $message = match ($status) {
                 self::ALERT_DIGEST_DELIVERY_QUEUED => $this->digestQueuedMessage($candidateCount),
-                self::ALERT_DIGEST_DELIVERY_NO_ALERTS => 'No digest-ready alerts found.',
-                self::ALERT_DIGEST_DELIVERY_FAILED => 'Digest email could not be queued.',
-                default => 'No digest run has been recorded yet.',
+                self::ALERT_DIGEST_DELIVERY_NO_ALERTS => __('profile.digest.no_alerts_message'),
+                self::ALERT_DIGEST_DELIVERY_FAILED => __('profile.digest.failed_message'),
+                default => __('profile.digest.never_message'),
             };
         }
 
@@ -222,10 +222,10 @@ class User extends Authenticatable
         return [
             'status' => $status,
             'label' => match ($status) {
-                self::ALERT_DIGEST_DELIVERY_QUEUED => 'Queued digest email',
-                self::ALERT_DIGEST_DELIVERY_NO_ALERTS => 'No digest-ready alerts',
-                self::ALERT_DIGEST_DELIVERY_FAILED => 'Digest delivery failed',
-                default => 'Not run yet',
+                self::ALERT_DIGEST_DELIVERY_QUEUED => __('profile.digest.queued_label'),
+                self::ALERT_DIGEST_DELIVERY_NO_ALERTS => __('profile.digest.no_alerts_label'),
+                self::ALERT_DIGEST_DELIVERY_FAILED => __('profile.digest.failed_label'),
+                default => __('profile.digest.never_label'),
             },
             'candidate_count' => $candidateCount,
             'message' => $message,

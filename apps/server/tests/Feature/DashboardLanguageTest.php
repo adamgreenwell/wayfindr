@@ -147,3 +147,79 @@ test('the extracted surface has no copy left behind in its view', function (): v
 
     expect($matches[0])->toBe([]);
 });
+
+test('an install that sets its own language gets it, for agents who chose nothing', function (): void {
+    // "Use the install default" has to mean the install's default. Every agent
+    // on an upgraded install has no preference, so this IS the common path.
+    config()->set('wayfindr.dashboard_locale', 'de');
+
+    $this->actingAs(languageAgent())
+        ->get(route('dashboard.profile.show'))
+        ->assertOk()
+        ->assertSee('Ihr Profil')
+        ->assertDontSee('Your profile');
+});
+
+test('rendering for one agent does not change the default for the next', function (): void {
+    // `App::setLocale()` mutates `config('app.locale')`, so reading the install
+    // default from there meant a request rendered for a German agent left the
+    // config saying "de" -- and the next agent with no preference silently
+    // inherited a language they never chose. Two requests in one process is all
+    // it took.
+    $account = Account::factory()->create();
+    $german = User::factory()->for($account)->create(['locale' => 'de']);
+    $unset = User::factory()->for($account)->create(['locale' => null]);
+
+    $this->actingAs($german)->get(route('dashboard.profile.show'))->assertOk();
+
+    $this->actingAs($unset)
+        ->get(route('dashboard.profile.show'))
+        ->assertOk()
+        ->assertSee('Your profile')
+        ->assertDontSee('Ihr Profil');
+});
+
+test('the profile page renders no English at all in German', function (): void {
+    // The claim this slice makes is a COMPLETE surface, and the way that claim
+    // fails is a page in two languages at once -- the view translated while a
+    // controller or model goes on emitting English nobody grepped for.
+    $agent = languageAgent('de');
+
+    $html = $this->actingAs($agent)
+        ->get(route('dashboard.profile.show'))
+        ->assertOk()
+        ->getContent();
+
+    // Every distinct English string this page is built from, wherever it is
+    // assembled: the view, the controller's readiness cards, and the model's
+    // option and digest maps.
+    //
+    // ONE thing on this page is knowingly not covered: the mail readiness
+    // summary comes from `OperatorReadiness`, whose vocabulary belongs to the
+    // operator console and extracts with that surface rather than from a
+    // page-shaped slice reaching into a thousand lines of shared copy. It is
+    // recorded in docs/product/dashboard-language.md, not left to be
+    // discovered.
+    $english = collect(require lang_path('en/profile.php'))
+        ->pipe(function ($items) {
+            $flat = [];
+
+            $walk = function (array $node) use (&$walk, &$flat): void {
+                foreach ($node as $value) {
+                    is_array($value) ? $walk($value) : $flat[] = $value;
+                }
+            };
+
+            $walk($items->all());
+
+            return collect($flat);
+        })
+        // The tab title and role names are proper nouns or identical across
+        // both catalogues; comparing them proves nothing.
+        ->reject(fn (string $line): bool => mb_strlen($line) < 12)
+        ->reject(fn (string $line): bool => str_contains($line, ':latest'));
+
+    $leaked = $english->filter(fn (string $line): bool => str_contains($html, $line));
+
+    expect($leaked->values()->all())->toBe([]);
+});
