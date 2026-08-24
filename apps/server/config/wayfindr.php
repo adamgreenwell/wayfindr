@@ -70,8 +70,17 @@ return [
 
     // FAILED authentication attempts per minute per IP. Only failures spend
     // it, so a working integration never touches this however much traffic it
-    // sends -- it bounds what probing for a valid token can cost.
+    // sends -- and going over it refuses credentials that do not authenticate
+    // rather than the address, so one broken script cannot lock every other
+    // integration behind the same NAT out of its own account.
     'api_failed_auth_per_minute' => (int) env('WAYFINDR_API_FAILED_AUTH_PER_MINUTE', 60),
+
+    // The install's own default dashboard language, read from the environment
+    // rather than from `app.locale` at runtime: `App::setLocale()` MUTATES that
+    // config value, so a request rendered for a German agent leaves it saying
+    // "de" and the next agent with no preference inherits a language they never
+    // chose. Laravel never touches this key.
+    'dashboard_locale' => (string) env('APP_LOCALE', 'en'),
 
     'widget_rate_limits' => [
         'bootstrap_per_minute' => (int) env('WAYFINDR_WIDGET_BOOTSTRAP_RATE_LIMIT', 120),

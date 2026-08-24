@@ -172,7 +172,7 @@ test('the breadcrumb names the account and the current section', function (): vo
         ->assertOk()
         ->assertSee('aria-label="Breadcrumb"', false)
         ->assertSee('wf-crumb-current', false)
-        ->assertSeeInOrder(['Acme Support', 'wf-crumb-current">Tickets'], false);
+        ->assertSeeInOrder(['Acme Support', 'wf-crumb-current" lang="en">Tickets'], false);
 });
 
 test('the breadcrumb falls back to the page title outside the rail', function (): void {
@@ -183,7 +183,7 @@ test('the breadcrumb falls back to the page title outside the rail', function ()
     $this->actingAs($agent)
         ->get('/dashboard/profile')
         ->assertOk()
-        ->assertSee('wf-crumb-current">Agent Profile', false);
+        ->assertSee('wf-crumb-current" lang="en">Agent Profile', false);
 });
 
 test('every navigation item keeps a text label for assistive technology', function (): void {

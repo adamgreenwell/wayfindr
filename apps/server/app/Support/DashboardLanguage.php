@@ -1,0 +1,140 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Support;
+
+use App\Models\User;
+
+/**
+ * The language the dashboard speaks to one agent.
+ *
+ * A per-agent choice rather than an account or install setting, because the
+ * dashboard is read by people rather than by an organisation: a support team
+ * spread across countries has agents who each want their own tools in their own
+ * language, and none of them should have to argue with a colleague about it.
+ *
+ * Distinct from `WidgetLanguage`, which is the operator's guess at who VISITS.
+ * The two lists happen to match today and are not required to: a desk can
+ * perfectly well answer German visitors from an English-speaking dashboard.
+ */
+final class DashboardLanguage
+{
+    /**
+     * Languages the dashboard carries a catalogue for.
+     *
+     * **Autonyms — each language named in its own language, never glossed.**
+     * This list is deliberately NOT translated and is deliberately identical in
+     * every rendering language, which is the one place on a translated page
+     * where copy reading the same in English and German is correct.
+     *
+     * The reason is who reads it. This selector asks an agent which language
+     * *they* want to read, so the reader of any option is by definition someone
+     * who reads that language, and `Deutsch` is what they are looking for. The
+     * gloss it used to carry — `Deutsch (German)` — helped exactly one audience,
+     * English readers, and put an English word inside the German page for
+     * everyone else.
+     *
+     * Contrast `Sites\WidgetLanguage`, which keeps its glosses on purpose: that
+     * list asks an operator to choose a language for VISITORS, and the operator
+     * may well not read it. Same words, different question.
+     *
+     * @var array<string, string>
+     */
+    public const SUPPORTED = [
+        'en' => 'English',
+        'de' => 'Deutsch',
+    ];
+
+    public const FALLBACK = 'en';
+
+    /**
+     * Route names whose copy has been through the extraction (#749).
+     *
+     * The dashboard is translated a surface at a time, so this list exists for
+     * the length of the epic and then deletes itself.
+     *
+     * It scopes the LOCALE, not just the `lang` attribute, and that distinction
+     * was the whole lesson. Switching the locale globally and marking only the
+     * document put German fragments inside pages that correctly declared
+     * themselves English -- a model's option labels here, a Carbon
+     * `diffForHumans()` there, a validation message somewhere else. Each one is
+     * a separate leak with a separate fix, and there is no end to the list.
+     *
+     * Scoping the locale answers all of them at once: on a surface that has not
+     * been extracted, nothing is translated, so nothing can be inconsistent and
+     * `lang="en"` is simply true.
+     *
+     * Write routes are here alongside their page because they render it back on
+     * a validation failure.
+     */
+    public const EXTRACTED_ROUTES = [
+        'dashboard.profile.show',
+        'dashboard.profile.update',
+        'dashboard.profile.alerts.update',
+        'dashboard.profile.password.update',
+    ];
+
+    /**
+     * The locale to render a given request in.
+     *
+     * An agent's own language on a surface that can speak it, and English
+     * everywhere else -- including for an install whose own default is German,
+     * because an unextracted page has no German to show.
+     */
+    public static function forRequest(?User $agent, ?string $routeName): string
+    {
+        return $routeName !== null && in_array($routeName, self::EXTRACTED_ROUTES, true)
+            ? self::for($agent)
+            : self::FALLBACK;
+    }
+
+    /**
+     * The locale to render for this agent, always something we can render.
+     *
+     * Null preference means the install default rather than a broken page --
+     * every agent predates this setting, so null is the common case and has to
+     * be the safe one.
+     */
+    public static function for(?User $agent): string
+    {
+        return self::normalise($agent?->locale)
+            // "Use the install default" has to mean the install's default. An
+            // operator who set APP_LOCALE=de and left every agent unset -- which
+            // is every agent on an upgraded install -- got English from a
+            // hard-coded fallback, so the option did the one thing it names.
+            //
+            // Read from our own config key, NOT from `app.locale`:
+            // `App::setLocale()` mutates that one, so after a request rendered
+            // for a German agent it says "de", and the next agent with no
+            // preference silently inherits a language they never chose.
+            ?? self::normalise(config('wayfindr.dashboard_locale'))
+            ?? self::FALLBACK;
+    }
+
+    /**
+     * A supported locale, or null when it is not one we can render.
+     */
+    public static function normalise(mixed $locale): ?string
+    {
+        if (! is_string($locale) || $locale === '') {
+            return null;
+        }
+
+        // `de-DE` and `de_DE` both mean German here. The dashboard does not
+        // carry regional variants, and refusing one because of its suffix
+        // would be pedantry rather than accuracy.
+        $base = strtolower(str_replace('_', '-', trim($locale)));
+        $base = explode('-', $base)[0];
+
+        return array_key_exists($base, self::SUPPORTED) ? $base : null;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function options(): array
+    {
+        return self::SUPPORTED;
+    }
+}

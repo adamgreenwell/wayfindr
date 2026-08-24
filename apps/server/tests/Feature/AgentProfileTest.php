@@ -101,7 +101,7 @@ test('agent can update their alert preference mode', function (): void {
             'email_alerts' => '1',
         ])
         ->assertRedirect('/dashboard/profile')
-        ->assertSessionHas('status', 'Alert preferences updated.');
+        ->assertSessionHas('status', 'profile.flash.alerts_updated');
 
     expect($agent->fresh()->alert_preferences)->toMatchArray([
         'mode' => 'assigned',
@@ -155,7 +155,7 @@ test('agent can choose their email alert delivery cadence', function (): void {
             'alert_cadence' => 'digest',
         ])
         ->assertRedirect('/dashboard/profile')
-        ->assertSessionHas('status', 'Alert preferences updated.');
+        ->assertSessionHas('status', 'profile.flash.alerts_updated');
 
     expect($agent->fresh()->alert_preferences)->toMatchArray([
         'mode' => 'all',
@@ -348,7 +348,7 @@ test('agent can disable email alert delivery while keeping dashboard alerts', fu
             'alert_mode' => 'all',
         ])
         ->assertRedirect('/dashboard/profile')
-        ->assertSessionHas('status', 'Alert preferences updated.');
+        ->assertSessionHas('status', 'profile.flash.alerts_updated');
 
     expect($agent->fresh()->alert_preferences)->toMatchArray([
         'mode' => 'all',
@@ -368,7 +368,7 @@ test('agent can update their display name', function (): void {
             'name' => 'Ada Lovelace',
         ])
         ->assertRedirect('/dashboard/profile')
-        ->assertSessionHas('status', 'Profile updated.');
+        ->assertSessionHas('status', 'profile.flash.profile_updated');
 
     expect($agent->fresh()->name)->toBe('Ada Lovelace');
 });
@@ -386,7 +386,7 @@ test('agent can change their password with the current password', function (): v
             'password_confirmation' => 'new-password',
         ])
         ->assertRedirect('/dashboard/profile')
-        ->assertSessionHas('status', 'Password updated.');
+        ->assertSessionHas('status', 'profile.flash.password_updated');
 
     $auditEvent = AuditEvent::query()
         ->where('action', 'agent.password_updated')
@@ -415,4 +415,35 @@ test('agent cannot change their password with the wrong current password', funct
 
     expect(Hash::check('old-password', $agent->fresh()->password))->toBeTrue()
         ->and(AuditEvent::query()->where('action', 'agent.password_updated')->exists())->toBeFalse();
+});
+
+test('a confirmation reaches the page as a sentence, not as a catalogue key', function (): void {
+    // The flash travels as a key so it can be translated in the request that
+    // shows it (see docs/product/dashboard-language.md). That trade is only
+    // sound if the view actually translates it -- if it ever stops, every
+    // confirmation on this page silently becomes `profile.flash.something`,
+    // and the tests above would still pass because the session is right.
+    $agent = User::factory()->for(Account::factory())->create([
+        'password' => Hash::make('old-password'),
+    ]);
+
+    $submissions = [
+        ['/dashboard/profile', ['name' => 'Ada Lovelace'], 'Profile updated.'],
+        ['/dashboard/profile/alerts', ['alert_mode' => User::ALERT_MODE_ALL], 'Alert preferences updated.'],
+        ['/dashboard/profile/password', [
+            'current_password' => 'old-password',
+            'password' => 'new-password',
+            'password_confirmation' => 'new-password',
+        ], 'Password updated.'],
+    ];
+
+    foreach ($submissions as [$route, $payload, $expected]) {
+        $this->actingAs($agent->fresh())
+            ->from('/dashboard/profile')
+            ->followingRedirects()
+            ->put($route, $payload)
+            ->assertOk()
+            ->assertSee($expected)
+            ->assertDontSee('profile.flash');
+    }
 });

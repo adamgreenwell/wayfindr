@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\AccountRole;
 use App\Models\AuditEvent;
 use App\Models\User;
+use App\Support\DashboardLanguage;
 use App\Support\OperatorReadiness;
 use App\Support\UnattendedConversationAlertCollector;
 use Carbon\CarbonImmutable;
@@ -31,9 +32,9 @@ class AgentProfileController extends Controller
             'agent' => $agent,
             'account' => $account,
             'roleLabels' => [
-                AccountRole::Owner->value => 'Owner',
-                AccountRole::Admin->value => 'Admin',
-                AccountRole::Agent->value => 'Agent',
+                AccountRole::Owner->value => __('profile.roles.owner'),
+                AccountRole::Admin->value => __('profile.roles.admin'),
+                AccountRole::Agent->value => __('profile.roles.agent'),
             ],
             'alertMode' => $agent->alertMode(),
             'alertModeOptions' => $agent::alertModeOptions(),
@@ -51,15 +52,25 @@ class AgentProfileController extends Controller
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
+            'locale' => ['nullable', 'string', Rule::in(array_keys(DashboardLanguage::SUPPORTED))],
         ]);
 
         $request->user()->update([
             'name' => trim($validated['name']),
+            // Null means "follow the install", which is what every agent had
+            // before this existed and stays the safe answer.
+            'locale' => DashboardLanguage::normalise($validated['locale'] ?? null),
         ]);
 
+        // The KEY travels, not the sentence. This action can change the agent's
+        // own language, and the flash is built here while the request is still
+        // running under the language they are leaving -- so translating now
+        // lands a German page carrying an English confirmation, or the reverse.
+        // Translating where it is displayed makes the ordering irrelevant
+        // rather than making this one ordering correct.
         return redirect()
             ->route('dashboard.profile.show')
-            ->with('status', 'Profile updated.');
+            ->with('status', 'profile.flash.profile_updated');
     }
 
     public function updateAlertPreferences(Request $request): RedirectResponse
@@ -83,7 +94,7 @@ class AgentProfileController extends Controller
 
         return redirect()
             ->route('dashboard.profile.show')
-            ->with('status', 'Alert preferences updated.');
+            ->with('status', 'profile.flash.alerts_updated');
     }
 
     public function updatePassword(Request $request): RedirectResponse
@@ -114,7 +125,7 @@ class AgentProfileController extends Controller
 
         return redirect()
             ->route('dashboard.profile.show')
-            ->with('status', 'Password updated.');
+            ->with('status', 'profile.flash.password_updated');
     }
 
     /**
@@ -142,18 +153,18 @@ class AgentProfileController extends Controller
     {
         if ($agent->alertMode() === User::ALERT_MODE_QUIET) {
             return [
-                'label' => 'Dashboard alerts',
-                'status' => 'Paused',
+                'label' => __('profile.readiness_cards.dashboard_label'),
+                'status' => __('profile.readiness_cards.paused'),
                 'tone' => 'manual',
-                'detail' => 'Quiet mode suppresses new dashboard and email alerts.',
+                'detail' => __('profile.readiness_cards.quiet_detail'),
             ];
         }
 
         return [
-            'label' => 'Dashboard alerts',
-            'status' => 'Listening',
+            'label' => __('profile.readiness_cards.dashboard_label'),
+            'status' => __('profile.readiness_cards.listening'),
             'tone' => 'ready',
-            'detail' => 'You will receive dashboard alerts for eligible support work.',
+            'detail' => __('profile.readiness_cards.listening_detail'),
         ];
     }
 
@@ -164,22 +175,22 @@ class AgentProfileController extends Controller
     {
         return match ($agent->alertMode()) {
             User::ALERT_MODE_ASSIGNED => [
-                'label' => 'Alert scope',
-                'status' => 'Assigned to me',
+                'label' => __('profile.readiness_cards.scope_label'),
+                'status' => __('profile.readiness_cards.scope_assigned'),
                 'tone' => 'ready',
-                'detail' => 'Only conversations and tickets assigned to you create new alerts.',
+                'detail' => __('profile.readiness_cards.scope_assigned_detail'),
             ],
             User::ALERT_MODE_QUIET => [
-                'label' => 'Alert scope',
-                'status' => 'Quiet mode',
+                'label' => __('profile.readiness_cards.scope_label'),
+                'status' => __('profile.readiness_cards.scope_quiet'),
                 'tone' => 'manual',
-                'detail' => 'Your scope is paused until quiet mode is turned off.',
+                'detail' => __('profile.readiness_cards.scope_quiet_detail'),
             ],
             default => [
-                'label' => 'Alert scope',
-                'status' => 'All support work',
+                'label' => __('profile.readiness_cards.scope_label'),
+                'status' => __('profile.readiness_cards.scope_all'),
                 'tone' => 'ready',
-                'detail' => 'Conversations and tickets you can support can create new alerts.',
+                'detail' => __('profile.readiness_cards.scope_all_detail'),
             ],
         };
     }
@@ -192,26 +203,36 @@ class AgentProfileController extends Controller
     {
         if (! $agent->alertEmailEnabled()) {
             return [
-                'label' => 'Email delivery',
-                'status' => 'Dashboard only',
+                'label' => __('profile.readiness_cards.email_label'),
+                'status' => __('profile.readiness_cards.email_off'),
                 'tone' => 'manual',
-                'detail' => 'Email alerts are off for your profile.',
+                'detail' => __('profile.readiness_cards.email_off_detail'),
             ];
         }
 
         if (($mailReadiness['status'] ?? null) === 'ready') {
             return [
-                'label' => 'Email delivery',
-                'status' => 'Ready',
+                'label' => __('profile.readiness_cards.email_label'),
+                'status' => __('profile.readiness_cards.email_ready'),
                 'tone' => 'ready',
-                'detail' => 'Email alerts are enabled and outbound mail looks configured.',
+                'detail' => __('profile.readiness_cards.email_ready_detail'),
             ];
         }
 
         return [
-            'label' => 'Email delivery',
-            'status' => 'Needs setup',
+            'label' => __('profile.readiness_cards.email_label'),
+            'status' => __('profile.readiness_cards.email_setup'),
             'tone' => 'attention',
+            // `OperatorReadiness` supplies this sentence and its vocabulary is
+            // the operator console's, which extracts with that surface -- the
+            // recorded exception in docs/product/dashboard-language.md.
+            //
+            // It has to SAY it is English. It sits inside a page region marked
+            // with the agent's language, so left unmarked a screen reader
+            // pronounces the one deliberately untranslated sentence on the page
+            // with German phonetics. An exception that is invisible to
+            // assistive technology is not an exception, it is a defect.
+            'detail_locale' => DashboardLanguage::FALLBACK,
             'detail' => trim(($mailReadiness['summary'] ?? 'Outbound mail is not ready.').' '.($mailReadiness['action'] ?? '')),
         ];
     }
@@ -224,30 +245,30 @@ class AgentProfileController extends Controller
     {
         if ($alertCadence === User::ALERT_CADENCE_UNATTENDED) {
             return [
-                'label' => 'Cadence',
-                'status' => 'Unattended only',
+                'label' => __('profile.readiness_cards.cadence_label'),
+                'status' => __('profile.readiness_cards.cadence_unattended'),
                 'tone' => $emailEnabled ? 'ready' : 'manual',
                 'detail' => $emailEnabled
-                    ? sprintf('Email goes out only when a visitor message stays unseen for %d minutes.', UnattendedConversationAlertCollector::THRESHOLD_MINUTES)
-                    : 'Unattended preference is saved, but email alerts are off.',
+                    ? __('profile.readiness_cards.cadence_unattended_detail', ['minutes' => UnattendedConversationAlertCollector::THRESHOLD_MINUTES])
+                    : __('profile.readiness_cards.cadence_unattended_off_detail'),
             ];
         }
 
         if ($alertCadence !== User::ALERT_CADENCE_DIGEST) {
             return [
-                'label' => 'Cadence',
-                'status' => 'Immediate',
+                'label' => __('profile.readiness_cards.cadence_label'),
+                'status' => __('profile.readiness_cards.cadence_immediate'),
                 'tone' => 'ready',
-                'detail' => 'New eligible alerts can notify immediately when email alerts are enabled.',
+                'detail' => __('profile.readiness_cards.cadence_immediate_detail'),
             ];
         }
 
         if (! $emailEnabled) {
             return [
-                'label' => 'Cadence',
-                'status' => 'Digest',
+                'label' => __('profile.readiness_cards.cadence_label'),
+                'status' => __('profile.readiness_cards.cadence_digest'),
                 'tone' => 'manual',
-                'detail' => 'Digest preference is saved, but email alerts are off.',
+                'detail' => __('profile.readiness_cards.cadence_digest_off_detail'),
             ];
         }
 
@@ -258,15 +279,15 @@ class AgentProfileController extends Controller
         }
 
         return [
-            'label' => 'Cadence',
-            'status' => 'Digest',
+            'label' => __('profile.readiness_cards.cadence_label'),
+            'status' => __('profile.readiness_cards.cadence_digest'),
             'tone' => match ($digestDeliveryStatus['status']) {
                 User::ALERT_DIGEST_DELIVERY_FAILED => 'attention',
                 User::ALERT_DIGEST_DELIVERY_QUEUED,
                 User::ALERT_DIGEST_DELIVERY_NO_ALERTS => 'ready',
                 default => 'manual',
             },
-            'detail' => 'Digest delivery is preferred. Latest digest: '.$latestDigest.'.',
+            'detail' => __('profile.readiness_cards.cadence_digest_detail', ['latest' => $latestDigest]),
         ];
     }
 }

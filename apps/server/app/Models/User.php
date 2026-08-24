@@ -19,7 +19,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Throwable;
 
-#[Fillable(['account_id', 'account_role', 'platform_role', 'name', 'email', 'password', 'deactivated_at', 'alert_preferences'])]
+#[Fillable(['account_id', 'account_role', 'platform_role', 'name', 'email', 'password', 'deactivated_at', 'alert_preferences', 'locale'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -69,9 +69,9 @@ class User extends Authenticatable
     public static function alertModeOptions(): array
     {
         return [
-            self::ALERT_MODE_ALL => 'All site alerts I can support',
-            self::ALERT_MODE_ASSIGNED => 'Only conversations and tickets assigned to me',
-            self::ALERT_MODE_QUIET => 'Quiet mode',
+            self::ALERT_MODE_ALL => __('profile.alerts.modes.all'),
+            self::ALERT_MODE_ASSIGNED => __('profile.alerts.modes.assigned'),
+            self::ALERT_MODE_QUIET => __('profile.alerts.modes.quiet'),
         ];
     }
 
@@ -81,9 +81,9 @@ class User extends Authenticatable
     public static function alertCadenceOptions(): array
     {
         return [
-            self::ALERT_CADENCE_IMMEDIATE => 'Send email alerts as they happen',
-            self::ALERT_CADENCE_UNATTENDED => 'Email only when a visitor waits unseen',
-            self::ALERT_CADENCE_DIGEST => 'Prefer digest delivery when available',
+            self::ALERT_CADENCE_IMMEDIATE => __('profile.alerts.cadences.immediate'),
+            self::ALERT_CADENCE_UNATTENDED => __('profile.alerts.cadences.unattended'),
+            self::ALERT_CADENCE_DIGEST => __('profile.alerts.cadences.digest'),
         ];
     }
 
@@ -205,16 +205,18 @@ class User extends Authenticatable
             : self::ALERT_DIGEST_DELIVERY_NOT_RUN;
 
         $candidateCount = (int) data_get($delivery, 'candidate_count', 0);
-        $message = data_get($delivery, 'message');
-
-        if (! is_string($message) || trim($message) === '') {
-            $message = match ($status) {
-                self::ALERT_DIGEST_DELIVERY_QUEUED => $this->digestQueuedMessage($candidateCount),
-                self::ALERT_DIGEST_DELIVERY_NO_ALERTS => 'No digest-ready alerts found.',
-                self::ALERT_DIGEST_DELIVERY_FAILED => 'Digest email could not be queued.',
-                default => 'No digest run has been recorded yet.',
-            };
-        }
+        // Derived from the STATUS, never read back from the stored prose. The
+        // scheduler persists an English sentence with every run, so printing
+        // what it stored means a German agent reads English for every digest
+        // that has actually happened -- and the translated version would only
+        // ever appear on an install where the scheduler had never run, which is
+        // exactly backwards.
+        $message = match ($status) {
+            self::ALERT_DIGEST_DELIVERY_QUEUED => $this->digestQueuedMessage($candidateCount),
+            self::ALERT_DIGEST_DELIVERY_NO_ALERTS => __('profile.digest.no_alerts_message'),
+            self::ALERT_DIGEST_DELIVERY_FAILED => __('profile.digest.failed_message'),
+            default => __('profile.digest.never_message'),
+        };
 
         $error = data_get($delivery, 'error');
         $attemptedAt = data_get($delivery, 'last_attempted_at');
@@ -222,10 +224,10 @@ class User extends Authenticatable
         return [
             'status' => $status,
             'label' => match ($status) {
-                self::ALERT_DIGEST_DELIVERY_QUEUED => 'Queued digest email',
-                self::ALERT_DIGEST_DELIVERY_NO_ALERTS => 'No digest-ready alerts',
-                self::ALERT_DIGEST_DELIVERY_FAILED => 'Digest delivery failed',
-                default => 'Not run yet',
+                self::ALERT_DIGEST_DELIVERY_QUEUED => __('profile.digest.queued_label'),
+                self::ALERT_DIGEST_DELIVERY_NO_ALERTS => __('profile.digest.no_alerts_label'),
+                self::ALERT_DIGEST_DELIVERY_FAILED => __('profile.digest.failed_label'),
+                default => __('profile.digest.never_label'),
             },
             'candidate_count' => $candidateCount,
             'message' => $message,
@@ -236,7 +238,10 @@ class User extends Authenticatable
 
     public static function digestQueuedMessage(int $candidateCount): string
     {
-        return 'Queued digest email with '.$candidateCount.' '.str('alert')->plural($candidateCount).'.';
+        // `trans_choice` rather than a hand-built plural: English pluralises by
+        // adding an s and German does not, so the rule has to live in the
+        // catalogue with the words rather than in the code beside them.
+        return trans_choice('profile.digest.queued_message', $candidateCount, ['count' => $candidateCount]);
     }
 
     public function shouldReceiveConversationAlert(Conversation $conversation): bool

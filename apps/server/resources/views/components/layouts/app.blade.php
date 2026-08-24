@@ -8,12 +8,27 @@
 ])
 
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+{{-- The SHELL's language, which is not yet the agent's.
+
+     The navigation, the topbar and the support-code search in this file are
+     still English, so a document that declared itself German would be lying
+     about most of its own chrome -- and a screen reader would pronounce
+     "Conversations" and "Sign out" with German phonetics. That is the same
+     defect as the one the scoped locale fixed, arriving from the other
+     direction: there the body was English inside a German document, here the
+     shell is English inside one.
+
+     So the root states the shell's language and the page region below states
+     its own. When the shell itself is extracted this becomes
+     `app()->getLocale()` and the `lang` on `<main>` stops being needed. --}}
+<html lang="{{ str_replace('_', '-', \App\Support\DashboardLanguage::FALLBACK) }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{{ $title }}</title>
+    {{-- The title is the PAGE's copy, and the page may speak a different
+         language from the shell around it -- see the `lang` on `<html>`. --}}
+    <title lang="{{ str_replace('_', '-', app()->getLocale()) }}">{{ $title }}</title>
     <script>
         (function () {
             try {
@@ -2772,6 +2787,17 @@
             // the honest answer when there is one; the page title covers the
             // screens that sit outside the rail, like Profile.
             $currentLabel = collect($workItems)->concat($manageItems)->firstWhere('active')['label'] ?? $title;
+
+            // The crumb sits outside `<main>`, so it says which language it is
+            // rather than inheriting the root and being pronounced as English.
+            //
+            // The page's language covers every case that exists today: a rail
+            // label is shell copy and the shell is English, and the locale is
+            // English on any surface that has not been extracted -- so the two
+            // only diverge once an EXTRACTED surface also has a rail item.
+            // Nothing does yet, which is why this is one value rather than a
+            // branch nothing could exercise.
+            $pageLocale = str_replace('_', '-', app()->getLocale());
         @endphp
 
         <div class="wf-app">
@@ -2826,9 +2852,9 @@
                         @if ($crumb)
                             <a href="{{ route('operator.dashboard') }}">{{ $currentLabel }}</a>
                             <x-icon name="chevron-right" :size="13" />
-                            <span class="wf-crumb-current">{{ $crumb }}</span>
+                            <span class="wf-crumb-current" lang="{{ $pageLocale }}">{{ $crumb }}</span>
                         @else
-                            <span class="wf-crumb-current">{{ $currentLabel }}</span>
+                            <span class="wf-crumb-current" lang="{{ $pageLocale }}">{{ $currentLabel }}</span>
                         @endif
                     </nav>
 
@@ -2839,7 +2865,9 @@
                     </form>
                 </header>
 
-                <main class="page">
+                {{-- The page's own language, which on an extracted surface is
+                     the agent's and everywhere else is the shell's. --}}
+                <main class="page" lang="{{ str_replace('_', '-', app()->getLocale()) }}">
                     @if (session('support_code_lookup_result'))
                         <p class="status-message">{{ session('support_code_lookup_result') }}</p>
                     @endif
