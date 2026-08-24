@@ -160,6 +160,38 @@ function conversationQueueLanguageWorld(int $conversations = 3): array
                     'reconnects' => 0,
                     'dropped_batches' => 0,
                 ],
+                // A snapshot, a mutation stream and page state, so the
+                // replay preview, the drift line, the snapshot panel and the
+                // page-state grid all render. Without these that half of the
+                // panel is absent and every assertion over it is vacuous --
+                // two mutations survived on exactly that.
+                'snapshot' => [
+                    'reported_at' => now()->subMinutes(9)->toJSON(),
+                    'node_count' => 120,
+                    'masked_count' => 4,
+                    'html' => '<p>Datenpunkt</p>',
+                    'text' => 'Datenpunkt snapshot text',
+                    'page_url' => 'https://datenpunkt.test/checkout',
+                    'title' => 'Datenpunkt checkout',
+                ],
+                'mutations' => [
+                    'batch_count' => 3,
+                    'mutation_count' => 7,
+                    'dropped_count' => 2,
+                    'skipped_count' => 1,
+                    'last_sequence' => 12,
+                    'last_page_url' => 'https://datenpunkt.test/checkout',
+                ],
+                'page_state' => [
+                    'viewport_width' => 1440,
+                    'viewport_height' => 900,
+                    'scroll_x' => 0,
+                    'scroll_y' => 240,
+                    'focused' => true,
+                    'page_url' => 'https://datenpunkt.test/checkout',
+                    'title' => 'Datenpunkt checkout',
+                    'visibility_state' => 'visible',
+                ],
                 // A fulfilled resync request, so the recovery timeline renders.
                 // Without one the timeline is absent and its timestamps are
                 // audited nowhere -- a mutation that dropped their language
@@ -1010,6 +1042,7 @@ function conversationQueueLanguageCognates(): array
         'Status' => 'the same word in both languages',
         'Normal' => 'the same word in both languages, as a priority',
         'Live' => 'the same word in both languages, as a transport state',
+        'URL' => 'the same word in both languages',
         'Label' => 'a loanword German uses as-is',
         'Labels' => 'a loanword German uses as-is',
         'English' => 'an autonym -- the language selector names each language in its own language',

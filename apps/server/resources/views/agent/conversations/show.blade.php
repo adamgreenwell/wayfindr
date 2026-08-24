@@ -238,9 +238,9 @@
                     <div class="section-header">
                         <strong>{{ __('conversations.detail.cobrowse.replay_preview') }}</strong>
                         <span class="lede">
-                            <span data-cobrowse-replay-applied>{{ $cobrowseConsent['replay_preview']['applied_mutations'] }}</span>
+                            <span data-cobrowse-replay-applied>{{ __('cobrowse.units.applied', ['count' => number_format($cobrowseConsent['replay_preview']['applied_mutations_value'])]) }}</span>
                             /
-                            <span data-cobrowse-replay-skipped>{{ $cobrowseConsent['replay_preview']['skipped_mutations'] }}</span>
+                            <span data-cobrowse-replay-skipped>{{ __('cobrowse.units.skipped', ['count' => number_format($cobrowseConsent['replay_preview']['skipped_mutations_value'])]) }}</span>
                         </span>
                         @if ($cobrowseConsent['replay_preview']['viewport_width'])
                             <span class="lede" data-cobrowse-viewport-label>{{ __('cobrowse.units.viewport', ['width' => number_format($cobrowseConsent['replay_preview']['viewport_width'])]) }}</span>
@@ -540,7 +540,9 @@
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.reply.visibility_label') }}</span>
-                            <span class="meta-value">{{ $cobrowseConsent['page_state']['visibility_state'] }}</span>
+                            <span class="meta-value">{{ __('cobrowse.visibility.'.(in_array($cobrowseConsent['page_state']['visibility_state'], ['visible', 'hidden', 'prerender'], true)
+                                    ? $cobrowseConsent['page_state']['visibility_state']
+                                    : 'unknown')) }}</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.cobrowse.focus') }}</span>
@@ -593,7 +595,7 @@
 
                     <div class="message-list">
                         <article class="message">
-                            <p class="message-body">{{ $cobrowseConsent['snapshot']['text'] }}</p>
+                            <p class="message-body">@if ($cobrowseConsent['snapshot']['text_reported'])<span lang="">{{ $cobrowseConsent['snapshot']['text'] }}</span>@else{{ __('cobrowse.units.no_text_preview') }}@endif</p>
                         </article>
                     </div>
                 @else
@@ -1057,24 +1059,42 @@
                         previewFrame.srcdoc = preview.srcdoc;
                     }
 
-                    if (previewApplied && typeof preview.applied_mutations === 'string') {
-                        previewApplied.textContent = preview.applied_mutations;
+                    // The payload's own strings are English -- it is the same
+                    // shape the server render reads, and it reaches every agent
+                    // watching. The counts travel; the words are local.
+                    if (previewApplied && typeof preview.applied_mutations_value === 'number') {
+                        previewApplied.textContent = realtimeLabels.cobrowseUnits.applied
+                            .replace(':count', preview.applied_mutations_value.toLocaleString());
                     }
 
-                    if (previewSkipped && typeof preview.skipped_mutations === 'string') {
-                        previewSkipped.textContent = preview.skipped_mutations;
+                    if (previewSkipped && typeof preview.skipped_mutations_value === 'number') {
+                        previewSkipped.textContent = realtimeLabels.cobrowseUnits.skipped
+                            .replace(':count', preview.skipped_mutations_value.toLocaleString());
                     }
 
                     var drift = preview.drift || null;
 
+                    var driftCopy = drift
+                        ? (realtimeLabels.cobrowseDrift[drift.state] || realtimeLabels.cobrowseDrift.steady)
+                        : null;
+
                     if (drift && previewDriftStatus) {
-                        previewDriftStatus.textContent = drift.label || '';
+                        previewDriftStatus.textContent = driftCopy.label;
                         previewDriftStatus.dataset.status = drift.tone || 'manual';
                     }
 
                     if (drift && previewDriftMessage) {
-                        var summary = drift.summary ? ' (' + drift.summary + ')' : '';
-                        previewDriftMessage.textContent = (drift.message || '') + summary;
+                        // '3 of 12 drifted' is a sentence with two numbers in
+                        // it, not a value -- so the counts come across and the
+                        // catalogue decides where they land.
+                        var counts = drift.summary_counts || null;
+                        var summary = counts
+                            ? ' (' + realtimeLabels.cobrowseDriftSummary
+                                .replace(':unresolved', counts.unresolved)
+                                .replace(':addressable', counts.addressable) + ')'
+                            : '';
+
+                        previewDriftMessage.textContent = driftCopy.message + summary;
                         previewDriftMessage.dataset.recommendResync = drift.recommend_resync ? 'true' : 'false';
                         previewDriftMessage.hidden = drift.state === 'steady';
                     }

@@ -283,4 +283,11 @@ return [
         'transcript_failed' => 'Transcript refresh failed: :reason',
         'retry_limit' => 'Fresh snapshot retry limit reached. Request another fresh snapshot when you are ready.',
     ],
+
+    'visibility' => [
+        'visible' => 'Visible',
+        'hidden' => 'Hidden',
+        'prerender' => 'Prerendering',
+        'unknown' => 'Not reported',
+    ],
 ];

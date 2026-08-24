@@ -263,4 +263,11 @@ return [
         'transcript_failed' => 'Aktualisierung des Verlaufs fehlgeschlagen: :reason',
         'retry_limit' => 'Wiederholungslimit für neue Schnappschüsse erreicht. Fordern Sie einen weiteren an, wenn Sie bereit sind.',
     ],
+
+    'visibility' => [
+        'visible' => 'Sichtbar',
+        'hidden' => 'Ausgeblendet',
+        'prerender' => 'Wird vorgerendert',
+        'unknown' => 'Nicht gemeldet',
+    ],
 ];

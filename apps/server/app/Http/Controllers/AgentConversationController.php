@@ -122,6 +122,12 @@ class AgentConversationController extends Controller
                         'guidance' => __('cobrowse.transport.'.$copy.'.guidance'),
                         'recovery_action' => __('cobrowse.transport.'.$copy.'.recovery_action'),
                     ]])->all(),
+                'cobrowseDrift' => collect(['steady', 'watch', 'drifting'])
+                    ->mapWithKeys(fn (string $state): array => [$state => [
+                        'label' => __('cobrowse.drift.'.$state.'.label'),
+                        'message' => __('cobrowse.drift.'.$state.'.message'),
+                    ]])->all(),
+                'cobrowseDriftSummary' => __('cobrowse.drift.summary'),
                 'cobrowseRecovery' => collect(['pending', 'unknown', 'needs_refresh'])
                     ->mapWithKeys(fn (string $copy): array => [$copy => [
                         'label' => __('cobrowse.snapshot_recovery.'.$copy.'.label'),
