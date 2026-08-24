@@ -13,7 +13,7 @@
 
     <div data-transcript>
         @include('agent.conversations.partials.message-list', [
-            'emptyMessage' => 'No messages yet.',
+            'emptyMessage' => __('conversations.detail.no_messages'),
             'transcriptMessages' => $messages,
             'supportCode' => $conversation->support_code,
             'transcriptSiteColor' => $conversation->site->resolvedColor()->cssVariable(),

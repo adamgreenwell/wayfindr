@@ -26,6 +26,7 @@ use App\Support\TicketExternalIssueAttempt;
 use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\App;
+use Illuminate\Support\Facades\File;
 
 uses(RefreshDatabase::class);
 
@@ -1124,6 +1125,34 @@ test('no English is rendered as German on any extracted surface', function (): v
     );
 
     expect($leaks)->toBe([], 'announced as German but never translated, in the support-lookup empty state');
+
+    // Same lesson again, from the other direction. The ticket-creation form and
+    // the empty transcript exist only BEFORE a conversation has tickets or
+    // messages, and the world above has both -- so mutations of the category
+    // options, the priority guide and the empty transcript survived every state
+    // visited above. A world with neither reaches all three.
+    $bare = conversationQueueLanguageWorld();
+    $bareConversation = Conversation::query()
+        ->where('site_id', $bare['site']->id)
+        ->orderBy('id')
+        ->firstOrFail();
+
+    expect($bareConversation->messages()->count())->toBe(0, 'the bare conversation has messages, so it renders no empty transcript')
+        ->and($bareConversation->tickets()->count())->toBe(0, 'the bare conversation has tickets, so it renders no creation form');
+
+    foreach (['ticket', 'transcript'] as $tab) {
+        $url = route('dashboard.conversations.show', [
+            'supportCode' => $bareConversation->support_code,
+            'tab' => $tab,
+        ]);
+
+        $leaks = conversationQueueLanguageEnglishLeaks(
+            (string) $this->actingAs($bare['agents']['de'])->get($url)->assertOk()->getContent(),
+            (string) $this->actingAs($bare['agents']['en'])->get($url)->assertOk()->getContent(),
+        );
+
+        expect($leaks)->toBe([], "announced as German but never translated, at {$url}");
+    }
 });
 
 test('a filter chip translates its label, not only the value it wraps', function (): void {
@@ -1474,6 +1503,100 @@ test('nothing German is marked as English', function (): void {
                 "German announced as English at {$url}: \"{$announcement['text']}\"");
         }
     }
+});
+
+test('no language marker is rendered inside an attribute', function (): void {
+    // An element cannot go inside an attribute value. Wrapping a translated
+    // string in <x-lang> is right in element content and catastrophic in an
+    // attribute: the span's own quote closes the attribute early, and every
+    // attribute after it is parsed as text. On an <iframe> that silently blanked
+    // the cobrowse preview and hid it from the realtime script.
+    //
+    // A bulk edit that wraps every `__()` on a page will do this, because one
+    // of them is always in a title. Attributes take their language from their
+    // element, so `lang` goes on the element instead.
+    $offenders = [];
+
+    foreach (File::allFiles(resource_path('views')) as $file) {
+        if ($file->getExtension() !== 'php') {
+            continue;
+        }
+
+        $contents = $file->getContents();
+
+        if (preg_match_all('/\b[a-z-]+="[^"]*<[a-z]/i', $contents, $found) > 0) {
+            foreach ($found[0] as $match) {
+                $offenders[] = $file->getRelativePathname().': '.$match;
+            }
+        }
+    }
+
+    expect($offenders)->toBe([], 'element markup rendered inside an attribute value');
+});
+
+test('a cobrowse timestamp never travels without its language', function (): void {
+    // Five branches hand-list their keys. Three got the language field and two
+    // did not, so a German diffForHumans() value was marked English on exactly
+    // the states a pending resync produces -- the common ones.
+    //
+    // `momentPair()` makes them inseparable; this asserts it stayed that way,
+    // and drives every branch through a real session rather than a shape I
+    // invented, so a branch I have not thought of is still covered.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+    $session = CobrowseSession::query()->where('conversation_id', $conversation->id)->firstOrFail();
+
+    $branches = [
+        'pending' => ['requested_at' => now()->subSeconds(15)->toJSON(), 'fulfilled_at' => null],
+        'delayed' => ['requested_at' => now()->subMinutes(4)->toJSON(), 'fulfilled_at' => null],
+        'fulfilled' => ['requested_at' => now()->subMinutes(2)->toJSON(), 'fulfilled_at' => now()->toJSON()],
+        'exhausted' => ['requested_at' => now()->subMinutes(2)->toJSON(), 'fulfilled_at' => null, 'attempts_exhausted_at' => now()->toJSON()],
+        'expired' => ['requested_at' => now()->subHour()->toJSON(), 'fulfilled_at' => null],
+    ];
+
+    $state = app(CobrowseConsentState::class);
+    $checked = 0;
+
+    foreach ($branches as $name => $request) {
+        $session->forceFill(['metadata' => [
+            'resync_request' => array_merge(['id' => 'resync_'.$name, 'requested_by_name' => 'Support'], $request),
+        ]])->save();
+
+        $payload = $state->forConversation($conversation->fresh());
+
+        $walk = function (array $node, string $path) use (&$walk, &$checked, $name): void {
+            foreach ($node as $key => $value) {
+                if (is_array($value)) {
+                    $walk($value, $path.'.'.$key);
+
+                    continue;
+                }
+
+                if (is_string($key) && str_ends_with($key, '_at') && is_string($value)) {
+                    // A machine timestamp is not prose and has no language:
+                    // `retry_at` is toJSON() for a data- attribute the script
+                    // parses. Only the diffForHumans() values are announced.
+                    if ($value === '' || preg_match('/^\d{4}-\d{2}-\d{2}T/', $value) === 1) {
+                        continue;
+                    }
+
+                    $checked++;
+
+                    // NOT toHaveKey($key, $message): its second argument is the
+                    // expected VALUE, so the message is compared against the
+                    // data and the test fails for the wrong reason -- or passes
+                    // for one. Same trap as toContain()'s variadic second arg.
+                    expect(array_key_exists($key.'_language', $node))->toBeTrue(
+                        "{$name}: {$path}.{$key} is rendered without reporting its language"
+                    );
+                }
+            }
+        };
+
+        $walk($payload, $name);
+    }
+
+    expect($checked)->toBeGreaterThan(0, 'no timestamp fields were produced, so this proves nothing');
 });
 
 test('no unreplaced placeholder ever reaches the page', function (): void {

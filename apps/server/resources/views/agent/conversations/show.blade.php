@@ -270,9 +270,15 @@
 
                     <div class="cobrowse-preview-frame">
                         <div class="cobrowse-preview-scale">
+                            {{-- The title is translated, but an element cannot go inside an
+                                 attribute: the span's own quote closes `title` early and every
+                                 attribute after it -- sandbox, srcdoc -- is parsed as text, which
+                                 blanks the preview. An attribute takes its language from its
+                                 element, so `lang` goes on the iframe. --}}
                             <iframe
                                 class="cobrowse-preview"
-                                title="<x-lang>{{ __('conversations.detail.cobrowse.replay_heading') }}</x-lang>"
+                                lang="{{ str_replace('_', '-', app()->getLocale()) }}"
+                                title="{{ __('conversations.detail.cobrowse.replay_heading') }}"
                                 sandbox
                                 srcdoc="{{ $cobrowseConsent['replay_preview']['srcdoc'] }}"
                                 data-cobrowse-replay-frame
@@ -871,7 +877,7 @@
                             <select id="category" name="category">
                                 <option value="">{{ __('conversations.detail.ticket.uncategorized') }}</option>
                                 @foreach ($ticketCategories as $value => $category)
-                                    <option value="{{ $value }}" @selected(old('category') === $value)>{{ $category['label'] }}</option>
+                                    <option value="{{ $value }}" @selected(old('category') === $value)>{{ __('tickets.categories.'.$value) }}</option>
                                 @endforeach
                             </select>
                             <x-ticket-category-guidance :categories="$ticketCategoryGuidance" />
@@ -884,7 +890,7 @@
                             <label for="priority">{{ __('conversations.detail.ticket.priority') }}</label>
                             <select id="priority" name="priority">
                                 @foreach ($ticketPriorities as $value => $priority)
-                                    <option value="{{ $value }}" @selected(old('priority', 'normal') === $value)>{{ $priority['label'] }}</option>
+                                    <option value="{{ $value }}" @selected(old('priority', 'normal') === $value)>{{ __('tickets.priorities.'.$value) }}</option>
                                 @endforeach
                             </select>
                             <x-ticket-priority-guidance :priorities="$ticketPriorityGuidance" />

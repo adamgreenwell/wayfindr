@@ -323,4 +323,56 @@ return [
         'none' => 'Keine',
         'unassigned' => 'Nicht zugewiesen',
     ],
+
+    'guidance' => [
+        'category_aria' => 'Kategorieleitfaden',
+        'priority_aria' => 'Prioritätsleitfaden',
+        'agent_move' => 'Nächster Schritt: :action',
+    ],
+
+    'category_help' => [
+        'question' => [
+            'description' => 'Allgemeine Frage oder Hilfe zur Anwendung.',
+            'guidance' => 'Verwenden für: Klärung, Produktberatung oder „Wie mache ich …?“-Fragen.',
+        ],
+        'bug' => [
+            'description' => 'Etwas ist defekt oder funktioniert nicht wie erwartet.',
+            'guidance' => 'Verwenden für: defektes, unerwartetes oder reproduzierbares Verhalten.',
+        ],
+        'billing' => [
+            'description' => 'Preise, Rechnung, Zahlung oder Abrechnung des Kontos.',
+            'guidance' => 'Verwenden für: Preise, Rechnungen, Zahlungen, Verlängerungen oder Änderungen am Abrechnungskonto.',
+        ],
+        'access' => [
+            'description' => 'Anmeldung, Berechtigungen oder Zugriff auf das Konto.',
+            'guidance' => 'Verwenden für: Anmeldung, Rollen, gesperrte Konten, Berechtigungen oder Identitäts- und Zugriffsfragen.',
+        ],
+        'task' => [
+            'description' => 'Folgearbeiten, Konfiguration oder betriebliche Anfrage.',
+            'guidance' => 'Verwenden für: Einrichtung, Konfiguration, betriebliche Arbeiten oder geplante Folgeschritte.',
+        ],
+        'other' => [
+            'description' => 'Alles, was in keine der anderen Kategorien passt.',
+            'guidance' => 'Sparsam verwenden; Kontext ergänzen, damit später neu kategorisiert werden kann.',
+        ],
+    ],
+
+    'priority_help' => [
+        'low' => [
+            'description' => 'Wünschenswerte Folgearbeit oder nicht blockierende Frage.',
+            'agent_action' => 'nach aktiven Blockaden von Besuchern bearbeiten.',
+        ],
+        'normal' => [
+            'description' => 'Normale Supportanfrage ohne unmittelbare Frist.',
+            'agent_action' => 'in normaler Reihenfolge der Warteschlange beantworten.',
+        ],
+        'high' => [
+            'description' => 'Zeitkritisches Problem, das einen wichtigen Kundenprozess betrifft.',
+            'agent_action' => 'heute noch vorantreiben.',
+        ],
+        'urgent' => [
+            'description' => 'Geschäftskritisch, aktive Störung oder blockierter Produktivbetrieb.',
+            'agent_action' => 'sofort zuweisen und den Besucher auf dem Laufenden halten.',
+        ],
+    ],
 ];

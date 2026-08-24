@@ -330,4 +330,56 @@ return [
         'none' => 'None',
         'unassigned' => 'Unassigned',
     ],
+
+    'guidance' => [
+        'category_aria' => 'Category guide',
+        'priority_aria' => 'Priority guide',
+        'agent_move' => 'Agent move: :action',
+    ],
+
+    'category_help' => [
+        'question' => [
+            'description' => 'General question or how-to help.',
+            'guidance' => 'Use for: clarification, product guidance, or "how do I?" support.',
+        ],
+        'bug' => [
+            'description' => 'Something broken or not working as expected.',
+            'guidance' => 'Use for: broken, unexpected, or reproducible behavior.',
+        ],
+        'billing' => [
+            'description' => 'Pricing, invoice, payment, or account billing issue.',
+            'guidance' => 'Use for: pricing, invoices, payments, renewals, or billing-account changes.',
+        ],
+        'access' => [
+            'description' => 'Login, permissions, or account access issue.',
+            'guidance' => 'Use for: login, roles, locked accounts, permissions, or identity/access issues.',
+        ],
+        'task' => [
+            'description' => 'Follow-up work, configuration, or operational request.',
+            'guidance' => 'Use for: setup, configuration, operational work, or planned follow-up.',
+        ],
+        'other' => [
+            'description' => 'Anything that does not fit the other categories.',
+            'guidance' => 'Use sparingly; add context so it can be recategorized later.',
+        ],
+    ],
+
+    'priority_help' => [
+        'low' => [
+            'description' => 'Nice-to-have follow-up or non-blocking question.',
+            'agent_action' => 'handle after active visitor blockers.',
+        ],
+        'normal' => [
+            'description' => 'Standard support request with no immediate deadline.',
+            'agent_action' => 'answer in normal queue order.',
+        ],
+        'high' => [
+            'description' => 'Time-sensitive issue affecting an important customer workflow.',
+            'agent_action' => 'keep it moving today.',
+        ],
+        'urgent' => [
+            'description' => 'Business-critical, active outage, or blocked production work.',
+            'agent_action' => 'assign immediately and keep the visitor updated.',
+        ],
+    ],
 ];

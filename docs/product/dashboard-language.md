@@ -143,6 +143,42 @@ audited** — it fails when a surface is extracted without being added, which is
 exactly how the ticket queue got its states. The catalogue list has no such
 check yet and is worth one when a fifth catalogue lands.
 
+### An element cannot go inside an attribute
+
+A bulk edit that wraps every `__()` on a page in a language marker will break
+one of them, because one of them is always in a `title`:
+
+```blade
+title="<x-lang>{{ __('...') }}</x-lang>"   {{-- the span's quote closes `title` --}}
+```
+
+Every attribute after it is then parsed as fallback text. On the cobrowse
+`<iframe>` that meant `sandbox` and `srcdoc` stopped being attributes at all:
+the preview rendered blank and the realtime script could not find the frame. It
+looks like a formatting change and it is a functional outage.
+
+**An attribute takes its language from its element**, so the marker goes on the
+element and the attribute stays a plain translated string. Guarded by
+`no language marker is rendered inside an attribute`, which scans every Blade
+file for element markup inside a quoted attribute value.
+
+### A value and its language travel together or not at all
+
+`formatResyncRequest()` has five branches, each hand-listing its keys. Three
+received the language field and two did not — so a German `diffForHumans()`
+value was announced as English on exactly the states a *pending* resync
+produces, which are the common ones.
+
+Fixing the two branches would have left the sixth branch to come. The pair is
+built together instead:
+
+```php
+...$this->momentPair('requested_at', $requestedAt, 'Request time unavailable'),
+```
+
+A machine timestamp is exempt and the guard knows it: `retry_at` is `toJSON()`
+for a `data-` attribute the script parses, not prose anyone hears.
+
 ### Marking a half-extracted surface: state the majority, reset the minority
 
 A surface part-way through extraction has translated chrome around untranslated
@@ -173,6 +209,18 @@ English made a screen reader pronounce the German headings with English rules;
 taking the marker off left the English chrome announced as German. The tests
 assert **both** directions, per text node with its effective language, because
 an element-level check reads a nested reset as part of the text around it.
+
+### A guard is only as good as the states it visits
+
+Said once already about the support-lookup empty state, and true again for the
+opposite reason. The leak audit's fixture creates tickets and messages, so the
+**ticket-creation form and the empty transcript never rendered** — and mutations
+of the category options, both guidance components and the empty transcript all
+survived every state it visited.
+
+The audit now also walks a conversation that has neither, and asserts that it
+has neither before trusting the result. First-run states are not an edge case
+here: they are the only states in which half this page's copy exists.
 
 ### `diffForHumans()` follows the page locale, so a model must report the language
 
