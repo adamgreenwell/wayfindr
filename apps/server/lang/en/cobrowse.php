@@ -204,6 +204,7 @@ return [
     // words take a plural, which is the whole reason these are trans_choice
     // rather than ':count batches'.
     'units' => [
+        'untitled_page' => 'Untitled page',
         'applied' => ':count applied',
         'milliseconds' => ':count ms',
         'bytes' => ':count bytes',
@@ -254,6 +255,8 @@ return [
     ],
 
     'labels' => [
+        'retry_ready_help' => 'Still waiting. You can request another fresh snapshot now.',
+        'retry_ready_recovery' => 'Request another fresh snapshot if the preview still looks out of date.',
         'request_snapshot' => 'Request fresh snapshot',
         'request_another_snapshot' => 'Request another fresh snapshot',
         'requested_by' => 'Requested by :actor',

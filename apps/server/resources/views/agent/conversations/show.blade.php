@@ -179,9 +179,9 @@
                                 action="{{ route('dashboard.conversations.cobrowse.resync', $conversation->support_code) }}"
                                 data-resync-retry-form
                                 data-retry-at="{{ $cobrowseConsent['resync_request']['retry_at'] ?? '' }}"
-                                data-retry-label="Request another fresh snapshot"
-                                data-retry-ready-help="Still waiting. You can request another fresh snapshot now."
-                                data-retry-ready-recovery="Request another fresh snapshot if the preview still looks out of date."
+                                data-retry-label="{{ __('cobrowse.labels.request_another_snapshot') }}"
+                                data-retry-ready-help="{{ __('cobrowse.labels.retry_ready_help') }}"
+                                data-retry-ready-recovery="{{ __('cobrowse.labels.retry_ready_recovery') }}"
                             >
                                 @csrf
                                 @include('agent.conversations.partials.return-query-fields')
@@ -524,7 +524,7 @@
                     <div class="meta-grid realtime-grid">
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.ticket.title') }}</span>
-                            <span class="meta-value"><span lang="">{{ $cobrowseConsent['page_state']['title'] }}</span></span>
+                            <span class="meta-value">@if ($cobrowseConsent['page_state']['title_reported'])<span lang="">{{ $cobrowseConsent['page_state']['title'] }}</span>@else{{ __('cobrowse.units.untitled_page') }}@endif</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.cobrowse.url') }}</span>
@@ -577,7 +577,7 @@
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.ticket.title') }}</span>
-                            <span class="meta-value"><span lang="">{{ $cobrowseConsent['snapshot']['title'] }}</span></span>
+                            <span class="meta-value">@if ($cobrowseConsent['snapshot']['title_reported'])<span lang="">{{ $cobrowseConsent['snapshot']['title'] }}</span>@else{{ __('cobrowse.units.untitled_page') }}@endif</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.cobrowse.url') }}</span>

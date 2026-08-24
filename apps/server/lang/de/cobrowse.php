@@ -190,6 +190,7 @@ return [
     ],
 
     'units' => [
+        'untitled_page' => 'Seite ohne Titel',
         'applied' => ':count angewendet',
         'milliseconds' => ':count ms',
         'bytes' => ':count Bytes',
@@ -237,6 +238,8 @@ return [
     ],
 
     'labels' => [
+        'retry_ready_help' => 'Es wird weiterhin gewartet. Sie können jetzt einen weiteren Schnappschuss anfordern.',
+        'retry_ready_recovery' => 'Fordern Sie einen weiteren Schnappschuss an, wenn die Vorschau weiterhin veraltet wirkt.',
         'request_snapshot' => 'Neuen Schnappschuss anfordern',
         'request_another_snapshot' => 'Weiteren Schnappschuss anfordern',
         'requested_by' => 'Angefordert von :actor',

@@ -135,6 +135,11 @@ class AgentConversationController extends Controller
                     ]])->all(),
                 'cobrowseRealtime' => __('cobrowse.realtime'),
                 'cobrowseUnits' => [
+                    // Consumed by applyPreviewState(). Missing entries are not a
+                    // language bug -- `.replace()` on undefined is a TypeError,
+                    // and the whole refresh reports itself as a failure.
+                    'applied' => __('cobrowse.units.applied'),
+                    'skipped' => __('cobrowse.units.skipped'),
                     'notReported' => __('cobrowse.units.not_reported'),
                     'viewport' => __('cobrowse.units.viewport'),
                     'milliseconds' => __('cobrowse.units.milliseconds'),

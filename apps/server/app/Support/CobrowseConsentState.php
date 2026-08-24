@@ -464,6 +464,9 @@ class CobrowseConsentState
 
         return [
             'title' => filled($pageState['title'] ?? null) ? (string) $pageState['title'] : 'Untitled page',
+            // Their words, or ours. `lang=""` on the fallback would both
+            // mispronounce it and hide it from the leak guard.
+            'title_reported' => filled($pageState['title'] ?? null),
             'page_url' => filled($pageState['page_url'] ?? null) ? (string) $pageState['page_url'] : 'Not reported',
             'viewport' => $this->formatDimensions($pageState['viewport_width'] ?? null, $pageState['viewport_height'] ?? null),
             'scroll' => $this->formatCoordinates($pageState['scroll_x'] ?? null, $pageState['scroll_y'] ?? null),
@@ -484,6 +487,9 @@ class CobrowseConsentState
 
         return [
             'title' => filled($snapshot['title'] ?? null) ? (string) $snapshot['title'] : 'Untitled page',
+            // Their words, or ours. `lang=""` on the fallback would both
+            // mispronounce it and hide it from the leak guard.
+            'title_reported' => filled($snapshot['title'] ?? null),
             'page_url' => filled($snapshot['page_url'] ?? null) ? (string) $snapshot['page_url'] : 'Not reported',
             'node_count' => number_format((int) ($snapshot['node_count'] ?? 0)).' nodes',
             'node_count_value' => (int) ($snapshot['node_count'] ?? 0),

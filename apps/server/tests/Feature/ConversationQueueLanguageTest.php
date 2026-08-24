@@ -2493,6 +2493,127 @@ test('a reply template says what language its body is in', function (): void {
         ->and($option->getAttribute('lang'))->toBe('', 'a managed template name claims a language it cannot know');
 });
 
+test('every label the page reads is a label the controller supplies', function (): void {
+    // A missing entry here is not a language bug. `realtimeLabels.cobrowseUnits
+    // .applied.replace(...)` on an undefined value is a TypeError, so the whole
+    // handler dies -- and in the preview's case a SUCCESSFUL refresh reported
+    // itself as a failure. I shipped exactly that: two keys consumed, neither
+    // supplied, every test green.
+    //
+    // Nothing executes this script in the suite, so the two halves are compared
+    // instead: every dotted path the source reads must resolve in the table the
+    // controller renders.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+
+    config([
+        'broadcasting.default' => 'reverb',
+        'broadcasting.connections.reverb.key' => 'language-test-key',
+        'broadcasting.connections.reverb.options.host' => 'localhost',
+        'broadcasting.connections.reverb.options.port' => 8080,
+        'broadcasting.connections.reverb.options.scheme' => 'http',
+    ]);
+
+    $page = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent();
+
+    preg_match('/var realtimeLabels = (\{.*?\});/s', $page, $found);
+
+    expect($found)->not->toBe([], 'no realtime label table rendered');
+
+    $labels = json_decode(html_entity_decode($found[1], ENT_QUOTES), true);
+
+    expect($labels)->toBeArray();
+
+    // Dotted paths only -- a bracket lookup is dynamic and cannot be resolved
+    // from the source, and those already fall back with `||`.
+    preg_match_all('/realtimeLabels((?:\.[A-Za-z_][A-Za-z0-9_]*)+)/', $page, $paths);
+
+    $missing = [];
+
+    foreach (array_unique($paths[1]) as $path) {
+        $node = $labels;
+
+        foreach (array_filter(explode('.', $path)) as $segment) {
+            // Once the path resolves to a string the rest is a method call on
+            // it -- `.replace`, `.toLocaleString`. The label itself is what
+            // this checks, not what the script then does with it.
+            if (is_string($node)) {
+                break;
+            }
+
+            if (! is_array($node) || ! array_key_exists($segment, $node)) {
+                $missing[] = 'realtimeLabels'.$path;
+
+                continue 2;
+            }
+
+            $node = $node[$segment];
+        }
+    }
+
+    expect($missing)->toBe([], 'the page reads a label the controller never supplies, which is a TypeError at runtime');
+});
+
+test('the cobrowse states the fixture does not reach are translated too', function (): void {
+    // Two branches the standing fixture cannot show: a page the widget could
+    // not name, and a resync still pending (the fixture's is fulfilled). Both
+    // survived a mutation because neither renders in the default state.
+    //
+    // The untitled fallback is the more interesting one -- it is OUR copy
+    // wearing the visitor's clothes, and marking it `lang=""` both mispronounces
+    // it and hides it from the leak guard, which skips unknown-language text by
+    // design. A wrong marker is not a smaller mistake than a missing one.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+    $session = CobrowseSession::query()->where('conversation_id', $conversation->id)->firstOrFail();
+
+    $metadata = $session->metadata;
+    $metadata['snapshot']['title'] = null;
+    $metadata['page_state']['title'] = null;
+    $metadata['resync_request'] = [
+        'id' => 'resync-pending-fixture',
+        'requested_by_name' => 'Support',
+        'requested_at' => now()->subSeconds(30)->toJSON(),
+        'fulfilled_at' => null,
+    ];
+
+    $session->forceFill(['metadata' => $metadata])->save();
+
+    $html = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent();
+
+    $page = conversationQueueLanguageVisibleText($html);
+
+    $this->assertStringContainsString(__('cobrowse.units.untitled_page', [], 'de'), $page,
+        'the untitled-page fallback did not render in German');
+    $this->assertStringNotContainsString(__('cobrowse.units.untitled_page', [], 'en'), $page,
+        'the English untitled-page fallback is still on the German page');
+
+    // The retry timer's copy travels in data- attributes, which the
+    // announcement walker does not read -- it only knows the accessible ones.
+    // Asserted directly.
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+
+    $form = (new DOMXPath($document))->query('//form[@data-resync-retry-form]')->item(0);
+
+    expect($form)->not->toBeNull('no pending retry form rendered, so this proves nothing');
+
+    foreach ([
+        'data-retry-label' => 'cobrowse.labels.request_another_snapshot',
+        'data-retry-ready-help' => 'cobrowse.labels.retry_ready_help',
+        'data-retry-ready-recovery' => 'cobrowse.labels.retry_ready_recovery',
+    ] as $attribute => $key) {
+        expect($form->getAttribute($attribute))->toBe(__($key, [], 'de'),
+            "{$attribute} is not the German the timer will write");
+    }
+});
+
 test('no unreplaced placeholder ever reaches the page', function (): void {
     // A sentence rendered without its parameters shows `:elapsed` or `:count`
     // to the agent. It looks like copy, it is in the right language, and it is
