@@ -19,6 +19,7 @@
  */
 return [
     'document_title' => 'Conversations',
+    'detail_document_title' => 'Conversation :code',
     'title' => 'Conversation queue',
     'page_title_active' => 'Active visitor conversations for :account.',
     'page_title_closed' => 'Closed visitor conversations for :account.',

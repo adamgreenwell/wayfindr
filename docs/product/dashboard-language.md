@@ -278,6 +278,18 @@ English into a German page on an ordinary upload.
 When a surface is extracted, list every endpoint it calls, not just the ones
 that render markup.
 
+### Copy wrapped around data is invisible to the leak guard
+
+The detail page's `<title>` stayed `Conversation WF-…` through five rounds of
+auditing. The leak guard skips any sentence containing a data token — the
+support code, the account name, an email — because that token renders
+identically in both languages and would otherwise be reported as a leak. A
+sentence *built around* one is discarded with it.
+
+The row-copy test exists for the same reason on the queue. The page title needed
+its own, because it is the tab and the first thing a screen reader announces,
+and it is the one string a page never renders in its body.
+
 ### A guard is only as good as the states it visits
 
 Said once already about the support-lookup empty state, and true again for the

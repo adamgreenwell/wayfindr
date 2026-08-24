@@ -1,4 +1,4 @@
-<x-layouts.app title="Conversation {{ $conversation->support_code }}" :agent="$agent" :account="$account">
+<x-layouts.app :title="__('conversations.detail_document_title', ['code' => $conversation->support_code])" :agent="$agent" :account="$account">
             {{-- Whole sentences from the catalogue: a subject is the visitor's own
                  words and is never translated, but the fallback and the support-code
                  line are copy. --}}

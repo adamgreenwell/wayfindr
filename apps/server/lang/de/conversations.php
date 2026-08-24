@@ -12,6 +12,7 @@
  */
 return [
     'document_title' => 'Unterhaltungen',
+    'detail_document_title' => 'Unterhaltung :code',
     'title' => 'Unterhaltungs-Warteschlange',
     'page_title_active' => 'Aktive Besucher-Unterhaltungen für :account.',
     'page_title_closed' => 'Geschlossene Besucher-Unterhaltungen für :account.',

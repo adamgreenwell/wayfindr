@@ -1492,6 +1492,47 @@ test('the cobrowse panel announces both its languages correctly', function (): v
     }
 });
 
+test('every extracted page translates its document title', function (): void {
+    // The `<title>` is the tab and the first thing a screen reader announces
+    // for the page, and the leak guard could not see this one: the detail
+    // page's title carries the support code, and any sentence containing a
+    // data token is excluded wholesale as data. Copy wrapped around data is
+    // invisible to that heuristic -- the same blind spot the row-copy test
+    // exists for, in the one place a page names itself.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+
+    $titleOf = function (string $url, string $locale) use ($world): string {
+        $html = (string) $this->actingAs($world['agents'][$locale])->get($url)->assertOk()->getContent();
+
+        preg_match('#<title>(.*?)</title>#is', $html, $found);
+
+        return trim(html_entity_decode($found[1] ?? '', ENT_QUOTES));
+    };
+
+    $urls = [
+        route('dashboard.profile.show'),
+        route('dashboard.conversations.index'),
+        route('dashboard.tickets.index'),
+        route('dashboard.conversations.show', $conversation->support_code),
+    ];
+
+    foreach ($urls as $url) {
+        $german = $titleOf($url, 'de');
+        $english = $titleOf($url, 'en');
+
+        expect($german)->not->toBe('', "no document title rendered at {$url}");
+
+        // A title that is the same word in both languages is fine, but it has
+        // to be a word already declared as one -- not a new coincidence.
+        if (array_key_exists($german, conversationQueueLanguageCognates())) {
+            continue;
+        }
+
+        expect($german)->not->toBe($english, "the document title at {$url} is identical in both languages");
+    }
+});
+
 test('the realtime handlers hard-code no copy of their own', function (): void {
     // This reads the source rather than the page, which is unusual and is the
     // point: the realtime handlers only run when a broadcast arrives, so no
