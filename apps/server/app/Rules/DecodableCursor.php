@@ -59,7 +59,10 @@ class DecodableCursor implements ValidationRule
             // `created_at` passes and then breaks when the paginator binds it
             // to the query -- a 500 where the contract promises a 422, which
             // reads as the server failing rather than the request being wrong.
-            if ($value !== null && ! is_scalar($value)) {
+            // Null is not exempt. A cursor carrying `{"created_at":null}`
+            // decodes, has the key, and then asks the database to order
+            // against nothing -- which is the same 500 by a shorter route.
+            if (! is_scalar($value)) {
                 $fail('The :attribute is not a valid pagination cursor.');
 
                 return;

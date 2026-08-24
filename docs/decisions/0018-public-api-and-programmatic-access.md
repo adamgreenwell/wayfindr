@@ -104,6 +104,15 @@ explicit decision. Issuing a token is not that decision. So an admin who does
 not support every site gets a token pinned to the sites they do, and asking for
 sites they cannot see grants nothing rather than everything.
 
+**Every token is pinned to a list**, including one issued by somebody who
+supports every site that currently exists. Seeing all of today's sites is not
+account-wide authority, and there is no such authority here: visibility is per
+site, so a site created later and assigned to its creator is invisible to
+everyone else — and an open-ended token would have read it anyway, outliving the
+ceiling it was issued under. The cost is that a new site does not join existing
+tokens, which is the right way round: a credential that quietly widens as the
+account grows is worse than one that has to be reissued on purpose.
+
 Whether a token is restricted is **stored on the token**, not inferred from
 whether any site rows remain attached to it. Sites can be archived and purged,
 and the join rows go with them — so a token restricted to one site would

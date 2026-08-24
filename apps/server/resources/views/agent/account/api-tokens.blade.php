@@ -174,18 +174,13 @@
                             </label>
                         @endforeach
                         <p class="field-help">
-                            @if (count($visibleSiteIds) === $accountSiteCount)
-                                Tick none and the token reaches every site on this account. An integration that
-                                watches one site should not be a credential for all of them.
-                            @else
-                                {{-- The issuer ceiling, said where the decision is made rather than only in
-                                     the docs: otherwise an admin deploys an integration expecting
-                                     account-wide results and silently gets a subset. --}}
-                                Tick none and the token reaches every site <strong>you support</strong> &mdash;
-                                not the whole account, because a token cannot reach further than the person
-                                issuing it. An integration that watches one site should not be a credential
-                                for all of them.
-                            @endif
+                            {{-- Said where the decision is made rather than only in the docs. A token is
+                                 always pinned to a list: it cannot reach further than the person issuing
+                                 it, and it does not widen later as the account grows. --}}
+                            Tick none and the token reaches every site <strong>you support today</strong>.
+                            A site created afterwards is not added to it &mdash; issue a new token when you
+                            want one to cover more. An integration that watches one site should not be a
+                            credential for all of them.
                         </p>
                     </div>
                 @endif

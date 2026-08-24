@@ -292,15 +292,29 @@ test('an admin cannot issue a token that reaches further than they can', functio
         ->and(ApiToken::query()->firstOrFail()->restricts_sites)->toBeTrue();
 });
 
-test('an admin who can see the whole account still gets an account-wide token', function (): void {
-    // The narrowing above must not turn every token into a pinned list, or a
-    // site added next month silently falls outside every existing credential.
+test('a token is pinned to a list even when its issuer sees everything', function (): void {
+    // Seeing every site that exists today is not account-wide authority, and
+    // there is no such thing here: visibility is per site, so a site created
+    // later and assigned to its creator is invisible to everybody else. An
+    // unrestricted token would read it anyway, outliving the ceiling it was
+    // issued under.
     $w = tokenAdmin();
 
-    $this->actingAs($w['admin'])
-        ->post(route('dashboard.account.api-tokens.store'), ['name' => 'Wide', 'abilities' => ['read']]);
+    $plain = issuedPlaintext($this->actingAs($w['admin'])
+        ->post(route('dashboard.account.api-tokens.store'), ['name' => 'Wide', 'abilities' => ['read']])
+        ->getSession()->get('issued_api_token'));
 
-    expect(ApiToken::query()->firstOrFail()->restricts_sites)->toBeFalse();
+    $token = ApiToken::query()->firstOrFail();
+
+    expect($token->restricts_sites)->toBeTrue()
+        ->and($token->sites->pluck('id')->all())->toBe([$w['site']->id]);
+
+    // A site created afterwards does not join it.
+    $later = Site::factory()->for($w['account'])->create(['name' => 'Opened later']);
+
+    expect($this->getJson('/api/v1/me', ['Authorization' => 'Bearer '.$plain])->json('data.site_ids'))
+        ->toBe([$w['site']->id])
+        ->and($later->exists())->toBeTrue();
 });
 
 test('asking for sites you cannot see grants nothing, not everything', function (): void {
@@ -404,7 +418,9 @@ test('an archived site does not make a full-access admin look site-limited', fun
 
     $token = ApiToken::query()->firstOrFail();
 
-    expect($token->restricts_sites)->toBeFalse()
+    // Pinned, and the archived site is IN the pinned list -- archiving takes a
+    // site out of service, and a read surface is not service.
+    expect($token->restricts_sites)->toBeTrue()
         ->and($this->getJson('/api/v1/me', ['Authorization' => 'Bearer '.$plain])->json('data.site_ids'))
         ->toContain($archived->id);
 });
@@ -478,17 +494,20 @@ test('a site-limited admin is told the token will be limited too', function (): 
     $this->actingAs($w['admin'])
         ->get(route('dashboard.account.api-tokens.index'))
         ->assertOk()
-        ->assertSee('reaches every site <strong>you support</strong>', false)
-        ->assertDontSee('reaches every site on this account');
+        ->assertSee('reaches every site <strong>you support today</strong>', false)
+        ->assertSee('A site created afterwards is not added to it');
 });
 
-test('an admin who sees everything is still promised the whole account', function (): void {
+test('the form never promises reach that outlives the issuer', function (): void {
+    // One sentence for every admin now, because "tick none" means the same
+    // thing for all of them: the sites you support today, and no more.
     $w = tokenAdmin();
 
     $this->actingAs($w['admin'])
         ->get(route('dashboard.account.api-tokens.index'))
         ->assertOk()
-        ->assertSee('reaches every site on this account');
+        ->assertSee('reaches every site <strong>you support today</strong>', false)
+        ->assertDontSee('reaches every site on this account');
 });
 
 test('a non-admin cannot tell their account tokens from anyone else', function (): void {
@@ -596,4 +615,22 @@ test('the revoke route refuses a non-numeric id at routing', function (): void {
     expect($route)->not->toBeNull()
         ->and($route->wheres)->toHaveKey('apiToken')
         ->and($route->wheres['apiToken'])->toBe('[0-9]+');
+});
+
+test('a numeric id too large to be a key is a 404, not a server error', function (): void {
+    // The route constraint allows any run of digits, and PostgreSQL raises
+    // casting a 30-digit value to a bigint. Numeric is not the same as usable,
+    // and an id too large to exist is treated exactly like one that does not.
+    $w = tokenAdmin();
+
+    foreach (['999999999999999999999999999999', '9223372036854775808', str_repeat('9', 40)] as $tooBig) {
+        $this->actingAs($w['admin'])
+            ->delete('/dashboard/account/api-tokens/'.$tooBig)
+            ->assertNotFound();
+    }
+
+    // The largest value that IS a key still reaches the ordinary lookup.
+    $this->actingAs($w['admin'])
+        ->delete('/dashboard/account/api-tokens/'.PHP_INT_MAX)
+        ->assertNotFound();
 });

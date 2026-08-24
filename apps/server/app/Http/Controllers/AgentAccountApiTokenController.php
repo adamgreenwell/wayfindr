@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ApiToken;
 use App\Models\AuditEvent;
 use App\Models\User;
+use App\Support\DatabaseKey;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -48,9 +49,6 @@ class AgentAccountApiTokenController extends Controller
             // legitimately reach sites its viewer cannot, and naming those
             // would leak exactly what site access hides.
             'visibleSiteIds' => $account->sites()->visibleToAgentIncludingArchived($agent)->pluck('id')->all(),
-            // So the form can say what "tick none" actually means for THIS
-            // admin, rather than promising account-wide reach they cannot give.
-            'accountSiteCount' => $account->sites()->count(),
             // Shown once, immediately after creation, and never again.
             'issuedToken' => $this->issuedToken($request),
         ]);
@@ -105,23 +103,29 @@ class AgentAccountApiTokenController extends Controller
         // costing them the archived history that ADR 0018 says a read surface
         // keeps.
         $visibleSiteIds = $account->sites()->visibleToAgentIncludingArchived($agent)->pluck('id');
-        $accountSiteIds = $account->sites()->pluck('id');
         $requested = $validated['site_ids'] ?? [];
         $askedForSpecificSites = $request->has('site_ids');
 
-        if ($askedForSpecificSites) {
+        // ALWAYS pinned to a list, never left open-ended.
+        //
+        // The previous version left a token unrestricted when its issuer
+        // happened to see every site that existed at the time. That is not the
+        // same as account-wide authority, and there is no such thing here: site
+        // visibility is per site, so a site created later and assigned to its
+        // creator is invisible to everybody else -- and an unrestricted token
+        // would have read it anyway, outliving the ceiling it was issued under.
+        //
+        // The cost is that a new site does not join existing tokens, which is
+        // the right way round: a credential quietly widening as the account
+        // grows is worse than one that has to be reissued deliberately.
+        $siteIds = $askedForSpecificSites
             // Intersected, so a site id typed into the form cannot reach
             // anything the issuer could not. An empty result means the token
-            // reaches NOTHING -- asking for less must never hand back more,
-            // which is what falling through to "unrestricted" would do.
-            $siteIds = $visibleSiteIds->intersect($requested)->values();
-            $restricted = true;
-        } else {
-            // Account-wide, but only if the issuer can actually see the whole
-            // account. Otherwise the token is pinned to their own reach.
-            $restricted = $visibleSiteIds->count() !== $accountSiteIds->count();
-            $siteIds = $restricted ? $visibleSiteIds->values() : collect();
-        }
+            // reaches NOTHING -- asking for less must never hand back more.
+            ? $visibleSiteIds->intersect($requested)->values()
+            : $visibleSiteIds->values();
+
+        $restricted = true;
 
         $token->sites()->sync($siteIds);
 
@@ -150,9 +154,9 @@ class AgentAccountApiTokenController extends Controller
             // The app key is the same at-rest boundary provider credentials
             // already sit behind.
             ->with('issued_api_token', Crypt::encryptString($generated['plain']))
-            ->with('status', $restricted && ! $askedForSpecificSites
-                ? 'API token created, limited to the sites you support. Copy it now — it cannot be shown again.'
-                : 'API token created. Copy it now — it cannot be shown again.');
+            ->with('status', $askedForSpecificSites
+                ? 'API token created. Copy it now — it cannot be shown again.'
+                : 'API token created, limited to the sites you support today. Copy it now — it cannot be shown again.');
     }
 
     /**
@@ -173,7 +177,14 @@ class AgentAccountApiTokenController extends Controller
         // they get -- including whether the id exists at all.
         abort_unless($agent->isAdmin(), 403);
 
-        $apiToken = ApiToken::query()->whereKey($apiToken)->first();
+        // Numeric is not the same as a usable key. The route constraint allows
+        // any run of digits, and PostgreSQL raises casting a 30-digit value to
+        // a bigint -- a 500 where the point was an indistinguishable 404. An
+        // id too large to be one is treated exactly like an id that is not
+        // there, because it cannot be.
+        $apiToken = DatabaseKey::isValid($apiToken)
+            ? ApiToken::query()->whereKey($apiToken)->first()
+            : null;
 
         // 404 for a token that does not exist and for one belonging to another
         // account, identically: for somebody who IS an admin here, the id

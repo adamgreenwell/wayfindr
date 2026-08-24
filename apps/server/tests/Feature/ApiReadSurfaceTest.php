@@ -398,3 +398,18 @@ test('a cursor whose ordering values are not scalars is a 422, not a 500', funct
         readGet($this, $w, '/api/v1/'.$collection.'?cursor='.urlencode($crafted))->assertStatus(422);
     }
 });
+
+test('a cursor whose ordering values are null is a 422, not a 500', function (): void {
+    // Decodes, has the keys, and then asks the database to order against
+    // nothing -- the same server error by a shorter route.
+    $w = readWorld();
+
+    $crafted = str_replace(['+', '/', '='], ['-', '_', ''], base64_encode(json_encode([
+        'created_at' => null,
+        'id' => null,
+        '_pointsToNextItems' => true,
+    ])));
+
+    readGet($this, $w, '/api/v1/conversations?cursor='.urlencode($crafted))->assertStatus(422);
+    readGet($this, $w, '/api/v1/tickets?cursor='.urlencode($crafted))->assertStatus(422);
+});
