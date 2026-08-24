@@ -100,9 +100,24 @@ final class DashboardLanguage
      * everywhere else -- including for an install whose own default is German,
      * because an unextracted page has no German to show.
      */
-    public static function forRequest(?User $agent, ?string $routeName): string
+    public static function forRequest(?User $agent, ?string $routeName, ?string $rendersBackTo = null): string
     {
-        return $routeName !== null && in_array($routeName, self::EXTRACTED_ROUTES, true)
+        if ($routeName !== null && in_array($routeName, self::EXTRACTED_ROUTES, true)) {
+            return self::for($agent);
+        }
+
+        // A write that renders back onto an extracted page belongs to that
+        // page, whoever owns the endpoint.
+        //
+        // Listing the write route alongside its own page (above) only works
+        // when the endpoint serves one surface. A linked-ticket action does
+        // not: the same `AgentTicketController::close()` is submitted from the
+        // ticket page and from the conversation panel, and its validation runs
+        // before the redirect. Listing it would answer in German on the English
+        // ticket page; not listing it put English errors on the German
+        // conversation page. Neither is a locale for the endpoint to have --
+        // the language belongs to whichever surface will render the answer.
+        return $rendersBackTo !== null && in_array($rendersBackTo, self::EXTRACTED_ROUTES, true)
             ? self::for($agent)
             : self::FALLBACK;
     }

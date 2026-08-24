@@ -9,6 +9,7 @@ use App\Models\AuditEvent;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\ReplyTemplate;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\TicketExternalLink;
@@ -22,6 +23,7 @@ use App\Support\CobrowseSnapshotFreshness;
 use App\Support\CobrowseTransportPressure;
 use App\Support\DashboardLanguage;
 use App\Support\ExternalIssueSyncStatus;
+use App\Support\ReplyTemplateOptions;
 use App\Support\TicketExternalIssueAttempt;
 use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -1834,6 +1836,93 @@ test('the attachment endpoint answers in the agent language', function (): void 
     expect($message)->not->toBe('')
         ->and($message)->not->toContain('field is required')
         ->and($message)->not->toContain('must be a file');
+});
+
+test('a write answers in the language of the page it renders back to', function (): void {
+    // A linked-ticket action is submitted from BOTH the conversation panel and
+    // the ticket page, and its validation runs before the redirect. Listing the
+    // endpoint would answer in German on the English ticket page; not listing
+    // it put English errors on the German conversation page. The language
+    // belongs to whichever surface renders the answer.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+    $agent = $world['agents']['de'];
+
+    $ticket = Ticket::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($conversation)
+        ->for($conversation->visitor, 'requester')
+        ->create(['status' => 'open', 'subject' => 'Datenpunkt locale', 'priority' => 'normal']);
+
+    $tooLong = ['resolution_note' => str_repeat('a', 4001)];
+
+    $errorFor = function (string $from) use ($agent, $ticket, $tooLong): string {
+        $this->actingAs($agent)->from($from)
+            ->post(route('dashboard.tickets.close', $ticket), $tooLong)
+            ->assertSessionHasErrors('resolution_note');
+
+        return (string) session('errors')->getBag('default')->first('resolution_note');
+    };
+
+    // Submitted from the conversation panel, which IS extracted.
+    $germanError = $errorFor(route('dashboard.conversations.show', $conversation->support_code));
+
+    expect($germanError)->toBe(__('validation.max.string', [
+        'attribute' => __('validation.attributes.resolution_note', [], 'de'),
+        'max' => 4000,
+    ], 'de'));
+
+    // Submitted from the ticket page, which is NOT extracted, so the same
+    // endpoint answers in English -- the page that will render it.
+    $englishError = $errorFor(route('dashboard.tickets.show', $ticket));
+
+    expect($englishError)->not->toBe('')
+        ->and($englishError)->not->toBe($germanError)
+        ->and($englishError)->toContain('4000');
+});
+
+test('a reply template says what language its body is in', function (): void {
+    // The body is what the VISITOR receives, not chrome. A built-in is English
+    // and says so. A managed one is written by the account in whatever language
+    // it works in, so it reports `lang=""` -- HTML's "unknown". Claiming either
+    // English or the agent's language would be a guess a screen reader acts on.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+
+    $builtIn = AgentReplyTemplate::options();
+
+    expect($builtIn)->not->toBe([]);
+
+    foreach ($builtIn as $key => $template) {
+        expect($template['body_language'] ?? null)->toBe(DashboardLanguage::FALLBACK,
+            "the built-in template {$key} does not declare its body language");
+    }
+
+    $page = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent();
+
+    // The picker carries it too, because selecting a template rewrites the
+    // textarea and the draft stops being the agent's language at that moment.
+    expect($page)->toContain('data-body-lang="en"');
+
+    // A managed template reports unknown rather than guessing.
+    ReplyTemplate::factory()->for($world['account'])->create([
+        'name' => 'Datenpunkt Vorlage',
+        'body' => 'Wir prüfen das und melden uns gleich.',
+        'is_active' => true,
+    ]);
+
+    $managed = app(ReplyTemplateOptions::class)->forAgent($world['agents']['de']);
+
+    expect($managed)->not->toBe([]);
+
+    foreach ($managed as $key => $template) {
+        expect($template['body_language'] ?? null)->toBe('',
+            "the managed template {$key} claims a language it cannot know");
+    }
 });
 
 test('no unreplaced placeholder ever reaches the page', function (): void {

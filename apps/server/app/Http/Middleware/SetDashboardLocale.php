@@ -6,7 +6,9 @@ use App\Support\DashboardLanguage;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
+use Illuminate\Support\Facades\Route;
 use Symfony\Component\HttpFoundation\Response;
+use Throwable;
 
 /**
  * Render the dashboard in the signed-in agent's own language.
@@ -27,8 +29,47 @@ class SetDashboardLocale
         App::setLocale(DashboardLanguage::forRequest(
             $request->user(),
             $request->route()?->getName(),
+            $this->rendersBackTo($request),
         ));
 
         return $next($request);
+    }
+
+    /**
+     * The route a write will render its answer on, if it redirects back.
+     *
+     * A validation failure never renders the endpoint -- it renders the page
+     * the agent submitted from, which for a linked-ticket action is the
+     * conversation panel rather than the ticket page that owns the controller.
+     *
+     * Reads are excluded: a GET renders itself, and its own route already
+     * decides. The referer is only ever used to pick a language, so a wrong or
+     * forged one costs nothing.
+     */
+    private function rendersBackTo(Request $request): ?string
+    {
+        if ($request->isMethodSafe()) {
+            return null;
+        }
+
+        $previous = $request->headers->get('referer');
+
+        if (! is_string($previous) || $previous === '') {
+            return null;
+        }
+
+        // Same origin only, so an external referer cannot choose the language.
+        if (! str_starts_with($previous, $request->getSchemeAndHttpHost())) {
+            return null;
+        }
+
+        try {
+            return Route::getRoutes()
+                ->match(Request::create($previous))
+                ->getName();
+        } catch (Throwable) {
+            // An unroutable referer simply does not answer the question.
+            return null;
+        }
     }
 }

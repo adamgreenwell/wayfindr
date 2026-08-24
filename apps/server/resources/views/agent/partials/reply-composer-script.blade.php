@@ -41,6 +41,11 @@
                 }
 
                 templateTarget.value = body;
+                // The draft is now the template's text, not the agent's, so the
+                // textarea stops inheriting the document language and says what
+                // the body actually is. An empty value is HTML's "unknown",
+                // which is what a managed template reports.
+                templateTarget.setAttribute('lang', templatePicker.selectedOptions[0]?.dataset.bodyLang ?? '');
                 templateTarget.focus();
             });
         });

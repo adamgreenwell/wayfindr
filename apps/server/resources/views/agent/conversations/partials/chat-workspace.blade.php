@@ -66,6 +66,7 @@
                         <option
                             value="{{ $replyTemplateKey }}"
                             data-body="{{ $replyTemplate['body'] }}"
+                            data-body-lang="{{ str_replace('_', '-', $replyTemplate['body_language'] ?? \App\Support\DashboardLanguage::FALLBACK) }}"
                             @selected($selectedReplyTemplate === $replyTemplateKey)
                         >
                             {{ $replyTemplate['label'] }}
@@ -130,12 +131,15 @@
 
                 @foreach ($replyTemplates as $replyTemplateKey => $replyTemplate)
                     <article data-template-preview-item="{{ $replyTemplateKey }}" @if ($selectedReplyTemplate !== $replyTemplateKey) hidden @endif>
-                        <strong>{{ $replyTemplate['label'] }}</strong>
+                        {{-- A built-in label is chrome and follows the agent, so it
+                             carries no marker. A managed one is written by the
+                             account and reports `lang=""` -- HTML's "unknown". --}}
+                        <strong @isset($replyTemplate['label_language']) lang="{{ $replyTemplate['label_language'] }}" @endisset>{{ $replyTemplate['label'] }}</strong>
                         {{-- The draft itself, not chrome: it is what the VISITOR
-                             would receive, so it is English and says so rather
-                             than being announced as German. See
-                             App\Support\AgentReplyTemplate. --}}
-                        <p lang="{{ str_replace('_', '-', \App\Support\DashboardLanguage::FALLBACK) }}">{{ $replyTemplate['body'] }}</p>
+                             would receive. A built-in body is English and says so;
+                             a managed one could be in any language, and guessing
+                             is worse than admitting it. See App\Support\AgentReplyTemplate. --}}
+                        <p lang="{{ str_replace('_', '-', $replyTemplate['body_language'] ?? \App\Support\DashboardLanguage::FALLBACK) }}">{{ $replyTemplate['body'] }}</p>
                     </article>
                 @endforeach
             </div>

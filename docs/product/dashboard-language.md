@@ -241,6 +241,32 @@ The general rule: **any view that renders a flash should call `__()` on it.**
 `__()` returns a non-key string unchanged, so it costs nothing on surfaces that
 flash literals and prevents a raw key from ever reaching a page.
 
+### A write answers in the language of the page it renders back to
+
+Listing a write route beside its own page works only while the endpoint serves
+one surface. A linked-ticket action serves two: the same
+`AgentTicketController::close()` is submitted from the ticket page and from the
+conversation panel, and its **validation runs before the redirect**. Listing it
+would answer in German on the English ticket page; not listing it put English
+errors on the German conversation panel. Neither is a locale the endpoint can
+have.
+
+So for an unsafe request the locale is resolved from the **referer's** route —
+the surface that will render the answer. Same-origin only, and reads are
+excluded because a GET renders itself. The referer only ever picks a language,
+so a wrong or forged one costs nothing.
+
+### The language of a value nobody owns is `lang=""`
+
+A reply template's body is not chrome and not the dashboard's copy. A built-in
+is English, and says so. A **managed** template is written by the account in
+whatever language it works in, and neither English nor the agent's language is
+a defensible guess — HTML has an answer for this and it is `lang=""`, meaning
+unknown. The picker carries it too, because selecting a template rewrites the
+textarea and the draft stops being the agent's language at that moment.
+
+Guessing here is worse than admitting: a screen reader acts on the claim.
+
 ### An endpoint the page calls is part of the page
 
 `EXTRACTED_ROUTES` scopes the locale per route, so an endpoint the page posts to

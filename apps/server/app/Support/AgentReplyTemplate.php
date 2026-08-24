@@ -26,18 +26,24 @@ final /*
             'looking_into_it' => [
                 'label' => __('conversations.reply_templates.looking_into_it.label'),
                 'body' => 'Thanks for the update. I am looking into this now and will follow up shortly.',
+                // The label is chrome and follows the agent. The body is what the
+                // VISITOR receives, so it is English and says so.
+                'body_language' => DashboardLanguage::FALLBACK,
             ],
             'need_more_detail' => [
                 'label' => __('conversations.reply_templates.need_more_detail.label'),
                 'body' => 'Could you share a little more detail about what you expected to happen and what happened instead?',
+                'body_language' => DashboardLanguage::FALLBACK,
             ],
             'confirm_resolution' => [
                 'label' => __('conversations.reply_templates.confirm_resolution.label'),
                 'body' => 'Thanks for your patience. I believe this is resolved now, but I am happy to keep digging if anything still looks off.',
+                'body_language' => DashboardLanguage::FALLBACK,
             ],
             'ticket_follow_up' => [
                 'label' => __('conversations.reply_templates.ticket_follow_up.label'),
                 'body' => 'I turned this into a ticket so we can track the follow-up without losing the context from this conversation.',
+                'body_language' => DashboardLanguage::FALLBACK,
             ],
         ];
     }

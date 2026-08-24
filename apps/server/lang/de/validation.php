@@ -72,6 +72,7 @@ return [
      * spells them.
      */
     'attributes' => [
+        'resolution_note' => 'Abschlussnotiz',
         'file' => 'Datei',
         'alert_cadence' => 'Häufigkeit',
         'alert_mode' => 'Benachrichtigungen',
