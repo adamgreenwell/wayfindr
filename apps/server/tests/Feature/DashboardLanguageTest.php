@@ -560,6 +560,36 @@ test('translated copy outside the page region says which language it is', functi
         ->assertDontSee('lang="de"', false);
 });
 
+test('the recorded exception says it is English rather than being pronounced German', function (): void {
+    // `OperatorReadiness` supplies the mail sentence and its vocabulary belongs
+    // to the operator console, so it stays English on purpose. It sits inside a
+    // page region marked with the agent's language, and left unmarked a screen
+    // reader pronounces the one deliberately untranslated sentence on the page
+    // with German phonetics.
+    //
+    // An exception that assistive technology cannot see is not an exception,
+    // it is a defect. So the fragment carries its own `lang`.
+    // Email alerts ON, because the readiness card only reaches the untranslated
+    // branch when the agent actually wants email -- with them off the card says
+    // so, in German, and the exception never renders.
+    $agent = languageAgent('de');
+    $agent->forceFill(['alert_preferences' => ['email' => true]])->save();
+
+    $html = (string) $this->actingAs($agent)
+        ->get(route('dashboard.profile.show'))
+        ->assertOk()
+        ->getContent();
+
+    // Both places it appears: the inline help under the email toggle, and the
+    // readiness card when mail needs setting up.
+    expect($html)->toContain('<span lang="en">')
+        ->and($html)->toContain('<p class="field-help" lang="en">');
+
+    // The cards that ARE translated still follow the page, so this marks the
+    // exception rather than marking everything.
+    expect($html)->toContain('<p class="field-help" lang="de">');
+});
+
 test('an untranslated page is still marked as the English it is', function (): void {
     // The dashboard is being translated a surface at a time, so an agent who
     // chose German reads a few pages in German and most still in English. The

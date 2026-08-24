@@ -223,6 +223,16 @@ class AgentProfileController extends Controller
             'label' => __('profile.readiness_cards.email_label'),
             'status' => __('profile.readiness_cards.email_setup'),
             'tone' => 'attention',
+            // `OperatorReadiness` supplies this sentence and its vocabulary is
+            // the operator console's, which extracts with that surface -- the
+            // recorded exception in docs/product/dashboard-language.md.
+            //
+            // It has to SAY it is English. It sits inside a page region marked
+            // with the agent's language, so left unmarked a screen reader
+            // pronounces the one deliberately untranslated sentence on the page
+            // with German phonetics. An exception that is invisible to
+            // assistive technology is not an exception, it is a defect.
+            'detail_locale' => DashboardLanguage::FALLBACK,
             'detail' => trim(($mailReadiness['summary'] ?? 'Outbound mail is not ready.').' '.($mailReadiness['action'] ?? '')),
         ];
     }

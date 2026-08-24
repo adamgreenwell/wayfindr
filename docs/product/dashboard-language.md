@@ -12,6 +12,14 @@ of copy shared across that surface — so it extracts with the operator console
 rather than from a page-shaped change reaching into it. Until then, an agent
 reading the dashboard in German sees that one sentence in English.
 
+**A recorded exception has to say it is one.** Both exceptions sit inside a page
+region marked with the agent's language, so left unmarked a screen reader
+pronounces the one deliberately untranslated sentence on the page with German
+phonetics. Each carries its own `lang`, which means the readiness cards on the
+profile page are not uniform: the translated ones follow the page and the mail
+one declares English. An exception that assistive technology cannot see is not
+an exception, it is a defect.
+
 Written down rather than left to be discovered, because the failure mode of an
 extraction is precisely a page that looks finished and is not.
 

@@ -87,7 +87,9 @@
                     <span class="meta-value">
                         <span class="readiness-status" data-status="{{ $readinessItem['tone'] }}">{{ $readinessItem['status'] }}</span>
                     </span>
-                    <p class="field-help">{{ $readinessItem['detail'] }}</p>
+                    {{-- A card whose detail is not translated says so; the rest
+                         inherit the page. See AgentProfileController. --}}
+                    <p class="field-help" lang="{{ str_replace('_', '-', $readinessItem['detail_locale'] ?? app()->getLocale()) }}">{{ $readinessItem['detail'] }}</p>
                 </div>
             @endforeach
         </div>
@@ -179,7 +181,9 @@
                 <span class="readiness-status" data-status="{{ $mailReadiness['status'] }}">
                     {{ $mailReadiness['status'] === 'ready' ? __('profile.alerts.delivery_ready') : __('profile.alerts.delivery_attention') }}
                 </span>
-                {{ $mailReadiness['summary'] }} {{ $mailReadiness['action'] }}
+                {{-- Same exception, same reason: this prose is the operator
+                     console's and is deliberately still English. --}}
+                <span lang="{{ str_replace('_', '-', \App\Support\DashboardLanguage::FALLBACK) }}">{{ $mailReadiness['summary'] }} {{ $mailReadiness['action'] }}</span>
             </p>
 
             <button class="button" type="submit">{{ __('profile.alerts.save') }}</button>
