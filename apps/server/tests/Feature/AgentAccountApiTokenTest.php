@@ -8,6 +8,7 @@ use App\Models\Site;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Route;
 
 uses(RefreshDatabase::class);
 
@@ -568,4 +569,31 @@ test('an admin cannot tell another account token from a made-up one either', fun
 
     expect($other->status())->toBe(404)
         ->and($invented->status())->toBe(404);
+});
+
+test('a malformed token id is a 404, not a server error', function (): void {
+    // The controller takes the id raw so model binding cannot answer before the
+    // authority check, which left a non-numeric id reaching `whereKey()` as a
+    // string. PostgreSQL raises comparing that to a bigint.
+    $w = tokenAdmin();
+
+    $this->actingAs($w['admin'])
+        ->delete('/dashboard/account/api-tokens/not-a-number')
+        ->assertNotFound();
+});
+
+test('the revoke route refuses a non-numeric id at routing', function (): void {
+    // The behavioural test above cannot prove this: SQLite compares a string to
+    // an integer key without complaint, so it returns 404 whether or not the
+    // constraint exists, and removing the constraint leaves it green. Only
+    // PostgreSQL -- what every documented install runs -- raises.
+    //
+    // So the constraint is asserted directly, the same way the ticket
+    // transition lock is: the suite cannot show the failure, but it can show
+    // the guard is still there.
+    $route = Route::getRoutes()->getByName('dashboard.account.api-tokens.destroy');
+
+    expect($route)->not->toBeNull()
+        ->and($route->wheres)->toHaveKey('apiToken')
+        ->and($route->wheres['apiToken'])->toBe('[0-9]+');
 });

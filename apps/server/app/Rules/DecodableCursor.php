@@ -47,8 +47,19 @@ class DecodableCursor implements ValidationRule
 
         foreach ($this->orderedBy as $parameter) {
             try {
-                $cursor->parameter($parameter);
+                $value = $cursor->parameter($parameter);
             } catch (UnexpectedValueException) {
+                $fail('The :attribute is not a valid pagination cursor.');
+
+                return;
+            }
+
+            // Present is not the same as usable. `parameter()` only checks the
+            // key exists, so a cursor carrying an array or object under
+            // `created_at` passes and then breaks when the paginator binds it
+            // to the query -- a 500 where the contract promises a 422, which
+            // reads as the server failing rather than the request being wrong.
+            if ($value !== null && ! is_scalar($value)) {
                 $fail('The :attribute is not a valid pagination cursor.');
 
                 return;

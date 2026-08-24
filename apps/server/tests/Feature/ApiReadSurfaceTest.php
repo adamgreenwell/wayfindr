@@ -381,3 +381,20 @@ test('a decodable cursor missing its ordering columns is a 422, not a 500', func
 
     readGet($this, $w, '/api/v1/conversations/WF-MINE01/messages?cursor='.urlencode($crafted))->assertStatus(422);
 });
+
+test('a cursor whose ordering values are not scalars is a 422, not a 500', function (): void {
+    // Present is not usable: `Cursor::parameter()` only checks the key exists,
+    // so an array under `created_at` passed the presence check and then broke
+    // when the paginator bound it to the query.
+    $w = readWorld();
+
+    $crafted = str_replace(['+', '/', '='], ['-', '_', ''], base64_encode(json_encode([
+        'created_at' => ['not', 'a', 'timestamp'],
+        'id' => ['also' => 'not an id'],
+        '_pointsToNextItems' => true,
+    ])));
+
+    foreach (['conversations', 'tickets', 'visitors'] as $collection) {
+        readGet($this, $w, '/api/v1/'.$collection.'?cursor='.urlencode($crafted))->assertStatus(422);
+    }
+});

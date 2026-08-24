@@ -90,6 +90,13 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
     Route::post('/dashboard/account/api-tokens', [AgentAccountApiTokenController::class, 'store'])
         ->name('dashboard.account.api-tokens.store');
     Route::delete('/dashboard/account/api-tokens/{apiToken}', [AgentAccountApiTokenController::class, 'destroy'])
+        // Numeric ids only. The controller takes the id raw so model binding
+        // cannot answer before the authority check, which means a malformed id
+        // would otherwise reach `whereKey()` as a string -- and PostgreSQL
+        // raises on comparing that to a bigint, turning a bad URL into a 500
+        // where the point was an indistinguishable 404. SQLite accepts it, so
+        // the suite could never have shown this.
+        ->whereNumber('apiToken')
         ->name('dashboard.account.api-tokens.destroy');
     Route::get('/dashboard/account/operator-access', [AgentAccountBreakGlassController::class, 'index'])
         ->name('dashboard.account.break-glass.index');
