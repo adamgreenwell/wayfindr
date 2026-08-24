@@ -179,47 +179,114 @@ test('rendering for one agent does not change the default for the next', functio
         ->assertDontSee('Ihr Profil');
 });
 
-test('the profile page renders no English at all in German', function (): void {
-    // The claim this slice makes is a COMPLETE surface, and the way that claim
-    // fails is a page in two languages at once -- the view translated while a
-    // controller or model goes on emitting English nobody grepped for.
-    $agent = languageAgent('de');
-
-    $html = $this->actingAs($agent)
-        ->get(route('dashboard.profile.show'))
-        ->assertOk()
-        ->getContent();
-
-    // Every distinct English string this page is built from, wherever it is
-    // assembled: the view, the controller's readiness cards, and the model's
-    // option and digest maps.
+test('nothing on the profile page reads the same in both languages', function (): void {
+    // Rewritten, because the previous version could not see the thing it was
+    // for. It checked that no string FROM THE CATALOGUE leaked into a German
+    // render -- which says nothing about copy that was never extracted, and
+    // three separate misses got past it: two readiness details, the persisted
+    // digest message, and every success flash.
     //
-    // ONE thing on this page is knowingly not covered: the mail readiness
-    // summary comes from `OperatorReadiness`, whose vocabulary belongs to the
-    // operator console and extracts with that surface rather than from a
-    // page-shaped slice reaching into a thousand lines of shared copy. It is
-    // recorded in docs/product/dashboard-language.md, not left to be
-    // discovered.
-    $english = collect(require lang_path('en/profile.php'))
-        ->pipe(function ($items) {
-            $flat = [];
+    // This compares the two renders instead. Any sentence that survives a
+    // change of language unchanged is either untranslated or a proper noun, and
+    // the allowlist below has to name which.
+    // Rendered in several STATES, not just the default one. Copy that only
+    // appears on a branch -- a cadence nobody selected, a digest that has run,
+    // the flash after a save -- is exactly the copy an extraction misses, and
+    // a single default render reaches none of it. The first version of this
+    // test compared one page in one state and let three real misses through.
+    // Named, so the test can tell the account's DATA apart from its copy: a
+    // name renders identically in both languages and should.
+    $account = Account::factory()->create(['name' => 'Acme Support Datenpunkt']);
 
-            $walk = function (array $node) use (&$walk, &$flat): void {
-                foreach ($node as $value) {
-                    is_array($value) ? $walk($value) : $flat[] = $value;
-                }
-            };
+    $states = [
+        'default' => [],
+        'unattended, email off' => [
+            'alert_preferences' => ['cadence' => User::ALERT_CADENCE_UNATTENDED, 'email' => false],
+        ],
+        'unattended, email on' => [
+            'alert_preferences' => ['cadence' => User::ALERT_CADENCE_UNATTENDED, 'email' => true],
+        ],
+        'digest already run' => [
+            'alert_preferences' => [
+                'cadence' => User::ALERT_CADENCE_DIGEST,
+                'email' => true,
+                'digest_delivery' => [
+                    'status' => User::ALERT_DIGEST_DELIVERY_QUEUED,
+                    'candidate_count' => 3,
+                    'message' => 'Queued digest email with 3 alerts.',
+                    'last_attempted_at' => now()->subHour()->toJSON(),
+                ],
+            ],
+        ],
+    ];
 
-            $walk($items->all());
+    $sentences = function (string $html): array {
+        // The page's own region, not the shell around it. The topbar, search
+        // and navigation belong to the app shell, which is its own surface and
+        // extracts with itself -- comparing them here would report the shell's
+        // copy as this page's debt forever.
+        //
+        // A boundary the test can enforce, rather than an allowlist of strings
+        // that drifts the moment somebody edits one.
+        if (preg_match('/<main\b[^>]*>(.*)<\/main>/is', $html, $main) === 1) {
+            $html = $main[1];
+        }
 
-            return collect($flat);
-        })
-        // The tab title and role names are proper nouns or identical across
-        // both catalogues; comparing them proves nothing.
-        ->reject(fn (string $line): bool => mb_strlen($line) < 12)
-        ->reject(fn (string $line): bool => str_contains($line, ':latest'));
+        // Script and style bodies survive `strip_tags`, and they are full of
+        // English prose that is not copy -- comments, font paths, CSS. They are
+        // not translated and never should be.
+        $html = preg_replace('/<(script|style)\b[^>]*>.*?<\/\1>/is', ' ', $html) ?? $html;
+        $text = strip_tags($html);
+        $lines = preg_split('/[\r\n]+/u', html_entity_decode($text)) ?: [];
 
-    $leaked = $english->filter(fn (string $line): bool => str_contains($html, $line));
+        return collect($lines)
+            ->map(fn (string $line): string => trim(preg_replace('/\s+/u', ' ', $line) ?? ''))
+            // Long enough to be prose rather than a label, a number or a name.
+            ->filter(fn (string $line): bool => mb_strlen($line) >= 25)
+            ->unique()
+            ->values()
+            ->all();
+    };
 
-    expect($leaked->values()->all())->toBe([]);
+    // The one documented exception: `OperatorReadiness` supplies the mail
+    // summary and action, and its vocabulary belongs to the operator console.
+    // See docs/product/dashboard-language.md.
+    // Matched on `MAIL_MAILER`, the config key that sentence names, rather than
+    // on "mail". The first version of this allowlist said `str_contains('mail')`
+    // -- which also matches every sentence containing "eMAIL", and therefore
+    // exempted precisely the alert copy the exception was never meant to cover.
+    // Three mutations survived behind it.
+    $allowed = fn (string $line): bool => str_contains($line, 'MAIL_MAILER')
+        // Data rather than copy. An account name, an agent name and an email
+        // address read the same in every language, correctly.
+        || str_contains($line, 'Acme Support Datenpunkt')
+        || str_contains($line, 'Ada Agent')
+        || str_contains($line, '@');
+
+    foreach ($states as $label => $attributes) {
+        $english = User::factory()->for($account)->create($attributes + ['locale' => 'en', 'name' => 'Ada Agent']);
+        $german = User::factory()->for($account)->create($attributes + ['locale' => 'de', 'name' => 'Ada Agent']);
+
+        $inEnglish = $sentences($this->actingAs($english)->get(route('dashboard.profile.show'))->getContent());
+        $inGerman = $sentences($this->actingAs($german)->get(route('dashboard.profile.show'))->getContent());
+
+        $shared = array_values(array_filter(
+            array_intersect($inEnglish, $inGerman),
+            fn (string $line): bool => ! $allowed($line),
+        ));
+
+        expect(array_values($shared))->toBe([], "untranslated copy in state: {$label}");
+    }
+
+    // And the flash after a save, which no GET can reach.
+    $flashEnglish = User::factory()->for($account)->create(['locale' => 'en', 'name' => 'Ada Agent']);
+    $flashGerman = User::factory()->for($account)->create(['locale' => 'de', 'name' => 'Ada Agent']);
+
+    $flashOf = function (User $agent): string {
+        $this->actingAs($agent)->put(route('dashboard.profile.update'), ['name' => 'Ada Agent']);
+
+        return (string) session('status');
+    };
+
+    expect($flashOf($flashGerman))->not->toBe($flashOf($flashEnglish));
 });

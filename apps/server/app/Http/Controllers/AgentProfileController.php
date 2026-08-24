@@ -64,7 +64,7 @@ class AgentProfileController extends Controller
 
         return redirect()
             ->route('dashboard.profile.show')
-            ->with('status', 'Profile updated.');
+            ->with('status', __('profile.flash.profile_updated'));
     }
 
     public function updateAlertPreferences(Request $request): RedirectResponse
@@ -88,7 +88,7 @@ class AgentProfileController extends Controller
 
         return redirect()
             ->route('dashboard.profile.show')
-            ->with('status', 'Alert preferences updated.');
+            ->with('status', __('profile.flash.alerts_updated'));
     }
 
     public function updatePassword(Request $request): RedirectResponse
@@ -119,7 +119,7 @@ class AgentProfileController extends Controller
 
         return redirect()
             ->route('dashboard.profile.show')
-            ->with('status', 'Password updated.');
+            ->with('status', __('profile.flash.password_updated'));
     }
 
     /**
@@ -233,8 +233,8 @@ class AgentProfileController extends Controller
                 'status' => __('profile.readiness_cards.cadence_unattended'),
                 'tone' => $emailEnabled ? 'ready' : 'manual',
                 'detail' => $emailEnabled
-                    ? sprintf('Email goes out only when a visitor message stays unseen for %d minutes.', UnattendedConversationAlertCollector::THRESHOLD_MINUTES)
-                    : 'Unattended preference is saved, but email alerts are off.',
+                    ? __('profile.readiness_cards.cadence_unattended_detail', ['minutes' => UnattendedConversationAlertCollector::THRESHOLD_MINUTES])
+                    : __('profile.readiness_cards.cadence_unattended_off_detail'),
             ];
         }
 

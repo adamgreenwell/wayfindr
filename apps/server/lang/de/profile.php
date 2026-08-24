@@ -65,6 +65,8 @@ return [
         'cadence_immediate_detail' => 'Neue infrage kommende Benachrichtigungen können sofort zugestellt werden, wenn E-Mail-Benachrichtigungen aktiviert sind.',
         'cadence_digest' => 'Sammelmeldung',
         'cadence_digest_off_detail' => 'Die Einstellung zur Sammelzustellung ist gespeichert, aber E-Mail-Benachrichtigungen sind ausgeschaltet.',
+        'cadence_unattended_detail' => 'Eine E-Mail geht nur raus, wenn eine Besuchernachricht :minutes Minuten lang ungesehen bleibt.',
+        'cadence_unattended_off_detail' => 'Die Einstellung „unbeantwortet\" ist gespeichert, aber E-Mail-Benachrichtigungen sind ausgeschaltet.',
         'cadence_digest_detail' => 'Sammelzustellung wird bevorzugt. Letzte Sammelmeldung: :latest.',
     ],
 
@@ -102,10 +104,17 @@ return [
         'no_alerts_message' => 'Keine für die Sammelmeldung geeigneten Benachrichtigungen gefunden.',
         'failed_message' => 'Die Sammel-E-Mail konnte nicht eingereiht werden.',
         'never_message' => 'Es wurde noch kein Sammellauf aufgezeichnet.',
+        'queued_message' => '{1} Sammel-E-Mail mit :count Benachrichtigung eingereiht.|[2,*] Sammel-E-Mail mit :count Benachrichtigungen eingereiht.',
         'queued_label' => 'Sammel-E-Mail eingereiht',
         'no_alerts_label' => 'Keine geeigneten Benachrichtigungen',
         'failed_label' => 'Sammelzustellung fehlgeschlagen',
         'never_label' => 'Noch nicht ausgeführt',
+    ],
+
+    'flash' => [
+        'profile_updated' => 'Profil aktualisiert.',
+        'alerts_updated' => 'Benachrichtigungseinstellungen aktualisiert.',
+        'password_updated' => 'Passwort aktualisiert.',
     ],
 
     'password' => [

@@ -205,16 +205,18 @@ class User extends Authenticatable
             : self::ALERT_DIGEST_DELIVERY_NOT_RUN;
 
         $candidateCount = (int) data_get($delivery, 'candidate_count', 0);
-        $message = data_get($delivery, 'message');
-
-        if (! is_string($message) || trim($message) === '') {
-            $message = match ($status) {
-                self::ALERT_DIGEST_DELIVERY_QUEUED => $this->digestQueuedMessage($candidateCount),
-                self::ALERT_DIGEST_DELIVERY_NO_ALERTS => __('profile.digest.no_alerts_message'),
-                self::ALERT_DIGEST_DELIVERY_FAILED => __('profile.digest.failed_message'),
-                default => __('profile.digest.never_message'),
-            };
-        }
+        // Derived from the STATUS, never read back from the stored prose. The
+        // scheduler persists an English sentence with every run, so printing
+        // what it stored means a German agent reads English for every digest
+        // that has actually happened -- and the translated version would only
+        // ever appear on an install where the scheduler had never run, which is
+        // exactly backwards.
+        $message = match ($status) {
+            self::ALERT_DIGEST_DELIVERY_QUEUED => $this->digestQueuedMessage($candidateCount),
+            self::ALERT_DIGEST_DELIVERY_NO_ALERTS => __('profile.digest.no_alerts_message'),
+            self::ALERT_DIGEST_DELIVERY_FAILED => __('profile.digest.failed_message'),
+            default => __('profile.digest.never_message'),
+        };
 
         $error = data_get($delivery, 'error');
         $attemptedAt = data_get($delivery, 'last_attempted_at');
@@ -236,7 +238,10 @@ class User extends Authenticatable
 
     public static function digestQueuedMessage(int $candidateCount): string
     {
-        return 'Queued digest email with '.$candidateCount.' '.str('alert')->plural($candidateCount).'.';
+        // `trans_choice` rather than a hand-built plural: English pluralises by
+        // adding an s and German does not, so the rule has to live in the
+        // catalogue with the words rather than in the code beside them.
+        return trans_choice('profile.digest.queued_message', $candidateCount, ['count' => $candidateCount]);
     }
 
     public function shouldReceiveConversationAlert(Conversation $conversation): bool

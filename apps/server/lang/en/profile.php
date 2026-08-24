@@ -65,6 +65,8 @@ return [
         'cadence_immediate_detail' => 'New eligible alerts can notify immediately when email alerts are enabled.',
         'cadence_digest' => 'Digest',
         'cadence_digest_off_detail' => 'Digest preference is saved, but email alerts are off.',
+        'cadence_unattended_detail' => 'Email goes out only when a visitor message stays unseen for :minutes minutes.',
+        'cadence_unattended_off_detail' => 'Unattended preference is saved, but email alerts are off.',
         'cadence_digest_detail' => 'Digest delivery is preferred. Latest digest: :latest.',
     ],
 
@@ -102,10 +104,17 @@ return [
         'no_alerts_message' => 'No digest-ready alerts found.',
         'failed_message' => 'Digest email could not be queued.',
         'never_message' => 'No digest run has been recorded yet.',
+        'queued_message' => '{1} Queued digest email with :count alert.|[2,*] Queued digest email with :count alerts.',
         'queued_label' => 'Queued digest email',
         'no_alerts_label' => 'No digest-ready alerts',
         'failed_label' => 'Digest delivery failed',
         'never_label' => 'Not run yet',
+    ],
+
+    'flash' => [
+        'profile_updated' => 'Profile updated.',
+        'alerts_updated' => 'Alert preferences updated.',
+        'password_updated' => 'Password updated.',
     ],
 
     'password' => [
