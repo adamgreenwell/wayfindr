@@ -52,13 +52,17 @@ class SetDashboardLocale
             return null;
         }
 
-        // The session's previous URL first, because that is what
-        // `redirect()->back()` itself uses -- so this answers the same question
-        // the redirect will. The header is only a fallback: a browser, webview
-        // or proxy sending `Referrer-Policy: no-referrer` strips it, and the
-        // redirect still lands on the conversation page while the locale would
-        // have quietly fallen back to English.
-        $previous = $request->session()->previousUrl() ?: $request->headers->get('referer');
+        // The Referer FIRST, then the session -- the same order
+        // `UrlGenerator::previous()` uses, which is what `redirect()->back()`
+        // calls. Getting this backwards diverges in exactly the case the
+        // session is worst at: with two tabs open, the session's previous URL
+        // belongs to whichever tab navigated last, so an action submitted from
+        // the English ticket page could answer in German because a German
+        // conversation was the most recent navigation anywhere.
+        //
+        // The session still matters: `Referrer-Policy: no-referrer` strips the
+        // header while the redirect still lands on the submitting page.
+        $previous = $request->headers->get('referer') ?: $request->session()->previousUrl();
 
         if (! is_string($previous) || $previous === '') {
             return null;

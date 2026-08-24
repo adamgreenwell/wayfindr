@@ -2253,6 +2253,22 @@ test('a write answers in the language of the page it renders back to', function 
         'max' => 4000,
     ], 'de'));
 
+    // Two tabs: the session's previous URL is the conversation page (the most
+    // recent navigation anywhere), but THIS request came from the ticket page.
+    // The redirect follows the header, so the locale must too -- reading the
+    // session first answered in German on an English page.
+    $this->actingAs($agent)
+        ->from(route('dashboard.conversations.show', $conversation->support_code))
+        ->withHeaders(['referer' => route('dashboard.tickets.show', $ticket)])
+        ->post(route('dashboard.tickets.close', $ticket), $tooLong)
+        ->assertSessionHasErrors('resolution_note');
+
+    expect((string) session('errors')->getBag('default')->first('resolution_note'))
+        ->not->toBe(__('validation.max.string', [
+            'attribute' => __('validation.attributes.resolution_note', [], 'de'),
+            'max' => 4000,
+        ], 'de'), 'a stale session URL outvoted the Referer this request actually carried');
+
     // Submitted from the ticket page, which is NOT extracted, so the same
     // endpoint answers in English -- the page that will render it.
     $englishError = $errorFor(route('dashboard.tickets.show', $ticket));

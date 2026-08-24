@@ -308,10 +308,19 @@ would answer in German on the English ticket page; not listing it put English
 errors on the German conversation panel. Neither is a locale the endpoint can
 have.
 
-So for an unsafe request the locale is resolved from the **referer's** route —
-the surface that will render the answer. Same-origin only, and reads are
-excluded because a GET renders itself. The referer only ever picks a language,
-so a wrong or forged one costs nothing.
+So for an unsafe request the locale is resolved from the route the response will
+render on. Same-origin only, and reads are excluded because a GET renders
+itself. The referer only ever picks a language, so a wrong or forged one costs
+nothing.
+
+**Match `UrlGenerator::previous()` exactly — Referer first, session second.**
+That is the order `redirect()->back()` uses, and getting it backwards diverges
+in the case the session is worst at: with two tabs open, the session's previous
+URL belongs to whichever tab navigated last, so an action submitted from an
+English page could answer in German because a German page was the most recent
+navigation *anywhere*. The session still matters, because
+`Referrer-Policy: no-referrer` strips the header while the redirect still lands
+on the submitting page.
 
 ### The conversation is not the dashboard
 
