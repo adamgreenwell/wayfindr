@@ -20,6 +20,7 @@ use App\Support\CobrowseSnapshotFreshness;
 use App\Support\CobrowseTransportPressure;
 use App\Support\DashboardLanguage;
 use App\Support\ExternalIssueSyncStatus;
+use App\Support\TicketExternalIssueAttempt;
 use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\App;
@@ -1528,4 +1529,76 @@ test('the narrowed ticket heading takes the dative after von', function (): void
         ->and(trans_choice('tickets.counts.matching_tickets', 3, ['count' => 3]))->toBe('3 passenden Tickets')
         // Neither is the nominative a word-for-word translation produces.
         ->and(trans_choice('tickets.counts.matching_tickets', 1, ['count' => 1]))->not->toContain('passendes');
+});
+
+test('every external attempt branch is translated, including the fall-through', function (): void {
+    // Three branches produce an attempt cue and I extracted two of them. The
+    // third is the FALL-THROUGH -- every audit action that is not a create or a
+    // remove, `ticket.external_sync_failed` among them -- and it is the most
+    // common of the three. The link-based fixture never reaches it, so it read
+    // English on a German page while the guard stayed green.
+    $world = conversationQueueLanguageWorld(conversations: 1);
+    $conversation = Conversation::query()->firstOrFail();
+    $agent = $world['agents']['de'];
+
+    $ticket = Ticket::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($conversation)
+        ->for($conversation->visitor, 'requester')
+        ->create(['category' => 'task', 'priority' => 'low', 'status' => 'open', 'subject' => 'Datenpunkt sync', 'description' => 'Datenpunkt body']);
+
+    foreach ([
+        // action, whether metadata carries a project key
+        ['ticket.external_sync_failed', true],
+        ['ticket.external_issue_created', false],
+        ['ticket.external_link_removed', false],
+    ] as [$action, $withProject]) {
+        AuditEvent::query()->create([
+            'account_id' => $world['account']->id,
+            'actor_type' => $agent->getMorphClass(),
+            'actor_id' => $agent->id,
+            'subject_type' => $ticket->getMorphClass(),
+            'subject_id' => $ticket->id,
+            'action' => $action,
+            'metadata' => $withProject ? ['provider' => 'github', 'project_key' => 'Datenpunkt/repo'] : ['provider' => 'github'],
+            'occurred_at' => now()->addSecond(),
+        ]);
+
+        $cue = TicketExternalIssueAttempt::latestCueForTicket(Ticket::query()->find($ticket->id));
+
+        App::setLocale('de');
+        $german = TicketExternalIssueAttempt::latestCueForTicket(Ticket::query()->find($ticket->id));
+
+        App::setLocale('en');
+        $english = TicketExternalIssueAttempt::latestCueForTicket(Ticket::query()->find($ticket->id));
+
+        expect($cue)->not->toBeNull()
+            // Not `toBe($x, $message)` -- Pest's matchers take the message
+            // differently and a stray second argument changes the assertion.
+            ->and($german['label'])->not->toBe($english['label'])
+            ->and($german['body'])->not->toBe($english['body']);
+    }
+
+    // And the project fallback, which is COPY rather than data -- asserted on
+    // the rendered cue, not on the catalogue. Asserting `trans()` only proves
+    // the key exists; it says nothing about whether the code path uses it, and
+    // a mutation of that path survived exactly that.
+    AuditEvent::query()->create([
+        'account_id' => $world['account']->id,
+        'actor_type' => $agent->getMorphClass(),
+        'actor_id' => $agent->id,
+        'subject_type' => $ticket->getMorphClass(),
+        'subject_id' => $ticket->id,
+        'action' => 'ticket.external_link_removed',
+        // No project key, which is what makes the fallback render.
+        'metadata' => ['provider' => 'github'],
+        'occurred_at' => now()->addMinute(),
+    ]);
+
+    App::setLocale('de');
+    $german = TicketExternalIssueAttempt::latestCueForTicket(Ticket::query()->find($ticket->id));
+
+    expect($german['body'])->toContain('Projekt nicht erfasst')
+        ->and($german['body'])->not->toContain('Project not recorded');
 });

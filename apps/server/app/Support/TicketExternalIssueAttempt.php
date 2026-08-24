@@ -68,7 +68,7 @@ final /*
 
         return is_string($projectKey) && trim($projectKey) !== ''
             ? trim($projectKey)
-            : 'Project not recorded';
+            : __('tickets.external_attempt.project_unknown');
     }
 
     /**
@@ -172,9 +172,13 @@ final /*
             ];
         }
 
+        // The fall-through, which every audit action that is not a create or
+        // a remove lands in -- `ticket.external_sync_failed` among them. It was
+        // the one branch of this class still building English, and it is the
+        // most common of the three.
         return [
-            'body' => "{$projectKey} needs attention. Provider details withheld.",
-            'label' => "{$providerLabel} sync failed",
+            'body' => __('tickets.external_attempt.failed_body', ['project' => $projectKey]),
+            'label' => __('tickets.external_attempt.failed_label', ['provider' => $providerLabel]),
             'occurred_at' => $event->occurred_at,
             'sequence' => (int) $event->id,
         ];

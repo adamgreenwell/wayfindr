@@ -369,6 +369,15 @@ a whole review round with every guard green. The world now builds those states
 explicitly, and where a branch needs one fixture per case (five lifecycle
 actions) the **mapping** is asserted directly instead of five pages rendered.
 
+An eighth, which is really the seventh sharpened: **a fall-through branch is
+the one most likely to render and the least likely to be fixtured.** Three
+branches build an external-attempt cue; I extracted the two named ones and left
+the `default`, which every action that is not a create or a remove lands in.
+
+And a matching test trap: **asserting `trans('some.key')` proves the key exists,
+not that the code path uses it.** A mutation of the path survived that
+assertion; asserting the rendered value caught it.
+
 The rule these share: when the general net cannot reach a class of copy, assert
 that class directly rather than loosening the net until it produces noise.
 
