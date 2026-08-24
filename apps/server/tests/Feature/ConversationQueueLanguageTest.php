@@ -615,3 +615,28 @@ test('a visitor with nothing to be named by is still named in German', function 
     expect($english)->toContain('Unknown visitor')
         ->and($english)->not->toContain('Unbekannter Besucher');
 });
+
+test('zero takes the plural, which no explicit rule in the catalogue says', function (): void {
+    // `{1} …|[2,*] …` covers one and many. Zero matches neither, and Laravel
+    // falls through to the locale's own plural rule -- which puts it in the
+    // plural for both English and German. That is correct, and it is correct by
+    // a path nothing in the catalogue states, so it is worth pinning: someone
+    // adding an explicit `{0}` later should have to notice this.
+    //
+    // An empty filtered queue is a normal state, not an edge case.
+    $world = conversationQueueLanguageWorld(conversations: 2);
+
+    $url = route('dashboard.conversations.index', ['conversation_search' => 'zzzz-nothing-matches']);
+
+    $german = conversationQueueLanguageVisibleText(
+        $this->actingAs($world['agents']['de'])->get($url)->assertOk()->getContent()
+    );
+    $english = conversationQueueLanguageVisibleText(
+        $this->actingAs($world['agents']['en'])->get($url)->assertOk()->getContent()
+    );
+
+    expect($german)->toContain('Es werden 0 Unterhaltungen angezeigt')
+        ->and($german)->not->toContain('Es wird 0 Unterhaltung ')
+        ->and($english)->toContain('Showing 0 conversations')
+        ->and($english)->not->toContain('0 conversation matching');
+});
