@@ -155,7 +155,7 @@ Over either limit returns `429`.
 | `401` | No token, or a token that is unknown, revoked or expired. All four say the same thing on purpose. |
 | `403` | The token authenticated but lacks the ability for this endpoint. |
 | `404` | No such record **within this token's reach**. |
-| `422` | A malformed filter or pagination parameter, including a cursor that does not decode. A corrupted cursor is refused rather than treated as no cursor, which would hand you page one again and have you reprocess rows you have already seen. |
+| `422` | A malformed filter or pagination parameter, including a cursor that does not decode, is missing an ordering column, or carries a value that column cannot be compared with. A corrupted cursor is refused rather than treated as no cursor, which would hand you page one again and have you reprocess rows you have already seen. |
 | `429` | Rate limited. |
 
 ## The honest limitation

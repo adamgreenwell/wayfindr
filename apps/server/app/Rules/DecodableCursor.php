@@ -2,9 +2,12 @@
 
 namespace App\Rules;
 
+use App\Support\DatabaseKey;
+use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Pagination\Cursor;
+use Throwable;
 use UnexpectedValueException;
 
 /**
@@ -27,9 +30,12 @@ use UnexpectedValueException;
 class DecodableCursor implements ValidationRule
 {
     /**
-     * @param  list<string>  $orderedBy  The columns the paginated query sorts on.
+     * @param  array<string, string>  $orderedBy  Column => expected kind, one of
+     *                                            `key` or `timestamp`.
      */
-    public function __construct(private readonly array $orderedBy = ['created_at', 'id']) {}
+    public function __construct(
+        private readonly array $orderedBy = ['created_at' => 'timestamp', 'id' => 'key'],
+    ) {}
 
     public function validate(string $attribute, mixed $value, Closure $fail): void
     {
@@ -45,28 +51,49 @@ class DecodableCursor implements ValidationRule
             return;
         }
 
-        foreach ($this->orderedBy as $parameter) {
+        foreach ($this->orderedBy as $parameter => $kind) {
             try {
-                $value = $cursor->parameter($parameter);
+                $carried = $cursor->parameter($parameter);
             } catch (UnexpectedValueException) {
                 $fail('The :attribute is not a valid pagination cursor.');
 
                 return;
             }
 
-            // Present is not the same as usable. `parameter()` only checks the
-            // key exists, so a cursor carrying an array or object under
-            // `created_at` passes and then breaks when the paginator binds it
-            // to the query -- a 500 where the contract promises a 422, which
-            // reads as the server failing rather than the request being wrong.
-            // Null is not exempt. A cursor carrying `{"created_at":null}`
-            // decodes, has the key, and then asks the database to order
-            // against nothing -- which is the same 500 by a shorter route.
-            if (! is_scalar($value)) {
+            if (! self::isUsable($carried, $kind)) {
                 $fail('The :attribute is not a valid pagination cursor.');
 
                 return;
             }
         }
+    }
+
+    /**
+     * Whether a carried value can be compared against the column it orders by.
+     *
+     * Scalar is not enough, which is where the previous version stopped. On
+     * PostgreSQL a cursor carrying `"not-a-timestamp"` is a perfectly good
+     * string that the database refuses to compare with a timestamp column --
+     * another 500 where the contract documents a 422, and again the reading is
+     * "the server broke" rather than "your request was wrong". SQLite compares
+     * anything to anything, so none of this surfaces in the suite by accident.
+     */
+    private static function isUsable(mixed $value, string $kind): bool
+    {
+        if (! is_scalar($value)) {
+            return false;
+        }
+
+        if ($kind === 'key') {
+            return DatabaseKey::isValid((string) $value);
+        }
+
+        try {
+            CarbonImmutable::parse((string) $value);
+        } catch (Throwable) {
+            return false;
+        }
+
+        return true;
     }
 }

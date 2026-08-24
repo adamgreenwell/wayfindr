@@ -7,6 +7,7 @@ use App\Models\Visitor;
 use App\Rules\DecodableCursor;
 use App\Support\Api\ApiScope;
 use App\Support\Api\V1\Payload;
+use App\Support\DatabaseKey;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -27,7 +28,7 @@ class VisitorController extends Controller
             'external_id' => ['nullable', 'string', 'max:255'],
             'email' => ['nullable', 'string', 'max:255'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
-            'cursor' => ['nullable', 'string', new DecodableCursor(['created_at', 'id'])],
+            'cursor' => ['nullable', 'string', new DecodableCursor],
         ]);
 
         $visitors = Visitor::query()
@@ -52,9 +53,21 @@ class VisitorController extends Controller
         return response()->json(Payload::page($visitors, Payload::visitor(...)));
     }
 
-    public function show(Request $request, int $visitor): JsonResponse
+    /**
+     * The id arrives RAW, not coerced to `int`.
+     *
+     * The route constrains shape and not range, so a thirty-digit id is
+     * accepted -- and PHP cannot coerce that into an `int` parameter, so the
+     * request dies with a TypeError before the method body runs. A 500 where
+     * the contract documents 404.
+     */
+    public function show(Request $request, string $visitor): JsonResponse
     {
         $scope = ApiScope::fromRequest($request);
+
+        // An id too large to be a key cannot match one, so it is treated exactly
+        // like an id that is not there.
+        abort_unless(DatabaseKey::isValid($visitor), 404);
 
         $found = Visitor::query()
             ->whereIn('site_id', $scope->siteIdsQuery())

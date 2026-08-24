@@ -413,3 +413,44 @@ test('a cursor whose ordering values are null is a 422, not a 500', function ():
     readGet($this, $w, '/api/v1/conversations?cursor='.urlencode($crafted))->assertStatus(422);
     readGet($this, $w, '/api/v1/tickets?cursor='.urlencode($crafted))->assertStatus(422);
 });
+
+test('an out-of-range id on a show route is a 404, not a type error', function (): void {
+    // The route constrains shape and not range, and PHP cannot coerce a
+    // thirty-digit string into an `int` parameter -- the request died with a
+    // TypeError before the method body ran.
+    $w = readWorld();
+
+    foreach (['tickets', 'visitors'] as $collection) {
+        readGet($this, $w, '/api/v1/'.$collection.'/999999999999999999999999999999')->assertNotFound();
+        readGet($this, $w, '/api/v1/'.$collection.'/9223372036854775808')->assertNotFound();
+    }
+});
+
+test('a cursor value that cannot be compared to its column is a 422', function (): void {
+    // Scalar is not enough. On PostgreSQL a cursor carrying "not-a-timestamp"
+    // is a perfectly good string the database refuses to compare with a
+    // timestamp column. SQLite compares anything to anything, so this can only
+    // be caught by validating the value rather than by exercising the query.
+    $w = readWorld();
+
+    $encode = fn (array $payload): string => str_replace(['+', '/', '='], ['-', '_', ''], base64_encode(json_encode($payload)));
+
+    $bad = [
+        ['created_at' => 'not-a-timestamp', 'id' => 'not-an-id', '_pointsToNextItems' => true],
+        ['created_at' => '2026-08-23 10:00:00', 'id' => 'not-an-id', '_pointsToNextItems' => true],
+        ['created_at' => 'not-a-timestamp', 'id' => 5, '_pointsToNextItems' => true],
+        ['created_at' => true, 'id' => 5, '_pointsToNextItems' => true],
+        ['created_at' => '2026-08-23 10:00:00', 'id' => '999999999999999999999999999999', '_pointsToNextItems' => true],
+    ];
+
+    foreach ($bad as $payload) {
+        readGet($this, $w, '/api/v1/conversations?cursor='.urlencode($encode($payload)))->assertStatus(422);
+    }
+
+    // A well-formed one still works, so this is not simply refusing everything.
+    readGet($this, $w, '/api/v1/conversations?cursor='.urlencode($encode([
+        'created_at' => '2026-08-23 10:00:00',
+        'id' => 5,
+        '_pointsToNextItems' => true,
+    ])))->assertOk();
+});

@@ -27,7 +27,7 @@ class ConversationController extends Controller
             'site_id' => ['nullable', 'integer'],
             'status' => ['nullable', 'string', 'in:open,closed'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
-            'cursor' => ['nullable', 'string', new DecodableCursor(['created_at', 'id'])],
+            'cursor' => ['nullable', 'string', new DecodableCursor],
         ]);
 
         $conversations = Conversation::query()
@@ -62,7 +62,7 @@ class ConversationController extends Controller
 
         $validated = $request->validate([
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
-            'cursor' => ['nullable', 'string', new DecodableCursor(['created_at', 'id'])],
+            'cursor' => ['nullable', 'string', new DecodableCursor],
         ]);
 
         $messages = $conversation->messages()
