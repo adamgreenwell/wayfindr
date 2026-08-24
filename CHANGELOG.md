@@ -74,7 +74,17 @@ half of interface language support.
 
 - **Email as a conversation channel.** Every ticket used to have to begin as a
   widget chat, and a customer replying to a Wayfindr notification was replying
-  into nothing. Mail now opens and continues conversations.
+  into nothing. Mail can now open and continue conversations.
+
+  **This is off until you switch it on, and it needs more than a restart.** The
+  inbound endpoint refuses every request until `WAYFINDR_INBOUND_MAIL_SECRET` is
+  set — an open endpoint that writes conversations is worse than one an operator
+  has to enable. Once set, point your mail provider's inbound webhook at
+  `POST /mail/inbound` and have it sign each delivery with an `X-Wayfindr-Signature`
+  HMAC-SHA256 of the raw body using that secret. Without the secret the endpoint
+  answers `404`; with a bad signature, `401`.
+
+  Outbound replies use your existing mail configuration.
 
 - **Support hours, an away state, and offline capture.** The widget behaved
   identically at 3pm Tuesday and 3am Sunday. A site can now say when it is open,
@@ -88,6 +98,12 @@ half of interface language support.
 - **Password recovery.** There was no forgot-password route. Recovery meant an
   operator with production shell access running a command. Agents can now
   recover their own password.
+
+  **Configure and test outbound mail before you rely on this.** Laravel's default
+  mailer writes to the log rather than sending, and the reset form tells the
+  agent a link is on its way either way — so an install without working mail
+  gives a locked-out agent a dead end that looks like success. The operator
+  console's mail settings include a send test; use it.
 
 - **Per-site widget appearance.** A site's widget can wear its own colour, sit in
   the corner it chooses, and speak the operator's own words.
@@ -147,8 +163,6 @@ half of interface language support.
 
 - The installer's closing message pointed at a readiness page that had moved,
   so the last thing a fresh install printed was a link to nothing.
-- The backup job was dispatched on one queue and awaited on another, so a failed
-  dispatch could leave a run marked as still running forever.
 
 ## [0.6.0] - 2026-08-21
 

@@ -30,9 +30,13 @@ artifact you intend to run.
 
 Evidence below is recorded per artifact and is not superseded by a later
 release: each entry states what was proved, for which version, on which date.
-`v0.7.0` requires no operator action and carries no new required migrations, so
-the most recent clean-install and upgrade evidence remains the authority on the
-install path itself.
+
+**None of it covers `v0.7.0`.** That release adds schema migrations — articles,
+inbound mail, ratings, lifecycle recording boundaries, API tokens, reporting
+indexes and per-user locales — so an older artifact's clean-install and upgrade
+runs prove nothing about this one's install path. Record fresh evidence from the
+`v0.7.0` artifact before adopting it on anything that matters, exactly as the
+rule above says.
 
 - `v0.3.2` has passing hosted public-artifact clean-install evidence from
   August 11, 2026:
