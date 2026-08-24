@@ -1887,7 +1887,7 @@ test('the realtime handlers hard-code no copy of their own', function (): void {
     // its own change, and these names grow to cover them when it lands.
     $source = file_get_contents(resource_path('views/agent/conversations/show.blade.php'));
 
-    $handlers = ['updateVisitorPresence', 'updateVisitorRead', 'fillElapsed', 'elapsedSince', 'updateSnapshotFreshness'];
+    $handlers = ['updateVisitorPresence', 'updateVisitorRead', 'fillElapsed', 'elapsedSince', 'updateSnapshotFreshness', 'transportHealthFromTelemetry', 'updateTransportHealth', 'recoveryFromSnapshotFreshness', 'updateSnapshotRecovery', 'droppedBatchPressure'];
 
     // The reply composer is a whole script rather than a few handlers, and the
     // announcement walker strips <script> before it looks at anything -- so no

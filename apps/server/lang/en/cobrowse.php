@@ -12,6 +12,12 @@ return [
     // here would answer in whatever locale the last request happened to leave
     // behind. See docs/product/dashboard-language.md.
     'transport' => [
+        'exhausted' => [
+            'label' => 'Retry limit reached',
+            'message' => 'Fresh snapshot retry limit reached.',
+            'guidance' => 'Request another fresh snapshot when the visitor transport settles.',
+            'recovery_action' => 'Request another fresh snapshot when the visitor transport settles.',
+        ],
         'recovery_locked' => 'Fresh snapshot already requested. Wait for the visitor widget before retrying.',
         'inactive' => [
             'label' => 'Unavailable',
@@ -254,5 +260,27 @@ return [
         'received' => 'Received :elapsed',
         'expires' => 'Expires :elapsed',
         'expired' => 'Expired :elapsed',
+    ],
+
+    // Copy the page writes while a live connection comes and goes. Never
+    // broadcast -- these describe THIS browser's socket, so they are ordinary
+    // page copy that happens to be written by a script.
+    'realtime' => [
+        'listening' => 'Listening for live conversation updates.',
+        'disconnected' => 'Live updates disconnected. Reconnecting…',
+        'unavailable' => 'Live cobrowse updates are unavailable in this browser.',
+        'failed' => 'Live cobrowse updates could not connect.',
+        'unauthorized' => 'Broadcast authorization failed.',
+        'telemetry_updated' => 'Connection telemetry updated live.',
+        'snapshot_received' => 'Fresh snapshot received. Updating the preview…',
+        'snapshot_received_idle' => 'Fresh snapshot received live. Refresh the preview when you are ready.',
+        'changes_received' => 'New cobrowse changes received. Updating the preview…',
+        'update_available' => 'New cobrowse update available. Refresh the preview when you are ready.',
+        'preview_updated' => 'Preview updated with the latest cobrowse changes.',
+        'preview_refreshing' => 'Refreshing the preview…',
+        'preview_refresh_failed' => 'Could not refresh the preview automatically. Use Refresh preview to try again.',
+        'preview_failed' => 'Preview refresh failed: :reason',
+        'transcript_failed' => 'Transcript refresh failed: :reason',
+        'retry_limit' => 'Fresh snapshot retry limit reached. Request another fresh snapshot when you are ready.',
     ],
 ];

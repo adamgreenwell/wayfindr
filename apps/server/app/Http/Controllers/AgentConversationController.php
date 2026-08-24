@@ -111,6 +111,42 @@ class AgentConversationController extends Controller
                     'unseen' => __('conversations.detail.reply.not_seen'),
                 ],
                 'lastSeenUnknown' => __('conversations.detail.context.not_reported'),
+                // The cobrowse panel is ordinary localized content now, so its
+                // live writers need words the same way presence and read
+                // receipts do. Keyed by the same `copy` names the server render
+                // uses, so both halves say the same thing.
+                'cobrowseTransport' => collect(['exhausted', 'reconnecting', 'degraded', 'live', 'stale', 'inactive', 'no_reports'])
+                    ->mapWithKeys(fn (string $copy): array => [$copy => [
+                        'label' => __('cobrowse.transport.'.$copy.'.label'),
+                        'message' => __('cobrowse.transport.'.$copy.'.message'),
+                        'guidance' => __('cobrowse.transport.'.$copy.'.guidance'),
+                        'recovery_action' => __('cobrowse.transport.'.$copy.'.recovery_action'),
+                    ]])->all(),
+                'cobrowseRecovery' => collect(['pending', 'unknown', 'needs_refresh'])
+                    ->mapWithKeys(fn (string $copy): array => [$copy => [
+                        'label' => __('cobrowse.snapshot_recovery.'.$copy.'.label'),
+                        'message' => __('cobrowse.snapshot_recovery.'.$copy.'.message'),
+                    ]])->all(),
+                'cobrowseRealtime' => __('cobrowse.realtime'),
+                'cobrowseUnits' => [
+                    'notReported' => __('cobrowse.units.not_reported'),
+                    'viewport' => __('cobrowse.units.viewport'),
+                    'milliseconds' => __('cobrowse.units.milliseconds'),
+                    'bytes' => __('cobrowse.units.bytes'),
+                ],
+                // Both plural branches, resolved here with the placeholder left
+                // in -- the same shape the transcript counter uses for its
+                // data-total-one / data-total-many attributes. A script cannot
+                // read Laravel's pipe syntax, and teaching it to would put the
+                // pluralisation rules in two places.
+                'cobrowsePressure' => [
+                    'droppedOne' => trans_choice('cobrowse.pressure.dropped', 1, ['count' => ':count']),
+                    'droppedMany' => trans_choice('cobrowse.pressure.dropped', 2, ['count' => ':count']),
+                    'skippedOne' => trans_choice('cobrowse.pressure.skipped', 1, ['count' => ':count']),
+                    'skippedMany' => trans_choice('cobrowse.pressure.skipped', 2, ['count' => ':count']),
+                    'separator' => __('cobrowse.pressure.separator'),
+                    'noneRecent' => __('cobrowse.pressure.none_recent'),
+                ],
                 // Snapshot freshness is BROADCAST as prose by
                 // CobrowseStateUpdated, built in whichever agent's request
                 // created the event. The page reads `state` and writes its own

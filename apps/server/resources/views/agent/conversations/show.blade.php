@@ -243,7 +243,7 @@
                             <span data-cobrowse-replay-skipped>{{ $cobrowseConsent['replay_preview']['skipped_mutations'] }}</span>
                         </span>
                         @if ($cobrowseConsent['replay_preview']['viewport_width'])
-                            <span class="lede" data-cobrowse-viewport-label>Visitor viewport {{ number_format($cobrowseConsent['replay_preview']['viewport_width']) }}px</span>
+                            <span class="lede" data-cobrowse-viewport-label>{{ __('cobrowse.units.viewport', ['width' => number_format($cobrowseConsent['replay_preview']['viewport_width'])]) }}</span>
                         @else
                             <span class="lede" data-cobrowse-viewport-label hidden></span>
                         @endif
@@ -1013,7 +1013,7 @@
 
                 if (!config || (!hasCobrowseTargets && !hasPresenceTargets && !hasReadTargets && !hasTransportTargets && !hasSnapshotFreshnessTargets && !hasSnapshotRecoveryTargets && !hasTelemetryTargets && !hasTranscriptTarget) || !window.WebSocket) {
                     if (status) {
-                        status.textContent = 'Live cobrowse updates are unavailable in this browser.';
+                        status.textContent = realtimeLabels.cobrowseRealtime.unavailable;
                     }
 
                     return;
@@ -1022,7 +1022,7 @@
                 if (refresh) {
                     refresh.addEventListener('click', function () {
                         if (config.previewUrl) {
-                            setStatus('Refreshing the preview…', 'listening');
+                            setStatus(realtimeLabels.cobrowseRealtime.preview_refreshing, 'listening');
                             refreshCobrowsePreview();
 
                             return;
@@ -1103,7 +1103,7 @@
                         previewFrame.setAttribute('data-viewport-width', String(viewportWidth));
 
                         if (previewViewportLabel) {
-                            previewViewportLabel.textContent = 'Visitor viewport ' + viewportWidth.toLocaleString() + 'px';
+                            previewViewportLabel.textContent = realtimeLabels.cobrowseUnits.viewport.replace(':width', viewportWidth.toLocaleString());
                             previewViewportLabel.hidden = false;
                         }
                     } else {
@@ -1146,7 +1146,7 @@
                     })
                         .then(function (response) {
                             if (!response.ok) {
-                                throw new Error('Preview refresh failed: ' + response.status);
+                                throw new Error(realtimeLabels.cobrowseRealtime.preview_failed.replace(':reason', '') + response.status);
                             }
 
                             return response.json();
@@ -1168,7 +1168,7 @@
                                     refresh.hidden = true;
                                 }
 
-                                setStatus('Preview updated with the latest cobrowse changes.', 'listening');
+                                setStatus(realtimeLabels.cobrowseRealtime.preview_updated, 'listening');
                             }
                         })
                         .catch(function () {
@@ -1176,7 +1176,7 @@
                                 refresh.hidden = false;
                             }
 
-                            setStatus('Could not refresh the preview automatically. Use Refresh preview to try again.', 'warning');
+                            setStatus(realtimeLabels.cobrowseRealtime.preview_refresh_failed, 'warning');
                         })
                         .then(function () {
                             previewRefreshInFlight = false;
@@ -1379,13 +1379,13 @@
                 function formatMilliseconds(value) {
                     var number = numericValue(value);
 
-                    return number === null ? 'Not reported' : Math.round(number).toLocaleString() + ' ms';
+                    return number === null ? realtimeLabels.cobrowseUnits.notReported : realtimeLabels.cobrowseUnits.milliseconds.replace(':count', Math.round(number).toLocaleString());
                 }
 
                 function formatBytes(value) {
                     var number = numericValue(value);
 
-                    return number === null ? 'Not reported' : Math.round(number).toLocaleString() + ' bytes';
+                    return number === null ? realtimeLabels.cobrowseUnits.notReported : realtimeLabels.cobrowseUnits.bytes.replace(':count', Math.round(number).toLocaleString());
                 }
 
                 function timestampValue(value) {
@@ -1435,19 +1435,27 @@
                     var skippedMutations = pressure ? pressure.skipped_mutations : 0;
                     var parts = [];
 
+                    var pressureCopy = realtimeLabels.cobrowsePressure;
+
+                    // The sentence is composed, not translated -- the English
+                    // built it by gluing an English pluraliser to a comma, and
+                    // neither of those travels. Same rule the server render
+                    // follows in x-cobrowse-pressure.
                     if (droppedBatches > 0) {
-                        parts.push(Math.round(droppedBatches).toLocaleString() + ' dropped ' + (droppedBatches === 1 ? 'batch' : 'batches'));
+                        parts.push((droppedBatches === 1 ? pressureCopy.droppedOne : pressureCopy.droppedMany)
+                            .replace(':count', Math.round(droppedBatches).toLocaleString()));
                     }
 
                     if (skippedMutations > 0) {
-                        parts.push(Math.round(skippedMutations).toLocaleString() + ' skipped ' + (skippedMutations === 1 ? 'mutation' : 'mutations'));
+                        parts.push((skippedMutations === 1 ? pressureCopy.skippedOne : pressureCopy.skippedMany)
+                            .replace(':count', Math.round(skippedMutations).toLocaleString()));
                     }
 
                     if (parts.length === 0) {
-                        return 'No recent drops reported';
+                        return pressureCopy.noneRecent;
                     }
 
-                    return parts.join(', ');
+                    return parts.join(pressureCopy.separator);
                 }
 
                 function transportHealthFromTelemetry(telemetry, pressure) {
@@ -1456,42 +1464,20 @@
                     var reconnects = numericValue(telemetry.reconnects) || 0;
 
                     if (telemetry.resync_attempts_exhausted === true) {
-                        return {
-                            state: 'exhausted',
-                            label: 'Retry limit reached',
-                            message: 'Fresh snapshot retry limit reached.',
-                            guidance: 'Request another fresh snapshot when the visitor transport settles.',
-                            recovery_action: 'Request another fresh snapshot when the visitor transport settles.',
-                        };
+                        return {state: 'exhausted', copy: 'exhausted'};
                     }
 
                     if (reconnects > 0) {
-                        return {
-                            state: 'reconnecting',
-                            label: 'Reconnecting',
-                            message: 'The visitor transport has reconnected recently; preview data may briefly lag.',
-                            guidance: 'Use chat to confirm anything that depends on fast-changing page state.',
-                            recovery_action: 'Give the visitor widget a moment, then request a fresh snapshot if the preview still lags.',
-                        };
+                        return {state: 'reconnecting', copy: 'reconnecting'};
                     }
 
                     if (droppedBatches > 0 || skippedMutations > 0) {
-                        return {
-                            state: 'degraded',
-                            label: 'Degraded',
-                            message: 'Cobrowse reports are arriving, but the visitor page is changing faster than Wayfindr can fully replay.',
-                            guidance: 'Use the preview for orientation and confirm fast-changing details through chat.',
-                            recovery_action: 'Request a fresh snapshot once the visitor widget settles, and use chat for fast-changing details.',
-                        };
+                        return {state: 'degraded', copy: 'degraded'};
                     }
 
-                    return {
-                        state: 'live',
-                        label: 'Live',
-                        message: 'Cobrowse reports are arriving normally.',
-                        guidance: 'Preview is current enough to use alongside chat.',
-                        recovery_action: 'No recovery action needed.',
-                    };
+                    // State and the NAME of the copy, never the copy itself:
+                    // this runs for whoever is watching, in their language.
+                    return {state: 'live', copy: 'live'};
                 }
 
                 function updateTransportHealth(telemetry, pressure) {
@@ -1505,13 +1491,18 @@
                         transportPanel.dataset.state = health.state;
                     }
 
-                    setText(transportLabel, health.label);
-                    setText(transportMessage, health.message);
-                    setText(transportStateLabel, health.label);
-                    setText(transportLastReport, formatRelativeTimestamp(pressure && pressure.reported_at ? pressure.reported_at : telemetry.reported_at));
+                    var copy = realtimeLabels.cobrowseTransport[health.copy] || realtimeLabels.cobrowseTransport.live;
+                    var reportedAt = pressure && pressure.reported_at ? pressure.reported_at : telemetry.reported_at;
+
+                    setText(transportLabel, copy.label);
+                    setText(transportMessage, copy.message);
+                    setText(transportStateLabel, copy.label);
+                    setTextIfKnown(transportLastReport, reportedAt
+                        ? elapsedSince(reportedAt)
+                        : realtimeLabels.cobrowseUnits.notReported);
                     setText(transportReconnects, formatNumber(telemetry.reconnects));
                     setText(transportPressure, droppedBatchPressure(telemetry, pressure));
-                    setText(transportGuidance, health.guidance);
+                    setText(transportGuidance, copy.guidance);
 
                     if (!transportRecovery) {
                         return;
@@ -1522,7 +1513,7 @@
                     }
 
                     transportRecovery.dataset.recoveryLocked = 'false';
-                    setText(transportRecovery, health.recovery_action);
+                    setText(transportRecovery, copy.recovery_action);
                 }
 
                 function recoveryFromSnapshotFreshness(freshness) {
@@ -1531,26 +1522,16 @@
                     }
 
                     if (snapshotRecovery && snapshotRecovery.dataset.pending === 'true') {
-                        return {
-                            status: 'pending',
-                            label: 'Snapshot refresh already requested',
-                            message: 'A fresh snapshot request is already waiting on the visitor widget. Use chat while it catches up.',
-                        };
+                        return {status: 'pending', copy: 'pending'};
                     }
 
                     if (freshness.state === 'unknown') {
-                        return {
-                            status: 'unknown',
-                            label: 'Snapshot time needs confirmation',
-                            message: 'Ask the visitor what they see or request a fresh snapshot before relying on this preview.',
-                        };
+                        return {status: 'unknown', copy: 'unknown'};
                     }
 
-                    return {
-                        status: freshness.state,
-                        label: 'Snapshot may need refresh',
-                        message: 'Request a fresh snapshot before relying on this preview, or confirm the page through chat.',
-                    };
+                    // `aging` and `stale` are different states that say the same
+                    // thing, exactly as the server render has it.
+                    return {status: freshness.state, copy: 'needs_refresh'};
                 }
 
                 function updateSnapshotRecovery(freshness) {
@@ -1568,8 +1549,11 @@
 
                     snapshotRecovery.hidden = false;
                     snapshotRecovery.dataset.state = recovery.status || 'unknown';
-                    setText(snapshotRecoveryLabel, recovery.label || 'Snapshot may need refresh');
-                    setText(snapshotRecoveryMessage, recovery.message || 'Use chat to confirm what the visitor sees before relying on this preview.');
+                    var recoveryCopy = realtimeLabels.cobrowseRecovery[recovery.copy]
+                        || realtimeLabels.cobrowseRecovery.needs_refresh;
+
+                    setText(snapshotRecoveryLabel, recoveryCopy.label);
+                    setText(snapshotRecoveryMessage, recoveryCopy.message);
                 }
 
                 function updateSnapshotFreshness(snapshot) {
@@ -1589,7 +1573,7 @@
                     snapshotStatus.dataset.status = freshness.tone || 'manual';
                     setText(snapshotFreshnessLabel, freshnessCopy.label);
                     setText(snapshotFreshnessMessage, freshnessCopy.message);
-                    setText(snapshotFreshnessReported, fillElapsed(
+                    setTextIfKnown(snapshotFreshnessReported, fillElapsed(
                         realtimeLabels.freshness.reported,
                         snapshot.reported_at,
                         realtimeLabels.freshness.reportedUnknown
@@ -1723,7 +1707,7 @@
                             // was sent to /login (which is itself 200 OK). Never swap
                             // that HTML into the transcript.
                             if (response.redirected || !response.ok) {
-                                throw new Error('Transcript refresh failed: ' + response.status);
+                                throw new Error(realtimeLabels.cobrowseRealtime.transcript_failed.replace(':reason', '') + response.status);
                             }
 
                             return response.text();
@@ -1831,7 +1815,7 @@
                         })
                         .then(function (data) {
                             subscribe(socket, data.auth);
-                            setStatus('Listening for live conversation updates.', 'listening');
+                            setStatus(realtimeLabels.cobrowseRealtime.listening, 'listening');
                             reconnectDelay = 1000;
 
                             // Catch up the transcript on every successful subscribe,
@@ -1850,7 +1834,7 @@
                             hasConnectedOnce = true;
                         })
                         .catch(function () {
-                            setStatus('Live cobrowse updates could not connect.', 'warning');
+                            setStatus(realtimeLabels.cobrowseRealtime.failed, 'warning');
                         });
                 }
 
@@ -1913,10 +1897,10 @@
                             updateSnapshotFreshness(summary.snapshot);
 
                             if (config.previewUrl) {
-                                setStatus('Fresh snapshot received. Updating the preview…', 'listening');
+                                setStatus(realtimeLabels.cobrowseRealtime.snapshot_received, 'listening');
                                 refreshCobrowsePreview();
                             } else {
-                                setStatus('Fresh snapshot received live. Refresh the preview when you are ready.', 'available');
+                                setStatus(realtimeLabels.cobrowseRealtime.snapshot_received_idle, 'available');
 
                                 if (refresh) {
                                     refresh.hidden = false;
@@ -1929,8 +1913,8 @@
                         if (updateKind === 'telemetry') {
                             setStatus(
                                 telemetry && telemetry.resync_attempts_exhausted === true
-                                    ? 'Fresh snapshot retry limit reached. Request another fresh snapshot when you are ready.'
-                                    : 'Connection telemetry updated live.',
+                                    ? realtimeLabels.cobrowseRealtime.retry_limit
+                                    : realtimeLabels.cobrowseRealtime.telemetry_updated,
                                 telemetry && telemetry.resync_attempts_exhausted === true ? 'exhausted' : 'listening'
                             );
 
@@ -1942,10 +1926,10 @@
                         // state, consent lifecycle) keep the calm manual cue so
                         // frequent page-state reports do not refetch needlessly.
                         if (config.previewUrl && updateKind === 'mutations') {
-                            setStatus('New cobrowse changes received. Updating the preview…', 'listening');
+                            setStatus(realtimeLabels.cobrowseRealtime.changes_received, 'listening');
                             refreshCobrowsePreview();
                         } else {
-                            setStatus('New cobrowse update available. Refresh the preview when you are ready.', 'available');
+                            setStatus(realtimeLabels.cobrowseRealtime.update_available, 'available');
 
                             if (refresh) {
                                 refresh.hidden = false;
@@ -1976,7 +1960,7 @@
 
                     socket.addEventListener('close', function () {
                         if (hasCobrowseTargets && panel.dataset.state !== 'available') {
-                            setStatus('Live updates disconnected. Reconnecting…', 'warning');
+                            setStatus(realtimeLabels.cobrowseRealtime.disconnected, 'warning');
                         }
 
                         scheduleReconnect();

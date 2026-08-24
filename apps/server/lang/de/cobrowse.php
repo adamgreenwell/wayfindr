@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 return [
     'transport' => [
+        'exhausted' => [
+            'label' => 'Wiederholungslimit erreicht',
+            'message' => 'Wiederholungslimit für neue Schnappschüsse erreicht.',
+            'guidance' => 'Fordern Sie einen weiteren Schnappschuss an, sobald sich die Besucherübertragung beruhigt hat.',
+            'recovery_action' => 'Fordern Sie einen weiteren Schnappschuss an, sobald sich die Besucherübertragung beruhigt hat.',
+        ],
         'recovery_locked' => 'Es wurde bereits ein neuer Schnappschuss angefordert. Warten Sie auf das Besucher-Widget, bevor Sie es erneut versuchen.',
         'inactive' => [
             'label' => 'Nicht verfügbar',
@@ -237,5 +243,24 @@ return [
         'received' => 'Empfangen :elapsed',
         'expires' => 'Läuft ab :elapsed',
         'expired' => 'Abgelaufen :elapsed',
+    ],
+
+    'realtime' => [
+        'listening' => 'Warten auf Live-Aktualisierungen der Unterhaltung.',
+        'disconnected' => 'Live-Aktualisierungen getrennt. Verbindung wird wiederhergestellt …',
+        'unavailable' => 'Live-Cobrowse-Aktualisierungen sind in diesem Browser nicht verfügbar.',
+        'failed' => 'Live-Cobrowse-Aktualisierungen konnten keine Verbindung herstellen.',
+        'unauthorized' => 'Die Broadcast-Autorisierung ist fehlgeschlagen.',
+        'telemetry_updated' => 'Verbindungstelemetrie live aktualisiert.',
+        'snapshot_received' => 'Neuer Schnappschuss empfangen. Die Vorschau wird aktualisiert …',
+        'snapshot_received_idle' => 'Neuer Schnappschuss live empfangen. Aktualisieren Sie die Vorschau, wenn Sie bereit sind.',
+        'changes_received' => 'Neue Cobrowse-Änderungen empfangen. Die Vorschau wird aktualisiert …',
+        'update_available' => 'Neue Cobrowse-Aktualisierung verfügbar. Aktualisieren Sie die Vorschau, wenn Sie bereit sind.',
+        'preview_updated' => 'Die Vorschau wurde mit den neuesten Cobrowse-Änderungen aktualisiert.',
+        'preview_refreshing' => 'Die Vorschau wird aktualisiert …',
+        'preview_refresh_failed' => 'Die Vorschau konnte nicht automatisch aktualisiert werden. Nutzen Sie „Vorschau aktualisieren“, um es erneut zu versuchen.',
+        'preview_failed' => 'Aktualisierung der Vorschau fehlgeschlagen: :reason',
+        'transcript_failed' => 'Aktualisierung des Verlaufs fehlgeschlagen: :reason',
+        'retry_limit' => 'Wiederholungslimit für neue Schnappschüsse erreicht. Fordern Sie einen weiteren an, wenn Sie bereit sind.',
     ],
 ];
