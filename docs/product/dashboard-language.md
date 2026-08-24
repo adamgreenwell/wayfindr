@@ -71,9 +71,28 @@ Short keys grouped by surface — `lang/en/profile.php`, and a matching
 a visitor was seen, because the conversation queue names those states in a
 filter *and* on every row, and the visitors directory names them again. Held per
 surface they would drift the first time a translator improved one of them, and
-the queue would show two different words for one state on the same screen. The
-cost is real and worth stating: the visitors directory is not extracted yet, so
-it renders those labels translated while the rest of that page is English.
+the queue would show two different words for one state on the same screen.
+
+### Models answer with state; surfaces render copy
+
+The first version of the queue extraction put `__()` inside
+`Conversation::attentionLabel()` and `Visitor::presenceLabel()`, and recorded
+the consequence here as a cost worth paying: the visitors directory would render
+those labels in German while the rest of that page stayed English.
+
+It was not worth paying, and the reasoning was wrong in a way worth keeping.
+**A model is read by every surface that touches it, so translating in one is
+unscopeable by construction.** Those two methods reached the conversation detail
+page and the visitors directory — documents that are not extracted and correctly
+declare `<html lang="en">` — which is precisely the mixed-language problem the
+per-surface flag exists to prevent, arriving through the model instead of through
+the layout.
+
+So a model answers with a **state** (`attentionState()`, `presenceState()`) and
+each extracted surface translates that state at its own call site. The label
+methods stay English until their last consumer is extracted, and then they go
+away. A test asserts the unextracted page still reads English for a German
+agent, which is the correct answer until somebody extracts it.
 
 English-as-key reads well in a diff and fails badly in practice here: this
 codebase's copy is edited constantly, and prose in a key position means every
