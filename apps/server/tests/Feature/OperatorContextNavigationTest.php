@@ -54,7 +54,7 @@ test('the current section is marked, in the sidebar and the breadcrumb', functio
     $this->actingAs(platformOperator())
         ->get('/operator/settings/backups')
         ->assertOk()
-        ->assertSee('wf-crumb-current" lang="en">Backups', false)
+        ->assertSee('wf-crumb-current">Backups', false)
         // Asserted as a shape rather than an exact attribute order, which Blade
         // does not promise.
         ->assertSeeInOrder([

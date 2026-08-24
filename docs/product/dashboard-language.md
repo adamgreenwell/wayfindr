@@ -247,25 +247,26 @@ The list exists for the length of the epic and deletes itself with it. Write
 routes sit beside their page, because they render it back on a validation
 failure.
 
-**The shell is its own language.** The navigation, topbar and support-code
-search live in the layout and are not extracted, so a document declaring itself
-German would be lying about most of its own chrome — the same defect from the
-other direction, and a screen reader would pronounce *Conversations* and *Sign
-out* with German phonetics. The root `<html lang>` therefore states the
-**shell's** language and `<main>` states the **page's**, which is what `lang` is
-for. When the shell is extracted the root follows the locale and the attribute
-on `<main>` stops being needed.
+**The shell was its own language, and briefly needed saying so.** While the
+navigation, topbar and search were English, a document declaring itself German
+would have been lying about most of its own chrome, so the root stated the
+shell's language and `<main>` the page's.
 
-Two strings escape `<main>` and have to say so themselves: the document
-`<title>`, and the topbar breadcrumb, which falls back to the page title on
-surfaces with no rail item. Both are page copy standing in shell territory, and
-without a `lang` of their own a screen reader pronounces them as English.
+**That has now collapsed, because the shell is extracted.** An extracted route
+renders a uniformly German document and an unextracted one a uniformly English
+document, so there is no mixed document left to describe: one `lang` on the
+root, none on `<main>`, none on the title or breadcrumb. The route list decides
+the whole page rather than only its main region.
 
-The breadcrumb is the subtler of the two, because **which** language it is
-depends on where its label came from: a rail item's label is shell copy and
-still English, while the fallback to the page title is the agent's. Those only
-differ on a surface that is extracted *and* has a rail item — the conversation
-queue is the first, rendering a German page under an English crumb.
+Recorded exceptions still carry their own `lang` — they are English inside
+German pages on purpose, and they say so.
+
+The breadcrumb was the subtlest case while that split existed: **which**
+language it is depended on where its label came from — a rail item's label was
+shell copy and English, while the fallback to the page title was the agent's,
+and the two only differed on a surface that was extracted *and* had a rail item.
+Extracting the shell removed the distinction rather than solving it, which is
+usually the better outcome.
 
 ### Sentences are translated whole, never assembled
 
