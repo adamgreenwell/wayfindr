@@ -36,7 +36,6 @@ return [
         'closed' => 'Geschlossen',
     ],
 
-
     'lanes' => [
         'region_label' => 'Unterhaltungs-Spuren',
         'new_activity' => 'Benötigt Aufmerksamkeit',
@@ -99,6 +98,17 @@ return [
         'lane_unassigned' => 'Keine nicht zugewiesenen Unterhaltungen in dieser Warteschlange.',
     ],
 
+    'columns' => [
+        'subject' => 'Betreff',
+        'site' => 'Website',
+        'visitor' => 'Besucher',
+        'attention' => 'Aufmerksamkeit',
+        'read' => 'Gelesen',
+        'cobrowse' => 'Cobrowse',
+        'assigned' => 'Zugewiesen',
+        'timing' => 'Zeit',
+    ],
+
     'row' => [
         'attention_waiting_on_visitor' => 'Wartet auf Besucher',
         'attention_needs_reply' => 'Antwort nötig',
@@ -113,6 +123,12 @@ return [
         'waiting_on_reply' => 'Wartet seit :elapsed auf Antwort',
         'waiting_on_visitor' => 'Wartet seit :elapsed auf den Besucher',
         'waiting_on_update' => 'Wartet seit :elapsed auf eine Aktualisierung',
+        'read_new_activity' => 'Neue Aktivität',
+        'read_seen' => 'Gesehen',
+        'unassigned_agent' => 'Nicht zugewiesen',
+        'last_report' => 'Letzte Meldung :value',
+        'pressure' => 'Auslastung :value',
+        'activity' => 'Aktivität :elapsed',
         'no_messages' => 'Noch keine Nachrichten',
     ],
 ];

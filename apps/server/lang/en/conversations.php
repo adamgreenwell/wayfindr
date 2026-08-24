@@ -43,7 +43,6 @@ return [
         'closed' => 'Closed',
     ],
 
-
     'lanes' => [
         'region_label' => 'Conversation lanes',
         'new_activity' => 'Needs attention',
@@ -106,6 +105,17 @@ return [
         'lane_unassigned' => 'No unassigned conversations in this queue.',
     ],
 
+    'columns' => [
+        'subject' => 'Subject',
+        'site' => 'Site',
+        'visitor' => 'Visitor',
+        'attention' => 'Attention',
+        'read' => 'Read',
+        'cobrowse' => 'Cobrowse',
+        'assigned' => 'Assigned',
+        'timing' => 'Timing',
+    ],
+
     'row' => [
         'attention_waiting_on_visitor' => 'Waiting on visitor',
         'attention_needs_reply' => 'Needs reply',
@@ -120,6 +130,12 @@ return [
         'waiting_on_reply' => 'Waiting on reply for :elapsed',
         'waiting_on_visitor' => 'Waiting on visitor for :elapsed',
         'waiting_on_update' => 'Waiting on update for :elapsed',
+        'read_new_activity' => 'New activity',
+        'read_seen' => 'Seen',
+        'unassigned_agent' => 'Unassigned',
+        'last_report' => 'Last report :value',
+        'pressure' => 'Pressure :value',
+        'activity' => 'Activity :elapsed',
         'no_messages' => 'No messages yet',
     ],
 ];

@@ -4,7 +4,7 @@ Status: **in progress.** The plumbing is shipped and the agent profile page is
 translated, with one recorded exception below. The remaining views are being
 extracted surface by surface.
 
-### The recorded exception
+### The recorded exceptions
 
 The profile page shows a mail-readiness sentence built by `OperatorReadiness`.
 That class holds the **operator console's** vocabulary — around a thousand lines
@@ -20,8 +20,21 @@ profile page are not uniform: the translated ones follow the page and the mail
 one declares English. An exception that assistive technology cannot see is not
 an exception, it is a defect.
 
+The **conversation queue** has the same shape of exception for the same reason:
+`CobrowseConsentState` supplies the transport label on every row, and its
+hundred-odd strings are shared with the conversation detail page. Until cobrowse
+is extracted, a German agent reads that one cell in English.
+
 Written down rather than left to be discovered, because the failure mode of an
-extraction is precisely a page that looks finished and is not.
+extraction is precisely a page that looks finished and is not. Both exceptions
+are named in their tests, and the queue's test **fails if its exemption stops
+matching anything** — so an allowlist cannot outlive the thing it excuses and
+quietly start covering real misses.
+
+One hazard recorded ahead of that work: the queue view decides whether to show
+cobrowse pressure by comparing the value against the English strings
+`No drops reported` and `No recent drops reported`. That comparison breaks the
+moment those are translated, and needs to move to a state key rather than prose.
 
 Distinct from [ADR 0017](../decisions/0017-speaking-the-visitors-language.md),
 which is about the **widget** and therefore about visitors. This is about
@@ -53,6 +66,14 @@ should change language when they say so and not before.
 
 Short keys grouped by surface — `lang/en/profile.php`, and a matching
 `lang/de/profile.php` — rather than English-as-key JSON.
+
+**Shared vocabulary gets its own catalogue.** `presence.php` holds how recently
+a visitor was seen, because the conversation queue names those states in a
+filter *and* on every row, and the visitors directory names them again. Held per
+surface they would drift the first time a translator improved one of them, and
+the queue would show two different words for one state on the same screen. The
+cost is real and worth stating: the visitors directory is not extracted yet, so
+it renders those labels translated while the rest of that page is English.
 
 English-as-key reads well in a diff and fails badly in practice here: this
 codebase's copy is edited constantly, and prose in a key position means every
@@ -168,6 +189,49 @@ Two strings escape `<main>` and have to say so themselves: the document
 `<title>`, and the topbar breadcrumb, which falls back to the page title on
 surfaces with no rail item. Both are page copy standing in shell territory, and
 without a `lang` of their own a screen reader pronounces them as English.
+
+### Sentences are translated whole, never assembled
+
+The queue used to build its summary as `'Showing '.$count.' after the '.$lane.'
+support-lane filter.'` — one sentence to read, three fragments in English word
+order. No other language is obliged to keep that order, and a translator handed
+the fragments cannot move them. Composed sentences are single catalogue entries
+with placeholders.
+
+Counts go through `trans_choice`, **including the verb**. `1 needs attention`
+against `3 need attention` is a plural rule; English inflects the verb for
+number and German does not, so a label built as a noun plus a separately chosen
+verb is correct in one language by luck. Several German plural forms are
+deliberately identical on both sides of the `|`, which is the right translation
+rather than a copy-paste slip.
+
+### What a two-language render comparison cannot see
+
+The comparison — render twice, treat any sentence surviving the change as
+untranslated — is the main net, and three things slip through it. Each one hid
+real untranslated copy on the queue that only mutation testing found.
+
+**Rows are one line of several fields.** `strip_tags` collapses a row into
+`· Latest visitor message · Activity 2 minutes ago · <the message body>`, so a
+line-level comparison judges copy and data together, and dropping any line
+containing data throws away the copy beside it. The comparison splits on the
+separator and judges each field alone.
+
+**An interpolated value can be localised too.** `Opened 2 minutes ago` and
+`Opened vor 2 Minuten` are not equal, so an untranslated `Opened` passes a
+comparison test forever. Segments carrying a number are set aside and asserted
+directly instead.
+
+**Short copy is below the floor.** Every column header on the queue is shorter
+than the length floor that keeps names and numbers out of the comparison.
+Lowering it is not the fix; the headers are read from the header row itself and
+compared position by position. Asserting merely that the German page *contains*
+`Besucher` passes while the header still says `Visitor`, because the word also
+appears in the search hint and in a lane label — a real mutation survived
+exactly that.
+
+The rule these share: when the general net cannot reach a class of copy, assert
+that class directly rather than loosening the net until it produces noise.
 
 ### Copy can be wrong without being English
 

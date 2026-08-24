@@ -205,7 +205,9 @@ class Conversation extends Model
 
     public function readStateLabelFor(User $agent): string
     {
-        return $this->hasNewActivityFor($agent) ? 'New activity' : 'Seen';
+        return $this->hasNewActivityFor($agent)
+            ? __('conversations.row.read_new_activity')
+            : __('conversations.row.read_seen');
     }
 
     /**
