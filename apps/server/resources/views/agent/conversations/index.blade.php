@@ -84,7 +84,7 @@
                             <option value="">{{ __('conversations.sites.any') }}</option>
                             @foreach ($sites as $site)
                                 <option value="{{ $site->id }}" @selected($conversationSite === $site->id)>
-                                    {{ $site->name }}
+                                    <span lang="">{{ $site->name }}</span>
                                 </option>
                             @endforeach
                         </select>
@@ -215,7 +215,7 @@
                                         <td>
                                             <a class="wf-queue-site" href="{{ route('dashboard.sites.show', $conversation->site) }}">
                                                 <span class="wf-site-dot" style="background: var({{ $conversation->site->resolvedColor()->cssVariable() }})" aria-hidden="true"></span>
-                                                {{ $conversation->site->name }}
+                                                <span lang="">{{ $conversation->site->name }}</span>
                                             </a>
                                         </td>
                                         <td>

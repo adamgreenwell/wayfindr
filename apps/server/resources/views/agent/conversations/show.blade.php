@@ -79,7 +79,7 @@
                 <div class="meta-grid">
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.context.site') }}</span>
-                        <span class="meta-value">{{ $conversation->site->name }}</span>
+                        <span class="meta-value"><span lang="">{{ $conversation->site->name }}</span></span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.context.visitor') }}</span>
@@ -845,7 +845,7 @@
                                         <strong>{{ __('conversations.detail.ticket.heading') }}</strong>
                                         @forelse ($priorConversation->tickets as $ticket)
                                             <a class="text-link" href="{{ route('dashboard.tickets.show', $ticket) }}">
-                                                {{ $ticket->subject }}
+                                                <span lang="">{{ $ticket->subject }}</span>
                                             </a>
                                             {{-- A TICKET status, from the ticket catalogue rather than this one. --}}
                                             <span>{{ __('tickets.statuses.'.$ticket->status) }}</span>

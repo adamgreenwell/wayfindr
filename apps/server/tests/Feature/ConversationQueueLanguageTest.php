@@ -1681,6 +1681,46 @@ test('the transcript declares its own language, not the dashboard\'s', function 
     expect($titledSibling['subject'])->toBe($spoken->subject)
         ->and($titledSibling['subject_fallback'])->toBeFalse();
 
+    // A linked ticket, so its work panel renders -- its heading is the stored
+    // subject, which is the visitor's words copied across or an agent's own,
+    // and either way not the dashboard's language.
+    Ticket::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($spoken)
+        ->for($spoken->visitor, 'requester')
+        ->create(['status' => 'open', 'priority' => 'normal', 'subject' => 'Datenpunkt linked subject']);
+
+    $html = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $spoken->support_code))
+        ->assertOk()
+        ->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+
+    expect($xpath->query('//h3[contains(@id, "-work-heading")]')->length)
+        ->toBeGreaterThan(0, 'no linked ticket panel rendered, so this proves nothing');
+
+    // Every user-authored value on this page, found by walking rather than by
+    // naming them: the conversation subject, the linked ticket's subject, the
+    // ticket activity body, the site name. Codex found these one file at a
+    // time across three rounds; this is the sweep that should have come first.
+    $authored = [
+        '//*[contains(@class, "message-body")]',
+        '//h3[contains(@id, "-work-heading")]',
+    ];
+
+    foreach ($authored as $selector) {
+        foreach ($xpath->query($selector) as $node) {
+            expect($node->hasAttribute('lang'))->toBeTrue(
+                "a user-authored value at {$selector} inherits the dashboard language");
+            expect($node->getAttribute('lang'))->toBe('',
+                "a user-authored value at {$selector} claims a language it cannot know");
+        }
+    }
+
     // The subject is the same thing wearing a heading. It is the page's primary
     // heading, and it also appears in the queue switcher and in prior
     // conversations -- all of it the visitor's own words.

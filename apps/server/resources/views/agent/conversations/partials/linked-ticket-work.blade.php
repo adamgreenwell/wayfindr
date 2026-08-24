@@ -17,7 +17,15 @@
         <div class="section-header">
             <div>
                 <span class="meta-label">{{ __('conversations.detail.ticket.work') }}</span>
-                <h3 id="ticket-{{ $ticket->id }}-work-heading">{{ $ticket->subject }}</h3>
+                {{-- The stored subject: copied from the conversation, or typed by an
+                     agent on the ticket page. Either way it is not the language this
+                     agent reads the dashboard in.
+
+                     A PERSON'S NAME is deliberately not marked, here or anywhere
+                     else. Authored text has a language; a name is a name in any
+                     of them, and marking every agent name would be a much wider
+                     change for no benefit a screen reader can use. --}}
+                <h3 id="ticket-{{ $ticket->id }}-work-heading" lang="">{{ $ticket->subject }}</h3>
             </div>
             <div class="section-actions">
                 <span class="readiness-status" data-status="{{ $ticket->attentionState() === 'needs_reply' ? 'attention' : 'manual' }}">
@@ -58,9 +66,7 @@
                 <span class="meta-value">{{ __('tickets.row.'.$ticketActivityPreview['label_key']) }}</span>
                 {{-- The body is the visitor's or agent's own words unless there
                      are none, in which case it is copy and has a key. --}}
-                <span class="lede">{{ $ticketActivityPreview['body_key']
-                    ? __('tickets.row.'.$ticketActivityPreview['body_key'])
-                    : $ticketActivityPreview['body'] }}</span>
+                <span class="lede">@if ($ticketActivityPreview['body_key']){{ __('tickets.row.'.$ticketActivityPreview['body_key']) }}@else<span lang="">{{ $ticketActivityPreview['body'] }}</span>@endif</span>
                 @if ($ticketActivityPreview['occurred_at'])
                     <span class="table-note">{{ $ticketActivityPreview['occurred_at']->diffForHumans() }}</span>
                 @endif

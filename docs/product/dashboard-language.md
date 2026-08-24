@@ -313,6 +313,12 @@ German into an element still claiming English.
 `lang=""` everywhere here, for the same reason it is right on a managed reply
 template.
 
+**Where the line falls.** Authored *text* gets `lang=""` — a conversation
+subject, a ticket subject, a ticket activity body, a message body, a site name,
+a managed reply template's name and body. A **person's name** does not: a name
+is a name in any language, and marking every agent name would be a much wider
+change for nothing a screen reader can use.
+
 **Testing this has a trap.** `getAttribute('lang')` returns `''` for an
 attribute that is *absent*, so asserting the value alone cannot tell "declared
 unknown" from "declared nothing" — and the second one inherits German. Assert
