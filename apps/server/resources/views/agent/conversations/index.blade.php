@@ -1,4 +1,4 @@
-<x-layouts.app :title="__('conversations.document_title')" :translated="true" :agent="$agent" :account="$account">
+<x-layouts.app :title="__('conversations.document_title')" :agent="$agent" :account="$account">
             {{-- One whole sentence per language, not a clause glued to ' for '. --}}
             <x-page-header
                 :title="__('conversations.document_title')"
