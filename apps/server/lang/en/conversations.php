@@ -374,6 +374,23 @@ return [
         ],
     ],
 
+    'flash' => [
+        'reply_sent' => 'Reply sent.',
+        'closed' => 'Conversation closed.',
+        'reopened' => 'Conversation reopened.',
+        'claimed' => 'Conversation claimed.',
+        'released' => 'Conversation released.',
+        'ticket_exists' => 'Ticket already exists.',
+        'ticket_created' => 'Ticket created.',
+        'cobrowse_already_active' => 'Cobrowse request already active.',
+        'cobrowse_requested' => 'Cobrowse requested.',
+        'cobrowse_none' => 'No active cobrowse session.',
+        'cobrowse_ended' => 'Cobrowse session ended.',
+        'cobrowse_needed_for_snapshot' => 'Cobrowse must be active before requesting a fresh snapshot.',
+        'snapshot_already_requested' => 'Fresh cobrowse snapshot already requested.',
+        'snapshot_requested' => 'Fresh cobrowse snapshot requested.',
+    ],
+
     'row' => [
         'attention_waiting_on_visitor' => 'Waiting on visitor',
         'attention_needs_reply' => 'Needs reply',

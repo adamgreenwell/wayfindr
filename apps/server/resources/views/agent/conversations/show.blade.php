@@ -48,7 +48,7 @@
             </x-page-header>
 
             @if (session('status'))
-                <p class="status-message">{{ session('status') }}</p>
+                <p class="status-message">{{ __(session('status')) }}</p>
             @endif
 
             <x-tabs

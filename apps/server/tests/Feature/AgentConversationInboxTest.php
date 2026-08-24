@@ -3648,7 +3648,7 @@ test('agent can close an open conversation', function (): void {
         ->from('/dashboard/conversations/WF-CLOSE1')
         ->post('/dashboard/conversations/WF-CLOSE1/close')
         ->assertRedirect('/dashboard/conversations/WF-CLOSE1')
-        ->assertSessionHas('status', 'Conversation closed.');
+        ->assertSessionHas('status', 'conversations.flash.closed');
 
     $conversation->refresh();
 
@@ -3682,7 +3682,7 @@ test('agent can reopen a closed conversation', function (): void {
         ->from('/dashboard/conversations/WF-REOPEN1')
         ->post('/dashboard/conversations/WF-REOPEN1/reopen')
         ->assertRedirect('/dashboard/conversations/WF-REOPEN1')
-        ->assertSessionHas('status', 'Conversation reopened.');
+        ->assertSessionHas('status', 'conversations.flash.reopened');
 
     $conversation->refresh();
 
@@ -3708,7 +3708,7 @@ test('agent reply reopens a closed conversation', function (): void {
             'body' => 'I can keep helping here.',
         ])
         ->assertRedirect('/dashboard/conversations/WF-REPLYOP')
-        ->assertSessionHas('status', 'Reply sent.');
+        ->assertSessionHas('status', 'conversations.flash.reply_sent');
 
     $conversation->refresh();
 
@@ -3747,7 +3747,7 @@ test('agent reply clears that agents typing signal', function (): void {
             'body' => 'I can help with that.',
         ])
         ->assertRedirect('/dashboard/conversations/WF-REPLYTYPE')
-        ->assertSessionHas('status', 'Reply sent.');
+        ->assertSessionHas('status', 'conversations.flash.reply_sent');
 
     $typingSignals = $conversation->fresh()->metadata['agent_typing'] ?? [];
 
@@ -3778,7 +3778,7 @@ test('agent can claim an unassigned conversation', function (): void {
         ->from('/dashboard/conversations/WF-CLAIM1')
         ->post('/dashboard/conversations/WF-CLAIM1/claim')
         ->assertRedirect('/dashboard/conversations/WF-CLAIM1')
-        ->assertSessionHas('status', 'Conversation claimed.');
+        ->assertSessionHas('status', 'conversations.flash.claimed');
 
     expect($conversation->fresh()->assigned_agent_id)->toBe($agent->id);
 
@@ -3805,7 +3805,7 @@ test('assigned agent can release a conversation', function (): void {
         ->from('/dashboard/conversations/WF-RELEASE1')
         ->post('/dashboard/conversations/WF-RELEASE1/release')
         ->assertRedirect('/dashboard/conversations/WF-RELEASE1')
-        ->assertSessionHas('status', 'Conversation released.');
+        ->assertSessionHas('status', 'conversations.flash.released');
 
     expect($conversation->fresh()->assigned_agent_id)->toBeNull();
 });
@@ -4064,7 +4064,7 @@ test('agent can create a ticket from their account conversation', function (): v
             'priority' => 'high',
         ])
         ->assertRedirect('/dashboard/conversations/WF-TICKET1')
-        ->assertSessionHas('status', 'Ticket created.');
+        ->assertSessionHas('status', 'conversations.flash.ticket_created');
 
     $this->assertDatabaseHas('tickets', [
         'account_id' => $account->id,
@@ -5644,7 +5644,7 @@ test('creating a ticket from a conversation is idempotent', function (): void {
             'priority' => 'urgent',
         ])
         ->assertRedirect('/dashboard/conversations/WF-TICKET2')
-        ->assertSessionHas('status', 'Ticket already exists.');
+        ->assertSessionHas('status', 'conversations.flash.ticket_exists');
 
     $this->assertDatabaseCount('tickets', 1);
 });
@@ -6440,7 +6440,7 @@ test('agent can request cobrowse consent for their account conversation', functi
         ->from('/dashboard/conversations/WF-REQUEST1')
         ->post('/dashboard/conversations/WF-REQUEST1/cobrowse/request')
         ->assertRedirect('/dashboard/conversations/WF-REQUEST1')
-        ->assertSessionHas('status', 'Cobrowse requested.');
+        ->assertSessionHas('status', 'conversations.flash.cobrowse_requested');
 
     $this->assertDatabaseHas('cobrowse_sessions', [
         'conversation_id' => $conversation->id,
@@ -6486,7 +6486,7 @@ test('agent cobrowse request is idempotent while a session is active', function 
         ->from('/dashboard/conversations/WF-REQUEST2')
         ->post('/dashboard/conversations/WF-REQUEST2/cobrowse/request')
         ->assertRedirect('/dashboard/conversations/WF-REQUEST2')
-        ->assertSessionHas('status', 'Cobrowse request already active.');
+        ->assertSessionHas('status', 'conversations.flash.cobrowse_already_active');
 
     $this->assertDatabaseCount('cobrowse_sessions', 1);
 });
@@ -6518,7 +6518,7 @@ test('agent can end an active cobrowse session', function (): void {
         ->from('/dashboard/conversations/WF-END1')
         ->post('/dashboard/conversations/WF-END1/cobrowse/end')
         ->assertRedirect('/dashboard/conversations/WF-END1')
-        ->assertSessionHas('status', 'Cobrowse session ended.');
+        ->assertSessionHas('status', 'conversations.flash.cobrowse_ended');
 
     expect($session->fresh())
         ->status->toBe('ended')
@@ -6573,7 +6573,7 @@ test('agent can request a fresh cobrowse snapshot for a granted session', functi
             ->from('/dashboard/conversations/WF-RESYNC')
             ->post('/dashboard/conversations/WF-RESYNC/cobrowse/resync')
             ->assertRedirect('/dashboard/conversations/WF-RESYNC')
-            ->assertSessionHas('status', 'Fresh cobrowse snapshot requested.');
+            ->assertSessionHas('status', 'conversations.flash.snapshot_requested');
 
         $session->refresh();
 
@@ -6646,7 +6646,7 @@ test('agent cannot replace a fresh pending cobrowse resync request with another 
             ->from('/dashboard/conversations/WF-RESYNC4')
             ->post('/dashboard/conversations/WF-RESYNC4/cobrowse/resync')
             ->assertRedirect('/dashboard/conversations/WF-RESYNC4')
-            ->assertSessionHas('status', 'Fresh cobrowse snapshot already requested.');
+            ->assertSessionHas('status', 'conversations.flash.snapshot_already_requested');
 
         expect($session->fresh()->metadata['resync_request'])
             ->id->toBe('resync_existing')
@@ -6703,7 +6703,7 @@ test('agent can replace a delayed pending cobrowse resync request', function ():
             ->from('/dashboard/conversations/WF-RESYNC5')
             ->post('/dashboard/conversations/WF-RESYNC5/cobrowse/resync')
             ->assertRedirect('/dashboard/conversations/WF-RESYNC5')
-            ->assertSessionHas('status', 'Fresh cobrowse snapshot requested.');
+            ->assertSessionHas('status', 'conversations.flash.snapshot_requested');
 
         $session->refresh();
 
@@ -6757,7 +6757,7 @@ test('agent can replace an exhausted cobrowse resync request', function (): void
             ->from('/dashboard/conversations/WF-RESYNC-EXHAUSTED-RETRY')
             ->post('/dashboard/conversations/WF-RESYNC-EXHAUSTED-RETRY/cobrowse/resync')
             ->assertRedirect('/dashboard/conversations/WF-RESYNC-EXHAUSTED-RETRY')
-            ->assertSessionHas('status', 'Fresh cobrowse snapshot requested.');
+            ->assertSessionHas('status', 'conversations.flash.snapshot_requested');
 
         $session->refresh();
 
@@ -7032,7 +7032,7 @@ test('agent cannot request a fresh cobrowse snapshot before consent is granted',
         ->from('/dashboard/conversations/WF-NORESYNC')
         ->post('/dashboard/conversations/WF-NORESYNC/cobrowse/resync')
         ->assertRedirect('/dashboard/conversations/WF-NORESYNC')
-        ->assertSessionHas('status', 'Cobrowse must be active before requesting a fresh snapshot.');
+        ->assertSessionHas('status', 'conversations.flash.cobrowse_needed_for_snapshot');
 
     expect($session->fresh()->metadata ?? [])->not->toHaveKey('resync_request');
 });

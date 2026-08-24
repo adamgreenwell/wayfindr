@@ -1244,6 +1244,70 @@ test('a model hands out keys, so an agent gets their own language and not a proc
         ->and($conversation->queueActivityPreview()['label'])->toBe('No activity preview yet');
 });
 
+test('no unreplaced placeholder ever reaches the page', function (): void {
+    // A sentence rendered without its parameters shows `:elapsed` or `:count`
+    // to the agent. It looks like copy, it is in the right language, and it is
+    // nonsense -- so no comparison or key check can see it.
+    //
+    // This exists because a mutation survived them both: pinning a timing value
+    // to null rendered "Wartet seit :elapsed auf Antwort", which still contains
+    // every German word the assertions were looking for.
+    //
+    // The placeholder names come from the catalogues, so the guard cannot go
+    // stale as sentences gain parameters.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+
+    conversationQueueLanguageTicketStates($world, $conversation);
+
+    $placeholders = [];
+
+    foreach (glob(lang_path('en/*.php')) ?: [] as $file) {
+        $walk = function (array $values) use (&$walk, &$placeholders): void {
+            foreach ($values as $value) {
+                if (is_array($value)) {
+                    $walk($value);
+
+                    continue;
+                }
+
+                if (is_string($value) && preg_match_all('/:([a-z][a-z_]{2,})/', $value, $found) > 0) {
+                    $placeholders = array_merge($placeholders, $found[1]);
+                }
+            }
+        };
+
+        $walk(require $file);
+    }
+
+    $placeholders = array_values(array_unique($placeholders));
+
+    expect($placeholders)->not->toBe([]);
+
+    $states = [
+        route('dashboard.profile.show'),
+        route('dashboard.conversations.index'),
+        route('dashboard.tickets.index'),
+        route('dashboard.conversations.show', $conversation->support_code),
+    ];
+
+    foreach (['de', 'en'] as $locale) {
+        foreach ($states as $url) {
+            $text = conversationQueueLanguageVisibleText(
+                (string) $this->actingAs($world['agents'][$locale])->get($url)->assertOk()->getContent()
+            );
+
+            foreach ($placeholders as $placeholder) {
+                $this->assertStringNotContainsString(
+                    ':'.$placeholder,
+                    $text,
+                    "unreplaced :{$placeholder} rendered at {$url} in {$locale}"
+                );
+            }
+        }
+    }
+});
+
 test('no raw catalogue key ever reaches the page', function (): void {
     // A missing key renders as `conversations.row.something` -- readable enough
     // to look like copy in a screenshot and wrong to everybody.
@@ -1693,5 +1757,66 @@ test('a reply helper translates its name but never its message', function (): vo
         expect($german[$key]['label'])->not->toBe($english[$key]['label'])
             // ...and the message the visitor would receive does not.
             ->and($german[$key]['body'])->toBe($english[$key]['body']);
+    }
+});
+
+test('every detail-page action confirms itself in the agent language', function (): void {
+    // The flash is written in one request and read in the next, so the KEY
+    // travels and the page translates it -- the same rule the profile page
+    // follows. Asserting the session holds a key proves nothing about what the
+    // agent sees, so this follows the redirect.
+    $world = conversationQueueLanguageWorld(conversations: 1);
+    $conversation = Conversation::query()->firstOrFail();
+    $agent = $world['agents']['de'];
+
+    $this->actingAs($agent)
+        ->from(route('dashboard.conversations.show', $conversation->support_code))
+        ->followingRedirects()
+        ->post(route('dashboard.conversations.close', $conversation->support_code))
+        ->assertOk()
+        ->assertSee('Unterhaltung geschlossen.')
+        ->assertDontSee('Conversation closed.')
+        // A raw key reaching the page is the specific failure of flashing one.
+        ->assertDontSee('conversations.flash');
+
+    $this->actingAs($world['agents']['en'])
+        ->from(route('dashboard.conversations.show', $conversation->support_code))
+        ->followingRedirects()
+        ->post(route('dashboard.conversations.reopen', $conversation->support_code))
+        ->assertOk()
+        ->assertSee('Conversation reopened.')
+        ->assertDontSee('Unterhaltung wieder geöffnet.');
+});
+
+test('the linked ticket panel is translated, values and all', function (): void {
+    // The comparison guard cannot judge these: the timing values carry an
+    // elapsed time (digits) and the preview body carries the message itself
+    // (data), so both segments are discarded before they are compared. Same
+    // blind spots as the queue rows, same answer.
+    $world = conversationQueueLanguageWorld(conversations: 1);
+    $conversation = Conversation::query()->firstOrFail();
+
+    // A ticket with no messages and no description, so the preview falls back
+    // to copy rather than quoting a visitor.
+    Ticket::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($conversation)
+        ->for($conversation->visitor, 'requester')
+        ->create(['category' => 'task', 'priority' => 'low', 'status' => 'open', 'subject' => 'Datenpunkt linked', 'description' => null]);
+
+    $german = conversationQueueLanguageVisibleText(
+        (string) $this->actingAs($world['agents']['de'])
+            ->get(route('dashboard.conversations.show', $conversation->support_code))
+            ->assertOk()
+            ->getContent()
+    );
+
+    foreach (['Geöffnet', 'Wartet', 'Noch keine Aktivitätsvorschau', 'Öffnen Sie das Ticket'] as $expected) {
+        $this->assertStringContainsString($expected, $german, "linked ticket panel: {$expected}");
+    }
+
+    foreach (['Opened ', 'Waiting on', 'No activity preview yet', 'Open the ticket to add context'] as $english) {
+        $this->assertStringNotContainsString($english, $german, "English left in the linked ticket panel: {$english}");
     }
 });

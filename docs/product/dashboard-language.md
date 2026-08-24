@@ -143,6 +143,17 @@ audited** — it fails when a surface is extracted without being added, which is
 exactly how the ticket queue got its states. The catalogue list has no such
 check yet and is worth one when a fifth catalogue lands.
 
+### An unreplaced placeholder is the same bug wearing a translation
+
+A sentence rendered without its parameters shows `:elapsed` or `:count` to the
+agent. It is in the right language, it looks like copy, and it is nonsense — so
+neither the comparison nor the raw-key check can see it. A mutation that pinned
+a timing value to null rendered *"Wartet seit :elapsed auf Antwort"*, which
+still contained every German word the assertions were looking for.
+
+The guard collects placeholder names **from the catalogues**, so it cannot go
+stale as sentences gain parameters.
+
 ### A raw key on the page is always a bug, and needs its own guard
 
 A missing key renders as `conversations.row.something` — readable enough to pass

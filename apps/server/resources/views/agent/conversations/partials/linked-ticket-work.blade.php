@@ -44,13 +44,23 @@
             </div>
             <div class="meta-item">
                 <span class="meta-label">{{ __('conversations.detail.context.timing') }}</span>
-                <span class="meta-value">{{ $ticketTiming['opened_label'] }}</span>
-                <span class="lede">{{ $ticketTiming['wait_label'] }}</span>
+                <span class="meta-value">{{ __('tickets.row.opened', ['elapsed' => $ticketTiming['opened_at']->diffForHumans()]) }}</span>
+                <span class="lede">{{ $ticketTiming['wait_since']
+                    ? __('tickets.row.'.$ticketTiming['wait_key'], [
+                        'elapsed' => $ticketTiming['wait_key'] === 'closed'
+                            ? $ticketTiming['wait_since']->diffForHumans()
+                            : $ticket->elapsedWaitFrom($ticketTiming['wait_since']),
+                    ])
+                    : __('tickets.row.'.$ticketTiming['wait_key']) }}</span>
             </div>
             <div class="meta-item">
                 <span class="meta-label">{{ __('conversations.detail.context.latest_activity') }}</span>
                 <span class="meta-value">{{ __('tickets.row.'.$ticketActivityPreview['label_key']) }}</span>
-                <span class="lede">{{ $ticketActivityPreview['body'] }}</span>
+                {{-- The body is the visitor's or agent's own words unless there
+                     are none, in which case it is copy and has a key. --}}
+                <span class="lede">{{ $ticketActivityPreview['body_key']
+                    ? __('tickets.row.'.$ticketActivityPreview['body_key'])
+                    : $ticketActivityPreview['body'] }}</span>
                 @if ($ticketActivityPreview['occurred_at'])
                     <span class="table-note">{{ $ticketActivityPreview['occurred_at']->diffForHumans() }}</span>
                 @endif

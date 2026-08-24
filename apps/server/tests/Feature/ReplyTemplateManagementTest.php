@@ -368,7 +368,7 @@ test('agents can send replies from managed account templates', function (): void
             'body' => '',
         ])
         ->assertRedirect("/dashboard/conversations/{$conversation->support_code}")
-        ->assertSessionHas('status', 'Reply sent.');
+        ->assertSessionHas('status', 'conversations.flash.reply_sent');
 
     $conversationReply = $conversation->messages()->latest('id')->firstOrFail();
 

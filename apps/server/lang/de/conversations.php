@@ -358,6 +358,23 @@ return [
         ],
     ],
 
+    'flash' => [
+        'reply_sent' => 'Antwort gesendet.',
+        'closed' => 'Unterhaltung geschlossen.',
+        'reopened' => 'Unterhaltung wieder geöffnet.',
+        'claimed' => 'Unterhaltung übernommen.',
+        'released' => 'Unterhaltung freigegeben.',
+        'ticket_exists' => 'Das Ticket existiert bereits.',
+        'ticket_created' => 'Ticket erstellt.',
+        'cobrowse_already_active' => 'Eine Cobrowse-Anfrage ist bereits aktiv.',
+        'cobrowse_requested' => 'Cobrowse angefragt.',
+        'cobrowse_none' => 'Keine aktive Cobrowse-Sitzung.',
+        'cobrowse_ended' => 'Cobrowse-Sitzung beendet.',
+        'cobrowse_needed_for_snapshot' => 'Cobrowse muss aktiv sein, bevor eine neue Momentaufnahme angefragt werden kann.',
+        'snapshot_already_requested' => 'Eine neue Cobrowse-Momentaufnahme wurde bereits angefragt.',
+        'snapshot_requested' => 'Neue Cobrowse-Momentaufnahme angefragt.',
+    ],
+
     'row' => [
         'attention_waiting_on_visitor' => 'Wartet auf Besucher',
         'attention_needs_reply' => 'Antwort nötig',
