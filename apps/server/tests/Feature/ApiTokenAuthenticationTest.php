@@ -4,6 +4,7 @@ use App\Models\Account;
 use App\Models\ApiToken;
 use App\Models\Site;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -223,4 +224,64 @@ test('an ability refusal does not spend another token budget', function (): void
 
     // The second is still merely misconfigured, not throttled.
     apiGet($this, $other['plain'], '/api/v1/me')->assertStatus(403);
+});
+
+test('a working integration is not locked out by a broken one sharing its address', function (): void {
+    // An IP is not a tenant. Self-hosted installs sit behind office NAT, CI
+    // egress and cloud gateways, so the address that burned this budget with a
+    // stale token in a retry loop is also the address every other integration
+    // in the building calls from -- and refusing before the lookup meant one
+    // broken script took all of them down while they held correct credentials.
+    config()->set('wayfindr.api_failed_auth_per_minute', 3);
+
+    $working = issueToken();
+
+    foreach (range(1, 4) as $i) {
+        $this->getJson('/api/v1/me', ['Authorization' => 'Bearer wfk_'.str_repeat('c', 40)]);
+    }
+
+    // The address is locked out for anything that does not authenticate...
+    $this->getJson('/api/v1/me', ['Authorization' => 'Bearer wfk_'.str_repeat('d', 40)])
+        ->assertStatus(429);
+
+    // ...and the token that is actually valid still works.
+    apiGet($this, $working['plain'], '/api/v1/me')->assertOk();
+    apiGet($this, $working['plain'], '/api/v1/conversations')->assertOk();
+});
+
+test('a credential that cannot be one of ours is refused without a database read', function (): void {
+    // What makes honouring valid tokens under lockout affordable: the lookup no
+    // longer sits behind the budget, so it has to be cheap to reach. Every
+    // issued token is the prefix plus 40 base62 characters, so anything else
+    // cannot be in the table and is refused on a regex.
+    $queries = 0;
+
+    DB::listen(function ($query) use (&$queries): void {
+        if (str_contains($query->sql, 'api_tokens')) {
+            $queries++;
+        }
+    });
+
+    foreach ([
+        'not-a-token',
+        'wfk_short',
+        'wfk_'.str_repeat('c', 39),
+        'wfk_'.str_repeat('c', 41),
+        'wfk_'.str_repeat('!', 40),
+        str_repeat('c', 40),
+        'WFK_'.str_repeat('c', 40),
+    ] as $malformed) {
+        $this->getJson('/api/v1/me', ['Authorization' => 'Bearer '.$malformed])
+            ->assertStatus(401);
+    }
+
+    expect($queries)->toBe(0);
+
+    // And a well-shaped token that simply does not exist DOES cost a lookup,
+    // so this is measuring the shape gate rather than measuring that the API
+    // never queries at all.
+    $this->getJson('/api/v1/me', ['Authorization' => 'Bearer wfk_'.str_repeat('c', 40)])
+        ->assertStatus(401);
+
+    expect($queries)->toBe(1);
 });

@@ -175,8 +175,22 @@ resolved yet, so every token behind one address silently shares one bucket.
 For the same reason, **failed authentication is bounded inside that middleware**
 rather than by a throttle placed before it: a throttle placed before it does not
 stay before it. Only failures spend that budget, so a working integration never
-touches it however much traffic it sends, and an address probing for a valid
-token stops costing lookups.
+touches it however much traffic it sends.
+
+**Exhausting that budget locks out invalid credentials, not the address.** An IP
+is not a tenant. Self-hosted installs sit behind office NAT, CI egress and cloud
+gateways, so the address that burned the budget with a stale token in a retry
+loop is also the address every other integration in the building calls from.
+Refusing before the lookup meant one broken script took all of them down while
+they were holding correct credentials — denial of service by a co-tenant, which
+is a worse failure than the enumeration the budget exists to bound.
+
+So the lookup no longer sits behind the budget, which means it has to be cheap
+to reach. It is gated on **shape** instead: every issued token is the prefix
+plus 40 base62 characters, so anything else cannot be in the table and is
+refused on a regex. A flood of malformed guesses never reaches the database.
+A well-formed guess still costs one indexed read, locked out or not, and that
+is the price of not locking a building out of its own integrations.
 
 ### Read first, and less than the dashboard can do
 

@@ -140,6 +140,10 @@ Separately, **failed** authentication attempts are limited to 60 per minute per
 address (`WAYFINDR_API_FAILED_AUTH_PER_MINUTE`). Only failures count, so a
 working integration never encounters it however much traffic it sends.
 
+Going over it locks out credentials that do not authenticate, **not the
+address**. Your token keeps working even when something else behind the same
+office NAT or CI runner has been failing all morning.
+
 A token that authenticates but lacks an ability does not spend *that* budget —
 it is a misconfigured integration, not somebody hunting for a credential that
 works — but it is still bounded, per token, on the same per-minute budget a

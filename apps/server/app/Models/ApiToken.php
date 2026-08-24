@@ -96,6 +96,19 @@ class ApiToken extends Model
         return hash('sha256', $plain);
     }
 
+    /**
+     * Whether a presented credential could be one of ours at all.
+     *
+     * Every issued token is the prefix followed by exactly 40 base62
+     * characters, so anything else cannot be in the table and can be refused
+     * without a database read. Shape only -- this says nothing about whether
+     * the token exists, belongs to anyone, or still works.
+     */
+    public static function looksLikeToken(string $presented): bool
+    {
+        return preg_match('/^'.preg_quote(self::PREFIX, '/').'[A-Za-z0-9]{40}$/', $presented) === 1;
+    }
+
     public function account(): BelongsTo
     {
         return $this->belongsTo(Account::class);

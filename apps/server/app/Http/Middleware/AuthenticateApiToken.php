@@ -43,21 +43,34 @@ class AuthenticateApiToken implements AuthenticatesRequests
         // ahead of `ThrottleRequests` (see above), so a route throttle placed
         // before it does not stay before it. The middleware that refuses is
         // the one that can count refusals.
-        //
-        // Checked BEFORE the lookup, so an address that has burned its budget
-        // costs nothing further. Only failures spend it, so a working
-        // integration never touches this no matter how much traffic it sends.
         $probeKey = 'api-failed-auth:'.(string) $request->ip();
         $maxFailures = max(1, (int) config('wayfindr.api_failed_auth_per_minute', 60));
 
-        if (RateLimiter::tooManyAttempts($probeKey, $maxFailures)) {
-            return $this->refuse('Too many failed authentication attempts.', 429);
-        }
+        // Exhausting the budget locks out INVALID credentials from this
+        // address. It deliberately does not lock out the address.
+        //
+        // An IP is not a tenant. Self-hosted installs sit behind office NAT,
+        // CI egress and cloud gateways, so one integration with a stale token
+        // in a retry loop shares an address with everyone else in the building
+        // -- and refusing before the lookup meant their broken script took
+        // every working integration down with it, for a credential those
+        // callers were holding correctly. Denial of service by a co-tenant is
+        // a worse failure than the enumeration this bounds.
+        $lockedOut = RateLimiter::tooManyAttempts($probeKey, $maxFailures);
 
         $presented = $request->bearerToken();
 
         if (! is_string($presented) || $presented === '') {
-            return $this->fail($probeKey, 'An API token is required.');
+            return $this->refuseFailure($probeKey, $lockedOut, 'An API token is required.');
+        }
+
+        // Shape first, and this is what makes honouring valid tokens under
+        // lockout affordable. Every issued token is the prefix plus 40 base62
+        // characters, so anything else cannot be in the table -- which means a
+        // flood of malformed guesses is refused on a regex and never reaches
+        // the database, locked out or not.
+        if (! ApiToken::looksLikeToken($presented)) {
+            return $this->refuseFailure($probeKey, $lockedOut, 'That API token is not valid.');
         }
 
         // Looked up by hash rather than compared row by row. The hash is the
@@ -71,7 +84,7 @@ class AuthenticateApiToken implements AuthenticatesRequests
         // caller learning that their token *used to* work learns something
         // about the account; a caller who mistyped learns nothing either way.
         if ($token === null || ! $token->isUsable()) {
-            return $this->fail($probeKey, 'That API token is not valid.');
+            return $this->refuseFailure($probeKey, $lockedOut, 'That API token is not valid.');
         }
 
         // Written before the response, not after, so a request refused for any
@@ -117,6 +130,23 @@ class AuthenticateApiToken implements AuthenticatesRequests
         $request->attributes->set(self::ATTRIBUTE, $token);
 
         return $next($request);
+    }
+
+    /**
+     * Refuse a credential that did not authenticate.
+     *
+     * Once the address is locked out the reason is no longer itemised, because
+     * the caller has already been told 60 times and the only useful answer is
+     * to stop. A valid token never arrives here, so this cannot lock anybody
+     * out of their own account.
+     */
+    private function refuseFailure(string $probeKey, bool $lockedOut, string $message): JsonResponse
+    {
+        if ($lockedOut) {
+            return $this->refuse('Too many failed authentication attempts.', 429);
+        }
+
+        return $this->fail($probeKey, $message);
     }
 
     /**
