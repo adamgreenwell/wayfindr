@@ -2,13 +2,23 @@
 
 Wayfindr is an open source, self-hostable customer support platform for live chat, cobrowsing, and ticketing.
 
-The project is intentionally early. The first goal is to prove a focused support loop:
+A visitor can reach support through a widget, through the help centre before
+they ask, or by email. An agent works the queue, replies, cobrowses with
+consent, and turns any of it into a durable ticket. An owner can see whether the
+desk is actually working.
 
-- install a small widget on a site,
-- identify anonymous or authenticated visitors,
-- chat with a support agent,
-- request consent-based cobrowsing,
-- create a durable ticket from the support session.
+- install a small widget on a site, themed to match it and speaking the
+  visitor's language;
+- identify anonymous or authenticated visitors, and ask who they are when the
+  site needs to know;
+- answer before the question — searchable help-centre articles inside the
+  widget;
+- chat with a support agent, by widget or by email;
+- say when the desk is open, and take the question when it is not;
+- request consent-based cobrowsing;
+- create a durable ticket from the support session;
+- measure all of it — volume, response and resolution times, reopens, workload,
+  and whether the visitor said it helped.
 
 Wayfindr is a Laravel-first monorepo. Laravel owns the core product, while SDKs and integrations make it portable across WordPress, Laravel, Next.js, React, and plain JavaScript sites.
 
@@ -106,11 +116,13 @@ Start with [data-responsibility.md](docs/privacy/data-responsibility.md), the
 
 ## Status
 
-Pre-alpha. The latest public release is `v0.3.2` (August 11, 2026), and the
-next development line is `0.4.0`. Wayfindr now has a usable internal alpha spine
-for the first support loop and a review-gated self-hosting path, but
-release-readiness claims are still being proven on disposable VMs before the
-project should be treated as a boring appliance.
+Pre-1.0. The latest public release is `v0.7.0` (August 24, 2026), and the next
+development line is `0.7.1`. Self-hosting and upgrades from published artifacts
+are proved repeatable on hosted runners and disposable bare-metal guests.
+
+`1.0.0` is deliberately scoped to finishing the core support product and proving
+it, rather than to feature parity with every competitor: the remaining Tier 1
+gaps, first-class localization, and hardening. Everything below already ships.
 
 - browser and CLI first-run setup;
 - authenticated account owners, admins, agents, and platform operators;
@@ -122,6 +134,18 @@ project should be treated as a boring appliance.
   retention sweep, malware-scanner hook, and S3-compatible storage routing;
 - durable tickets with assignment, status changes, categories, priorities,
   labels, notes, replies, queue filters, and support reference panels;
+- email as a second conversation channel, inbound and outbound;
+- a help centre: articles authored in the dashboard, searchable from the widget;
+- per-site support hours in the site's own timezone, an away state, offline
+  capture, and a configurable pre-chat form;
+- reporting over conversations and tickets — volume, first-response and
+  resolution times, reopen rates, agent workload — plus visitor satisfaction
+  ratings, each stating the date the install began recording it;
+- per-site widget appearance, and a widget language catalogue with German
+  complete;
+- an agent-selectable dashboard language, on the surfaces translated so far;
+- a visitor directory, and agent-initiated password recovery;
+- a read-only public API with a decided isolation model;
 - visitor profiles, support-code lookup, and safe cross-record context;
 - alert preferences, dashboard alerts, queued email notifications, welcome
   emails, and mail smoke testing;

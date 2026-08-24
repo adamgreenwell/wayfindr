@@ -2,13 +2,30 @@
 
 This roadmap is directional and should not include private business strategy.
 
-As of August 12, 2026, the latest public release is `v0.3.2`, and the next
-development line is `0.4.0`.
+As of August 24, 2026, the latest public release is `v0.7.0`, and the next
+development line is `0.7.1`.
 
-## Current Alpha Spine
+`1.0.0` is scoped to finishing the core support product and proving it, rather
+than to feature parity: the remaining Tier 1 gaps (live visitor monitoring and
+the second half of interface language support), first-class localization
+including timezone and regional settings, and hardening — upgrade paths,
+performance, and third-party install validation. Tier 2 parity work and the AI
+tier are explicitly post-1.0.
 
-The current pre-alpha app has moved beyond the original technical spike. The
-foundation now includes:
+## Shipped
+
+The product has moved past a spine. It now includes:
+
+- Email as a second conversation channel, a searchable help centre inside the
+  widget, per-site support hours with an away state and offline capture, and a
+  configurable pre-chat form.
+- Reporting over conversations and tickets, plus visitor satisfaction ratings.
+- Per-site widget appearance, a widget language catalogue with German complete,
+  and an agent-selectable dashboard language on the surfaces translated so far.
+- A visitor directory, agent-initiated password recovery, and a read-only public
+  API with a decided isolation model.
+
+Underneath that, the original foundation:
 
 - Laravel core app shell, authentication, account roles, site access, and
   platform operator authority.

@@ -30,214 +30,125 @@ missed while skimming.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.7.0] - 2026-08-24
+
 **No operator action required.** Pull, restart, and migrations run themselves.
+
+0.6.0 changed how Wayfindr looks. **0.7.0 changes what it can do.** It is the
+largest functional release since the product went public: a support desk that
+could only be reached through a chat widget can now be reached by email, answers
+questions before they are asked, tells visitors when nobody is home, and — for
+the first time — can tell you whether any of it is working.
+
+Seven of the nine gaps that separated Wayfindr from an established support
+product are closed in this release. The two that remain are live visitor
+monitoring, which needs a privacy decision before it is built, and the second
+half of interface language support.
 
 ### Added
 
+- **Reporting.** Wayfindr had no measurement surface at all. It now has one, at
+  **Reports**, admin and owner only: conversation and ticket volume, first
+  response and resolution times as median and 90th percentile, how often
+  resolutions did not hold, who is carrying the queue, and what visitors said
+  when asked whether it helped.
+
+  **Two of these numbers are older than the others, and the page says so.**
+  Conversations opened and first-response times are recoverable from data
+  Wayfindr has always kept. Closes, resolution times and reopens are read from a
+  lifecycle log that only started being written in this release — before that,
+  the previous answer was destroyed on every reopen and cannot be backfilled. A
+  flat line before that date is an absence of records, not an absence of work,
+  and only the recording date the page names can tell the two apart.
+
+- **Satisfaction ratings.** Every other figure reports how *fast* the desk moved.
+  A desk can improve volume, first-response and resolution time all at once while
+  getting worse at helping people. Visitors can now be asked whether it helped,
+  and the percentage is never reported over people who said nothing.
+
+- **A help centre.** Articles written in the dashboard, published deliberately,
+  and searchable from inside the widget — so a visitor can find the answer before
+  they open a conversation.
+
+- **Email as a conversation channel.** Every ticket used to have to begin as a
+  widget chat, and a customer replying to a Wayfindr notification was replying
+  into nothing. Mail now opens and continues conversations.
+
+- **Support hours, an away state, and offline capture.** The widget behaved
+  identically at 3pm Tuesday and 3am Sunday. A site can now say when it is open,
+  in **its own timezone**, show the words you choose when it is closed, and still
+  take the question. Somebody can also close the desk early and have it mean
+  something.
+
+- **A pre-chat form.** Sites that need to know who is asking can ask before the
+  conversation reaches the queue, with the fields they choose.
+
+- **Password recovery.** There was no forgot-password route. Recovery meant an
+  operator with production shell access running a command. Agents can now
+  recover their own password.
+
+- **Per-site widget appearance.** A site's widget can wear its own colour, sit in
+  the corner it chooses, and speak the operator's own words.
+
 - **The widget speaks the visitor's language.** Every word in the chat box was
   English, hardcoded. A visitor did not choose Wayfindr and cannot be asked to
-  read a language they do not speak &mdash; they arrived on somebody's website
-  with a question.
+  read a language they do not speak — they arrived on somebody's website with a
+  question.
 
-  The widget now carries a language catalogue, and **German ships complete**.
-  It picks a language before it draws anything: your own page's choice first (add
+  The widget now carries a language catalogue, and **German ships complete**. It
+  picks a language before it draws anything: your own page's choice first (add
   `data-wayfindr-locale="de"` to the install snippet if your app knows what the
   visitor reads), then the visitor's own browser, then the site default under
-  **Sites &rarr; the site &rarr; What language the widget speaks**, then English.
+  **Sites → the site → What language the widget speaks**, then English.
 
   The browser deliberately outranks the site default. The default is your guess
   at who visits; the browser is the visitor answering for themselves.
 
   **Nothing changes unless you want it to.** With no default configured the
   widget follows each visitor's browser and falls back to English, exactly as
-  before. Your own words &mdash; the away message, the intake introduction, the
-  cobrowse notice &mdash; are shown as you wrote them, in whatever language you
-  wrote them.
+  before. Your own words — the away message, the intake introduction, the
+  cobrowse notice — are shown as you wrote them, in whatever language you wrote
+  them.
 
-  The German translations were produced during development rather than by a
-  professional translator. They are consistent and grammatical; have a native
-  speaker read them before you promise German to a customer.
+- **The dashboard speaks German, on some surfaces.** An agent can choose their
+  language under **Profile**, and the queues, the ticket list, the app shell and
+  the profile page follow it. **The conversation detail page does not yet** — it
+  stays English until 0.7.1, and pages that have not been translated render in
+  English rather than showing a half-translated screen. This is deliberate and
+  visible: you will see German in some places and English in others.
 
-  Right-to-left languages are prepared for but not shipped: the widget sets its
-  own text direction and its layout no longer assumes left-to-right, so an
-  Arabic or Hebrew catalogue can be added without touching the layout. The
-  dashboard is still English throughout.
+- **A visitor directory.** The desk can now list the visitors it has heard from,
+  with a path into each profile and any live conversation. Live presence — who is
+  on the site *right now* — is not part of this and is recorded in ADR 0016,
+  because it is the first surface that makes Wayfindr's visitor data feel like
+  surveillance and needs a retention decision before it is built.
 
-- **An agent who forgets their password can recover it.** There was no
-  forgot-password flow at all: recovery meant asking somebody with production
-  shell access to run a command against the database on your behalf.
+- **A read-only public API.** Every route was previously the widget talking to its
+  own backend. There is now an authenticated public surface with a decided
+  isolation model, documented in ADR 0018. Writes are deliberately not included
+  yet.
 
-  **Sign in → Forgotten your password?** emails a link that expires. Setting a new
-  password also signs that account out everywhere else, so a reset ends whatever
-  access prompted it rather than running alongside it.
+### Changed
 
-  ⚠ **Operator action** if this install has never configured outbound mail: there
-  is no recovery path without it, because the link is an email. `/operator` →
-  **Mail** sets it up, and its test button confirms delivery before you need it.
+- **Conversation closes and reopens are recorded from this release forward.**
+  `conversations.closed_at` was a current-state column, nulled on every reopen,
+  so the previous answer was destroyed each time. There is now a lifecycle log.
+  Nothing you do changes because of this, but reporting can only measure from the
+  date your install began keeping it, and the Reports page names that date.
 
-- **The widget can ask whether it helped.** Every figure on the reports page
-  described how *fast* the desk moved &mdash; volume, response time, resolution
-  time. A team can improve every one of those while getting worse at helping
-  people, and Wayfindr would have shown that as unambiguous progress. A site can
-  now ask the visitor how it went when a conversation closes, with three answers
-  &mdash; good, ok, bad &mdash; and an optional comment, which is usually where
-  the actual information is. Off until an operator turns it on, under **Asking
-  how it went** in a site's settings.
-
-  Two things it deliberately does not do. It never reports a percentage of the
-  people who were *asked*, only of the people who *answered*: response rates are
-  low everywhere, a non-response is not a neutral score, and an average over
-  silence is fiction. And a visitor answers once per close &mdash; changing their
-  mind replaces the answer rather than adding one, so a small number of
-  responses cannot be swamped. A conversation that is reopened and closed again
-  is asked afresh, because that is a genuinely different question.
-- **Reports cover tickets, not just conversations.** The reports page described
-  conversations only, while the ticket half of the desk went unreported &mdash;
-  the half that, on an install running since May, has a full quarter of history
-  where conversations have weeks. Tickets now get their own tab: volume, resolution
-  times, reopens, and who carried the work, in the same shapes the conversation
-  tab uses. Both halves now measure a resolution through one shared walk, so
-  they cannot drift apart on what "resolution time" means &mdash; a ticket
-  closed three times contributes three resolutions rather than one long one.
-  Each half states its own recording boundary and reports closes it cannot
-  measure as *counted but not measured*, rather than folding an unknowable
-  duration into the median.
-
-  Ticket lifecycle now records only **transitions**, the rule conversations have
-  followed since ADR 0015. Closing a ticket twice &mdash; a double-click, a
-  retry, a stale page &mdash; used to write two closes, making one resolution
-  contribute two durations. And the same **Reopen** control serves a closed
-  ticket and a pending one, so taking a ticket off hold was recorded as a
-  reopen: it claimed a resolution had failed when none was ever reached, and
-  restarted the resolution clock at the un-hold, hiding every hour before the
-  ticket went on hold. Off-hold is now its own event, shown in the ticket's
-  activity as *Ticket taken off hold*. A stale **Mark pending** submitted against
-  an already-closed ticket un-closed it while recording only the hold, so the
-  resolution looked like it held; leaving *closed* now records the reopen it
-  performs whichever control did it. History already recorded is read correctly
-  rather than rewritten.
-- **A public API, so integrations do not all have to be built by us.** Every
-  route Wayfindr served was either the widget talking to its own backend or a
-  provider posting inbound &mdash; no authenticated public surface at all, which
-  meant every integration anyone would ever want was ours to write. There is now
-  a read-only, token-authenticated API under `/api/v1/`: conversations,
-  transcripts, tickets and visitors. Tokens are issued and revoked under
-  **Account → API tokens**, carry a last-used time so a live token can be told
-  from a forgotten one, and can be restricted to specific sites. See
-  [the API guide](docs/product/api.md) and
-  [ADR 0018](docs/decisions/0018-public-api-and-programmatic-access.md).
-
-  The limits are the interesting part. `metadata` and `anonymous_id` are never
-  published &mdash; the first is whatever somebody's website wrote into it, the
-  second is a browser-session handle rather than a person. A `site_id` filter can
-  only narrow, because "unknown filter is ignored" would be a silent scope
-  escalation. Records outside a token's reach return 404 rather than 403, since
-  403 confirms they exist. Operator access grants do not extend to tokens in
-  either direction: a grant is built around a person being accountable for
-  having looked, and a token has nobody behind it. And cobrowse is not reachable
-  at all.
-
-  Authentication is hand-rolled rather than pulling in Sanctum, whose
-  distinctive feature is a session mode this project does not use. Wayfindr's
-  dependencies stay at six.
-
-- **A site can have support hours.** Until now the widget behaved identically at
-  3pm Tuesday and 3am Sunday: a visitor arriving out of hours opened a
-  conversation, saw nothing suggesting anyone was away, and waited for a reply
-  that was not coming.
-
-  Set them under **Sites → the site → When the desk is open**: a timezone, hours
-  per weekday, and what to tell a visitor who arrives outside them. Out of hours
-  the widget says so before they start typing, and says when you are back.
-
-  **Sites without hours configured are unchanged** — always open, exactly as
-  before. Nothing to do unless you want hours.
-
-  The away message is yours to write, so it can be in your visitors' language. It
-  is shown to every visitor of that site, so keep it free of anything private;
-  the schedule itself is never sent to the widget.
-
-- **You can ask a visitor who they are before the conversation starts.** An
-  anonymous visitor — most traffic on most sites — started with no name, no email
-  and no stated reason, and ended with no way to be reached about anything
-  unresolved. `name` and `email` have been columns on the visitor record since the
-  first release and nothing ever filled them in.
-
-  Under **Sites → the site → What to ask before a conversation starts**, each of
-  name, email and reason can be off, optional, or required. Name and email are
-  remembered for the visitor's next visit; the reason belongs to the conversation
-  it was given for.
-
-  **A question already answered is not asked again** — a stored name or email
-  turns that field off on the next visit, and a stored address also satisfies the
-  out-of-hours rule. The reason is asked each time, because it belongs to the
-  conversation it was given for.
-
-  **Out of hours an email is required**, whatever you otherwise ask, because it
-  is the only way back to somebody who arrived at 3am.
-
-  Sites that configure nothing ask nothing, exactly as before.
-
-- **Reports.** Wayfindr shipped 39 controllers and none of them answered "are we
-  getting faster, and who is carrying the queue?". Five were dedicated to
-  operator settings and none to whether support delivered through the product was
-  working.
-
-  **Reports** in the sidebar, for admins and owners: conversations opened and
-  closed per day, first-response and resolution time, how often a resolution did
-  not hold, and replies and closes per agent. Range of 7, 30 or 90 days, one site
-  or all of them, and CSV for the daily series and the agent table.
-
-  Times are reported as a median and a 90th percentile rather than an average.
-  Support work is long-tailed — most replies are quick and a few take a day — so
-  an average sits in the gap between the two and describes neither.
-
-  **Two of the numbers are older than the others, and the page says which.**
-  Conversations opened and first-response times reach back through the whole life
-  of your install. Closes, resolution times and reopens are read from the
-  lifecycle records described below, so they begin the day that release was
-  installed — before it, closes overwrote each other and nothing can recover
-  them. The page names that date rather than drawing a flat line you might read
-  as a quiet month.
-
-  Archived sites still count toward history: archiving takes a site out of
-  service without destroying anything, and tidying one up should not rewrite last
-  quarter's numbers. Purging still removes its history, and that is what purging
-  is for.
-
-- **Conversation closes and reopens are recorded.** They were not, and the
-  consequence was quiet: `closed_at` holds only the most recent close, so it is
-  overwritten every time a conversation comes back. A visitor replying to a
-  closed conversation — the clearest signal that a resolution did not hold —
-  reopened it silently, indistinguishable from any other message.
-
-  Closes and reopens now appear in your account audit log, with who caused them
-  and what the conversation was before. Tickets already recorded theirs.
-
-  This is groundwork for reporting ([#742](https://github.com/adamgreenwell/wayfindr/issues/742)),
-  and it ships first for a reason: **history cannot be backfilled.** Every
-  release without it is a period no future report can describe.
-
-- **A list of the visitors you have heard from.** A visitor profile page existed
-  with no way to reach it except from a conversation or a support-code lookup, so
-  you could ask "tell me about this visitor" but not "who has been in touch".
-  **Visitors** in the sidebar lists them, most recently seen first, with search by
-  name, email or identifier, and filters for site and how recently they were seen.
-
-  It lists people who **made contact** — Wayfindr records somebody when they open
-  the chat, send a message or start typing, and deliberately not when they load a
-  page. It is not a live board of everyone on your site, and whether it should ever
-  become one is an open question rather than a missing feature: watching visitors
-  who never got in touch is the opposite of the consent-based posture cobrowse
-  takes. See ADR 0016.
+- **The test suite runs against PostgreSQL as well as SQLite.** Every documented
+  install runs PostgreSQL and CI ran neither, so a query valid on only one engine
+  could ship green. Both engines now run on every change. This is invisible in
+  the product and is the reason several of the above features are trustworthy.
 
 ### Fixed
 
-- **The installer no longer sends you to the old readiness address.** Its closing
-  message pointed at `/dashboard/readiness`, which 0.6.0 made operator-only. The
-  link still resolves — it redirects, and the account you create at `/setup` is
-  the install's first platform operator — but it named a page that had moved. It
-  now points at `/operator` and says why that account can open it.
+- The installer's closing message pointed at a readiness page that had moved,
+  so the last thing a fresh install printed was a link to nothing.
+- The backup job was dispatched on one queue and awaited on another, so a failed
+  dispatch could leave a run marked as still running forever.
 
 ## [0.6.0] - 2026-08-21
 
