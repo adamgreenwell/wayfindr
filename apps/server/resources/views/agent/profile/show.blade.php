@@ -1,5 +1,5 @@
-<x-layouts.app title="Agent Profile" :agent="$agent" :account="$account">
-    <x-page-header title="Agent profile" subtitle="Keep your agent identity and sign-in password current." />
+<x-layouts.app :title="__('profile.document_title')" :agent="$agent" :account="$account">
+    <x-page-header :title="__('profile.title')" :subtitle="__('profile.subtitle')" />
 
     @if (session('status'))
         <p class="status-message">{{ session('status') }}</p>
@@ -8,33 +8,33 @@
     <section class="section" aria-labelledby="profile-context-heading">
         <div class="section-header">
             <h2 id="profile-context-heading">{{ $agent->name }}</h2>
-            <span class="lede">{{ $roleLabels[$agent->account_role?->value] ?? 'Agent' }}</span>
+            <span class="lede">{{ $roleLabels[$agent->account_role?->value] ?? __('profile.roles.agent') }}</span>
         </div>
 
         <div class="meta-grid">
             <div class="meta-item">
-                <span class="meta-label">Email</span>
+                <span class="meta-label">{{ __('profile.context.email') }}</span>
                 <span class="meta-value">{{ $agent->email }}</span>
             </div>
             <div class="meta-item">
-                <span class="meta-label">Account</span>
+                <span class="meta-label">{{ __('profile.context.account') }}</span>
                 <span class="meta-value">{{ $account->name }}</span>
             </div>
             <div class="meta-item">
-                <span class="meta-label">Role</span>
-                <span class="meta-value">{{ $roleLabels[$agent->account_role?->value] ?? 'Agent' }}</span>
+                <span class="meta-label">{{ __('profile.context.role') }}</span>
+                <span class="meta-value">{{ $roleLabels[$agent->account_role?->value] ?? __('profile.roles.agent') }}</span>
             </div>
             <div class="meta-item">
-                <span class="meta-label">Member since</span>
-                <span class="meta-value">{{ $agent->created_at?->diffForHumans() ?? 'Unknown' }}</span>
+                <span class="meta-label">{{ __('profile.context.member_since') }}</span>
+                <span class="meta-value">{{ $agent->created_at?->diffForHumans() ?? __('profile.context.member_since_unknown') }}</span>
             </div>
         </div>
     </section>
 
     <section class="section" aria-labelledby="profile-update-heading">
         <div class="section-header">
-            <h2 id="profile-update-heading">Your profile</h2>
-            <span class="lede">Your name, and the language you read this in</span>
+            <h2 id="profile-update-heading">{{ __('profile.details.heading') }}</h2>
+            <span class="lede">{{ __('profile.details.lede') }}</span>
         </div>
 
         <form class="section-form" method="POST" action="{{ route('dashboard.profile.update') }}">
@@ -42,43 +42,40 @@
             @method('PUT')
 
             <div class="field">
-                <label for="name">Name</label>
+                <label for="name">{{ __('profile.details.name') }}</label>
                 <input id="name" name="name" value="{{ old('name', $agent->name) }}" autocomplete="name" required>
                 @error('name')
                     <p class="field-error">{{ $message }}</p>
                 @enderror
             </div>
 
-            <p class="field-help">Your email is used for sign-in. Ask an owner if it needs changed.</p>
+            <p class="field-help">{{ __('profile.details.email_help') }}</p>
 
             <div class="field">
-                <label for="locale">Dashboard language</label>
+                <label for="locale">{{ __('profile.details.language') }}</label>
                 <select id="locale" name="locale">
                     {{-- "Whatever the install uses" is the default and stays
                          selectable: an agent who picked a language should be
                          able to stop having picked one. --}}
-                    <option value="">Use the install default</option>
+                    <option value="">{{ __('profile.details.language_default') }}</option>
                     @foreach (\App\Support\DashboardLanguage::options() as $code => $label)
                         <option value="{{ $code }}" @selected(old('locale', $agent->locale) === $code)>{{ $label }}</option>
                     @endforeach
                 </select>
-                <p class="field-help">
-                    Yours alone. It changes the dashboard for you and nobody else, and does not affect
-                    what language the widget speaks to your visitors &mdash; that is set per site.
-                </p>
+                <p class="field-help">{{ __('profile.details.language_help') }}</p>
                 @error('locale')
                     <p class="field-error">{{ $message }}</p>
                 @enderror
             </div>
 
-            <button class="button" type="submit">Save profile</button>
+            <button class="button" type="submit">{{ __('profile.details.save') }}</button>
         </form>
     </section>
 
     <section class="section" aria-labelledby="alert-readiness-heading">
         <div class="section-header">
-            <h2 id="alert-readiness-heading">Alert readiness</h2>
-            <span class="lede">Your current support signal path</span>
+            <h2 id="alert-readiness-heading">{{ __('profile.readiness.heading') }}</h2>
+            <span class="lede">{{ __('profile.readiness.lede') }}</span>
         </div>
 
         <div class="meta-grid">
@@ -96,15 +93,15 @@
 
     <section class="section" aria-labelledby="alert-preferences-heading">
         <div class="section-header">
-            <h2 id="alert-preferences-heading">Alert preferences</h2>
-            <span class="lede">Keep support signals useful</span>
+            <h2 id="alert-preferences-heading">{{ __('profile.alerts.heading') }}</h2>
+            <span class="lede">{{ __('profile.alerts.lede') }}</span>
         </div>
 
         <div class="notice-copy notice-copy-bordered" aria-labelledby="alert-preference-guidance-heading">
-            <p><strong id="alert-preference-guidance-heading">How alerts behave</strong></p>
-            <p>Dashboard alerts are the source of truth for support work that needs attention.</p>
-            <p>Email alerts are optional delivery, not a separate queue.</p>
-            <p>Quiet mode pauses new alerts without changing assignments, site access, or support responsibility.</p>
+            <p><strong id="alert-preference-guidance-heading">{{ __('profile.alerts.guidance_heading') }}</strong></p>
+            <p>{{ __('profile.alerts.guidance_dashboard') }}</p>
+            <p>{{ __('profile.alerts.guidance_email') }}</p>
+            <p>{{ __('profile.alerts.guidance_quiet') }}</p>
         </div>
 
         <form class="section-form" method="POST" action="{{ route('dashboard.profile.alerts.update') }}">
@@ -112,7 +109,7 @@
             @method('PUT')
 
             <div class="field">
-                <label for="alert_mode">Alert mode</label>
+                <label for="alert_mode">{{ __('profile.alerts.mode') }}</label>
                 <select id="alert_mode" name="alert_mode" required>
                     @foreach ($alertModeOptions as $modeValue => $modeLabel)
                         <option value="{{ $modeValue }}" @selected(old('alert_mode', $alertMode) === $modeValue)>
@@ -133,11 +130,11 @@
                     value="1"
                     @checked(old('email_alerts', $agent->alertEmailEnabled()))
                 >
-                <span>Email alerts</span>
+                <span>{{ __('profile.alerts.email_alerts') }}</span>
             </label>
 
             <div class="field">
-                <label for="alert_cadence">Email cadence</label>
+                <label for="alert_cadence">{{ __('profile.alerts.cadence') }}</label>
                 <select id="alert_cadence" name="alert_cadence" required>
                     @foreach ($alertCadenceOptions as $cadenceValue => $cadenceLabel)
                         @php
@@ -153,9 +150,7 @@
                 @enderror
             </div>
 
-            <p class="field-help">
-                Digest delivery bundles eligible email alerts when the scheduler runs. Unattended only emails when a visitor message waits unseen. Dashboard alerts stay immediate.
-            </p>
+            <p class="field-help">{{ __('profile.alerts.cadence_help') }}</p>
 
             @if ($alertCadence === $agent::ALERT_CADENCE_DIGEST)
                 @php
@@ -167,7 +162,7 @@
                 @endphp
                 <p class="field-help">
                     <span class="readiness-status" data-status="{{ $digestDeliveryTone }}">
-                        Last digest
+                        {{ __('profile.alerts.last_digest') }}
                     </span>
                     {{ $digestDeliveryStatus['label'] }}.
                     {{ $digestDeliveryStatus['message'] }}
@@ -177,25 +172,22 @@
                 </p>
             @endif
 
-            <p class="field-help">
-                Email alerts send the same calm support signals to your inbox
-                when mail is configured. Quiet mode still suppresses new alerts.
-            </p>
+            <p class="field-help">{{ __('profile.alerts.email_help') }}</p>
             <p class="field-help">
                 <span class="readiness-status" data-status="{{ $mailReadiness['status'] }}">
-                    {{ $mailReadiness['status'] === 'ready' ? 'Email delivery ready' : 'Email delivery needs attention' }}
+                    {{ $mailReadiness['status'] === 'ready' ? __('profile.alerts.delivery_ready') : __('profile.alerts.delivery_attention') }}
                 </span>
                 {{ $mailReadiness['summary'] }} {{ $mailReadiness['action'] }}
             </p>
 
-            <button class="button" type="submit">Save alert preferences</button>
+            <button class="button" type="submit">{{ __('profile.alerts.save') }}</button>
         </form>
     </section>
 
     <section class="section" aria-labelledby="password-update-heading">
         <div class="section-header">
-            <h2 id="password-update-heading">Change password</h2>
-            <span class="lede">Use this after receiving a temporary password</span>
+            <h2 id="password-update-heading">{{ __('profile.password.heading') }}</h2>
+            <span class="lede">{{ __('profile.password.lede') }}</span>
         </div>
 
         <form class="section-form" method="POST" action="{{ route('dashboard.profile.password.update') }}">
@@ -205,7 +197,7 @@
             <input type="text" name="username" value="{{ $agent->email }}" autocomplete="username" hidden readonly>
 
             <div class="field">
-                <label for="current_password">Current password</label>
+                <label for="current_password">{{ __('profile.password.current') }}</label>
                 <input id="current_password" name="current_password" type="password" autocomplete="current-password" required>
                 @error('current_password')
                     <p class="field-error">{{ $message }}</p>
@@ -213,7 +205,7 @@
             </div>
 
             <div class="field">
-                <label for="password">New password</label>
+                <label for="password">{{ __('profile.password.new') }}</label>
                 <input id="password" name="password" type="password" autocomplete="new-password" required>
                 @error('password')
                     <p class="field-error">{{ $message }}</p>
@@ -221,11 +213,11 @@
             </div>
 
             <div class="field">
-                <label for="password_confirmation">Confirm new password</label>
+                <label for="password_confirmation">{{ __('profile.password.confirm') }}</label>
                 <input id="password_confirmation" name="password_confirmation" type="password" autocomplete="new-password" required>
             </div>
 
-            <button class="button" type="submit">Update password</button>
+            <button class="button" type="submit">{{ __('profile.password.save') }}</button>
         </form>
     </section>
 </x-layouts.app>

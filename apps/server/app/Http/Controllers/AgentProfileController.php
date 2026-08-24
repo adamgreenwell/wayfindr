@@ -32,9 +32,9 @@ class AgentProfileController extends Controller
             'agent' => $agent,
             'account' => $account,
             'roleLabels' => [
-                AccountRole::Owner->value => 'Owner',
-                AccountRole::Admin->value => 'Admin',
-                AccountRole::Agent->value => 'Agent',
+                AccountRole::Owner->value => __('profile.roles.owner'),
+                AccountRole::Admin->value => __('profile.roles.admin'),
+                AccountRole::Agent->value => __('profile.roles.agent'),
             ],
             'alertMode' => $agent->alertMode(),
             'alertModeOptions' => $agent::alertModeOptions(),

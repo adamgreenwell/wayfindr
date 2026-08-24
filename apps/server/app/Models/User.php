@@ -69,9 +69,9 @@ class User extends Authenticatable
     public static function alertModeOptions(): array
     {
         return [
-            self::ALERT_MODE_ALL => 'All site alerts I can support',
-            self::ALERT_MODE_ASSIGNED => 'Only conversations and tickets assigned to me',
-            self::ALERT_MODE_QUIET => 'Quiet mode',
+            self::ALERT_MODE_ALL => __('profile.alerts.modes.all'),
+            self::ALERT_MODE_ASSIGNED => __('profile.alerts.modes.assigned'),
+            self::ALERT_MODE_QUIET => __('profile.alerts.modes.quiet'),
         ];
     }
 
@@ -81,9 +81,9 @@ class User extends Authenticatable
     public static function alertCadenceOptions(): array
     {
         return [
-            self::ALERT_CADENCE_IMMEDIATE => 'Send email alerts as they happen',
-            self::ALERT_CADENCE_UNATTENDED => 'Email only when a visitor waits unseen',
-            self::ALERT_CADENCE_DIGEST => 'Prefer digest delivery when available',
+            self::ALERT_CADENCE_IMMEDIATE => __('profile.alerts.cadences.immediate'),
+            self::ALERT_CADENCE_UNATTENDED => __('profile.alerts.cadences.unattended'),
+            self::ALERT_CADENCE_DIGEST => __('profile.alerts.cadences.digest'),
         ];
     }
 
