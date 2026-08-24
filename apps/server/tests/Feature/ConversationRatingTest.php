@@ -17,6 +17,7 @@ use App\Support\Sites\SiteRatingPrompt;
 use Carbon\CarbonInterface as DateTimeInterface;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
@@ -643,7 +644,19 @@ test('two closes inside one second are two episodes, not one', function (): void
     $w = ratingWorld();
     $token = ratingToken($this);
 
-    $at = now();
+    $at = now()->startOfSecond();
+
+    // Pin the close that already exists to the same second BEFORE answering it.
+    // Without this the first rating records whatever second `ratingWorld()`
+    // happened to close in, so the test only passes when the suite runs fast
+    // enough not to cross a second boundary -- which SQLite did and PostgreSQL,
+    // a little slower, did not. It was measuring the clock, not the episode.
+    $pinLifecycleEventsTo = fn (DateTimeInterface $moment) => AuditEvent::query()
+        ->where('subject_id', $w['conversation']->id)
+        ->whereIn('action', [ConversationLifecycleLog::CLOSED, ConversationLifecycleLog::REOPENED])
+        ->update(['occurred_at' => $moment]);
+
+    $pinLifecycleEventsTo($at);
 
     postRating($this, $token, 'bad')->assertCreated();
 
@@ -653,10 +666,7 @@ test('two closes inside one second are two episodes, not one', function (): void
     app(ConversationLifecycleLog::class)->closed($w['conversation']->fresh(), null, 'open');
     $w['conversation']->forceFill(['status' => 'closed', 'closed_at' => $at])->save();
 
-    AuditEvent::query()
-        ->where('subject_id', $w['conversation']->id)
-        ->whereIn('action', [ConversationLifecycleLog::CLOSED, ConversationLifecycleLog::REOPENED])
-        ->update(['occurred_at' => $at]);
+    $pinLifecycleEventsTo($at);
 
     postRating($this, $token, 'good')->assertCreated();
 
@@ -711,10 +721,11 @@ test('the reporting index leads on the column the reports filter by', function (
     // feels the difference. The failure mode is a fixed 7/30/90-day view
     // getting slower every quarter, which nobody attributes to an index
     // because the query never changed.
-    $indexes = collect(DB::select("PRAGMA index_list('conversation_ratings')"))
-        ->map(fn (object $index): array => collect(DB::select('PRAGMA index_info('.$index->name.')'))
-            ->pluck('name')
-            ->all());
+    // Read through the schema builder rather than `PRAGMA index_list`, which
+    // is SQLite's own syntax and is rejected outright by PostgreSQL. The suite
+    // runs on both now, and a structural assertion only one engine can execute
+    // is the same blind spot this test exists to cover, one step further out.
+    $indexes = collect(Schema::getIndexes('conversation_ratings'))->pluck('columns');
 
     expect($indexes)->toContain(['site_id', 'episode_closed_at']);
 });

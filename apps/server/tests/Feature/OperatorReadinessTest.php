@@ -14,6 +14,7 @@ use App\Support\OperatorReadiness;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
@@ -755,7 +756,10 @@ test('readiness diagnostics skip confirmation lookup when the confirmation table
 
     expect($database)->toMatchArray([
         'status' => 'ready',
-        'summary' => 'The sqlite connection responded.',
+        // Named from the live connection, not hardcoded: this suite runs on
+        // SQLite and every documented install runs on PostgreSQL, so pinning
+        // one driver's name here makes the check untestable on the other.
+        'summary' => sprintf('The %s connection responded.', DB::connection()->getName()),
     ])->and($scheduler)->toMatchArray([
         'status' => 'manual',
         'confirmation' => null,

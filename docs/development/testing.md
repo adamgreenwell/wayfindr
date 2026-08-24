@@ -21,14 +21,33 @@ many future slices.
 
 ## Database Drivers in Tests
 
-The suite runs on SQLite (`phpunit.xml` pins `DB_CONNECTION=sqlite`,
-`DB_DATABASE=:memory:`) and CI installs `pdo_sqlite` with no database service
-container. Every documented install runs PostgreSQL.
+The suite defaults to SQLite (`phpunit.xml` pins `DB_CONNECTION=sqlite`,
+`DB_DATABASE=:memory:`), and every documented install runs PostgreSQL.
 
-**So a query that is valid only on PostgreSQL passes CI and fails in
-production, and one that is valid only on SQLite passes CI and fails
-everywhere.** This is the sharpest edge in the repository's test setup, because
-the failure is invisible in the place you would look for it.
+**CI runs the whole suite against both.** `php-application` runs it on SQLite;
+`php-application-postgres` runs it again against a `postgres:17-alpine` service.
+A query valid on only one engine now fails a job instead of shipping green.
+
+Each job also declares which engine it means through
+`WAYFINDR_EXPECTED_DB_DRIVER`, and `tests/Feature/DatabaseDriverTest.php`
+asserts it from **inside** the suite. That indirection is not ceremony. The
+obvious check — asserting the driver from a standalone script before the tests —
+reads `.env`, which names PostgreSQL, while the suite is configured by
+`phpunit.xml`, which pins SQLite. Such a guard reports success no matter which
+engine the tests actually used. Only an assertion running inside the suite sees
+the real answer. Locally the variable is unset and the test skips.
+
+To run against PostgreSQL yourself:
+
+```bash
+docker run -d --name wayfindr-pg -e POSTGRES_USER=wayfindr -e POSTGRES_PASSWORD=wayfindr -e POSTGRES_DB=wayfindr_test -p 55432:5432 postgres:17-alpine
+```
+
+then, from `apps/server`, with `DB_CONNECTION=pgsql DB_HOST=127.0.0.1
+DB_PORT=55432 DB_DATABASE=wayfindr_test DB_USERNAME=wayfindr
+DB_PASSWORD=wayfindr` in the environment, run the suite as usual. `phpunit.xml`
+does not override variables already set in the environment, which is what makes
+that work.
 
 Two rules follow, and the code that already obeys them is worth copying:
 
@@ -41,9 +60,10 @@ Two rules follow, and the code that already obeys them is worth copying:
   expression with `$query->getQuery()->getGrammar()->wrap($column)` so quoting
   follows the driver.
 
-There is no `getDriverName()` branching anywhere in `apps/server/app`, and
-adding some would mean CI could only ever exercise one side of the branch.
-Prefer a portable expression, or move the work into PHP.
+There is no `getDriverName()` branching anywhere in `apps/server/app`. Both
+sides of such a branch would now at least be exercised, but a portable
+expression or PHP-side work is still preferable to two code paths that have to
+agree.
 
 A related trap that has already bitten: `notifications.data` is a `text` column,
 so a JSON-path `where` breaks on PostgreSQL while SQLite tolerates it.
