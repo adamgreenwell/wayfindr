@@ -226,7 +226,17 @@
                 var removeEl = document.createElement('button');
                 removeEl.type = 'button';
                 removeEl.className = 'reply-attach-chip-remove';
-                removeEl.setAttribute('aria-label', @json(__('composer.remove', ['name' => ':name'])).replace(':name', file.name || @json(__('composer.attachment'))));
+                // A FUNCTION replacement, not a string one. `String.replace`
+                // reads `$&`, `` $` `` and `$'` in the replacement as
+                // backreferences, so a file called `$&.pdf` would produce an
+                // aria-label naming `:name.pdf` -- the token, not the file.
+                // A filename is user data and can contain anything.
+                var attachmentName = file.name || @json(__('composer.attachment'));
+
+                removeEl.setAttribute('aria-label',
+                    @json(__('composer.remove', ['name' => ':name'])).replace(':name', function () {
+                        return attachmentName;
+                    }));
                 removeEl.textContent = '×';
                 removeEl.addEventListener('click', function () {
                     if (form.getAttribute('data-submitting') === 'true') {

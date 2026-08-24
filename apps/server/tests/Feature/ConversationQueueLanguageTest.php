@@ -1851,6 +1851,13 @@ test('the realtime handlers hard-code no copy of their own', function (): void {
     $this->assertStringContainsString("nameEl.setAttribute('lang', '')", $composer,
         'the live attachment chip announces a filename in the dashboard language');
 
+    // A filename is user data and goes into `String.replace` as a REPLACEMENT,
+    // where `$&`, '$' followed by a backtick, and "$'" are read as
+    // backreferences. A file called `$&.pdf` would name `:name.pdf` in the
+    // aria-label. A function replacement has no such semantics.
+    expect(preg_match("/\.replace\(':name', *(?!function)[a-zA-Z@]/", $composer))->toBe(0,
+        'a filename is passed to String.replace as a replacement string, where $& expands');
+
     // A browser without Intl.RelativeTimeFormat still has perfectly good
     // timestamps. Treating the missing FORMATTER as missing DATA replaced a
     // real "seen 2 minutes ago" with "no visitor heartbeat yet" on every
@@ -2364,6 +2371,36 @@ test('a reply template says what language its body is in', function (): void {
     expect($option)->not->toBeNull('the managed template is not in the picker, so this proves nothing')
         ->and($option->hasAttribute('lang'))->toBeTrue('a managed template name inherits the dashboard language')
         ->and($option->getAttribute('lang'))->toBe('', 'a managed template name claims a language it cannot know');
+});
+
+test('a region that declares English is English all the way down', function (): void {
+    // `diffForHumans()` follows whatever locale the request scoped, so once
+    // this route was extracted an unextracted class started building 'Reported
+    // vor 2 Minuten' -- an English word glued to a German duration, rendered
+    // inside a panel that declares itself English and therefore announced
+    // entirely as English.
+    //
+    // An exception has to hold all the way down or it is not an exception.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+
+    $freshness = app(CobrowseSnapshotFreshness::class);
+
+    // Rendered under a German request, as the extracted route now is.
+    $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk();
+
+    $formatted = $freshness->format(now()->subMinutes(2)->toJSON());
+
+    expect($formatted['reported_label'])->toBeString();
+
+    // NOT expect()->not->toContain($needle, $message): toContain is variadic,
+    // so the message becomes a second needle and the assertion always passes.
+    // Third time in this file. The habit that works is to reach for
+    // assertStringNotContainsString whenever a message is wanted.
+    $this->assertStringNotContainsString('vor ', $formatted['reported_label'],
+        'the English freshness label carries a German duration');
 });
 
 test('no unreplaced placeholder ever reaches the page', function (): void {

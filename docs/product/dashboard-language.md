@@ -504,6 +504,25 @@ The payload carries the **timestamp**; the page formats it with
 `Intl.RelativeTimeFormat` in the reading agent's language. Anything a broadcast
 formats is frozen at the moment it is built, so it must not be prose.
 
+### A region that declares English must be English all the way down
+
+`diffForHumans()` follows whatever locale the request scoped. So extracting a
+route changes what an **unextracted** class produces: `CobrowseSnapshotFreshness`
+kept gluing the English word `Reported` to a duration that had quietly become
+German, and the panel that declares itself English then announced the German
+half as English.
+
+An exception has to hold all the way down or it is not an exception. The class
+formats with `->locale(DashboardLanguage::FALLBACK)` so its answer matches the
+declaration it is rendered under.
+
+### A filename is user data, and `String.replace` reads `$&`
+
+Passing user data as the **replacement** argument to `String.prototype.replace`
+expands `$&`, `` $` `` and `$'` as backreferences. A file called `$&.pdf` made an
+aria-label say `:name.pdf` — the token, not the file. Use a function
+replacement, which has no such semantics.
+
 ### An unreplaced placeholder is the same bug wearing a translation
 
 A sentence rendered without its parameters shows `:elapsed` or `:count` to the
