@@ -229,20 +229,37 @@
                                             @endif
                                         </td>
                                         <td>
+                                            @php
+                                                // Every string CobrowseConsentState supplies is still English --
+                                                // the recorded exception in docs/product/dashboard-language.md --
+                                                // and it is being rendered inside a region marked with the agent's
+                                                // language, so each piece has to say what it actually is.
+                                                //
+                                                // The label, message and guidance are wholly English, so the
+                                                // element carrying them is marked. The two below are mixed: a
+                                                // German label wrapping an English value, in one sentence whose
+                                                // word order the catalogue owns. Splitting the sentence to wrap
+                                                // the value would be exactly the fragment concatenation this
+                                                // extraction refuses, so the marked value is passed IN as the
+                                                // placeholder -- escaped here, with only our own catalogue string
+                                                // rendered unescaped around it.
+                                                $inEnglish = fn (string $value): string => '<span lang="'
+                                                    .e(str_replace('_', '-', \App\Support\DashboardLanguage::FALLBACK))
+                                                    .'">'.e($value).'</span>';
+                                            @endphp
                                             <span
                                                 class="wf-queue-cobrowse"
+                                                lang="{{ str_replace('_', '-', \App\Support\DashboardLanguage::FALLBACK) }}"
                                                 @if ($cobrowseTransport['tone'] !== 'manual')
                                                     data-tone="{{ $cobrowseTransport['tone'] === 'ready' ? 'live' : 'attention' }}"
                                                 @endif
                                                 title="{{ $cobrowseTransport['message'] }} {{ $cobrowseTransport['guidance'] }}"
                                             >{{ $cobrowseTransport['label'] }}</span>
                                             <span class="wf-queue-preview">
-                                                {{-- The LABELS here belong to this page; the values they wrap come
-                                                     from CobrowseConsentState, which is not extracted yet -- see
-                                                     docs/product/dashboard-language.md. The `in_array` below compares
-                                                     against English prose and will need to move to a state key when
-                                                     that vocabulary is translated. --}}
-                                                {{ __('conversations.row.last_report', ['value' => $cobrowseTransport['last_report']]) }}@if (! in_array($cobrowseTransport['pressure'], ['No drops reported', 'No recent drops reported'], true)) &middot; {{ __('conversations.row.pressure', ['value' => $cobrowseTransport['pressure']]) }}@endif
+                                                {{-- The `in_array` below compares against English prose and will
+                                                     need to move to a state key when that vocabulary is
+                                                     extracted. --}}
+                                                {!! __('conversations.row.last_report', ['value' => $inEnglish($cobrowseTransport['last_report'])]) !!}@if (! in_array($cobrowseTransport['pressure'], ['No drops reported', 'No recent drops reported'], true)) &middot; {!! __('conversations.row.pressure', ['value' => $inEnglish($cobrowseTransport['pressure'])]) !!}@endif
                                             </span>
                                         </td>
                                         <td>

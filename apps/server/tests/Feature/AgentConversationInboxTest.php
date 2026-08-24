@@ -1348,7 +1348,11 @@ test('dashboard shows cobrowse transport health in the conversation queue', func
             ->get('/dashboard/conversations')
             ->assertOk()
             ->assertSee('Cobrowse')
-            ->assertSeeInOrder(['Degraded cobrowse session', 'Degraded', 'Pressure 2 dropped batches'])
+            // 'Pressure' and its value are separate items because the value is
+            // wrapped in `lang="en"` -- it comes from CobrowseConsentState, which
+            // is not extracted, inside a row whose labels are (#749). Order is
+            // still asserted; only the contiguity assumption is dropped.
+            ->assertSeeInOrder(['Degraded cobrowse session', 'Degraded', 'Pressure', '2 dropped batches'])
             ->assertSeeInOrder(['Live cobrowse session', 'Live', '20 seconds ago'])
             ->assertSeeInOrder(['Stale cobrowse session', 'Stale', '4 minutes ago'])
             ->assertSeeInOrder(['No cobrowse session', 'Unavailable', 'Not reported']);

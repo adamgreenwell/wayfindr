@@ -10,6 +10,11 @@ use App\Models\ConversationMessage;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\CobrowseConsentState;
+use App\Support\CobrowseReplayPreview;
+use App\Support\CobrowseResyncRequestPolicy;
+use App\Support\CobrowseSnapshotFreshness;
+use App\Support\CobrowseTransportPressure;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -639,4 +644,73 @@ test('zero takes the plural, which no explicit rule in the catalogue says', func
         ->and($german)->not->toContain('Es wird 0 Unterhaltung ')
         ->and($english)->toContain('Showing 0 conversations')
         ->and($english)->not->toContain('0 conversation matching');
+});
+
+test('the cobrowse exception says it is English, value and all', function (): void {
+    // Every string CobrowseConsentState supplies is still English, and it is
+    // rendered inside a region marked with the agent's language -- so without
+    // saying so, a screen reader pronounces the one deliberately untranslated
+    // cell on the page with German phonetics. Same rule the profile page's
+    // exception follows.
+    //
+    // The awkward half is the two mixed sentences: a German label wrapping an
+    // English value. Splitting them to wrap the value would be the fragment
+    // concatenation this extraction refuses, so the marked value goes in as the
+    // placeholder instead.
+    $world = conversationQueueLanguageWorld();
+
+    $html = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.index'))
+        ->assertOk()
+        ->getContent();
+
+    // The wholly-English cell: label, and the message/guidance in its title.
+    expect($html)->toContain('class="wf-queue-cobrowse"')
+        ->and($html)->toMatch('/<span\s+class="wf-queue-cobrowse"\s+lang="en"/');
+
+    // And the English value inside an otherwise German sentence.
+    expect($html)->toContain('Letzte Meldung <span lang="en">Not reported</span>');
+
+    // An English agent gets the same markup, because the exception is about
+    // the copy's language rather than about the reader's.
+    $inEnglish = (string) $this->actingAs($world['agents']['en'])
+        ->get(route('dashboard.conversations.index'))
+        ->assertOk()
+        ->getContent();
+
+    expect($inEnglish)->toContain('Last report <span lang="en">Not reported</span>');
+});
+
+test('a cobrowse value is escaped, not trusted', function (): void {
+    // Marking the value meant rendering that sentence unescaped, so only the
+    // catalogue string is trusted and the value is escaped on the way in. That
+    // is a claim about safety, so it gets a test rather than a comment.
+    $world = conversationQueueLanguageWorld();
+
+    // Resolved from the container so its four collaborators come along; only
+    // the one method under test is replaced.
+    $this->instance(CobrowseConsentState::class, new class(app(CobrowseReplayPreview::class), app(CobrowseResyncRequestPolicy::class), app(CobrowseSnapshotFreshness::class), app(CobrowseTransportPressure::class)) extends CobrowseConsentState
+    {
+        public function queueTransportForConversation(Conversation $conversation): array
+        {
+            return [
+                'state' => 'unavailable',
+                'label' => 'Unavailable',
+                'message' => 'x',
+                'last_report' => '<script>alert(1)</script>',
+                'pressure' => 'No drops reported',
+                'guidance' => 'x',
+                'recovery_action' => 'x',
+                'tone' => 'manual',
+            ];
+        }
+    });
+
+    $html = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.index'))
+        ->assertOk()
+        ->getContent();
+
+    expect($html)->not->toContain('<script>alert(1)</script>')
+        ->and($html)->toContain('&lt;script&gt;');
 });

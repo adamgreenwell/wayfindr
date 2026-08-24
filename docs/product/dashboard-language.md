@@ -12,13 +12,23 @@ of copy shared across that surface — so it extracts with the operator console
 rather than from a page-shaped change reaching into it. Until then, an agent
 reading the dashboard in German sees that one sentence in English.
 
-**A recorded exception has to say it is one.** Both exceptions sit inside a page
+**A recorded exception has to say it is one, down to the value.** Both exceptions sit inside a page
 region marked with the agent's language, so left unmarked a screen reader
 pronounces the one deliberately untranslated sentence on the page with German
 phonetics. Each carries its own `lang`, which means the readiness cards on the
 profile page are not uniform: the translated ones follow the page and the mail
 one declares English. An exception that assistive technology cannot see is not
 an exception, it is a defect.
+
+The queue's cobrowse cell is the awkward case, and worth knowing about before
+the next one: its label, message and guidance are wholly English, so the element
+carrying them is marked — but `Last report …` and `Pressure …` are **mixed**, a
+translated label wrapping an untranslated value in one sentence whose word order
+the catalogue owns. Splitting the sentence to wrap the value is exactly the
+fragment concatenation this extraction refuses, so the marked value is passed in
+as the placeholder and only our own catalogue string renders unescaped around
+it. The value is escaped on the way in, and there is a test that says so rather
+than a comment.
 
 The **conversation queue** has the same shape of exception for the same reason:
 `CobrowseConsentState` supplies the transport label on every row, and its
