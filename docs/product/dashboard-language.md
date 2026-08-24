@@ -156,6 +156,11 @@ out* with German phonetics. The root `<html lang>` therefore states the
 for. When the shell is extracted the root follows the locale and the attribute
 on `<main>` stops being needed.
 
+Two strings escape `<main>` and have to say so themselves: the document
+`<title>`, and the topbar breadcrumb, which falls back to the page title on
+surfaces with no rail item. Both are page copy standing in shell territory, and
+without a `lang` of their own a screen reader pronounces them as English.
+
 ### Copy can be wrong without being English
 
 `'„unbeantwortet\"'` in a single-quoted PHP string keeps its backslash — PHP

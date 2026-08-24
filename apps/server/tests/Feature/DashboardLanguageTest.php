@@ -525,6 +525,41 @@ test('the shell says English and the page region says its own language', functio
         ->assertSee('<main class="page" lang="en"', false);
 });
 
+test('translated copy outside the page region says which language it is', function (): void {
+    // Two strings escape `<main>`: the document `<title>`, and the topbar
+    // breadcrumb, which falls back to the page title on surfaces that have no
+    // rail item -- Profile is one. Both are page copy sitting in shell
+    // territory, so without saying so they inherit the root and get pronounced
+    // as English.
+    //
+    // The crumb is the interesting one: its language depends on which branch it
+    // took. A rail label is the shell's copy and stays English; the fallback is
+    // the page's and follows the agent.
+    $agent = languageAgent('de');
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.profile.show'))
+        ->assertOk()
+        ->assertSee('<title lang="de">', false)
+        ->assertSee('<span class="wf-crumb-current" lang="de">', false);
+
+    // A surface WITH a rail item takes the shell's label, which is English --
+    // and is not extracted anyway, so both agree.
+    $this->actingAs($agent)
+        ->get(route('dashboard.alerts.index'))
+        ->assertOk()
+        ->assertSee('<title lang="en">', false)
+        ->assertSee('<span class="wf-crumb-current" lang="en">', false);
+
+    // An English agent sees English everywhere, so this measures the marking
+    // rather than a locale that stopped switching.
+    $this->actingAs(languageAgent('en'))
+        ->get(route('dashboard.profile.show'))
+        ->assertOk()
+        ->assertSee('<title lang="en">', false)
+        ->assertDontSee('lang="de"', false);
+});
+
 test('an untranslated page is still marked as the English it is', function (): void {
     // The dashboard is being translated a surface at a time, so an agent who
     // chose German reads a few pages in German and most still in English. The

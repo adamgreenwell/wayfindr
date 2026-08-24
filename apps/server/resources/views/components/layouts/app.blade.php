@@ -26,7 +26,9 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{{ $title }}</title>
+    {{-- The title is the PAGE's copy, and the page may speak a different
+         language from the shell around it -- see the `lang` on `<html>`. --}}
+    <title lang="{{ str_replace('_', '-', app()->getLocale()) }}">{{ $title }}</title>
     <script>
         (function () {
             try {
@@ -2785,6 +2787,17 @@
             // the honest answer when there is one; the page title covers the
             // screens that sit outside the rail, like Profile.
             $currentLabel = collect($workItems)->concat($manageItems)->firstWhere('active')['label'] ?? $title;
+
+            // The crumb sits outside `<main>`, so it says which language it is
+            // rather than inheriting the root and being pronounced as English.
+            //
+            // The page's language covers every case that exists today: a rail
+            // label is shell copy and the shell is English, and the locale is
+            // English on any surface that has not been extracted -- so the two
+            // only diverge once an EXTRACTED surface also has a rail item.
+            // Nothing does yet, which is why this is one value rather than a
+            // branch nothing could exercise.
+            $pageLocale = str_replace('_', '-', app()->getLocale());
         @endphp
 
         <div class="wf-app">
@@ -2839,9 +2852,9 @@
                         @if ($crumb)
                             <a href="{{ route('operator.dashboard') }}">{{ $currentLabel }}</a>
                             <x-icon name="chevron-right" :size="13" />
-                            <span class="wf-crumb-current">{{ $crumb }}</span>
+                            <span class="wf-crumb-current" lang="{{ $pageLocale }}">{{ $crumb }}</span>
                         @else
-                            <span class="wf-crumb-current">{{ $currentLabel }}</span>
+                            <span class="wf-crumb-current" lang="{{ $pageLocale }}">{{ $currentLabel }}</span>
                         @endif
                     </nav>
 
