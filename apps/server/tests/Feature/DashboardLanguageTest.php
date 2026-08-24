@@ -452,6 +452,53 @@ test('the language selector names each language in its own language', function (
     }
 });
 
+test('an unextracted page is English all the way down, not only at the root', function (): void {
+    // Marking the DOCUMENT English while leaving the LOCALE German left German
+    // fragments scattered inside it -- a model's option labels here, a Carbon
+    // relative time there, a validation message somewhere else. Each is a
+    // separate leak with a separate fix and there is no end to the list.
+    //
+    // So the locale is scoped rather than the attribute: on a surface that has
+    // not been extracted there is nothing German to be inconsistent with, and
+    // `lang="en"` is simply true rather than a claim a second mechanism has to
+    // keep honest.
+    $agent = languageAgent('de');
+
+    $alerts = $this->actingAs($agent)->get(route('dashboard.alerts.index'))->assertOk();
+
+    // `User::alertModeOptions()` is catalogue-backed and reaches this page.
+    $alerts->assertSee('All site alerts I can support')
+        ->assertDontSee('Alle Website-Benachrichtigungen');
+
+    // The same agent, on the surface that HAS been extracted, still reads
+    // German -- so this measures scoping rather than a translation that broke.
+    $this->actingAs($agent)
+        ->get(route('dashboard.profile.show'))
+        ->assertOk()
+        ->assertSee('Alle Website-Benachrichtigungen, die ich betreuen kann')
+        ->assertDontSee('All site alerts I can support');
+});
+
+test('an unextracted page renders its relative times in English too', function (): void {
+    // Carbon reads the application locale, so a scoped `lang` attribute alone
+    // left `vor 3 Stunden` inside a document declaring itself English. Nothing
+    // about the view says "translate this"; the locale simply reached it.
+    $agent = languageAgent('de');
+
+    App::setLocale('de');
+    $inGerman = now()->subHours(3)->diffForHumans();
+
+    App::setLocale('en');
+    $inEnglish = now()->subHours(3)->diffForHumans();
+
+    expect($inGerman)->not->toBe($inEnglish);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.alerts.index'))
+        ->assertOk()
+        ->assertDontSee($inGerman);
+});
+
 test('an untranslated page is still marked as the English it is', function (): void {
     // The dashboard is being translated a surface at a time, so an agent who
     // chose German reads a few pages in German and most still in English. The

@@ -1,4 +1,4 @@
-<x-layouts.app :title="__('profile.document_title')" :agent="$agent" :account="$account" :translated="true">
+<x-layouts.app :title="__('profile.document_title')" :agent="$agent" :account="$account">
     <x-page-header :title="__('profile.title')" :subtitle="__('profile.subtitle')" />
 
     @if (session('status'))

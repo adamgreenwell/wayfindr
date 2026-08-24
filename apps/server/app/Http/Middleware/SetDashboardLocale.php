@@ -21,7 +21,13 @@ class SetDashboardLocale
 {
     public function handle(Request $request, Closure $next): Response
     {
-        App::setLocale(DashboardLanguage::for($request->user()));
+        // Scoped to surfaces that have actually been extracted -- see
+        // `DashboardLanguage::EXTRACTED_ROUTES` for why that is the locale
+        // rather than only the `lang` attribute.
+        App::setLocale(DashboardLanguage::forRequest(
+            $request->user(),
+            $request->route()?->getName(),
+        ));
 
         return $next($request);
     }

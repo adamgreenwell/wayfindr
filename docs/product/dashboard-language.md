@@ -121,24 +121,31 @@ already run, the flash after a save, the error under a field — is exactly the
 copy an extraction misses, and a single default render reaches none of it. Every
 miss found by review so far has been on a branch of this kind.
 
-### An untranslated page still says it is English
+### The locale is scoped to extracted surfaces, not just the `lang` attribute
 
-The application locale switches for the whole dashboard — it has to, or the
-pages that *are* translated would not be. But `<html lang>` describes the
-document, and while this epic is half-finished most documents are still English.
-Telling a screen reader that an English page is German makes it pronounce
-English words with German phonetics: a sighted agent never notices, and someone
-listening to the page hears nothing else.
+While this epic is half-finished, most pages are still English. Telling a screen
+reader that an English page is German makes it pronounce English words with
+German phonetics: a sighted agent never notices, and someone listening to the
+page hears nothing else.
 
-So the layout marks a page as English until its surface claims otherwise, with a
-`translated` flag a view sets once its copy is extracted. The locale switches
-globally; the `lang` attribute does not, until the surface says so. The flag
-deletes itself when the last surface lands.
+The first attempt marked the *document* — the locale switched everywhere and a
+per-view flag decided what `lang` claimed. That was wrong, and the way it was
+wrong is the useful part. A global locale leaks into an English page through
+every seam that reads it: a model's option labels, a Carbon `diffForHumans()`, a
+validation message, a shared support class. Each leak is a separate discovery
+with a separate fix, and there is no end to the list — two review rounds found
+three of them and there was no reason to think that was all.
 
-One limit worth naming ahead of time: a page whose *shell* is translated and
-whose body is not is genuinely mixed, and no single root `lang` is right for it.
-That arrives when the app shell is extracted, and the answer there is a `lang`
-on the shell region rather than on `<html>`.
+So `DashboardLanguage::EXTRACTED_ROUTES` names the surfaces whose copy has been
+through the extraction, and the middleware sets the locale from it: the agent's
+own language on a surface that can speak it, English everywhere else. On a page
+that has not been extracted there is then nothing German to be inconsistent
+with, and `<html lang="en">` is simply true rather than a claim a second
+mechanism has to keep honest.
+
+The list exists for the length of the epic and deletes itself with it. Write
+routes sit beside their page, because they render it back on a validation
+failure.
 
 ### Copy can be wrong without being English
 

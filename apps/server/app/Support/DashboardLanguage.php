@@ -49,6 +49,47 @@ final class DashboardLanguage
     public const FALLBACK = 'en';
 
     /**
+     * Route names whose copy has been through the extraction (#749).
+     *
+     * The dashboard is translated a surface at a time, so this list exists for
+     * the length of the epic and then deletes itself.
+     *
+     * It scopes the LOCALE, not just the `lang` attribute, and that distinction
+     * was the whole lesson. Switching the locale globally and marking only the
+     * document put German fragments inside pages that correctly declared
+     * themselves English -- a model's option labels here, a Carbon
+     * `diffForHumans()` there, a validation message somewhere else. Each one is
+     * a separate leak with a separate fix, and there is no end to the list.
+     *
+     * Scoping the locale answers all of them at once: on a surface that has not
+     * been extracted, nothing is translated, so nothing can be inconsistent and
+     * `lang="en"` is simply true.
+     *
+     * Write routes are here alongside their page because they render it back on
+     * a validation failure.
+     */
+    public const EXTRACTED_ROUTES = [
+        'dashboard.profile.show',
+        'dashboard.profile.update',
+        'dashboard.profile.alerts.update',
+        'dashboard.profile.password.update',
+    ];
+
+    /**
+     * The locale to render a given request in.
+     *
+     * An agent's own language on a surface that can speak it, and English
+     * everywhere else -- including for an install whose own default is German,
+     * because an unextracted page has no German to show.
+     */
+    public static function forRequest(?User $agent, ?string $routeName): string
+    {
+        return $routeName !== null && in_array($routeName, self::EXTRACTED_ROUTES, true)
+            ? self::for($agent)
+            : self::FALLBACK;
+    }
+
+    /**
      * The locale to render for this agent, always something we can render.
      *
      * Null preference means the install default rather than a broken page --
