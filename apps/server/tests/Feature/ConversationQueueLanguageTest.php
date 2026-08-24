@@ -682,6 +682,46 @@ test('the cobrowse exception says it is English, value and all', function (): vo
     expect($inEnglish)->toContain('Last report <span lang="en">Not reported</span>');
 });
 
+test('a localised cobrowse timestamp is marked German, not English', function (): void {
+    // `last_report` is the static "Not reported" ONLY in the `unavailable`
+    // state. Every other state builds it with `diffForHumans()`, which follows
+    // the page's locale -- so on this route it is already German. Marking that
+    // English has a screen reader pronounce German as English, which is the
+    // same defect as leaving it unmarked, pointing the other way.
+    //
+    // Decided from the state rather than by reading the prose.
+    $world = conversationQueueLanguageWorld();
+
+    $this->instance(CobrowseConsentState::class, new class(app(CobrowseReplayPreview::class), app(CobrowseResyncRequestPolicy::class), app(CobrowseSnapshotFreshness::class), app(CobrowseTransportPressure::class)) extends CobrowseConsentState
+    {
+        public function queueTransportForConversation(Conversation $conversation): array
+        {
+            return [
+                'state' => 'live',
+                'label' => 'Live',
+                'message' => 'x',
+                // What `diffForHumans()` returns once the locale is German.
+                'last_report' => 'vor 20 Sekunden',
+                'pressure' => '2 dropped batches',
+                'guidance' => 'x',
+                'recovery_action' => 'x',
+                'tone' => 'ready',
+            ];
+        }
+    });
+
+    $html = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.index'))
+        ->assertOk()
+        ->getContent();
+
+    expect($html)->toContain('Letzte Meldung <span lang="de">vor 20 Sekunden</span>')
+        ->and($html)->not->toContain('<span lang="en">vor 20 Sekunden</span>')
+        // The pressure value beside it IS static English -- English words and
+        // an English pluraliser -- so it stays marked English.
+        ->and($html)->toContain('<span lang="en">2 dropped batches</span>');
+});
+
 test('a cobrowse value is escaped, not trusted', function (): void {
     // Marking the value meant rendering that sentence unescaped, so only the
     // catalogue string is trusted and the value is escaped on the way in. That

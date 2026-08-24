@@ -243,9 +243,26 @@
                                                 // extraction refuses, so the marked value is passed IN as the
                                                 // placeholder -- escaped here, with only our own catalogue string
                                                 // rendered unescaped around it.
-                                                $inEnglish = fn (string $value): string => '<span lang="'
-                                                    .e(str_replace('_', '-', \App\Support\DashboardLanguage::FALLBACK))
+                                                $marked = fn (string $value, string $language): string => '<span lang="'
+                                                    .e(str_replace('_', '-', $language))
                                                     .'">'.e($value).'</span>';
+
+                                                // `pressure` is always English: English words, and an English
+                                                // pluraliser building "2 dropped batches".
+                                                $englishValue = \App\Support\DashboardLanguage::FALLBACK;
+
+                                                // `last_report` is NOT. It is the static "Not reported" only in
+                                                // the `unavailable` state; every other state builds it with
+                                                // `diffForHumans()`, which follows the page's locale and returns
+                                                // "vor 20 Sekunden" here. Marking that English would have a
+                                                // screen reader pronounce German as English -- the same defect as
+                                                // leaving it unmarked, pointing the other way.
+                                                //
+                                                // Decided from the STATE rather than by comparing the prose,
+                                                // which is what the `in_array` below still does and should not.
+                                                $lastReportValue = ($cobrowseTransport['state'] ?? null) === 'unavailable'
+                                                    ? $englishValue
+                                                    : app()->getLocale();
                                             @endphp
                                             <span
                                                 class="wf-queue-cobrowse"
@@ -259,7 +276,7 @@
                                                 {{-- The `in_array` below compares against English prose and will
                                                      need to move to a state key when that vocabulary is
                                                      extracted. --}}
-                                                {!! __('conversations.row.last_report', ['value' => $inEnglish($cobrowseTransport['last_report'])]) !!}@if (! in_array($cobrowseTransport['pressure'], ['No drops reported', 'No recent drops reported'], true)) &middot; {!! __('conversations.row.pressure', ['value' => $inEnglish($cobrowseTransport['pressure'])]) !!}@endif
+                                                {!! __('conversations.row.last_report', ['value' => $marked($cobrowseTransport['last_report'], $lastReportValue)]) !!}@if (! in_array($cobrowseTransport['pressure'], ['No drops reported', 'No recent drops reported'], true)) &middot; {!! __('conversations.row.pressure', ['value' => $marked($cobrowseTransport['pressure'], $englishValue)]) !!}@endif
                                             </span>
                                         </td>
                                         <td>
