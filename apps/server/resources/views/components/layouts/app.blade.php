@@ -8,10 +8,20 @@
 ])
 
 <!DOCTYPE html>
-{{-- The locale is already scoped to extracted surfaces by
-     `SetDashboardLocale`, so this is simply true rather than a second
-     mechanism that has to agree with the first. --}}
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+{{-- The SHELL's language, which is not yet the agent's.
+
+     The navigation, the topbar and the support-code search in this file are
+     still English, so a document that declared itself German would be lying
+     about most of its own chrome -- and a screen reader would pronounce
+     "Conversations" and "Sign out" with German phonetics. That is the same
+     defect as the one the scoped locale fixed, arriving from the other
+     direction: there the body was English inside a German document, here the
+     shell is English inside one.
+
+     So the root states the shell's language and the page region below states
+     its own. When the shell itself is extracted this becomes
+     `app()->getLocale()` and the `lang` on `<main>` stops being needed. --}}
+<html lang="{{ str_replace('_', '-', \App\Support\DashboardLanguage::FALLBACK) }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -2842,7 +2852,9 @@
                     </form>
                 </header>
 
-                <main class="page">
+                {{-- The page's own language, which on an extracted surface is
+                     the agent's and everywhere else is the shell's. --}}
+                <main class="page" lang="{{ str_replace('_', '-', app()->getLocale()) }}">
                     @if (session('support_code_lookup_result'))
                         <p class="status-message">{{ session('support_code_lookup_result') }}</p>
                     @endif

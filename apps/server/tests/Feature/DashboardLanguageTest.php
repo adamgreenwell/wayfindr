@@ -499,6 +499,32 @@ test('an unextracted page renders its relative times in English too', function (
         ->assertDontSee($inGerman);
 });
 
+test('the shell says English and the page region says its own language', function (): void {
+    // The mirror of the leak the scoped locale fixed. There, English copy sat
+    // inside a document claiming German; here the SHELL is English -- the
+    // navigation, the topbar, the support-code search all still say "Work",
+    // "Conversations", "Sign out" -- so a root declaring German would be lying
+    // about most of its own chrome, and a screen reader would pronounce those
+    // words with German phonetics.
+    //
+    // The root states the shell's language and the page region states its own,
+    // which is what `lang` is for. When the shell is extracted the root follows
+    // the locale and the region attribute stops being needed.
+    $agent = languageAgent('de');
+
+    $profile = $this->actingAs($agent)->get(route('dashboard.profile.show'))->assertOk();
+
+    $profile->assertSee('<html lang="en"', false)
+        ->assertSee('<main class="page" lang="de"', false);
+
+    // On a surface that is not extracted, both say English and mean it.
+    $this->actingAs($agent)
+        ->get(route('dashboard.alerts.index'))
+        ->assertOk()
+        ->assertSee('<html lang="en"', false)
+        ->assertSee('<main class="page" lang="en"', false);
+});
+
 test('an untranslated page is still marked as the English it is', function (): void {
     // The dashboard is being translated a surface at a time, so an agent who
     // chose German reads a few pages in German and most still in English. The
@@ -509,17 +535,20 @@ test('an untranslated page is still marked as the English it is', function (): v
     // sees this; someone listening to the page hears nothing else.
     $agent = languageAgent('de');
 
+    // The ROOT is the shell's language, which is still English everywhere --
+    // see 'the shell says English and the page region says its own language'.
+    // What moves per surface is the page region.
     $this->actingAs($agent)
         ->get(route('dashboard.profile.show'))
         ->assertOk()
-        ->assertSee('<html lang="de"', false);
+        ->assertSee('lang="de"', false);
 
     // A surface that has not been extracted yet says English, and means it.
     $this->actingAs($agent)
         ->get(route('dashboard'))
         ->assertOk()
         ->assertSee('<html lang="en"', false)
-        ->assertDontSee('<html lang="de"', false);
+        ->assertDontSee('lang="de"', false);
 });
 
 test('an English agent is told English everywhere', function (): void {

@@ -147,6 +147,15 @@ The list exists for the length of the epic and deletes itself with it. Write
 routes sit beside their page, because they render it back on a validation
 failure.
 
+**The shell is its own language.** The navigation, topbar and support-code
+search live in the layout and are not extracted, so a document declaring itself
+German would be lying about most of its own chrome — the same defect from the
+other direction, and a screen reader would pronounce *Conversations* and *Sign
+out* with German phonetics. The root `<html lang>` therefore states the
+**shell's** language and `<main>` states the **page's**, which is what `lang` is
+for. When the shell is extracted the root follows the locale and the attribute
+on `<main>` stops being needed.
+
 ### Copy can be wrong without being English
 
 `'„unbeantwortet\"'` in a single-quoted PHP string keeps its backslash — PHP
