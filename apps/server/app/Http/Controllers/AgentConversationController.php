@@ -114,7 +114,7 @@ class AgentConversationController extends Controller
             ->get();
 
         return response()->view('agent.conversations.partials.message-list', [
-            'emptyMessage' => 'No messages yet.',
+            'emptyMessage' => __('conversations.detail.no_messages'),
             'transcriptMessages' => $messages,
             'supportCode' => $conversation->support_code,
             // The realtime refresh replaces the rendered transcript wholesale.
@@ -198,7 +198,7 @@ class AgentConversationController extends Controller
                 ->slice($windowStart, self::SWITCHER_MENU_WINDOW * 2 + 1)
                 ->map(fn (Conversation $candidate): array => [
                     'support_code' => $candidate->support_code,
-                    'subject' => $candidate->subject ?? 'Untitled conversation',
+                    'subject' => $candidate->subject ?? __('conversations.detail.untitled'),
                     'current' => $candidate->id === $conversation->id,
                 ])
                 ->values(),
@@ -295,7 +295,7 @@ class AgentConversationController extends Controller
 
             if (! $resolvedTemplate) {
                 throw ValidationException::withMessages([
-                    'reply_template' => 'Choose an available reply helper.',
+                    'reply_template' => __('conversations.validation.reply_template'),
                 ]);
             }
         }
@@ -306,7 +306,7 @@ class AgentConversationController extends Controller
 
         if ($body === '' && $attachmentIds === []) {
             throw ValidationException::withMessages([
-                'body' => 'Please enter a reply or attach a file.',
+                'body' => __('conversations.validation.body'),
             ]);
         }
 
@@ -540,7 +540,7 @@ class AgentConversationController extends Controller
             'status' => 'open',
             'priority' => $validated['priority'] ?? 'normal',
             'category' => $validated['category'] ?? null,
-            'subject' => $conversation->subject ?: 'Conversation '.$conversation->support_code,
+            'subject' => $conversation->subject ?: __('conversations.detail.ticket_subject_fallback', ['code' => $conversation->support_code]),
             'description' => $this->ticketDescription($conversation),
             'metadata' => [
                 'source' => 'conversation',
@@ -766,7 +766,7 @@ class AgentConversationController extends Controller
         $conversationMetadata = $conversation->metadata ?? [];
 
         return [
-            'anonymous_id' => $visitor?->anonymous_id ?? 'Unknown visitor',
+            'anonymous_id' => $visitor?->anonymous_id ?? __('conversations.detail.unknown_visitor'),
             'external_id' => $visitorContextSanitizer->sanitizeIdentifier($visitor?->external_id),
             // What the visitor typed into the pre-chat form, if the site asked.
             // Collecting an answer nobody can see makes the field pointless, so
@@ -777,8 +777,20 @@ class AgentConversationController extends Controller
             'last_seen_at' => $visitor?->last_seen_at,
             'presence' => [
                 'state' => $visitor?->presenceState() ?? 'unknown',
-                'label' => $visitor?->presenceLabel() ?? 'Not reported',
-                'detail' => $visitor?->presenceDetail() ?? 'No visitor heartbeat yet.',
+                // The visitor's presence STATE translated here, because the
+                // model hands out English -- see Visitor::presenceLabel().
+                'label' => $visitor
+                    ? __('presence.'.($visitor->presenceState() === 'unknown' ? 'not_reported' : $visitor->presenceState()))
+                    : __('conversations.detail.not_reported'),
+                // The presence CUE translated here, because the model hands out
+                // keys -- see Visitor::presenceCue().
+                'detail' => $visitor
+                    ? ($visitor->presenceCue()['seen_at']
+                        ? __('conversations.detail.context.seen_at', ['elapsed' => $visitor->presenceCue()['seen_at']->diffForHumans()])
+                        : ($visitor->presenceCue()['key'] === 'seen_recently'
+                            ? __('conversations.detail.context.seen_recently')
+                            : __('conversations.detail.no_heartbeat')))
+                    : __('conversations.detail.no_heartbeat'),
             ],
             'last_page_url' => $this->contextString($visitorMetadata['last_page_url'] ?? null),
             'started_page_url' => $this->contextString($conversationMetadata['started_page_url'] ?? null),
@@ -887,7 +899,7 @@ class AgentConversationController extends Controller
 
                 $senderName = $message->sender_type === User::class
                     ? ($message->sender?->name ?? 'Agent')
-                    : 'Visitor';
+                    : __('conversations.detail.visitor_actor');
 
                 return $senderName.': '.$body;
             })
@@ -895,7 +907,7 @@ class AgentConversationController extends Controller
             ->implode(PHP_EOL.PHP_EOL);
 
         if ($messages === '') {
-            return 'Created from conversation '.$conversation->support_code.'.';
+            return __('conversations.detail.ticket_from_conversation', ['code' => $conversation->support_code]);
         }
 
         return $messages;

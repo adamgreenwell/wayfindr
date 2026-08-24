@@ -493,19 +493,29 @@ test('the shared support-code control speaks the surface it is rendered on', fun
         ->and($german)->not->toContain('>Copy</button>')
         ->and($german)->not->toContain('Open support record');
 
-    // The conversation DETAIL page is not extracted, and renders the same
-    // component -- so it is English there, for the same German agent, in the
-    // same session. That is the property that makes translating a shared view
-    // safe, and it is only observable on a page that actually renders one.
+    // A page still outside `EXTRACTED_ROUTES` renders the same component in
+    // English, for the same German agent in the same session -- the property
+    // that makes translating a shared view safe.
+    //
+    // This used the conversation detail page until that surface was extracted
+    // too, which is the recurring cost of a contrast built on "not done yet":
+    // it expires. The ticket detail page is the contrast now.
     $conversation = Conversation::query()->orderByDesc('id')->firstOrFail();
 
-    $detail = (string) $this->actingAs($world['agents']['de'])
-        ->get(route('dashboard.conversations.show', $conversation->support_code))
+    $ticket = Ticket::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($conversation)
+        ->for($conversation->visitor, 'requester')
+        ->create(['category' => 'task', 'priority' => 'low', 'status' => 'open', 'subject' => 'Datenpunkt contrast', 'description' => 'Datenpunkt body']);
+
+    $unextracted = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.tickets.show', $ticket))
         ->assertOk()
         ->getContent();
 
-    expect($detail)->toContain('>Copy</button>')
-        ->and($detail)->not->toContain('>Kopieren</button>');
+    expect($unextracted)->toContain('>Copy</button>')
+        ->and($unextracted)->not->toContain('>Kopieren</button>');
 });
 
 test('the queue claims to be translated, so a screen reader is told the truth', function (): void {
@@ -548,23 +558,21 @@ test('translating a model would put German on pages that are still English', fun
     // who reads German, which is the correct answer until it is extracted.
     $world = conversationQueueLanguageWorld();
 
-    // The conversation with an AGENT message last, which is the state whose
-    // label this test is about. Looked up by that rather than by a support code
-    // the world now numbers per run.
-    $conversation = Conversation::query()
-        ->whereHas('messages', fn ($query) => $query->where('sender_type', User::class))
-        ->orderByDesc('id')
-        ->firstOrFail();
-
-    $detail = conversationQueueLanguageVisibleText(
+    // The visitors directory, which is still outside `EXTRACTED_ROUTES`. This
+    // used the conversation detail page until that surface was extracted too:
+    // the point is that a model's English survives on a page nobody has
+    // translated, so the page has to be one nobody has translated.
+    $unextracted = conversationQueueLanguageVisibleText(
         $this->actingAs($world['agents']['de'])
-            ->get(route('dashboard.conversations.show', $conversation->support_code))
+            ->get(route('dashboard.visitors.index'))
             ->assertOk()
             ->getContent()
     );
 
-    expect($detail)->toContain('Waiting on visitor')
-        ->and($detail)->not->toContain('Wartet auf Besucher');
+    // `Visitor::presenceLabel()` answers English from the model, and this page
+    // reads it directly.
+    expect($unextracted)->toContain('Active recently')
+        ->and($unextracted)->not->toContain('Kürzlich aktiv');
 
     // And the queue, which IS extracted, still says it in German -- so this is
     // measuring where the translation happens rather than that it stopped.
@@ -911,6 +919,7 @@ function conversationQueueLanguageCognates(): array
         'Cobrowse' => "the product's own name for the feature, not translated",
         'Wayfindr' => 'the product name, which is not copy',
         'Tickets' => 'the same word in both languages',
+        'Ticket' => 'the same word in both languages, singular',
         'Status' => 'the same word in both languages',
         'Normal' => 'the same word in both languages, as a priority',
         'Label' => 'a loanword German uses as-is',
@@ -1035,6 +1044,11 @@ test('no English is rendered as German on any extracted surface', function (): v
         // A refinement that matches nothing, which is a DIFFERENT empty state
         // from the search one and carries its own message.
         route('dashboard.tickets.index', ['ticket_priority' => 'urgent']),
+        route('dashboard.conversations.show', $conversation->support_code),
+        route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'context']),
+        route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'ticket']),
+        route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'cobrowse']),
+        route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'references']),
     ];
 
     // Every GET-able extracted route is covered, whether or not it is listed
@@ -1045,14 +1059,21 @@ test('no English is rendered as German on any extracted surface', function (): v
     foreach (DashboardLanguage::EXTRACTED_ROUTES as $name) {
         $route = app('router')->getRoutes()->getByName($name);
 
-        if ($route === null || ! in_array('GET', $route->methods(), true) || str_contains($route->uri(), '{')) {
+        if ($route === null || ! in_array('GET', $route->methods(), true)) {
             continue;
         }
+
+        // A route WITH parameters is matched by its static prefix rather than
+        // skipped. Skipping them silently is how `conversations.show` joined
+        // the extracted list and was never audited -- the guard passed because
+        // it had quietly decided not to look.
+        $prefix = rtrim('/'.ltrim(explode('{', $route->uri())[0], '/'), '/');
+        $matched = collect($covered)->contains(fn (string $path): bool => str_starts_with($path, $prefix));
 
         // Not `expect()->toContain()`: that is variadic, so a message passed
         // as a second argument becomes a second required value and the failure
         // reports the message itself as missing.
-        $this->assertContains('/'.ltrim($route->uri(), '/'), $covered, "extracted route not audited: {$name}");
+        $this->assertTrue($matched, "extracted route not audited: {$name} ({$route->uri()})");
     }
 
     foreach ($states as $url) {
@@ -1145,6 +1166,12 @@ test('every cognate on the list still appears, so the list cannot rot', function
         ),
         conversationQueueLanguageAnnouncements(
             (string) $this->actingAs($world['agents']['de'])->get(route('dashboard.tickets.index'))->getContent()
+        ),
+        // The detail page too: `Ticket` singular is a tab label and appears
+        // nowhere else, so without this the anti-rot check fails for a cognate
+        // that is perfectly real.
+        conversationQueueLanguageAnnouncements(
+            (string) $this->actingAs($world['agents']['de'])->get(route('dashboard.conversations.show', $conversation->support_code))->getContent()
         ),
     ), 'text');
 
@@ -1261,6 +1288,8 @@ test('no raw catalogue key ever reaches the page', function (): void {
         route('dashboard.tickets.index', ['ticket_status' => 'closed']),
         route('dashboard.tickets.index', ['ticket_attention' => 'needs_owner']),
         route('dashboard.tickets.index', ['ticket_search' => 'zzzz']),
+        route('dashboard.conversations.show', $conversation->support_code),
+        route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'cobrowse']),
     ];
 
     foreach (['de', 'en'] as $locale) {
@@ -1601,4 +1630,43 @@ test('every external attempt branch is translated, including the fall-through', 
 
     expect($german['body'])->toContain('Projekt nicht erfasst')
         ->and($german['body'])->not->toContain('Project not recorded');
+});
+
+test('the detail page counts name what they are counting', function (): void {
+    // No comparison guard can see this one: swapping one count for another
+    // still renders German, just the wrong German -- "0 Felder" where the page
+    // means "0 früher". Same class as the ticket queue's status heading.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+
+    $german = conversationQueueLanguageVisibleText(
+        (string) $this->actingAs($world['agents']['de'])
+            ->get(route('dashboard.conversations.show', $conversation->support_code))
+            ->assertOk()
+            ->getContent()
+    );
+
+    // Anchored to the section each count belongs to. A page-wide
+    // `assertStringContainsString` passes while one of three call sites is
+    // wrong, because the other two still render the word -- which is exactly
+    // what a mutation of one of them proved.
+    $near = function (string $text, string $heading, string $expected): void {
+        $at = mb_strpos($text, $heading);
+
+        $this->assertNotFalse($at, "section heading missing: {$heading}");
+        $this->assertStringContainsString($expected, mb_substr($text, $at, 160), "count under: {$heading}");
+    };
+
+    $near($german, 'Host-Kontext', 'Feld');
+    $near($german, 'Verlauf auf dieser Website', 'früher');
+
+    $inEnglish = conversationQueueLanguageVisibleText(
+        (string) $this->actingAs($world['agents']['en'])
+            ->get(route('dashboard.conversations.show', $conversation->support_code))
+            ->assertOk()
+            ->getContent()
+    );
+
+    $near($inEnglish, 'Host context', 'field');
+    $near($inEnglish, 'History on this site', 'previous');
 });

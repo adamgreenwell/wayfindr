@@ -229,6 +229,67 @@ return [
         'project_unknown' => 'Project not recorded',
     ],
 
+    'next_action' => [
+        'needs_reply' => [
+            'title' => 'Reply to visitor',
+            'body' => 'Visitor replied last. Send a clear response, then mark the ticket pending or close it when the outcome is settled.',
+            'cta' => 'Jump to reply',
+        ],
+        'needs_owner' => [
+            'title' => 'Assign an owner',
+            'body' => 'No agent owns this ticket yet. Assign someone before work gets lost.',
+            'cta' => 'Assign ticket',
+        ],
+        'waiting_on_customer' => [
+            'title' => 'Wait on customer',
+            'body' => 'Agent replied last. Keep the ticket visible, then reopen the loop when the visitor answers.',
+            'cta' => 'Review status actions',
+        ],
+        'resolved' => [
+            'title' => 'Review resolution',
+            'body' => 'This ticket is closed. Reopen it only if the customer comes back or the outcome changes.',
+            'cta' => 'Review status actions',
+        ],
+        'needs_agent' => [
+            'title' => 'Add the next update',
+            'body' => 'This ticket is assigned and ready for an agent update. Add a reply, internal note, or status change.',
+            'cta' => 'Review actions',
+        ],
+    ],
+
+    'status_readiness' => [
+        'reply_before_closing' => [
+            'title' => 'Reply before closing',
+            'detail' => 'Visitor replied last. Closing now may leave the customer waiting. Use pending or close only after an agent update or a confirmed outcome.',
+            'cta' => 'Jump to reply',
+        ],
+        'assign_first' => [
+            'title' => 'Assign before status changes',
+            'detail' => 'Assign an owner before changing status so follow-up does not drift.',
+            'cta' => 'Assign ticket',
+        ],
+        'pending' => [
+            'title' => 'Pending ticket',
+            'detail' => 'This ticket is pending. Reopen it when the visitor answers or new work is needed.',
+            'cta' => 'Review reopen option',
+        ],
+        'calm' => [
+            'title' => 'Lifecycle options are calm',
+            'detail' => 'Agent replied last. Mark pending if you are waiting on the visitor, or close once the outcome is settled.',
+            'cta' => 'Review status actions',
+        ],
+        'closed' => [
+            'title' => 'Closed ticket',
+            'detail' => 'Reopen only if the customer comes back or the outcome changes. Use the reopen note to leave the next agent enough context.',
+            'cta' => 'Review reopen option',
+        ],
+        'default' => [
+            'title' => 'Lifecycle options are calm',
+            'detail' => 'Add the next update, internal note, pending state, or close once the outcome is clear.',
+            'cta' => 'Review status actions',
+        ],
+    ],
+
     'row' => [
         'attention_needs_reply' => 'Needs reply',
         'attention_needs_owner' => 'Needs owner',

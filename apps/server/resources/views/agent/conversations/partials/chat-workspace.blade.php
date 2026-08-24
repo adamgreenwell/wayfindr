@@ -1,7 +1,14 @@
 <section class="section" aria-labelledby="messages-heading">
     <div class="section-header">
-        <h2 id="messages-heading">Messages</h2>
-        <span class="lede" data-transcript-count>{{ $messages->count() }} total</span>
+        <h2 id="messages-heading">{{ __('conversations.detail.headings.messages') }}</h2>
+        {{-- The script that updates this count cannot reach the catalogue, so both
+             plural forms are handed to it as data attributes and it picks one. --}}
+        <span
+            class="lede"
+            data-transcript-count
+            data-total-one="{{ trans_choice('conversations.detail.tabs.transcript_total', 1, ['count' => 1]) }}"
+            data-total-many="{{ trans_choice('conversations.detail.tabs.transcript_total', 2, ['count' => ':count']) }}"
+        >{{ trans_choice('conversations.detail.tabs.transcript_total', $messages->count(), ['count' => $messages->count()]) }}</span>
     </div>
 
     <div data-transcript>
@@ -13,13 +20,14 @@
         ])
     </div>
 
-    <p class="realtime-note" data-visitor-typing aria-live="polite" {{ $conversation->visitorTypingState() === 'typing' ? '' : 'hidden' }}>Visitor is typing…</p>
+    <p class="realtime-note" data-visitor-typing aria-live="polite" {{ $conversation->visitorTypingState() === 'typing' ? '' : 'hidden' }}>{{ __('conversations.detail.reply.typing') }}</p>
 </section>
 
 <section class="section" aria-labelledby="reply-heading">
     <div class="section-header">
-        <h2 id="reply-heading">Reply</h2>
-        <span class="lede">{{ $conversation->attentionLabel() }}</span>
+        <h2 id="reply-heading">{{ __('conversations.detail.reply.heading') }}</h2>
+        {{-- The model hands out a state; this surface renders it. --}}
+        <span class="lede">{{ __('conversations.row.attention_'.$conversation->attentionState()) }}</span>
     </div>
 
     @php
@@ -40,18 +48,20 @@
             @csrf
             @include('agent.conversations.partials.return-query-fields')
 
-            <div class="reply-context-strip" aria-label="Reply context">
+            <div class="reply-context-strip" aria-label="{{ __('conversations.detail.reply.context') }}">
                 <div class="reply-context-item">
-                    <span class="meta-label">Visitor read</span>
-                    <span class="meta-value" data-visitor-read-label aria-live="polite">{{ $conversation->visitorReadLabel() }}</span>
-                    <span class="lede" data-visitor-read-detail>{{ $conversation->visitorReadDetail() }}</span>
+                    <span class="meta-label">{{ __('conversations.detail.reply.visitor_read') }}</span>
+                    <span class="meta-value" data-visitor-read-label aria-live="polite">{{ __('tickets.read_state.'.$conversation->visitorReadCue()['key']) }}</span>
+                    <span class="lede" data-visitor-read-detail>@php($readCue = $conversation->visitorReadCue()){{ $readCue['seen_at']
+                        ? __('tickets.read_state.detail_seen', ['elapsed' => $readCue['seen_at']->diffForHumans()])
+                        : __('tickets.read_state.'.$readCue['detail_key']) }}</span>
                 </div>
             </div>
 
             <div class="field">
-                <label for="reply_template">Reply helper</label>
+                <label for="reply_template">{{ __('conversations.detail.reply.helper') }}</label>
                 <select id="reply_template" name="reply_template" data-template-picker data-target="#body">
-                    <option value="">Write a custom reply</option>
+                    <option value="">{{ __('conversations.detail.reply.custom') }}</option>
                     @foreach ($replyTemplates as $replyTemplateKey => $replyTemplate)
                         <option
                             value="{{ $replyTemplateKey }}"
@@ -68,17 +78,17 @@
             </div>
 
             <div class="field">
-                <label for="body">Message</label>
+                <label for="body">{{ __('conversations.detail.reply.label') }}</label>
                 <textarea
                     id="body"
                     name="body"
                     rows="5"
-                    placeholder="Write a clear, calm reply."
+                    placeholder="{{ __('conversations.detail.reply.guidance') }}"
                     aria-describedby="reply-shortcut-help"
                     data-reply-body
                     data-shortcut-submit
                 >{{ old('body') }}</textarea>
-                <p id="reply-shortcut-help" class="sr-only">Command or Control plus Enter sends this reply.</p>
+                <p id="reply-shortcut-help" class="sr-only">{{ __('conversations.detail.reply.shortcut') }}</p>
                 @error('body')
                     <p class="field-error">{{ $message }}</p>
                 @enderror
@@ -96,9 +106,9 @@
                     data-reply-file-input
                 >
                 <button class="button secondary reply-attach-button" type="button" data-reply-attach>
-                    <span aria-hidden="true">📎</span> Attach file
+                    <span aria-hidden="true">📎</span> {{ __('conversations.detail.reply.attach') }}
                 </button>
-                <ul class="reply-attachments" data-reply-attachments aria-label="Files to send with this reply" hidden></ul>
+                <ul class="reply-attachments" data-reply-attachments aria-label="{{ __('conversations.detail.reply.files') }}" hidden></ul>
                 @error('attachment_ids')
                     <p class="field-error">{{ $message }}</p>
                 @enderror
@@ -106,16 +116,16 @@
 
             <p class="sr-only" data-reply-status aria-live="polite"></p>
 
-            <button class="button" type="submit" data-reply-submit>Send reply</button>
+            <button class="button" type="submit" data-reply-submit>{{ __('conversations.detail.reply.send') }}</button>
         </form>
 
         <aside class="reply-assist" aria-labelledby="reply-assist-heading">
-            <h3 id="reply-assist-heading">Reply assist</h3>
+            <h3 id="reply-assist-heading">{{ __('conversations.detail.reply.assist') }}</h3>
 
             <div class="reply-template-preview" data-template-preview>
                 <div data-template-preview-empty @if ($selectedReplyTemplate !== '') hidden @endif>
-                    <strong>Writing this one yourself</strong>
-                    <p class="lede">Reply helpers offer a starting point you can edit. Wayfindr never writes a reply for you.</p>
+                    <strong>{{ __('conversations.detail.reply.writing_own') }}</strong>
+                    <p class="lede">{{ __('conversations.detail.reply.helper_note') }}</p>
                 </div>
 
                 @foreach ($replyTemplates as $replyTemplateKey => $replyTemplate)
@@ -127,8 +137,8 @@
             </div>
 
             <div class="notice-list">
-                <p>Keep sensitive details out of replies unless the visitor supplied them here.</p>
-                <p>Create or attach a ticket when the next step needs durable follow-up.</p>
+                <p>{{ __('conversations.detail.reply.privacy') }}</p>
+                <p>{{ __('conversations.detail.ticket.create_hint') }}</p>
             </div>
         </aside>
     </div>

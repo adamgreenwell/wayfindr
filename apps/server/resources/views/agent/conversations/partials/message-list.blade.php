@@ -41,7 +41,7 @@
                                 Seen by visitor {{ $transcriptMessage->seen_at->diffForHumans() }}
                             </span>
                         @elseif ($isAgent && (string) $transcriptMessage->id === (string) $latestAgentMessageId)
-                            <span class="message-seen" data-agent-message-seen-id="{{ $transcriptMessage->id }}">Not seen yet</span>
+                            <span class="message-seen" data-agent-message-seen-id="{{ $transcriptMessage->id }}">{{ __('conversations.detail.reply.not_seen') }}</span>
                         @endif
                     </span>
                 </div>
@@ -54,7 +54,7 @@
                 @if (filled($transcriptMessage->body))
                     <p class="message-body">{{ $transcriptMessage->body }}</p>
                 @elseif ($messageAttachments->isEmpty())
-                    <p class="message-empty">This message has no text or attachment.</p>
+                    <p class="message-empty">{{ __('conversations.detail.reply.no_body') }}</p>
                 @endif
 
                 @if ($supportCode && $messageAttachments->isNotEmpty())

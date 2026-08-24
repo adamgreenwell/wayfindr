@@ -80,6 +80,7 @@ final class DashboardLanguage
         'dashboard.profile.password.update',
         'dashboard.conversations.index',
         'dashboard.tickets.index',
+        'dashboard.conversations.show',
     ];
 
     /**

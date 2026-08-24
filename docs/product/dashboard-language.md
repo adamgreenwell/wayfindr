@@ -6,6 +6,18 @@ extracted surface by surface.
 
 ### The recorded exceptions
 
+The conversation **detail** page carries the largest one. Its cobrowse panel is
+supplied by the `CobrowseConsentState` family — nine support classes and roughly
+a hundred and thirty strings, shared with the widget and the operator console —
+so the panel declares `lang="en"` and that vocabulary extracts as its own
+change. The headings *around* it are this page's and are translated, the same
+split the queue's cobrowse cell uses.
+
+Two mechanisms exist so an exception can say so: `x-tab-panel` merges
+`$attributes`, and a tab may pass `badge_lang` for a badge that sits outside its
+own panel. Without them the attribute was silently dropped.
+
+
 The profile page shows a mail-readiness sentence built by `OperatorReadiness`.
 That class holds the **operator console's** vocabulary — around a thousand lines
 of copy shared across that surface — so it extracts with the operator console

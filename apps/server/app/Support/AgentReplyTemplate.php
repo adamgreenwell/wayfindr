@@ -2,7 +2,11 @@
 
 namespace App\Support;
 
-final class AgentReplyTemplate
+final /*
+ * Reached only from controllers and views, never a job or a mail build, so it
+ * may use the catalogue directly -- see Ticket::attentionLabelKey() for the
+ * distinction.
+ */ class AgentReplyTemplate
 {
     /**
      * @return array<string, array{label: string, body: string}>
@@ -11,20 +15,20 @@ final class AgentReplyTemplate
     {
         return [
             'looking_into_it' => [
-                'label' => 'Looking into it',
-                'body' => 'Thanks for the update. I am looking into this now and will follow up shortly.',
+                'label' => __('conversations.reply_templates.looking_into_it.label'),
+                'body' => __('conversations.reply_templates.looking_into_it.body'),
             ],
             'need_more_detail' => [
-                'label' => 'Need more detail',
-                'body' => 'Could you share a little more detail about what you expected to happen and what happened instead?',
+                'label' => __('conversations.reply_templates.need_more_detail.label'),
+                'body' => __('conversations.reply_templates.need_more_detail.body'),
             ],
             'confirm_resolution' => [
-                'label' => 'Confirm resolution',
-                'body' => 'Thanks for your patience. I believe this is resolved now, but I am happy to keep digging if anything still looks off.',
+                'label' => __('conversations.reply_templates.confirm_resolution.label'),
+                'body' => __('conversations.reply_templates.confirm_resolution.body'),
             ],
             'ticket_follow_up' => [
-                'label' => 'Ticket follow-up',
-                'body' => 'I turned this into a ticket so we can track the follow-up without losing the context from this conversation.',
+                'label' => __('conversations.reply_templates.ticket_follow_up.label'),
+                'body' => __('conversations.reply_templates.ticket_follow_up.body'),
             ],
         ];
     }
