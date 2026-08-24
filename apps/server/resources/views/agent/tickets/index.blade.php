@@ -285,7 +285,7 @@
                                                     {{ __('tickets.row.lifecycle_note') }} {{ __('tickets.lifecycle.'.$ticketLifecycleNote['label_key']) }}: {{ $ticketLifecycleNote['body'] }}
                                                 </span>
                                                 {{-- An actor is a NAME when there is one, and a key when there is not. --}}
-                                                <span class="wf-queue-preview">{{ $ticketLifecycleNote['actor'] ?? __('tickets.row.'.$ticketLifecycleNote['actor_key']) }} - {{ $ticketLifecycleNote['occurred_at']->diffForHumans() }}</span>
+                                                <span class="wf-queue-preview">{{ $ticketLifecycleNote['actor_key'] ? __('tickets.row.'.$ticketLifecycleNote['actor_key']) : $ticketLifecycleNote['actor'] }} - {{ $ticketLifecycleNote['occurred_at']->diffForHumans() }}</span>
                                             @endif
                                         </td>
                                         <td>

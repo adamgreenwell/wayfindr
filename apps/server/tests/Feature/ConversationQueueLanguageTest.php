@@ -1453,3 +1453,79 @@ test('every lifecycle action maps to a key that resolves', function (): void {
         }
     }
 });
+
+test('adding a key never takes the English answer away', function (): void {
+    // The rule this epic runs on: a model gains a KEY and keeps its English
+    // label, because the surfaces that have not been extracted still read the
+    // label. Setting `actor` to null and supplying only `actor_key` blanked the
+    // actor on the ticket detail page -- which nothing in that change touched.
+    $world = conversationQueueLanguageWorld(conversations: 1);
+    $conversation = Conversation::query()->firstOrFail();
+    $agent = $world['agents']['en'];
+
+    // A visitor-authored event and an actor-less one: the two cases that have
+    // no name to fall back to.
+    foreach ([[Visitor::class, $conversation->visitor->id, 'Visitor'], [null, null, 'System']] as [$actorType, $actorId, $expected]) {
+        $ticket = Ticket::factory()
+            ->for($world['account'])
+            ->for($world['site'])
+            ->for($conversation)
+            ->for($conversation->visitor, 'requester')
+            ->create(['category' => 'task', 'priority' => 'low', 'status' => 'open', 'subject' => 'Datenpunkt actor', 'description' => 'Datenpunkt body']);
+
+        AuditEvent::query()->create([
+            'account_id' => $world['account']->id,
+            'actor_type' => $actorType,
+            'actor_id' => $actorId,
+            'subject_type' => $ticket->getMorphClass(),
+            'subject_id' => $ticket->id,
+            'action' => 'ticket.escalated',
+            'metadata' => ['reason' => 'Datenpunkt reason'],
+            'occurred_at' => now(),
+        ]);
+
+        $note = Ticket::query()->find($ticket->id)->latestLifecycleNote();
+
+        // The English answer survives for unextracted consumers...
+        expect($note['actor'])->toBe($expected)
+            // ...and the key is there for the ones that translate.
+            ->and($note['actor_key'])->toBe($expected === 'Visitor' ? 'actor_visitor' : 'actor_system');
+    }
+
+    // A real actor name is DATA: it is returned as itself and has no key.
+    $named = Ticket::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($conversation)
+        ->for($conversation->visitor, 'requester')
+        ->create(['category' => 'task', 'priority' => 'low', 'status' => 'open', 'subject' => 'Datenpunkt named', 'description' => 'Datenpunkt body']);
+
+    AuditEvent::query()->create([
+        'account_id' => $world['account']->id,
+        'actor_type' => $agent->getMorphClass(),
+        'actor_id' => $agent->id,
+        'subject_type' => $named->getMorphClass(),
+        'subject_id' => $named->id,
+        'action' => 'ticket.escalated',
+        'metadata' => ['reason' => 'Datenpunkt reason'],
+        'occurred_at' => now(),
+    ]);
+
+    $note = Ticket::query()->find($named->id)->latestLifecycleNote();
+
+    expect($note['actor'])->toBe($agent->name)
+        ->and($note['actor_key'])->toBeNull();
+});
+
+test('the narrowed ticket heading takes the dative after von', function (): void {
+    // German inflects the adjective for CASE as well as number, and after a
+    // bare numeral it takes strong endings. Ticket is neuter, so the dative
+    // singular is -em; Unterhaltung is feminine and takes -er, which is why the
+    // two queues read differently for what looks like the same sentence.
+    App::setLocale('de');
+
+    expect(trans_choice('tickets.counts.matching_tickets', 1, ['count' => 1]))->toBe('1 passendem Ticket')
+        ->and(trans_choice('tickets.counts.matching_tickets', 3, ['count' => 3]))->toBe('3 passenden Tickets')
+        // Neither is the nominative a word-for-word translation produces.
+        ->and(trans_choice('tickets.counts.matching_tickets', 1, ['count' => 1]))->not->toContain('passendes');
+});

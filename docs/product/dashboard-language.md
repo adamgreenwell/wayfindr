@@ -123,6 +123,17 @@ assertion was looking for, so `toContain` passes on a broken page.
 Match the shape of a key, not the catalogue name: an English sentence ending
 "…for your profile." contains `profile.` and is perfectly good copy.
 
+### Adding a key must never take the English answer away
+
+A model gains a key and **keeps** its English label, because the surfaces that
+have not been extracted still read the label. Setting `actor` to null and
+supplying only `actor_key` blanked the lifecycle actor on the ticket detail page
+— a page the change did not touch and no test in that PR opened.
+
+The corollary is what belongs in a key at all: a real actor *name* is **data**,
+returned as itself with no key; only the `Visitor` and `System` fallbacks are
+copy. A key for a name would be a key for something no catalogue can hold.
+
 ### Models answer with state; surfaces render copy
 
 The first version of the queue extraction put `__()` inside
@@ -296,6 +307,14 @@ number and German does not, so a label built as a noun plus a separately chosen
 verb is correct in one language by luck. Several German plural forms are
 deliberately identical on both sides of the `|`, which is the right translation
 rather than a copy-paste slip.
+
+**Case agrees too, and gender decides the ending.** Both queues interpolate a
+count after `von`, which takes the dative — and after a bare numeral the
+adjective takes *strong* endings, where the ending depends on gender. *Die
+Unterhaltung* is feminine and takes `-er` (`von 1 passender Unterhaltung`); *das
+Ticket* is neuter and takes `-em` (`von 1 passendem Ticket`). Two sentences that
+look identical in English are not the same sentence in German, and a
+word-for-word translation gives the nominative for both.
 
 **And the sentence AROUND a count agrees with it too.** Getting `:shown` to
 choose between *1 conversation* and *3 conversations* is only half the job: the

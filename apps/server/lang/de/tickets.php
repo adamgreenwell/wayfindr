@@ -124,7 +124,12 @@ return [
     'counts' => [
         'tickets' => '{1} 1 Ticket|[2,*] :count Tickets',
         'matches' => '{1} 1 Ticket entspricht|[2,*] :count Tickets entsprechen',
-        'matching_tickets' => '{1} 1 passendes Ticket|[2,*] :count passenden Tickets',
+        // DATIVE, because `lane_narrowed_heading` reads "von :matching", and
+        // after a bare numeral the adjective takes STRONG endings. Ticket is
+        // neuter, so that is -em in the singular ('von 1 passendem Ticket') and
+        // -en in the plural. Unterhaltung is feminine and takes -er, which is
+        // why the conversation queue's equivalent reads differently.
+        'matching_tickets' => '{1} 1 passendem Ticket|[2,*] :count passenden Tickets',
     ],
 
     'summary' => [

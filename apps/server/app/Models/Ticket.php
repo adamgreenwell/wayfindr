@@ -329,15 +329,20 @@ class Ticket extends Model
             return null;
         }
 
+        $actorName = $event->actor_type === Visitor::class ? null : $event->actor?->name;
+
         return [
-            // The actor is a NAME when there is one -- data, never translated --
-            // and a key otherwise.
-            'actor' => $event->actor_type === Visitor::class
+            // The English answer STAYS, for the surfaces that have not been
+            // extracted -- the ticket detail page reads this directly. Adding
+            // a key must never take the old answer away; that is the rule this
+            // whole epic runs on, and removing it here blanked the actor on a
+            // page nothing in this PR touches.
+            'actor' => $actorName ?? ($event->actor_type === Visitor::class ? 'Visitor' : 'System'),
+            // A NAME is data and is never translated, so there is no key for
+            // it -- only for the two fallbacks.
+            'actor_key' => $actorName !== null
                 ? null
-                : $event->actor?->name,
-            'actor_key' => $event->actor_type === Visitor::class
-                ? 'actor_visitor'
-                : ($event->actor?->name ? null : 'actor_system'),
+                : ($event->actor_type === Visitor::class ? 'actor_visitor' : 'actor_system'),
             'body' => $this->lifecycleNoteBody($event),
             'label' => $this->lifecycleNoteLabel($event),
             'label_key' => $this->lifecycleNoteLabelKey($event),
