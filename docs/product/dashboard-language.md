@@ -300,7 +300,23 @@ bodies inherit `lang="de"` from the document has a screen reader pronounce an
 English conversation with German rules — on the one part of the page people
 actually read.
 
-`lang=""` again, for the same reason it is right on a managed reply template.
+The **subject** is the same thing wearing a heading: it is the `<h1>`, the queue
+switcher, the queue row and the prior-conversation list. All of it the visitor's
+words. Its *fallback* is our copy and stays in the document language, so the
+mark is conditional on the subject existing.
+
+Same for the reply draft: selecting a template makes the textarea the template's
+language, and selecting **"write a custom reply"** has to clear it again — that
+branch returns early, so the clear happens before the return or the agent writes
+German into an element still claiming English.
+
+`lang=""` everywhere here, for the same reason it is right on a managed reply
+template.
+
+**Testing this has a trap.** `getAttribute('lang')` returns `''` for an
+attribute that is *absent*, so asserting the value alone cannot tell "declared
+unknown" from "declared nothing" — and the second one inherits German. Assert
+`hasAttribute()` first.
 
 ### A missing formatter is not missing data
 

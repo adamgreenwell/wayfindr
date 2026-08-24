@@ -4,6 +4,7 @@
                  line are copy. --}}
             <x-page-header
                 :title="$conversation->subject ?? __('conversations.detail.untitled')"
+                :title-lang="$conversation->subject ? '' : null"
                 :subtitle="__('conversations.detail.support_code', ['code' => $conversation->support_code])"
                 :back-href="$conversationBackUrl"
                 :back-label="__('conversations.detail.back')">
@@ -31,7 +32,7 @@
                                             class="wf-switcher-item"
                                             href="{{ route('dashboard.conversations.show', ['supportCode' => $sibling['support_code'], 'from_queue' => '1'] + $conversationReturnQuery) }}"
                                             @if ($sibling['current']) aria-current="true" @endif
-                                        >{{ $sibling['subject'] }}</a>
+                                        ><span lang="">{{ $sibling['subject'] }}</span></a>
                                     @endforeach
                                 </div>
                             </details>
@@ -774,7 +775,7 @@
                                         <a class="text-link" href="{{ route('dashboard.conversations.show', $priorConversation->support_code) }}">
                                             {{ $priorConversation->support_code }}
                                         </a>
-                                        <span class="lede">{{ $priorConversation->subject ?? __('conversations.detail.untitled') }}</span>
+                                        <span class="lede">@if ($priorConversation->subject)<span lang="">{{ $priorConversation->subject }}</span>@else{{ __('conversations.detail.untitled') }}@endif</span>
                                     </p>
                                 @endforeach
                             </div>
@@ -832,7 +833,7 @@
                             <article class="timeline-item">
                                 <div class="timeline-content">
                                     <a class="text-link" href="{{ route('dashboard.conversations.show', $priorConversation->support_code) }}">
-                                        {{ $priorConversation->subject ?? __('conversations.detail.untitled') }}
+                                        @if ($priorConversation->subject)<span lang="">{{ $priorConversation->subject }}</span>@else{{ __('conversations.detail.untitled') }}@endif
                                     </a>
                                     <div class="timeline-meta">
                                         <span>{{ $priorConversation->support_code }}</span>

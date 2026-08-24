@@ -1640,6 +1640,19 @@ test('the transcript declares its own language, not the dashboard\'s', function 
         expect($body->hasAttribute('lang'))->toBeTrue('a message body inherits the document language');
         expect($body->getAttribute('lang'))->toBe('', 'a message body claims a language it cannot know');
     }
+
+    // The subject is the same thing wearing a heading. It is the page's primary
+    // heading, and it also appears in the queue switcher and in prior
+    // conversations -- all of it the visitor's own words.
+    $heading = $xpath->query('//h1')->item(0);
+
+    expect($heading)->not->toBeNull()
+        ->and(trim($heading->textContent))->toBe($spoken->subject, 'the heading is not the subject, so this proves nothing')
+        // hasAttribute FIRST: getAttribute returns '' for an attribute that is
+        // absent, so asserting the value alone cannot tell "declared unknown"
+        // from "declared nothing" -- and the second one inherits German.
+        ->and($heading->hasAttribute('lang'))->toBeTrue('the conversation subject inherits the dashboard language')
+        ->and($heading->getAttribute('lang'))->toBe('', 'the conversation subject claims a language it cannot know');
 });
 
 test('a write finds its destination without a Referer header', function (): void {
@@ -1730,6 +1743,19 @@ test('the realtime handlers hard-code no copy of their own', function (): void {
 
     $this->assertStringContainsString('function setTextIfKnown(', $page,
         'the writer that skips an unknown value is gone');
+
+    // Choosing "write a custom reply" has no body, so the template handler
+    // returns early. The draft's language has to be cleared BEFORE that return
+    // or the agent writes their own reply into an element still claiming the
+    // previous template's language. No request test reaches a change event.
+    $composerSource = file_get_contents(resource_path('views/agent/partials/reply-composer-script.blade.php'));
+    $clear = strpos($composerSource, "templateTarget.setAttribute('lang', '')");
+    $earlyReturn = strpos($composerSource, 'if (! body || ! templateTarget) {');
+
+    expect($clear)->not->toBeFalse('the draft language is never cleared')
+        ->and($earlyReturn)->not->toBeFalse('the early return moved; this guard no longer reads it')
+        ->and($clear)->toBeLessThan($earlyReturn,
+            'the draft language is cleared after the early return, so leaving a template keeps its language');
 
     // And nothing writes a fillElapsed result directly any more.
     expect(preg_match('/\.textContent = fillElapsed\(/', $page))->toBe(0,

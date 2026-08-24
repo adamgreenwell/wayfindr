@@ -36,6 +36,15 @@
 
                 updateTemplatePreview(selectedTemplate);
 
+                if (templateTarget) {
+                    // Cleared FIRST, and before the early return below. Choosing
+                    // "write a custom reply" has no body, so the handler used to
+                    // return with the previous template's language still on the
+                    // textarea -- and the agent then wrote their own reply into
+                    // an element still claiming to be English.
+                    templateTarget.setAttribute('lang', '');
+                }
+
                 if (! body || ! templateTarget) {
                     return;
                 }
