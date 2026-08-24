@@ -1570,6 +1570,47 @@ test('a ticket is stored in the install language, not the creating agent\'s', fu
             ['code' => $bare->support_code], 'de'));
 });
 
+test('nothing on an extracted path throws a literal validation message', function (): void {
+    // Scoping a route's locale does nothing for a message built as a PHP
+    // string: `ValidationException::withMessages(['file' => 'This file type is
+    // not allowed.'])` is English whatever locale is active. The upload path
+    // reaches the German composer, and the linked-ticket assignment reaches the
+    // German panel, so every message they can throw has to come from the
+    // catalogue.
+    $files = [
+        'app/Support/Attachments/AttachmentUploadService.php',
+        'app/Support/Attachments/AttachmentBinder.php',
+        'app/Http/Controllers/AgentTicketController.php',
+    ];
+
+    $literals = [];
+
+    foreach ($files as $file) {
+        $source = file_get_contents(base_path($file));
+
+        expect($source)->not->toBeFalse("{$file} is gone; this guard no longer reads it");
+
+        // Each `withMessages([...])` block, and the strings inside it.
+        foreach (preg_split('/withMessages\(\[/', $source) as $index => $chunk) {
+            if ($index === 0) {
+                continue;
+            }
+
+            $block = substr($chunk, 0, strpos($chunk, '])') ?: strlen($chunk));
+
+            preg_match_all("/=> *'([^'\\\\\n]*)'/", $block, $found);
+
+            foreach ($found[1] as $literal) {
+                if (conversationQueueLanguageIsProse($literal)) {
+                    $literals[] = basename($file).': '.$literal;
+                }
+            }
+        }
+    }
+
+    expect($literals)->toBe([], 'a validation message on an extracted path is a PHP string rather than a catalogue key');
+});
+
 test('the realtime handlers hard-code no copy of their own', function (): void {
     // This reads the source rather than the page, which is unusual and is the
     // point: the realtime handlers only run when a broadcast arrives, so no

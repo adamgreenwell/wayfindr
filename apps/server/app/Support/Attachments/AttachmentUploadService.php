@@ -39,14 +39,14 @@ class AttachmentUploadService
         $sizeBytes = (int) $file->getSize();
 
         if ($sizeBytes <= 0) {
-            throw ValidationException::withMessages(['file' => 'The file could not be read.']);
+            throw ValidationException::withMessages(['file' => __('composer.rejected.unreadable')]);
         }
 
         $maxFileBytes = (int) config('wayfindr.attachments.max_file_bytes');
 
         if ($sizeBytes > $maxFileBytes) {
             throw ValidationException::withMessages([
-                'file' => 'The file is larger than the '.$this->humanBytes($maxFileBytes).' limit.',
+                'file' => __('composer.rejected.too_large', ['limit' => $this->humanBytes($maxFileBytes)]),
             ]);
         }
 
@@ -56,7 +56,7 @@ class AttachmentUploadService
         $allowed = (array) config('wayfindr.attachments.allowed_mime_types', []);
 
         if (! in_array($mimeType, $allowed, true)) {
-            throw ValidationException::withMessages(['file' => 'This file type is not allowed.']);
+            throw ValidationException::withMessages(['file' => __('composer.rejected.type')]);
         }
 
         $filename = $this->sanitizeFilename($file->getClientOriginalName());
@@ -119,7 +119,7 @@ class AttachmentUploadService
 
             if ($existingBytes + $sizeBytes > $maxConversationBytes) {
                 throw ValidationException::withMessages([
-                    'file' => 'This conversation has reached its attachment storage limit.',
+                    'file' => __('composer.rejected.conversation_full'),
                 ]);
             }
 
@@ -195,7 +195,7 @@ class AttachmentUploadService
             ]);
 
             throw ValidationException::withMessages([
-                'file' => 'This file was rejected by a security scan.',
+                'file' => __('composer.rejected.infected'),
             ]);
         }
 
@@ -212,7 +212,7 @@ class AttachmentUploadService
             ]);
 
             throw ValidationException::withMessages([
-                'file' => 'This file could not be scanned for malware and was not accepted. Please try again shortly.',
+                'file' => __('composer.rejected.unscannable'),
             ]);
         }
 

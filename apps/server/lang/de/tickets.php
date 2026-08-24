@@ -390,4 +390,14 @@ return [
         'reopened' => 'Ticket wieder geöffnet.',
         'updated' => 'Ticket aktualisiert.',
     ],
+
+    'errors' => [
+        'note_required' => 'Bitte geben Sie eine interne Notiz ein.',
+        'label_needs_content' => 'Verwenden Sie mindestens einen Buchstaben oder eine Ziffer für das Label.',
+        'label_reserved' => 'Dieser Label-Name ist für die Ticket-Filterung reserviert.',
+        'reply_helper' => 'Wählen Sie eine verfügbare Antwortvorlage.',
+        'reply_required' => 'Bitte geben Sie eine Antwort ein.',
+        'assignee_not_on_site' => 'Wählen Sie einen Agenten, der dieser Website zugewiesen ist.',
+        'escalate_other_agent' => 'Wählen Sie einen anderen Agenten, an den dieses Ticket eskaliert werden soll.',
+    ],
 ];

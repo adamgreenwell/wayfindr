@@ -397,4 +397,14 @@ return [
         'reopened' => 'Ticket reopened.',
         'updated' => 'Ticket updated.',
     ],
+
+    'errors' => [
+        'note_required' => 'Please enter an internal note.',
+        'label_needs_content' => 'Use at least one letter or number for the label.',
+        'label_reserved' => 'That label name is reserved for ticket filtering.',
+        'reply_helper' => 'Choose an available reply helper.',
+        'reply_required' => 'Please enter a reply.',
+        'assignee_not_on_site' => 'Choose an agent assigned to this site.',
+        'escalate_other_agent' => 'Choose another agent to escalate this ticket to.',
+    ],
 ];

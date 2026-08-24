@@ -18,4 +18,18 @@ return [
     'waiting_uploads' => 'Waiting for uploads to finish…',
     'remove' => 'Remove :name',
     'attachment' => 'attachment',
+
+    // Rejections the upload path throws as ValidationException. They surface on
+    // whichever page posted the file, so they follow that page's language --
+    // see DashboardLanguage::forRequest and the attachment route in
+    // EXTRACTED_ROUTES.
+    'rejected' => [
+        'unreadable' => 'The file could not be read.',
+        'too_large' => 'The file is larger than the :limit limit.',
+        'type' => 'This file type is not allowed.',
+        'conversation_full' => 'This conversation has reached its attachment storage limit.',
+        'infected' => 'This file was rejected by a security scan.',
+        'unscannable' => 'This file could not be scanned for malware and was not accepted. Please try again shortly.',
+        'unavailable' => 'One or more attachments are unavailable.',
+    ],
 ];

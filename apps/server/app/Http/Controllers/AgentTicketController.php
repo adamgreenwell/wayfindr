@@ -147,7 +147,7 @@ class AgentTicketController extends Controller
 
         if ($body === '') {
             throw ValidationException::withMessages([
-                'body' => 'Please enter an internal note.',
+                'body' => __('tickets.errors.note_required'),
             ]);
         }
 
@@ -315,13 +315,13 @@ class AgentTicketController extends Controller
 
         if ($name === '' || $slug === '') {
             throw ValidationException::withMessages([
-                'label_name' => 'Use at least one letter or number for the label.',
+                'label_name' => __('tickets.errors.label_needs_content'),
             ]);
         }
 
         if (TicketLabel::isReservedSlug($slug)) {
             throw ValidationException::withMessages([
-                'label_name' => 'That label name is reserved for ticket filtering.',
+                'label_name' => __('tickets.errors.label_reserved'),
             ]);
         }
 
@@ -389,7 +389,7 @@ class AgentTicketController extends Controller
 
             if (! $resolvedTemplate) {
                 throw ValidationException::withMessages([
-                    'reply_template' => 'Choose an available reply helper.',
+                    'reply_template' => __('tickets.errors.reply_helper'),
                 ]);
             }
         }
@@ -400,7 +400,7 @@ class AgentTicketController extends Controller
 
         if ($body === '') {
             throw ValidationException::withMessages([
-                'message' => 'Please enter a reply.',
+                'message' => __('tickets.errors.reply_required'),
             ]);
         }
 
@@ -656,7 +656,7 @@ class AgentTicketController extends Controller
 
         if ($newAssignee && ! $ticket->site->supportsAgent($newAssignee)) {
             throw ValidationException::withMessages([
-                'assignee_id' => 'Choose an agent assigned to this site.',
+                'assignee_id' => __('tickets.errors.assignee_not_on_site'),
             ]);
         }
 
@@ -709,13 +709,13 @@ class AgentTicketController extends Controller
 
         if (! $targetAgent || ! $ticket->site->supportsAgent($targetAgent)) {
             throw ValidationException::withMessages([
-                'target_agent_id' => 'Choose an agent assigned to this site.',
+                'target_agent_id' => __('tickets.errors.assignee_not_on_site'),
             ]);
         }
 
         if ($targetAgent->is($agent)) {
             throw ValidationException::withMessages([
-                'target_agent_id' => 'Choose another agent to escalate this ticket to.',
+                'target_agent_id' => __('tickets.errors.escalate_other_agent'),
             ]);
         }
 

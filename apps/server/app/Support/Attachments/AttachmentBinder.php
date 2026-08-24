@@ -59,7 +59,7 @@ class AttachmentBinder
         // failure leaks nothing.
         if ($candidates->count() !== count($attachmentIds)) {
             throw ValidationException::withMessages([
-                'attachment_ids' => 'One or more attachments are unavailable.',
+                'attachment_ids' => __('composer.rejected.unavailable'),
             ]);
         }
 
@@ -74,7 +74,7 @@ class AttachmentBinder
 
         if ($bound !== $candidates->count()) {
             throw ValidationException::withMessages([
-                'attachment_ids' => 'One or more attachments are unavailable.',
+                'attachment_ids' => __('composer.rejected.unavailable'),
             ]);
         }
 

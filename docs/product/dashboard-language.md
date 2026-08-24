@@ -241,6 +241,21 @@ The general rule: **any view that renders a flash should call `__()` on it.**
 `__()` returns a non-key string unchanged, so it costs nothing on surfaces that
 flash literals and prevents a raw key from ever reaching a page.
 
+### Scoping a locale does nothing for a message built as a PHP string
+
+`ValidationException::withMessages(['file' => 'This file type is not allowed.'])`
+is English whatever locale is active. Route scoping only decides which
+catalogue `__()` reads — it cannot reach a literal.
+
+Two paths that reach an extracted surface were full of them: the attachment
+upload service, which the German composer posts to, and the linked-ticket
+actions, which redirect back to the German panel. Twelve messages between them,
+and Codex found one — the guard found the other eleven.
+
+Guarded by `nothing on an extracted path throws a literal validation message`,
+which reads every `withMessages([...])` block in those files and fails on any
+prose literal.
+
 ### Content that is stored is not content that is rendered
 
 The sharpest version of the rule this whole document circles.
