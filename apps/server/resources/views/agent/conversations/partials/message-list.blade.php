@@ -56,7 +56,16 @@
                 @endphp
 
                 @if (filled($transcriptMessage->body))
-                    <p class="message-body">{{ $transcriptMessage->body }}</p>
+                    {{-- The conversation's own content, not the dashboard's. A
+                         visitor writes in whatever language they came in with,
+                         and an agent replies in whatever language they chose to
+                         reply in -- neither has anything to do with the language
+                         this agent reads the DASHBOARD in. `lang=""` is HTML's
+                         "unknown", the same answer a managed reply template
+                         gives, and the honest one: guessing German because the
+                         chrome is German would have a screen reader pronounce an
+                         English conversation with German rules. --}}
+                    <p class="message-body" lang="">{{ $transcriptMessage->body }}</p>
                 @elseif ($messageAttachments->isEmpty())
                     <p class="message-empty">{{ __('conversations.detail.reply.no_body') }}</p>
                 @endif

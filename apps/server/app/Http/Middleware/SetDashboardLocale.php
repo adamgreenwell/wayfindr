@@ -52,7 +52,13 @@ class SetDashboardLocale
             return null;
         }
 
-        $previous = $request->headers->get('referer');
+        // The session's previous URL first, because that is what
+        // `redirect()->back()` itself uses -- so this answers the same question
+        // the redirect will. The header is only a fallback: a browser, webview
+        // or proxy sending `Referrer-Policy: no-referrer` strips it, and the
+        // redirect still lands on the conversation page while the locale would
+        // have quietly fallen back to English.
+        $previous = $request->session()->previousUrl() ?: $request->headers->get('referer');
 
         if (! is_string($previous) || $previous === '') {
             return null;

@@ -1238,6 +1238,13 @@
 
                 // A template whose `:elapsed` cannot be filled must not reach the
                 // page: `Seen :elapsed` is the right language and still nonsense.
+                //
+                // Returns null when it cannot produce anything, which is NOT the
+                // same as the fallback. A browser without Intl.RelativeTimeFormat
+                // can still have a perfectly good timestamp, and treating that as
+                // missing telemetry would replace a real "seen 2 minutes ago" with
+                // "no visitor heartbeat yet" -- a different fact, on every event.
+                // The caller leaves the server-rendered text alone instead.
                 function fillElapsed(template, timestamp, fallback) {
                     if (!template) {
                         return fallback;
@@ -1247,9 +1254,20 @@
                         return template;
                     }
 
+                    if (!timestamp) {
+                        return fallback;
+                    }
+
                     var elapsed = elapsedSince(timestamp);
 
-                    return elapsed === null ? fallback : template.replace(':elapsed', elapsed);
+                    return elapsed === null ? null : template.replace(':elapsed', elapsed);
+                }
+
+                // Skips the write when there is nothing trustworthy to write.
+                function setTextIfKnown(target, value) {
+                    if (target && value !== null) {
+                        target.textContent = value;
+                    }
                 }
 
                 function updateVisitorPresence(visitorPresence) {
@@ -1263,15 +1281,16 @@
                     visitorPresenceLabel.textContent = realtimeLabels.presence[presenceState]
                         || visitorPresenceLabel.dataset.fallback;
                     visitorPresenceLabel.dataset.status = presenceStatusFor(presenceState);
-                    visitorPresenceDetail.textContent = fillElapsed(
+                    setTextIfKnown(visitorPresenceDetail, fillElapsed(
                         realtimeLabels.presenceDetail[visitorPresence.detail_key],
                         visitorPresence.last_seen_at,
                         realtimeLabels.presenceDetail.no_heartbeat
-                    );
+                    ));
 
                     if (visitorPresenceLastSeen) {
-                        visitorPresenceLastSeen.textContent = elapsedSince(visitorPresence.last_seen_at)
-                            || realtimeLabels.lastSeenUnknown;
+                        setTextIfKnown(visitorPresenceLastSeen, visitorPresence.last_seen_at
+                            ? elapsedSince(visitorPresence.last_seen_at)
+                            : realtimeLabels.lastSeenUnknown);
                     }
                 }
 
@@ -1304,11 +1323,11 @@
                     visitorReadDetails.forEach(function (visitorReadDetail) {
                         // The payload's own `detail` is ignored for the same
                         // reason its `label` is.
-                        visitorReadDetail.textContent = fillElapsed(
+                        setTextIfKnown(visitorReadDetail, fillElapsed(
                             realtimeLabels.readDetail[visitorRead.state || 'none'],
                             visitorRead.seen_at,
                             realtimeLabels.readDetail.none
-                        );
+                        ));
                     });
 
                     var messageId = visitorRead.message_id ? String(visitorRead.message_id) : '';
@@ -1321,11 +1340,11 @@
                     }
 
                     if (visitorRead.state === 'seen') {
-                        agentMessageSeen.textContent = fillElapsed(
+                        setTextIfKnown(agentMessageSeen, fillElapsed(
                             realtimeLabels.transcript.seen,
                             visitorRead.seen_at,
                             realtimeLabels.transcript.seen_unknown
-                        );
+                        ) ?? realtimeLabels.transcript.seen_unknown);
 
                         return;
                     }

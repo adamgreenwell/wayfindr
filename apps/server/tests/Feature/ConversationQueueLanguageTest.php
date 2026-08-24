@@ -1611,6 +1611,69 @@ test('nothing on an extracted path throws a literal validation message', functio
     expect($literals)->toBe([], 'a validation message on an extracted path is a PHP string rather than a catalogue key');
 });
 
+test('the transcript declares its own language, not the dashboard\'s', function (): void {
+    // A conversation's content has nothing to do with the language the agent
+    // reads the dashboard in: the visitor wrote in whatever they came in with.
+    // Inheriting `lang="de"` from the document has a screen reader pronounce an
+    // English conversation with German rules.
+    $world = conversationQueueLanguageWorld();
+    $spoken = Conversation::query()
+        ->where('site_id', $world['site']->id)
+        ->whereHas('messages')
+        ->orderBy('id')
+        ->firstOrFail();
+
+    $html = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $spoken->support_code))
+        ->assertOk()
+        ->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+
+    $bodies = $xpath->query('//*[contains(@class, "message-body")]');
+
+    expect($bodies->length)->toBeGreaterThan(0, 'no message bodies rendered, so this proves nothing');
+
+    foreach ($bodies as $body) {
+        expect($body->hasAttribute('lang'))->toBeTrue('a message body inherits the document language');
+        expect($body->getAttribute('lang'))->toBe('', 'a message body claims a language it cannot know');
+    }
+});
+
+test('a write finds its destination without a Referer header', function (): void {
+    // `Referrer-Policy: no-referrer` -- set by browsers, embedded webviews and
+    // reverse proxies -- strips the header while `redirect()->back()` still
+    // lands on the conversation page, because that reads the SESSION's previous
+    // URL. Resolving the locale from the header alone meant the redirect and
+    // the locale disagreed about where the response was going.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+    $agent = $world['agents']['de'];
+
+    $ticket = Ticket::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($conversation)
+        ->for($conversation->visitor, 'requester')
+        ->create(['status' => 'open', 'subject' => 'Datenpunkt referer', 'priority' => 'normal']);
+
+    // `from()` seeds the session's previous URL; the header is sent as well, so
+    // it is stripped explicitly here to leave only the session to answer.
+    $this->actingAs($agent)
+        ->from(route('dashboard.conversations.show', $conversation->support_code))
+        ->withHeaders(['referer' => ''])
+        ->post(route('dashboard.tickets.close', $ticket), ['resolution_note' => str_repeat('a', 4001)])
+        ->assertSessionHasErrors('resolution_note');
+
+    expect((string) session('errors')->getBag('default')->first('resolution_note'))
+        ->toBe(__('validation.max.string', [
+            'attribute' => __('validation.attributes.resolution_note', [], 'de'),
+            'max' => 4000,
+        ], 'de'));
+});
+
 test('the realtime handlers hard-code no copy of their own', function (): void {
     // This reads the source rather than the page, which is unusual and is the
     // point: the realtime handlers only run when a broadcast arrives, so no
@@ -1650,6 +1713,27 @@ test('the realtime handlers hard-code no copy of their own', function (): void {
     )));
 
     expect($composerProse)->toBe([], 'the reply composer hard-codes copy instead of reading the catalogue');
+
+    // A browser without Intl.RelativeTimeFormat still has perfectly good
+    // timestamps. Treating the missing FORMATTER as missing DATA replaced a
+    // real "seen 2 minutes ago" with "no visitor heartbeat yet" on every
+    // event -- a different fact, not a degraded one.
+    //
+    // No request test reaches this: it is what the page does when a browser
+    // API is absent. The contract is asserted at the source instead --
+    // fillElapsed returns null rather than the fallback, and every caller
+    // routes through a writer that skips a null.
+    $page = file_get_contents(resource_path('views/agent/conversations/show.blade.php'));
+
+    $this->assertStringContainsString("return elapsed === null ? null : template.replace(':elapsed', elapsed);", $page,
+        'fillElapsed treats an unavailable formatter as missing data again');
+
+    $this->assertStringContainsString('function setTextIfKnown(', $page,
+        'the writer that skips an unknown value is gone');
+
+    // And nothing writes a fillElapsed result directly any more.
+    expect(preg_match('/\.textContent = fillElapsed\(/', $page))->toBe(0,
+        'a handler writes fillElapsed straight to the page, so a null lands as "null"');
 
     foreach ($handlers as $handler) {
         $open = strpos($source, 'function '.$handler.'(');

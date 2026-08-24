@@ -291,6 +291,28 @@ the surface that will render the answer. Same-origin only, and reads are
 excluded because a GET renders itself. The referer only ever picks a language,
 so a wrong or forged one costs nothing.
 
+### The conversation is not the dashboard
+
+The transcript is the page's primary content and has nothing to do with the
+language the agent reads the *chrome* in. A visitor writes in whatever they came
+in with; an agent replies in whatever they chose to reply in. Letting message
+bodies inherit `lang="de"` from the document has a screen reader pronounce an
+English conversation with German rules — on the one part of the page people
+actually read.
+
+`lang=""` again, for the same reason it is right on a managed reply template.
+
+### A missing formatter is not missing data
+
+`Intl.RelativeTimeFormat` is absent in some embedded webviews that support
+WebSockets perfectly well. Treating that as "no timestamp" replaced a real
+*"seen 2 minutes ago"* with *"no visitor heartbeat yet"* — a different fact, not
+a degraded one, on every event.
+
+`fillElapsed()` returns **null** when it cannot produce a value, distinct from
+the fallback it returns when the data really is missing, and callers route
+through a writer that skips a null and leaves the server-rendered text alone.
+
 ### The language of a value nobody owns is `lang=""`
 
 A reply template's body is not chrome and not the dashboard's copy. A built-in
