@@ -97,6 +97,20 @@ right while the extraction is half done, and it is why
 command, a mail build — and there the locale is whatever the process last set,
 scoped to nothing. That is the reason models hand out state.
 
+### A guard's catalogue list and state list both rot
+
+Two mutations survived the raw-key guard on the ticket queue for reasons that
+have nothing to do with the guard's logic: its catalogue list still named only
+the catalogues that existed when it was written, so a raw `tickets.row.…` key
+was invisible to it; and its state list only opened conversation pages, so it
+never rendered the ticket queue at all.
+
+Both are maintenance debts a guard accrues silently. The leak guard avoids the
+second by asserting that **every GET-able route in `EXTRACTED_ROUTES` is
+audited** — it fails when a surface is extracted without being added, which is
+exactly how the ticket queue got its states. The catalogue list has no such
+check yet and is worth one when a fifth catalogue lands.
+
 ### A raw key on the page is always a bug, and needs its own guard
 
 A missing key renders as `conversations.row.something` — readable enough to pass
@@ -316,6 +330,17 @@ compared position by position. Asserting merely that the German page *contains*
 `Besucher` passes while the header still says `Visitor`, because the word also
 appears in the search hint and in a lane label — a real mutation survived
 exactly that.
+
+A fifth, from the ticket queue: **a filter chip's label is invisible to the
+comparison** because the value it wraps differs between languages and carries
+the whole string with it — `Kategorie: Fehler` against `Category: Bug` differs
+whether or not `Category:` was translated. Same shape as the cobrowse
+`Letzte Meldung` case.
+
+And a sixth: **wrong-but-translated copy**. Pinning the ticket queue's heading
+to one status still produces German, just the wrong German — `2 offen` while
+showing closed tickets differs from `2 open` exactly as a correct translation
+would. Only a direct assertion that the heading names its own status can see it.
 
 The rule these share: when the general net cannot reach a class of copy, assert
 that class directly rather than loosening the net until it produces noise.

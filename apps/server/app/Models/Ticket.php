@@ -93,6 +93,31 @@ class Ticket extends Model
         return 'needs_agent';
     }
 
+    /**
+     * The attention state as a catalogue KEY.
+     *
+     * A model has no surface-scoped locale -- it can be reached from a job, a
+     * command or a mail build, where the locale is whatever the process last
+     * set. So it answers with keys and each extracted surface translates them.
+     * The English labels below stay for surfaces that have not been extracted.
+     * See Conversation::attentionLabel() for the same rule.
+     */
+    public function attentionLabelKey(): string
+    {
+        return 'attention_'.$this->attentionState();
+    }
+
+    public function attentionDescriptionKey(): string
+    {
+        return match ($this->attentionState()) {
+            'waiting_on_customer' => $this->status === 'pending'
+                ? 'description_waiting_marked_pending'
+                : 'description_waiting_agent_replied',
+            'needs_reply', 'needs_owner', 'resolved' => 'description_'.$this->attentionState(),
+            default => 'description_needs_agent',
+        };
+    }
+
     public function attentionLabel(): string
     {
         return match ($this->attentionState()) {
@@ -116,7 +141,7 @@ class Ticket extends Model
     }
 
     /**
-     * @return array{label: string, body: string, occurred_at: CarbonInterface|null, reply_visibility: array{label: string, detail: string, tone: string}|null}
+     * @return array{label: string, label_key: string, body: string, body_key: string|null, occurred_at: CarbonInterface|null, reply_visibility: array{label: string, detail: string, tone: string}|null}
      */
     public function queueActivityPreview(): array
     {
@@ -125,7 +150,9 @@ class Ticket extends Model
         if ($latestMessage) {
             return [
                 'body' => $this->activityPreviewSnippet($latestMessage->body) ?: 'Message has no text preview.',
+                'body_key' => $this->activityPreviewSnippet($latestMessage->body) ? null : 'preview_no_text',
                 'label' => $this->activityPreviewLabel($latestMessage),
+                'label_key' => $this->activityPreviewLabelKey($latestMessage),
                 'occurred_at' => $latestMessage->created_at,
                 'reply_visibility' => $latestMessage->sender_type === User::class
                     ? $this->replyVisibility()
@@ -138,7 +165,9 @@ class Ticket extends Model
         if ($description !== '') {
             return [
                 'body' => $description,
+                'body_key' => null,
                 'label' => 'Ticket summary',
+                'label_key' => 'preview_summary',
                 'occurred_at' => $this->created_at,
                 'reply_visibility' => null,
             ];
@@ -146,7 +175,9 @@ class Ticket extends Model
 
         return [
             'body' => 'Open the ticket to add context or send the next update.',
+            'body_key' => 'preview_none_body',
             'label' => 'No activity preview yet',
+            'label_key' => 'preview_none_label',
             'occurred_at' => null,
             'reply_visibility' => null,
         ];
@@ -327,8 +358,65 @@ class Ticket extends Model
 
         return [
             'opened_label' => 'Opened '.$this->created_at->diffForHumans(),
+            'opened_at' => $this->created_at,
             'wait_label' => $this->queueWaitLabel($latestMessage),
+            'wait_key' => $this->queueWaitKey($latestMessage),
+            'wait_since' => $this->queueWaitSince($latestMessage),
         ];
+    }
+
+    /**
+     * Which waiting state this row is in -- a key, formatted by the surface.
+     */
+    private function queueWaitKey(?ConversationMessage $latestMessage): string
+    {
+        $attentionState = $this->attentionState();
+
+        if ($attentionState === 'resolved') {
+            return 'closed';
+        }
+
+        if ($attentionState === 'needs_owner') {
+            return 'waiting_on_owner';
+        }
+
+        if ($latestMessage?->created_at) {
+            return match ($latestMessage->sender_type) {
+                Visitor::class => 'waiting_on_reply',
+                User::class => 'waiting_on_customer',
+                default => 'waiting_on_update',
+            };
+        }
+
+        return $attentionState === 'waiting_on_customer'
+            ? 'waiting_customer_since_open'
+            : 'waiting_agent_since_open';
+    }
+
+    /**
+     * The moment the waiting is measured from, or null when it is not measured.
+     */
+    private function queueWaitSince(?ConversationMessage $latestMessage): ?CarbonInterface
+    {
+        $attentionState = $this->attentionState();
+
+        if ($attentionState === 'resolved') {
+            return $this->closed_at ?? $this->updated_at;
+        }
+
+        if ($attentionState === 'needs_owner') {
+            return $latestMessage?->created_at ?? $this->created_at;
+        }
+
+        return $latestMessage?->created_at;
+    }
+
+    /**
+     * The elapsed rendering the surface uses for a waiting state.
+     */
+    public function elapsedWaitFrom(CarbonInterface $since): string
+    {
+        return $this->elapsedQueueTime($since);
     }
 
     private function queueWaitLabel(?ConversationMessage $latestMessage): string
@@ -375,6 +463,15 @@ class Ticket extends Model
                 ->latest('created_at')
                 ->latest('id')
                 ->first();
+    }
+
+    private function activityPreviewLabelKey(ConversationMessage $message): string
+    {
+        return match ($message->sender_type) {
+            Visitor::class => 'preview_visitor',
+            User::class => 'preview_agent',
+            default => 'preview_message',
+        };
     }
 
     private function activityPreviewLabel(ConversationMessage $message): string

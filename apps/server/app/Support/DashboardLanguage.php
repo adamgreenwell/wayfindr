@@ -79,6 +79,7 @@ final class DashboardLanguage
         'dashboard.profile.alerts.update',
         'dashboard.profile.password.update',
         'dashboard.conversations.index',
+        'dashboard.tickets.index',
     ];
 
     /**

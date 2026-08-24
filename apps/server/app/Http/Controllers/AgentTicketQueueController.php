@@ -44,37 +44,33 @@ class AgentTicketQueueController extends Controller
      */
     private function ticketQueueData(User $agent, Account $account, Collection $sites, Request $request): array
     {
-        $ticketFilters = [
-            'all' => 'Any assignee',
-            'assigned_to_me' => 'Assigned to me',
-            'unassigned' => 'Unassigned',
-        ];
+        // Keyed by the query-string value, which is the contract with the
+        // URL and must not move when the label does.
+        $ticketFilters = $this->translatedOptions('tickets.filters.assignee', ['all', 'assigned_to_me', 'unassigned']);
         $ticketFilter = $request->query('ticket_filter', 'all');
         $ticketFilter = is_string($ticketFilter) && array_key_exists($ticketFilter, $ticketFilters)
             ? $ticketFilter
             : 'all';
-        $ticketStatusFilters = [
-            'open' => 'All open',
-            'pending' => 'Pending',
-            'closed' => 'Closed',
-            'all' => 'All tickets',
-        ];
+        $ticketStatusFilters = $this->translatedOptions('tickets.filters.status', ['open', 'pending', 'closed', 'all']);
         $ticketStatus = $request->query('ticket_status', 'open');
         $ticketStatus = is_string($ticketStatus) && array_key_exists($ticketStatus, $ticketStatusFilters)
             ? $ticketStatus
             : 'open';
+        // Display names come from the catalogue rather than TicketPriority,
+        // whose descriptions and guidance belong to the ticket forms and
+        // extract with that surface.
         $ticketPriorityFilters = [
-            'all' => 'Any priority',
-            ...array_map(fn (array $priority): string => $priority['label'], TicketPriority::guidanceOptions()),
+            'all' => __('tickets.filters.priority_any'),
+            ...$this->translatedOptions('tickets.priorities', array_keys(TicketPriority::guidanceOptions())),
         ];
         $ticketPriority = $request->query('ticket_priority', 'all');
         $ticketPriority = is_string($ticketPriority) && array_key_exists($ticketPriority, $ticketPriorityFilters)
             ? $ticketPriority
             : 'all';
         $ticketCategoryFilters = [
-            'all' => 'Any category',
-            'uncategorized' => 'Uncategorized',
-            ...array_map(fn (array $category): string => $category['label'], TicketCategory::options()),
+            'all' => __('tickets.filters.category_any'),
+            'uncategorized' => __('tickets.filters.category_uncategorized'),
+            ...$this->translatedOptions('tickets.categories', array_keys(TicketCategory::options())),
         ];
         $ticketCategory = $request->query('ticket_category', 'all');
         $ticketCategory = is_string($ticketCategory) && array_key_exists($ticketCategory, $ticketCategoryFilters)
@@ -83,33 +79,28 @@ class AgentTicketQueueController extends Controller
         $ticketLabels = $account->ticketLabels()
             ->orderBy('name')
             ->get();
+        // Label names are the account's own words and are never translated.
         $ticketLabelFilters = [
-            'all' => 'Any label',
+            'all' => __('tickets.filters.label_any'),
             ...$ticketLabels->pluck('name', 'slug')->all(),
         ];
         $ticketLabel = $request->query('ticket_label', 'all');
         $ticketLabel = is_string($ticketLabel) && array_key_exists($ticketLabel, $ticketLabelFilters)
             ? $ticketLabel
             : 'all';
-        $ticketAttentionFilters = [
-            'all' => 'Any next step',
-            'escalated' => 'Recently escalated',
-            'needs_reply' => 'Needs reply',
-            'needs_owner' => 'Needs owner',
-            'needs_agent' => 'Needs agent',
-            'waiting_on_customer' => 'Waiting on customer',
-            'resolved' => 'Resolved',
-        ];
+        $ticketAttentionFilters = $this->translatedOptions('tickets.filters.attention', [
+            'all', 'escalated', 'needs_reply', 'needs_owner', 'needs_agent', 'waiting_on_customer', 'resolved',
+        ]);
         $ticketAttention = $request->query('ticket_attention', 'all');
         $ticketAttention = is_string($ticketAttention) && array_key_exists($ticketAttention, $ticketAttentionFilters)
             ? $ticketAttention
             : 'all';
         $ticketExternalIssueFilters = [
-            'all' => 'Any external issue',
-            TicketExternalIssueState::FAILED => 'Needs attention',
-            TicketExternalIssueState::PENDING => 'Sync pending',
-            TicketExternalIssueState::LINKED => 'Linked',
-            TicketExternalIssueState::NONE => 'No external issue',
+            'all' => __('tickets.filters.external.all'),
+            TicketExternalIssueState::FAILED => __('tickets.filters.external.failed'),
+            TicketExternalIssueState::PENDING => __('tickets.filters.external.pending'),
+            TicketExternalIssueState::LINKED => __('tickets.filters.external.linked'),
+            TicketExternalIssueState::NONE => __('tickets.filters.external.none'),
         ];
         $ticketExternalIssue = $request->query('ticket_external', 'all');
         $ticketExternalIssue = is_string($ticketExternalIssue) && array_key_exists($ticketExternalIssue, $ticketExternalIssueFilters)
@@ -126,10 +117,10 @@ class AgentTicketQueueController extends Controller
         $ticketSearch = is_string($ticketSearch)
             ? mb_substr(trim($ticketSearch), 0, 120)
             : '';
-        $ticketStatusSummary = match ($ticketStatus) {
-            'all' => 'total',
-            default => $ticketStatus,
-        };
+        // The catalogue KEY for the heading's noun, not the noun itself:
+        // "1 open" is a count and a word agreeing with it, which German
+        // inflects and English does not.
+        $ticketStatusSummary = $ticketStatus === 'all' ? 'total' : $ticketStatus;
         $ticketHasActiveRefinement = $ticketFilter !== 'all'
             || $ticketSite
             || $ticketPriority !== 'all'
@@ -139,12 +130,12 @@ class AgentTicketQueueController extends Controller
             || $ticketExternalIssue !== 'all'
             || $ticketSearch !== '';
         $ticketEmptyMessage = $ticketHasActiveRefinement
-            ? 'No tickets match those filters.'
+            ? __('tickets.empty.no_match_filters')
             : match ($ticketStatus) {
-                'all' => 'No tickets yet.',
-                'pending' => 'No pending tickets yet.',
-                'closed' => 'No closed tickets yet.',
-                default => 'No open tickets yet.',
+                'all' => __('tickets.empty.none_yet'),
+                'pending' => __('tickets.empty.no_pending'),
+                'closed' => __('tickets.empty.no_closed'),
+                default => __('tickets.empty.no_open'),
             };
         $ticketQuery = $this->ticketQueryParams($ticketStatus, $ticketFilter, $ticketSite, $ticketPriority, $ticketCategory, $ticketLabel, $ticketAttention, $ticketExternalIssue, $ticketSearch);
         $ticketEmptyState = $this->ticketEmptyState(
@@ -384,43 +375,43 @@ class AgentTicketQueueController extends Controller
         $filters = [];
 
         if ($ticketStatus !== 'open') {
-            $filters[] = $this->ticketFilterChip('ticket_status', 'Status: '.$ticketStatusFilters[$ticketStatus], $ticketQuery);
+            $filters[] = $this->ticketFilterChip('ticket_status', __('tickets.chips.status', ['value' => $ticketStatusFilters[$ticketStatus]]), $ticketQuery);
         }
 
         if ($ticketFilter !== 'all') {
-            $filters[] = $this->ticketFilterChip('ticket_filter', 'Assignee: '.$ticketFilters[$ticketFilter], $ticketQuery);
+            $filters[] = $this->ticketFilterChip('ticket_filter', __('tickets.chips.assignee', ['value' => $ticketFilters[$ticketFilter]]), $ticketQuery);
         }
 
         if ($ticketSite) {
             $site = $sites->firstWhere('id', $ticketSite);
 
             if ($site) {
-                $filters[] = $this->ticketFilterChip('ticket_site', 'Site: '.$site->name, $ticketQuery);
+                $filters[] = $this->ticketFilterChip('ticket_site', __('tickets.chips.site', ['value' => $site->name]), $ticketQuery);
             }
         }
 
         if ($ticketPriority !== 'all') {
-            $filters[] = $this->ticketFilterChip('ticket_priority', 'Priority: '.$ticketPriorityFilters[$ticketPriority], $ticketQuery);
+            $filters[] = $this->ticketFilterChip('ticket_priority', __('tickets.chips.priority', ['value' => $ticketPriorityFilters[$ticketPriority]]), $ticketQuery);
         }
 
         if ($ticketCategory !== 'all') {
-            $filters[] = $this->ticketFilterChip('ticket_category', 'Category: '.$ticketCategoryFilters[$ticketCategory], $ticketQuery);
+            $filters[] = $this->ticketFilterChip('ticket_category', __('tickets.chips.category', ['value' => $ticketCategoryFilters[$ticketCategory]]), $ticketQuery);
         }
 
         if ($ticketLabel !== 'all') {
-            $filters[] = $this->ticketFilterChip('ticket_label', 'Label: '.$ticketLabelFilters[$ticketLabel], $ticketQuery);
+            $filters[] = $this->ticketFilterChip('ticket_label', __('tickets.chips.label', ['value' => $ticketLabelFilters[$ticketLabel]]), $ticketQuery);
         }
 
         if ($ticketAttention !== 'all') {
-            $filters[] = $this->ticketFilterChip('ticket_attention', 'Next step: '.$ticketAttentionFilters[$ticketAttention], $ticketQuery);
+            $filters[] = $this->ticketFilterChip('ticket_attention', __('tickets.chips.next_step', ['value' => $ticketAttentionFilters[$ticketAttention]]), $ticketQuery);
         }
 
         if ($ticketExternalIssue !== 'all') {
-            $filters[] = $this->ticketFilterChip('ticket_external', 'External issue: '.$ticketExternalIssueFilters[$ticketExternalIssue], $ticketQuery);
+            $filters[] = $this->ticketFilterChip('ticket_external', __('tickets.chips.external', ['value' => $ticketExternalIssueFilters[$ticketExternalIssue]]), $ticketQuery);
         }
 
         if ($ticketSearch !== '') {
-            $filters[] = $this->ticketFilterChip('ticket_search', 'Search: '.$ticketSearch, $ticketQuery);
+            $filters[] = $this->ticketFilterChip('ticket_search', __('tickets.chips.search', ['value' => $ticketSearch]), $ticketQuery);
         }
 
         return $filters;
@@ -483,25 +474,53 @@ class AgentTicketQueueController extends Controller
 
         if (! $nextStepNarrowed) {
             return [
-                'detail' => 'Showing '.$this->ticketCountLabel($shownCount).' matching the current queue filters.',
-                'heading' => $shownCount.' '.$ticketStatusSummary,
+                'detail' => trans_choice('tickets.summary.filtered_detail', $shownCount, [
+                    'shown' => $this->ticketCountLabel($shownCount),
+                ]),
+                'heading' => trans_choice('tickets.summary.heading.'.$ticketStatusSummary, $shownCount, [
+                    'count' => $shownCount,
+                ]),
             ];
         }
 
         return [
-            'detail' => 'Showing '.$this->ticketCountLabel($shownCount).' after the '.$ticketAttentionFilters[$ticketAttention].' next-step filter. '.$this->ticketCountLabel($matchingCount).' '.$this->ticketCountVerb($matchingCount).' the other queue filters.',
-            'heading' => $shownCount.' shown of '.$matchingCount.' matching tickets',
+            // `trans_choice` on the SHOWN count, because that is the number
+            // the sentence's own verb agrees with. The second clause takes its
+            // verb from `:matching`, which carries one -- it used to pick a
+            // verb separately from the count it agreed with, which is right in
+            // English by luck and wrong in German.
+            'detail' => trans_choice('tickets.summary.lane_narrowed_detail', $shownCount, [
+                'shown' => $this->ticketCountLabel($shownCount),
+                'lane' => $ticketAttentionFilters[$ticketAttention],
+                'matching' => trans_choice('tickets.counts.matches', $matchingCount, ['count' => $matchingCount]),
+            ]),
+            'heading' => __('tickets.summary.lane_narrowed_heading', [
+                'shown' => (string) $shownCount,
+                'matching' => trans_choice('tickets.counts.matching_tickets', $matchingCount, ['count' => $matchingCount]),
+            ]),
         ];
+    }
+
+    /**
+     * A filter map: query-string value => translated label, in the order given.
+     *
+     * @param  array<int, string>  $keys
+     * @return array<string, string>
+     */
+    private function translatedOptions(string $catalogue, array $keys): array
+    {
+        $options = [];
+
+        foreach ($keys as $key) {
+            $options[$key] = __($catalogue.'.'.$key);
+        }
+
+        return $options;
     }
 
     private function ticketCountLabel(int $count): string
     {
-        return $count.' '.($count === 1 ? 'ticket' : 'tickets');
-    }
-
-    private function ticketCountVerb(int $count): string
-    {
-        return $count === 1 ? 'matches' : 'match';
+        return trans_choice('tickets.counts.tickets', $count, ['count' => $count]);
     }
 
     /**
@@ -512,7 +531,7 @@ class AgentTicketQueueController extends Controller
     {
         $clearAllAction = [
             'href' => route('dashboard.tickets.index'),
-            'label' => 'Clear all ticket filters',
+            'label' => __('tickets.actions.clear_all'),
         ];
 
         if (! $ticketHasActiveRefinement) {
@@ -523,10 +542,10 @@ class AgentTicketQueueController extends Controller
                     'actions' => [
                         [
                             'href' => route('dashboard.conversations.index'),
-                            'label' => 'Open conversations',
+                            'label' => __('tickets.actions.open_conversations'),
                         ],
                     ],
-                    'detail' => 'Tickets are created from conversations: open a thread and turn it into a durable ticket from its Ticket tab.',
+                    'detail' => __('tickets.empty.first_run_detail'),
                     'heading' => $ticketEmptyMessage,
                 ];
             }
@@ -537,10 +556,10 @@ class AgentTicketQueueController extends Controller
                 'actions' => [
                     [
                         'href' => route('dashboard.tickets.index', ['ticket_status' => 'all']),
-                        'label' => 'Show all tickets',
+                        'label' => __('tickets.actions.show_all'),
                     ],
                 ],
-                'detail' => 'When visitors need durable follow-up, tickets will land here.',
+                'detail' => __('tickets.empty.waiting_detail'),
                 'heading' => $ticketEmptyMessage,
             ];
         }
@@ -553,12 +572,12 @@ class AgentTicketQueueController extends Controller
                 'actions' => [
                     [
                         'href' => route('dashboard.tickets.index', $query),
-                        'label' => 'Clear search',
+                        'label' => __('tickets.actions.clear_search'),
                     ],
                     $clearAllAction,
                 ],
-                'detail' => 'Search covers ticket number, subject, description, support code, requester, email, and anonymous visitor IDs.',
-                'heading' => 'No tickets match "'.$ticketSearch.'".',
+                'detail' => __('tickets.empty.search_detail'),
+                'heading' => __('tickets.empty.search_heading', ['term' => $ticketSearch]),
             ];
         }
 
@@ -570,12 +589,14 @@ class AgentTicketQueueController extends Controller
                 'actions' => [
                     [
                         'href' => route('dashboard.tickets.index', $query),
-                        'label' => 'Clear next-step filter',
+                        'label' => __('tickets.actions.clear_next_step'),
                     ],
                     $clearAllAction,
                 ],
-                'detail' => 'Try another next-step queue or clear the next-step filter.',
-                'heading' => 'No tickets need '.$this->ticketEmptyAttentionPhrase($ticketAttention).' right now.',
+                'detail' => __('tickets.empty.next_step_detail'),
+                'heading' => __('tickets.empty.next_step_heading', [
+                    'phrase' => $this->ticketEmptyAttentionPhrase($ticketAttention),
+                ]),
             ];
         }
 
@@ -587,18 +608,18 @@ class AgentTicketQueueController extends Controller
                 'actions' => [
                     [
                         'href' => route('dashboard.tickets.index', $query),
-                        'label' => 'Clear external issue filter',
+                        'label' => __('tickets.actions.clear_external'),
                     ],
                     $clearAllAction,
                 ],
-                'detail' => 'Try another external issue state or clear the external issue filter.',
-                'heading' => 'No tickets match that external issue state.',
+                'detail' => __('tickets.empty.external_detail'),
+                'heading' => __('tickets.empty.external_heading'),
             ];
         }
 
         return [
             'actions' => [$clearAllAction],
-            'detail' => 'Try clearing a filter, widening the status, or searching by support code if you have one.',
+            'detail' => __('tickets.empty.refine_detail'),
             'heading' => $ticketEmptyMessage,
         ];
     }
@@ -606,13 +627,8 @@ class AgentTicketQueueController extends Controller
     private function ticketEmptyAttentionPhrase(string $ticketAttention): string
     {
         return match ($ticketAttention) {
-            'escalated' => 'recent escalation review',
-            'needs_reply' => 'a visitor reply',
-            'needs_owner' => 'an owner',
-            'needs_agent' => 'an agent update',
-            'waiting_on_customer' => 'customer follow-up',
-            'resolved' => 'resolution review',
-            default => 'that next step',
+            'escalated', 'needs_reply', 'needs_owner', 'needs_agent', 'waiting_on_customer', 'resolved' => __('tickets.attention_phrase.'.$ticketAttention),
+            default => __('tickets.attention_phrase.default'),
         };
     }
 
@@ -648,24 +664,24 @@ class AgentTicketQueueController extends Controller
     {
         return match ($state) {
             TicketExternalIssueState::FAILED => [
-                'label' => 'Needs attention',
+                'label' => __('tickets.filters.external.failed'),
                 'tone' => 'attention',
-                'detail' => 'Open the ticket to review safe retry options.',
+                'detail' => __('tickets.external_state.failed'),
             ],
             TicketExternalIssueState::PENDING => [
-                'label' => 'Sync pending',
+                'label' => __('tickets.filters.external.pending'),
                 'tone' => 'manual',
-                'detail' => 'Waiting for external tracker confirmation.',
+                'detail' => __('tickets.external_state.pending'),
             ],
             TicketExternalIssueState::LINKED => [
-                'label' => 'Linked',
+                'label' => __('tickets.filters.external.linked'),
                 'tone' => 'ready',
-                'detail' => 'External tracker reference is attached.',
+                'detail' => __('tickets.external_state.linked'),
             ],
             default => [
-                'label' => 'No external issue',
+                'label' => __('tickets.filters.external.none'),
                 'tone' => 'manual',
-                'detail' => 'Wayfindr is the only tracker for this ticket.',
+                'detail' => __('tickets.external_state.none'),
             ],
         };
     }
