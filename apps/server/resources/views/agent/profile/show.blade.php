@@ -33,8 +33,8 @@
 
     <section class="section" aria-labelledby="profile-update-heading">
         <div class="section-header">
-            <h2 id="profile-update-heading">Display name</h2>
-            <span class="lede">Shown to agents and visitors</span>
+            <h2 id="profile-update-heading">Your profile</h2>
+            <span class="lede">Your name, and the language you read this in</span>
         </div>
 
         <form class="section-form" method="POST" action="{{ route('dashboard.profile.update') }}">
@@ -50,6 +50,26 @@
             </div>
 
             <p class="field-help">Your email is used for sign-in. Ask an owner if it needs changed.</p>
+
+            <div class="field">
+                <label for="locale">Dashboard language</label>
+                <select id="locale" name="locale">
+                    {{-- "Whatever the install uses" is the default and stays
+                         selectable: an agent who picked a language should be
+                         able to stop having picked one. --}}
+                    <option value="">Use the install default</option>
+                    @foreach (\App\Support\DashboardLanguage::options() as $code => $label)
+                        <option value="{{ $code }}" @selected(old('locale', $agent->locale) === $code)>{{ $label }}</option>
+                    @endforeach
+                </select>
+                <p class="field-help">
+                    Yours alone. It changes the dashboard for you and nobody else, and does not affect
+                    what language the widget speaks to your visitors &mdash; that is set per site.
+                </p>
+                @error('locale')
+                    <p class="field-error">{{ $message }}</p>
+                @enderror
+            </div>
 
             <button class="button" type="submit">Save profile</button>
         </form>

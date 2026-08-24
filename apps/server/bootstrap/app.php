@@ -14,6 +14,7 @@ use App\Console\Commands\SendUnattendedConversationAlertsCommand;
 use App\Console\Commands\SweepOrphanedAttachmentsCommand;
 use App\Console\Commands\UpgradeGuardCommand;
 use App\Http\Middleware\RefuseServingWithUnmetRequirements;
+use App\Http\Middleware\SetDashboardLocale;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -52,6 +53,12 @@ return Application::configure(basePath: dirname(__DIR__))
         // (ADR 0013). Appended globally rather than to a route group, because a
         // release that is not fit to serve is not fit to serve anything.
         $middleware->append(RefuseServingWithUnmetRequirements::class);
+
+        // After the session is available, so there is an agent to read a
+        // language preference from. Web only: the widget carries its own
+        // catalogue and the public API answers machines, neither of which has
+        // a signed-in person to have a preference.
+        $middleware->web(append: SetDashboardLocale::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // The public API answers in JSON whether or not the caller asked for
