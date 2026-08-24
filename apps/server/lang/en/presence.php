@@ -11,10 +11,10 @@
  * screen.
  *
  * **Only extracted surfaces read it.** `Visitor::presenceLabel()` deliberately
- * returns English and answers with `presenceState()` instead, so the visitors
- * directory -- which has not been extracted -- is unaffected by this file
- * existing. A catalogue is reached by a surface translating a state, never by a
- * model handing one out.
+ * returns English and answers with `presenceState()` instead, because a model
+ * can be reached outside a request -- from a job, a command, a mail build --
+ * where no locale has been scoped to a surface. A catalogue is reached by a
+ * surface translating a state, never by a model handing one out.
  */
 return [
     'any' => 'Any presence',

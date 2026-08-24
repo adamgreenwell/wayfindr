@@ -64,11 +64,10 @@ class Visitor extends Model
 
     public function presenceLabel(): string
     {
-        // English on purpose -- see `Conversation::attentionLabel()`. The
-        // visitors directory and the conversation detail page both read this
-        // and neither is extracted yet, so translating here would put German
-        // into two documents that declare themselves English. Extracted
-        // surfaces translate `presenceState()` at their own call site.
+        // English on purpose -- see `Conversation::attentionLabel()` for the
+        // reasoning. A model can be reached outside a request, where no locale
+        // has been scoped to a surface; extracted surfaces translate
+        // `presenceState()` at their own call site instead.
         return match ($this->presenceState()) {
             'active' => 'Active recently',
             'recent' => 'Recently active',

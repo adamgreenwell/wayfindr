@@ -394,6 +394,43 @@ test('every column header is translated, read from the header row itself', funct
     }
 });
 
+test('the shared support-code control speaks the surface it is rendered on', function (): void {
+    // A shared Blade component, unlike a shared model, may use the catalogue
+    // directly: a view is only rendered inside a request, and the locale is
+    // scoped per request to surfaces that have been extracted. So the same
+    // component renders German here and English on the ticket queue beside it,
+    // which is right while the extraction is half done.
+    //
+    // The comparison test cannot see any of this: `Copy` is under its length
+    // floor and the rest are attributes, which `strip_tags` discards.
+    $world = conversationQueueLanguageWorld();
+
+    $german = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.index'))
+        ->assertOk()
+        ->getContent();
+
+    expect($german)->toContain('>Kopieren</button>')
+        ->and($german)->toContain('Support-Code kopieren')
+        ->and($german)->toContain('öffnen')
+        ->and($german)->not->toContain('>Copy</button>')
+        ->and($german)->not->toContain('Open support record');
+
+    // The conversation DETAIL page is not extracted, and renders the same
+    // component -- so it is English there, for the same German agent, in the
+    // same session. That is the property that makes translating a shared view
+    // safe, and it is only observable on a page that actually renders one.
+    $conversation = Conversation::query()->orderByDesc('id')->firstOrFail();
+
+    $detail = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent();
+
+    expect($detail)->toContain('>Copy</button>')
+        ->and($detail)->not->toContain('>Kopieren</button>');
+});
+
 test('the queue claims to be translated, so a screen reader is told the truth', function (): void {
     // The layout marks a page English until its surface says otherwise, so an
     // extracted surface that forgets to claim it is announced as English while

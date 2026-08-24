@@ -253,15 +253,17 @@ class Conversation extends Model
     /**
      * Deliberately NOT translated, and `attentionState()` is why.
      *
-     * A model is read by every surface that touches it, so a `__()` here puts
-     * German on pages the extraction has not reached -- the conversation detail
-     * page renders this label inside an otherwise English document that
-     * correctly declares `<html lang="en">`. That is the mixed-language problem
-     * the per-surface flag exists to prevent, arriving through the model
-     * instead of through the layout.
+     * A view is only ever rendered inside a request, so a shared Blade component
+     * may use the catalogue directly -- the locale is scoped per request to
+     * surfaces that have been extracted. A MODEL is not: `attentionLabel()` can
+     * be reached from a queued job, a console command or a mail build, where
+     * the locale is whatever the process last set and nothing has scoped it to
+     * a surface at all.
      *
-     * Extracted surfaces translate the STATE at their own call site. This stays
-     * English until the last consumer is extracted, and then it goes away.
+     * So the model answers with `attentionState()` and each extracted surface
+     * translates it at its own call site, which is where the request -- and
+     * therefore the reader -- is actually known. This label goes away when its
+     * last consumer is extracted.
      */
     public function attentionLabel(): string
     {

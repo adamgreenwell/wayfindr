@@ -73,6 +73,20 @@ filter *and* on every row, and the visitors directory names them again. Held per
 surface they would drift the first time a translator improved one of them, and
 the queue would show two different words for one state on the same screen.
 
+### A shared view may translate; a shared model may not
+
+The two look like the same case and are not. **A view is only ever rendered
+inside a request**, and the locale is scoped per request to surfaces that have
+been extracted — so a shared Blade component can use the catalogue directly and
+will render German on the conversation queue and English on the conversation
+detail page beside it, for the same agent in the same session. That is exactly
+right while the extraction is half done, and it is why
+`support-code-reference` is translated rather than deferred.
+
+**A model can be reached where no request exists** — a queued job, a console
+command, a mail build — and there the locale is whatever the process last set,
+scoped to nothing. That is the reason models hand out state.
+
 ### Models answer with state; surfaces render copy
 
 The first version of the queue extraction put `__()` inside
