@@ -266,7 +266,8 @@ test('the lane heading counts one match as one, in both languages', function ():
     // Whatever else is on the page, neither language may say "1 ... matching
     // conversations" or its German equivalent.
     expect($english)->not->toContain('1 matching conversations')
-        ->and($german)->not->toContain('1 passende Unterhaltungen');
+        ->and($german)->not->toContain('1 passende Unterhaltungen')
+        ->and($german)->not->toContain('1 passenden Unterhaltungen');
 });
 
 test('a plural count reads as a plural in both languages', function (): void {
@@ -499,4 +500,42 @@ test('the form labels and the untitled fallback are translated', function (): vo
 
     expect($english)->toContain('Untitled conversation')
         ->and($english)->not->toContain('Unterhaltung ohne Betreff');
+});
+
+test('the attention lane heading is a sentence, not a clause in a number slot', function (): void {
+    // Reachable only when the lane shows FEWER than the other filters match, so
+    // the world marks two of three conversations as already read: one still
+    // needs attention, three still match. No default render produces this.
+    $world = conversationQueueLanguageWorld(conversations: 3);
+
+    foreach (['de', 'en'] as $locale) {
+        $agent = $world['agents'][$locale];
+
+        Conversation::query()->orderBy('id')->take(2)->get()
+            ->each(fn (Conversation $conversation) => $conversation->readStates()->updateOrCreate(
+                ['user_id' => $agent->id],
+                ['last_read_at' => now()->addDay()],
+            ));
+    }
+
+    $url = route('dashboard.conversations.index', ['conversation_filter' => 'new_activity']);
+
+    $german = conversationQueueLanguageVisibleText(
+        $this->actingAs($world['agents']['de'])->get($url)->assertOk()->getContent()
+    );
+    $english = conversationQueueLanguageVisibleText(
+        $this->actingAs($world['agents']['en'])->get($url)->assertOk()->getContent()
+    );
+
+    // The shape that was broken: a whole clause dropped into the slot the other
+    // lanes fill with a number.
+    expect($german)->not->toContain('benötigt Aufmerksamkeit von')
+        ->and($german)->not->toContain('benötigen Aufmerksamkeit von')
+        ->and($english)->not->toContain('needs attention shown of');
+
+    expect($german)->toContain('1 von 3 passenden Unterhaltungen benötigt Aufmerksamkeit')
+        ->and($english)->toContain('1 of 3 matching conversations needs attention')
+        // Dative, not nominative: German inflects the adjective for case too,
+        // and every sentence using this count reads "von :matching".
+        ->and($german)->not->toContain('passende Unterhaltungen');
 });

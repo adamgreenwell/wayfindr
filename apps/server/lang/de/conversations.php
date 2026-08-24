@@ -71,7 +71,12 @@ return [
         'closed' => '{1} 1 geschlossen|[2,*] :count geschlossen',
         'open_matching' => '{1} 1 offener Treffer|[2,*] :count offene Treffer',
         'matches' => '{1} 1 Unterhaltung entspricht|[2,*] :count Unterhaltungen entsprechen',
-        'matching_conversations' => '{1} 1 passende Unterhaltung|[2,*] :count passende Unterhaltungen',
+        // DATIVE, because both sentences that use it read "von :matching".
+        // German inflects the adjective for case as well as number, and after a
+        // bare numeral it takes strong endings -- so "von 1 passender
+        // Unterhaltung" and "von 3 passenden Unterhaltungen", not the
+        // nominative "passende" a word-for-word translation produces.
+        'matching_conversations' => '{1} 1 passender Unterhaltung|[2,*] :count passenden Unterhaltungen',
     ],
 
     'summary' => [
@@ -80,6 +85,7 @@ return [
         // (entspricht/entsprechen) for number, so a sentence built around a
         // correctly pluralised count was still wrong on either side of it.
         'lane_narrowed_heading' => ':shown von :matching angezeigt',
+        'lane_narrowed_attention_heading' => '{1} :shown von :matching benötigt Aufmerksamkeit|[2,*] :shown von :matching benötigen Aufmerksamkeit',
         'lane_narrowed_detail' => '{1} Es wird :shown nach dem Support-Spur-Filter „:lane“ angezeigt. :matching den übrigen Filtern.|[2,*] Es werden :shown nach dem Support-Spur-Filter „:lane“ angezeigt. :matching den übrigen Filtern.',
         'filtered_detail' => '{1} Es wird :shown angezeigt, die den aktuellen Filtern entspricht.|[2,*] Es werden :shown angezeigt, die den aktuellen Filtern entsprechen.',
         'open_heading' => ':open offen · :attention · :cobrowse',

@@ -434,15 +434,22 @@ class AgentConversationQueueController extends Controller
                     'lane' => $conversationFilters[$conversationFilter],
                     'matching' => $this->conversationCountMatchLabel($matchingConversationCount),
                 ]),
-                'heading' => __('conversations.summary.lane_narrowed_heading', [
-                    // The attention lane counts in its own words, because
-                    // "3 need attention shown of 9" says what the lane is for
-                    // in a way that a bare "3" does not.
-                    'shown' => $conversationFilter === 'new_activity'
-                        ? trans_choice('conversations.counts.needs_attention', $shownCount, ['count' => $shownCount])
-                        : (string) $shownCount,
-                    'matching' => trans_choice('conversations.counts.matching_conversations', $matchingConversationCount, ['count' => $matchingConversationCount]),
-                ]),
+                // The attention lane says what the lane is for, in a sentence
+                // of its own. It used to interpolate `1 needs attention` into
+                // the slot the other lanes put a NUMBER in, which reads
+                // acceptably in English by luck and is simply broken in German:
+                // "1 benötigt Aufmerksamkeit von 3 passenden Unterhaltungen
+                // angezeigt". A clause is not a noun phrase, and a catalogue
+                // cannot reorder one that arrives pre-assembled.
+                'heading' => $conversationFilter === 'new_activity'
+                    ? trans_choice('conversations.summary.lane_narrowed_attention_heading', $shownCount, [
+                        'shown' => (string) $shownCount,
+                        'matching' => trans_choice('conversations.counts.matching_conversations', $matchingConversationCount, ['count' => $matchingConversationCount]),
+                    ])
+                    : __('conversations.summary.lane_narrowed_heading', [
+                        'shown' => (string) $shownCount,
+                        'matching' => trans_choice('conversations.counts.matching_conversations', $matchingConversationCount, ['count' => $matchingConversationCount]),
+                    ]),
             ];
         }
 

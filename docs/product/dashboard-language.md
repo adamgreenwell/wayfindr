@@ -107,13 +107,29 @@ of that appears in the view, so grepping the template says a page is finished
 while a third of it is still English, and nobody notices until they switch
 language and read a page in two at once.
 
-### Extraction does not edit copy
+### Extraction does not edit copy — with one recorded exception
+
+
 
 An extraction that quietly tidies wording is one nobody can trust to be
 behaviour-preserving. Where extraction surfaces a copy problem — the profile
 page turned out to call itself *Agent Profile* in the browser tab and *Agent
 profile* in its heading — the string is preserved exactly, with the reason
 recorded beside it, and the fix is left to be made on purpose.
+
+**The exception, and the shape that earns one.** The conversation queue's
+attention lane read *"2 need attention shown of 3 matching conversations"* — a
+whole clause dropped into the slot the other lanes fill with a number. English
+tolerates it; German does not, producing *"1 benötigt Aufmerksamkeit von 3
+passenden Unterhaltungen angezeigt"*, and no catalogue can reorder a clause that
+arrives pre-assembled. It now reads *"2 of 3 matching conversations need
+attention"* in both languages.
+
+So the rule is not "never change copy" but **never change copy for taste**. A
+sentence whose *structure* cannot be translated has to change, because the
+alternative is a sentence that is wrong in every language but the one it was
+written in. The figures it reports are unchanged, and the test that pinned the
+old wording was updated with the reason beside it rather than loosened.
 
 ### The selector names languages in their own language
 

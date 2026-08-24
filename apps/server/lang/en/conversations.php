@@ -88,6 +88,11 @@ return [
         // to agree with the same number -- English got this wrong too, reading
         // "1 shown of 1 matching conversations".
         'lane_narrowed_heading' => ':shown shown of :matching',
+        // The attention lane gets its own sentence rather than a predicate
+        // pushed into the one above. `1 needs attention` is a clause, not a
+        // noun phrase, and dropping a clause into a slot meant for a number
+        // produces word order no language has to accept.
+        'lane_narrowed_attention_heading' => '{1} :shown of :matching needs attention|[2,*] :shown of :matching need attention',
         'lane_narrowed_detail' => '{1} Showing :shown after the :lane support-lane filter. :matching the other queue filters.|[2,*] Showing :shown after the :lane support-lane filter. :matching the other queue filters.',
         'filtered_detail' => '{1} Showing :shown matching the current queue filters.|[2,*] Showing :shown matching the current queue filters.',
         'open_heading' => ':open open · :attention · :cobrowse',
