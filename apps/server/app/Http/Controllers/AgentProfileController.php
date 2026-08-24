@@ -62,9 +62,15 @@ class AgentProfileController extends Controller
             'locale' => DashboardLanguage::normalise($validated['locale'] ?? null),
         ]);
 
+        // The KEY travels, not the sentence. This action can change the agent's
+        // own language, and the flash is built here while the request is still
+        // running under the language they are leaving -- so translating now
+        // lands a German page carrying an English confirmation, or the reverse.
+        // Translating where it is displayed makes the ordering irrelevant
+        // rather than making this one ordering correct.
         return redirect()
             ->route('dashboard.profile.show')
-            ->with('status', __('profile.flash.profile_updated'));
+            ->with('status', 'profile.flash.profile_updated');
     }
 
     public function updateAlertPreferences(Request $request): RedirectResponse
@@ -88,7 +94,7 @@ class AgentProfileController extends Controller
 
         return redirect()
             ->route('dashboard.profile.show')
-            ->with('status', __('profile.flash.alerts_updated'));
+            ->with('status', 'profile.flash.alerts_updated');
     }
 
     public function updatePassword(Request $request): RedirectResponse
@@ -119,7 +125,7 @@ class AgentProfileController extends Controller
 
         return redirect()
             ->route('dashboard.profile.show')
-            ->with('status', __('profile.flash.password_updated'));
+            ->with('status', 'profile.flash.password_updated');
     }
 
     /**

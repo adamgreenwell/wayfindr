@@ -4,6 +4,7 @@ use App\Models\Account;
 use App\Models\User;
 use App\Support\DashboardLanguage;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\App;
 
 uses(RefreshDatabase::class);
 
@@ -282,11 +283,141 @@ test('nothing on the profile page reads the same in both languages', function ()
     $flashEnglish = User::factory()->for($account)->create(['locale' => 'en', 'name' => 'Ada Agent']);
     $flashGerman = User::factory()->for($account)->create(['locale' => 'de', 'name' => 'Ada Agent']);
 
+    // Read from the RENDERED page, not from `session('status')`. The flash
+    // travels as a catalogue key and is translated where it is displayed, so
+    // the session holds the same key in both languages -- comparing it there
+    // compares two identical keys and reports success no matter what the agent
+    // actually sees.
     $flashOf = function (User $agent): string {
-        $this->actingAs($agent)->put(route('dashboard.profile.update'), ['name' => 'Ada Agent']);
+        // The locale goes with it. This PUT carries the whole form, so omitting
+        // the select clears the preference -- and the German agent would then
+        // be measured after being quietly turned back into an English one.
+        $this->actingAs($agent)->put(route('dashboard.profile.update'), [
+            'name' => 'Ada Agent',
+            'locale' => (string) $agent->locale,
+        ]);
 
-        return (string) session('status');
+        $html = $this->actingAs($agent)->get(route('dashboard.profile.show'))->getContent();
+
+        preg_match('/<p class="status-message">(.*?)<\/p>/is', (string) $html, $flash);
+
+        return trim($flash[1] ?? '');
     };
 
-    expect($flashOf($flashGerman))->not->toBe($flashOf($flashEnglish));
+    $inGerman = $flashOf($flashGerman);
+    $inEnglish = $flashOf($flashEnglish);
+
+    expect($inGerman)->not->toBe('')
+        ->and($inEnglish)->not->toBe('')
+        // A raw key reaching the page is the specific failure of flashing one.
+        ->and($inGerman)->not->toContain('profile.flash')
+        ->and($inGerman)->not->toBe($inEnglish);
+});
+
+test('a validation failure is reported in the agent language', function (): void {
+    // The error path is a normal path -- mistyping a current password is the
+    // single most likely thing to go wrong on this page -- and it renders
+    // through Laravel's own catalogue rather than the profile one, which the
+    // rest of these tests never touch.
+    $agent = languageAgent('de');
+
+    // Followed to the page, because what matters is the sentence under the
+    // field rather than the string in the bag.
+    $this->actingAs($agent)
+        ->from(route('dashboard.profile.show'))
+        ->followingRedirects()
+        ->put(route('dashboard.profile.password.update'), [
+            'current_password' => 'not-the-password',
+            'password' => 'short',
+            'password_confirmation' => 'mismatched',
+        ])
+        ->assertOk()
+        ->assertSee('Das Passwort ist nicht korrekt.')
+        ->assertSee('Die Bestätigung für Passwort stimmt nicht überein.')
+        ->assertDontSee('The password is incorrect.')
+        // Named as the form names it, not as the column spells it.
+        ->assertDontSee('current_password muss');
+
+    // A second submission for the length rule. The field renders only its
+    // first error, so behind a mismatched confirmation the length message is
+    // never on the page -- asserting it above would have passed against a
+    // sentence nobody could see.
+    $this->actingAs($agent)
+        ->from(route('dashboard.profile.show'))
+        ->followingRedirects()
+        ->put(route('dashboard.profile.password.update'), [
+            'current_password' => 'not-the-password',
+            'password' => 'short',
+            'password_confirmation' => 'short',
+        ])
+        ->assertOk()
+        ->assertSee('Passwort muss mindestens 8 Zeichen lang sein.')
+        ->assertDontSee('at least 8 characters');
+});
+
+test('a validation failure an agent can read is still English for anyone else', function (): void {
+    $agent = languageAgent();
+
+    $this->actingAs($agent)
+        ->from(route('dashboard.profile.show'))
+        ->followingRedirects()
+        ->put(route('dashboard.profile.password.update'), [
+            'current_password' => 'not-the-password',
+            'password' => 'short',
+            'password_confirmation' => 'mismatched',
+        ])
+        ->assertOk()
+        ->assertSee('The password is incorrect.')
+        ->assertDontSee('Das Passwort ist nicht korrekt.');
+});
+
+test('a rule with no German line falls back to English, never to a raw key', function (): void {
+    // The German catalogue covers the rules the dashboard validates with, not
+    // all hundred Laravel ships. That is only safe if a missing line falls
+    // through to English prose -- if it surfaced the key instead, every rule
+    // added later would ship a broken message to German agents silently.
+    App::setLocale('de');
+
+    foreach (['validation.uuid', 'validation.ip', 'validation.alpha_dash', 'validation.regex'] as $key) {
+        $message = trans($key, ['attribute' => 'test']);
+
+        expect($message)->not->toBe($key)
+            ->and($message)->not->toContain('validation.');
+    }
+
+    // And one that IS covered, so this is measuring fallback rather than
+    // measuring that nothing is translated at all.
+    expect(trans('validation.required', ['attribute' => 'Name']))->toBe('Name muss ausgefüllt werden.');
+});
+
+test('the flash after changing language speaks the new language', function (): void {
+    // The one action whose confirmation is written under a different language
+    // than the page that shows it: the request that saves the change is still
+    // running as the language being left behind.
+    $agent = languageAgent();
+
+    $this->actingAs($agent)
+        ->from(route('dashboard.profile.show'))
+        ->put(route('dashboard.profile.update'), ['name' => $agent->name, 'locale' => 'de'])
+        ->assertRedirect(route('dashboard.profile.show'));
+
+    $this->actingAs($agent->fresh())
+        ->get(route('dashboard.profile.show'))
+        ->assertOk()
+        ->assertSee('Profil aktualisiert.')
+        ->assertDontSee('Profile updated.');
+
+    // And the reverse: a German agent going back to the install default must
+    // not be confirmed in German on an English page.
+    $german = languageAgent('de');
+
+    $this->actingAs($german)
+        ->from(route('dashboard.profile.show'))
+        ->put(route('dashboard.profile.update'), ['name' => $german->name, 'locale' => '']);
+
+    $this->actingAs($german->fresh())
+        ->get(route('dashboard.profile.show'))
+        ->assertOk()
+        ->assertSee('Profile updated.')
+        ->assertDontSee('Profil aktualisiert.');
 });

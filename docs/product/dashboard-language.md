@@ -67,6 +67,27 @@ page turned out to call itself *Agent Profile* in the browser tab and *Agent
 profile* in its heading — the string is preserved exactly, with the reason
 recorded beside it, and the fix is left to be made on purpose.
 
+### Two things a page shows that are not in any page catalogue
+
+**Validation messages come from Laravel**, not from a surface catalogue, and a
+mistyped current password is the likeliest thing to happen on a form. Left
+alone, the most ordinary error path on a translated page answers in English.
+`lang/de/validation.php` covers the rules the dashboard actually validates with
+rather than restating all hundred Laravel ships; anything else falls through to
+the framework's English, so a rule added later is a correct English sentence and
+never a raw key.
+
+Its `attributes` map matters more than it looks. Without it a German agent is
+told `current_password muss ausgefüllt werden`, which is worse than English —
+it reads as a system error rather than as a form asking for something.
+
+**A flash message is written in one request and read in the next**, and on this
+page the request that writes it is the one that can change the agent's language.
+Translating at the point of writing would land a German page carrying an English
+confirmation, or the reverse. So the catalogue **key** is what gets flashed and
+the view translates it, which makes the ordering irrelevant instead of making
+one ordering correct.
+
 ## What holds it together
 
 Three guards, because a missed string is invisible until somebody switches
@@ -78,6 +99,12 @@ language:
 - an extracted view must contain no prose;
 - German must actually render end to end, including the copy generated outside
   the view.
+
+The third guard renders the page in **several states** rather than once. Copy
+that only appears on a branch — a cadence nobody selected, a digest that has
+already run, the flash after a save, the error under a field — is exactly the
+copy an extraction misses, and a single default render reaches none of it. Every
+miss found by review so far has been on a branch of this kind.
 
 ## Not doing
 

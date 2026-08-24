@@ -2,7 +2,9 @@
     <x-page-header :title="__('profile.title')" :subtitle="__('profile.subtitle')" />
 
     @if (session('status'))
-        <p class="status-message">{{ session('status') }}</p>
+        {{-- A catalogue key rather than a sentence, so it is translated in the
+             request that shows it -- see AgentProfileController::update(). --}}
+        <p class="status-message">{{ __(session('status')) }}</p>
     @endif
 
     <section class="section" aria-labelledby="profile-context-heading">
