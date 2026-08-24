@@ -725,7 +725,14 @@ test('a cobrowse value is escaped, not trusted', function (): void {
  * it. Each string is paired with its EFFECTIVE language: the nearest ancestor
  * carrying `lang`, which is what assistive technology resolves.
  *
- * @return array<string, string> string => effective language
+ * Returned as a LIST of occurrences rather than a map keyed by text, and that
+ * matters: a queue renders the same string once per row. Keyed by text, a later
+ * occurrence overwrites an earlier one's language -- so one row leaking
+ * `Unavailable` as German is masked the moment a later row marks the same word
+ * English, and the guard passes. Attributes processed after text nodes overwrite
+ * them the same way.
+ *
+ * @return array<int, array{text: string, language: string}>
  */
 function conversationQueueLanguageAnnouncements(string $html): array
 {
@@ -758,7 +765,7 @@ function conversationQueueLanguageAnnouncements(string $html): array
         $text = trim(preg_replace('/\s+/u', ' ', $node->textContent) ?? '');
 
         if ($text !== '') {
-            $announcements[$text] = $languageOf($node->parentNode);
+            $announcements[] = ['text' => $text, 'language' => $languageOf($node->parentNode)];
         }
     }
 
@@ -767,7 +774,7 @@ function conversationQueueLanguageAnnouncements(string $html): array
             $text = trim(preg_replace('/\s+/u', ' ', $element->getAttribute($attribute)) ?? '');
 
             if ($text !== '') {
-                $announcements[$text] = $languageOf($element);
+                $announcements[] = ['text' => $text, 'language' => $languageOf($element)];
             }
         }
     }
@@ -825,7 +832,10 @@ function conversationQueueLanguageCognates(): array
 function conversationQueueLanguageEnglishLeaks(string $germanHtml, string $englishHtml): array
 {
     $german = conversationQueueLanguageAnnouncements($germanHtml);
-    $english = conversationQueueLanguageAnnouncements($englishHtml);
+
+    // Only a SET is needed from the English side -- the question there is
+    // "does this string appear at all", not where or in what language.
+    $english = array_flip(array_column(conversationQueueLanguageAnnouncements($englishHtml), 'text'));
 
     $isData = fn (string $text): bool => str_contains($text, 'Datenpunkt')
         || str_contains($text, 'WF-LANG')
@@ -837,12 +847,14 @@ function conversationQueueLanguageEnglishLeaks(string $germanHtml, string $engli
 
     $leaks = [];
 
-    foreach ($german as $text => $language) {
+    $cognates = conversationQueueLanguageCognates();
+
+    foreach ($german as ['text' => $text, 'language' => $language]) {
         if ($language !== 'de' || $isData($text) || ! array_key_exists($text, $english)) {
             continue;
         }
 
-        if (array_key_exists($text, conversationQueueLanguageCognates())) {
+        if (array_key_exists($text, $cognates)) {
             continue;
         }
 
@@ -906,16 +918,51 @@ test('every cognate on the list still appears, so the list cannot rot', function
     // entry has to go rather than quietly covering something else.
     $world = conversationQueueLanguageWorld();
 
-    $announced = array_merge(
+    $announced = array_column(array_merge(
         conversationQueueLanguageAnnouncements(
             (string) $this->actingAs($world['agents']['de'])->get(route('dashboard.profile.show'))->getContent()
         ),
         conversationQueueLanguageAnnouncements(
             (string) $this->actingAs($world['agents']['de'])->get(route('dashboard.conversations.index'))->getContent()
         ),
-    );
+    ), 'text');
 
     foreach (array_keys(conversationQueueLanguageCognates()) as $cognate) {
-        expect(array_keys($announced))->toContain($cognate);
+        expect($announced)->toContain($cognate);
     }
+});
+
+test('a marked occurrence does not mask an unmarked one', function (): void {
+    // The guard is a test, and a test that cannot fail is worse than none. This
+    // exercises its own logic on crafted markup rather than on a page, because
+    // the case only arises when the SAME string appears twice in different
+    // languages -- which a real queue produces one row at a time and no single
+    // fixture reliably reproduces.
+    //
+    // Keyed by text, the second occurrence overwrote the first and the leak
+    // vanished. Occurrences are kept separately now.
+    $german = <<<'HTML'
+    <main lang="de">
+        <p>Unavailable</p>
+        <p><span lang="en">Unavailable</span></p>
+    </main>
+    HTML;
+
+    $english = '<main lang="en"><p>Unavailable</p><p>Unavailable</p></main>';
+
+    expect(conversationQueueLanguageEnglishLeaks($german, $english))->toBe(['Unavailable']);
+
+    // Marked everywhere, nothing to report.
+    $allMarked = '<main lang="de"><p><span lang="en">Unavailable</span></p><p><span lang="en">Unavailable</span></p></main>';
+
+    expect(conversationQueueLanguageEnglishLeaks($allMarked, $english))->toBe([]);
+
+    // And an attribute cannot mask a text node either -- the same bug by a
+    // different route, since attributes are collected after text nodes. Both
+    // halves fall to one mutation (keying the collection by text), because that
+    // is the single change that reintroduces the masking; keying only the
+    // attribute half does nothing, as the two then occupy different key spaces.
+    $attributeAfter = '<main lang="de"><p>Unavailable</p><button lang="en" title="Unavailable">x</button></main>';
+
+    expect(conversationQueueLanguageEnglishLeaks($attributeAfter, $english))->toBe(['Unavailable']);
 });
