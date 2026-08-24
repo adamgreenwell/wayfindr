@@ -16,7 +16,9 @@ use App\Support\CobrowseResyncRequestPolicy;
 use App\Support\CobrowseSnapshotFreshness;
 use App\Support\CobrowseTransportPressure;
 use App\Support\DashboardLanguage;
+use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\App;
 
 uses(RefreshDatabase::class);
 
@@ -1005,4 +1007,80 @@ test('a marked occurrence does not mask an unmarked one', function (): void {
     $attributeAfter = '<main lang="de"><p>Unavailable</p><button lang="en" title="Unavailable">x</button></main>';
 
     expect(conversationQueueLanguageEnglishLeaks($attributeAfter, $english))->toBe(['Unavailable']);
+});
+
+test('a model hands out keys, so an agent gets their own language and not a process one', function (): void {
+    // The sharpest case for why models do not translate: readStateKeyFor()
+    // takes an AGENT. Translated inside the model it would answer in whatever
+    // locale the process last set -- so a job or a mail build would hand an
+    // English agent German because a German agent's request ran first.
+    //
+    // This simulates exactly that: set the ambient locale to German with no
+    // request scoping it, then ask the model about an English agent.
+    $world = conversationQueueLanguageWorld(conversations: 1);
+    $conversation = Conversation::query()->firstOrFail();
+
+    App::setLocale('de');
+
+    // Keys and data, never sentences -- so nothing here can carry the wrong
+    // language out of the model.
+    expect($conversation->readStateKeyFor($world['agents']['en']))->toBe('read_new_activity')
+        ->and($conversation->queueActivityPreview()['label_key'])->toBe('preview_none_label')
+        ->and($conversation->queueTimingContext()['wait_key'])->toBe('no_messages')
+        ->and($conversation->queueTimingContext()['opened_at'])->toBeInstanceOf(CarbonInterface::class)
+        ->and($conversation->attentionState())->toBe('needs_reply');
+
+    // And the English labels a surface that has NOT been extracted still reads
+    // stay English, whatever the ambient locale is.
+    expect($conversation->readStateLabelFor($world['agents']['en']))->toBe('New activity')
+        ->and($conversation->attentionLabel())->toBe('Needs reply')
+        ->and($conversation->queueActivityPreview()['label'])->toBe('No activity preview yet');
+});
+
+test('no raw catalogue key ever reaches the page', function (): void {
+    // A missing key renders as `conversations.row.something` -- readable enough
+    // to look like copy in a screenshot and wrong to everybody.
+    //
+    // This exists because two mutations survived without it. Turning a key back
+    // into a translated STRING makes the view look up
+    // `conversations.row.Letzte Besuchernachricht`, which misses and renders the
+    // key itself -- and the key CONTAINS the German the assertions were looking
+    // for, so `toContain` passed on a broken page. Substring assertions cannot
+    // tell a sentence from a key that quotes it.
+    $world = conversationQueueLanguageWorld();
+
+    $states = [
+        route('dashboard.profile.show'),
+        route('dashboard.conversations.index'),
+        route('dashboard.conversations.index', ['conversation_filter' => 'closed']),
+        route('dashboard.conversations.index', ['conversation_filter' => 'new_activity']),
+        route('dashboard.conversations.index', ['conversation_search' => 'zzzz']),
+    ];
+
+    foreach (['de', 'en'] as $locale) {
+        foreach ($states as $url) {
+            $text = conversationQueueLanguageVisibleText(
+                (string) $this->actingAs($world['agents'][$locale])->get($url)->assertOk()->getContent()
+            );
+
+            // A KEY, not merely a catalogue name followed by a dot: an English
+            // sentence ending "...for your profile." contains `profile.` and is
+            // perfectly good copy. A key is the catalogue, a dot, and a
+            // lowercase section -- no space between them.
+            foreach (['conversations', 'presence', 'support', 'profile', 'validation'] as $catalogue) {
+                $pattern = '/\b'.$catalogue.'\.[a-z][a-z_]*(\.[a-zA-Z_]+)*/';
+
+                // A PHPUnit assertion rather than `expect()->not->toContain()`,
+                // which is variadic: passing a message there asserts the text
+                // contains neither the key NOR the message, and since it never
+                // contains the message the negation passes on any page at all.
+                // That is the second time this file has met that trap.
+                $this->assertDoesNotMatchRegularExpression(
+                    $pattern,
+                    $text,
+                    "raw catalogue key from {$catalogue} rendered at {$url} in {$locale}"
+                );
+            }
+        }
+    }
 });

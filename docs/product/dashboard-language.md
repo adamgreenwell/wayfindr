@@ -97,6 +97,18 @@ right while the extraction is half done, and it is why
 command, a mail build — and there the locale is whatever the process last set,
 scoped to nothing. That is the reason models hand out state.
 
+### A raw key on the page is always a bug, and needs its own guard
+
+A missing key renders as `conversations.row.something` — readable enough to pass
+for copy in a screenshot and wrong to everybody. It gets a test because
+substring assertions cannot see it: turning a key back into a translated
+*string* makes the view look up `conversations.row.Letzte Besuchernachricht`,
+which misses and renders the key — and the key **contains** the German the
+assertion was looking for, so `toContain` passes on a broken page.
+
+Match the shape of a key, not the catalogue name: an English sentence ending
+"…for your profile." contains `profile.` and is perfectly good copy.
+
 ### Models answer with state; surfaces render copy
 
 The first version of the queue extraction put `__()` inside

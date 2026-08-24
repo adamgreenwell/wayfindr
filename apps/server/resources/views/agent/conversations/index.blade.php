@@ -188,12 +188,28 @@
                                             <a href="{{ route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'from_queue' => '1'] + $conversationQuery) }}">
                                                 {{ $conversation->subject ?? __('conversations.row.untitled') }}
                                             </a>
-                                            <span class="wf-queue-preview" title="{{ $activityPreview['body'] }}">
+                                            @php
+                                                // The model hands out keys and timestamps; this surface turns
+                                                // them into words, because it is the only place that knows whose
+                                                // language to use. See Conversation::attentionLabel().
+                                                $previewBody = $activityPreview['body_key']
+                                                    ? __('conversations.row.'.$activityPreview['body_key'])
+                                                    : $activityPreview['body'];
+                                                $previewLabel = __('conversations.row.'.$activityPreview['label_key']);
+                                                $waitLabel = $conversationTiming['wait_since']
+                                                    ? __('conversations.row.'.$conversationTiming['wait_key'], [
+                                                        'elapsed' => $conversationTiming['wait_key'] === 'closed'
+                                                            ? $conversationTiming['wait_since']->diffForHumans()
+                                                            : $conversation->elapsedWaitFrom($conversationTiming['wait_since']),
+                                                    ])
+                                                    : __('conversations.row.'.$conversationTiming['wait_key']);
+                                            @endphp
+                                            <span class="wf-queue-preview" title="{{ $previewBody }}">
                                                 <x-support-code-reference
                                                     :code="$conversation->support_code"
                                                     :href="route('dashboard.support-code.lookup', ['support_code' => $conversation->support_code])"
                                                 />
-                                                &middot; {{ $activityPreview['label'] }}@if ($activityPreview['occurred_at']) &middot; <time datetime="{{ $activityPreview['occurred_at']->toJSON() }}">{{ __('conversations.row.activity', ['elapsed' => $activityPreview['occurred_at']->diffForHumans()]) }}</time>@endif &middot; {{ $activityPreview['body'] }}
+                                                &middot; {{ $previewLabel }}@if ($activityPreview['occurred_at']) &middot; <time datetime="{{ $activityPreview['occurred_at']->toJSON() }}">{{ __('conversations.row.activity', ['elapsed' => $activityPreview['occurred_at']->diffForHumans()]) }}</time>@endif &middot; {{ $previewBody }}
                                             </span>
                                         </td>
                                         <td>
@@ -223,9 +239,9 @@
                                         </td>
                                         <td>
                                             @if ($conversation->hasNewActivityFor($agent))
-                                                <span class="wf-queue-unread">{{ $conversation->readStateLabelFor($agent) }}</span>
+                                                <span class="wf-queue-unread">{{ __('conversations.row.'.$conversation->readStateKeyFor($agent)) }}</span>
                                             @else
-                                                <span class="wf-queue-cobrowse">{{ $conversation->readStateLabelFor($agent) }}</span>
+                                                <span class="wf-queue-cobrowse">{{ __('conversations.row.'.$conversation->readStateKeyFor($agent)) }}</span>
                                             @endif
                                         </td>
                                         <td>
@@ -285,8 +301,8 @@
                                             </span>
                                         </td>
                                         <td class="wf-queue-when">
-                                            {{ $conversationTiming['opened_label'] }}
-                                            <span class="wf-queue-preview" title="{{ $conversationTiming['wait_label'] }}">{{ $conversationTiming['wait_label'] }}</span>
+                                            {{ __('conversations.row.opened', ['elapsed' => $conversationTiming['opened_at']->diffForHumans()]) }}
+                                            <span class="wf-queue-preview" title="{{ $waitLabel }}">{{ $waitLabel }}</span>
                                         </td>
                                     </tr>
                                 @endforeach
