@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Visitor;
+use App\Rules\DecodableCursor;
 use App\Support\Api\ApiScope;
 use App\Support\Api\V1\Payload;
 use Illuminate\Http\JsonResponse;
@@ -26,7 +27,7 @@ class VisitorController extends Controller
             'external_id' => ['nullable', 'string', 'max:255'],
             'email' => ['nullable', 'string', 'max:255'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
-            'cursor' => ['nullable', 'string'],
+            'cursor' => ['nullable', 'string', new DecodableCursor],
         ]);
 
         $visitors = Visitor::query()

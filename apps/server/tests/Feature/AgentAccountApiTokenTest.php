@@ -489,3 +489,54 @@ test('an admin who sees everything is still promised the whole account', functio
         ->assertOk()
         ->assertSee('reaches every site on this account');
 });
+
+test('a non-admin cannot tell their account tokens from anyone else', function (): void {
+    // Token ids are sequential, and an agent is deliberately barred from seeing
+    // the list at all. Checking the account before the role gave them 403 for
+    // their own account's tokens and 404 for other people's -- an enumeration
+    // oracle for exactly the person the page is hidden from.
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+
+    $ours = ApiToken::factory()->create(['account_id' => $account->id]);
+    $theirs = ApiToken::factory()->create();
+
+    $mine = $this->actingAs($agent)->delete(route('dashboard.account.api-tokens.destroy', $ours));
+    $other = $this->actingAs($agent)->delete(route('dashboard.account.api-tokens.destroy', $theirs));
+
+    expect($mine->status())->toBe(403)
+        ->and($other->status())->toBe(403)
+        ->and($ours->fresh()->revoked_at)->toBeNull()
+        ->and($theirs->fresh()->revoked_at)->toBeNull();
+});
+
+test('an admin still gets 404 for another account token', function (): void {
+    // The authority check moving first must not lose the cross-account
+    // behaviour for somebody who is allowed to be here.
+    $w = tokenAdmin();
+    $theirs = ApiToken::factory()->create();
+
+    $this->actingAs($w['admin'])
+        ->delete(route('dashboard.account.api-tokens.destroy', $theirs))
+        ->assertNotFound();
+});
+
+test('revoking twice keeps the moment it was actually disabled', function (): void {
+    // A replayed DELETE would otherwise stamp the retry time over the real one
+    // and write a second audit event, degrading the record the row is kept for.
+    $w = tokenAdmin();
+    $token = ApiToken::factory()->create(['account_id' => $w['account']->id]);
+
+    $this->actingAs($w['admin'])->delete(route('dashboard.account.api-tokens.destroy', $token));
+
+    $revokedAt = $token->fresh()->revoked_at;
+
+    $this->travel(2)->hours();
+
+    $this->actingAs($w['admin'])
+        ->delete(route('dashboard.account.api-tokens.destroy', $token))
+        ->assertRedirect(route('dashboard.account.api-tokens.index'));
+
+    expect($token->fresh()->revoked_at->timestamp)->toBe($revokedAt->timestamp)
+        ->and(AuditEvent::query()->where('action', 'api_token.revoked')->count())->toBe(1);
+});

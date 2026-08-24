@@ -316,3 +316,52 @@ test('purging a site does remove it from the API', function (): void {
 
     readGet($this, $w, '/api/v1/conversations/WF-MINE01')->assertNotFound();
 });
+
+test('the API answers in JSON even when the caller does not ask for it', function (): void {
+    // Laravel decides that from `Accept`, so a client omitting the header --
+    // including the curl example in our own docs -- got an HTML error page or a
+    // redirect where the contract promises JSON. Every other test here uses
+    // `getJson()`, which sets the header, so the suite could never show it.
+    $w = readWorld();
+
+    $response = $this->get('/api/v1/conversations?per_page=0', [
+        'Authorization' => 'Bearer '.$w['plain'],
+    ]);
+
+    $response->assertStatus(422);
+
+    expect($response->headers->get('content-type'))->toContain('application/json')
+        ->and($response->json('message'))->not->toBeNull();
+
+    // And a record outside the token's reach is a JSON 404, not an HTML one.
+    $missing = $this->get('/api/v1/conversations/WF-NOSUCH', [
+        'Authorization' => 'Bearer '.$w['plain'],
+    ]);
+
+    $missing->assertStatus(404);
+
+    expect($missing->headers->get('content-type'))->toContain('application/json');
+});
+
+test('a corrupted cursor is refused, not silently restarted', function (): void {
+    // Laravel reads an undecodable cursor as no cursor, so an integration
+    // holding a truncated one quietly receives page one again -- reprocessing
+    // rows it has already seen, or looping, with a 200 every time.
+    $w = readWorld();
+
+    foreach (['not-a-cursor', 'eyJ0cnVuY2F0ZWQ', base64_encode('{"broken":')] as $bad) {
+        readGet($this, $w, '/api/v1/conversations?cursor='.urlencode($bad))->assertStatus(422);
+    }
+
+    // Every list endpoint, not just the one it was reported against.
+    readGet($this, $w, '/api/v1/tickets?cursor=not-a-cursor')->assertStatus(422);
+    readGet($this, $w, '/api/v1/visitors?cursor=not-a-cursor')->assertStatus(422);
+    readGet($this, $w, '/api/v1/conversations/WF-MINE01/messages?cursor=not-a-cursor')->assertStatus(422);
+
+    // A cursor the API itself issued still works.
+    $cursor = readGet($this, $w, '/api/v1/conversations?per_page=1')->json('meta.next_cursor');
+
+    if ($cursor !== null) {
+        readGet($this, $w, '/api/v1/conversations?per_page=1&cursor='.urlencode($cursor))->assertOk();
+    }
+});

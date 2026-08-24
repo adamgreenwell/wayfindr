@@ -160,10 +160,27 @@ class AgentAccountApiTokenController extends Controller
         $agent = $request->user();
         $account = $agent->account()->firstOrFail();
 
-        // 404 rather than 403 for another account's token: the id should not
-        // confirm anything.
-        abort_unless((int) $apiToken->account_id === (int) $account->id, 404);
+        // Authority FIRST, so a non-admin learns nothing from which refusal
+        // they get. Checking the account first meant an agent -- who is
+        // deliberately barred from even seeing this list -- got 403 for a token
+        // belonging to their account and 404 for one that did not, and token
+        // ids are sequential. That is an enumeration oracle for exactly the
+        // person the page is hidden from.
         abort_unless($agent->isAdmin(), 403);
+
+        // 404 rather than 403 for another account's token: for somebody who IS
+        // an admin here, the id should still not confirm anything.
+        abort_unless((int) $apiToken->account_id === (int) $account->id, 404);
+
+        // Already revoked is a no-op. A replayed DELETE would otherwise stamp
+        // the retry time over the moment the credential was actually disabled
+        // and write a second audit event -- degrading the security record the
+        // row is kept for.
+        if ($apiToken->isRevoked()) {
+            return redirect()
+                ->route('dashboard.account.api-tokens.index')
+                ->with('status', 'That API token was already revoked.');
+        }
 
         // Revoked, not deleted. The row is the record that this credential
         // existed and when it was last used, which is the part worth keeping

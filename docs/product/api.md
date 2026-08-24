@@ -45,6 +45,9 @@ curl -H "Authorization: Bearer wfk_your_token_here" \
   https://support.example.com/api/v1/me
 ```
 
+Errors come back as JSON whether or not you send `Accept: application/json`, so
+the example above behaves the same as one that sets it.
+
 Everything lives under `/api/v1/`. The version is in the path from the first
 release, because a contract with no version is a contract that can never change.
 
@@ -152,7 +155,7 @@ Over either limit returns `429`.
 | `401` | No token, or a token that is unknown, revoked or expired. All four say the same thing on purpose. |
 | `403` | The token authenticated but lacks the ability for this endpoint. |
 | `404` | No such record **within this token's reach**. |
-| `422` | A malformed filter or pagination parameter. |
+| `422` | A malformed filter or pagination parameter, including a cursor that does not decode. A corrupted cursor is refused rather than treated as no cursor, which would hand you page one again and have you reprocess rows you have already seen. |
 | `429` | Rate limited. |
 
 ## The honest limitation

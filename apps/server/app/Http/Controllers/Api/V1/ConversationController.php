@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
+use App\Rules\DecodableCursor;
 use App\Support\Api\ApiScope;
 use App\Support\Api\V1\Payload;
 use Illuminate\Http\JsonResponse;
@@ -26,7 +27,7 @@ class ConversationController extends Controller
             'site_id' => ['nullable', 'integer'],
             'status' => ['nullable', 'string', 'in:open,closed'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
-            'cursor' => ['nullable', 'string'],
+            'cursor' => ['nullable', 'string', new DecodableCursor],
         ]);
 
         $conversations = Conversation::query()
@@ -61,7 +62,7 @@ class ConversationController extends Controller
 
         $validated = $request->validate([
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
-            'cursor' => ['nullable', 'string'],
+            'cursor' => ['nullable', 'string', new DecodableCursor],
         ]);
 
         $messages = $conversation->messages()
