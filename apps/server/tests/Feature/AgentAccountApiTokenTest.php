@@ -634,3 +634,74 @@ test('a numeric id too large to be a key is a 404, not a server error', function
         ->delete('/dashboard/account/api-tokens/'.PHP_INT_MAX)
         ->assertNotFound();
 });
+
+test('a revocation decides from the locked row, not the one read before it', function (): void {
+    // Two DELETEs in flight together both read an unrevoked row, both pass an
+    // unlocked guard, and both write -- stamping the later time over the moment
+    // the credential was actually disabled and recording the revocation twice.
+    // This account's audit trail is a product feature rather than a debug log,
+    // so a duplicate entry is a wrong answer to "who turned this off, and when".
+    //
+    // SQLite cannot run the two requests at once, so the interleaving is staged
+    // instead: the moment the controller reads the token, another writer
+    // revokes it underneath. A revocation that re-reads under its lock sees
+    // that and stands down; one that trusts the model it loaded first does not.
+    ['admin' => $admin, 'account' => $account] = tokenAdmin();
+
+    $generated = ApiToken::generate();
+    $token = ApiToken::query()->create([
+        'account_id' => $account->id,
+        'name' => 'Integration',
+        'token_hash' => $generated['hash'],
+        'last_four' => $generated['last_four'],
+        'abilities' => [ApiToken::ABILITY_READ],
+    ]);
+
+    $revokedAt = now()->subMinutes(5);
+    $raced = false;
+
+    DB::listen(function ($query) use ($token, $revokedAt, &$raced): void {
+        if ($raced || ! str_contains($query->sql, 'api_tokens') || ! str_contains($query->sql, 'select')) {
+            return;
+        }
+
+        // Once, and before the controller's own transaction opens.
+        $raced = true;
+
+        DB::table('api_tokens')->where('id', $token->id)->update(['revoked_at' => $revokedAt]);
+    });
+
+    $this->actingAs($admin)
+        ->delete(route('dashboard.account.api-tokens.destroy', $token))
+        ->assertRedirect(route('dashboard.account.api-tokens.index'))
+        ->assertSessionHas('status', 'That API token was already revoked.');
+
+    // The moment it was actually disabled survives, rather than being stamped
+    // over with the moment somebody asked a second time.
+    expect($token->fresh()->revoked_at->timestamp)->toBe($revokedAt->timestamp);
+
+    expect(AuditEvent::query()->where('action', 'api_token.revoked')->count())->toBe(0);
+});
+
+test('revoking twice in a row records it once', function (): void {
+    ['admin' => $admin, 'account' => $account] = tokenAdmin();
+
+    $generated = ApiToken::generate();
+    $token = ApiToken::query()->create([
+        'account_id' => $account->id,
+        'name' => 'Integration',
+        'token_hash' => $generated['hash'],
+        'last_four' => $generated['last_four'],
+        'abilities' => [ApiToken::ABILITY_READ],
+    ]);
+
+    $this->actingAs($admin)->delete(route('dashboard.account.api-tokens.destroy', $token));
+    $firstRevokedAt = $token->fresh()->revoked_at;
+
+    $this->actingAs($admin)
+        ->delete(route('dashboard.account.api-tokens.destroy', $token))
+        ->assertSessionHas('status', 'That API token was already revoked.');
+
+    expect($token->fresh()->revoked_at->timestamp)->toBe($firstRevokedAt->timestamp)
+        ->and(AuditEvent::query()->where('action', 'api_token.revoked')->count())->toBe(1);
+});

@@ -10,6 +10,7 @@ use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
@@ -191,33 +192,54 @@ class AgentAccountApiTokenController extends Controller
         // should still not confirm anything.
         abort_if($apiToken === null || (int) $apiToken->account_id !== (int) $account->id, 404);
 
-        // Already revoked is a no-op. A replayed DELETE would otherwise stamp
-        // the retry time over the moment the credential was actually disabled
-        // and write a second audit event -- degrading the security record the
-        // row is kept for.
-        if ($apiToken->isRevoked()) {
-            return redirect()
-                ->route('dashboard.account.api-tokens.index')
-                ->with('status', 'That API token was already revoked.');
-        }
+        // Read, check, write and audit under one row lock, following the
+        // lifecycle transitions in `AgentConversationController`.
+        //
+        // Checking `isRevoked()` on the model loaded above only defeats a
+        // SEQUENTIAL retry. Two DELETEs in flight together both read an
+        // unrevoked row, both pass the guard, and both write -- stamping the
+        // later time over the moment the credential was actually disabled and
+        // recording the revocation twice. This account's audit trail is a
+        // product feature rather than a debug log, so a duplicate entry is a
+        // wrong answer to "who turned this off, and when".
+        $alreadyRevoked = DB::transaction(function () use ($agent, $apiToken): bool {
+            $locked = ApiToken::query()
+                ->whereKey($apiToken->getKey())
+                ->lockForUpdate()
+                ->first();
 
-        // Revoked, not deleted. The row is the record that this credential
-        // existed and when it was last used, which is the part worth keeping
-        // after somebody turns it off.
-        $apiToken->forceFill(['revoked_at' => now()])->save();
+            // Gone between the check above and the lock. Nothing to revoke and
+            // nothing to say about it that the 404 above would not have said.
+            if ($locked === null) {
+                return true;
+            }
 
-        // Who turned it off, and when. Revoking a standing credential for
-        // support transcripts is exactly the kind of act an account needs to
-        // attribute afterwards -- and ADR 0018 says issuance and revocation are
-        // audited, which the first version of this did not honour.
-        $this->audit($agent, $apiToken, 'api_token.revoked', [
-            'name' => $apiToken->name,
-            'last_used_at' => $apiToken->last_used_at?->toJSON(),
-        ]);
+            // Decided from the LOCKED row, not the one read before the lock.
+            if ($locked->isRevoked()) {
+                return true;
+            }
+
+            // Revoked, not deleted. The row is the record that this credential
+            // existed and when it was last used, which is the part worth
+            // keeping after somebody turns it off.
+            $locked->forceFill(['revoked_at' => now()])->save();
+
+            // Written while the lock is held, so exactly one of two concurrent
+            // revocations records one. ADR 0018 says issuance and revocation
+            // are audited, which the first version of this did not honour.
+            $this->audit($agent, $locked, 'api_token.revoked', [
+                'name' => $locked->name,
+                'last_used_at' => $locked->last_used_at?->toJSON(),
+            ]);
+
+            return false;
+        });
 
         return redirect()
             ->route('dashboard.account.api-tokens.index')
-            ->with('status', 'API token revoked.');
+            ->with('status', $alreadyRevoked
+                ? 'That API token was already revoked.'
+                : 'API token revoked.');
     }
 
     /**
