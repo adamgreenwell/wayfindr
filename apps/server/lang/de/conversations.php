@@ -71,12 +71,17 @@ return [
         'closed' => '{1} 1 geschlossen|[2,*] :count geschlossen',
         'open_matching' => '{1} 1 offener Treffer|[2,*] :count offene Treffer',
         'matches' => '{1} 1 Unterhaltung entspricht|[2,*] :count Unterhaltungen entsprechen',
+        'matching_conversations' => '{1} 1 passende Unterhaltung|[2,*] :count passende Unterhaltungen',
     ],
 
     'summary' => [
-        'lane_narrowed_heading' => ':shown von :matching passenden Unterhaltungen angezeigt',
-        'lane_narrowed_detail' => 'Es werden :shown nach dem Support-Spur-Filter „:lane“ angezeigt. :matching entsprechen den übrigen Filtern.',
-        'filtered_detail' => 'Es werden :shown angezeigt, die den aktuellen Filtern entsprechen.',
+        // The halves differ here, which is the point: German inflects both the
+        // auxiliary (wird/werden) and the relative-clause verb
+        // (entspricht/entsprechen) for number, so a sentence built around a
+        // correctly pluralised count was still wrong on either side of it.
+        'lane_narrowed_heading' => ':shown von :matching angezeigt',
+        'lane_narrowed_detail' => '{1} Es wird :shown nach dem Support-Spur-Filter „:lane“ angezeigt. :matching den übrigen Filtern.|[2,*] Es werden :shown nach dem Support-Spur-Filter „:lane“ angezeigt. :matching den übrigen Filtern.',
+        'filtered_detail' => '{1} Es wird :shown angezeigt, die den aktuellen Filtern entspricht.|[2,*] Es werden :shown angezeigt, die den aktuellen Filtern entsprechen.',
         'open_heading' => ':open offen · :attention · :cobrowse',
     ],
 

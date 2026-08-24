@@ -426,10 +426,13 @@ class AgentConversationQueueController extends Controller
 
         if ($supportLaneNarrowed) {
             return [
-                'detail' => __('conversations.summary.lane_narrowed_detail', [
+                // `trans_choice` on the SHOWN count, because that is the number
+                // the sentence's own verb agrees with. The second clause takes
+                // its verb from `:matching`, which carries one.
+                'detail' => trans_choice('conversations.summary.lane_narrowed_detail', $shownCount, [
                     'shown' => $this->conversationCountLabel($shownCount),
                     'lane' => $conversationFilters[$conversationFilter],
-                    'matching' => $this->conversationCountLabel($matchingConversationCount),
+                    'matching' => $this->conversationCountMatchLabel($matchingConversationCount),
                 ]),
                 'heading' => __('conversations.summary.lane_narrowed_heading', [
                     // The attention lane counts in its own words, because
@@ -438,12 +441,12 @@ class AgentConversationQueueController extends Controller
                     'shown' => $conversationFilter === 'new_activity'
                         ? trans_choice('conversations.counts.needs_attention', $shownCount, ['count' => $shownCount])
                         : (string) $shownCount,
-                    'matching' => (string) $matchingConversationCount,
+                    'matching' => trans_choice('conversations.counts.matching_conversations', $matchingConversationCount, ['count' => $matchingConversationCount]),
                 ]),
             ];
         }
 
-        $filteredDetail = __('conversations.summary.filtered_detail', [
+        $filteredDetail = trans_choice('conversations.summary.filtered_detail', $shownCount, [
             'shown' => $this->conversationCountLabel($shownCount),
         ]);
 

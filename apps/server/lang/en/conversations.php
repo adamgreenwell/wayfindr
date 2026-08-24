@@ -78,12 +78,18 @@ return [
         'closed' => '{1} 1 closed|[2,*] :count closed',
         'open_matching' => '{1} 1 open matching|[2,*] :count open matching',
         'matches' => '{1} 1 conversation matches|[2,*] :count conversations match',
+        'matching_conversations' => '{1} 1 matching conversation|[2,*] :count matching conversations',
     ],
 
     'summary' => [
-        'lane_narrowed_heading' => ':shown shown of :matching matching conversations',
-        'lane_narrowed_detail' => 'Showing :shown after the :lane support-lane filter. :matching match the other queue filters.',
-        'filtered_detail' => 'Showing :shown matching the current queue filters.',
+        // Every sentence carrying a count is plural-aware as a WHOLE, not just
+        // in the number it interpolates. `:shown` already chose between
+        // "1 conversation" and "3 conversations", and the verbs around it have
+        // to agree with the same number -- English got this wrong too, reading
+        // "1 shown of 1 matching conversations".
+        'lane_narrowed_heading' => ':shown shown of :matching',
+        'lane_narrowed_detail' => '{1} Showing :shown after the :lane support-lane filter. :matching the other queue filters.|[2,*] Showing :shown after the :lane support-lane filter. :matching the other queue filters.',
+        'filtered_detail' => '{1} Showing :shown matching the current queue filters.|[2,*] Showing :shown matching the current queue filters.',
         'open_heading' => ':open open · :attention · :cobrowse',
     ],
 

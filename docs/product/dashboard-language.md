@@ -224,6 +224,15 @@ verb is correct in one language by luck. Several German plural forms are
 deliberately identical on both sides of the `|`, which is the right translation
 rather than a copy-paste slip.
 
+**And the sentence AROUND a count agrees with it too.** Getting `:shown` to
+choose between *1 conversation* and *3 conversations* is only half the job: the
+verbs either side of it agree with the same number. German inflects both the
+auxiliary and the relative-clause verb, so a correctly pluralised count still
+produced *Es werden 1 Unterhaltung angezeigt, die … entsprechen* — two plural
+verbs about one conversation. English had the same class of error where the
+count was not the subject: *1 shown of 1 matching conversations*. Any sentence
+that interpolates a count is itself a `trans_choice` on that count.
+
 ### What a two-language render comparison cannot see
 
 The comparison — render twice, treat any sentence surviving the change as

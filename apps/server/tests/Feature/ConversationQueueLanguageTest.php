@@ -22,6 +22,11 @@ uses(RefreshDatabase::class);
  */
 function conversationQueueLanguageWorld(int $conversations = 3): array
 {
+    // Support codes are unique account-wide, so a test that builds two worlds
+    // -- one to check a singular and one a plural -- collides without this.
+    static $run = 0;
+    $run++;
+
     // Data with a German-looking token in it, so the test can tell an account's
     // DATA apart from its copy: a name renders identically in both languages
     // and should.
@@ -36,7 +41,7 @@ function conversationQueueLanguageWorld(int $conversations = 3): array
     // populated queue.
     for ($i = 1; $i <= $conversations; $i++) {
         $conversation = Conversation::factory()->for($site)->for($visitor)->create([
-            'support_code' => 'WF-LANG0'.$i,
+            'support_code' => 'WF-LANG'.$run.$i,
             'subject' => 'Datenpunkt checkout '.$i,
             'status' => 'open',
         ]);
@@ -216,6 +221,54 @@ test('counts choose their plural form in each language, verb included', function
         ->assertDontSee('1 Unterhaltungen');
 });
 
+test('a sentence agrees with its own count, not just the number inside it', function (): void {
+    // `:shown` chose correctly between "1 conversation" and "3 conversations"
+    // and the sentence around it did not, so German read
+    // "Es werden 1 Unterhaltung angezeigt, die ... entsprechen" -- two plural
+    // verbs about one conversation. English had the same class of error in the
+    // lane heading: "1 shown of 1 matching conversations".
+    $one = conversationQueueLanguageWorld(conversations: 1);
+
+    $inGerman = conversationQueueLanguageVisibleText(
+        $this->actingAs($one['agents']['de'])->get(route('dashboard.conversations.index'))->getContent()
+    );
+
+    expect($inGerman)->toContain('Es wird 1 Unterhaltung angezeigt, die den aktuellen Filtern entspricht.')
+        ->and($inGerman)->not->toContain('Es werden 1 Unterhaltung')
+        ->and($inGerman)->not->toContain('entsprechen.');
+
+    // And the plural still inflects the other way, so this is measuring
+    // agreement rather than a sentence rewritten to dodge it.
+    $many = conversationQueueLanguageWorld(conversations: 3);
+
+    $manyInGerman = conversationQueueLanguageVisibleText(
+        $this->actingAs($many['agents']['de'])->get(route('dashboard.conversations.index'))->getContent()
+    );
+
+    expect($manyInGerman)->toContain('Es werden 3 Unterhaltungen angezeigt, die den aktuellen Filtern entsprechen.')
+        ->and($manyInGerman)->not->toContain('Es wird 3 Unterhaltungen');
+});
+
+test('the lane heading counts one match as one, in both languages', function (): void {
+    // Reachable only when a support lane narrows the queue below what the other
+    // filters match, which no default render produces.
+    $world = conversationQueueLanguageWorld(conversations: 1);
+
+    $url = route('dashboard.conversations.index', ['conversation_filter' => 'assigned_to_me']);
+
+    $english = conversationQueueLanguageVisibleText(
+        $this->actingAs($world['agents']['en'])->get($url)->getContent()
+    );
+    $german = conversationQueueLanguageVisibleText(
+        $this->actingAs($world['agents']['de'])->get($url)->getContent()
+    );
+
+    // Whatever else is on the page, neither language may say "1 ... matching
+    // conversations" or its German equivalent.
+    expect($english)->not->toContain('1 matching conversations')
+        ->and($german)->not->toContain('1 passende Unterhaltungen');
+});
+
 test('a plural count reads as a plural in both languages', function (): void {
     $several = conversationQueueLanguageWorld(conversations: 3);
 
@@ -372,7 +425,13 @@ test('translating a model would put German on pages that are still English', fun
     // who reads German, which is the correct answer until it is extracted.
     $world = conversationQueueLanguageWorld();
 
-    $conversation = Conversation::query()->where('support_code', 'WF-LANG03')->firstOrFail();
+    // The conversation with an AGENT message last, which is the state whose
+    // label this test is about. Looked up by that rather than by a support code
+    // the world now numbers per run.
+    $conversation = Conversation::query()
+        ->whereHas('messages', fn ($query) => $query->where('sender_type', User::class))
+        ->orderByDesc('id')
+        ->firstOrFail();
 
     $detail = conversationQueueLanguageVisibleText(
         $this->actingAs($world['agents']['de'])
@@ -403,7 +462,7 @@ test('the form labels and the untitled fallback are translated', function (): vo
     Conversation::factory()
         ->for($world['site'])
         ->for(Visitor::factory()->for($world['site'])->create(['anonymous_id' => 'anon-nosubject']))
-        ->create(['support_code' => 'WF-LANG09', 'subject' => null, 'status' => 'open']);
+        ->create(['support_code' => 'WF-LANGNOSUBJ', 'subject' => null, 'status' => 'open']);
 
     $german = conversationQueueLanguageVisibleText(
         $this->actingAs($world['agents']['de'])->get(route('dashboard.conversations.index'))->getContent()
