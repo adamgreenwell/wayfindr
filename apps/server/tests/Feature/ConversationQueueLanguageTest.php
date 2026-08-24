@@ -66,6 +66,38 @@ function conversationQueueLanguageWorld(int $conversations = 3): array
 }
 
 /**
+ * The text the page shows, with markup and scripts removed.
+ */
+function conversationQueueLanguageVisibleText(string $html): string
+{
+    if (preg_match('/<main\b[^>]*>(.*)<\/main>/is', $html, $main) === 1) {
+        $html = $main[1];
+    }
+
+    $html = preg_replace('/<(script|style)\b[^>]*>.*?<\/\1>/is', ' ', $html) ?? $html;
+
+    return (string) preg_replace('/\s+/u', ' ', html_entity_decode(strip_tags($html)));
+}
+
+/**
+ * The page's sentences, reduced to the parts a comparison can honestly judge.
+ *
+ * Three things defeated the first version of this, and each one hid real
+ * untranslated copy that mutation testing then found:
+ *
+ * 1. **Rows are one line of several fields.** `strip_tags` collapses a row into
+ *    `· Latest visitor message · Activity 2 minutes ago · <the message body>`,
+ *    so a line-level comparison judges copy and data together. Split on the
+ *    separator and each field is judged on its own.
+ * 2. **Data was rejected by the LINE.** Dropping any line containing the
+ *    account name threw away the copy sitting next to it. Segments containing
+ *    data are dropped now, and the copy beside them survives.
+ * 3. **An interpolated time differs between languages even when the copy does
+ *    not.** `Opened 2 minutes ago` against `Opened vor 2 Minuten` are not
+ *    equal, so an untranslated `Opened` passes a comparison test forever.
+ *    Segments carrying a number are set aside here and asserted directly in
+ *    `the row copy an elapsed time hides`.
+ *
  * @return array<int, string>
  */
 function conversationQueueLanguageSentences(string $html): array
@@ -77,18 +109,45 @@ function conversationQueueLanguageSentences(string $html): array
     }
 
     $html = preg_replace('/<(script|style)\b[^>]*>.*?<\/\1>/is', ' ', $html) ?? $html;
-    $lines = preg_split('/[\r\n]+/u', html_entity_decode(strip_tags($html))) ?: [];
+    $text = html_entity_decode(strip_tags($html));
 
-    return collect($lines)
-        ->map(fn (string $line): string => trim(preg_replace('/\s+/u', ' ', $line) ?? ''))
-        ->filter(fn (string $line): bool => mb_strlen($line) >= 25)
+    return collect(preg_split('/[\r\n]+/u', $text) ?: [])
+        ->flatMap(fn (string $line): array => preg_split('/[·|]/u', $line) ?: [])
+        ->map(fn (string $segment): string => trim(preg_replace('/\s+/u', ' ', $segment) ?? ''))
         // Data rather than copy, and correctly identical in both languages.
-        ->reject(fn (string $line): bool => str_contains($line, 'Datenpunkt')
-            || str_contains($line, 'WF-LANG')
-            || str_contains($line, '@'))
+        ->reject(fn (string $segment): bool => str_contains($segment, 'Datenpunkt')
+            || str_contains($segment, 'WF-LANG')
+            || str_contains($segment, 'anon-')
+            || str_contains($segment, '@'))
+        // Carries an interpolated value that is itself localised, so the
+        // segment differs between languages whether or not its copy does.
+        ->reject(fn (string $segment): bool => preg_match('/\d/', $segment) === 1)
+        // Long enough to be copy rather than a fragment of markup.
+        ->filter(fn (string $segment): bool => mb_strlen($segment) >= 10)
         ->unique()
         ->values()
         ->all();
+}
+
+/**
+ * The one recorded exception, matched EXACTLY.
+ *
+ * `CobrowseConsentState` supplies the transport label on every row, and its
+ * vocabulary is shared with the conversation detail page -- about a hundred and
+ * thirty strings that extract with cobrowse rather than from a queue-shaped
+ * change reaching into them. Until then a German agent reads that one cell in
+ * English, which is recorded in docs/product/dashboard-language.md.
+ *
+ * Exact strings rather than a substring test, because the last allowlist on
+ * this epic exempted `mail` and quietly matched every sentence containing
+ * "email". And `the recorded exception is still real` fails when an entry here
+ * stops appearing, so an exemption cannot outlive the thing it excuses.
+ *
+ * @return array<int, string>
+ */
+function conversationQueueLanguageExceptions(): array
+{
+    return ['Unavailable'];
 }
 
 test('nothing on the conversation queue reads the same in both languages', function (): void {
@@ -115,8 +174,9 @@ test('nothing on the conversation queue reads the same in both languages', funct
             $this->actingAs($world['agents']['de'])->get(route('dashboard.conversations.index', $query))->getContent()
         );
 
-        expect(array_values(array_intersect($inEnglish, $inGerman)))
-            ->toBe([], "untranslated copy in state: {$label}");
+        $shared = array_values(array_diff(array_intersect($inEnglish, $inGerman), conversationQueueLanguageExceptions()));
+
+        expect($shared)->toBe([], "untranslated copy in state: {$label}");
     }
 });
 
@@ -168,4 +228,132 @@ test('a plural count reads as a plural in both languages', function (): void {
         ->get(route('dashboard.conversations.index'))
         ->assertOk()
         ->assertSee('3 Unterhaltungen');
+});
+
+test('the recorded exception is still real', function (): void {
+    // An allowlist nobody rechecks becomes a place where real misses hide. If
+    // cobrowse gets extracted, or that label stops rendering, this fails and
+    // the exemption has to be removed rather than quietly covering something
+    // it was never meant to.
+    $world = conversationQueueLanguageWorld();
+
+    $rendered = conversationQueueLanguageSentences(
+        $this->actingAs($world['agents']['de'])->get(route('dashboard.conversations.index'))->getContent()
+    );
+
+    foreach (conversationQueueLanguageExceptions() as $exception) {
+        expect($rendered)->toContain($exception);
+    }
+});
+
+test('the row copy an elapsed time hides is translated too', function (): void {
+    // What the comparison test cannot reach, asserted directly.
+    //
+    // A row's copy shares its line with an interpolated value -- an elapsed
+    // time Carbon localises on its own, a message body, an agent name -- so
+    // `Opened 2 minutes ago` and `Opened vor 2 Minuten` differ whether or not
+    // `Opened` was ever translated. Every one of these survived a mutation back
+    // to an English literal while the comparison test stayed green.
+    $world = conversationQueueLanguageWorld();
+
+    // Against the text the page SHOWS, not the raw response. `assertDontSee`
+    // reads the whole document including `<script>`, and the app layout carries
+    // a JavaScript comment containing the word "Opened" -- which failed this
+    // test for a sentence no agent can read.
+    $german = conversationQueueLanguageVisibleText(
+        $this->actingAs($world['agents']['de'])->get(route('dashboard.conversations.index'))->getContent()
+    );
+
+    foreach ([
+        'Geöffnet',
+        'Wartet seit',
+        'Letzte Besuchernachricht',
+        'Letzte Agentenantwort',
+        'Noch keine Nachrichten',
+        'Wartet auf Besucher',
+        'Letzte Meldung',
+        'Aktivität',
+    ] as $expected) {
+        expect($german)->toContain($expected);
+    }
+
+    foreach ([
+        'Opened ',
+        'Waiting on reply for',
+        'Waiting on visitor for',
+        'Latest visitor message',
+        'Latest agent reply',
+        'No messages yet',
+        'Last report',
+        'Activity ',
+    ] as $english) {
+        expect($german)->not->toContain($english);
+    }
+
+    // And the English page still reads as English, so this is measuring
+    // translation rather than measuring that the strings moved.
+    $inEnglish = conversationQueueLanguageVisibleText(
+        $this->actingAs($world['agents']['en'])->get(route('dashboard.conversations.index'))->getContent()
+    );
+
+    expect($inEnglish)->toContain('Latest visitor message')
+        ->and($inEnglish)->toContain('Waiting on reply for')
+        ->and($inEnglish)->not->toContain('Letzte Besuchernachricht');
+});
+
+test('every column header is translated, read from the header row itself', function (): void {
+    // The comparison test cannot judge these: every header is shorter than its
+    // 10-character floor, and lowering that would sweep in names, numbers and
+    // markup fragments.
+    //
+    // Read from `<th>` rather than from the page text, which is the whole
+    // point. Asserting that the German page merely CONTAINS `Besucher` passes
+    // while the header still says `Visitor`, because the word appears in the
+    // search hint, in a lane label and in the visitor column -- a mutation of
+    // that header survived exactly that assertion.
+    $world = conversationQueueLanguageWorld();
+
+    $headersOf = function (User $agent): array {
+        $html = (string) $this->actingAs($agent)
+            ->get(route('dashboard.conversations.index'))
+            ->getContent();
+
+        preg_match_all('/<th\b[^>]*scope="col"[^>]*>(.*?)<\/th>/is', $html, $matches);
+
+        return array_map(fn (string $header): string => trim(strip_tags($header)), $matches[1]);
+    };
+
+    $inEnglish = $headersOf($world['agents']['en']);
+    $inGerman = $headersOf($world['agents']['de']);
+
+    expect($inEnglish)->not->toBe([])
+        ->and($inGerman)->toHaveCount(count($inEnglish));
+
+    foreach ($inEnglish as $index => $header) {
+        // `Cobrowse` is the product's own word and reads the same in both
+        // languages, correctly.
+        if ($header === 'Cobrowse') {
+            continue;
+        }
+
+        expect($inGerman[$index])->not->toBe($header, "column header not translated: {$header}");
+    }
+});
+
+test('the queue claims to be translated, so a screen reader is told the truth', function (): void {
+    // The layout marks a page English until its surface says otherwise, so an
+    // extracted surface that forgets to claim it is announced as English while
+    // reading German -- the same wrong answer as the default, in the other
+    // direction.
+    $world = conversationQueueLanguageWorld();
+
+    $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.index'))
+        ->assertOk()
+        ->assertSee('<html lang="de"', false);
+
+    $this->actingAs($world['agents']['en'])
+        ->get(route('dashboard.conversations.index'))
+        ->assertOk()
+        ->assertSee('<html lang="en"', false);
 });

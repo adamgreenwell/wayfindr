@@ -1,4 +1,4 @@
-<x-layouts.app :title="__('conversations.document_title')" :agent="$agent" :account="$account">
+<x-layouts.app :title="__('conversations.document_title')" :translated="true" :agent="$agent" :account="$account">
             {{-- One whole sentence per language, not a clause glued to ' for '. --}}
             <x-page-header
                 :title="__('conversations.document_title')"
@@ -153,14 +153,14 @@
                         <table class="wf-queue">
                             <thead>
                                 <tr>
-                                    <th scope="col">Subject</th>
-                                    <th scope="col">Site</th>
-                                    <th scope="col">Visitor</th>
-                                    <th scope="col">Attention</th>
-                                    <th scope="col">Read</th>
-                                    <th scope="col">Cobrowse</th>
-                                    <th scope="col">Assigned</th>
-                                    <th scope="col">Timing</th>
+                                    <th scope="col">{{ __('conversations.columns.subject') }}</th>
+                                    <th scope="col">{{ __('conversations.columns.site') }}</th>
+                                    <th scope="col">{{ __('conversations.columns.visitor') }}</th>
+                                    <th scope="col">{{ __('conversations.columns.attention') }}</th>
+                                    <th scope="col">{{ __('conversations.columns.read') }}</th>
+                                    <th scope="col">{{ __('conversations.columns.cobrowse') }}</th>
+                                    <th scope="col">{{ __('conversations.columns.assigned') }}</th>
+                                    <th scope="col">{{ __('conversations.columns.timing') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -193,7 +193,7 @@
                                                     :code="$conversation->support_code"
                                                     :href="route('dashboard.support-code.lookup', ['support_code' => $conversation->support_code])"
                                                 />
-                                                &middot; {{ $activityPreview['label'] }}@if ($activityPreview['occurred_at']) &middot; <time datetime="{{ $activityPreview['occurred_at']->toJSON() }}">Activity {{ $activityPreview['occurred_at']->diffForHumans() }}</time>@endif &middot; {{ $activityPreview['body'] }}
+                                                &middot; {{ $activityPreview['label'] }}@if ($activityPreview['occurred_at']) &middot; <time datetime="{{ $activityPreview['occurred_at']->toJSON() }}">{{ __('conversations.row.activity', ['elapsed' => $activityPreview['occurred_at']->diffForHumans()]) }}</time>@endif &middot; {{ $activityPreview['body'] }}
                                             </span>
                                         </td>
                                         <td>
@@ -237,12 +237,17 @@
                                                 title="{{ $cobrowseTransport['message'] }} {{ $cobrowseTransport['guidance'] }}"
                                             >{{ $cobrowseTransport['label'] }}</span>
                                             <span class="wf-queue-preview">
-                                                Last report {{ $cobrowseTransport['last_report'] }}@if (! in_array($cobrowseTransport['pressure'], ['No drops reported', 'No recent drops reported'], true)) &middot; Pressure {{ $cobrowseTransport['pressure'] }}@endif
+                                                {{-- The LABELS here belong to this page; the values they wrap come
+                                                     from CobrowseConsentState, which is not extracted yet -- see
+                                                     docs/product/dashboard-language.md. The `in_array` below compares
+                                                     against English prose and will need to move to a state key when
+                                                     that vocabulary is translated. --}}
+                                                {{ __('conversations.row.last_report', ['value' => $cobrowseTransport['last_report']]) }}@if (! in_array($cobrowseTransport['pressure'], ['No drops reported', 'No recent drops reported'], true)) &middot; {{ __('conversations.row.pressure', ['value' => $cobrowseTransport['pressure']]) }}@endif
                                             </span>
                                         </td>
                                         <td>
                                             <span class="wf-queue-assignee" @if (! $conversation->assignedAgent) data-unassigned="true" @endif>
-                                                {{ $conversation->assignedAgent?->name ?? 'Unassigned' }}
+                                                {{ $conversation->assignedAgent?->name ?? __('conversations.row.unassigned_agent') }}
                                             </span>
                                         </td>
                                         <td class="wf-queue-when">
