@@ -106,9 +106,18 @@ class CobrowseConsentState
 
         return [
             'state' => $transport['state'],
+            // `copy` names which catalogue entry this shape means; `state` does
+            // not, because two branches both report `unavailable` with
+            // different messages. The English below stays for the surfaces that
+            // are not extracted.
+            'copy' => $transport['copy'],
+            'guidance_copy' => $transport['guidance_copy'] ?? 'guidance',
+            'has_pressure' => $transport['has_pressure'],
+            'pressure_counts' => $transport['pressure_counts'],
             'label' => $transport['label'],
             'message' => $transport['message'],
             'last_report' => $transport['last_report'],
+            'last_report_reported' => $transport['last_report_reported'],
             'pressure' => $transport['pressure'],
             'guidance' => $transport['guidance'],
             'recovery_action' => $transport['recovery_action'],
@@ -132,6 +141,10 @@ class CobrowseConsentState
         if (! $session || $session->status !== 'granted' || $session->ended_at) {
             return [
                 'state' => 'unavailable',
+                'copy' => 'inactive',
+                'last_report_reported' => false,
+                'has_pressure' => false,
+                'pressure_counts' => ['dropped_batches' => 0, 'skipped_mutations' => 0, 'has_recent_report' => false],
                 'label' => 'Unavailable',
                 'message' => 'Cobrowse transport is not active.',
                 'last_report' => 'Not reported',
@@ -152,6 +165,10 @@ class CobrowseConsentState
         if (! $latestReport) {
             return [
                 'state' => 'unavailable',
+                'copy' => 'no_reports',
+                'last_report_reported' => false,
+                'has_pressure' => $this->hasTransportPressure($pressure),
+                'pressure_counts' => $this->transportPressure->counts($metadata, $latestReport),
                 'label' => 'Unavailable',
                 'message' => 'No cobrowse transport reports have arrived yet.',
                 'last_report' => 'Not reported',
@@ -165,6 +182,10 @@ class CobrowseConsentState
         if ($latestReport->lt(now()->subSeconds(self::TRANSPORT_STALE_AFTER_SECONDS))) {
             return [
                 'state' => 'stale',
+                'copy' => 'stale',
+                'last_report_reported' => true,
+                'has_pressure' => $this->hasTransportPressure($pressure),
+                'pressure_counts' => $this->transportPressure->counts($metadata, $latestReport),
                 'label' => 'Stale',
                 'message' => 'No cobrowse report has arrived in the last 2 minutes.',
                 'last_report' => $latestReport->diffForHumans(),
@@ -178,6 +199,10 @@ class CobrowseConsentState
         if ($this->hasFreshReconnectWarning($reconnects, $telemetryReport, $latestReport)) {
             return [
                 'state' => 'reconnecting',
+                'copy' => 'reconnecting',
+                'last_report_reported' => true,
+                'has_pressure' => $this->hasTransportPressure($pressure),
+                'pressure_counts' => $this->transportPressure->counts($metadata, $latestReport),
                 'label' => 'Reconnecting',
                 'message' => 'The visitor transport has reconnected recently; preview data may briefly lag.',
                 'last_report' => $latestReport->diffForHumans(),
@@ -191,6 +216,10 @@ class CobrowseConsentState
         if ($this->hasTransportPressure($pressure)) {
             return [
                 'state' => 'degraded',
+                'copy' => 'degraded',
+                'last_report_reported' => true,
+                'has_pressure' => $this->hasTransportPressure($pressure),
+                'pressure_counts' => $this->transportPressure->counts($metadata, $latestReport),
                 'label' => 'Degraded',
                 'message' => 'Cobrowse reports are arriving, but the visitor page is changing faster than Wayfindr can fully replay.',
                 'last_report' => $latestReport->diffForHumans(),
@@ -203,6 +232,10 @@ class CobrowseConsentState
 
         return [
             'state' => 'live',
+            'copy' => 'live',
+            'last_report_reported' => true,
+            'has_pressure' => $this->hasTransportPressure($pressure),
+            'pressure_counts' => $this->transportPressure->counts($metadata, $latestReport),
             'label' => 'Live',
             'message' => 'Cobrowse reports are arriving normally.',
             'last_report' => $latestReport->diffForHumans(),
@@ -211,6 +244,10 @@ class CobrowseConsentState
             'guidance' => ! $this->hasTransportPressure($pressure)
                 ? 'Preview is current enough to use alongside chat.'
                 : 'Use chat to confirm anything that depends on fast-changing page state.',
+            // The only field in this shape whose copy is not settled by `copy`
+            // alone, so it names its own key rather than making the surface
+            // re-derive a condition it cannot see.
+            'guidance_copy' => ! $this->hasTransportPressure($pressure) ? 'guidance' : 'guidance_pressure',
             'recovery_action' => 'No recovery action needed.',
         ];
     }
@@ -262,16 +299,49 @@ class CobrowseConsentState
     {
         return [
             'requested_by' => $session->requestedBy?->name ?? 'Unknown agent',
+            // A person's name is data and is never translated. The fallback is
+            // copy and is, so the shape says which one this is.
+            'requested_by_copy' => $session->requestedBy?->name === null ? 'unknown_agent' : null,
             ...$this->momentPair('requested_at', $session->created_at),
             ...$this->momentPair('consented_at', $session->consented_at, 'Not granted yet'),
             ...$this->momentPair('ended_at', $session->ended_at, 'Still active'),
+            // A boolean, because the view's alternative is comparing against
+            // the words 'Still active' -- which stops being true the moment
+            // that fallback is translated, silently and in the direction that
+            // shows MORE than it should.
+            'has_ended' => $session->ended_at !== null,
+            // The two lifecycle moments whose fallback is a STATE rather than a
+            // time. `formatMoment` answers 'Still active' / 'Not granted yet',
+            // which the surface cannot tell from a timestamp without reading
+            // the words -- so each says which it is.
+            'ended_at_copy' => $session->ended_at === null ? 'still_active' : null,
+            'consented_at_copy' => $session->consented_at === null ? 'not_granted_yet' : null,
             'ended_by' => $this->endedByLabel($session->metadata ?? []),
+            'ended_by_copy' => $this->endedByCopy($session->metadata ?? []),
         ];
     }
 
     /**
      * @param  array<string, mixed>  $metadata
      */
+    /**
+     * Which catalogue entry `endedByLabel()` means, or null when it is a name.
+     *
+     * A person's name is data. 'Visitor' and 'Not recorded' are copy. The
+     * string alone cannot be told apart from an agent actually called
+     * "Visitor", so the shape says which it is rather than the surface
+     * guessing.
+     */
+    private function endedByCopy(array $metadata): ?string
+    {
+        // Mirrors endedByLabel() branch for branch: same key, same order.
+        if (($metadata['ended_by_type'] ?? null) === 'visitor') {
+            return 'visitor';
+        }
+
+        return filled($metadata['ended_by_name'] ?? null) ? null : 'not_recorded';
+    }
+
     private function endedByLabel(array $metadata): string
     {
         if (($metadata['ended_by_type'] ?? null) === 'visitor') {
@@ -365,10 +435,18 @@ class CobrowseConsentState
         }
 
         return [
+            // Each reading reports its raw value too. Without it a surface can
+            // only tell "no reading" from a reading by recognising the words
+            // "Not reported", which is the prose comparison this extraction
+            // exists to remove.
             'rtt' => $this->formatMilliseconds($telemetry['rtt_ms'] ?? null),
+            'rtt_value' => isset($telemetry['rtt_ms']) ? (int) $telemetry['rtt_ms'] : null,
             'max_rtt' => $this->formatMilliseconds($telemetry['max_rtt_ms'] ?? null),
+            'max_rtt_value' => isset($telemetry['max_rtt_ms']) ? (int) $telemetry['max_rtt_ms'] : null,
             'payload' => $this->formatBytes($telemetry['payload_bytes'] ?? null),
+            'payload_value' => isset($telemetry['payload_bytes']) ? (int) $telemetry['payload_bytes'] : null,
             'max_payload' => $this->formatBytes($telemetry['max_payload_bytes'] ?? null),
+            'max_payload_value' => isset($telemetry['max_payload_bytes']) ? (int) $telemetry['max_payload_bytes'] : null,
             'dropped_batches' => number_format((int) ($telemetry['dropped_batches'] ?? 0)),
             'reconnects' => number_format((int) ($telemetry['reconnects'] ?? 0)),
             'samples' => number_format((int) ($telemetry['samples'] ?? 0)),
@@ -391,6 +469,7 @@ class CobrowseConsentState
             'scroll' => $this->formatCoordinates($pageState['scroll_x'] ?? null, $pageState['scroll_y'] ?? null),
             'visibility_state' => filled($pageState['visibility_state'] ?? null) ? (string) $pageState['visibility_state'] : 'Not reported',
             'focus' => ($pageState['focused'] ?? false) ? 'Focused' : 'Not focused',
+            'focus_copy' => ($pageState['focused'] ?? false) ? 'focused' : 'not_focused',
         ];
     }
 
@@ -407,8 +486,13 @@ class CobrowseConsentState
             'title' => filled($snapshot['title'] ?? null) ? (string) $snapshot['title'] : 'Untitled page',
             'page_url' => filled($snapshot['page_url'] ?? null) ? (string) $snapshot['page_url'] : 'Not reported',
             'node_count' => number_format((int) ($snapshot['node_count'] ?? 0)).' nodes',
+            'node_count_value' => (int) ($snapshot['node_count'] ?? 0),
             'masked_count' => number_format((int) ($snapshot['masked_count'] ?? 0)).' masked',
+            'masked_count_value' => (int) ($snapshot['masked_count'] ?? 0),
             'text' => filled($snapshot['text'] ?? null) ? (string) $snapshot['text'] : 'No text preview reported.',
+            // The visitor's page text, or our copy saying there is none. The
+            // first is unknown-language content; the second is chrome.
+            'text_reported' => filled($snapshot['text'] ?? null),
             'freshness' => $this->snapshotFreshness->format($snapshot['reported_at'] ?? null),
         ];
     }
@@ -429,6 +513,7 @@ class CobrowseConsentState
         if (($resyncRequest['status'] ?? null) === 'pending') {
             return [
                 'status' => 'pending',
+                'copy' => 'pending',
                 'label' => 'Snapshot refresh already requested',
                 'message' => 'A fresh snapshot request is already waiting on the visitor widget. Use chat while it catches up.',
             ];
@@ -437,6 +522,7 @@ class CobrowseConsentState
         if ($freshnessState === 'unknown') {
             return [
                 'status' => 'unknown',
+                'copy' => 'unknown',
                 'label' => 'Snapshot time needs confirmation',
                 'message' => 'Ask the visitor what they see or request a fresh snapshot before relying on this preview.',
             ];
@@ -444,6 +530,9 @@ class CobrowseConsentState
 
         return [
             'status' => $freshnessState,
+            // `aging` and `stale` are different states that say the same thing,
+            // so the copy is named rather than duplicated per state.
+            'copy' => 'needs_refresh',
             'label' => 'Snapshot may need refresh',
             'message' => 'Request a fresh snapshot before relying on this preview, or confirm the page through chat.',
         ];
@@ -459,11 +548,18 @@ class CobrowseConsentState
         }
 
         return [
+            // The English stays for the broadcast and the console command;
+            // the raw numbers are what a surface pluralises.
             'batch_count' => number_format((int) ($mutations['batch_count'] ?? 0)).' batches',
+            'batch_count_value' => (int) ($mutations['batch_count'] ?? 0),
             'mutation_count' => number_format((int) ($mutations['mutation_count'] ?? 0)).' mutations',
+            'mutation_count_value' => (int) ($mutations['mutation_count'] ?? 0),
             'dropped_count' => number_format((int) ($mutations['dropped_count'] ?? 0)).' dropped',
+            'dropped_count_value' => (int) ($mutations['dropped_count'] ?? 0),
             'skipped_count' => number_format((int) ($mutations['skipped_count'] ?? 0)).' skipped',
+            'skipped_count_value' => (int) ($mutations['skipped_count'] ?? 0),
             'last_sequence' => 'Sequence '.number_format((int) ($mutations['last_sequence'] ?? 0)),
+            'last_sequence_value' => (int) ($mutations['last_sequence'] ?? 0),
             'last_page_url' => filled($mutations['last_page_url'] ?? null) ? (string) $mutations['last_page_url'] : 'Not reported',
         ];
     }
@@ -563,6 +659,8 @@ class CobrowseConsentState
         $timeline = [
             [
                 'state' => 'complete',
+                'copy' => 'requested',
+                'replace' => ['actor' => $requestedBy],
                 'label' => 'Snapshot requested',
                 'detail' => $requestedBy.' asked the visitor widget for a clean masked snapshot.',
                 ...$this->momentPair('occurred_at', $requestedAt, 'Request time unavailable'),
@@ -573,6 +671,7 @@ class CobrowseConsentState
         if ($fulfilledAt) {
             $timeline[] = [
                 'state' => 'complete',
+                'copy' => 'responded',
                 'label' => 'Visitor widget responded',
                 'detail' => 'A fresh cobrowse snapshot response arrived from the visitor page.',
                 ...$this->momentPair('occurred_at', $fulfilledAt, 'Receipt time unavailable'),
@@ -582,6 +681,7 @@ class CobrowseConsentState
             if ($snapshotReportedAt) {
                 $timeline[] = [
                     'state' => 'complete',
+                    'copy' => 'refreshed',
                     'label' => 'Masked snapshot refreshed',
                     'detail' => 'The clean page snapshot is available in the agent preview.',
                     ...$this->momentPair('occurred_at', $snapshotReportedAt, 'Snapshot report time unavailable'),
@@ -595,6 +695,7 @@ class CobrowseConsentState
         if ($attemptsExhaustedAt) {
             $timeline[] = [
                 'state' => 'exhausted',
+                'copy' => 'exhausted',
                 'label' => 'Retry limit reached',
                 'detail' => 'The visitor widget stopped retrying this request ID after repeated failures.',
                 ...$this->momentPair('occurred_at', $attemptsExhaustedAt, 'Retry limit time unavailable'),
@@ -607,6 +708,7 @@ class CobrowseConsentState
         if ($this->resyncRequestPolicy->isExpired($request)) {
             $timeline[] = [
                 'state' => 'expired',
+                'copy' => 'expired',
                 'label' => 'Request expired',
                 'detail' => 'No widget response arrived before the recovery window closed.',
                 ...$this->momentPair('occurred_at', $expiresAt, 'Expiry unavailable'),
@@ -619,6 +721,7 @@ class CobrowseConsentState
         if ($this->resyncRequestPolicy->isDelayedPending($request)) {
             $timeline[] = [
                 'state' => 'delayed',
+                'copy' => 'retry_available',
                 'label' => 'Retry available',
                 'detail' => 'Support can request another clean snapshot without waiting on the first request.',
                 ...$this->momentPair('occurred_at', $retryAt, 'Retry time unavailable'),
@@ -627,6 +730,7 @@ class CobrowseConsentState
 
             $timeline[] = [
                 'state' => 'pending',
+                'copy' => 'expires',
                 'label' => 'Request expires',
                 'detail' => 'Wayfindr will stop advertising this stale request after the expiration window.',
                 ...$this->momentPair('occurred_at', $expiresAt, 'Expiry unavailable'),
@@ -638,6 +742,14 @@ class CobrowseConsentState
 
         $timeline[] = [
             'state' => 'pending',
+            'copy' => 'waiting',
+            // The fallback is a different SENTENCE, not a missing word, so the
+            // item names which one it means rather than leaving the surface to
+            // interpolate 'when the retry window opens' into a slot shaped for
+            // a duration.
+            'detail_copy' => $retryAt ? 'detail' : 'detail_unknown',
+            'replace' => ['elapsed' => $this->formatMoment($retryAt, 'when the retry window opens')],
+            'replace_language' => $this->momentLanguage($retryAt),
             'label' => 'Waiting on visitor widget',
             'detail' => 'Retry opens '.$this->formatMoment($retryAt, 'when the retry window opens').'.',
             ...$this->momentPair('occurred_at', $retryAt, 'Retry time unavailable'),
@@ -663,6 +775,8 @@ class CobrowseConsentState
 
             $timeline[] = [
                 'state' => 'ignored',
+                'copy' => 'ignored',
+                'replace' => ['reason' => (string) ($ignoredResponse['reason'] ?? 'unknown')],
                 'label' => 'Snapshot response ignored',
                 'detail' => $this->ignoredResyncResponseDetail((string) ($ignoredResponse['reason'] ?? 'unknown')),
                 ...$this->momentPair(

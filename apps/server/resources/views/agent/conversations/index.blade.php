@@ -248,26 +248,24 @@
                                         </td>
                                         <td>
                                             @php
-                                                // Every string CobrowseConsentState supplies is still English --
-                                                // the recorded exception in docs/product/dashboard-language.md --
-                                                // and it is being rendered inside a region marked with the agent's
-                                                // language, so each piece has to say what it actually is.
-                                                //
-                                                // The label, message and guidance are wholly English, so the
-                                                // element carrying them is marked. The two below are mixed: a
-                                                // German label wrapping an English value, in one sentence whose
-                                                // word order the catalogue owns. Splitting the sentence to wrap
-                                                // the value would be exactly the fragment concatenation this
-                                                // extraction refuses, so the marked value is passed IN as the
-                                                // placeholder -- escaped here, with only our own catalogue string
-                                                // rendered unescaped around it.
+                                                // The label, message and guidance are translated now, so the
+                                                // element carrying them no longer claims English. The two below
+                                                // are mixed: a German label wrapping a value that may be English,
+                                                // in one sentence whose word order the catalogue owns. Splitting
+                                                // the sentence to wrap the value would be exactly the fragment
+                                                // concatenation this extraction refuses, so the marked value is
+                                                // passed IN as the placeholder -- escaped here, with only our own
+                                                // catalogue string rendered unescaped around it.
                                                 $marked = fn (string $value, string $language): string => '<span lang="'
                                                     .e(str_replace('_', '-', $language))
                                                     .'">'.e($value).'</span>';
 
-                                                // `pressure` is always English: English words, and an English
-                                                // pluraliser building "2 dropped batches".
+                                                // `pressure` is still English: English words, and an English
+                                                // pluraliser building "2 dropped batches". It belongs to
+                                                // CobrowseTransportPressure, which is not extracted yet.
                                                 $englishValue = \App\Support\DashboardLanguage::FALLBACK;
+
+                                                $transportCopy = $cobrowseTransport['copy'] ?? 'inactive';
 
                                                 // `last_report` is NOT. It is the static "Not reported" only in
                                                 // the `unavailable` state; every other state builds it with
@@ -284,17 +282,13 @@
                                             @endphp
                                             <span
                                                 class="wf-queue-cobrowse"
-                                                lang="{{ str_replace('_', '-', \App\Support\DashboardLanguage::FALLBACK) }}"
                                                 @if ($cobrowseTransport['tone'] !== 'manual')
                                                     data-tone="{{ $cobrowseTransport['tone'] === 'ready' ? 'live' : 'attention' }}"
                                                 @endif
-                                                title="{{ $cobrowseTransport['message'] }} {{ $cobrowseTransport['guidance'] }}"
-                                            >{{ $cobrowseTransport['label'] }}</span>
+                                                title="{{ __('cobrowse.transport.'.$transportCopy.'.message') }} {{ __('cobrowse.transport.'.$transportCopy.'.'.($cobrowseTransport['guidance_copy'] ?? 'guidance')) }}"
+                                            >{{ __('cobrowse.transport.'.$transportCopy.'.label') }}</span>
                                             <span class="wf-queue-preview">
-                                                {{-- The `in_array` below compares against English prose and will
-                                                     need to move to a state key when that vocabulary is
-                                                     extracted. --}}
-                                                {!! __('conversations.row.last_report', ['value' => $marked($cobrowseTransport['last_report'], $lastReportValue)]) !!}@if (! in_array($cobrowseTransport['pressure'], ['No drops reported', 'No recent drops reported'], true)) &middot; {!! __('conversations.row.pressure', ['value' => $marked($cobrowseTransport['pressure'], $englishValue)]) !!}@endif
+                                                {!! __('conversations.row.last_report', ['value' => $marked($cobrowseTransport['last_report'], $lastReportValue)]) !!}@if ($cobrowseTransport['has_pressure'] ?? false) &middot; {!! __('conversations.row.pressure', ['value' => $marked($cobrowseTransport['pressure'], $englishValue)]) !!}@endif
                                             </span>
                                         </td>
                                         <td>

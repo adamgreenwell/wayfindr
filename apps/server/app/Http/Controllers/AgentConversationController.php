@@ -111,6 +111,30 @@ class AgentConversationController extends Controller
                     'unseen' => __('conversations.detail.reply.not_seen'),
                 ],
                 'lastSeenUnknown' => __('conversations.detail.context.not_reported'),
+                // Snapshot freshness is BROADCAST as prose by
+                // CobrowseStateUpdated, built in whichever agent's request
+                // created the event. The page reads `state` and writes its own
+                // words, same rule as presence and read receipts.
+                'freshness' => [
+                    'unknown' => [
+                        'label' => __('cobrowse.freshness.unknown.label'),
+                        'message' => __('cobrowse.freshness.unknown.message'),
+                    ],
+                    'stale' => [
+                        'label' => __('cobrowse.freshness.stale.label'),
+                        'message' => __('cobrowse.freshness.stale.message'),
+                    ],
+                    'aging' => [
+                        'label' => __('cobrowse.freshness.aging.label'),
+                        'message' => __('cobrowse.freshness.aging.message'),
+                    ],
+                    'fresh' => [
+                        'label' => __('cobrowse.freshness.fresh.label'),
+                        'message' => __('cobrowse.freshness.fresh.message'),
+                    ],
+                    'reported' => __('cobrowse.freshness.reported'),
+                    'reportedUnknown' => __('cobrowse.freshness.reported_unknown'),
+                ],
                 // A broadcast payload reaches every agent watching, so any
                 // duration formatted server-side is frozen in whichever agent's
                 // request happened to build it. The payload therefore carries a
