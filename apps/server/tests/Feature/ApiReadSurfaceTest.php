@@ -454,3 +454,91 @@ test('a cursor value that cannot be compared to its column is a 422', function (
         '_pointsToNextItems' => true,
     ])))->assertOk();
 });
+
+test('a cursor with no direction marker is a 422, not a 500', function (): void {
+    // Every check before this one ran AFTER `Cursor::fromEncoded()` had built a
+    // cursor -- and a payload with no `_pointsToNextItems` never becomes one:
+    // `fromEncoded()` returns null, which the paginator reads as NO cursor, so
+    // the client silently gets page one again with a 200. That is the whole
+    // bug this rule exists to prevent, arriving through the only door it did
+    // not cover. A non-bool marker gets through `fromEncoded()` instead and
+    // then decides the walk direction by truthiness, which is its own quiet
+    // wrong answer.
+    $w = readWorld();
+
+    $encode = fn (array $payload): string => str_replace(['+', '/', '='], ['-', '_', ''], base64_encode(json_encode($payload)));
+
+    $bad = [
+        ['created_at' => '2026-08-23 10:00:00', 'id' => 5],
+        ['created_at' => '2026-08-23 10:00:00', 'id' => 5, '_pointsToNextItems' => 'yes'],
+        ['created_at' => '2026-08-23 10:00:00', 'id' => 5, '_pointsToNextItems' => 1],
+        ['created_at' => '2026-08-23 10:00:00', 'id' => 5, '_pointsToNextItems' => null],
+    ];
+
+    foreach ($bad as $payload) {
+        readGet($this, $w, '/api/v1/conversations?cursor='.urlencode($encode($payload)))->assertStatus(422);
+        readGet($this, $w, '/api/v1/tickets?cursor='.urlencode($encode($payload)))->assertStatus(422);
+    }
+
+    readGet($this, $w, '/api/v1/conversations/WF-MINE01/messages?cursor='.urlencode($encode($bad[0])))->assertStatus(422);
+});
+
+test('a cursor carrying a relative date expression is a 422', function (): void {
+    // Carbon parses far more than a timestamp column accepts. `first day of
+    // next month` and `@1755950000` both parse happily, but the ORIGINAL
+    // string is what gets bound to the query, and PostgreSQL rejects it. So
+    // the check is the emitted format, not "can Carbon read this".
+    $w = readWorld();
+
+    $encode = fn (string $createdAt): string => str_replace(['+', '/', '='], ['-', '_', ''], base64_encode(json_encode([
+        'created_at' => $createdAt,
+        'id' => 5,
+        '_pointsToNextItems' => true,
+    ])));
+
+    foreach (['first day of next month', '@1755950000', 'now', 'tomorrow', '+1 day', '2026', 'next friday'] as $expression) {
+        readGet($this, $w, '/api/v1/conversations?cursor='.urlencode($encode($expression)))->assertStatus(422);
+    }
+
+    // The shapes the paginator actually emits still pass, including the
+    // microsecond and offset forms a driver may hand back.
+    foreach ([
+        '2026-08-23 10:00:00',
+        '2026-08-23 10:00:00.123456',
+        '2026-08-23T10:00:00',
+        '2026-08-23T10:00:00.123456Z',
+        '2026-08-23T10:00:00+02:00',
+    ] as $emitted) {
+        readGet($this, $w, '/api/v1/conversations?cursor='.urlencode($encode($emitted)))->assertOk();
+    }
+});
+
+test('a cursor carrying a boolean id is a 422, not a silent reposition', function (): void {
+    // The nastiest of the set, because it does not fail -- it succeeds at the
+    // wrong place. `(string) true` is `"1"`, which passes every key check, and
+    // Laravel binds it as 1, so the client walks the list from a row it never
+    // asked for and never learns that it did.
+    $w = readWorld();
+
+    $encode = fn (mixed $id): string => str_replace(['+', '/', '='], ['-', '_', ''], base64_encode(json_encode([
+        'created_at' => '2026-08-23 10:00:00',
+        'id' => $id,
+        '_pointsToNextItems' => true,
+    ])));
+
+    foreach ([true, false] as $id) {
+        readGet($this, $w, '/api/v1/conversations?cursor='.urlencode($encode($id)))->assertStatus(422);
+        readGet($this, $w, '/api/v1/tickets?cursor='.urlencode($encode($id)))->assertStatus(422);
+        readGet($this, $w, '/api/v1/visitors?cursor='.urlencode($encode($id)))->assertStatus(422);
+    }
+
+    // A fractional float is the same shape of accident by a different route:
+    // `(string) 5.7` is `"5.7"`, which is not a key. Note there is no 5.0 case
+    // here -- `json_encode(5.0)` emits `5`, so a whole float is genuinely an
+    // integer by the time it arrives and refusing it would refuse a real id.
+    readGet($this, $w, '/api/v1/conversations?cursor='.urlencode($encode(5.7)))->assertStatus(422);
+
+    // And a real id is still a real id.
+    readGet($this, $w, '/api/v1/conversations?cursor='.urlencode($encode(5)))->assertOk();
+    readGet($this, $w, '/api/v1/conversations?cursor='.urlencode($encode('5')))->assertOk();
+});
