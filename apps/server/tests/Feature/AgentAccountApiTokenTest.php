@@ -540,3 +540,32 @@ test('revoking twice keeps the moment it was actually disabled', function (): vo
     expect($token->fresh()->revoked_at->timestamp)->toBe($revokedAt->timestamp)
         ->and(AuditEvent::query()->where('action', 'api_token.revoked')->count())->toBe(1);
 });
+
+test('a non-admin cannot tell an existing token id from a made-up one', function (): void {
+    // Model binding resolves before the controller runs, so type-hinting the
+    // model gave a non-admin 404 for an id that does not exist and 403 for one
+    // that does -- the same oracle the check order closes, one layer above
+    // where reordering inside the controller can reach it.
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+
+    $real = ApiToken::factory()->create(['account_id' => $account->id]);
+
+    $existing = $this->actingAs($agent)->delete(route('dashboard.account.api-tokens.destroy', $real));
+    $invented = $this->actingAs($agent)->delete(route('dashboard.account.api-tokens.destroy', $real->id + 9_999));
+
+    expect($existing->status())->toBe(403)
+        ->and($invented->status())->toBe(403)
+        ->and($real->fresh()->revoked_at)->toBeNull();
+});
+
+test('an admin cannot tell another account token from a made-up one either', function (): void {
+    $w = tokenAdmin();
+    $theirs = ApiToken::factory()->create();
+
+    $other = $this->actingAs($w['admin'])->delete(route('dashboard.account.api-tokens.destroy', $theirs));
+    $invented = $this->actingAs($w['admin'])->delete(route('dashboard.account.api-tokens.destroy', $theirs->id + 9_999));
+
+    expect($other->status())->toBe(404)
+        ->and($invented->status())->toBe(404);
+});

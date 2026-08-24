@@ -27,7 +27,7 @@ class VisitorController extends Controller
             'external_id' => ['nullable', 'string', 'max:255'],
             'email' => ['nullable', 'string', 'max:255'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
-            'cursor' => ['nullable', 'string', new DecodableCursor],
+            'cursor' => ['nullable', 'string', new DecodableCursor(['created_at', 'id'])],
         ]);
 
         $visitors = Visitor::query()

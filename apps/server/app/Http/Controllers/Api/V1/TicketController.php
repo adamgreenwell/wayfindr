@@ -23,7 +23,7 @@ class TicketController extends Controller
             'site_id' => ['nullable', 'integer'],
             'status' => ['nullable', 'string', 'in:open,pending,closed'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
-            'cursor' => ['nullable', 'string', new DecodableCursor],
+            'cursor' => ['nullable', 'string', new DecodableCursor(['created_at', 'id'])],
         ]);
 
         $tickets = Ticket::query()

@@ -155,22 +155,30 @@ class AgentAccountApiTokenController extends Controller
                 : 'API token created. Copy it now — it cannot be shown again.');
     }
 
-    public function destroy(Request $request, ApiToken $apiToken): RedirectResponse
+    /**
+     * The id arrives RAW, not model-bound.
+     *
+     * Type-hinting `ApiToken` would have Laravel resolve it before this method
+     * runs, so a non-admin probing ids would get 404 for one that does not
+     * exist and 403 for one that does -- the same enumeration oracle the check
+     * order below closes, reintroduced a layer above where no reordering inside
+     * the controller can reach it.
+     */
+    public function destroy(Request $request, string $apiToken): RedirectResponse
     {
         $agent = $request->user();
         $account = $agent->account()->firstOrFail();
 
         // Authority FIRST, so a non-admin learns nothing from which refusal
-        // they get. Checking the account first meant an agent -- who is
-        // deliberately barred from even seeing this list -- got 403 for a token
-        // belonging to their account and 404 for one that did not, and token
-        // ids are sequential. That is an enumeration oracle for exactly the
-        // person the page is hidden from.
+        // they get -- including whether the id exists at all.
         abort_unless($agent->isAdmin(), 403);
 
-        // 404 rather than 403 for another account's token: for somebody who IS
-        // an admin here, the id should still not confirm anything.
-        abort_unless((int) $apiToken->account_id === (int) $account->id, 404);
+        $apiToken = ApiToken::query()->whereKey($apiToken)->first();
+
+        // 404 for a token that does not exist and for one belonging to another
+        // account, identically: for somebody who IS an admin here, the id
+        // should still not confirm anything.
+        abort_if($apiToken === null || (int) $apiToken->account_id !== (int) $account->id, 404);
 
         // Already revoked is a no-op. A replayed DELETE would otherwise stamp
         // the retry time over the moment the credential was actually disabled

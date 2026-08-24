@@ -365,3 +365,19 @@ test('a corrupted cursor is refused, not silently restarted', function (): void 
         readGet($this, $w, '/api/v1/conversations?per_page=1&cursor='.urlencode($cursor))->assertOk();
     }
 });
+
+test('a decodable cursor missing its ordering columns is a 422, not a 500', function (): void {
+    // `Cursor::fromEncoded()` returns a cursor for any decodable JSON object,
+    // so this one passes a decode check and then fails inside cursorPaginate()
+    // reaching for a column that is not there -- turning a malformed parameter
+    // into a server error where the contract promises a 422.
+    $w = readWorld();
+
+    $crafted = str_replace(['+', '/', '='], ['-', '_', ''], base64_encode(json_encode(['_pointsToNextItems' => true])));
+
+    foreach (['conversations', 'tickets', 'visitors'] as $collection) {
+        readGet($this, $w, '/api/v1/'.$collection.'?cursor='.urlencode($crafted))->assertStatus(422);
+    }
+
+    readGet($this, $w, '/api/v1/conversations/WF-MINE01/messages?cursor='.urlencode($crafted))->assertStatus(422);
+});
