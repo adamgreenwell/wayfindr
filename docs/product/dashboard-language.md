@@ -241,6 +241,26 @@ The general rule: **any view that renders a flash should call `__()` on it.**
 `__()` returns a non-key string unchanged, so it costs nothing on surfaces that
 flash literals and prevents a raw key from ever reaching a page.
 
+### Content that is stored is not content that is rendered
+
+The sharpest version of the rule this whole document circles.
+
+A ticket's subject and description are written **once** and read by everyone:
+other agents on other language settings, notification emails, the API, and
+whatever external issue tracker the account has linked. Generating them in the
+creating agent's language puts one person's dashboard preference into shared
+data permanently, where nothing can translate it back — the agent who picked
+German has decided what an English colleague reads next year.
+
+`DashboardLanguage::forStoredContent()` names the distinction: the **install's**
+own language, which is what every unextracted surface already renders and does
+not change with whoever pressed the button.
+
+The test to reach for: create the record as a German agent, and assert the
+stored value is the install's language *and specifically not* the German. The
+second half matters — without it the assertion passes on an English-only
+install, which is every install today.
+
 ### A write answers in the language of the page it renders back to
 
 Listing a write route beside its own page works only while the endpoint serves

@@ -1533,6 +1533,43 @@ test('every extracted page translates its document title', function (): void {
     }
 });
 
+test('a ticket is stored in the install language, not the creating agent\'s', function (): void {
+    // A ticket's subject and description are written once and read by everyone:
+    // other agents on other language settings, notification emails, the API,
+    // and whatever external issue tracker the account has linked. Generating
+    // them in the creating agent's language puts one person's dashboard
+    // preference into shared data permanently, where nothing translates it back.
+    $world = conversationQueueLanguageWorld();
+
+    // A conversation with no subject and no messages, so BOTH fallbacks fire.
+    $bare = Conversation::factory()
+        ->for($world['site'])
+        ->for(Visitor::factory()->for($world['site'])->create(['anonymous_id' => 'anon-stored']))
+        ->create(['support_code' => 'WF-LANGSTORED', 'subject' => '', 'status' => 'open']);
+
+    $this->actingAs($world['agents']['de'])
+        ->from(route('dashboard.conversations.show', $bare->support_code))
+        ->post(route('dashboard.conversations.tickets.store', $bare->support_code), [
+            'priority' => 'normal',
+        ])
+        ->assertRedirect();
+
+    $ticket = $bare->tickets()->firstOrFail();
+
+    $installLanguage = DashboardLanguage::forStoredContent();
+
+    expect($ticket->subject)->toBe(__('conversations.detail.ticket_subject_fallback',
+        ['code' => $bare->support_code], $installLanguage))
+        ->and($ticket->description)->toBe(__('conversations.detail.ticket_from_conversation',
+            ['code' => $bare->support_code], $installLanguage));
+
+    // And specifically NOT the German the creating agent was reading.
+    expect($ticket->subject)->not->toBe(__('conversations.detail.ticket_subject_fallback',
+        ['code' => $bare->support_code], 'de'))
+        ->and($ticket->description)->not->toBe(__('conversations.detail.ticket_from_conversation',
+            ['code' => $bare->support_code], 'de'));
+});
+
 test('the realtime handlers hard-code no copy of their own', function (): void {
     // This reads the source rather than the page, which is unusual and is the
     // point: the realtime handlers only run when a broadcast arrives, so no

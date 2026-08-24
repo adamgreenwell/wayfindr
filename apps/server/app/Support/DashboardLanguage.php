@@ -123,6 +123,25 @@ final class DashboardLanguage
     }
 
     /**
+     * The language for content that is STORED rather than rendered.
+     *
+     * A ticket's subject and description are written once and read by everyone
+     * -- other agents on other language settings, notification emails, the API,
+     * and whatever external issue tracker the account has linked. Generating
+     * them in the creating agent's language puts one person's dashboard
+     * preference into shared data permanently, where nothing can translate it
+     * back.
+     *
+     * The install's own language is the neutral answer: it is what every
+     * unextracted surface already renders, and it does not change with whoever
+     * happened to press the button.
+     */
+    public static function forStoredContent(): string
+    {
+        return self::for(null);
+    }
+
+    /**
      * The locale to render for this agent, always something we can render.
      *
      * Null preference means the install default rather than a broken page --

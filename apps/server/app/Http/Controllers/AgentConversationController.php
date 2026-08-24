@@ -15,6 +15,7 @@ use App\Support\CobrowseConsentState;
 use App\Support\CobrowseResyncRequestPolicy;
 use App\Support\Conversations\ConversationLifecycleLog;
 use App\Support\Conversations\ConversationQueueQuery;
+use App\Support\DashboardLanguage;
 use App\Support\Mail\ConversationReplyMailer;
 use App\Support\ReplyTemplateOptions;
 use App\Support\TicketCategory;
@@ -583,7 +584,9 @@ class AgentConversationController extends Controller
             'status' => 'open',
             'priority' => $validated['priority'] ?? 'normal',
             'category' => $validated['category'] ?? null,
-            'subject' => $conversation->subject ?: __('conversations.detail.ticket_subject_fallback', ['code' => $conversation->support_code]),
+            // Stored, not rendered: see DashboardLanguage::forStoredContent().
+            'subject' => $conversation->subject ?: __('conversations.detail.ticket_subject_fallback',
+                ['code' => $conversation->support_code], DashboardLanguage::forStoredContent()),
             'description' => $this->ticketDescription($conversation),
             'metadata' => [
                 'source' => 'conversation',
@@ -942,7 +945,7 @@ class AgentConversationController extends Controller
 
                 $senderName = $message->sender_type === User::class
                     ? ($message->sender?->name ?? 'Agent')
-                    : __('conversations.detail.visitor_actor');
+                    : __('conversations.detail.visitor_actor', [], DashboardLanguage::forStoredContent());
 
                 return $senderName.': '.$body;
             })
@@ -950,7 +953,8 @@ class AgentConversationController extends Controller
             ->implode(PHP_EOL.PHP_EOL);
 
         if ($messages === '') {
-            return __('conversations.detail.ticket_from_conversation', ['code' => $conversation->support_code]);
+            return __('conversations.detail.ticket_from_conversation',
+                ['code' => $conversation->support_code], DashboardLanguage::forStoredContent());
         }
 
         return $messages;
