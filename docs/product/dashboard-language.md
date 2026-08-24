@@ -143,13 +143,16 @@ audited** — it fails when a surface is extracted without being added, which is
 exactly how the ticket queue got its states. The catalogue list has no such
 check yet and is worth one when a fifth catalogue lands.
 
-### An element cannot go inside an attribute
+### An element cannot go inside an attribute, or inside an `<option>`
 
-A bulk edit that wraps every `__()` on a page in a language marker will break
-one of them, because one of them is always in a `title`:
+Two containers take **text only**, and a language marker put inside either of
+them looks correct and does nothing.
+
+A bulk edit that wraps every `__()` on a page will break an attribute, because
+one of them is always in a `title`:
 
 ```blade
-title="<x-lang>{{ __('...') }}</x-lang>"   {{-- the span's quote closes `title` --}}
+title="<x-lang>{{ __('...') }}</x-lang>"   {{-- the span's quote closes title --}}
 ```
 
 Every attribute after it is then parsed as fallback text. On the cobrowse
@@ -157,10 +160,17 @@ Every attribute after it is then parsed as fallback text. On the cobrowse
 the preview rendered blank and the realtime script could not find the frame. It
 looks like a formatting change and it is a functional outage.
 
-**An attribute takes its language from its element**, so the marker goes on the
-element and the attribute stays a plain translated string. Guarded by
-`no language marker is rendered inside an attribute`, which scans every Blade
-file for element markup inside a quoted attribute value.
+An `<option>` fails more quietly. `<option><span lang="">{{ $site->name }}</span></option>`
+parses to the text alone — the span is discarded, the name inherits the document
+language, and nothing anywhere reports a problem.
+
+**Both take the attribute on the element itself.** Guarded by `no language
+marker is rendered inside an attribute`, which scans every Blade file for
+element markup inside a quoted attribute value *and* inside an `<option>`.
+
+*(The guard strips Blade comments first: its own documentation says the word
+`<option>`, and the regex matched from inside that comment to the real closing
+tag.)*
 
 ### A value and its language travel together or not at all
 

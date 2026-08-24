@@ -1947,6 +1947,33 @@ test('no language marker is rendered inside an attribute', function (): void {
     }
 
     expect($offenders)->toBe([], 'element markup rendered inside an attribute value');
+
+    // Same trap, different container. An <option> takes TEXT content only, so a
+    // nested <span lang=""> is dropped by the parser and the value inherits the
+    // document language after all -- the markup looks right and does nothing.
+    // The attribute belongs on the <option> itself.
+    $inOptions = [];
+
+    foreach (File::allFiles(resource_path('views')) as $file) {
+        if ($file->getExtension() !== 'php') {
+            continue;
+        }
+
+        // Blade comments stripped first: this very guard is documented in a
+        // comment that says the word `<option>`, and the regex matched from
+        // inside it to the real closing tag.
+        $contents = preg_replace('/\{\{--.*?--\}\}/s', '', $file->getContents()) ?? '';
+
+        if (preg_match_all('/<option\b[^>]*>(.*?)<\/option>/is', $contents, $found) > 0) {
+            foreach ($found[1] as $content) {
+                if (preg_match('/<[a-z]/i', $content) === 1) {
+                    $inOptions[] = $file->getRelativePathname().': '.trim(preg_replace('/\s+/', ' ', $content));
+                }
+            }
+        }
+    }
+
+    expect($inOptions)->toBe([], 'element markup inside an <option>, which only takes text');
 });
 
 test('a cobrowse timestamp never travels without its language', function (): void {

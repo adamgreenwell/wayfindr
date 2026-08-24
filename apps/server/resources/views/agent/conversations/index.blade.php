@@ -83,9 +83,11 @@
                         <select id="conversation_site" name="conversation_site">
                             <option value="">{{ __('conversations.sites.any') }}</option>
                             @foreach ($sites as $site)
-                                <option value="{{ $site->id }}" @selected($conversationSite === $site->id)>
-                                    <span lang="">{{ $site->name }}</span>
-                                </option>
+                                {{-- `lang` on the option itself: an <option> takes text
+                                     content only, so a nested element is dropped by the
+                                     parser and the name would inherit the document
+                                     language after all. --}}
+                                <option value="{{ $site->id }}" lang="" @selected($conversationSite === $site->id)>{{ $site->name }}</option>
                             @endforeach
                         </select>
                     </div>

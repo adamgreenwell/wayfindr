@@ -708,7 +708,8 @@
                     @if ($visitorContext['reason'])
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.context.about') }}</span>
-                            <span class="meta-value">{{ $visitorContext['reason'] }}</span>
+                            {{-- The visitor's own words, typed before the conversation started. --}}
+                            <span class="meta-value" lang="">{{ $visitorContext['reason'] }}</span>
                         </div>
                     @endif
                     <div class="meta-item">
@@ -811,8 +812,11 @@
                             <tbody>
                                 @foreach ($visitorContext['host_context'] as $field => $value)
                                     <tr>
-                                        <td>{{ $field }}</td>
-                                        <td>{{ $value }}</td>
+                                        {{-- Host context is whatever the customer's own
+                                             site chose to send: their field names, their
+                                             values, their language. --}}
+                                        <td lang="">{{ $field }}</td>
+                                        <td lang="">{{ $value }}</td>
                                     </tr>
                                 @endforeach
                             </tbody>
