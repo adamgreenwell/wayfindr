@@ -143,6 +143,73 @@ audited** — it fails when a surface is extracted without being added, which is
 exactly how the ticket queue got its states. The catalogue list has no such
 check yet and is worth one when a fifth catalogue lands.
 
+### Marking a half-extracted surface: state the majority, reset the minority
+
+A surface part-way through extraction has translated chrome around untranslated
+values, and assistive technology has to be told which is which. There are two
+ways to do it and only one of them is safe.
+
+Marking each untranslated **value** looks tidier and is wrong: it is complete
+only if you find every English fragment, and you will not. The cobrowse panel
+had thirty-five English values, and marking all of them still left bare chrome
+words — `Received`, `Expires`, `Expired` — sitting in the markup between a label
+and its timestamp, announced as German the moment the panel-level marker came
+off.
+
+So the region **states its own majority language**, and every translated
+fragment inside resets to the document's:
+
+```blade
+<x-tab-panel id="cobrowse" lang="en">
+    <h2><x-lang>{{ __('conversations.detail.tabs.cobrowse') }}</x-lang></h2>
+    <p>{{ $cobrowseConsent['message'] }}</p>   {{-- English: no marker needed --}}
+```
+
+That is complete by construction: anything missed stays English, which it is.
+The reverse approach fails silently in the direction that is hardest to see.
+
+Both failures are real and they are mirror images — marking the whole panel
+English made a screen reader pronounce the German headings with English rules;
+taking the marker off left the English chrome announced as German. The tests
+assert **both** directions, per text node with its effective language, because
+an element-level check reads a nested reset as part of the text around it.
+
+### `diffForHumans()` follows the page locale, so a model must report the language
+
+The trap under all of this. A field that looks English in the source can be
+German at runtime:
+
+```php
+'ended_at' => $this->formatMoment($session->ended_at, 'Still active'),
+```
+
+With a timestamp that is `diffForHumans()` — *"vor 20 Sekunden"* for a German
+agent. Without one it is the static English fallback. **Same field, two
+languages, decided by data the view cannot see.** Marking it English mispronounces
+the German; leaving it unmarked mispronounces the English.
+
+The view must not guess by comparing the prose. The model reports it:
+
+```php
+private function momentLanguage(mixed $moment): string
+{
+    return ! $moment || ! method_exists($moment, 'diffForHumans')
+        ? DashboardLanguage::FALLBACK
+        : app()->getLocale();
+}
+```
+
+### A broadcast carries timestamps, never durations
+
+Same rule as labels, one step further. `visitorReadPayload()` used to send
+`seen_label` — a duration formatted by `diffForHumans()` in whichever agent's
+request happened to build the broadcast. Every other agent watching then read it
+in a language they did not choose.
+
+The payload carries the **timestamp**; the page formats it with
+`Intl.RelativeTimeFormat` in the reading agent's language. Anything a broadcast
+formats is frozen at the moment it is built, so it must not be prose.
+
 ### An unreplaced placeholder is the same bug wearing a translation
 
 A sentence rendered without its parameters shows `:elapsed` or `:count` to the

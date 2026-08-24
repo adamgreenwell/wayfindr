@@ -132,14 +132,17 @@
                      extract as their own change; the headings around them are this
                      page's and are translated.
 
-                     So the panel says it is English rather than inheriting the
-                     document's language, exactly as the queue's cobrowse cell does.
+                     So the marker goes on each English VALUE, not on the panel.
+                     Marking the panel told a screen reader to pronounce the German
+                     headings inside it with English rules -- an exception that
+                     swallows the copy it was meant to sit beside. Each <x-english>
+                     below disappears when the value it wraps gains a key.
                      An exception assistive technology cannot see is a defect, not an
                      exception. See docs/product/dashboard-language.md. --}}
                 <x-tab-panel id="cobrowse" lang="{{ str_replace('_', '-', \App\Support\DashboardLanguage::FALLBACK) }}">
             <section class="section" aria-labelledby="cobrowse-heading">
                 <div class="section-header">
-                    <h2 id="cobrowse-heading">{{ __('conversations.detail.tabs.cobrowse') }}</h2>
+                    <h2 id="cobrowse-heading"><x-lang>{{ __('conversations.detail.tabs.cobrowse') }}</x-lang></h2>
                     <span class="lede">{{ $cobrowseConsent['label'] }}</span>
                 </div>
 
@@ -153,7 +156,7 @@
                         data-pending="{{ $cobrowseConsent['snapshot_recovery']['status'] === 'pending' ? 'true' : 'false' }}"
                     >
                         <div>
-                            <span class="meta-label">{{ __('conversations.detail.cobrowse.snapshot_guidance') }}</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.snapshot_guidance') }}</x-lang></span>
                             <strong data-cobrowse-snapshot-recovery-label>{{ $cobrowseConsent['snapshot_recovery']['label'] }}</strong>
                             <p class="lede" data-cobrowse-snapshot-recovery-message>{{ $cobrowseConsent['snapshot_recovery']['message'] }}</p>
                         </div>
@@ -165,7 +168,7 @@
                         @csrf
                         @include('agent.conversations.partials.return-query-fields')
 
-                        <button class="button" type="submit">{{ __('conversations.detail.cobrowse.request') }}</button>
+                        <button class="button" type="submit"><x-lang>{{ __('conversations.detail.cobrowse.request') }}</x-lang></button>
                     </form>
                 @elseif (in_array($cobrowseConsent['status'], ['pending', 'granted'], true))
                     @if ($cobrowseConsent['status'] === 'granted')
@@ -190,8 +193,8 @@
                                 @csrf
                                 @include('agent.conversations.partials.return-query-fields')
 
-                                <button class="button secondary" type="submit" disabled data-resync-retry-button>{{ __('conversations.detail.cobrowse.fresh_requested') }}</button>
-                                <p class="field-help" data-resync-retry-help>{{ __('conversations.detail.cobrowse.fresh_waiting') }}</p>
+                                <button class="button secondary" type="submit" disabled data-resync-retry-button><x-lang>{{ __('conversations.detail.cobrowse.fresh_requested') }}</x-lang></button>
+                                <p class="field-help" data-resync-retry-help><x-lang>{{ __('conversations.detail.cobrowse.fresh_waiting') }}</x-lang></p>
                             </form>
                         @else
                             <form class="section-form" method="POST" action="{{ route('dashboard.conversations.cobrowse.resync', $conversation->support_code) }}">
@@ -220,18 +223,18 @@
                         </div>
                         <span class="lede">
                             Requested by {{ $cobrowseConsent['resync_request']['requested_by'] }}
-                            {{ $cobrowseConsent['resync_request']['requested_at'] }}
+                            <span lang="{{ str_replace('_', '-', $cobrowseConsent['resync_request']['requested_at_language'] ?? \App\Support\DashboardLanguage::FALLBACK) }}">{{ $cobrowseConsent['resync_request']['requested_at'] }}</span>
                             @if (filled($cobrowseConsent['resync_request']['fulfilled_at'] ?? null))
                                 <br>
-                                Received {{ $cobrowseConsent['resync_request']['fulfilled_at'] }}
+                                Received <span lang="{{ str_replace('_', '-', $cobrowseConsent['resync_request']['fulfilled_at_language'] ?? \App\Support\DashboardLanguage::FALLBACK) }}">{{ $cobrowseConsent['resync_request']['fulfilled_at'] }}</span>
                             @endif
                             @if (filled($cobrowseConsent['resync_request']['expires_at'] ?? null))
                                 <br>
-                                Expires {{ $cobrowseConsent['resync_request']['expires_at'] }}
+                                Expires <span lang="{{ str_replace('_', '-', $cobrowseConsent['resync_request']['expires_at_language'] ?? \App\Support\DashboardLanguage::FALLBACK) }}">{{ $cobrowseConsent['resync_request']['expires_at'] }}</span>
                             @endif
                             @if (filled($cobrowseConsent['resync_request']['expired_at'] ?? null))
                                 <br>
-                                Expired {{ $cobrowseConsent['resync_request']['expired_at'] }}
+                                Expired <span lang="{{ str_replace('_', '-', $cobrowseConsent['resync_request']['expired_at_language'] ?? \App\Support\DashboardLanguage::FALLBACK) }}">{{ $cobrowseConsent['resync_request']['expired_at'] }}</span>
                             @endif
                         </span>
                     </div>
@@ -240,7 +243,7 @@
 
                 @if ($cobrowseConsent['replay_preview'])
                     <div class="section-header">
-                        <strong>{{ __('conversations.detail.cobrowse.replay_preview') }}</strong>
+                        <strong><x-lang>{{ __('conversations.detail.cobrowse.replay_preview') }}</x-lang></strong>
                         <span class="lede">
                             <span data-cobrowse-replay-applied>{{ $cobrowseConsent['replay_preview']['applied_mutations'] }}</span>
                             /
@@ -269,7 +272,7 @@
                         <div class="cobrowse-preview-scale">
                             <iframe
                                 class="cobrowse-preview"
-                                title="{{ __('conversations.detail.cobrowse.replay_heading') }}"
+                                title="<x-lang>{{ __('conversations.detail.cobrowse.replay_heading') }}</x-lang>"
                                 sandbox
                                 srcdoc="{{ $cobrowseConsent['replay_preview']['srcdoc'] }}"
                                 data-cobrowse-replay-frame
@@ -386,7 +389,7 @@
                         })();
                     </script>
                 @else
-                    <p class="empty realtime-note" data-cobrowse-replay-empty>{{ __('conversations.detail.cobrowse.no_replay') }}</p>
+                    <p class="empty realtime-note" data-cobrowse-replay-empty><x-lang>{{ __('conversations.detail.cobrowse.no_replay') }}</x-lang></p>
                 @endif
 
                 @if ($cobrowseConsent['transport'])
@@ -398,7 +401,7 @@
                     @endphp
 
                     <div class="section-header" data-cobrowse-transport-panel data-state="{{ $cobrowseConsent['transport']['state'] }}">
-                        <strong>{{ __('conversations.detail.cobrowse.transport_health') }}</strong>
+                        <strong><x-lang>{{ __('conversations.detail.cobrowse.transport_health') }}</x-lang></strong>
                         <span class="lede" data-cobrowse-transport-label>{{ $cobrowseConsent['transport']['label'] }}</span>
                     </div>
 
@@ -408,42 +411,42 @@
                 @if ($realtime)
                     <div class="live-update" data-cobrowse-update-panel data-state="idle">
                         <div>
-                            <strong>{{ __('conversations.detail.cobrowse.updates') }}</strong>
-                            <p class="lede" data-cobrowse-update-status>{{ __('conversations.detail.cobrowse.waiting') }}</p>
+                            <strong><x-lang>{{ __('conversations.detail.cobrowse.updates') }}</x-lang></strong>
+                            <p class="lede" data-cobrowse-update-status><x-lang>{{ __('conversations.detail.cobrowse.waiting') }}</x-lang></p>
                         </div>
-                        <button class="button secondary" type="button" data-cobrowse-refresh hidden>{{ __('conversations.detail.cobrowse.refresh_preview') }}</button>
+                        <button class="button secondary" type="button" data-cobrowse-refresh hidden><x-lang>{{ __('conversations.detail.cobrowse.refresh_preview') }}</x-lang></button>
                     </div>
                 @endif
 
                 {{-- Everything below is session diagnostics: useful when debugging a
                      specific cobrowse session, ambient noise otherwise. Collapsed by
                      default; the realtime script's targets stay in the DOM. --}}
-                <x-details-disclosure :summary="__('conversations.detail.context.session_diagnostics')" data-cobrowse-diagnostics>
+                <x-details-disclosure :summary="__('conversations.detail.context.session_diagnostics')" :summary-lang="app()->getLocale()" data-cobrowse-diagnostics>
                     @if ($cobrowseConsent['lifecycle'])
                         <div class="section-header">
-                            <strong>{{ __('conversations.detail.cobrowse.session_timeline') }}</strong>
+                            <strong><x-lang>{{ __('conversations.detail.cobrowse.session_timeline') }}</x-lang></strong>
                         </div>
 
                         <div class="meta-grid realtime-grid">
                             <div class="meta-item">
-                                <span class="meta-label">{{ __('conversations.detail.cobrowse.requested_by') }}</span>
+                                <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.requested_by') }}</x-lang></span>
                                 <span class="meta-value">{{ $cobrowseConsent['lifecycle']['requested_by'] }}</span>
                             </div>
                             <div class="meta-item">
-                                <span class="meta-label">{{ __('conversations.detail.cobrowse.requested') }}</span>
-                                <span class="meta-value">{{ $cobrowseConsent['lifecycle']['requested_at'] }}</span>
+                                <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.requested') }}</x-lang></span>
+                                <span class="meta-value"><span lang="{{ str_replace('_', '-', $cobrowseConsent['lifecycle']['requested_at_language'] ?? \App\Support\DashboardLanguage::FALLBACK) }}">{{ $cobrowseConsent['lifecycle']['requested_at'] }}</span></span>
                             </div>
                             <div class="meta-item">
-                                <span class="meta-label">{{ __('conversations.detail.cobrowse.consent') }}</span>
-                                <span class="meta-value">{{ $cobrowseConsent['lifecycle']['consented_at'] }}</span>
+                                <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.consent') }}</x-lang></span>
+                                <span class="meta-value"><span lang="{{ str_replace('_', '-', $cobrowseConsent['lifecycle']['consented_at_language'] ?? \App\Support\DashboardLanguage::FALLBACK) }}">{{ $cobrowseConsent['lifecycle']['consented_at'] }}</span></span>
                             </div>
                             <div class="meta-item">
-                                <span class="meta-label">{{ __('conversations.detail.cobrowse.stopped') }}</span>
-                                <span class="meta-value">{{ $cobrowseConsent['lifecycle']['ended_at'] }}</span>
+                                <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.stopped') }}</x-lang></span>
+                                <span class="meta-value"><span lang="{{ str_replace('_', '-', $cobrowseConsent['lifecycle']['ended_at_language'] ?? \App\Support\DashboardLanguage::FALLBACK) }}">{{ $cobrowseConsent['lifecycle']['ended_at'] }}</span></span>
                             </div>
                             @if ($cobrowseConsent['lifecycle']['ended_at'] !== 'Still active')
                                 <div class="meta-item">
-                                    <span class="meta-label">{{ __('conversations.detail.cobrowse.stopped_by') }}</span>
+                                    <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.stopped_by') }}</x-lang></span>
                                     <span class="meta-value">{{ $cobrowseConsent['lifecycle']['ended_by'] }}</span>
                                 </div>
                             @endif
@@ -452,8 +455,8 @@
 
                     @if (! empty($cobrowseConsent['resync_request']['recovery_timeline'] ?? []))
                         <div class="section-header">
-                            <strong>{{ __('conversations.detail.cobrowse.recovery_timeline') }}</strong>
-                            <span class="lede">{{ __('conversations.detail.cobrowse.fresh_path') }}</span>
+                            <strong><x-lang>{{ __('conversations.detail.cobrowse.recovery_timeline') }}</x-lang></strong>
+                            <span class="lede"><x-lang>{{ __('conversations.detail.cobrowse.fresh_path') }}</x-lang></span>
                         </div>
 
                         <div class="timeline-list">
@@ -474,32 +477,34 @@
 
                     @if ($cobrowseConsent['transport'])
                         <div class="section-header">
-                            <strong>{{ __('conversations.detail.cobrowse.transport_detail') }}</strong>
+                            <strong><x-lang>{{ __('conversations.detail.cobrowse.transport_detail') }}</x-lang></strong>
                         </div>
 
                         <div class="meta-grid realtime-grid">
                             <div class="meta-item">
-                                <span class="meta-label">{{ __('conversations.detail.cobrowse.state') }}</span>
+                                <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.state') }}</x-lang></span>
                                 <span class="meta-value" data-cobrowse-transport-state-label>{{ $cobrowseConsent['transport']['label'] }}</span>
                             </div>
                             <div class="meta-item">
-                                <span class="meta-label">{{ __('conversations.detail.cobrowse.last_report') }}</span>
-                                <span class="meta-value" data-cobrowse-transport-last-report>{{ $cobrowseConsent['transport']['last_report'] }}</span>
+                                <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.last_report') }}</x-lang></span>
+                                <span class="meta-value" data-cobrowse-transport-last-report><span lang="{{ str_replace('_', '-', ($cobrowseConsent['transport']['state'] ?? null) === 'unavailable'
+                                    ? \App\Support\DashboardLanguage::FALLBACK
+                                    : app()->getLocale()) }}">{{ $cobrowseConsent['transport']['last_report'] }}</span></span>
                             </div>
                             <div class="meta-item">
-                                <span class="meta-label">{{ __('conversations.detail.cobrowse.reconnects') }}</span>
+                                <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.reconnects') }}</x-lang></span>
                                 <span class="meta-value" data-cobrowse-transport-reconnects>{{ $cobrowseConsent['transport']['reconnects'] }}</span>
                             </div>
                             <div class="meta-item">
-                                <span class="meta-label">{{ __('conversations.detail.cobrowse.pressure') }}</span>
+                                <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.pressure') }}</x-lang></span>
                                 <span class="meta-value" data-cobrowse-transport-pressure>{{ $cobrowseConsent['transport']['pressure'] }}</span>
                             </div>
                             <div class="meta-item">
-                                <span class="meta-label">{{ __('conversations.detail.cobrowse.guidance') }}</span>
+                                <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.guidance') }}</x-lang></span>
                                 <span class="meta-value" data-cobrowse-transport-guidance>{{ $cobrowseConsent['transport']['guidance'] }}</span>
                             </div>
                             <div class="meta-item">
-                                <span class="meta-label">{{ __('conversations.detail.cobrowse.recovery_action') }}</span>
+                                <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.recovery_action') }}</x-lang></span>
                                 <span
                                     class="meta-value"
                                     data-cobrowse-transport-recovery
@@ -511,42 +516,42 @@
 
                 @if ($cobrowseConsent['page_state'])
                     <div class="section-header">
-                        <strong>{{ __('conversations.detail.cobrowse.visitor_page') }}</strong>
+                        <strong><x-lang>{{ __('conversations.detail.cobrowse.visitor_page') }}</x-lang></strong>
                     </div>
 
                     <div class="meta-grid realtime-grid">
                         <div class="meta-item">
-                            <span class="meta-label">{{ __('conversations.detail.ticket.title') }}</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.ticket.title') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['page_state']['title'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">{{ __('conversations.detail.cobrowse.url') }}</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.url') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['page_state']['page_url'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">{{ __('conversations.detail.cobrowse.viewport') }}</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.viewport') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['page_state']['viewport'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">{{ __('conversations.detail.cobrowse.scroll') }}</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.scroll') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['page_state']['scroll'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">{{ __('conversations.detail.reply.visibility_label') }}</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.reply.visibility_label') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['page_state']['visibility_state'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">{{ __('conversations.detail.cobrowse.focus') }}</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.focus') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['page_state']['focus'] }}</span>
                         </div>
                     </div>
                 @else
-                    <p class="empty realtime-note">{{ __('conversations.detail.context.no_page_state') }}</p>
+                    <p class="empty realtime-note"><x-lang>{{ __('conversations.detail.context.no_page_state') }}</x-lang></p>
                 @endif
 
                 @if ($cobrowseConsent['snapshot'])
                     <div class="section-header">
-                        <strong>{{ __('conversations.detail.cobrowse.page_snapshot') }}</strong>
+                        <strong><x-lang>{{ __('conversations.detail.cobrowse.page_snapshot') }}</x-lang></strong>
                         <span
                             class="readiness-status"
                             data-status="{{ $cobrowseConsent['snapshot']['freshness']['tone'] }}"
@@ -556,28 +561,28 @@
 
                     <div class="meta-grid realtime-grid">
                         <div class="meta-item">
-                            <span class="meta-label">{{ __('conversations.detail.cobrowse.snapshot_freshness') }}</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.snapshot_freshness') }}</x-lang></span>
                             <span class="meta-value" data-cobrowse-snapshot-freshness-label>{{ $cobrowseConsent['snapshot']['freshness']['label'] }}</span>
                             <span class="lede" data-cobrowse-snapshot-freshness-message>{{ $cobrowseConsent['snapshot']['freshness']['message'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">{{ __('conversations.detail.cobrowse.reported') }}</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.reported') }}</x-lang></span>
                             <span class="meta-value" data-cobrowse-snapshot-freshness-reported>{{ $cobrowseConsent['snapshot']['freshness']['reported_label'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">{{ __('conversations.detail.ticket.title') }}</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.ticket.title') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['snapshot']['title'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">{{ __('conversations.detail.cobrowse.url') }}</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.url') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['snapshot']['page_url'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">{{ __('conversations.detail.cobrowse.nodes') }}</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.nodes') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['snapshot']['node_count'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">{{ __('conversations.detail.cobrowse.masked') }}</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.masked') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['snapshot']['masked_count'] }}</span>
                         </div>
                     </div>
@@ -588,42 +593,42 @@
                         </article>
                     </div>
                 @else
-                    <p class="empty realtime-note">{{ __('conversations.detail.cobrowse.no_snapshot') }}</p>
+                    <p class="empty realtime-note"><x-lang>{{ __('conversations.detail.cobrowse.no_snapshot') }}</x-lang></p>
                 @endif
 
                 @if ($cobrowseConsent['mutation_stream'])
                     <div class="section-header">
-                        <strong>{{ __('conversations.detail.cobrowse.mutation_stream') }}</strong>
+                        <strong><x-lang>{{ __('conversations.detail.cobrowse.mutation_stream') }}</x-lang></strong>
                     </div>
 
                     <div class="meta-grid realtime-grid">
                         <div class="meta-item">
-                            <span class="meta-label">{{ __('conversations.detail.cobrowse.batches') }}</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.batches') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['mutation_stream']['batch_count'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">{{ __('conversations.detail.cobrowse.mutations') }}</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.mutations') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['mutation_stream']['mutation_count'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">{{ __('conversations.detail.cobrowse.dropped') }}</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.dropped') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['mutation_stream']['dropped_count'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">{{ __('conversations.detail.cobrowse.skipped') }}</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.skipped') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['mutation_stream']['skipped_count'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">{{ __('conversations.detail.cobrowse.last_sequence') }}</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.last_sequence') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['mutation_stream']['last_sequence'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">{{ __('conversations.detail.cobrowse.url') }}</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.url') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['mutation_stream']['last_page_url'] }}</span>
                         </div>
                     </div>
                 @else
-                    <p class="empty realtime-note">{{ __('conversations.detail.cobrowse.no_mutations') }}</p>
+                    <p class="empty realtime-note"><x-lang>{{ __('conversations.detail.cobrowse.no_mutations') }}</x-lang></p>
                 @endif
 
 
@@ -631,41 +636,41 @@
                      they live on /dashboard/readiness. --}}
 
                 <div class="section-header" data-cobrowse-telemetry-heading @if (! $cobrowseConsent['telemetry']) hidden @endif>
-                    <strong>{{ __('conversations.detail.cobrowse.telemetry') }}</strong>
+                    <strong><x-lang>{{ __('conversations.detail.cobrowse.telemetry') }}</x-lang></strong>
                 </div>
 
                 <div class="meta-grid realtime-grid" data-cobrowse-telemetry-grid @if (! $cobrowseConsent['telemetry']) hidden @endif>
                     <div class="meta-item">
-                        <span class="meta-label">{{ __('conversations.detail.cobrowse.rtt') }}</span>
-                        <span class="meta-value" data-cobrowse-telemetry-rtt>{{ $cobrowseConsent['telemetry']['rtt'] ?? __('conversations.detail.context.not_reported') }}</span>
+                        <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.rtt') }}</x-lang></span>
+                        <span class="meta-value" data-cobrowse-telemetry-rtt>@isset($cobrowseConsent['telemetry']['rtt']){{ $cobrowseConsent['telemetry']['rtt'] }}@else<x-lang>{{ __('conversations.detail.context.not_reported') }}</x-lang>@endisset</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">{{ __('conversations.detail.cobrowse.max_rtt') }}</span>
-                        <span class="meta-value" data-cobrowse-telemetry-max-rtt>{{ $cobrowseConsent['telemetry']['max_rtt'] ?? __('conversations.detail.context.not_reported') }}</span>
+                        <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.max_rtt') }}</x-lang></span>
+                        <span class="meta-value" data-cobrowse-telemetry-max-rtt>@isset($cobrowseConsent['telemetry']['max_rtt']){{ $cobrowseConsent['telemetry']['max_rtt'] }}@else<x-lang>{{ __('conversations.detail.context.not_reported') }}</x-lang>@endisset</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">{{ __('conversations.detail.cobrowse.payload') }}</span>
-                        <span class="meta-value" data-cobrowse-telemetry-payload>{{ $cobrowseConsent['telemetry']['payload'] ?? __('conversations.detail.context.not_reported') }}</span>
+                        <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.payload') }}</x-lang></span>
+                        <span class="meta-value" data-cobrowse-telemetry-payload>@isset($cobrowseConsent['telemetry']['payload']){{ $cobrowseConsent['telemetry']['payload'] }}@else<x-lang>{{ __('conversations.detail.context.not_reported') }}</x-lang>@endisset</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">{{ __('conversations.detail.cobrowse.max_payload') }}</span>
-                        <span class="meta-value" data-cobrowse-telemetry-max-payload>{{ $cobrowseConsent['telemetry']['max_payload'] ?? __('conversations.detail.context.not_reported') }}</span>
+                        <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.max_payload') }}</x-lang></span>
+                        <span class="meta-value" data-cobrowse-telemetry-max-payload>@isset($cobrowseConsent['telemetry']['max_payload']){{ $cobrowseConsent['telemetry']['max_payload'] }}@else<x-lang>{{ __('conversations.detail.context.not_reported') }}</x-lang>@endisset</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">{{ __('conversations.detail.cobrowse.dropped_batches') }}</span>
+                        <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.dropped_batches') }}</x-lang></span>
                         <span class="meta-value" data-cobrowse-telemetry-dropped-batches>{{ $cobrowseConsent['telemetry']['dropped_batches'] ?? '0' }}</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">{{ __('conversations.detail.cobrowse.reconnects') }}</span>
+                        <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.reconnects') }}</x-lang></span>
                         <span class="meta-value" data-cobrowse-telemetry-reconnects>{{ $cobrowseConsent['telemetry']['reconnects'] ?? '0' }}</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">{{ __('conversations.detail.cobrowse.samples') }}</span>
+                        <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.samples') }}</x-lang></span>
                         <span class="meta-value" data-cobrowse-telemetry-samples>{{ $cobrowseConsent['telemetry']['samples'] ?? '0' }}</span>
                     </div>
                 </div>
 
-                <p class="empty realtime-note" data-cobrowse-telemetry-empty @if ($cobrowseConsent['telemetry']) hidden @endif>{{ __('conversations.detail.cobrowse.no_telemetry') }}</p>
+                <p class="empty realtime-note" data-cobrowse-telemetry-empty @if ($cobrowseConsent['telemetry']) hidden @endif><x-lang>{{ __('conversations.detail.cobrowse.no_telemetry') }}</x-lang></p>
                 </x-details-disclosure>
             </section>
                 </x-tab-panel>
@@ -1181,6 +1186,66 @@
                         : 'manual';
                 }
 
+                var relativeTimeFormat = (function () {
+                    try {
+                        return new Intl.RelativeTimeFormat(realtimeLabels.locale || 'en', {numeric: 'auto'});
+                    } catch (error) {
+                        return null;
+                    }
+                })();
+
+                // Durations arrive as timestamps and are formatted here. A
+                // duration formatted on the server is frozen in whichever
+                // agent's request built the broadcast, and every other agent
+                // watching then reads it in a language they did not choose.
+                function elapsedSince(timestamp) {
+                    if (!timestamp || !relativeTimeFormat) {
+                        return null;
+                    }
+
+                    var moment = Date.parse(timestamp);
+
+                    if (!Number.isFinite(moment)) {
+                        return null;
+                    }
+
+                    var seconds = Math.round((moment - Date.now()) / 1000);
+                    var units = [
+                        ['year', 31536000],
+                        ['month', 2592000],
+                        ['day', 86400],
+                        ['hour', 3600],
+                        ['minute', 60],
+                    ];
+
+                    for (var index = 0; index < units.length; index += 1) {
+                        if (Math.abs(seconds) >= units[index][1]) {
+                            return relativeTimeFormat.format(
+                                Math.round(seconds / units[index][1]),
+                                units[index][0]
+                            );
+                        }
+                    }
+
+                    return relativeTimeFormat.format(seconds, 'second');
+                }
+
+                // A template whose `:elapsed` cannot be filled must not reach the
+                // page: `Seen :elapsed` is the right language and still nonsense.
+                function fillElapsed(template, timestamp, fallback) {
+                    if (!template) {
+                        return fallback;
+                    }
+
+                    if (template.indexOf(':elapsed') === -1) {
+                        return template;
+                    }
+
+                    var elapsed = elapsedSince(timestamp);
+
+                    return elapsed === null ? fallback : template.replace(':elapsed', elapsed);
+                }
+
                 function updateVisitorPresence(visitorPresence) {
                     if (!hasPresenceTargets || !visitorPresence) {
                         return;
@@ -1192,12 +1257,15 @@
                     visitorPresenceLabel.textContent = realtimeLabels.presence[presenceState]
                         || visitorPresenceLabel.dataset.fallback;
                     visitorPresenceLabel.dataset.status = presenceStatusFor(presenceState);
-                    visitorPresenceDetail.textContent = visitorPresence.detail_key
-                        ? (realtimeLabels.presenceDetail[visitorPresence.detail_key] || realtimeLabels.presenceDetail.no_heartbeat)
-                        : realtimeLabels.presenceDetail.no_heartbeat;
+                    visitorPresenceDetail.textContent = fillElapsed(
+                        realtimeLabels.presenceDetail[visitorPresence.detail_key],
+                        visitorPresence.last_seen_at,
+                        realtimeLabels.presenceDetail.no_heartbeat
+                    );
 
                     if (visitorPresenceLastSeen) {
-                        visitorPresenceLastSeen.textContent = visitorPresence.last_seen_label || 'Not reported';
+                        visitorPresenceLastSeen.textContent = elapsedSince(visitorPresence.last_seen_at)
+                            || realtimeLabels.lastSeenUnknown;
                     }
                 }
 
@@ -1228,7 +1296,13 @@
                     });
 
                     visitorReadDetails.forEach(function (visitorReadDetail) {
-                        visitorReadDetail.textContent = visitorRead.detail || 'No agent reply has been sent.';
+                        // The payload's own `detail` is ignored for the same
+                        // reason its `label` is.
+                        visitorReadDetail.textContent = fillElapsed(
+                            realtimeLabels.readDetail[visitorRead.state || 'none'],
+                            visitorRead.seen_at,
+                            realtimeLabels.readDetail.none
+                        );
                     });
 
                     var messageId = visitorRead.message_id ? String(visitorRead.message_id) : '';
@@ -1241,13 +1315,17 @@
                     }
 
                     if (visitorRead.state === 'seen') {
-                        agentMessageSeen.textContent = 'Seen by visitor ' + (visitorRead.seen_label || 'just now');
+                        agentMessageSeen.textContent = fillElapsed(
+                            realtimeLabels.transcript.seen,
+                            visitorRead.seen_at,
+                            realtimeLabels.transcript.seen_unknown
+                        );
 
                         return;
                     }
 
                     if (visitorRead.state === 'unseen') {
-                        agentMessageSeen.textContent = 'Not seen yet';
+                        agentMessageSeen.textContent = realtimeLabels.transcript.unseen;
                     }
                 }
 

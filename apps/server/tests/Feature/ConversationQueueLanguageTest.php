@@ -6,6 +6,7 @@
 
 use App\Models\Account;
 use App\Models\AuditEvent;
+use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\Site;
@@ -135,6 +136,28 @@ function conversationQueueLanguageWorld(int $conversations = 3): array
             'sender_type' => $i % 2 === 0 ? Visitor::class : User::class,
             'sender_id' => $i % 2 === 0 ? $visitor->id : $agentFor($account)->id,
             'body' => 'Datenpunkt message body '.$i,
+        ]);
+    }
+
+    // A granted cobrowse session, so the detail page's cobrowse panel actually
+    // renders. Without one the panel is nearly all absent, and the marker tests
+    // above assert over a handful of elements while believing they cover it --
+    // a mutation that mismarked a lifecycle timestamp survived for exactly this
+    // reason.
+    $first = Conversation::query()->where('support_code', 'WF-LANG'.$run.'1')->first();
+
+    if ($first) {
+        CobrowseSession::factory()->for($first)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(2),
+            'ended_at' => null,
+            'metadata' => [
+                'telemetry' => [
+                    'reported_at' => now()->subSeconds(20)->toJSON(),
+                    'reconnects' => 0,
+                    'dropped_batches' => 0,
+                ],
+            ],
         ]);
     }
 
@@ -1242,6 +1265,215 @@ test('a model hands out keys, so an agent gets their own language and not a proc
     expect($conversation->readStateLabelFor($world['agents']['en']))->toBe('New activity')
         ->and($conversation->attentionLabel())->toBe('Needs reply')
         ->and($conversation->queueActivityPreview()['label'])->toBe('No activity preview yet');
+});
+
+test('live updates render every field in the reading agent language', function (): void {
+    // The realtime handlers do not re-render server-side, so a translated page
+    // can revert to English the moment an event arrives. These tables are what
+    // the page substitutes in, so they must be complete: a missing entry falls
+    // through to a fallback and quietly replaces correct copy with wrong copy.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+
+    // The realtime block is gated on a configured broadcaster, so without this
+    // the page renders no script at all and the assertions below would pass
+    // over an empty page rather than a translated one.
+    config([
+        'broadcasting.default' => 'reverb',
+        'broadcasting.connections.reverb.key' => 'language-test-key',
+        'broadcasting.connections.reverb.options.host' => 'localhost',
+        'broadcasting.connections.reverb.options.port' => 8080,
+        'broadcasting.connections.reverb.options.scheme' => 'http',
+    ]);
+
+    foreach (['de', 'en'] as $locale) {
+        $page = (string) $this->actingAs($world['agents'][$locale])
+            ->get(route('dashboard.conversations.show', $conversation->support_code))
+            ->assertOk()
+            ->getContent();
+
+        preg_match('/var realtimeLabels = (\{.*?\});/s', $page, $found);
+
+        expect($found)->not->toBe([], "no realtime label table rendered in {$locale}");
+
+        $labels = json_decode(html_entity_decode($found[1], ENT_QUOTES), true);
+
+        expect($labels)->toBeArray();
+
+        // Every key the payloads can emit needs an entry. `seen_at` is the one
+        // that was missing: a visitor with a heartbeat who has gone quiet fell
+        // through to "no heartbeat yet", which is a different fact.
+        foreach (['seen_recently', 'seen_at', 'no_heartbeat'] as $key) {
+            expect($labels['presenceDetail'][$key] ?? null)->toBeString()
+                ->and($labels['presenceDetail'][$key])->not->toBe('');
+        }
+
+        foreach (['seen', 'unseen', 'none'] as $key) {
+            expect($labels['readDetail'][$key] ?? null)->toBeString();
+        }
+
+        foreach (['seen', 'seen_unknown', 'unseen'] as $key) {
+            expect($labels['transcript'][$key] ?? null)->toBeString();
+        }
+
+        expect($labels['locale'] ?? null)->toBe($locale);
+
+        if ($locale === 'de') {
+            // Not merely present -- actually translated. An entry that resolves
+            // to the English string is the bug this test exists for.
+            expect($labels['presenceDetail']['seen_at'])->toBe(__('conversations.detail.context.seen_at', [], 'de'))
+                ->and($labels['presenceDetail']['seen_at'])->not->toBe(__('conversations.detail.context.seen_at', [], 'en'))
+                ->and($labels['transcript']['seen'])->not->toBe(__('conversations.detail.reply.seen_by_visitor', [], 'en'))
+                ->and($labels['readDetail']['seen'])->not->toBe(__('tickets.read_state.detail_seen', [], 'en'));
+        }
+
+        // Templates that take a duration must still carry their placeholder --
+        // the page fills it from a timestamp, so a table that shipped a
+        // pre-formatted duration would be frozen in one agent's language.
+        expect($labels['presenceDetail']['seen_at'])->toContain(':elapsed')
+            ->and($labels['transcript']['seen'])->toContain(':elapsed');
+    }
+});
+
+test('the cobrowse panel announces both its languages correctly', function (): void {
+    // The panel is half-extracted: its chrome is translated, its vocabulary is
+    // not. Both halves have to announce correctly, and the two failures are
+    // mirror images -- marking the whole panel English made a screen reader
+    // pronounce the German headings with English rules, and taking the marker
+    // off left bare English words like "Received" announced as German.
+    //
+    // So the panel states English and every translated fragment resets. That
+    // is complete by construction: anything missed stays English, which it is.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+
+    $page = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent();
+
+    $announcements = conversationQueueLanguageAnnouncements($page);
+
+    $languageOf = function (string $needle) use ($announcements): ?string {
+        foreach ($announcements as $announcement) {
+            if ($needle !== '' && str_contains($announcement['text'], $needle)) {
+                return $announcement['language'];
+            }
+        }
+
+        return null;
+    };
+
+    // Translated chrome, announced in the agent's language.
+    $heading = __('conversations.detail.tabs.cobrowse', [], 'de');
+
+    expect($languageOf($heading))->toBe('de', 'the translated cobrowse heading is not announced as German');
+
+    // Untranslated vocabulary, announced as English.
+    $consent = app(CobrowseConsentState::class)->forConversation($conversation);
+
+    foreach (['label', 'message'] as $field) {
+        $value = trim((string) ($consent[$field] ?? ''));
+
+        expect($value)->not->toBe('', "the cobrowse {$field} rendered empty, so this proves nothing");
+        expect($languageOf($value))->toBe('en', "the untranslated cobrowse {$field} is not announced as English");
+    }
+});
+
+test('the realtime handlers hard-code no copy of their own', function (): void {
+    // This reads the source rather than the page, which is unusual and is the
+    // point: the realtime handlers only run when a broadcast arrives, so no
+    // request-based test reaches them, and a table-shape assertion proves the
+    // words are AVAILABLE without proving the handler uses them. Two mutations
+    // proved exactly that -- both reverted a field to English and both passed.
+    //
+    // Every word these handlers write comes from the label table, so any prose
+    // literal among them is a bug by construction, whatever it currently says.
+    //
+    // Scoped to the handlers this page owns. The cobrowse handlers in the same
+    // script still hard-code roughly forty English strings; that vocabulary is
+    // its own change, and these names grow to cover them when it lands.
+    $source = file_get_contents(resource_path('views/agent/conversations/show.blade.php'));
+
+    $handlers = ['updateVisitorPresence', 'updateVisitorRead', 'fillElapsed', 'elapsedSince'];
+
+    foreach ($handlers as $handler) {
+        $open = strpos($source, 'function '.$handler.'(');
+
+        // Without this the test passes by finding nothing -- which is how an
+        // earlier version of it passed with the bug reintroduced.
+        expect($open)->not->toBeFalse("the realtime handler {$handler} no longer exists under that name");
+
+        $brace = strpos($source, '{', $open);
+        $depth = 0;
+        $close = null;
+
+        for ($index = $brace; $index < strlen($source); $index++) {
+            if ($source[$index] === '{') {
+                $depth++;
+            } elseif ($source[$index] === '}') {
+                $depth--;
+
+                if ($depth === 0) {
+                    $close = $index;
+
+                    break;
+                }
+            }
+        }
+
+        expect($close)->not->toBeNull("could not find the end of {$handler}");
+
+        $body = preg_replace('#//[^\n]*#', '', substr($source, $open, $close - $open + 1));
+
+        preg_match_all("/'([^'\\\\\n]*)'/", $body, $found);
+
+        $prose = array_values(array_unique(array_filter(
+            $found[1],
+            fn (string $literal): bool => preg_match('/[A-Za-z]{2,}\s+[A-Za-z]{2,}/', $literal) === 1
+        )));
+
+        expect($prose)->toBe([], "{$handler} hard-codes copy instead of reading the label table");
+    }
+});
+
+test('nothing German is marked as English', function (): void {
+    // The mirror of the cobrowse-panel finding. Marking translated copy as
+    // English is the same defect pointing the other way, and it is the easier
+    // one to introduce: a value that looks English in the source can be
+    // `diffForHumans()`, which follows the page locale and returns German.
+    //
+    // Nothing caught this. Re-wrapping a locale-following timestamp in the
+    // English marker passed every other test in this file.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+
+    $urls = [
+        route('dashboard.profile.show'),
+        route('dashboard.conversations.index'),
+        route('dashboard.tickets.index'),
+        route('dashboard.conversations.show', $conversation->support_code),
+    ];
+
+    // Carbon's German relative time, which is what these fields actually emit.
+    $germanElapsed = '/\bvor \d+ (Sekunde|Minute|Stunde|Tag|Woche|Monat|Jahr)/u';
+
+    foreach ($urls as $url) {
+        $page = (string) $this->actingAs($world['agents']['de'])->get($url)->assertOk()->getContent();
+
+        // Per text node with its EFFECTIVE language, not per element: a region
+        // marked English legitimately contains translated fragments that reset
+        // to the document language, and an element-level check reads those
+        // nested resets as part of the English text.
+        foreach (conversationQueueLanguageAnnouncements($page) as $announcement) {
+            if (! str_starts_with($announcement['language'], 'en')) {
+                continue;
+            }
+
+            expect(preg_match($germanElapsed, $announcement['text']))->toBe(0,
+                "German announced as English at {$url}: \"{$announcement['text']}\"");
+        }
+    }
 });
 
 test('no unreplaced placeholder ever reaches the page', function (): void {

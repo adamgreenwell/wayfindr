@@ -263,8 +263,11 @@ class CobrowseConsentState
         return [
             'requested_by' => $session->requestedBy?->name ?? 'Unknown agent',
             'requested_at' => $this->formatMoment($session->created_at),
+            'requested_at_language' => $this->momentLanguage($session->created_at),
             'consented_at' => $this->formatMoment($session->consented_at, 'Not granted yet'),
+            'consented_at_language' => $this->momentLanguage($session->consented_at),
             'ended_at' => $this->formatMoment($session->ended_at, 'Still active'),
+            'ended_at_language' => $this->momentLanguage($session->ended_at),
             'ended_by' => $this->endedByLabel($session->metadata ?? []),
         ];
     }
@@ -283,6 +286,22 @@ class CobrowseConsentState
         }
 
         return 'Not recorded';
+    }
+
+    /**
+     * Which language `formatMoment()` will answer in.
+     *
+     * A real timestamp is rendered by `diffForHumans()`, which follows the
+     * page locale and returns German to a German agent. The fallback is a
+     * static English phrase. Same field, two languages, decided by whether the
+     * moment exists -- so the caller cannot know from the string, and must not
+     * guess by comparing the prose.
+     */
+    private function momentLanguage(mixed $moment): string
+    {
+        return ! $moment || ! method_exists($moment, 'diffForHumans')
+            ? DashboardLanguage::FALLBACK
+            : app()->getLocale();
     }
 
     private function formatMoment(mixed $moment, string $missing = 'Not recorded'): string
@@ -463,7 +482,9 @@ class CobrowseConsentState
                 'message' => 'The visitor widget sent a clean masked snapshot.',
                 'requested_by' => filled($request['requested_by_name'] ?? null) ? (string) $request['requested_by_name'] : 'Support',
                 'requested_at' => $this->formatMoment($requestedAt, 'Request time unavailable'),
+                'requested_at_language' => $this->momentLanguage($requestedAt),
                 'fulfilled_at' => $this->formatMoment($fulfilledAt, 'Receipt time unavailable'),
+                'fulfilled_at_language' => $this->momentLanguage($fulfilledAt),
                 'snapshot_reported_at' => $this->formatMoment($snapshotReportedAt, 'Snapshot report time unavailable'),
                 'recovery_timeline' => $timeline,
             ];
@@ -476,7 +497,9 @@ class CobrowseConsentState
                 'message' => 'The visitor widget tried to send a clean snapshot but could not complete it. Request another clean snapshot or confirm the page state through chat.',
                 'requested_by' => filled($request['requested_by_name'] ?? null) ? (string) $request['requested_by_name'] : 'Support',
                 'requested_at' => $this->formatMoment($requestedAt, 'Request time unavailable'),
+                'requested_at_language' => $this->momentLanguage($requestedAt),
                 'expires_at' => $this->formatMoment($expiresAt, 'Expiry unavailable'),
+                'expires_at_language' => $this->momentLanguage($expiresAt),
                 'attempts_exhausted_at' => $this->formatMoment($attemptsExhaustedAt, 'Retry limit time unavailable'),
                 'recovery_timeline' => $timeline,
             ];
@@ -489,7 +512,9 @@ class CobrowseConsentState
                 'message' => 'The visitor widget did not answer in time. Request another clean snapshot or continue through chat.',
                 'requested_by' => filled($request['requested_by_name'] ?? null) ? (string) $request['requested_by_name'] : 'Support',
                 'requested_at' => $this->formatMoment($requestedAt, 'Request time unavailable'),
+                'requested_at_language' => $this->momentLanguage($requestedAt),
                 'expired_at' => $this->formatMoment($expiresAt, 'Expiry unavailable'),
+                'expired_at_language' => $this->momentLanguage($expiresAt),
                 'recovery_timeline' => $timeline,
             ];
         }

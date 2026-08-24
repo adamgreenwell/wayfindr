@@ -93,8 +93,29 @@ class AgentConversationController extends Controller
                 ],
                 'presenceDetail' => [
                     'seen_recently' => __('conversations.detail.context.seen_recently'),
+                    // Carries `:elapsed`. The duration is filled in on the page
+                    // from the payload's timestamp, never sent pre-formatted --
+                    // see the note on `locale` below.
+                    'seen_at' => __('conversations.detail.context.seen_at'),
                     'no_heartbeat' => __('conversations.detail.no_heartbeat'),
                 ],
+                'readDetail' => [
+                    'seen' => __('tickets.read_state.detail_seen'),
+                    'unseen' => __('tickets.read_state.detail_unseen'),
+                    'none' => __('tickets.read_state.detail_none'),
+                ],
+                'transcript' => [
+                    'seen' => __('conversations.detail.reply.seen_by_visitor'),
+                    'seen_unknown' => __('tickets.read_state.seen'),
+                    'unseen' => __('conversations.detail.reply.not_seen'),
+                ],
+                'lastSeenUnknown' => __('conversations.detail.context.not_reported'),
+                // A broadcast payload reaches every agent watching, so any
+                // duration formatted server-side is frozen in whichever agent's
+                // request happened to build it. The payload therefore carries a
+                // timestamp, and the page formats it -- in this agent's language,
+                // which is what this is for.
+                'locale' => str_replace('_', '-', app()->getLocale()),
             ],
             'accountAgents' => $this->supportAgentsForSite($conversation->site),
             'agent' => $agent,
