@@ -23,11 +23,27 @@ final class DashboardLanguage
     /**
      * Languages the dashboard carries a catalogue for.
      *
+     * **Autonyms — each language named in its own language, never glossed.**
+     * This list is deliberately NOT translated and is deliberately identical in
+     * every rendering language, which is the one place on a translated page
+     * where copy reading the same in English and German is correct.
+     *
+     * The reason is who reads it. This selector asks an agent which language
+     * *they* want to read, so the reader of any option is by definition someone
+     * who reads that language, and `Deutsch` is what they are looking for. The
+     * gloss it used to carry — `Deutsch (German)` — helped exactly one audience,
+     * English readers, and put an English word inside the German page for
+     * everyone else.
+     *
+     * Contrast `Sites\WidgetLanguage`, which keeps its glosses on purpose: that
+     * list asks an operator to choose a language for VISITORS, and the operator
+     * may well not read it. Same words, different question.
+     *
      * @var array<string, string>
      */
     public const SUPPORTED = [
         'en' => 'English',
-        'de' => 'Deutsch (German)',
+        'de' => 'Deutsch',
     ];
 
     public const FALLBACK = 'en';

@@ -421,3 +421,33 @@ test('the flash after changing language speaks the new language', function (): v
         ->assertSee('Profile updated.')
         ->assertDontSee('Profil aktualisiert.');
 });
+
+test('the language selector names each language in its own language', function (): void {
+    // The general comparison test cannot see this class of miss: it ignores
+    // anything under 25 characters, so `Deutsch (German)` -- an English word
+    // sitting inside the German page, in the language selector of all places --
+    // read as identical in both renders and was skipped as a label.
+    //
+    // Lowering that floor is not the fix; it would sweep in names, numbers and
+    // one-word labels. This asserts the specific rule instead.
+    expect(DashboardLanguage::SUPPORTED)->toBe([
+        'en' => 'English',
+        'de' => 'Deutsch',
+    ]);
+
+    foreach (DashboardLanguage::SUPPORTED as $label) {
+        // A gloss is the shape this went wrong in: correct for one audience,
+        // foreign copy for every other.
+        expect($label)->not->toContain('(');
+    }
+
+    // And it renders that way, in both languages, which is the correct
+    // exception to "nothing reads the same in both".
+    foreach (['en', 'de'] as $locale) {
+        $this->actingAs(languageAgent($locale))
+            ->get(route('dashboard.profile.show'))
+            ->assertOk()
+            ->assertSee('Deutsch')
+            ->assertDontSee('Deutsch (German)');
+    }
+});

@@ -67,6 +67,21 @@ page turned out to call itself *Agent Profile* in the browser tab and *Agent
 profile* in its heading — the string is preserved exactly, with the reason
 recorded beside it, and the fix is left to be made on purpose.
 
+### The selector names languages in their own language
+
+`English`, `Deutsch` — autonyms, never glossed, and deliberately identical in
+every rendering language. It is the one place on a translated page where copy
+reading the same in English and German is correct.
+
+The reason is who reads it. This selector asks an agent which language *they*
+want to read, so the reader of any option is by definition someone who reads
+that language. The gloss it used to carry — `Deutsch (German)` — helped exactly
+one audience and put an English word inside the German page for everyone else.
+
+The **widget** language list keeps its glosses on purpose. That one asks an
+operator to choose a language for visitors, and the operator may well not read
+it. Same words, different question.
+
 ### Two things a page shows that are not in any page catalogue
 
 **Validation messages come from Laravel**, not from a surface catalogue, and a
