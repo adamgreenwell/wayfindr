@@ -396,7 +396,7 @@
                             method="POST"
                             action="{{ route('dashboard.tickets.replies.store', $ticket) }}"
                             data-reply-composer
-                            data-submitting-label="Sending visitor reply..."
+                            data-submitting-label="{{ __('composer.sending_visitor_reply') }}"
                         >
                             @csrf
                             @include('agent.tickets.partials.return-query-fields')

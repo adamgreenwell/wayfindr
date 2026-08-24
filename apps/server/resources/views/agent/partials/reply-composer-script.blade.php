@@ -49,7 +49,7 @@
             var submit = form.querySelector('[data-reply-submit]');
             var body = form.querySelector('[data-reply-body]');
             var status = form.querySelector('[data-reply-status]');
-            var submittingLabel = form.getAttribute('data-submitting-label') || 'Sending...';
+            var submittingLabel = form.getAttribute('data-submitting-label') || @json(__('composer.sending'));
             var typingUrl = form.getAttribute('data-typing-url') || '';
             var csrf = document.querySelector('meta[name="csrf-token"]');
             var typingThrottleMs = 5000;
@@ -173,7 +173,7 @@
 
                 var stateEl = document.createElement('span');
                 stateEl.className = 'reply-attach-chip-state';
-                stateEl.textContent = 'Uploading…';
+                stateEl.textContent = @json(__('composer.uploading'));
                 chip.appendChild(stateEl);
 
                 // Release this upload's hold on the in-flight count exactly once,
@@ -210,7 +210,7 @@
                 var removeEl = document.createElement('button');
                 removeEl.type = 'button';
                 removeEl.className = 'reply-attach-chip-remove';
-                removeEl.setAttribute('aria-label', 'Remove ' + (file.name || 'attachment'));
+                removeEl.setAttribute('aria-label', @json(__('composer.remove', ['name' => ':name'])).replace(':name', file.name || @json(__('composer.attachment'))));
                 removeEl.textContent = '×';
                 removeEl.addEventListener('click', function () {
                     if (form.getAttribute('data-submitting') === 'true') {
@@ -277,7 +277,7 @@
                         chip.className = 'reply-attach-chip reply-attach-chip--error';
                         stateEl.textContent = (result.data && result.data.message)
                             ? result.data.message
-                            : 'That file could not be attached.';
+                            : @json(__('composer.attach_failed'));
 
                         return;
                     }
@@ -298,7 +298,7 @@
                     }
 
                     chip.className = 'reply-attach-chip reply-attach-chip--error';
-                    stateEl.textContent = 'That file could not be attached.';
+                    stateEl.textContent = @json(__('composer.attach_failed'));
                 });
             }
 
@@ -331,7 +331,7 @@
                     event.preventDefault();
 
                     if (status) {
-                        status.textContent = 'Waiting for uploads to finish…';
+                        status.textContent = @json(__('composer.waiting_uploads'));
                     }
 
                     return;

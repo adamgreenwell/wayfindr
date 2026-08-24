@@ -176,6 +176,11 @@ return [
             'heading' => 'Nächster Schritt',
         ],
 
+        'roles' => [
+            'agent' => 'Agent',
+            'visitor' => 'Besucher',
+        ],
+
         'reply' => [
             'heading' => 'Antworten',
             'label' => 'Nachricht',

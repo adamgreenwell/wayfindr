@@ -158,6 +158,17 @@ function conversationQueueLanguageWorld(int $conversations = 3): array
                     'reconnects' => 0,
                     'dropped_batches' => 0,
                 ],
+                // A fulfilled resync request, so the recovery timeline renders.
+                // Without one the timeline is absent and its timestamps are
+                // audited nowhere -- a mutation that dropped their language
+                // marker survived every other state in this file.
+                'resync_request' => [
+                    'id' => 'resync-language-fixture',
+                    'requested_by_name' => 'Support',
+                    'requested_at' => now()->subMinutes(2)->toJSON(),
+                    'fulfilled_at' => now()->subSeconds(30)->toJSON(),
+                    'fulfilled_snapshot_reported_at' => now()->subSeconds(25)->toJSON(),
+                ],
             ],
         ]);
     }
@@ -877,6 +888,28 @@ test('a cobrowse value is escaped, not trusted', function (): void {
  *
  * @return array<int, array{text: string, language: string}>
  */
+/**
+ * Prose an agent reads, as opposed to identifiers that merely contain spaces.
+ *
+ * A class list -- `reply-attach-chip reply-attach-chip--error` -- has spaces
+ * and letters and is not copy. Every token in one is lowercase kebab-case,
+ * which no English sentence is.
+ */
+function conversationQueueLanguageIsProse(string $literal): bool
+{
+    if (preg_match('/[A-Za-z]{2,}\s+[A-Za-z]{2,}/', $literal) !== 1) {
+        return false;
+    }
+
+    foreach (preg_split('/\s+/', trim($literal)) ?: [] as $token) {
+        if (preg_match('/^[a-z0-9-]+$/', $token) !== 1) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function conversationQueueLanguageAnnouncements(string $html): array
 {
     // The WHOLE document, not just `<main>`. The shell is an extracted surface
@@ -1153,6 +1186,48 @@ test('no English is rendered as German on any extracted surface', function (): v
 
         expect($leaks)->toBe([], "announced as German but never translated, at {$url}");
     }
+
+    // And a transcript that HAS messages. The conversation above has none, so
+    // every message-level label -- the sender roles among them -- went
+    // unrendered and unaudited on this page.
+    $spoken = Conversation::query()
+        ->where('site_id', $bare['site']->id)
+        ->whereHas('messages')
+        ->orderBy('id')
+        ->firstOrFail();
+
+    expect($spoken->messages()->count())->toBeGreaterThan(0, 'the conversation has no messages, so it renders no transcript');
+
+    $url = route('dashboard.conversations.show', $spoken->support_code);
+
+    $leaks = conversationQueueLanguageEnglishLeaks(
+        (string) $this->actingAs($bare['agents']['de'])->get($url)->assertOk()->getContent(),
+        (string) $this->actingAs($bare['agents']['en'])->get($url)->assertOk()->getContent(),
+    );
+
+    expect($leaks)->toBe([], "announced as German but never translated, at {$url}");
+
+    // And a visitor with no anonymous id. The column is nullable, so this is a
+    // real production state, and every fixture above gives its visitor one --
+    // so the `Unknown visitor` fallback rendered nowhere and was audited
+    // nowhere. Fallback branches need a fixture as much as happy paths do;
+    // this is the third state gap this test has been taught.
+    $namelessVisitor = Visitor::factory()->for($bare['site'])->create(['anonymous_id' => null]);
+    $nameless = Conversation::factory()
+        ->for($bare['site'])
+        ->for($namelessVisitor)
+        ->create(['support_code' => 'WF-LANGNONAME', 'subject' => 'Datenpunkt nameless', 'status' => 'open']);
+
+    expect($nameless->visitor->anonymous_id)->toBeNull('the visitor has an id, so the fallback never renders');
+
+    $url = route('dashboard.conversations.show', $nameless->support_code);
+
+    $leaks = conversationQueueLanguageEnglishLeaks(
+        (string) $this->actingAs($bare['agents']['de'])->get($url)->assertOk()->getContent(),
+        (string) $this->actingAs($bare['agents']['en'])->get($url)->assertOk()->getContent(),
+    );
+
+    expect($leaks)->toBe([], "announced as German but never translated, at {$url}");
 });
 
 test('a filter chip translates its label, not only the value it wraps', function (): void {
@@ -1426,6 +1501,29 @@ test('the realtime handlers hard-code no copy of their own', function (): void {
 
     $handlers = ['updateVisitorPresence', 'updateVisitorRead', 'fillElapsed', 'elapsedSince'];
 
+    // The reply composer is a whole script rather than a few handlers, and the
+    // announcement walker strips <script> before it looks at anything -- so no
+    // amount of page-level auditing can see this copy. Checked at the source.
+    $composer = file_get_contents(resource_path('views/agent/partials/reply-composer-script.blade.php'));
+
+    // NOT expect()->toContain($x, $message): toContain is variadic, so the
+    // message becomes a second required value and the assertion reports the
+    // message itself as missing.
+    $this->assertStringContainsString('data-reply-composer', $composer,
+        'the composer script moved; this no longer reads it');
+
+    $stripped = preg_replace('#//[^\n]*#', '', $composer);
+    $stripped = preg_replace('/@json\([^)]*\)/', 'null', $stripped);
+
+    preg_match_all("/'([^'\\\\\n]*)'/", $stripped, $composerFound);
+
+    $composerProse = array_values(array_unique(array_filter(
+        $composerFound[1],
+        conversationQueueLanguageIsProse(...)
+    )));
+
+    expect($composerProse)->toBe([], 'the reply composer hard-codes copy instead of reading the catalogue');
+
     foreach ($handlers as $handler) {
         $open = strpos($source, 'function '.$handler.'(');
 
@@ -1459,7 +1557,7 @@ test('the realtime handlers hard-code no copy of their own', function (): void {
 
         $prose = array_values(array_unique(array_filter(
             $found[1],
-            fn (string $literal): bool => preg_match('/[A-Za-z]{2,}\s+[A-Za-z]{2,}/', $literal) === 1
+            conversationQueueLanguageIsProse(...)
         )));
 
         expect($prose)->toBe([], "{$handler} hard-codes copy instead of reading the label table");

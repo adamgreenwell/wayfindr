@@ -192,6 +192,11 @@ return [
             'heading' => 'Next action',
         ],
 
+        'roles' => [
+            'agent' => 'Agent',
+            'visitor' => 'Visitor',
+        ],
+
         'reply' => [
             'heading' => 'Reply',
             'label' => 'Message',

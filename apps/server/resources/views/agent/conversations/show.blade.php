@@ -82,7 +82,7 @@
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.context.visitor') }}</span>
-                        <span class="meta-value">{{ $conversation->visitor->anonymous_id ?? 'Unknown visitor' }}</span>
+                        <span class="meta-value">{{ $conversation->visitor->anonymous_id ?? __('conversations.detail.unknown_visitor') }}</span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.context.assigned_to') }}</span>
@@ -472,7 +472,7 @@
                                         <strong>{{ $timelineItem['label'] }}</strong>
                                         <p class="message-body">{{ $timelineItem['detail'] }}</p>
                                         <div class="timeline-meta">
-                                            <span>{{ $timelineItem['occurred_at'] }}</span>
+                                            <span lang="{{ str_replace('_', '-', $timelineItem['occurred_at_language'] ?? \App\Support\DashboardLanguage::FALLBACK) }}">{{ $timelineItem['occurred_at'] }}</span>
                                             <span>{{ $timelineItem['badge'] }}</span>
                                         </div>
                                     </div>

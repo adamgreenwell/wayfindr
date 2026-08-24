@@ -41,7 +41,7 @@
             method="POST"
             action="{{ route('dashboard.conversations.messages.store', $conversation->support_code) }}"
             data-reply-composer
-            data-submitting-label="Sending reply..."
+            data-submitting-label="{{ __('composer.sending_reply') }}"
             data-typing-url="{{ route('dashboard.conversations.typing.store', $conversation->support_code) }}"
             data-attachments-url="{{ route('dashboard.conversations.attachments.store', $conversation->support_code) }}"
         >

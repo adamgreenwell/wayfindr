@@ -210,6 +210,24 @@ taking the marker off left the English chrome announced as German. The tests
 assert **both** directions, per text node with its effective language, because
 an element-level check reads a nested reset as part of the text around it.
 
+### Codex puts findings in two places, and one of them has no thread
+
+Findings arrive as inline review comments **and** in the review body. Only the
+inline ones become resolvable threads, so a "zero unresolved threads" check
+reports a clean PR while a body-level finding sits unaddressed. One was found
+by accident, while fixing the *verdict detection*, minutes before a merge.
+
+Read both:
+
+```bash
+gh api repos/OWNER/REPO/pulls/N/reviews --paginate \
+  --jq '.[] | select(.user.login=="chatgpt-codex-connector[bot]") | "\(.commit_id) \(.body)"'
+```
+
+The verdict lives on the **review object**, not in issue comments — `commit_id`
+is the reliable field, and a clean verdict's body says `**Reviewed commit:**`
+with no findings under it.
+
 ### A guard is only as good as the states it visits
 
 Said once already about the support-lookup empty state, and true again for the
@@ -221,6 +239,26 @@ survived every state it visited.
 The audit now also walks a conversation that has neither, and asserts that it
 has neither before trusting the result. First-run states are not an edge case
 here: they are the only states in which half this page's copy exists.
+
+Four gaps of this shape have been found in this file so far, and the pattern is
+always the same — **a branch the fixture cannot reach is a branch nothing
+guards**:
+
+| what was invisible | because the fixture had |
+|---|---|
+| ticket-creation choices | tickets already |
+| the empty transcript | messages already |
+| the transcript sender roles | *no* messages |
+| the `Unknown visitor` fallback | a visitor with an id |
+| the recovery timeline | no resync request |
+
+Every one of them was a real finding first and a fixture change second. When a
+guard passes, ask what it rendered — not just what it asserted.
+
+Copy inside a `<script>` is invisible to all of this: the announcement walker
+strips scripts before it looks at anything. The reply composer and the realtime
+handlers are checked at the source instead, against the rule that every word
+they write comes from the catalogue.
 
 ### `diffForHumans()` follows the page locale, so a model must report the language
 
