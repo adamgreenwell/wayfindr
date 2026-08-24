@@ -269,7 +269,7 @@
                     return response.json().catch(function () {
                         return {};
                     }).then(function (data) {
-                        return { ok: response.ok, data: data };
+                        return { ok: response.ok, status: response.status, data: data };
                     });
                 }).then(function (result) {
                     settleUpload();
@@ -289,7 +289,13 @@
 
                     if (! attachment || ! attachment.id) {
                         chip.className = 'reply-attach-chip reply-attach-chip--error';
-                        stateEl.textContent = (result.data && result.data.message)
+                        // Only a 422 carries a message we wrote and translated.
+                        // Everything else -- a failed storage write, a 403, a
+                        // 404 -- answers with a framework exception message in
+                        // English, and preferring it puts 'Not Found.' on a
+                        // German page. The local fallback is ours and is
+                        // already in the right language.
+                        stateEl.textContent = (result.status === 422 && result.data && result.data.message)
                             ? result.data.message
                             : @json(__('composer.attach_failed'));
 

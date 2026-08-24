@@ -1807,6 +1807,13 @@ test('the realtime handlers hard-code no copy of their own', function (): void {
 
     expect($composerProse)->toBe([], 'the reply composer hard-codes copy instead of reading the catalogue');
 
+    // A response message is only ours when the response is a 422. Anything else
+    // -- a failed storage write, a 403, a 404 -- answers with a framework
+    // exception message in English, and preferring it puts 'Not Found.' on a
+    // German page. No request test reaches an upload's error branch.
+    $this->assertStringContainsString('result.status === 422 && result.data && result.data.message', $composer,
+        'the composer trusts a response message from a status that does not carry translated copy');
+
     // A browser without Intl.RelativeTimeFormat still has perfectly good
     // timestamps. Treating the missing FORMATTER as missing DATA replaced a
     // real "seen 2 minutes ago" with "no visitor heartbeat yet" on every

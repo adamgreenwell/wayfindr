@@ -251,6 +251,18 @@ The general rule: **any view that renders a flash should call `__()` on it.**
 `__()` returns a non-key string unchanged, so it costs nothing on surfaces that
 flash literals and prevents a raw key from ever reaching a page.
 
+### Only a validation response carries a message we wrote
+
+The composer prefers the upload endpoint's own `message` over its local
+fallback, which is right for a 422 — that message came from our catalogue. It is
+wrong for everything else. A failed storage write, a 403, a 404: those answer
+with a framework exception message in English, and preferring it puts
+*"Not Found."* on a German page.
+
+**Trust a response's copy only from the status that produces our copy.** The
+local fallback is already in the right language, and it is the safer default for
+every other status.
+
 ### Scoping a locale does nothing for a message built as a PHP string
 
 `ValidationException::withMessages(['file' => 'This file type is not allowed.'])`
