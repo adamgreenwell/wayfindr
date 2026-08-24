@@ -9,6 +9,7 @@ use App\Models\AuditEvent;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\ConversationMessageAttachment;
 use App\Models\ReplyTemplate;
 use App\Models\Site;
 use App\Models\Ticket;
@@ -1681,6 +1682,20 @@ test('the transcript declares its own language, not the dashboard\'s', function 
     expect($titledSibling['subject'])->toBe($spoken->subject)
         ->and($titledSibling['subject_fallback'])->toBeFalse();
 
+    // Two attachments on the transcript -- an image and a file -- so both the
+    // alt text and the visible name render. A filename is whatever the person
+    // called it, and the image variant carries it in an ATTRIBUTE.
+    $attachedTo = $spoken->messages()->orderBy('id')->firstOrFail();
+
+    ConversationMessageAttachment::factory()->for($attachedTo, 'message')->create([
+        'original_filename' => 'Datenpunkt receipt.png',
+        'mime_type' => 'image/png',
+    ]);
+    ConversationMessageAttachment::factory()->for($attachedTo, 'message')->create([
+        'original_filename' => 'Datenpunkt invoice.pdf',
+        'mime_type' => 'application/pdf',
+    ]);
+
     // A linked ticket, so its work panel renders -- its heading is the stored
     // subject, which is the visitor's words copied across or an agent's own,
     // and either way not the dashboard's language.
@@ -1710,15 +1725,31 @@ test('the transcript declares its own language, not the dashboard\'s', function 
     $authored = [
         '//*[contains(@class, "message-body")]',
         '//h3[contains(@id, "-work-heading")]',
+        // A filename is the visitor's or the agent's own words too, and the
+        // image variant carries it in an ATTRIBUTE, so the marker is on the
+        // element rather than around it.
+        '//*[contains(@class, "message-attachment-name")]',
+        '//img[contains(@class, "message-attachment-image")]',
     ];
 
+    // Each selector must MATCH something. A foreach over an empty NodeList
+    // passes silently, which is how ten previous assertions in this file
+    // managed to prove nothing.
+    $matched = [];
+
     foreach ($authored as $selector) {
+        $matched[$selector] = $xpath->query($selector)->length;
+
         foreach ($xpath->query($selector) as $node) {
             expect($node->hasAttribute('lang'))->toBeTrue(
                 "a user-authored value at {$selector} inherits the dashboard language");
             expect($node->getAttribute('lang'))->toBe('',
                 "a user-authored value at {$selector} claims a language it cannot know");
         }
+    }
+
+    foreach ($matched as $selector => $count) {
+        expect($count)->toBeGreaterThan(0, "nothing matched {$selector}, so that assertion proved nothing");
     }
 
     // The subject is the same thing wearing a heading. It is the page's primary
@@ -1813,6 +1844,12 @@ test('the realtime handlers hard-code no copy of their own', function (): void {
     // German page. No request test reaches an upload's error branch.
     $this->assertStringContainsString('result.status === 422 && result.data && result.data.message', $composer,
         'the composer trusts a response message from a status that does not carry translated copy');
+
+    // The upload chip is built in script, so no request test renders it. Its
+    // name is the file the person chose, in whatever language they named it --
+    // the same treatment the transcript's attachment names get server-side.
+    $this->assertStringContainsString("nameEl.setAttribute('lang', '')", $composer,
+        'the live attachment chip announces a filename in the dashboard language');
 
     // A browser without Intl.RelativeTimeFormat still has perfectly good
     // timestamps. Treating the missing FORMATTER as missing DATA replaced a

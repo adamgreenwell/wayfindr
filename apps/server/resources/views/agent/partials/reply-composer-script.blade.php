@@ -182,7 +182,9 @@
 
                 var nameEl = document.createElement('span');
                 nameEl.className = 'reply-attach-chip-name';
-                nameEl.textContent = file.name || 'attachment';
+                // The agent's own filename, in whatever language they named it.
+                nameEl.setAttribute('lang', '');
+                nameEl.textContent = file.name || @json(__('composer.attachment'));
                 chip.appendChild(nameEl);
 
                 var stateEl = document.createElement('span');
