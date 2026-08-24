@@ -57,22 +57,23 @@ class AgentConversationQueueController extends Controller
      */
     private function conversationQueueData(User $agent, Collection $sites, Request $request, CobrowseConsentState $cobrowseConsentState): array
     {
-        $conversationFilters = [
-            'all' => 'All open',
-            'new_activity' => 'New activity',
-            'needs_reply' => 'Needs reply',
-            'assigned_to_me' => 'Assigned to me',
-            'unassigned' => 'Unassigned',
-            'cobrowse_attention' => 'Cobrowse attention',
-            'closed' => 'Closed',
-        ];
-        $conversationPresenceFilters = [
-            'all' => 'Any presence',
-            'active' => 'Active recently',
-            'recent' => 'Recently active',
-            'quiet' => 'Quiet',
-            'not_reported' => 'Not reported',
-        ];
+        // Keyed by the query-string value, which is the contract with the URL
+        // and must not move when the label does.
+        $conversationFilters = [];
+
+        foreach (['all', 'new_activity', 'needs_reply', 'assigned_to_me', 'unassigned', 'cobrowse_attention', 'closed'] as $key) {
+            $conversationFilters[$key] = __('conversations.filters.'.$key);
+        }
+
+        // From the shared presence catalogue, not a queue-local copy. These
+        // same words label every row and the visitors directory, and two copies
+        // drift the first time one is improved -- which would show two
+        // different words for one state on this very page.
+        $conversationPresenceFilters = ['all' => __('presence.any')];
+
+        foreach (['active', 'recent', 'quiet', 'not_reported'] as $key) {
+            $conversationPresenceFilters[$key] = __('presence.'.$key);
+        }
         $conversationFilter = $request->query('conversation_filter', 'all');
         $conversationFilter = is_string($conversationFilter) && array_key_exists($conversationFilter, $conversationFilters)
             ? $conversationFilter
@@ -92,12 +93,12 @@ class AgentConversationQueueController extends Controller
         $conversationStatus = $conversationFilter === 'closed' ? 'closed' : 'open';
         $conversationHasActiveRefinement = $conversationSearch !== '' || $conversationSite || $conversationPresence !== 'all';
         $conversationEmptyMessage = $conversationHasActiveRefinement
-            ? 'No conversations match those filters.'
+            ? __('conversations.empty.no_match_filters')
             : match ($conversationFilter) {
-                'new_activity' => 'No conversations need attention.',
-                'cobrowse_attention' => 'No active cobrowse sessions need attention.',
-                'closed' => 'No closed conversations yet.',
-                default => 'No active conversations yet.',
+                'new_activity' => __('conversations.empty.no_new_activity'),
+                'cobrowse_attention' => __('conversations.empty.no_cobrowse_attention'),
+                'closed' => __('conversations.empty.no_closed'),
+                default => __('conversations.empty.no_active'),
             };
         $conversationQuery = $this->conversationQueryParams($conversationFilter, $conversationSearch, $conversationSite, $conversationPresence);
         $newActivityConversationCount = Conversation::query()
@@ -238,16 +239,16 @@ class AgentConversationQueueController extends Controller
             $site = $sites->firstWhere('id', $conversationSite);
 
             if ($site) {
-                $filters[] = $this->conversationFilterChip('conversation_site', 'Site: '.$site->name, $conversationQuery);
+                $filters[] = $this->conversationFilterChip('conversation_site', __('conversations.chips.site', ['name' => $site->name]), $conversationQuery);
             }
         }
 
         if ($conversationSearch !== '') {
-            $filters[] = $this->conversationFilterChip('conversation_search', 'Search: '.$conversationSearch, $conversationQuery);
+            $filters[] = $this->conversationFilterChip('conversation_search', __('conversations.chips.search', ['term' => $conversationSearch]), $conversationQuery);
         }
 
         if ($conversationPresence !== 'all' && isset($conversationPresenceFilters[$conversationPresence])) {
-            $filters[] = $this->conversationFilterChip('conversation_presence', 'Presence: '.$conversationPresenceFilters[$conversationPresence], $conversationQuery);
+            $filters[] = $this->conversationFilterChip('conversation_presence', __('conversations.chips.presence', ['label' => $conversationPresenceFilters[$conversationPresence]]), $conversationQuery);
         }
 
         return $filters;
@@ -309,7 +310,7 @@ class AgentConversationQueueController extends Controller
         return [
             $this->conversationQueueSummaryChip(
                 'new_activity',
-                'Needs attention',
+                __('conversations.lanes.new_activity'),
                 $laneQuery()->withNewActivityFor($agent)->count(),
                 ['conversation_filter' => 'new_activity'],
                 $conversationQuery,
@@ -317,7 +318,7 @@ class AgentConversationQueueController extends Controller
             ),
             $this->conversationQueueSummaryChip(
                 'needs_reply',
-                'Needs reply',
+                __('conversations.lanes.needs_reply'),
                 $needsReplyQuery->count(),
                 ['conversation_filter' => 'needs_reply'],
                 $conversationQuery,
@@ -325,7 +326,7 @@ class AgentConversationQueueController extends Controller
             ),
             $this->conversationQueueSummaryChip(
                 'assigned_to_me',
-                'Assigned to me',
+                __('conversations.lanes.assigned_to_me'),
                 $laneQuery()->where('assigned_agent_id', $agent->id)->count(),
                 ['conversation_filter' => 'assigned_to_me'],
                 $conversationQuery,
@@ -333,7 +334,7 @@ class AgentConversationQueueController extends Controller
             ),
             $this->conversationQueueSummaryChip(
                 'unassigned',
-                'Unassigned',
+                __('conversations.lanes.unassigned'),
                 $laneQuery()->whereNull('assigned_agent_id')->count(),
                 ['conversation_filter' => 'unassigned'],
                 $conversationQuery,
@@ -341,7 +342,7 @@ class AgentConversationQueueController extends Controller
             ),
             $this->conversationQueueSummaryChip(
                 'active',
-                'Active visitors',
+                __('conversations.lanes.active'),
                 $activeVisitorsQuery->count(),
                 ['conversation_filter' => null, 'conversation_presence' => 'active'],
                 $conversationQuery,
@@ -349,7 +350,7 @@ class AgentConversationQueueController extends Controller
             ),
             $this->conversationQueueSummaryChip(
                 'recent',
-                'Recently active',
+                __('conversations.lanes.recent'),
                 $recentVisitorsQuery->count(),
                 ['conversation_filter' => null, 'conversation_presence' => 'recent'],
                 $conversationQuery,
@@ -424,39 +425,59 @@ class AgentConversationQueueController extends Controller
             && $shownCount !== $matchingConversationCount;
 
         if ($supportLaneNarrowed) {
-            $heading = $shownCount.' shown of '.$matchingConversationCount.' matching conversations';
-
-            if ($conversationFilter === 'new_activity') {
-                $heading = ($shownCount === 1 ? '1 needs attention' : $shownCount.' need attention')
-                    .' shown of '.$matchingConversationCount.' matching conversations';
-            }
-
             return [
-                'detail' => 'Showing '.$this->conversationCountLabel($shownCount).' after the '.$conversationFilters[$conversationFilter].' support-lane filter. '.$this->conversationCountLabel($matchingConversationCount).' match the other queue filters.',
-                'heading' => $heading,
+                // `trans_choice` on the SHOWN count, because that is the number
+                // the sentence's own verb agrees with. The second clause takes
+                // its verb from `:matching`, which carries one.
+                'detail' => trans_choice('conversations.summary.lane_narrowed_detail', $shownCount, [
+                    'shown' => $this->conversationCountLabel($shownCount),
+                    'lane' => $conversationFilters[$conversationFilter],
+                    'matching' => $this->conversationCountMatchLabel($matchingConversationCount),
+                ]),
+                // The attention lane says what the lane is for, in a sentence
+                // of its own. It used to interpolate `1 needs attention` into
+                // the slot the other lanes put a NUMBER in, which reads
+                // acceptably in English by luck and is simply broken in German:
+                // "1 benötigt Aufmerksamkeit von 3 passenden Unterhaltungen
+                // angezeigt". A clause is not a noun phrase, and a catalogue
+                // cannot reorder one that arrives pre-assembled.
+                'heading' => $conversationFilter === 'new_activity'
+                    ? trans_choice('conversations.summary.lane_narrowed_attention_heading', $shownCount, [
+                        'shown' => (string) $shownCount,
+                        'matching' => trans_choice('conversations.counts.matching_conversations', $matchingConversationCount, ['count' => $matchingConversationCount]),
+                    ])
+                    : __('conversations.summary.lane_narrowed_heading', [
+                        'shown' => (string) $shownCount,
+                        'matching' => trans_choice('conversations.counts.matching_conversations', $matchingConversationCount, ['count' => $matchingConversationCount]),
+                    ]),
             ];
         }
 
+        $filteredDetail = trans_choice('conversations.summary.filtered_detail', $shownCount, [
+            'shown' => $this->conversationCountLabel($shownCount),
+        ]);
+
         if ($conversationFilter === 'closed') {
             return [
-                'detail' => 'Showing '.$this->conversationCountLabel($shownCount).' matching the current queue filters.',
-                'heading' => $shownCount === 1 ? '1 closed' : $shownCount.' closed',
+                'detail' => $filteredDetail,
+                'heading' => trans_choice('conversations.counts.closed', $shownCount, ['count' => $shownCount]),
             ];
         }
 
         if ($conversationHasActiveRefinement) {
             return [
-                'detail' => 'Showing '.$this->conversationCountLabel($shownCount).' matching the current queue filters.',
-                'heading' => $shownCount === 1 ? '1 open matching' : $shownCount.' open matching',
+                'detail' => $filteredDetail,
+                'heading' => trans_choice('conversations.counts.open_matching', $shownCount, ['count' => $shownCount]),
             ];
         }
 
         return [
-            'detail' => 'Showing '.$this->conversationCountLabel($shownCount).' matching the current queue filters.',
-            'heading' => $shownCount.' open · '
-                .($newActivityConversationCount === 1 ? '1 needs attention' : $newActivityConversationCount.' need attention')
-                .' · '
-                .($cobrowseAttentionConversationCount === 1 ? '1 cobrowse session needs attention' : $cobrowseAttentionConversationCount.' cobrowse sessions need attention'),
+            'detail' => $filteredDetail,
+            'heading' => __('conversations.summary.open_heading', [
+                'open' => (string) $shownCount,
+                'attention' => trans_choice('conversations.counts.needs_attention', $newActivityConversationCount, ['count' => $newActivityConversationCount]),
+                'cobrowse' => trans_choice('conversations.counts.cobrowse_attention', $cobrowseAttentionConversationCount, ['count' => $cobrowseAttentionConversationCount]),
+            ]),
         ];
     }
 
@@ -475,19 +496,19 @@ class AgentConversationQueueController extends Controller
         $state = [
             'actions' => [],
             'detail' => match ($conversationFilter) {
-                'closed' => 'Closed conversations will appear here after agents close support threads.',
-                default => 'New visitor conversations will appear here as support starts.',
+                'closed' => __('conversations.empty.closed_detail'),
+                default => __('conversations.empty.default_detail'),
             },
             'heading' => $conversationEmptyMessage,
         ];
 
         if ($conversationSearch !== '') {
-            $state['heading'] = sprintf('No conversations match "%s".', $conversationSearch);
-            $state['detail'] = 'Search covers subject, support code, visitor ID, visitor name, and visitor email.';
-            $state['actions'][] = $this->conversationEmptyAction('conversation_search', 'Clear search', $conversationQuery);
+            $state['heading'] = __('conversations.empty.no_search_match', ['term' => $conversationSearch]);
+            $state['detail'] = __('conversations.empty.search_covers');
+            $state['actions'][] = $this->conversationEmptyAction('conversation_search', __('conversations.actions.clear_search'), $conversationQuery);
             $state['actions'][] = [
                 'href' => route('dashboard.conversations.index'),
-                'label' => 'Clear all conversation filters',
+                'label' => __('conversations.actions.clear_all'),
             ];
 
             return $state;
@@ -497,14 +518,14 @@ class AgentConversationQueueController extends Controller
             $clearRefinementsQuery = $conversationQuery;
             unset($clearRefinementsQuery['conversation_site'], $clearRefinementsQuery['conversation_presence']);
 
-            $state['detail'] = 'Try another site or presence filter, or clear the filters to return to the broader queue.';
+            $state['detail'] = __('conversations.empty.refine_detail');
             $state['actions'][] = [
                 'href' => route('dashboard.conversations.index', $clearRefinementsQuery),
-                'label' => 'Clear filters',
+                'label' => __('conversations.actions.clear_filters'),
             ];
             $state['actions'][] = [
                 'href' => route('dashboard.conversations.index'),
-                'label' => 'Clear all conversation filters',
+                'label' => __('conversations.actions.clear_all'),
             ];
 
             return $state;
@@ -515,19 +536,20 @@ class AgentConversationQueueController extends Controller
 
         if ($supportLaneIsEmpty) {
             $state['heading'] = match ($conversationFilter) {
-                'assigned_to_me' => 'No conversations are assigned to you in this queue.',
-                'cobrowse_attention' => 'No active cobrowse sessions need attention.',
-                'needs_reply' => 'No conversations need a reply right now.',
-                'new_activity' => 'No conversations need attention right now.',
-                'unassigned' => 'No unassigned conversations in this queue.',
+                'assigned_to_me' => __('conversations.empty.lane_assigned_to_me'),
+                'cobrowse_attention' => __('conversations.empty.lane_cobrowse_attention'),
+                'needs_reply' => __('conversations.empty.lane_needs_reply'),
+                'new_activity' => __('conversations.empty.lane_new_activity'),
+                'unassigned' => __('conversations.empty.lane_unassigned'),
                 default => $conversationEmptyMessage,
             };
-            $state['detail'] = 'Try another support lane or clear the lane filter. '
-                .$this->conversationCountMatchLabel($matchingConversationCount).' the other queue filters.';
-            $state['actions'][] = $this->conversationEmptyAction('conversation_filter', 'Clear support lane', $conversationQuery);
+            $state['detail'] = __('conversations.empty.lane_detail', [
+                'matching' => $this->conversationCountMatchLabel($matchingConversationCount),
+            ]);
+            $state['actions'][] = $this->conversationEmptyAction('conversation_filter', __('conversations.actions.clear_support_lane'), $conversationQuery);
             $state['actions'][] = [
                 'href' => route('dashboard.conversations.index'),
-                'label' => 'Clear all conversation filters',
+                'label' => __('conversations.actions.clear_all'),
             ];
 
             return $state;
@@ -536,16 +558,15 @@ class AgentConversationQueueController extends Controller
         if ($conversationFilter === 'closed') {
             $state['actions'][] = [
                 'href' => route('dashboard.conversations.index'),
-                'label' => 'Show active conversations',
+                'label' => __('conversations.actions.show_active'),
             ];
         } else {
             // True first-run: nothing filtered this queue empty — there are no
             // conversations yet. Point at what creates them.
-            $state['detail'] = 'New visitor conversations will appear here as support starts. '
-                .'Conversations begin when a visitor opens the widget on a connected site.';
+            $state['detail'] = __('conversations.empty.first_run_detail');
             $state['actions'][] = [
                 'href' => route('dashboard.sites.index'),
-                'label' => 'Check widget installs',
+                'label' => __('conversations.actions.check_installs'),
             ];
         }
 
@@ -554,12 +575,15 @@ class AgentConversationQueueController extends Controller
 
     private function conversationCountLabel(int $count): string
     {
-        return $count.' '.($count === 1 ? 'conversation' : 'conversations');
+        return trans_choice('conversations.counts.conversations', $count, ['count' => $count]);
     }
 
     private function conversationCountMatchLabel(int $count): string
     {
-        return $this->conversationCountLabel($count).' '.($count === 1 ? 'matches' : 'match');
+        // Not the count label plus a verb. English inflects the verb for number
+        // and German does not, so the whole phrase is one plural form rather
+        // than a noun glued to a separately chosen verb.
+        return trans_choice('conversations.counts.matches', $count, ['count' => $count]);
     }
 
     /**

@@ -2786,18 +2786,25 @@
             // The breadcrumb names where you are. The active navigation item is
             // the honest answer when there is one; the page title covers the
             // screens that sit outside the rail, like Profile.
-            $currentLabel = collect($workItems)->concat($manageItems)->firstWhere('active')['label'] ?? $title;
+            $activeNavItem = collect($workItems)->concat($manageItems)->firstWhere('active');
+            $currentLabel = $activeNavItem['label'] ?? $title;
 
             // The crumb sits outside `<main>`, so it says which language it is
             // rather than inheriting the root and being pronounced as English.
             //
-            // The page's language covers every case that exists today: a rail
-            // label is shell copy and the shell is English, and the locale is
-            // English on any surface that has not been extracted -- so the two
-            // only diverge once an EXTRACTED surface also has a rail item.
-            // Nothing does yet, which is why this is one value rather than a
-            // branch nothing could exercise.
+            // Which language depends on where the label came from. A rail label
+            // is the SHELL's copy and the shell is still English; falling back
+            // to the page title borrows the PAGE's, which on an extracted
+            // surface is the agent's own.
+            //
+            // The conversation queue is what makes this a real branch rather
+            // than a theoretical one: it is extracted AND it has a rail item,
+            // so it renders a German page under an English crumb. On #786 there
+            // was no such surface and this was deliberately one value, because
+            // a branch no test can reach is not worth having.
+            $shellLocale = str_replace('_', '-', \App\Support\DashboardLanguage::FALLBACK);
             $pageLocale = str_replace('_', '-', app()->getLocale());
+            $currentLabelLocale = $activeNavItem !== null ? $shellLocale : $pageLocale;
         @endphp
 
         <div class="wf-app">
@@ -2854,7 +2861,7 @@
                             <x-icon name="chevron-right" :size="13" />
                             <span class="wf-crumb-current" lang="{{ $pageLocale }}">{{ $crumb }}</span>
                         @else
-                            <span class="wf-crumb-current" lang="{{ $pageLocale }}">{{ $currentLabel }}</span>
+                            <span class="wf-crumb-current" lang="{{ $currentLabelLocale }}">{{ $currentLabel }}</span>
                         @endif
                     </nav>
 

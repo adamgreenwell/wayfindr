@@ -1,5 +1,10 @@
-<x-layouts.app title="Conversations" :agent="$agent" :account="$account">
-            <x-page-header title="Conversations" :subtitle="($conversationFilter === 'closed' ? 'Closed visitor conversations' : 'Active visitor conversations').' for '.$account->name.'.'" />
+<x-layouts.app :title="__('conversations.document_title')" :agent="$agent" :account="$account">
+            {{-- One whole sentence per language, not a clause glued to ' for '. --}}
+            <x-page-header
+                :title="__('conversations.document_title')"
+                :subtitle="$conversationFilter === 'closed'
+                    ? __('conversations.page_title_closed', ['account' => $account->name])
+                    : __('conversations.page_title_active', ['account' => $account->name])" />
 
             @php
                 // The lanes carry their own counts, which is what lets the
@@ -11,9 +16,9 @@
             @endphp
 
             <section id="conversations" aria-labelledby="conversations-heading">
-                <h2 id="conversations-heading" class="sr-only">Conversation queue</h2>
+                <h2 id="conversations-heading" class="sr-only">{{ __('conversations.title') }}</h2>
 
-                <nav class="wf-lanes" aria-label="Conversation lanes">
+                <nav class="wf-lanes" aria-label="{{ __('conversations.lanes.region_label') }}">
                     @foreach ($conversationFilters as $filterValue => $filterLabel)
                         @php
                             $filterParams = $conversationQuery;
@@ -62,21 +67,21 @@
                     @endif
 
                     <div class="wf-filter wf-filter-search">
-                        <label for="conversation_search">Search</label>
+                        <label for="conversation_search">{{ __('conversations.search.label') }}</label>
                         <input
                             id="conversation_search"
                             name="conversation_search"
                             type="search"
                             value="{{ $conversationSearch }}"
-                            placeholder="Subject, support code, or visitor"
+                            placeholder="{{ __('conversations.search.placeholder') }}"
                         >
-                        <span class="wf-filter-help">Search by subject, support code, visitor ID, visitor name, or visitor email.</span>
+                        <span class="wf-filter-help">{{ __('conversations.search.hint') }}</span>
                     </div>
 
                     <div class="wf-filter">
-                        <label for="conversation_site">Site</label>
+                        <label for="conversation_site">{{ __('conversations.columns.site') }}</label>
                         <select id="conversation_site" name="conversation_site">
-                            <option value="">Any site</option>
+                            <option value="">{{ __('conversations.sites.any') }}</option>
                             @foreach ($sites as $site)
                                 <option value="{{ $site->id }}" @selected($conversationSite === $site->id)>
                                     {{ $site->name }}
@@ -86,7 +91,7 @@
                     </div>
 
                     <div class="wf-filter">
-                        <label for="conversation_presence">Presence</label>
+                        <label for="conversation_presence">{{ __('conversations.filters_label_presence') }}</label>
                         <select id="conversation_presence" name="conversation_presence">
                             @foreach ($conversationPresenceFilters as $presenceValue => $presenceLabel)
                                 <option value="{{ $presenceValue === 'all' ? '' : $presenceValue }}" @selected($conversationPresence === $presenceValue)>
@@ -101,8 +106,8 @@
                         unset($clearParams['conversation_search'], $clearParams['conversation_site'], $clearParams['conversation_presence']);
                     @endphp
                     <div class="wf-filter-actions">
-                        <button class="button" type="submit">Search conversations</button>
-                        <a class="button secondary" href="{{ route('dashboard.conversations.index', $clearParams) }}">Clear filters</a>
+                        <button class="button" type="submit">{{ __('conversations.search.submit') }}</button>
+                        <a class="button secondary" href="{{ route('dashboard.conversations.index', $clearParams) }}">{{ __('conversations.actions.clear_filters') }}</a>
                     </div>
                 </form>
 
@@ -112,9 +117,9 @@
                 </p>
 
                 @if ($activeConversationFilters !== [])
-                    <div class="filter-summary" aria-label="Active conversation filters">
+                    <div class="filter-summary" aria-label="{{ __('conversations.chips.region_label') }}">
                         <div>
-                            <strong>Active conversation filters</strong>
+                            <strong>{{ __('conversations.chips.region_label') }}</strong>
                         </div>
                         <div class="filter-chips">
                             @foreach ($activeConversationFilters as $activeFilter)
@@ -123,7 +128,7 @@
                                     <span aria-hidden="true">x</span>
                                 </a>
                             @endforeach
-                            <a class="filter-chip filter-chip-clear" href="{{ route('dashboard.conversations.index') }}">Clear all conversation filters</a>
+                            <a class="filter-chip filter-chip-clear" href="{{ route('dashboard.conversations.index') }}">{{ __('conversations.actions.clear_all') }}</a>
                         </div>
                     </div>
                 @endif
@@ -148,14 +153,14 @@
                         <table class="wf-queue">
                             <thead>
                                 <tr>
-                                    <th scope="col">Subject</th>
-                                    <th scope="col">Site</th>
-                                    <th scope="col">Visitor</th>
-                                    <th scope="col">Attention</th>
-                                    <th scope="col">Read</th>
-                                    <th scope="col">Cobrowse</th>
-                                    <th scope="col">Assigned</th>
-                                    <th scope="col">Timing</th>
+                                    <th scope="col">{{ __('conversations.columns.subject') }}</th>
+                                    <th scope="col">{{ __('conversations.columns.site') }}</th>
+                                    <th scope="col">{{ __('conversations.columns.visitor') }}</th>
+                                    <th scope="col">{{ __('conversations.columns.attention') }}</th>
+                                    <th scope="col">{{ __('conversations.columns.read') }}</th>
+                                    <th scope="col">{{ __('conversations.columns.cobrowse') }}</th>
+                                    <th scope="col">{{ __('conversations.columns.assigned') }}</th>
+                                    <th scope="col">{{ __('conversations.columns.timing') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -176,19 +181,35 @@
                                         $visitorLabel = $conversation->visitor?->name
                                             ?: $conversation->visitor?->email
                                             ?: $conversation->visitor?->anonymous_id
-                                            ?: 'Unknown visitor';
+                                            ?: __('conversations.row.unknown_visitor');
                                     @endphp
                                     <tr>
                                         <td class="wf-queue-subject" style="--wf-row-site: var({{ $conversation->site->resolvedColor()->cssVariable() }})">
                                             <a href="{{ route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'from_queue' => '1'] + $conversationQuery) }}">
-                                                {{ $conversation->subject ?? 'Untitled conversation' }}
+                                                {{ $conversation->subject ?? __('conversations.row.untitled') }}
                                             </a>
-                                            <span class="wf-queue-preview" title="{{ $activityPreview['body'] }}">
+                                            @php
+                                                // The model hands out keys and timestamps; this surface turns
+                                                // them into words, because it is the only place that knows whose
+                                                // language to use. See Conversation::attentionLabel().
+                                                $previewBody = $activityPreview['body_key']
+                                                    ? __('conversations.row.'.$activityPreview['body_key'])
+                                                    : $activityPreview['body'];
+                                                $previewLabel = __('conversations.row.'.$activityPreview['label_key']);
+                                                $waitLabel = $conversationTiming['wait_since']
+                                                    ? __('conversations.row.'.$conversationTiming['wait_key'], [
+                                                        'elapsed' => $conversationTiming['wait_key'] === 'closed'
+                                                            ? $conversationTiming['wait_since']->diffForHumans()
+                                                            : $conversation->elapsedWaitFrom($conversationTiming['wait_since']),
+                                                    ])
+                                                    : __('conversations.row.'.$conversationTiming['wait_key']);
+                                            @endphp
+                                            <span class="wf-queue-preview" title="{{ $previewBody }}">
                                                 <x-support-code-reference
                                                     :code="$conversation->support_code"
                                                     :href="route('dashboard.support-code.lookup', ['support_code' => $conversation->support_code])"
                                                 />
-                                                &middot; {{ $activityPreview['label'] }}@if ($activityPreview['occurred_at']) &middot; <time datetime="{{ $activityPreview['occurred_at']->toJSON() }}">Activity {{ $activityPreview['occurred_at']->diffForHumans() }}</time>@endif &middot; {{ $activityPreview['body'] }}
+                                                &middot; {{ $previewLabel }}@if ($activityPreview['occurred_at']) &middot; <time datetime="{{ $activityPreview['occurred_at']->toJSON() }}">{{ __('conversations.row.activity', ['elapsed' => $activityPreview['occurred_at']->diffForHumans()]) }}</time>@endif &middot; {{ $previewBody }}
                                             </span>
                                         </td>
                                         <td>
@@ -202,7 +223,7 @@
                                         </td>
                                         <td>
                                             <span class="wf-queue-state" @if ($needsReply) data-tone="waiting" @endif>
-                                                <i aria-hidden="true"></i>{{ $conversation->attentionLabel() }}
+                                                <i aria-hidden="true"></i>{{ __('conversations.row.attention_'.$conversation->attentionState()) }}
                                             </span>
 
                                             {{-- Marks only for what is actually true. A quiet visitor and an
@@ -211,38 +232,77 @@
                                             <span class="wf-queue-marks">
                                                 @if (in_array($presenceState, ['active', 'recent'], true))
                                                     <span class="wf-queue-mark" data-tone="live">
-                                                        <i aria-hidden="true"></i>{{ $conversation->visitor?->presenceLabel() }}
+                                                        <i aria-hidden="true"></i>{{ $conversation->visitor ? __('presence.'.($conversation->visitor->presenceState() === 'unknown' ? 'not_reported' : $conversation->visitor->presenceState())) : '' }}
                                                     </span>
                                                 @endif
                                             </span>
                                         </td>
                                         <td>
                                             @if ($conversation->hasNewActivityFor($agent))
-                                                <span class="wf-queue-unread">{{ $conversation->readStateLabelFor($agent) }}</span>
+                                                <span class="wf-queue-unread">{{ __('conversations.row.'.$conversation->readStateKeyFor($agent)) }}</span>
                                             @else
-                                                <span class="wf-queue-cobrowse">{{ $conversation->readStateLabelFor($agent) }}</span>
+                                                <span class="wf-queue-cobrowse">{{ __('conversations.row.'.$conversation->readStateKeyFor($agent)) }}</span>
                                             @endif
                                         </td>
                                         <td>
+                                            @php
+                                                // Every string CobrowseConsentState supplies is still English --
+                                                // the recorded exception in docs/product/dashboard-language.md --
+                                                // and it is being rendered inside a region marked with the agent's
+                                                // language, so each piece has to say what it actually is.
+                                                //
+                                                // The label, message and guidance are wholly English, so the
+                                                // element carrying them is marked. The two below are mixed: a
+                                                // German label wrapping an English value, in one sentence whose
+                                                // word order the catalogue owns. Splitting the sentence to wrap
+                                                // the value would be exactly the fragment concatenation this
+                                                // extraction refuses, so the marked value is passed IN as the
+                                                // placeholder -- escaped here, with only our own catalogue string
+                                                // rendered unescaped around it.
+                                                $marked = fn (string $value, string $language): string => '<span lang="'
+                                                    .e(str_replace('_', '-', $language))
+                                                    .'">'.e($value).'</span>';
+
+                                                // `pressure` is always English: English words, and an English
+                                                // pluraliser building "2 dropped batches".
+                                                $englishValue = \App\Support\DashboardLanguage::FALLBACK;
+
+                                                // `last_report` is NOT. It is the static "Not reported" only in
+                                                // the `unavailable` state; every other state builds it with
+                                                // `diffForHumans()`, which follows the page's locale and returns
+                                                // "vor 20 Sekunden" here. Marking that English would have a
+                                                // screen reader pronounce German as English -- the same defect as
+                                                // leaving it unmarked, pointing the other way.
+                                                //
+                                                // Decided from the STATE rather than by comparing the prose,
+                                                // which is what the `in_array` below still does and should not.
+                                                $lastReportValue = ($cobrowseTransport['state'] ?? null) === 'unavailable'
+                                                    ? $englishValue
+                                                    : app()->getLocale();
+                                            @endphp
                                             <span
                                                 class="wf-queue-cobrowse"
+                                                lang="{{ str_replace('_', '-', \App\Support\DashboardLanguage::FALLBACK) }}"
                                                 @if ($cobrowseTransport['tone'] !== 'manual')
                                                     data-tone="{{ $cobrowseTransport['tone'] === 'ready' ? 'live' : 'attention' }}"
                                                 @endif
                                                 title="{{ $cobrowseTransport['message'] }} {{ $cobrowseTransport['guidance'] }}"
                                             >{{ $cobrowseTransport['label'] }}</span>
                                             <span class="wf-queue-preview">
-                                                Last report {{ $cobrowseTransport['last_report'] }}@if (! in_array($cobrowseTransport['pressure'], ['No drops reported', 'No recent drops reported'], true)) &middot; Pressure {{ $cobrowseTransport['pressure'] }}@endif
+                                                {{-- The `in_array` below compares against English prose and will
+                                                     need to move to a state key when that vocabulary is
+                                                     extracted. --}}
+                                                {!! __('conversations.row.last_report', ['value' => $marked($cobrowseTransport['last_report'], $lastReportValue)]) !!}@if (! in_array($cobrowseTransport['pressure'], ['No drops reported', 'No recent drops reported'], true)) &middot; {!! __('conversations.row.pressure', ['value' => $marked($cobrowseTransport['pressure'], $englishValue)]) !!}@endif
                                             </span>
                                         </td>
                                         <td>
                                             <span class="wf-queue-assignee" @if (! $conversation->assignedAgent) data-unassigned="true" @endif>
-                                                {{ $conversation->assignedAgent?->name ?? 'Unassigned' }}
+                                                {{ $conversation->assignedAgent?->name ?? __('conversations.row.unassigned_agent') }}
                                             </span>
                                         </td>
                                         <td class="wf-queue-when">
-                                            {{ $conversationTiming['opened_label'] }}
-                                            <span class="wf-queue-preview" title="{{ $conversationTiming['wait_label'] }}">{{ $conversationTiming['wait_label'] }}</span>
+                                            {{ __('conversations.row.opened', ['elapsed' => $conversationTiming['opened_at']->diffForHumans()]) }}
+                                            <span class="wf-queue-preview" title="{{ $waitLabel }}">{{ $waitLabel }}</span>
                                         </td>
                                     </tr>
                                 @endforeach

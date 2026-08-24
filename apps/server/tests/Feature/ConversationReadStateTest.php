@@ -121,7 +121,12 @@ test('dashboard filters conversations by new activity for the signed in agent', 
     $this->actingAs($agent)
         ->get('/dashboard/conversations?conversation_filter=new_activity')
         ->assertOk()
-        ->assertSee('2 need attention')
+        // The attention lane's heading was restructured for #749: it used to
+        // read "2 need attention shown of 3 matching conversations", which
+        // drops a whole clause into the slot the other lanes fill with a
+        // number -- untranslatable, and broken outright in German. The figures
+        // it reports are unchanged.
+        ->assertSee('2 of 3 matching conversations need attention')
         ->assertSee('New activity')
         ->assertSee('Unread for Ada')
         ->assertSee('Only Bea has seen this')

@@ -203,6 +203,20 @@ class Conversation extends Model
         return ! $lastReadAt || $lastActivityAt->gt($lastReadAt);
     }
 
+    /**
+     * Which read state this conversation is in for one agent.
+     *
+     * A key, not a sentence: this class has no surface-scoped locale (see
+     * `attentionLabel()`), and this method is the sharpest illustration of why.
+     * It takes an AGENT and, translated here, would answer in whatever locale
+     * the process last set -- so a job or a mail build would hand an English
+     * agent German because a German agent's request happened to run first.
+     */
+    public function readStateKeyFor(User $agent): string
+    {
+        return $this->hasNewActivityFor($agent) ? 'read_new_activity' : 'read_seen';
+    }
+
     public function readStateLabelFor(User $agent): string
     {
         return $this->hasNewActivityFor($agent) ? 'New activity' : 'Seen';
@@ -248,6 +262,21 @@ class Conversation extends Model
             : 'needs_reply';
     }
 
+    /**
+     * Deliberately NOT translated, and `attentionState()` is why.
+     *
+     * A view is only ever rendered inside a request, so a shared Blade component
+     * may use the catalogue directly -- the locale is scoped per request to
+     * surfaces that have been extracted. A MODEL is not: `attentionLabel()` can
+     * be reached from a queued job, a console command or a mail build, where
+     * the locale is whatever the process last set and nothing has scoped it to
+     * a surface at all.
+     *
+     * So the model answers with `attentionState()` and each extracted surface
+     * translates it at its own call site, which is where the request -- and
+     * therefore the reader -- is actually known. This label goes away when its
+     * last consumer is extracted.
+     */
     public function attentionLabel(): string
     {
         return match ($this->attentionState()) {
@@ -304,7 +333,15 @@ class Conversation extends Model
     }
 
     /**
-     * @return array{label: string, body: string, occurred_at: CarbonInterface|null}
+     * The latest activity on this conversation, as data plus catalogue KEYS.
+     *
+     * `body` is the visitor's or agent's own words and is never translated.
+     * `body_key` is set only when there are no words to show, and `label_key`
+     * names who spoke -- both are keys rather than sentences, for the reason on
+     * `attentionLabel()`. The English `label` and `body` fallbacks remain for
+     * surfaces that have not been extracted.
+     *
+     * @return array{label: string, label_key: string, body: string, body_key: string|null, occurred_at: CarbonInterface|null}
      */
     public function queueActivityPreview(): array
     {
@@ -316,22 +353,34 @@ class Conversation extends Model
                 ->first();
 
         if ($latestMessage) {
+            $snippet = $this->activityPreviewSnippet($latestMessage->body);
+
             return [
-                'body' => $this->activityPreviewSnippet($latestMessage->body) ?: 'Message has no text preview.',
+                'body' => $snippet ?: 'Message has no text preview.',
+                'body_key' => $snippet ? null : 'preview_no_text',
                 'label' => $this->activityPreviewLabel($latestMessage),
+                'label_key' => $this->activityPreviewLabelKey($latestMessage),
                 'occurred_at' => $latestMessage->created_at,
             ];
         }
 
         return [
             'body' => 'No messages have been sent yet.',
+            'body_key' => 'preview_none_body',
             'label' => 'No activity preview yet',
+            'label_key' => 'preview_none_label',
             'occurred_at' => null,
         ];
     }
 
     /**
-     * @return array{opened_label: string, wait_label: string}
+     * When this conversation opened and how long it has been waiting.
+     *
+     * Timestamps rather than sentences, and a key for the waiting state --
+     * `diffForHumans()` reads the ambient locale, so rendering it here would
+     * put a job's locale into an agent's page. The surface formats both.
+     *
+     * @return array{opened_label: string, opened_at: CarbonInterface, wait_label: string, wait_key: string, wait_since: CarbonInterface|null}
      */
     public function queueTimingContext(): array
     {
@@ -344,7 +393,10 @@ class Conversation extends Model
 
         return [
             'opened_label' => 'Opened '.$this->created_at->diffForHumans(),
+            'opened_at' => $this->created_at,
             'wait_label' => $this->queueWaitLabel($latestMessage),
+            'wait_key' => $this->queueWaitKey($latestMessage),
+            'wait_since' => $this->queueWaitSince($latestMessage),
         ];
     }
 
@@ -535,6 +587,15 @@ class Conversation extends Model
             ->first();
     }
 
+    private function activityPreviewLabelKey(ConversationMessage $message): string
+    {
+        return match ($message->sender_type) {
+            Visitor::class => 'preview_visitor',
+            User::class => 'preview_agent',
+            default => 'preview_message',
+        };
+    }
+
     private function activityPreviewLabel(ConversationMessage $message): string
     {
         return match ($message->sender_type) {
@@ -549,6 +610,38 @@ class Conversation extends Model
         $body = (string) Str::of((string) $body)->squish();
 
         return Str::limit($body, 150);
+    }
+
+    /**
+     * Which waiting state this row is in -- a key, formatted by the surface.
+     */
+    private function queueWaitKey(?ConversationMessage $latestMessage): string
+    {
+        if ($this->status === 'closed') {
+            return 'closed';
+        }
+
+        if ($latestMessage?->created_at === null) {
+            return 'no_messages';
+        }
+
+        return match ($latestMessage->sender_type) {
+            Visitor::class => 'waiting_on_reply',
+            User::class => 'waiting_on_visitor',
+            default => 'waiting_on_update',
+        };
+    }
+
+    /**
+     * The moment the waiting has been measured from, or null when nothing is.
+     */
+    private function queueWaitSince(?ConversationMessage $latestMessage): ?CarbonInterface
+    {
+        if ($this->status === 'closed') {
+            return $this->closed_at ?? $this->updated_at;
+        }
+
+        return $latestMessage?->created_at;
     }
 
     private function queueWaitLabel(?ConversationMessage $latestMessage): string
@@ -568,6 +661,14 @@ class Conversation extends Model
         }
 
         return 'No messages yet';
+    }
+
+    /**
+     * The elapsed rendering the surface uses for a waiting state.
+     */
+    public function elapsedWaitFrom(CarbonInterface $since): string
+    {
+        return $this->elapsedQueueTime($since);
     }
 
     private function elapsedQueueTime(CarbonInterface $since): string

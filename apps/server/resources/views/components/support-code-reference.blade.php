@@ -5,7 +5,7 @@
 
 <span class="support-reference">
     @if ($href)
-        <a class="text-link" href="{{ $href }}" aria-label="Open support record {{ $code }}">
+        <a class="text-link" href="{{ $href }}" aria-label="{{ __('support.open_record', ['code' => $code]) }}">
             <code>{{ $code }}</code>
         </a>
     @else
@@ -15,9 +15,9 @@
         class="support-reference-copy"
         type="button"
         data-copy-value="{{ $code }}"
-        data-copy-default-label="Copy"
-        data-copy-success-label="Copied"
-        aria-label="Copy support code {{ $code }}"
-        title="Copy support code"
-    >Copy</button>
+        data-copy-default-label="{{ __('support.copy') }}"
+        data-copy-success-label="{{ __('support.copied') }}"
+        aria-label="{{ __('support.copy_code_for', ['code' => $code]) }}"
+        title="{{ __('support.copy_code') }}"
+    >{{ __('support.copy') }}</button>
 </span>
