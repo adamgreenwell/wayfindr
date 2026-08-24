@@ -121,6 +121,25 @@ already run, the flash after a save, the error under a field — is exactly the
 copy an extraction misses, and a single default render reaches none of it. Every
 miss found by review so far has been on a branch of this kind.
 
+### An untranslated page still says it is English
+
+The application locale switches for the whole dashboard — it has to, or the
+pages that *are* translated would not be. But `<html lang>` describes the
+document, and while this epic is half-finished most documents are still English.
+Telling a screen reader that an English page is German makes it pronounce
+English words with German phonetics: a sighted agent never notices, and someone
+listening to the page hears nothing else.
+
+So the layout marks a page as English until its surface claims otherwise, with a
+`translated` flag a view sets once its copy is extracted. The locale switches
+globally; the `lang` attribute does not, until the surface says so. The flag
+deletes itself when the last surface lands.
+
+One limit worth naming ahead of time: a page whose *shell* is translated and
+whose body is not is genuinely mixed, and no single root `lang` is right for it.
+That arrives when the app shell is extracted, and the answer there is a `lang`
+on the shell region rather than on `<html>`.
+
 ### Copy can be wrong without being English
 
 `'„unbeantwortet\"'` in a single-quoted PHP string keeps its backslash — PHP
