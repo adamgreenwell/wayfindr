@@ -13,6 +13,7 @@ use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface as DateTimeInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
@@ -604,10 +605,11 @@ test('tickets are indexed for the date range the reports scan', function (): voi
     // handful of rows: correctness is identical and only a long-lived install
     // feels it. `volume()` runs on every load of the page whichever tab is
     // selected, so this one compounds faster than most.
-    $indexes = collect(DB::select("PRAGMA index_list('tickets')"))
-        ->map(fn (object $index): array => collect(DB::select('PRAGMA index_info('.$index->name.')'))
-            ->pluck('name')
-            ->all());
+    // Read through the schema builder rather than `PRAGMA index_list`, which
+    // is SQLite's own syntax and is rejected outright by PostgreSQL. The suite
+    // runs on both now, and a structural assertion only one engine can execute
+    // is the same blind spot this test exists to cover, one step further out.
+    $indexes = collect(Schema::getIndexes('tickets'))->pluck('columns');
 
     expect($indexes)->toContain(['site_id', 'created_at']);
 });
