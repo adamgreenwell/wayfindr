@@ -143,6 +143,7 @@ return [
         'pressure' => 'Auslastung :value',
         'activity' => 'Aktivität :elapsed',
         'untitled' => 'Unterhaltung ohne Betreff',
+        'unknown_visitor' => 'Unbekannter Besucher',
         'no_messages' => 'Noch keine Nachrichten',
     ],
 ];

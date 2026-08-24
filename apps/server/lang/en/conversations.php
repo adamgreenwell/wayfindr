@@ -150,6 +150,7 @@ return [
         'pressure' => 'Pressure :value',
         'activity' => 'Activity :elapsed',
         'untitled' => 'Untitled conversation',
+        'unknown_visitor' => 'Unknown visitor',
         'no_messages' => 'No messages yet',
     ],
 ];

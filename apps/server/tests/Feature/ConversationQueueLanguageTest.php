@@ -585,3 +585,33 @@ test('the attention lane heading is a sentence, not a clause in a number slot', 
         // and every sentence using this count reads "von :matching".
         ->and($german)->not->toContain('passende Unterhaltungen');
 });
+
+test('a visitor with nothing to be named by is still named in German', function (): void {
+    // Every column the label falls back through is nullable -- name, email and
+    // anonymous_id -- so this is a real row rather than a defensive branch.
+    // A conversation can also carry no visitor at all.
+    $world = conversationQueueLanguageWorld(conversations: 0);
+
+    Conversation::factory()
+        ->for($world['site'])
+        ->for(Visitor::factory()->for($world['site'])->create([
+            'name' => null,
+            'email' => null,
+            'anonymous_id' => null,
+        ]))
+        ->create(['support_code' => 'WF-LANGANON', 'subject' => 'Datenpunkt anon', 'status' => 'open']);
+
+    $german = conversationQueueLanguageVisibleText(
+        $this->actingAs($world['agents']['de'])->get(route('dashboard.conversations.index'))->getContent()
+    );
+
+    expect($german)->toContain('Unbekannter Besucher')
+        ->and($german)->not->toContain('Unknown visitor');
+
+    $english = conversationQueueLanguageVisibleText(
+        $this->actingAs($world['agents']['en'])->get(route('dashboard.conversations.index'))->getContent()
+    );
+
+    expect($english)->toContain('Unknown visitor')
+        ->and($english)->not->toContain('Unbekannter Besucher');
+});

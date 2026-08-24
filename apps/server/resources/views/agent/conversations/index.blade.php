@@ -181,7 +181,7 @@
                                         $visitorLabel = $conversation->visitor?->name
                                             ?: $conversation->visitor?->email
                                             ?: $conversation->visitor?->anonymous_id
-                                            ?: 'Unknown visitor';
+                                            ?: __('conversations.row.unknown_visitor');
                                     @endphp
                                     <tr>
                                         <td class="wf-queue-subject" style="--wf-row-site: var({{ $conversation->site->resolvedColor()->cssVariable() }})">
