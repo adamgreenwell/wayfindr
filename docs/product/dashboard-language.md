@@ -307,6 +307,31 @@ exactly that.
 The rule these share: when the general net cannot reach a class of copy, assert
 that class directly rather than loosening the net until it produces noise.
 
+### The net that replaced all of that
+
+Eight review findings on the queue were the same shape — copy reaching an
+extracted page from somewhere that is not that page: a model, a shared
+component, a support class, a nullable fallback, an attribute. Each was found
+individually and none of them said where the next one was.
+
+So the comparison is now **lang-aware and attribute-aware**, driven by
+`DashboardLanguage::EXTRACTED_ROUTES`. It reads every text node *and* every
+`title`, `aria-label`, `placeholder` and `alt`, resolves each string's effective
+language the way a screen reader does (nearest ancestor carrying `lang`), and
+flags anything announced as German that did not change when the language did.
+A recorded exception that declares itself English is skipped because it *says*
+it is English, not because it is on a list. Five of the seven leak shapes found
+by review are caught by it; each is mutation-verified.
+
+Two things it deliberately does not do. It ignores **cognates** — `Name`,
+`Agent`, `Cobrowse`, and the autonyms — by exact string, with a companion test
+that fails when an entry stops appearing, so the list cannot outlive what it
+excuses. And it **cannot see an untranslated fragment interpolated into a
+translated sentence**: `Letzte Meldung Not reported` differs from `Last report
+Not reported`, so the sentence passes while the value inside it is English.
+That one is held by the rule instead — interpolated untranslated values are
+marked at the point of interpolation — and by a test that says so.
+
 ### Copy can be wrong without being English
 
 `'„unbeantwortet\"'` in a single-quoted PHP string keeps its backslash — PHP

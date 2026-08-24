@@ -15,6 +15,7 @@ use App\Support\CobrowseReplayPreview;
 use App\Support\CobrowseResyncRequestPolicy;
 use App\Support\CobrowseSnapshotFreshness;
 use App\Support\CobrowseTransportPressure;
+use App\Support\DashboardLanguage;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -713,4 +714,208 @@ test('a cobrowse value is escaped, not trusted', function (): void {
 
     expect($html)->not->toContain('<script>alert(1)</script>')
         ->and($html)->toContain('&lt;script&gt;');
+});
+
+/**
+ * Every readable string on a page, with the language it is actually announced in.
+ *
+ * Text nodes AND the attributes a screen reader reads -- `title`, `aria-label`,
+ * `placeholder`, `alt` -- because a third of this page's copy lives in
+ * attributes and `strip_tags` throws all of it away before any comparison sees
+ * it. Each string is paired with its EFFECTIVE language: the nearest ancestor
+ * carrying `lang`, which is what assistive technology resolves.
+ *
+ * @return array<string, string> string => effective language
+ */
+function conversationQueueLanguageAnnouncements(string $html): array
+{
+    if (preg_match('/<main\b[^>]*>(.*)<\/main>/is', $html, $main) === 1) {
+        $html = $main[1];
+    }
+
+    $html = preg_replace('/<(script|style)\b[^>]*>.*?<\/\1>/is', ' ', $html) ?? $html;
+
+    $document = new DOMDocument;
+    $previous = libxml_use_internal_errors(true);
+    $document->loadHTML('<?xml encoding="UTF-8"?><div lang="de">'.$html.'</div>', LIBXML_NOERROR | LIBXML_NOWARNING);
+    libxml_clear_errors();
+    libxml_use_internal_errors($previous);
+
+    $languageOf = function (?DOMNode $element): string {
+        for (; $element instanceof DOMElement; $element = $element->parentNode) {
+            if ($element->hasAttribute('lang')) {
+                return $element->getAttribute('lang');
+            }
+        }
+
+        return 'de';
+    };
+
+    $announcements = [];
+    $xpath = new DOMXPath($document);
+
+    foreach ($xpath->query('//text()') ?: [] as $node) {
+        $text = trim(preg_replace('/\s+/u', ' ', $node->textContent) ?? '');
+
+        if ($text !== '') {
+            $announcements[$text] = $languageOf($node->parentNode);
+        }
+    }
+
+    foreach (['title', 'aria-label', 'placeholder', 'alt'] as $attribute) {
+        foreach ($xpath->query('//*[@'.$attribute.']') ?: [] as $element) {
+            $text = trim(preg_replace('/\s+/u', ' ', $element->getAttribute($attribute)) ?? '');
+
+            if ($text !== '') {
+                $announcements[$text] = $languageOf($element);
+            }
+        }
+    }
+
+    return $announcements;
+}
+
+/**
+ * Strings that are correctly identical in both languages.
+ *
+ * EXACT matches, never substrings: the last allowlist on this epic exempted
+ * `mail` and silently matched every sentence containing "email", hiding three
+ * real misses. And `every cognate on the list still appears` fails when an entry
+ * stops matching, so an exemption cannot outlive the thing it excuses.
+ *
+ * @return array<string, string> string => why it is the same in both
+ */
+function conversationQueueLanguageCognates(): array
+{
+    return [
+        'Name' => 'the same word in both languages',
+        'Agent' => 'the same word in both languages',
+        'Cobrowse' => "the product's own name for the feature, not translated",
+        'English' => 'an autonym -- the language selector names each language in its own language',
+        'Deutsch' => 'an autonym -- see above',
+    ];
+}
+
+/**
+ * Strings a German page announces AS German that did not change when the
+ * language did -- so they were never translated.
+ *
+ * This replaced a function-word heuristic, which could not see `Unavailable`
+ * (no English function word in it) and could not see attributes at all. Both
+ * were real leaks. Comparing the two renders catches any untranslated string
+ * regardless of its shape, and reading the effective `lang` means a recorded
+ * exception that declares itself English is correctly ignored rather than
+ * allow-listed by name.
+ *
+ * **What it still cannot see, stated rather than assumed:** an untranslated
+ * fragment INTERPOLATED into a translated sentence. `Letzte Meldung Not
+ * reported` differs from `Last report Not reported`, so the comparison passes
+ * while `Not reported` is English in both. Verified by mutation -- unwrapping
+ * that value is the one leak shape of seven that this guard misses.
+ *
+ * The mitigation is the rule rather than the net: an untranslated value
+ * interpolated into a translated sentence must be marked at the point of
+ * interpolation, which `the cobrowse exception says it is English, value and
+ * all` tests directly and three mutations hold in place. When a guard cannot
+ * reach a class of mistake, assert that class directly -- do not widen the
+ * guard until it produces noise.
+ *
+ * @return array<int, string>
+ */
+function conversationQueueLanguageEnglishLeaks(string $germanHtml, string $englishHtml): array
+{
+    $german = conversationQueueLanguageAnnouncements($germanHtml);
+    $english = conversationQueueLanguageAnnouncements($englishHtml);
+
+    $isData = fn (string $text): bool => str_contains($text, 'Datenpunkt')
+        || str_contains($text, 'WF-LANG')
+        || str_contains($text, 'anon-')
+        || str_contains($text, '@')
+        // Numbers, punctuation and single letters read the same in both
+        // languages, correctly.
+        || preg_match('/\p{L}{3}/u', $text) !== 1;
+
+    $leaks = [];
+
+    foreach ($german as $text => $language) {
+        if ($language !== 'de' || $isData($text) || ! array_key_exists($text, $english)) {
+            continue;
+        }
+
+        if (array_key_exists($text, conversationQueueLanguageCognates())) {
+            continue;
+        }
+
+        $leaks[] = $text;
+    }
+
+    return array_values(array_unique($leaks));
+}
+
+test('no English is rendered as German on any extracted surface', function (): void {
+    // The guard the last several review rounds were doing by hand. Every one of
+    // them was the same shape -- copy reaching an extracted page from somewhere
+    // that is not that page: a model, a shared component, a support class, a
+    // nullable fallback. Each was found individually and none of them told me
+    // where the next one was.
+    //
+    // Driven by EXTRACTED_ROUTES, so a surface added later is covered the day
+    // it is added rather than the day someone reads it aloud.
+    $world = conversationQueueLanguageWorld();
+    $agent = $world['agents']['de'];
+
+    $states = [
+        route('dashboard.profile.show'),
+        route('dashboard.conversations.index'),
+        route('dashboard.conversations.index', ['conversation_filter' => 'closed']),
+        route('dashboard.conversations.index', ['conversation_filter' => 'assigned_to_me']),
+        route('dashboard.conversations.index', ['conversation_search' => 'zzzz']),
+    ];
+
+    // Every GET-able extracted route is covered, whether or not it is listed
+    // above -- so this fails loudly when a surface is extracted without being
+    // added here, rather than silently skipping it.
+    $covered = collect($states)->map(fn (string $url): string => parse_url($url, PHP_URL_PATH))->all();
+
+    foreach (DashboardLanguage::EXTRACTED_ROUTES as $name) {
+        $route = app('router')->getRoutes()->getByName($name);
+
+        if ($route === null || ! in_array('GET', $route->methods(), true) || str_contains($route->uri(), '{')) {
+            continue;
+        }
+
+        // Not `expect()->toContain()`: that is variadic, so a message passed
+        // as a second argument becomes a second required value and the failure
+        // reports the message itself as missing.
+        $this->assertContains('/'.ltrim($route->uri(), '/'), $covered, "extracted route not audited: {$name}");
+    }
+
+    foreach ($states as $url) {
+        $leaks = conversationQueueLanguageEnglishLeaks(
+            (string) $this->actingAs($agent)->get($url)->assertOk()->getContent(),
+            (string) $this->actingAs($world['agents']['en'])->get($url)->assertOk()->getContent(),
+        );
+
+        expect($leaks)->toBe([], "announced as German but never translated, at {$url}");
+    }
+});
+
+test('every cognate on the list still appears, so the list cannot rot', function (): void {
+    // An allowlist nobody rechecks becomes a place real misses hide. If one of
+    // these stops rendering, or gets translated after all, this fails and the
+    // entry has to go rather than quietly covering something else.
+    $world = conversationQueueLanguageWorld();
+
+    $announced = array_merge(
+        conversationQueueLanguageAnnouncements(
+            (string) $this->actingAs($world['agents']['de'])->get(route('dashboard.profile.show'))->getContent()
+        ),
+        conversationQueueLanguageAnnouncements(
+            (string) $this->actingAs($world['agents']['de'])->get(route('dashboard.conversations.index'))->getContent()
+        ),
+    );
+
+    foreach (array_keys(conversationQueueLanguageCognates()) as $cognate) {
+        expect(array_keys($announced))->toContain($cognate);
+    }
 });
