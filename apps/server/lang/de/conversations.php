@@ -36,13 +36,6 @@ return [
         'closed' => 'Geschlossen',
     ],
 
-    'presence' => [
-        'all' => 'Beliebiger Status',
-        'active' => 'Kürzlich aktiv',
-        'recent' => 'Vor Kurzem aktiv',
-        'quiet' => 'Ruhig',
-        'not_reported' => 'Nicht gemeldet',
-    ],
 
     'lanes' => [
         'region_label' => 'Unterhaltungs-Spuren',
@@ -104,5 +97,22 @@ return [
         'lane_needs_reply' => 'Derzeit benötigt keine Unterhaltung eine Antwort.',
         'lane_new_activity' => 'Derzeit benötigt keine Unterhaltung Aufmerksamkeit.',
         'lane_unassigned' => 'Keine nicht zugewiesenen Unterhaltungen in dieser Warteschlange.',
+    ],
+
+    'row' => [
+        'attention_waiting_on_visitor' => 'Wartet auf Besucher',
+        'attention_needs_reply' => 'Antwort nötig',
+        'preview_none_body' => 'Es wurden noch keine Nachrichten gesendet.',
+        'preview_none_label' => 'Noch keine Aktivitätsvorschau',
+        'preview_no_text' => 'Die Nachricht hat keine Textvorschau.',
+        'preview_visitor' => 'Letzte Besuchernachricht',
+        'preview_agent' => 'Letzte Agentenantwort',
+        'preview_message' => 'Letzte Nachricht',
+        'opened' => 'Geöffnet :elapsed',
+        'closed' => 'Geschlossen :elapsed',
+        'waiting_on_reply' => 'Wartet seit :elapsed auf Antwort',
+        'waiting_on_visitor' => 'Wartet seit :elapsed auf den Besucher',
+        'waiting_on_update' => 'Wartet seit :elapsed auf eine Aktualisierung',
+        'no_messages' => 'Noch keine Nachrichten',
     ],
 ];

@@ -43,13 +43,6 @@ return [
         'closed' => 'Closed',
     ],
 
-    'presence' => [
-        'all' => 'Any presence',
-        'active' => 'Active recently',
-        'recent' => 'Recently active',
-        'quiet' => 'Quiet',
-        'not_reported' => 'Not reported',
-    ],
 
     'lanes' => [
         'region_label' => 'Conversation lanes',
@@ -111,5 +104,22 @@ return [
         'lane_needs_reply' => 'No conversations need a reply right now.',
         'lane_new_activity' => 'No conversations need attention right now.',
         'lane_unassigned' => 'No unassigned conversations in this queue.',
+    ],
+
+    'row' => [
+        'attention_waiting_on_visitor' => 'Waiting on visitor',
+        'attention_needs_reply' => 'Needs reply',
+        'preview_none_body' => 'No messages have been sent yet.',
+        'preview_none_label' => 'No activity preview yet',
+        'preview_no_text' => 'Message has no text preview.',
+        'preview_visitor' => 'Latest visitor message',
+        'preview_agent' => 'Latest agent reply',
+        'preview_message' => 'Latest message',
+        'opened' => 'Opened :elapsed',
+        'closed' => 'Closed :elapsed',
+        'waiting_on_reply' => 'Waiting on reply for :elapsed',
+        'waiting_on_visitor' => 'Waiting on visitor for :elapsed',
+        'waiting_on_update' => 'Waiting on update for :elapsed',
+        'no_messages' => 'No messages yet',
     ],
 ];

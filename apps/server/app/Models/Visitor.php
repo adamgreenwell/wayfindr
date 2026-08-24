@@ -65,10 +65,10 @@ class Visitor extends Model
     public function presenceLabel(): string
     {
         return match ($this->presenceState()) {
-            'active' => 'Active recently',
-            'recent' => 'Recently active',
-            'quiet' => 'Quiet',
-            default => 'Not reported',
+            'active' => __('presence.active'),
+            'recent' => __('presence.recent'),
+            'quiet' => __('presence.quiet'),
+            default => __('presence.not_reported'),
         };
     }
 

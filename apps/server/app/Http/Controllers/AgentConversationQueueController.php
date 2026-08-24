@@ -65,10 +65,14 @@ class AgentConversationQueueController extends Controller
             $conversationFilters[$key] = __('conversations.filters.'.$key);
         }
 
-        $conversationPresenceFilters = [];
+        // From the shared presence catalogue, not a queue-local copy. These
+        // same words label every row and the visitors directory, and two copies
+        // drift the first time one is improved -- which would show two
+        // different words for one state on this very page.
+        $conversationPresenceFilters = ['all' => __('presence.any')];
 
-        foreach (['all', 'active', 'recent', 'quiet', 'not_reported'] as $key) {
-            $conversationPresenceFilters[$key] = __('conversations.presence.'.$key);
+        foreach (['active', 'recent', 'quiet', 'not_reported'] as $key) {
+            $conversationPresenceFilters[$key] = __('presence.'.$key);
         }
         $conversationFilter = $request->query('conversation_filter', 'all');
         $conversationFilter = is_string($conversationFilter) && array_key_exists($conversationFilter, $conversationFilters)

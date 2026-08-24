@@ -251,8 +251,8 @@ class Conversation extends Model
     public function attentionLabel(): string
     {
         return match ($this->attentionState()) {
-            'waiting_on_visitor' => 'Waiting on visitor',
-            default => 'Needs reply',
+            'waiting_on_visitor' => __('conversations.row.attention_waiting_on_visitor'),
+            default => __('conversations.row.attention_needs_reply'),
         };
     }
 
@@ -317,15 +317,15 @@ class Conversation extends Model
 
         if ($latestMessage) {
             return [
-                'body' => $this->activityPreviewSnippet($latestMessage->body) ?: 'Message has no text preview.',
+                'body' => $this->activityPreviewSnippet($latestMessage->body) ?: __('conversations.row.preview_no_text'),
                 'label' => $this->activityPreviewLabel($latestMessage),
                 'occurred_at' => $latestMessage->created_at,
             ];
         }
 
         return [
-            'body' => 'No messages have been sent yet.',
-            'label' => 'No activity preview yet',
+            'body' => __('conversations.row.preview_none_body'),
+            'label' => __('conversations.row.preview_none_label'),
             'occurred_at' => null,
         ];
     }
@@ -343,7 +343,9 @@ class Conversation extends Model
                 ->first();
 
         return [
-            'opened_label' => 'Opened '.$this->created_at->diffForHumans(),
+            // Whole sentence with the elapsed time as a placeholder. Carbon
+            // renders the elapsed part in the active locale on its own.
+            'opened_label' => __('conversations.row.opened', ['elapsed' => $this->created_at->diffForHumans()]),
             'wait_label' => $this->queueWaitLabel($latestMessage),
         ];
     }
@@ -538,9 +540,9 @@ class Conversation extends Model
     private function activityPreviewLabel(ConversationMessage $message): string
     {
         return match ($message->sender_type) {
-            Visitor::class => 'Latest visitor message',
-            User::class => 'Latest agent reply',
-            default => 'Latest message',
+            Visitor::class => __('conversations.row.preview_visitor'),
+            User::class => __('conversations.row.preview_agent'),
+            default => __('conversations.row.preview_message'),
         };
     }
 
@@ -554,20 +556,22 @@ class Conversation extends Model
     private function queueWaitLabel(?ConversationMessage $latestMessage): string
     {
         if ($this->status === 'closed') {
-            return 'Closed '.($this->closed_at ?? $this->updated_at)->diffForHumans();
+            return __('conversations.row.closed', [
+                'elapsed' => ($this->closed_at ?? $this->updated_at)->diffForHumans(),
+            ]);
         }
 
         if ($latestMessage?->created_at) {
             $elapsed = $this->elapsedQueueTime($latestMessage->created_at);
 
             return match ($latestMessage->sender_type) {
-                Visitor::class => 'Waiting on reply for '.$elapsed,
-                User::class => 'Waiting on visitor for '.$elapsed,
-                default => 'Waiting on update for '.$elapsed,
+                Visitor::class => __('conversations.row.waiting_on_reply', ['elapsed' => $elapsed]),
+                User::class => __('conversations.row.waiting_on_visitor', ['elapsed' => $elapsed]),
+                default => __('conversations.row.waiting_on_update', ['elapsed' => $elapsed]),
             };
         }
 
-        return 'No messages yet';
+        return __('conversations.row.no_messages');
     }
 
     private function elapsedQueueTime(CarbonInterface $since): string
