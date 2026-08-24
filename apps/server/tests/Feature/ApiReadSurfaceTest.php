@@ -500,6 +500,30 @@ test('a cursor carrying a relative date expression is a 422', function (): void 
         readGet($this, $w, '/api/v1/conversations?cursor='.urlencode($encode($expression)))->assertStatus(422);
     }
 
+    // Shape is not range. Every one of these matches the emitted format and
+    // names a moment that does not exist, and PostgreSQL refuses all of them --
+    // so a format check alone would have traded one 500 for another.
+    foreach ([
+        '2026-99-99 99:99:99',
+        '2026-13-01 10:00:00',
+        '2026-02-31 10:00:00',
+        '2025-02-29 10:00:00',
+        '2026-08-32 10:00:00',
+        '2026-08-00 10:00:00',
+        '2026-00-10 10:00:00',
+        '2026-08-23 24:00:00',
+        '2026-08-23 10:60:00',
+        '2026-08-23 10:00:60',
+        '2026-08-23T10:00:00+99:00',
+        '2026-08-23T10:00:00+18:00',
+        '2026-08-23T10:00:00+05:99',
+    ] as $impossible) {
+        readGet($this, $w, '/api/v1/conversations?cursor='.urlencode($encode($impossible)))->assertStatus(422);
+    }
+
+    // And a real leap day is a real moment.
+    readGet($this, $w, '/api/v1/conversations?cursor='.urlencode($encode('2024-02-29 10:00:00')))->assertOk();
+
     // The shapes the paginator actually emits still pass, including the
     // microsecond and offset forms a driver may hand back.
     foreach ([

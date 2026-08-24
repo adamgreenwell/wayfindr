@@ -36,7 +36,18 @@ use Illuminate\Contracts\Validation\ValidationRule;
 class DecodableCursor implements ValidationRule
 {
     /** The format the paginator emits for a timestamp column. */
-    private const TIMESTAMP = '/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:?\d{2})?$/';
+    private const TIMESTAMP = '/^(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})[ T]'
+        .'(?<hour>\d{2}):(?<minute>\d{2}):(?<second>\d{2})(\.\d{1,6})?'
+        .'(?<offset>Z|[+-](?<offsetHours>\d{2}):?(?<offsetMinutes>\d{2}))?$/';
+
+    /**
+     * The widest UTC offset PostgreSQL will accept in timestamp input.
+     *
+     * Real offsets stop at +14:00, so nothing legitimate is refused here; the
+     * point is that an offset past this is rejected as a 422 rather than
+     * reaching the database and coming back as a 500.
+     */
+    private const MAX_OFFSET_HOURS = 15;
 
     /**
      * @param  array<string, string>  $orderedBy  Column => `key` or `timestamp`.
@@ -80,6 +91,30 @@ class DecodableCursor implements ValidationRule
     }
 
     /**
+     * Whether a well-shaped timestamp names a moment that exists.
+     *
+     * @param  array<string, string>  $parts
+     */
+    private static function isRealMoment(array $parts): bool
+    {
+        if (! checkdate((int) $parts['month'], (int) $parts['day'], (int) $parts['year'])) {
+            return false;
+        }
+
+        if ((int) $parts['hour'] > 23 || (int) $parts['minute'] > 59 || (int) $parts['second'] > 59) {
+            return false;
+        }
+
+        // `Z` carries no numbers to check; an absent offset carries nothing.
+        if (($parts['offset'] ?? '') === '' || $parts['offset'] === 'Z') {
+            return true;
+        }
+
+        return (int) $parts['offsetHours'] <= self::MAX_OFFSET_HOURS
+            && (int) $parts['offsetMinutes'] <= 59;
+    }
+
+    /**
      * @return array<string, mixed>|null
      */
     private static function decode(string $value): ?array
@@ -117,6 +152,13 @@ class DecodableCursor implements ValidationRule
         // parse". Carbon happily reads `first day of next month` and `@123`,
         // and the ORIGINAL string is what gets bound to the query -- where
         // PostgreSQL rejects it as timestamp input.
-        return is_string($value) && preg_match(self::TIMESTAMP, $value) === 1;
+        if (! is_string($value) || preg_match(self::TIMESTAMP, $value, $parts) !== 1) {
+            return false;
+        }
+
+        // Shape is not range. `2026-99-99 99:99:99` and `2026-02-31 10:00:00`
+        // both match the format above and are both refused by PostgreSQL, so
+        // matching alone would turn one 500 into a different 500.
+        return self::isRealMoment($parts);
     }
 }
