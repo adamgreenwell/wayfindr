@@ -36,7 +36,7 @@ class AttachmentBinder
 
         if (count($attachmentIds) > $maxPerMessage) {
             throw ValidationException::withMessages([
-                'attachment_ids' => "A message can include at most {$maxPerMessage} attachment(s).",
+                'attachment_ids' => __('composer.rejected.too_many', ['max' => $maxPerMessage]),
             ]);
         }
 

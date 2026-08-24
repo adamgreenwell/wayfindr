@@ -1598,9 +1598,15 @@ test('nothing on an extracted path throws a literal validation message', functio
 
             $block = substr($chunk, 0, strpos($chunk, '])') ?: strlen($chunk));
 
-            preg_match_all("/=> *'([^'\\\\\n]*)'/", $block, $found);
+            // BOTH quote forms. The single-quote-only version of this regex
+            // shipped, and missed `"A message can include at most {$max}
+            // attachment(s)."` -- which is the one message here that had to be
+            // interpolated, and so the one most likely to be written with
+            // double quotes. A guard that only recognises the easy spelling is
+            // worse than none, because it reports clean.
+            preg_match_all('/=> *"([^"\\\\\n]*)"|=> *\'([^\'\\\\\n]*)\'/', $block, $found);
 
-            foreach ($found[1] as $literal) {
+            foreach (array_filter(array_merge($found[1], $found[2])) as $literal) {
                 if (conversationQueueLanguageIsProse($literal)) {
                     $literals[] = basename($file).': '.$literal;
                 }
@@ -1640,6 +1646,40 @@ test('the transcript declares its own language, not the dashboard\'s', function 
         expect($body->hasAttribute('lang'))->toBeTrue('a message body inherits the document language');
         expect($body->getAttribute('lang'))->toBe('', 'a message body claims a language it cannot know');
     }
+
+    // A neighbour with no subject. The switcher's fallback is OUR copy and has
+    // to stay in the document language rather than being marked unknown along
+    // with the visitor-authored ones -- which means the controller must not
+    // normalise null away before the view can tell them apart.
+    //
+    // Asserted on the view data rather than the rendered switcher: that menu
+    // only renders for a conversation with siblings in its window, and the
+    // contract being protected here is the shape, not the markup.
+    Conversation::factory()
+        ->for($world['site'])
+        ->for($spoken->visitor)
+        ->create(['support_code' => 'WF-LANGNOSUBJ', 'subject' => null, 'status' => 'open']);
+
+    // `from_queue=1` or the switcher is deliberately empty: a conversation
+    // opened from a notification or a ticket has no queue to have neighbours in.
+    $siblings = $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', [
+            'supportCode' => $spoken->support_code,
+            'from_queue' => '1',
+        ]))
+        ->assertOk()
+        ->viewData('conversationSiblings');
+
+    $untitledSibling = collect($siblings['items'])->firstWhere('support_code', 'WF-LANGNOSUBJ');
+
+    expect($untitledSibling)->not->toBeNull('the untitled neighbour is not in the switcher, so this proves nothing')
+        ->and($untitledSibling['subject'])->toBeNull('the controller normalised the subject away, so the view cannot tell copy from content')
+        ->and($untitledSibling['subject_fallback'])->toBeTrue();
+
+    $titledSibling = collect($siblings['items'])->firstWhere('support_code', $spoken->support_code);
+
+    expect($titledSibling['subject'])->toBe($spoken->subject)
+        ->and($titledSibling['subject_fallback'])->toBeFalse();
 
     // The subject is the same thing wearing a heading. It is the page's primary
     // heading, and it also appears in the queue switcher and in prior
@@ -2137,6 +2177,26 @@ test('a reply template says what language its body is in', function (): void {
     // textarea and the draft stops being the agent's language at that moment.
     expect($page)->toContain('data-body-lang="en"');
 
+    // A validation failure re-renders this page with the draft restored, and no
+    // change event ever fires -- so the textarea's language has to be right in
+    // the MARKUP, not only in the handler that sets it on selection.
+    $rejected = (string) $this->actingAs($world['agents']['de'])
+        ->from(route('dashboard.conversations.show', $conversation->support_code))
+        ->withSession(['_old_input' => ['body' => 'Thanks for the update.', 'reply_template' => 'looking_into_it']])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent();
+
+    $restored = new DOMDocument;
+    @$restored->loadHTML('<?xml encoding="utf-8"?>'.$rejected);
+
+    $draft = (new DOMXPath($restored))->query('//textarea[@data-reply-body]')->item(0);
+
+    expect($draft)->not->toBeNull('no reply draft rendered, so this proves nothing')
+        ->and($draft->hasAttribute('lang'))->toBeTrue('the restored draft inherits the dashboard language')
+        ->and($draft->getAttribute('lang'))->toBe(DashboardLanguage::FALLBACK,
+            'a restored built-in template body does not declare the language it is actually in');
+
     // A managed template reports unknown rather than guessing.
     ReplyTemplate::factory()->for($world['account'])->create([
         'name' => 'Datenpunkt Vorlage',
@@ -2151,7 +2211,32 @@ test('a reply template says what language its body is in', function (): void {
     foreach ($managed as $key => $template) {
         expect($template['body_language'] ?? null)->toBe('',
             "the managed template {$key} claims a language it cannot know");
+        expect($template['label_language'] ?? null)->toBe('',
+            "the managed template {$key} claims to know its own NAME's language");
     }
+
+    // And the picker itself, rendered with that template in place -- the option
+    // is what a screen reader reads when the agent opens the menu, and it is a
+    // different element from the preview that was already marked.
+    $withManaged = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent();
+
+    $pickerDocument = new DOMDocument;
+    @$pickerDocument->loadHTML('<?xml encoding="utf-8"?>'.$withManaged);
+
+    $option = null;
+
+    foreach ((new DOMXPath($pickerDocument))->query('//select[@data-template-picker]/option') as $candidate) {
+        if (str_contains($candidate->textContent, 'Datenpunkt Vorlage')) {
+            $option = $candidate;
+        }
+    }
+
+    expect($option)->not->toBeNull('the managed template is not in the picker, so this proves nothing')
+        ->and($option->hasAttribute('lang'))->toBeTrue('a managed template name inherits the dashboard language')
+        ->and($option->getAttribute('lang'))->toBe('', 'a managed template name claims a language it cannot know');
 });
 
 test('no unreplaced placeholder ever reaches the page', function (): void {

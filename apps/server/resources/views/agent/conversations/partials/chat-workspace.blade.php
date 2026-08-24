@@ -67,10 +67,9 @@
                             value="{{ $replyTemplateKey }}"
                             data-body="{{ $replyTemplate['body'] }}"
                             data-body-lang="{{ str_replace('_', '-', $replyTemplate['body_language'] ?? \App\Support\DashboardLanguage::FALLBACK) }}"
+                            @isset($replyTemplate['label_language']) lang="{{ $replyTemplate['label_language'] }}" @endisset
                             @selected($selectedReplyTemplate === $replyTemplateKey)
-                        >
-                            {{ $replyTemplate['label'] }}
-                        </option>
+                        >{{ $replyTemplate['label'] }}</option>
                     @endforeach
                 </select>
                 @error('reply_template')
@@ -88,6 +87,14 @@
                     aria-describedby="reply-shortcut-help"
                     data-reply-body
                     data-shortcut-submit
+                    {{-- A validation failure re-renders this page with the draft
+                         restored, and no change event ever fires -- so the
+                         language has to be right in the markup, not only in the
+                         handler. Unknown unless we know the draft came from a
+                         template whose language we know. --}}
+                    lang="{{ $selectedReplyTemplate && isset($replyTemplates[$selectedReplyTemplate])
+                        ? str_replace('_', '-', $replyTemplates[$selectedReplyTemplate]['body_language'] ?? \App\Support\DashboardLanguage::FALLBACK)
+                        : '' }}"
                 >{{ old('body') }}</textarea>
                 <p id="reply-shortcut-help" class="sr-only">{{ __('conversations.detail.reply.shortcut') }}</p>
                 @error('body')

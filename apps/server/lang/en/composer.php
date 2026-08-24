@@ -24,6 +24,7 @@ return [
     // see DashboardLanguage::forRequest and the attachment route in
     // EXTRACTED_ROUTES.
     'rejected' => [
+        'too_many' => 'A message can include at most :max attachments.',
         'unreadable' => 'The file could not be read.',
         'too_large' => 'The file is larger than the :limit limit.',
         'type' => 'This file type is not allowed.',

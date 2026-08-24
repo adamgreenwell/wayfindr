@@ -242,7 +242,11 @@ class AgentConversationController extends Controller
                 ->slice($windowStart, self::SWITCHER_MENU_WINDOW * 2 + 1)
                 ->map(fn (Conversation $candidate): array => [
                     'support_code' => $candidate->support_code,
-                    'subject' => $candidate->subject ?? __('conversations.detail.untitled'),
+                    // Normalising here would erase the one thing the surface
+                    // needs: whether these are the visitor's words or our
+                    // fallback. The marker downstream is conditional on it.
+                    'subject' => $candidate->subject,
+                    'subject_fallback' => $candidate->subject === null,
                     'current' => $candidate->id === $conversation->id,
                 ])
                 ->values(),

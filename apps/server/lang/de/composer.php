@@ -13,6 +13,7 @@ return [
     'attachment' => 'Anhang',
 
     'rejected' => [
+        'too_many' => 'Eine Nachricht darf höchstens :max Anhänge enthalten.',
         'unreadable' => 'Die Datei konnte nicht gelesen werden.',
         'too_large' => 'Die Datei ist größer als das Limit von :limit.',
         'type' => 'Dieser Dateityp ist nicht zulässig.',

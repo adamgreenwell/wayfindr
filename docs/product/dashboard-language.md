@@ -318,6 +318,33 @@ attribute that is *absent*, so asserting the value alone cannot tell "declared
 unknown" from "declared nothing" — and the second one inherits German. Assert
 `hasAttribute()` first.
 
+### Normalising a null throws away the distinction the marker needs
+
+The switcher's controller replaced a missing subject with the translated
+fallback before the view ever saw it:
+
+```php
+'subject' => $candidate->subject ?? __('conversations.detail.untitled'),   // WRONG
+```
+
+The view's marker is conditional on the subject existing, and by then it could
+no longer tell — so our own copy got wrapped in `lang=""` along with the
+visitor's words. The presence travels separately now.
+
+**Generally: normalise at the point of USE, not on the way to it.** A `??` that
+merges "absent" into "present" erases exactly what a downstream conditional
+needs.
+
+### A guard that only reads one spelling reports clean
+
+The literal-validation-message guard used `/=> *'([^']*)'/` — single quotes
+only. It missed `"A message can include at most {$max} attachment(s)."`, which
+is the one message in that file that *had* to be interpolated, and therefore the
+one most likely to be written with double quotes.
+
+A guard that recognises only the easy spelling is worse than no guard, because
+it reports clean over exactly the cases that needed the attention.
+
 ### A missing formatter is not missing data
 
 `Intl.RelativeTimeFormat` is absent in some embedded webviews that support

@@ -32,7 +32,7 @@
                                             class="wf-switcher-item"
                                             href="{{ route('dashboard.conversations.show', ['supportCode' => $sibling['support_code'], 'from_queue' => '1'] + $conversationReturnQuery) }}"
                                             @if ($sibling['current']) aria-current="true" @endif
-                                        ><span lang="">{{ $sibling['subject'] }}</span></a>
+                                        >@if ($sibling['subject_fallback']){{ __('conversations.detail.untitled') }}@else<span lang="">{{ $sibling['subject'] }}</span>@endif</a>
                                     @endforeach
                                 </div>
                             </details>
