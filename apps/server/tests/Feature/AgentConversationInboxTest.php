@@ -7805,6 +7805,35 @@ test('agent can see a sandboxed cobrowse replay preview on a conversation', func
         ->assertSee('Visitor viewport 1,456px')
         ->assertDontSee('steal-token')
         ->assertDontSee('mutation-token');
+
+    // The substring assertions above are not enough on their own, and a real
+    // bug proved it: putting an element inside the `title` attribute closed it
+    // early, so `sandbox` and `srcdoc` became fallback TEXT rather than
+    // attributes. Every assertion above still passed while the preview
+    // rendered blank and the realtime script could not find the frame.
+    //
+    // So the frame is inspected as the browser parses it, not as a string.
+    $page = (string) $this->actingAs($agent)->get('/dashboard/conversations/WF-REPLAY')->getContent();
+
+    $document = new DOMDocument;
+    $previous = libxml_use_internal_errors(true);
+    $document->loadHTML('<?xml encoding="utf-8"?>'.$page, LIBXML_NOERROR | LIBXML_NOWARNING);
+    libxml_clear_errors();
+    libxml_use_internal_errors($previous);
+
+    $frame = (new DOMXPath($document))->query('//iframe[@data-cobrowse-replay-frame]')->item(0);
+
+    expect($frame)->toBeInstanceOf(DOMElement::class, 'the replay iframe is not parsed as an element with its data attribute');
+
+    foreach (['sandbox', 'srcdoc', 'title'] as $attribute) {
+        expect($frame->hasAttribute($attribute))->toBeTrue(
+            "the replay iframe lost its {$attribute} attribute, so the browser sees it as text"
+        );
+    }
+
+    expect($frame->getAttribute('srcdoc'))->toContain('Updated public copy.')
+        ->and(trim($frame->getAttribute('title')))->not->toBe('')
+        ->and($frame->getAttribute('title'))->not->toContain('<');
 });
 
 test('agent can fetch the sanitized cobrowse replay preview as json for live refresh', function (): void {
