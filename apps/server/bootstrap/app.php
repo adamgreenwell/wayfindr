@@ -17,6 +17,7 @@ use App\Http\Middleware\RefuseServingWithUnmetRequirements;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Request;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -53,6 +54,16 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->append(RefuseServingWithUnmetRequirements::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // The public API answers in JSON whether or not the caller asked for
+        // it (ADR 0018). Laravel decides that from `Accept`, so without this a
+        // client that omits the header -- including the curl example in our own
+        // docs -- gets an HTML error page or a redirect where the contract
+        // promises a 422 or a 404. Every test uses `getJson()`, which sets the
+        // header, so the suite could never have shown it.
+        $exceptions->shouldRenderJsonWhen(
+            fn (Request $request): bool => $request->is('api/v1/*') || $request->expectsJson(),
+        );
+
         // On a validation failure Laravel flashes the request input to the
         // session as old input. Keep operator secrets (S3 access keys) out of
         // that plaintext flash, alongside the framework's password defaults —

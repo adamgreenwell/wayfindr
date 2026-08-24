@@ -62,3 +62,35 @@ test('every signature check compares in constant time', function (): void {
         expect($code)->toContain('hash_equals(');
     }
 });
+
+/**
+ * The public API publishes named fields, never a model.
+ *
+ * `toArray()` on an Eloquent model publishes whatever columns exist, so a
+ * migration adding a column to `conversations` would silently add it to a
+ * public contract -- and for these tables, a new column means support data
+ * somebody may not have decided to publish.
+ *
+ * The failure is invisible: the endpoint keeps working and returns more.
+ */
+test('the v1 API payload never serialises a model wholesale', function (): void {
+    $source = file_get_contents(dirname(__DIR__, 2).'/app/Support/Api/V1/Payload.php');
+
+    expect($source)->not->toBeFalse();
+
+    // Comments stripped first: this docblock says `toArray()` while explaining
+    // the rule, and a raw grep would fail on the explanation.
+    $code = '';
+
+    foreach (token_get_all((string) $source) as $token) {
+        if (is_array($token) && in_array($token[0], [T_COMMENT, T_DOC_COMMENT], true)) {
+            continue;
+        }
+
+        $code .= is_array($token) ? $token[1] : $token;
+    }
+
+    foreach (['->toArray()', '->getAttributes()', 'get_object_vars'] as $wholesale) {
+        expect($code)->not->toContain($wholesale);
+    }
+});

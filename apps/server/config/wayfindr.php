@@ -63,6 +63,16 @@ return [
         ],
     ],
 
+    // Per token per minute, for the public API (ADR 0018). Separate from the
+    // widget limits above on purpose: those protect a visitor's browser from a
+    // mistake, this protects an account's data from a script.
+    'api_rate_limit' => (int) env('WAYFINDR_API_RATE_LIMIT', 120),
+
+    // FAILED authentication attempts per minute per IP. Only failures spend
+    // it, so a working integration never touches this however much traffic it
+    // sends -- it bounds what probing for a valid token can cost.
+    'api_failed_auth_per_minute' => (int) env('WAYFINDR_API_FAILED_AUTH_PER_MINUTE', 60),
+
     'widget_rate_limits' => [
         'bootstrap_per_minute' => (int) env('WAYFINDR_WIDGET_BOOTSTRAP_RATE_LIMIT', 120),
         'broadcast_auth_per_minute' => (int) env('WAYFINDR_WIDGET_BROADCAST_AUTH_RATE_LIMIT', 120),

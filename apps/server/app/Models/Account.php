@@ -49,6 +49,14 @@ class Account extends Model
         return $this->hasMany(TicketExternalLink::class);
     }
 
+    /**
+     * Programmatic credentials for this account (ADR 0018).
+     */
+    public function apiTokens(): HasMany
+    {
+        return $this->hasMany(ApiToken::class);
+    }
+
     public function externalIssueProviderConnections(): HasMany
     {
         return $this->hasMany(ExternalIssueProviderConnection::class);
