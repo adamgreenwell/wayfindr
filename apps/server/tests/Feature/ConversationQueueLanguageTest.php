@@ -2403,6 +2403,43 @@ test('a region that declares English is English all the way down', function (): 
         'the English freshness label carries a German duration');
 });
 
+test('this file never passes a message to a variadic matcher', function (): void {
+    // Three times in this file I have written
+    //
+    //     expect($x)->not->toContain($needle, 'why this matters');
+    //
+    // `toContain` is variadic: the message becomes a SECOND NEEDLE, and the
+    // negated form then asserts that neither appears -- which is trivially true
+    // of a sentence nobody renders. The assertion always passes. `toHaveKey`
+    // has the same shape with its second argument being the expected VALUE.
+    //
+    // Each time it hid a real defect that only a mutation caught, and the third
+    // was minutes after writing the comment warning about it. Knowing the trap
+    // is clearly not enough, so it is mechanical now.
+    //
+    // Scoped to this file because this is where it keeps happening; a
+    // suite-wide version would be a policy decision rather than a fix.
+    // Comments stripped first. This is the SECOND guard in this file to match
+    // its own documentation -- the `<option>` one did it too -- because a
+    // source guard's explanation necessarily contains the thing it looks for.
+    // Any guard that reads code has to exclude the prose about that code.
+    $source = preg_replace('#//[^\n]*#', '', file_get_contents(__FILE__)) ?? '';
+
+    preg_match_all("/->(toContain|toHaveKey)\(\s*([^,()]+),\s*'([^']{12,})'\s*\)/", $source, $found, PREG_SET_ORDER);
+
+    $offenders = [];
+
+    foreach ($found as $match) {
+        // A message has spaces and reads like a sentence; a second needle
+        // rarely does both.
+        if (str_contains($match[3], ' ') && preg_match('/\b(the|a|is|not|so|and|for|that|this|no|its)\b/', $match[3]) === 1) {
+            $offenders[] = '->'.$match[1]."(..., '".$match[3]."')";
+        }
+    }
+
+    expect($offenders)->toBe([], 'a message passed to a variadic matcher, where it becomes a second needle and the assertion always passes');
+});
+
 test('no unreplaced placeholder ever reaches the page', function (): void {
     // A sentence rendered without its parameters shows `:elapsed` or `:count`
     // to the agent. It looks like copy, it is in the right language, and it is
