@@ -5,10 +5,23 @@
     // A deeper crumb for surfaces that have their own sections, so the bar can
     // say "Operator > Backups" rather than stopping at the rail item.
     'crumb' => null,
+    // Whether THIS surface has been through the copy extraction (#749).
+    //
+    // The dashboard is being translated a surface at a time, so an agent who
+    // chose German reads some pages in German and most still in English. The
+    // application locale is German throughout -- it has to be, or the pages
+    // that ARE translated would not be -- but `lang` describes the document,
+    // and telling a screen reader that an English page is German makes it
+    // pronounce English words with German phonetics.
+    //
+    // So the locale switches globally and this attribute does not, until the
+    // surface says it should. The prop disappears when the last surface is
+    // extracted.
+    'translated' => false,
 ])
 
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+<html lang="{{ str_replace('_', '-', $translated ? app()->getLocale() : \App\Support\DashboardLanguage::FALLBACK) }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">

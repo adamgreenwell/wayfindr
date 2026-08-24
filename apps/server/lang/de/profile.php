@@ -66,7 +66,7 @@ return [
         'cadence_digest' => 'Sammelmeldung',
         'cadence_digest_off_detail' => 'Die Einstellung zur Sammelzustellung ist gespeichert, aber E-Mail-Benachrichtigungen sind ausgeschaltet.',
         'cadence_unattended_detail' => 'Eine E-Mail geht nur raus, wenn eine Besuchernachricht :minutes Minuten lang ungesehen bleibt.',
-        'cadence_unattended_off_detail' => 'Die Einstellung „unbeantwortet\" ist gespeichert, aber E-Mail-Benachrichtigungen sind ausgeschaltet.',
+        'cadence_unattended_off_detail' => 'Die Einstellung „unbeantwortet“ ist gespeichert, aber E-Mail-Benachrichtigungen sind ausgeschaltet.',
         'cadence_digest_detail' => 'Sammelzustellung wird bevorzugt. Letzte Sammelmeldung: :latest.',
     ],
 
@@ -80,7 +80,7 @@ return [
         'mode' => 'Benachrichtigungsmodus',
         'email_alerts' => 'E-Mail-Benachrichtigungen',
         'cadence' => 'E-Mail-Rhythmus',
-        'cadence_help' => 'Die Sammelzustellung bündelt geeignete E-Mail-Benachrichtigungen, wenn der Planer läuft. „Unbeantwortet" sendet nur dann eine E-Mail, wenn eine Besuchernachricht ungesehen wartet. Benachrichtigungen im Dashboard bleiben sofort.',
+        'cadence_help' => 'Die Sammelzustellung bündelt geeignete E-Mail-Benachrichtigungen, wenn der Planer läuft. „Unbeantwortet“ sendet nur dann eine E-Mail, wenn eine Besuchernachricht ungesehen wartet. Benachrichtigungen im Dashboard bleiben sofort.',
         'last_digest' => 'Letzte Sammelmeldung',
         'email_help' => 'E-Mail-Benachrichtigungen senden dieselben ruhigen Support-Signale an Ihren Posteingang, sofern E-Mail eingerichtet ist. Der Ruhemodus unterdrückt neue Benachrichtigungen weiterhin.',
         'delivery_ready' => 'E-Mail-Zustellung bereit',

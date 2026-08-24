@@ -451,3 +451,92 @@ test('the language selector names each language in its own language', function (
             ->assertDontSee('Deutsch (German)');
     }
 });
+
+test('an untranslated page is still marked as the English it is', function (): void {
+    // The dashboard is being translated a surface at a time, so an agent who
+    // chose German reads a few pages in German and most still in English. The
+    // application locale is German throughout -- it has to be, or the pages
+    // that ARE translated would not be -- but `lang` describes the DOCUMENT,
+    // and telling a screen reader that an English page is German makes it
+    // pronounce English words with German phonetics. A sighted agent never
+    // sees this; someone listening to the page hears nothing else.
+    $agent = languageAgent('de');
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.profile.show'))
+        ->assertOk()
+        ->assertSee('<html lang="de"', false);
+
+    // A surface that has not been extracted yet says English, and means it.
+    $this->actingAs($agent)
+        ->get(route('dashboard'))
+        ->assertOk()
+        ->assertSee('<html lang="en"', false)
+        ->assertDontSee('<html lang="de"', false);
+});
+
+test('an English agent is told English everywhere', function (): void {
+    $agent = languageAgent('en');
+
+    foreach ([route('dashboard.profile.show'), route('dashboard')] as $url) {
+        $this->actingAs($agent)->get($url)->assertOk()->assertSee('<html lang="en"', false);
+    }
+});
+
+test('no catalogue string carries an escape that PHP did not honour', function (): void {
+    // `'„unbeantwortet\"'` in a SINGLE-quoted PHP string keeps the backslash:
+    // PHP only honours `\\` and `\'` there, so the page rendered
+    // `unbeantwortet\"` to a German agent.
+    //
+    // The comparison test cannot see this class at all -- a malformed German
+    // sentence still differs from its English original, which is the only
+    // question that test asks. Copy can be wrong without being English.
+    $offenders = [];
+
+    foreach (glob(lang_path('*/*.php')) ?: [] as $file) {
+        $walk = function (array $values, string $path) use (&$walk, &$offenders, $file): void {
+            foreach ($values as $key => $value) {
+                if (is_array($value)) {
+                    $walk($value, $path.$key.'.');
+
+                    continue;
+                }
+
+                if (is_string($value) && str_contains($value, '\\')) {
+                    $offenders[] = basename(dirname($file)).'/'.basename($file).': '.$path.$key.' = '.$value;
+                }
+            }
+        };
+
+        $walk(require $file, '');
+    }
+
+    expect($offenders)->toBe([]);
+});
+
+test('German copy uses German quotation marks', function (): void {
+    // „…“ rather than "…". A straight quote is not a German quotation mark, and
+    // it is what a translator reaches for by habit when the surrounding code is
+    // English -- the same slip that produced the escaped backslash above.
+    $offenders = [];
+
+    foreach (glob(lang_path('de/*.php')) ?: [] as $file) {
+        $walk = function (array $values, string $path) use (&$walk, &$offenders, $file): void {
+            foreach ($values as $key => $value) {
+                if (is_array($value)) {
+                    $walk($value, $path.$key.'.');
+
+                    continue;
+                }
+
+                if (is_string($value) && preg_match('/["\']/', $value) === 1) {
+                    $offenders[] = basename($file).': '.$path.$key.' = '.$value;
+                }
+            }
+        };
+
+        $walk(require $file, '');
+    }
+
+    expect($offenders)->toBe([]);
+});
