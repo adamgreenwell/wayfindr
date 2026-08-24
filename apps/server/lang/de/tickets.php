@@ -375,4 +375,19 @@ return [
             'agent_action' => 'sofort zuweisen und den Besucher auf dem Laufenden halten.',
         ],
     ],
+
+    'flash' => [
+        'reply_sent' => 'Antwort gesendet.',
+        'assignee_updated' => 'Ticket-Zuständigkeit aktualisiert.',
+        'closed' => 'Ticket geschlossen.',
+        'escalated' => 'Ticket eskaliert.',
+        'label_added' => 'Ticket-Label hinzugefügt.',
+        'label_removed' => 'Ticket-Label entfernt.',
+        'marked_pending' => 'Ticket als wartend markiert.',
+        'note_added' => 'Notiz hinzugefügt.',
+        'note_added_posted' => 'Notiz hinzugefügt und im verknüpften Issue veröffentlicht.',
+        'note_added_not_posted' => 'Notiz hinzugefügt, aber der externe Kommentar konnte nicht veröffentlicht werden. Siehe Ticket-Aktivität.',
+        'reopened' => 'Ticket wieder geöffnet.',
+        'updated' => 'Ticket aktualisiert.',
+    ],
 ];

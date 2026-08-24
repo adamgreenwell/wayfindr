@@ -87,6 +87,10 @@ final class DashboardLanguage
         // different language from the page around it.
         'dashboard.conversations.messages.index',
         'dashboard.conversations.messages.store',
+        // And the attachment endpoint. The composer prefers the response's own
+        // message over its local fallback, so an oversized file answered in
+        // English replaced the German live state on an ordinary upload.
+        'dashboard.conversations.attachments.store',
     ];
 
     /**

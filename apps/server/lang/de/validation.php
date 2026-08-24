@@ -72,6 +72,7 @@ return [
      * spells them.
      */
     'attributes' => [
+        'file' => 'Datei',
         'alert_cadence' => 'Häufigkeit',
         'alert_mode' => 'Benachrichtigungen',
         'current_password' => 'Aktuelles Passwort',

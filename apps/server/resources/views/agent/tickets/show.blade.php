@@ -13,7 +13,10 @@
             </x-page-header>
 
             @if (session('status'))
-                <p class="status-message">{{ session('status') }}</p>
+                {{-- Ticket actions flash a KEY, because `redirect()->back()` can land on
+                     the conversation detail page, which is extracted. This page is not,
+                     so `__()` answers in the install default here -- English, correctly. --}}
+                <p class="status-message">{{ __(session('status')) }}</p>
             @endif
 
             @php

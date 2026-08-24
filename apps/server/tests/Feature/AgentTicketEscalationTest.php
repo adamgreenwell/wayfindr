@@ -31,7 +31,7 @@ test('agent can manually escalate a ticket to an eligible site agent', function 
             'reason' => 'Customer has an enterprise billing question.',
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Ticket escalated.');
+        ->assertSessionHas('status', 'tickets.flash.escalated');
 
     $ticket->refresh();
     $event = $ticket->auditEvents()->where('action', 'ticket.escalated')->firstOrFail();
@@ -112,7 +112,7 @@ test('manual escalation notifies the target even when they already own the ticke
             'reason' => 'Customer is waiting on the existing owner.',
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Ticket escalated.');
+        ->assertSessionHas('status', 'tickets.flash.escalated');
 
     expect($ticket->fresh()->assignee_id)->toBe($targetAgent->id)
         ->and($ticket->auditEvents()->where('action', 'ticket.escalated')->exists())->toBeTrue()

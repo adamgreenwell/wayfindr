@@ -665,7 +665,8 @@ class CobrowseConsentState
                 'state' => 'ignored',
                 'label' => 'Snapshot response ignored',
                 'detail' => $this->ignoredResyncResponseDetail((string) ($ignoredResponse['reason'] ?? 'unknown')),
-                'occurred_at' => $this->formatMoment(
+                ...$this->momentPair(
+                    'occurred_at',
                     $this->parseReportedAt($ignoredResponse['ignored_at'] ?? null),
                     'Ignored response time unavailable'
                 ),

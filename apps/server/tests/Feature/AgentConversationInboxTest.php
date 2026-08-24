@@ -4339,21 +4339,21 @@ test('ticket detail and actions preserve ticket queue return context', function 
             'timeline_filter' => 'conversation',
         ])
         ->assertRedirect($expectedFilteredDetailUrl)
-        ->assertSessionHas('status', 'Ticket note added.');
+        ->assertSessionHas('status', 'tickets.flash.note_added');
 
     $this->actingAs($agent)
         ->post("/dashboard/tickets/{$ticket->id}/notes", $returnQuery + [
             'body' => 'Customer needs a careful follow-up.',
         ])
         ->assertRedirect($expectedDetailUrl)
-        ->assertSessionHas('status', 'Ticket note added.');
+        ->assertSessionHas('status', 'tickets.flash.note_added');
 
     $this->actingAs($agent)
         ->post("/dashboard/tickets/{$ticket->id}/labels", $returnQuery + [
             'label_name' => 'Needs Dev',
         ])
         ->assertRedirect($expectedDetailUrl)
-        ->assertSessionHas('status', 'Ticket label added.');
+        ->assertSessionHas('status', 'tickets.flash.label_added');
 
     $newLabelId = DB::table('ticket_labels')
         ->where('account_id', $account->id)
@@ -4363,14 +4363,14 @@ test('ticket detail and actions preserve ticket queue return context', function 
     $this->actingAs($agent)
         ->delete("/dashboard/tickets/{$ticket->id}/labels/{$newLabelId}", $returnQuery)
         ->assertRedirect($expectedDetailUrl)
-        ->assertSessionHas('status', 'Ticket label removed.');
+        ->assertSessionHas('status', 'tickets.flash.label_removed');
 
     $this->actingAs($agent)
         ->post("/dashboard/tickets/{$ticket->id}/replies", $returnQuery + [
             'message' => 'I can keep helping from the ticket.',
         ])
         ->assertRedirect($expectedDetailUrl)
-        ->assertSessionHas('status', 'Reply sent.');
+        ->assertSessionHas('status', 'tickets.flash.reply_sent');
 
     $this->actingAs($agent)
         ->put("/dashboard/tickets/{$ticket->id}", $returnQuery + [
@@ -4380,35 +4380,35 @@ test('ticket detail and actions preserve ticket queue return context', function 
             'priority' => 'high',
         ])
         ->assertRedirect($expectedDetailUrl)
-        ->assertSessionHas('status', 'Ticket updated.');
+        ->assertSessionHas('status', 'tickets.flash.updated');
 
     $this->actingAs($agent)
         ->put("/dashboard/tickets/{$ticket->id}/assignee", $returnQuery + [
             'assignee_id' => $assignee->id,
         ])
         ->assertRedirect($expectedDetailUrl)
-        ->assertSessionHas('status', 'Ticket assignee updated.');
+        ->assertSessionHas('status', 'tickets.flash.assignee_updated');
 
     $this->actingAs($agent)
         ->post("/dashboard/tickets/{$ticket->id}/pending", $returnQuery + [
             'pending_note' => 'Waiting on customer confirmation.',
         ])
         ->assertRedirect($expectedDetailUrl)
-        ->assertSessionHas('status', 'Ticket marked pending.');
+        ->assertSessionHas('status', 'tickets.flash.marked_pending');
 
     $this->actingAs($agent)
         ->post("/dashboard/tickets/{$ticket->id}/close", $returnQuery + [
             'resolution_note' => 'Confirmed the support path is covered.',
         ])
         ->assertRedirect($expectedDetailUrl)
-        ->assertSessionHas('status', 'Ticket closed.');
+        ->assertSessionHas('status', 'tickets.flash.closed');
 
     $this->actingAs($agent)
         ->post("/dashboard/tickets/{$ticket->id}/reopen", $returnQuery + [
             'reopen_note' => 'Need one more pass.',
         ])
         ->assertRedirect($expectedDetailUrl)
-        ->assertSessionHas('status', 'Ticket reopened.');
+        ->assertSessionHas('status', 'tickets.flash.reopened');
 
     $this->actingAs($agent)
         ->post("/dashboard/tickets/{$ticket->id}/escalations", $returnQuery + [
@@ -4416,7 +4416,7 @@ test('ticket detail and actions preserve ticket queue return context', function 
             'reason' => 'Needs another site-aware agent.',
         ])
         ->assertRedirect($expectedDetailUrl)
-        ->assertSessionHas('status', 'Ticket escalated.');
+        ->assertSessionHas('status', 'tickets.flash.escalated');
 });
 
 test('agent can add a provider neutral external link to a ticket', function (): void {
@@ -4774,7 +4774,7 @@ test('agent can add an internal note to a ticket record', function (): void {
             'body' => 'Customer wants an update before noon.',
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Ticket note added.');
+        ->assertSessionHas('status', 'tickets.flash.note_added');
 
     $this->assertDatabaseHas('audit_events', [
         'account_id' => $account->id,
@@ -4861,7 +4861,7 @@ test('agent can add an internal note from a ticket helper', function (): void {
             'body' => '',
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Ticket note added.');
+        ->assertSessionHas('status', 'tickets.flash.note_added');
 
     $activity = AuditEvent::query()
         ->where('subject_type', Ticket::class)
@@ -4924,7 +4924,7 @@ test('agent can add and remove labels on a ticket', function (): void {
             'label_name' => 'Needs Dev',
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Ticket label added.');
+        ->assertSessionHas('status', 'tickets.flash.label_added');
 
     $label = DB::table('ticket_labels')
         ->where('account_id', $account->id)
@@ -4949,7 +4949,7 @@ test('agent can add and remove labels on a ticket', function (): void {
         ->from("/dashboard/tickets/{$ticket->id}")
         ->delete("/dashboard/tickets/{$ticket->id}/labels/{$label->id}")
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Ticket label removed.');
+        ->assertSessionHas('status', 'tickets.flash.label_removed');
 
     $this->assertDatabaseMissing('ticket_label_ticket', [
         'ticket_id' => $ticket->id,
@@ -5057,7 +5057,7 @@ test('ticket labels are scoped to the agent account', function (): void {
             'label_name' => 'Needs Dev',
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Ticket label added.');
+        ->assertSessionHas('status', 'tickets.flash.label_added');
 
     $ownLabel = DB::table('ticket_labels')
         ->where('account_id', $account->id)
@@ -5116,7 +5116,7 @@ test('agent can send a visitor reply from a linked ticket record', function (): 
             'message' => 'I can help from the ticket.',
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Reply sent.');
+        ->assertSessionHas('status', 'tickets.flash.reply_sent');
 
     $reply = $conversation->messages()->latest('id')->firstOrFail();
 
@@ -5252,7 +5252,7 @@ test('agent can send a visitor reply from a ticket helper', function (): void {
             'message' => '',
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Reply sent.');
+        ->assertSessionHas('status', 'tickets.flash.reply_sent');
 
     $reply = $conversation->messages()->latest('id')->firstOrFail();
 
@@ -5358,7 +5358,7 @@ test('agent can update ticket fields from the detail page', function (): void {
             'priority' => 'high',
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Ticket updated.');
+        ->assertSessionHas('status', 'tickets.flash.updated');
 
     expect($ticket->fresh())
         ->category->toBe('bug')
@@ -5479,7 +5479,7 @@ test('agent can close a ticket from its detail page', function (): void {
         ->from("/dashboard/tickets/{$ticket->id}")
         ->post("/dashboard/tickets/{$ticket->id}/close")
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Ticket closed.');
+        ->assertSessionHas('status', 'tickets.flash.closed');
 
     expect($ticket->fresh())
         ->status->toBe('closed')
@@ -5535,7 +5535,7 @@ test('agent can close a ticket with a resolution note', function (): void {
             'resolution_note' => 'Confirmed the checkout button works after cache clear.',
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Ticket closed.');
+        ->assertSessionHas('status', 'tickets.flash.closed');
 
     $activity = AuditEvent::query()
         ->where('subject_type', Ticket::class)
@@ -5579,7 +5579,7 @@ test('agent can mark a ticket pending from its detail page', function (): void {
         ->from("/dashboard/tickets/{$ticket->id}")
         ->post("/dashboard/tickets/{$ticket->id}/pending")
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Ticket marked pending.');
+        ->assertSessionHas('status', 'tickets.flash.marked_pending');
 
     expect($ticket->fresh())
         ->status->toBe('pending')
@@ -5681,7 +5681,7 @@ test('agent can close a linked ticket from their account conversation', function
         ->from('/dashboard/conversations/WF-TICKETCLOSE')
         ->post("/dashboard/tickets/{$ticket->id}/close")
         ->assertRedirect('/dashboard/conversations/WF-TICKETCLOSE')
-        ->assertSessionHas('status', 'Ticket closed.');
+        ->assertSessionHas('status', 'tickets.flash.closed');
 
     expect($ticket->fresh())
         ->status->toBe('closed')
@@ -5808,7 +5808,7 @@ test('agent can close a linked ticket with a resolution note from the conversati
             'resolution_note' => 'Confirmed the visitor can complete checkout.',
         ])
         ->assertRedirect('/dashboard/conversations/WF-CONVRESOLVE')
-        ->assertSessionHas('status', 'Ticket closed.');
+        ->assertSessionHas('status', 'tickets.flash.closed');
 
     $activity = AuditEvent::query()
         ->where('subject_type', Ticket::class)
@@ -5903,7 +5903,7 @@ test('agent can reopen a linked ticket from their account conversation', functio
         ->from('/dashboard/conversations/WF-TICKETOPEN')
         ->post("/dashboard/tickets/{$ticket->id}/reopen")
         ->assertRedirect('/dashboard/conversations/WF-TICKETOPEN')
-        ->assertSessionHas('status', 'Ticket reopened.');
+        ->assertSessionHas('status', 'tickets.flash.reopened');
 
     expect($ticket->fresh())
         ->status->toBe('open')
@@ -5967,7 +5967,7 @@ test('agent can reassign a linked ticket to another account agent', function ():
             'assignee_id' => $assignee->id,
         ])
         ->assertRedirect('/dashboard/conversations/WF-ASSIGNT1')
-        ->assertSessionHas('status', 'Ticket assignee updated.');
+        ->assertSessionHas('status', 'tickets.flash.assignee_updated');
 
     expect($ticket->fresh()->assignee_id)->toBe($assignee->id);
 
@@ -6016,7 +6016,7 @@ test('agent can clear a linked ticket assignee', function (): void {
             'assignee_id' => '',
         ])
         ->assertRedirect('/dashboard/conversations/WF-UNASSIGNT')
-        ->assertSessionHas('status', 'Ticket assignee updated.');
+        ->assertSessionHas('status', 'tickets.flash.assignee_updated');
 
     expect($ticket->fresh()->assignee_id)->toBeNull();
 

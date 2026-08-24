@@ -77,7 +77,7 @@ test('an opted-in note posts to the linked GitHub issue and records the relay', 
             'post_to_external' => '1',
         ])
         ->assertRedirect("/dashboard/tickets/{$f['ticket']->id}")
-        ->assertSessionHas('status', 'Ticket note added and posted to the linked issue.');
+        ->assertSessionHas('status', 'tickets.flash.note_added_posted');
 
     // The relayed comment id is remembered so the inbound webhook won't echo it back.
     expect(data_get($f['link']->fresh()->metadata, 'synced_comment_ids'))->toContain('700123');
@@ -111,7 +111,7 @@ test('an opted-in note posts to the linked GitLab issue as a note', function ():
             'body' => 'Relaying context to GitLab.',
             'post_to_external' => '1',
         ])
-        ->assertSessionHas('status', 'Ticket note added and posted to the linked issue.');
+        ->assertSessionHas('status', 'tickets.flash.note_added_posted');
 
     Http::assertSent(function (HttpClientRequest $request): bool {
         expect($request->method())->toBe('POST')
@@ -141,7 +141,7 @@ test('an opted-in note posts to Jira Cloud as an ADF comment over Basic auth', f
             'body' => 'Escalated to engineering.',
             'post_to_external' => '1',
         ])
-        ->assertSessionHas('status', 'Ticket note added and posted to the linked issue.');
+        ->assertSessionHas('status', 'tickets.flash.note_added_posted');
 
     Http::assertSent(function (HttpClientRequest $request): bool {
         $expectedBasic = 'Basic '.base64_encode('ops@acme.com:api-token-secret');
@@ -174,7 +174,7 @@ test('an opted-in note posts to Jira Server as a plain comment over Bearer auth'
             'body' => 'Server note.',
             'post_to_external' => '1',
         ])
-        ->assertSessionHas('status', 'Ticket note added and posted to the linked issue.');
+        ->assertSessionHas('status', 'tickets.flash.note_added_posted');
 
     Http::assertSent(function (HttpClientRequest $request): bool {
         expect((string) $request->url())->toBe('https://jira.internal/rest/api/2/issue/OPS-7/comment')
@@ -197,7 +197,7 @@ test('a note stays internal when the opt-in is not checked', function (): void {
         ->post(route('dashboard.tickets.notes.store', $f['ticket']), [
             'body' => 'Internal context only.',
         ])
-        ->assertSessionHas('status', 'Ticket note added.');
+        ->assertSessionHas('status', 'tickets.flash.note_added');
 
     Http::assertNothingSent();
     expect(AuditEvent::where('action', 'ticket.external_comment_posted')->count())->toBe(0);
@@ -219,7 +219,7 @@ test('the opt-in is unavailable and inert without the add_comment capability', f
             'body' => 'Should not leave.',
             'post_to_external' => '1',
         ])
-        ->assertSessionHas('status', 'Ticket note added.');
+        ->assertSessionHas('status', 'tickets.flash.note_added');
 
     Http::assertNothingSent();
 });
@@ -234,7 +234,7 @@ test('a disabled connection never relays', function (): void {
             'body' => 'Should not leave.',
             'post_to_external' => '1',
         ])
-        ->assertSessionHas('status', 'Ticket note added.');
+        ->assertSessionHas('status', 'tickets.flash.note_added');
 
     Http::assertNothingSent();
 });
@@ -252,7 +252,7 @@ test('a failed comment is recorded and the note still lands', function (): void 
             'body' => 'This should still be an internal note.',
             'post_to_external' => '1',
         ])
-        ->assertSessionHas('status', 'Ticket note added, but the external comment could not be posted. See ticket activity.');
+        ->assertSessionHas('status', 'tickets.flash.note_added_not_posted');
 
     expect(AuditEvent::where('action', 'ticket.note_added')->count())->toBe(1)
         ->and(AuditEvent::where('action', 'ticket.external_comment_failed')->count())->toBe(1)

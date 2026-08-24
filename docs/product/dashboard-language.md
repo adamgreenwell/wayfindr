@@ -228,6 +228,30 @@ The verdict lives on the **review object**, not in issue comments — `commit_id
 is the reliable field, and a clean verdict's body says `**Reviewed commit:**`
 with no findings under it.
 
+### The flash belongs to the destination, not the controller
+
+A page that renders `__(session('status'))` makes every controller that can
+redirect to it one of *its* surfaces. `AgentTicketController` flashes from the
+ticket page and from the conversation page — `redirect()->back()` decides — so
+its twelve status strings are keys now, and the ticket page translates them too.
+That page is not extracted, so `__()` answers in the install default there:
+English, correctly, and without a second code path.
+
+The general rule: **any view that renders a flash should call `__()` on it.**
+`__()` returns a non-key string unchanged, so it costs nothing on surfaces that
+flash literals and prevents a raw key from ever reaching a page.
+
+### An endpoint the page calls is part of the page
+
+`EXTRACTED_ROUTES` scopes the locale per route, so an endpoint the page posts to
+answers in the install default unless it is listed. The transcript endpoint was
+caught early; the **attachment** endpoint was not, and the composer prefers the
+response's own `message` over its local fallback — so an oversized file put
+English into a German page on an ordinary upload.
+
+When a surface is extracted, list every endpoint it calls, not just the ones
+that render markup.
+
 ### A guard is only as good as the states it visits
 
 Said once already about the support-lookup empty state, and true again for the
@@ -251,9 +275,18 @@ guards**:
 | the transcript sender roles | *no* messages |
 | the `Unknown visitor` fallback | a visitor with an id |
 | the recovery timeline | no resync request |
+| the ignored-response branch | no ignored responses |
 
 Every one of them was a real finding first and a fixture change second. When a
 guard passes, ask what it rendered — not just what it asserted.
+
+Some of this cannot be reached by rendering at all, and is checked at the
+source instead: **`every catalogue file answers the same set of keys`** compares
+`lang/en` against `lang/de` for every file, so a key added to one language and
+not the other fails immediately rather than waiting for a state to render it.
+It also lists every German string identical to its English — a real cognate, or
+a missed translation — and each one has to be named deliberately. That list is
+the shortlist for the native-speaker pass.
 
 Copy inside a `<script>` is invisible to all of this: the announcement walker
 strips scripts before it looks at anything. The reply composer and the realtime

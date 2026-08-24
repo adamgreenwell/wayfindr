@@ -168,6 +168,12 @@ function conversationQueueLanguageWorld(int $conversations = 3): array
                     'requested_at' => now()->subMinutes(2)->toJSON(),
                     'fulfilled_at' => now()->subSeconds(30)->toJSON(),
                     'fulfilled_snapshot_reported_at' => now()->subSeconds(25)->toJSON(),
+                    // An ignored response, so the timeline's `ignored` branch
+                    // renders. Without one that branch built its timestamp the
+                    // old way and no test could see it.
+                    'ignored_responses' => [
+                        ['reason' => 'stale', 'ignored_at' => now()->subSeconds(40)->toJSON()],
+                    ],
                 ],
             ],
         ]);
@@ -1695,6 +1701,139 @@ test('a cobrowse timestamp never travels without its language', function (): voi
     }
 
     expect($checked)->toBeGreaterThan(0, 'no timestamp fields were produced, so this proves nothing');
+});
+
+test('every catalogue file answers the same set of keys', function (): void {
+    // A key added to one language and not the other resolves to the raw key
+    // string on the page -- German text with `tickets.flash.closed` in it. The
+    // raw-key guard catches that only on states it renders; this catches it at
+    // the source, for every key, including ones no test reaches.
+    $missing = [];
+    $identical = [];
+
+    foreach (glob(lang_path('de/*.php')) ?: [] as $file) {
+        $name = basename($file, '.php');
+        $englishFile = lang_path('en/'.$name.'.php');
+
+        // Laravel ships English for validation, so there is no en/ file to
+        // compare against; every other catalogue must have both halves.
+        if (! file_exists($englishFile)) {
+            continue;
+        }
+
+        $flatten = function (array $values, string $prefix = '') use (&$flatten): array {
+            $flat = [];
+
+            foreach ($values as $key => $value) {
+                $flat = array_merge($flat, is_array($value)
+                    ? $flatten($value, $prefix.$key.'.')
+                    : [$prefix.$key => $value]);
+            }
+
+            return $flat;
+        };
+
+        $english = $flatten(require $englishFile);
+        $german = $flatten(require $file);
+
+        foreach (array_keys($english) as $key) {
+            if (! array_key_exists($key, $german)) {
+                $missing[] = "de/{$name}: {$key}";
+            } elseif ($german[$key] === $english[$key]) {
+                $identical[] = "{$name}.{$key} = ".$english[$key];
+            }
+        }
+
+        foreach (array_keys($german) as $key) {
+            if (! array_key_exists($key, $english)) {
+                $missing[] = "en/{$name}: {$key}";
+            }
+        }
+    }
+
+    expect($missing)->toBe([], 'a catalogue key exists in one language and not the other');
+
+    // A translation identical to its English is usually a missed string rather
+    // than a real cognate, so every one is named here deliberately. German
+    // support vocabulary borrows most of these wholesale; `Cobrowse` is a
+    // product term. This list is also the shortlist for the native-speaker
+    // pass -- these are the words most likely to be wrong.
+    $expectedCognates = [
+        'conversations.columns.cobrowse = Cobrowse',
+        'conversations.detail.headings.ticket = Ticket',
+        'conversations.detail.tabs.ticket = Ticket',
+        'conversations.detail.tabs.cobrowse = Cobrowse',
+        'conversations.detail.cobrowse.heading = Cobrowse',
+        'conversations.detail.cobrowse.url = URL',
+        'conversations.detail.roles.agent = Agent',
+        'conversations.detail.context.status = Status',
+        'nav.items.tickets = Tickets',
+        'profile.roles.agent = Agent',
+        'profile.details.name = Name',
+        'tickets.document_title = Tickets',
+        'tickets.columns.status = Status',
+        'tickets.columns.labels = Labels',
+        'tickets.columns.label = Label',
+        'tickets.priorities.normal = Normal',
+        'tickets.chips.status = Status: :value',
+        'tickets.chips.label = Label: :value',
+        'tickets.row.actor_system = System',
+    ];
+
+    expect(array_values(array_diff($identical, $expectedCognates)))->toBe([],
+        'a German string is identical to its English -- a real cognate, or a missed translation?');
+});
+
+test('an action on the detail page answers in the agent language', function (): void {
+    // The page translates `session('status')`, so a controller that flashes an
+    // English literal puts English feedback on a German page. Ticket actions
+    // reach here through `redirect()->back()`, so they are this page's flashes
+    // even though they belong to another controller.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+    $agent = $world['agents']['de'];
+
+    $ticket = Ticket::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($conversation)
+        ->for($conversation->visitor, 'requester')
+        ->create(['status' => 'open', 'subject' => 'Datenpunkt flash', 'priority' => 'normal']);
+
+    $this->actingAs($agent)
+        ->from(route('dashboard.conversations.show', $conversation->support_code))
+        ->post(route('dashboard.tickets.close', $ticket))
+        ->assertRedirect();
+
+    $flashed = session('status');
+
+    expect($flashed)->toBeString()->not->toBe('');
+
+    // The flash must be a key, and that key must answer in German here.
+    expect(__($flashed, [], 'de'))->not->toBe($flashed, "the flashed status '{$flashed}' is not a catalogue key")
+        ->and(__($flashed, [], 'de'))->not->toBe(__($flashed, [], 'en'));
+});
+
+test('the attachment endpoint answers in the agent language', function (): void {
+    // The composer prefers the response's own message over its local fallback,
+    // so an endpoint outside EXTRACTED_ROUTES puts English into a German page
+    // on something as ordinary as an oversized file.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+
+    expect(DashboardLanguage::EXTRACTED_ROUTES)
+        ->toContain('dashboard.conversations.attachments.store');
+
+    $response = $this->actingAs($world['agents']['de'])
+        ->postJson(route('dashboard.conversations.attachments.store', $conversation->support_code), []);
+
+    $response->assertStatus(422);
+
+    $message = (string) ($response->json('message') ?? '');
+
+    expect($message)->not->toBe('')
+        ->and($message)->not->toContain('field is required')
+        ->and($message)->not->toContain('must be a file');
 });
 
 test('no unreplaced placeholder ever reaches the page', function (): void {

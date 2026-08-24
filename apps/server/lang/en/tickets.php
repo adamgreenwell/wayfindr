@@ -382,4 +382,19 @@ return [
             'agent_action' => 'assign immediately and keep the visitor updated.',
         ],
     ],
+
+    'flash' => [
+        'reply_sent' => 'Reply sent.',
+        'assignee_updated' => 'Ticket assignee updated.',
+        'closed' => 'Ticket closed.',
+        'escalated' => 'Ticket escalated.',
+        'label_added' => 'Ticket label added.',
+        'label_removed' => 'Ticket label removed.',
+        'marked_pending' => 'Ticket marked pending.',
+        'note_added' => 'Ticket note added.',
+        'note_added_posted' => 'Ticket note added and posted to the linked issue.',
+        'note_added_not_posted' => 'Ticket note added, but the external comment could not be posted. See ticket activity.',
+        'reopened' => 'Ticket reopened.',
+        'updated' => 'Ticket updated.',
+    ],
 ];
