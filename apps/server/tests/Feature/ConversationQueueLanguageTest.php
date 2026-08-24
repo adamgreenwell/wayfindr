@@ -5,10 +5,12 @@
 // Blade file holds about seven sentences and the controller builds sixty.
 
 use App\Models\Account;
+use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\Site;
 use App\Models\Ticket;
+use App\Models\TicketExternalLink;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Support\CobrowseConsentState;
@@ -17,11 +19,76 @@ use App\Support\CobrowseResyncRequestPolicy;
 use App\Support\CobrowseSnapshotFreshness;
 use App\Support\CobrowseTransportPressure;
 use App\Support\DashboardLanguage;
+use App\Support\ExternalIssueSyncStatus;
 use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\App;
 
 uses(RefreshDatabase::class);
+
+/**
+ * Tickets in the states the queue's CONDITIONAL rows need.
+ *
+ * Reply visibility renders only when the latest message is an agent reply; the
+ * escalation cue only after a recent escalation; the lifecycle note only when a
+ * lifecycle event carries one. None of those appear on an ordinary fixture, so
+ * their copy stayed English through a whole review round -- the guard was
+ * looking at pages that never rendered them.
+ *
+ * @param  array{account: Account, site: Site, agents: array<string, User>}  $world
+ */
+function conversationQueueLanguageTicketStates(array $world, Conversation $conversation): void
+{
+    $agent = $world['agents']['de'];
+
+    $escalated = Ticket::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($conversation)
+        ->for($conversation->visitor, 'requester')
+        ->create([
+            'category' => 'task',
+            'priority' => 'normal',
+            'status' => 'open',
+            'subject' => 'Datenpunkt replied',
+            'description' => 'Datenpunkt body',
+        ]);
+
+    // An agent reply last, which is what makes reply visibility render.
+    ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => User::class,
+        'sender_id' => $agent->id,
+        'body' => 'Datenpunkt agent reply',
+    ]);
+
+    // A recent escalation aimed at this agent, which also carries the note the
+    // lifecycle row reads.
+    AuditEvent::query()->create([
+        'account_id' => $world['account']->id,
+        'actor_type' => $agent->getMorphClass(),
+        'actor_id' => $agent->id,
+        'subject_type' => $escalated->getMorphClass(),
+        'subject_id' => $escalated->id,
+        'action' => 'ticket.escalated',
+        // `reason` is the key the escalation note is read from; `note` is not.
+        'metadata' => ['target_agent_id' => $agent->id, 'reason' => 'Datenpunkt escalation reason'],
+        'occurred_at' => now(),
+    ]);
+
+    // An external link, which is what makes the attempt row render at all.
+    // Through the factory rather than hand-built: the table has four NOT NULL
+    // columns a literal insert discovers one failure at a time.
+    TicketExternalLink::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($escalated)
+        ->create([
+            'provider' => 'github',
+            'project_key' => 'Datenpunkt/repo',
+            'sync_status' => ExternalIssueSyncStatus::FAILED,
+            'last_synced_at' => now(),
+        ]);
+}
 
 /**
  * Named for this file rather than for the concept. Pest helpers are global, and
@@ -950,6 +1017,8 @@ test('no English is rendered as German on any extracted surface', function (): v
         ->for($conversation->visitor, 'requester')
         ->create(['category' => 'task', 'priority' => 'low', 'status' => 'open', 'subject' => 'Datenpunkt bare', 'description' => null]);
 
+    conversationQueueLanguageTicketStates($world, $conversation);
+
     $states = [
         route('dashboard.profile.show'),
         route('dashboard.conversations.index'),
@@ -1179,6 +1248,8 @@ test('no raw catalogue key ever reaches the page', function (): void {
         ->for($conversation->visitor, 'requester')
         ->create(['category' => 'task', 'priority' => 'low', 'status' => 'open', 'subject' => 'Datenpunkt bare', 'description' => null]);
 
+    conversationQueueLanguageTicketStates($world, $conversation);
+
     $states = [
         route('dashboard.profile.show'),
         route('dashboard.conversations.index'),
@@ -1264,5 +1335,121 @@ test('the ticket queue heading names the status it is actually showing', functio
         // A message would make `toContain` variadic; the loop key is in the
         // failure line instead.
         $this->assertStringContainsString($expected, $text, "ticket queue heading for status: {$filter}");
+    }
+});
+
+test('the ticket queue conditional rows are translated, labels and all', function (): void {
+    // These sit in segments that also carry DATA -- an escalation reason, a
+    // project key, a provider name -- so the comparison guard discards them
+    // and a targeted assertion is the only thing that sees them. Same shape as
+    // the filter chips: a translated label wrapping an untranslated value, or
+    // the reverse.
+    //
+    // Every one of these stayed English through a full review round because no
+    // fixture produced the branch that renders it.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+
+    conversationQueueLanguageTicketStates($world, $conversation);
+
+    $german = conversationQueueLanguageVisibleText(
+        (string) $this->actingAs($world['agents']['de'])
+            ->get(route('dashboard.tickets.index'))
+            ->assertOk()
+            ->getContent()
+    );
+
+    foreach ([
+        'Lebenszyklus-Notiz',      // the note label
+        'Ticket eskaliert',        // the lifecycle event name
+        'Letzter Versuch',         // the external attempt label
+        'An Sie eskaliert',        // the escalation audience
+        'Synchronisierung',        // the attempt's own label, from the support class
+    ] as $expected) {
+        $this->assertStringContainsString($expected, $german, "conditional ticket row copy: {$expected}");
+    }
+
+    foreach ([
+        'Lifecycle note',
+        'Ticket escalated',
+        'Latest attempt',
+        'Escalated to you',
+        'sync failed',
+    ] as $english) {
+        $this->assertStringNotContainsString($english, $german, "English left on a German ticket row: {$english}");
+    }
+
+    // And the English page still reads as English, so this measures
+    // translation rather than strings that simply moved.
+    $inEnglish = conversationQueueLanguageVisibleText(
+        (string) $this->actingAs($world['agents']['en'])
+            ->get(route('dashboard.tickets.index'))
+            ->assertOk()
+            ->getContent()
+    );
+
+    foreach (['Lifecycle note', 'Latest attempt', 'sync failed'] as $expected) {
+        $this->assertStringContainsString($expected, $inEnglish, "English ticket row copy: {$expected}");
+    }
+});
+
+test('every lifecycle action maps to a key that resolves', function (): void {
+    // Five actions, and a page fixture can realistically render one of them.
+    // Rather than build five tickets to reach five branches, this asserts the
+    // mapping itself and that each key resolves in both languages -- a missing
+    // one renders as `tickets.lifecycle.something` on the page.
+    $world = conversationQueueLanguageWorld(conversations: 1);
+    $conversation = Conversation::query()->firstOrFail();
+    $agent = $world['agents']['de'];
+
+    $actions = [
+        'ticket.pending' => 'pending',
+        'ticket.closed' => 'closed',
+        'ticket.reopened' => 'reopened',
+        'ticket.unheld' => 'unheld',
+        'ticket.escalated' => 'escalated',
+        'ticket.something_else' => 'default',
+    ];
+
+    foreach ($actions as $action => $expectedKey) {
+        $ticket = Ticket::factory()
+            ->for($world['account'])
+            ->for($world['site'])
+            ->for($conversation)
+            ->for($conversation->visitor, 'requester')
+            ->create(['category' => 'task', 'priority' => 'low', 'status' => 'open', 'subject' => 'Datenpunkt '.$action, 'description' => 'Datenpunkt body']);
+
+        AuditEvent::query()->create([
+            'account_id' => $world['account']->id,
+            'actor_type' => $agent->getMorphClass(),
+            'actor_id' => $agent->id,
+            'subject_type' => $ticket->getMorphClass(),
+            'subject_id' => $ticket->id,
+            'action' => $action,
+            'metadata' => ['reason' => 'r', 'pending_note' => 'r', 'resolution_note' => 'r', 'reopen_note' => 'r'],
+            'occurred_at' => now(),
+        ]);
+
+        $note = Ticket::query()->find($ticket->id)->latestLifecycleNote();
+
+        // The unknown action carries no note body, so it has nothing to render.
+        if ($expectedKey === 'default') {
+            expect($note)->toBeNull();
+
+            continue;
+        }
+
+        expect($note['label_key'])->toBe($expectedKey);
+    }
+
+    // And every key in the map resolves in both languages, in both files.
+    foreach (['en', 'de'] as $locale) {
+        App::setLocale($locale);
+
+        foreach (array_values($actions) as $key) {
+            $resolved = trans('tickets.lifecycle.'.$key);
+
+            expect($resolved)->not->toBe('tickets.lifecycle.'.$key);
+        }
     }
 });

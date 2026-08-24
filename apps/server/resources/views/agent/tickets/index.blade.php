@@ -229,8 +229,15 @@
                                             @if ($activityPreview['reply_visibility'])
                                                 <span class="wf-queue-preview">
                                                     {{ __('tickets.row.reply_visibility') }}
-                                                    <span class="wf-queue-mark" @if ($activityPreview['reply_visibility']['tone'] !== 'manual') data-tone="attention" @endif>{{ $activityPreview['reply_visibility']['label'] }}</span>
-                                                    {{ $activityPreview['reply_visibility']['detail'] }}
+                                                    @php
+                                                        $cue = $activityPreview['reply_visibility']['cue'] ?? null;
+                                                    @endphp
+                                                    <span class="wf-queue-mark" @if ($activityPreview['reply_visibility']['tone'] !== 'manual') data-tone="attention" @endif>{{ $cue ? __('tickets.read_state.'.$cue['key']) : __('tickets.row.no_linked_conversation') }}</span>
+                                                    {{ $cue
+                                                        ? ($cue['seen_at']
+                                                            ? __('tickets.read_state.detail_seen', ['elapsed' => $cue['seen_at']->diffForHumans()])
+                                                            : __('tickets.read_state.'.$cue['detail_key']))
+                                                        : __('tickets.row.reply_visibility_none') }}
                                                 </span>
                                             @endif
                                         </td>
@@ -271,13 +278,14 @@
                                             </span>
                                             <span class="wf-queue-preview" title="{{ __('tickets.row.'.$ticket->attentionDescriptionKey()) }}">{{ __('tickets.row.'.$ticket->attentionDescriptionKey()) }}</span>
                                             @if ($recentEscalation)
-                                                <span class="wf-queue-preview">{{ $ticket->escalationAudienceLabelFor($agent) }}</span>
+                                                <span class="wf-queue-preview">{{ __('tickets.row.'.$ticket->escalationAudienceKeyFor($agent)) }}</span>
                                             @endif
                                             @if ($ticketLifecycleNote)
                                                 <span class="wf-queue-preview" title="{{ $ticketLifecycleNote['body'] }}">
-                                                    Lifecycle note {{ $ticketLifecycleNote['label'] }}: {{ $ticketLifecycleNote['body'] }}
+                                                    {{ __('tickets.row.lifecycle_note') }} {{ __('tickets.lifecycle.'.$ticketLifecycleNote['label_key']) }}: {{ $ticketLifecycleNote['body'] }}
                                                 </span>
-                                                <span class="wf-queue-preview">{{ $ticketLifecycleNote['actor'] }} - {{ $ticketLifecycleNote['occurred_at']->diffForHumans() }}</span>
+                                                {{-- An actor is a NAME when there is one, and a key when there is not. --}}
+                                                <span class="wf-queue-preview">{{ $ticketLifecycleNote['actor'] ?? __('tickets.row.'.$ticketLifecycleNote['actor_key']) }} - {{ $ticketLifecycleNote['occurred_at']->diffForHumans() }}</span>
                                             @endif
                                         </td>
                                         <td>
@@ -287,7 +295,7 @@
                                             <span class="wf-queue-preview" title="{{ $ticketExternalIssueState['detail'] }}">{{ $ticketExternalIssueState['detail'] }}</span>
                                             @if ($ticketExternalIssueState['attempt'])
                                                 <span class="wf-queue-preview" title="{{ $ticketExternalIssueState['attempt']['body'] }}">
-                                                    Latest attempt {{ $ticketExternalIssueState['attempt']['label'] }}: {{ $ticketExternalIssueState['attempt']['body'] }}
+                                                    {{ __('tickets.row.latest_attempt') }} {{ $ticketExternalIssueState['attempt']['label'] }}: {{ $ticketExternalIssueState['attempt']['body'] }}
                                                 </span>
                                                 @if ($ticketExternalIssueState['attempt']['occurred_at'])
                                                     <span class="wf-queue-preview">{{ $ticketExternalIssueState['attempt']['occurred_at']->diffForHumans() }}</span>

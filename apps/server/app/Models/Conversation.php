@@ -411,6 +411,27 @@ class Conversation extends Model
         return $message->seen_at ? 'seen' : 'unseen';
     }
 
+    /**
+     * When the visitor last saw an agent reply, as a KEY plus the moment.
+     *
+     * Keys rather than sentences, for the reason on `attentionLabel()`. The
+     * English labels below stay for surfaces that are not extracted.
+     *
+     * @return array{key: string, detail_key: string, seen_at: CarbonInterface|null}
+     */
+    public function visitorReadCue(): array
+    {
+        $message = $this->latestAgentMessageForReadReceipt();
+
+        if (! $message) {
+            return ['key' => 'none', 'detail_key' => 'detail_none', 'seen_at' => null];
+        }
+
+        return $message->seen_at
+            ? ['key' => 'seen', 'detail_key' => 'detail_seen', 'seen_at' => $message->seen_at]
+            : ['key' => 'unseen', 'detail_key' => 'detail_unseen', 'seen_at' => null];
+    }
+
     public function visitorReadLabel(): string
     {
         return match ($this->visitorReadState()) {

@@ -194,6 +194,7 @@ class Ticket extends Model
 
         if (! $conversation) {
             return [
+                'cue' => null,
                 'detail' => 'Reply visibility starts once this ticket is connected to a conversation.',
                 'label' => 'No linked conversation',
                 'tone' => 'manual',
@@ -201,6 +202,7 @@ class Ticket extends Model
         }
 
         return [
+            'cue' => $conversation->visitorReadCue(),
             'detail' => $conversation->visitorReadDetail(),
             'label' => $conversation->visitorReadLabel(),
             'tone' => match ($conversation->visitorReadState()) {
@@ -328,11 +330,17 @@ class Ticket extends Model
         }
 
         return [
+            // The actor is a NAME when there is one -- data, never translated --
+            // and a key otherwise.
             'actor' => $event->actor_type === Visitor::class
-                ? 'Visitor'
-                : ($event->actor?->name ?? 'System'),
+                ? null
+                : $event->actor?->name,
+            'actor_key' => $event->actor_type === Visitor::class
+                ? 'actor_visitor'
+                : ($event->actor?->name ? null : 'actor_system'),
             'body' => $this->lifecycleNoteBody($event),
             'label' => $this->lifecycleNoteLabel($event),
+            'label_key' => $this->lifecycleNoteLabelKey($event),
             'occurred_at' => $event->occurred_at,
         ];
     }
@@ -504,6 +512,20 @@ class Ticket extends Model
         return (string) Str::of((string) $body)->squish();
     }
 
+    private function lifecycleNoteLabelKey(AuditEvent $event): string
+    {
+        // Without the `ticket.` prefix: a catalogue key containing a dot is
+        // read as nesting by Laravel's dot notation and never resolves.
+        return match ($event->action) {
+            'ticket.pending' => 'pending',
+            'ticket.closed' => 'closed',
+            'ticket.reopened' => 'reopened',
+            'ticket.unheld' => 'unheld',
+            'ticket.escalated' => 'escalated',
+            default => 'default',
+        };
+    }
+
     private function lifecycleNoteLabel(AuditEvent $event): string
     {
         return match ($event->action) {
@@ -588,6 +610,18 @@ class Ticket extends Model
         return (int) $targetAgentId === (int) $agent->id
             ? 'Escalated to you'
             : 'Recently escalated';
+    }
+
+    /**
+     * The escalation audience as a catalogue key -- see `attentionLabelKey()`.
+     */
+    public function escalationAudienceKeyFor(User $agent): string
+    {
+        $targetAgentId = data_get($this->latestRecentEscalationEvent()?->metadata, 'target_agent_id');
+
+        return (int) $targetAgentId === (int) $agent->id
+            ? 'escalated_to_you'
+            : 'escalated_recent';
     }
 
     public function externalLinks(): HasMany

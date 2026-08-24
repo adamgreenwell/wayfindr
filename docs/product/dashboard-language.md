@@ -342,6 +342,14 @@ to one status still produces German, just the wrong German — `2 offen` while
 showing closed tickets differs from `2 open` exactly as a correct translation
 would. Only a direct assertion that the heading names its own status can see it.
 
+A seventh, and the one that has cost the most: **a branch no fixture reaches is
+not audited at all.** The ticket queue's conditional rows — reply visibility, an
+escalation cue, a lifecycle note, an external sync attempt — each render only in
+a state an ordinary fixture never produces, so their copy stayed English through
+a whole review round with every guard green. The world now builds those states
+explicitly, and where a branch needs one fixture per case (five lifecycle
+actions) the **mapping** is asserted directly instead of five pages rendered.
+
 The rule these share: when the general net cannot reach a class of copy, assert
 that class directly rather than loosening the net until it produces noise.
 
