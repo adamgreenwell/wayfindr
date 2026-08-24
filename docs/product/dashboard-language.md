@@ -97,6 +97,20 @@ right while the extraction is half done, and it is why
 command, a mail build — and there the locale is whatever the process last set,
 scoped to nothing. That is the reason models hand out state.
 
+### A guard's catalogue list and state list both rot
+
+Two mutations survived the raw-key guard on the ticket queue for reasons that
+have nothing to do with the guard's logic: its catalogue list still named only
+the catalogues that existed when it was written, so a raw `tickets.row.…` key
+was invisible to it; and its state list only opened conversation pages, so it
+never rendered the ticket queue at all.
+
+Both are maintenance debts a guard accrues silently. The leak guard avoids the
+second by asserting that **every GET-able route in `EXTRACTED_ROUTES` is
+audited** — it fails when a surface is extracted without being added, which is
+exactly how the ticket queue got its states. The catalogue list has no such
+check yet and is worth one when a fifth catalogue lands.
+
 ### A raw key on the page is always a bug, and needs its own guard
 
 A missing key renders as `conversations.row.something` — readable enough to pass
@@ -108,6 +122,17 @@ assertion was looking for, so `toContain` passes on a broken page.
 
 Match the shape of a key, not the catalogue name: an English sentence ending
 "…for your profile." contains `profile.` and is perfectly good copy.
+
+### Adding a key must never take the English answer away
+
+A model gains a key and **keeps** its English label, because the surfaces that
+have not been extracted still read the label. Setting `actor` to null and
+supplying only `actor_key` blanked the lifecycle actor on the ticket detail page
+— a page the change did not touch and no test in that PR opened.
+
+The corollary is what belongs in a key at all: a real actor *name* is **data**,
+returned as itself with no key; only the `Visitor` and `System` fallbacks are
+copy. A key for a name would be a key for something no catalogue can hold.
 
 ### Models answer with state; surfaces render copy
 
@@ -283,6 +308,14 @@ verb is correct in one language by luck. Several German plural forms are
 deliberately identical on both sides of the `|`, which is the right translation
 rather than a copy-paste slip.
 
+**Case agrees too, and gender decides the ending.** Both queues interpolate a
+count after `von`, which takes the dative — and after a bare numeral the
+adjective takes *strong* endings, where the ending depends on gender. *Die
+Unterhaltung* is feminine and takes `-er` (`von 1 passender Unterhaltung`); *das
+Ticket* is neuter and takes `-em` (`von 1 passendem Ticket`). Two sentences that
+look identical in English are not the same sentence in German, and a
+word-for-word translation gives the nominative for both.
+
 **And the sentence AROUND a count agrees with it too.** Getting `:shown` to
 choose between *1 conversation* and *3 conversations* is only half the job: the
 verbs either side of it agree with the same number. German inflects both the
@@ -316,6 +349,34 @@ compared position by position. Asserting merely that the German page *contains*
 `Besucher` passes while the header still says `Visitor`, because the word also
 appears in the search hint and in a lane label — a real mutation survived
 exactly that.
+
+A fifth, from the ticket queue: **a filter chip's label is invisible to the
+comparison** because the value it wraps differs between languages and carries
+the whole string with it — `Kategorie: Fehler` against `Category: Bug` differs
+whether or not `Category:` was translated. Same shape as the cobrowse
+`Letzte Meldung` case.
+
+And a sixth: **wrong-but-translated copy**. Pinning the ticket queue's heading
+to one status still produces German, just the wrong German — `2 offen` while
+showing closed tickets differs from `2 open` exactly as a correct translation
+would. Only a direct assertion that the heading names its own status can see it.
+
+A seventh, and the one that has cost the most: **a branch no fixture reaches is
+not audited at all.** The ticket queue's conditional rows — reply visibility, an
+escalation cue, a lifecycle note, an external sync attempt — each render only in
+a state an ordinary fixture never produces, so their copy stayed English through
+a whole review round with every guard green. The world now builds those states
+explicitly, and where a branch needs one fixture per case (five lifecycle
+actions) the **mapping** is asserted directly instead of five pages rendered.
+
+An eighth, which is really the seventh sharpened: **a fall-through branch is
+the one most likely to render and the least likely to be fixtured.** Three
+branches build an external-attempt cue; I extracted the two named ones and left
+the `default`, which every action that is not a create or a remove lands in.
+
+And a matching test trap: **asserting `trans('some.key')` proves the key exists,
+not that the code path uses it.** A mutation of the path survived that
+assertion; asserting the rendered value caught it.
 
 The rule these share: when the general net cannot reach a class of copy, assert
 that class directly rather than loosening the net until it produces noise.

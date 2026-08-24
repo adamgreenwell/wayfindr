@@ -1,10 +1,13 @@
-<x-layouts.app title="Tickets" :agent="$agent" :account="$account">
-            <x-page-header title="Tickets" :subtitle="'Structured support work for '.$account->name.'.'" />
+<x-layouts.app :title="__('tickets.document_title')" :agent="$agent" :account="$account">
+            {{-- One whole sentence per language, not a clause glued to a name. --}}
+            <x-page-header
+                :title="__('tickets.document_title')"
+                :subtitle="__('tickets.subtitle', ['account' => $account->name])" />
 
             <section id="tickets" aria-labelledby="tickets-heading">
-                <h2 id="tickets-heading" class="sr-only">Ticket queue</h2>
+                <h2 id="tickets-heading" class="sr-only">{{ __('tickets.title') }}</h2>
 
-                <nav class="wf-lanes" aria-label="Ticket lanes">
+                <nav class="wf-lanes" aria-label="{{ __('tickets.regions.lanes') }}">
                     @foreach ($ticketStatusFilters as $filterValue => $filterLabel)
                         @php
                             $statusParams = $ticketQuery;
@@ -45,7 +48,7 @@
                 @if (collect($ticketQueueSummary)->sum('count') > 0)
                     {{-- The old "Queue snapshot" band. These chips were always the
                          next-step filter with a count on it, so they are lanes. --}}
-                    <nav class="wf-lanes wf-lanes-secondary" aria-label="Ticket next steps">
+                    <nav class="wf-lanes wf-lanes-secondary" aria-label="{{ __('tickets.regions.next_steps') }}">
                         @foreach ($ticketQueueSummary as $ticketSummary)
                             <a
                                 class="wf-lane"
@@ -73,25 +76,25 @@
                     @endif
 
                     <div class="wf-filter wf-filter-search">
-                        <label for="ticket_search">Search</label>
+                        <label for="ticket_search">{{ __('tickets.search.label') }}</label>
                         <input
                             id="ticket_search"
                             name="ticket_search"
                             type="search"
                             value="{{ $ticketSearch }}"
-                            placeholder="Ticket #123, support code, subject, requester"
+                            placeholder="{{ __('tickets.search.placeholder') }}"
                         >
-                        <span class="wf-filter-help">Search by ticket number, subject, description, support code, requester, email, or anonymous visitor ID.</span>
+                        <span class="wf-filter-help">{{ __('tickets.search.hint') }}</span>
                     </div>
 
                     @php
                         $ticketSelectFilters = [
-                            ['id' => 'ticket_site', 'label' => 'Site', 'options' => $sites->pluck('name', 'id')->prepend('Any site', '')->all(), 'selected' => $ticketSite ?? ''],
-                            ['id' => 'ticket_priority', 'label' => 'Priority', 'options' => $ticketPriorityFilters, 'selected' => $ticketPriority],
-                            ['id' => 'ticket_category', 'label' => 'Category', 'options' => $ticketCategoryFilters, 'selected' => $ticketCategory],
-                            ['id' => 'ticket_label', 'label' => 'Label', 'options' => $ticketLabelFilters, 'selected' => $ticketLabel],
-                            ['id' => 'ticket_attention', 'label' => 'Next step', 'options' => $ticketAttentionFilters, 'selected' => $ticketAttention],
-                            ['id' => 'ticket_external', 'label' => 'External issue', 'options' => $ticketExternalIssueFilters, 'selected' => $ticketExternalIssue],
+                            ['id' => 'ticket_site', 'label' => __('tickets.columns.site'), 'options' => $sites->pluck('name', 'id')->prepend(__('tickets.filters.site_any'), '')->all(), 'selected' => $ticketSite ?? ''],
+                            ['id' => 'ticket_priority', 'label' => __('tickets.columns.priority'), 'options' => $ticketPriorityFilters, 'selected' => $ticketPriority],
+                            ['id' => 'ticket_category', 'label' => __('tickets.columns.category'), 'options' => $ticketCategoryFilters, 'selected' => $ticketCategory],
+                            ['id' => 'ticket_label', 'label' => __('tickets.columns.label'), 'options' => $ticketLabelFilters, 'selected' => $ticketLabel],
+                            ['id' => 'ticket_attention', 'label' => __('tickets.columns.next_step'), 'options' => $ticketAttentionFilters, 'selected' => $ticketAttention],
+                            ['id' => 'ticket_external', 'label' => __('tickets.columns.external_issue'), 'options' => $ticketExternalIssueFilters, 'selected' => $ticketExternalIssue],
                         ];
                     @endphp
 
@@ -113,8 +116,8 @@
                         unset($clearParams['ticket_site'], $clearParams['ticket_priority'], $clearParams['ticket_category'], $clearParams['ticket_label'], $clearParams['ticket_attention'], $clearParams['ticket_external'], $clearParams['ticket_search']);
                     @endphp
                     <div class="wf-filter-actions">
-                        <button class="button" type="submit">Apply filters</button>
-                        <a class="button secondary" href="{{ route('dashboard.tickets.index', $clearParams) }}">Clear filters</a>
+                        <button class="button" type="submit">{{ __('tickets.search.submit') }}</button>
+                        <a class="button secondary" href="{{ route('dashboard.tickets.index', $clearParams) }}">{{ __('tickets.actions.clear_filters') }}</a>
                     </div>
                 </form>
 
@@ -124,9 +127,9 @@
                 </p>
 
                 @if ($ticketActiveFilters !== [])
-                    <div class="filter-summary" aria-label="Active ticket filters">
+                    <div class="filter-summary" aria-label="{{ __('tickets.regions.filters') }}">
                         <div>
-                            <strong>Active ticket filters</strong>
+                            <strong>{{ __('tickets.regions.filters') }}</strong>
                         </div>
                         <div class="filter-chips">
                             @foreach ($ticketActiveFilters as $activeFilter)
@@ -135,7 +138,7 @@
                                     <span aria-hidden="true">x</span>
                                 </a>
                             @endforeach
-                            <a class="filter-chip filter-chip-clear" href="{{ route('dashboard.tickets.index') }}">Clear all ticket filters</a>
+                            <a class="filter-chip filter-chip-clear" href="{{ route('dashboard.tickets.index') }}">{{ __('tickets.actions.clear_all') }}</a>
                         </div>
                     </div>
                 @endif
@@ -160,17 +163,17 @@
                         <table class="wf-queue">
                             <thead>
                                 <tr>
-                                    <th scope="col">Subject</th>
-                                    <th scope="col">Latest activity</th>
-                                    <th scope="col">Site</th>
-                                    <th scope="col">Status</th>
-                                    <th scope="col">Category</th>
-                                    <th scope="col">Labels</th>
-                                    <th scope="col">Priority</th>
-                                    <th scope="col">Assignee</th>
-                                    <th scope="col">Next step</th>
-                                    <th scope="col">External issue</th>
-                                    <th scope="col">Timing</th>
+                                    <th scope="col">{{ __('tickets.columns.subject') }}</th>
+                                    <th scope="col">{{ __('tickets.columns.latest_activity') }}</th>
+                                    <th scope="col">{{ __('tickets.columns.site') }}</th>
+                                    <th scope="col">{{ __('tickets.columns.status') }}</th>
+                                    <th scope="col">{{ __('tickets.columns.category') }}</th>
+                                    <th scope="col">{{ __('tickets.columns.labels') }}</th>
+                                    <th scope="col">{{ __('tickets.columns.priority') }}</th>
+                                    <th scope="col">{{ __('tickets.columns.assignee') }}</th>
+                                    <th scope="col">{{ __('tickets.columns.next_step') }}</th>
+                                    <th scope="col">{{ __('tickets.columns.external_issue') }}</th>
+                                    <th scope="col">{{ __('tickets.columns.timing') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -178,6 +181,21 @@
                                     @php
                                         $ticketTiming = $ticket->queueTimingContext();
                                         $activityPreview = $ticket->queueActivityPreview();
+
+                                        // The model hands out keys and timestamps; this surface
+                                        // turns them into words, because it is the only place that
+                                        // knows whose language to use. See Ticket::attentionLabelKey().
+                                        $previewBody = $activityPreview['body_key']
+                                            ? __('tickets.row.'.$activityPreview['body_key'])
+                                            : $activityPreview['body'];
+                                        $previewLabel = __('tickets.row.'.$activityPreview['label_key']);
+                                        $waitLabel = $ticketTiming['wait_since']
+                                            ? __('tickets.row.'.$ticketTiming['wait_key'], [
+                                                'elapsed' => $ticketTiming['wait_key'] === 'closed'
+                                                    ? $ticketTiming['wait_since']->diffForHumans()
+                                                    : $ticket->elapsedWaitFrom($ticketTiming['wait_since']),
+                                            ])
+                                            : __('tickets.row.'.$ticketTiming['wait_key']);
                                         $recentEscalation = $ticket->latestRecentEscalationEvent();
                                         $ticketLifecycleNote = $ticket->latestLifecycleNote();
                                         $ticketExternalIssueState = $ticketExternalIssueStates[$ticket->id] ?? [
@@ -199,20 +217,27 @@
                                                         :href="route('dashboard.support-code.lookup', ['support_code' => $ticket->conversation->support_code])"
                                                     />
                                                 @else
-                                                    Not linked
+                                                    {{ __('tickets.row.not_linked') }}
                                                 @endif
                                             </span>
                                         </td>
                                         <td class="ticket-activity-preview">
-                                            <span class="wf-queue-cobrowse">{{ $activityPreview['label'] }}</span>
-                                            <span class="wf-queue-preview" title="{{ $activityPreview['body'] }}">
-                                                {{ $activityPreview['body'] }}@if ($activityPreview['occurred_at']) &middot; {{ $activityPreview['occurred_at']->diffForHumans() }}@endif
+                                            <span class="wf-queue-cobrowse">{{ $previewLabel }}</span>
+                                            <span class="wf-queue-preview" title="{{ $previewBody }}">
+                                                {{ $previewBody }}@if ($activityPreview['occurred_at']) &middot; {{ $activityPreview['occurred_at']->diffForHumans() }}@endif
                                             </span>
                                             @if ($activityPreview['reply_visibility'])
                                                 <span class="wf-queue-preview">
-                                                    Reply visibility:
-                                                    <span class="wf-queue-mark" @if ($activityPreview['reply_visibility']['tone'] !== 'manual') data-tone="attention" @endif>{{ $activityPreview['reply_visibility']['label'] }}</span>
-                                                    {{ $activityPreview['reply_visibility']['detail'] }}
+                                                    {{ __('tickets.row.reply_visibility') }}
+                                                    @php
+                                                        $cue = $activityPreview['reply_visibility']['cue'] ?? null;
+                                                    @endphp
+                                                    <span class="wf-queue-mark" @if ($activityPreview['reply_visibility']['tone'] !== 'manual') data-tone="attention" @endif>{{ $cue ? __('tickets.read_state.'.$cue['key']) : __('tickets.row.no_linked_conversation') }}</span>
+                                                    {{ $cue
+                                                        ? ($cue['seen_at']
+                                                            ? __('tickets.read_state.detail_seen', ['elapsed' => $cue['seen_at']->diffForHumans()])
+                                                            : __('tickets.read_state.'.$cue['detail_key']))
+                                                        : __('tickets.row.reply_visibility_none') }}
                                                 </span>
                                             @endif
                                         </td>
@@ -222,11 +247,13 @@
                                                 {{ $ticket->site->name }}
                                             </span>
                                         </td>
-                                        <td><span class="wf-queue-cobrowse">{{ ucfirst($ticket->status) }}</span></td>
-                                        <td><span class="wf-queue-cobrowse">{{ $ticket->categoryLabel() }}</span></td>
+                                        <td><span class="wf-queue-cobrowse">{{ __('tickets.statuses.'.$ticket->status) }}</span></td>
+                                        {{-- From the catalogue, keyed by the value on the row. TicketCategory's
+                                             own labels stay English for the surfaces not yet extracted. --}}
+                                        <td><span class="wf-queue-cobrowse">{{ $ticket->category ? __('tickets.categories.'.$ticket->category) : __('tickets.filters.category_uncategorized') }}</span></td>
                                         <td>
                                             @if ($ticket->labels->isEmpty())
-                                                <span class="wf-queue-cobrowse">None</span>
+                                                <span class="wf-queue-cobrowse">{{ __('tickets.row.none') }}</span>
                                             @else
                                                 <div class="ticket-label-list">
                                                     @foreach ($ticket->labels as $label)
@@ -237,27 +264,28 @@
                                         </td>
                                         <td>
                                             <span class="wf-queue-cobrowse" @if ($ticket->priority === 'urgent' || $ticket->priority === 'high') data-tone="attention" @endif>
-                                                {{ ucfirst($ticket->priority) }}
+                                                {{ __('tickets.priorities.'.$ticket->priority) }}
                                             </span>
                                         </td>
                                         <td>
                                             <span class="wf-queue-assignee" @if (! $ticket->assignee) data-unassigned="true" @endif>
-                                                {{ $ticket->assignee?->name ?? 'Unassigned' }}
+                                                {{ $ticket->assignee?->name ?? __('tickets.row.unassigned') }}
                                             </span>
                                         </td>
                                         <td>
                                             <span class="wf-queue-state" @if (in_array($ticket->attentionState(), ['needs_reply', 'needs_owner'], true)) data-tone="waiting" @endif>
-                                                <i aria-hidden="true"></i>{{ $ticket->attentionLabel() }}
+                                                <i aria-hidden="true"></i>{{ __('tickets.row.'.$ticket->attentionLabelKey()) }}
                                             </span>
-                                            <span class="wf-queue-preview" title="{{ $ticket->attentionDescription() }}">{{ $ticket->attentionDescription() }}</span>
+                                            <span class="wf-queue-preview" title="{{ __('tickets.row.'.$ticket->attentionDescriptionKey()) }}">{{ __('tickets.row.'.$ticket->attentionDescriptionKey()) }}</span>
                                             @if ($recentEscalation)
-                                                <span class="wf-queue-preview">{{ $ticket->escalationAudienceLabelFor($agent) }}</span>
+                                                <span class="wf-queue-preview">{{ __('tickets.row.'.$ticket->escalationAudienceKeyFor($agent)) }}</span>
                                             @endif
                                             @if ($ticketLifecycleNote)
                                                 <span class="wf-queue-preview" title="{{ $ticketLifecycleNote['body'] }}">
-                                                    Lifecycle note {{ $ticketLifecycleNote['label'] }}: {{ $ticketLifecycleNote['body'] }}
+                                                    {{ __('tickets.row.lifecycle_note') }} {{ __('tickets.lifecycle.'.$ticketLifecycleNote['label_key']) }}: {{ $ticketLifecycleNote['body'] }}
                                                 </span>
-                                                <span class="wf-queue-preview">{{ $ticketLifecycleNote['actor'] }} - {{ $ticketLifecycleNote['occurred_at']->diffForHumans() }}</span>
+                                                {{-- An actor is a NAME when there is one, and a key when there is not. --}}
+                                                <span class="wf-queue-preview">{{ $ticketLifecycleNote['actor_key'] ? __('tickets.row.'.$ticketLifecycleNote['actor_key']) : $ticketLifecycleNote['actor'] }} - {{ $ticketLifecycleNote['occurred_at']->diffForHumans() }}</span>
                                             @endif
                                         </td>
                                         <td>
@@ -267,7 +295,7 @@
                                             <span class="wf-queue-preview" title="{{ $ticketExternalIssueState['detail'] }}">{{ $ticketExternalIssueState['detail'] }}</span>
                                             @if ($ticketExternalIssueState['attempt'])
                                                 <span class="wf-queue-preview" title="{{ $ticketExternalIssueState['attempt']['body'] }}">
-                                                    Latest attempt {{ $ticketExternalIssueState['attempt']['label'] }}: {{ $ticketExternalIssueState['attempt']['body'] }}
+                                                    {{ __('tickets.row.latest_attempt') }} {{ $ticketExternalIssueState['attempt']['label'] }}: {{ $ticketExternalIssueState['attempt']['body'] }}
                                                 </span>
                                                 @if ($ticketExternalIssueState['attempt']['occurred_at'])
                                                     <span class="wf-queue-preview">{{ $ticketExternalIssueState['attempt']['occurred_at']->diffForHumans() }}</span>
@@ -275,8 +303,8 @@
                                             @endif
                                         </td>
                                         <td class="wf-queue-when">
-                                            {{ $ticketTiming['opened_label'] }}
-                                            <span class="wf-queue-preview" title="{{ $ticketTiming['wait_label'] }}">{{ $ticketTiming['wait_label'] }}</span>
+                                            {{ __('tickets.row.opened', ['elapsed' => $ticketTiming['opened_at']->diffForHumans()]) }}
+                                            <span class="wf-queue-preview" title="{{ $waitLabel }}">{{ $waitLabel }}</span>
                                         </td>
                                     </tr>
                                 @endforeach
