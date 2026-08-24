@@ -81,6 +81,12 @@ final class DashboardLanguage
         'dashboard.conversations.index',
         'dashboard.tickets.index',
         'dashboard.conversations.show',
+        // The detail page's own endpoints. It replaces its transcript from
+        // `messages.index` and posts replies to `messages.store`, and an
+        // unlisted route renders English -- so a refreshed partial arrived in a
+        // different language from the page around it.
+        'dashboard.conversations.messages.index',
+        'dashboard.conversations.messages.store',
     ];
 
     /**

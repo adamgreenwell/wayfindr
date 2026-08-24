@@ -532,7 +532,12 @@ class Conversation extends Model
             : $this->visitor()->first();
 
         return [
+            // `state` and `detail_key` are what a consumer should read: this
+            // payload is broadcast to every agent watching, and they do not all
+            // read the same language. `label` and `detail` stay English for the
+            // surfaces that have not been extracted.
             'state' => $visitor?->presenceState() ?? 'unknown',
+            'detail_key' => $visitor?->presenceCue()['key'] ?? 'no_heartbeat',
             'label' => $visitor?->presenceLabel() ?? 'Not reported',
             'detail' => $visitor?->presenceDetail() ?? 'No visitor heartbeat yet.',
             'last_seen_at' => $visitor?->last_seen_at?->toJSON(),

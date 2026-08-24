@@ -213,6 +213,7 @@ return [
             'typing' => 'Visitor is typing…',
             'no_body' => 'This message has no text or attachment.',
             'visitor_read' => 'Visitor read',
+            'seen_by_visitor' => 'Seen by visitor :elapsed',
             'not_seen' => 'Not seen yet',
         ],
 
@@ -361,19 +362,15 @@ return [
     'reply_templates' => [
         'looking_into_it' => [
             'label' => 'Looking into it',
-            'body' => 'Thanks for the update. I am looking into this now and will follow up shortly.',
         ],
         'need_more_detail' => [
             'label' => 'Need more detail',
-            'body' => 'Could you share a little more detail about what you expected to happen and what happened instead?',
         ],
         'confirm_resolution' => [
             'label' => 'Confirm resolution',
-            'body' => 'Thanks for your patience. I believe this is resolved now, but I am happy to keep digging if anything still looks off.',
         ],
         'ticket_follow_up' => [
             'label' => 'Ticket follow-up',
-            'body' => 'I turned this into a ticket so we can track the follow-up without losing the context from this conversation.',
         ],
     ],
 

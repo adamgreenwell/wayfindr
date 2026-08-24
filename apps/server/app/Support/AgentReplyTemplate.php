@@ -4,8 +4,17 @@ namespace App\Support;
 
 final /*
  * Reached only from controllers and views, never a job or a mail build, so it
- * may use the catalogue directly -- see Ticket::attentionLabelKey() for the
- * distinction.
+ * may use the catalogue directly -- see Ticket::attentionLabelKey().
+ *
+ * **Only the LABEL is translated. The body deliberately is not.**
+ *
+ * A label is dashboard chrome: it names the helper to the agent choosing it.
+ * A body is a message to the VISITOR -- the composer drops it straight into the
+ * reply box and the agent sends it. Translating it couples what a visitor
+ * receives to the language their agent happens to read the dashboard in, so a
+ * German-speaking agent would send German to an English visitor without
+ * choosing to. The visitor's language is the widget's business (ADR 0017) and
+ * has nothing to do with this preference.
  */ class AgentReplyTemplate
 {
     /**
@@ -16,19 +25,19 @@ final /*
         return [
             'looking_into_it' => [
                 'label' => __('conversations.reply_templates.looking_into_it.label'),
-                'body' => __('conversations.reply_templates.looking_into_it.body'),
+                'body' => 'Thanks for the update. I am looking into this now and will follow up shortly.',
             ],
             'need_more_detail' => [
                 'label' => __('conversations.reply_templates.need_more_detail.label'),
-                'body' => __('conversations.reply_templates.need_more_detail.body'),
+                'body' => 'Could you share a little more detail about what you expected to happen and what happened instead?',
             ],
             'confirm_resolution' => [
                 'label' => __('conversations.reply_templates.confirm_resolution.label'),
-                'body' => __('conversations.reply_templates.confirm_resolution.body'),
+                'body' => 'Thanks for your patience. I believe this is resolved now, but I am happy to keep digging if anything still looks off.',
             ],
             'ticket_follow_up' => [
                 'label' => __('conversations.reply_templates.ticket_follow_up.label'),
-                'body' => __('conversations.reply_templates.ticket_follow_up.body'),
+                'body' => 'I turned this into a ticket so we can track the follow-up without losing the context from this conversation.',
             ],
         ];
     }

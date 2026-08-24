@@ -4,6 +4,26 @@ Status: **in progress.** The plumbing is shipped and the agent profile page is
 translated, with one recorded exception below. The remaining views are being
 extracted surface by surface.
 
+### Copy an agent reads, and copy an agent SENDS
+
+The dashboard language is a preference about what **the agent reads**. It must
+never decide what **a visitor receives**.
+
+A reply helper is the case that makes this concrete: its *label* is chrome — it
+names the helper to the agent choosing it — while its *body* is a draft message
+to the visitor, dropped into the composer and sent. Translating the body would
+mean a German-speaking agent sending German to an English visitor without ever
+choosing to. The visitor's language belongs to the widget (ADR 0017) and has
+nothing to do with this setting.
+
+So the label is translated, the body is not, and the body carries `lang="en"`
+because it genuinely is English sitting in a German page.
+
+**The same rule governs realtime payloads.** One broadcast reaches every agent
+watching a conversation, and they do not all read the same language — so a
+payload carries `state` and `detail_key`, never prose, and each page renders
+those into its own agent's words.
+
 ### The recorded exceptions
 
 The conversation **detail** page carries the largest one. Its cobrowse panel is

@@ -74,6 +74,28 @@ class AgentConversationController extends Controller
 
         return view('agent.conversations.show', [
             'account' => $agent->account()->firstOrFail(),
+            // Every word the page's realtime handlers can render, in THIS
+            // agent's language. A broadcast payload carries state, never prose:
+            // it reaches every agent watching the conversation and they do not
+            // all read the same language (#749).
+            'realtimeLabels' => [
+                'read' => [
+                    'seen' => __('tickets.read_state.seen'),
+                    'unseen' => __('tickets.read_state.unseen'),
+                    'none' => __('tickets.read_state.none'),
+                ],
+                'presence' => [
+                    'active' => __('presence.active'),
+                    'recent' => __('presence.recent'),
+                    'quiet' => __('presence.quiet'),
+                    'unknown' => __('presence.not_reported'),
+                    'not_reported' => __('presence.not_reported'),
+                ],
+                'presenceDetail' => [
+                    'seen_recently' => __('conversations.detail.context.seen_recently'),
+                    'no_heartbeat' => __('conversations.detail.no_heartbeat'),
+                ],
+            ],
             'accountAgents' => $this->supportAgentsForSite($conversation->site),
             'agent' => $agent,
             'cobrowseConsent' => $cobrowseConsent,

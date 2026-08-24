@@ -952,6 +952,8 @@
                 var previewDriftStatus = document.querySelector('[data-cobrowse-replay-drift-status]');
                 var previewDriftMessage = document.querySelector('[data-cobrowse-replay-drift-message]');
                 var previewViewportLabel = document.querySelector('[data-cobrowse-viewport-label]');
+                var realtimeLabels = @json($realtimeLabels);
+
                 var visitorPresenceLabel = document.querySelector('[data-visitor-presence-label]');
                 var visitorPresenceDetail = document.querySelector('[data-visitor-presence-detail]');
                 var visitorPresenceLastSeen = document.querySelector('[data-visitor-presence-last-seen]');
@@ -1184,10 +1186,15 @@
                         return;
                     }
 
-                    visitorPresenceLabel.textContent = visitorPresence.label
+                    // Same rule as the read receipt: state travels, words are local.
+                    var presenceState = visitorPresence.state || 'unknown';
+
+                    visitorPresenceLabel.textContent = realtimeLabels.presence[presenceState]
                         || visitorPresenceLabel.dataset.fallback;
-                    visitorPresenceLabel.dataset.status = presenceStatusFor(visitorPresence.state || 'unknown');
-                    visitorPresenceDetail.textContent = visitorPresence.detail || 'No visitor heartbeat yet.';
+                    visitorPresenceLabel.dataset.status = presenceStatusFor(presenceState);
+                    visitorPresenceDetail.textContent = visitorPresence.detail_key
+                        ? (realtimeLabels.presenceDetail[visitorPresence.detail_key] || realtimeLabels.presenceDetail.no_heartbeat)
+                        : realtimeLabels.presenceDetail.no_heartbeat;
 
                     if (visitorPresenceLastSeen) {
                         visitorPresenceLastSeen.textContent = visitorPresence.last_seen_label || 'Not reported';
@@ -1208,7 +1215,12 @@
                     }
 
                     visitorReadLabels.forEach(function (visitorReadLabel) {
-                        visitorReadLabel.textContent = visitorRead.label || 'No agent reply yet';
+                        // The payload's own `label` is deliberately ignored: one
+                        // broadcast reaches every agent watching, and they do not
+                        // all read the same language. The STATE travels; the words
+                        // come from this page, in this agent's language.
+                        visitorReadLabel.textContent = realtimeLabels.read[visitorRead.state || 'none']
+                            || realtimeLabels.read.none;
 
                         if (visitorReadLabel.hasAttribute('data-status')) {
                             visitorReadLabel.dataset.status = readStatusFor(visitorRead.state || 'none');

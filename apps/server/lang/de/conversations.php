@@ -197,6 +197,7 @@ return [
             'typing' => 'Besucher schreibt …',
             'no_body' => 'Diese Nachricht hat weder Text noch Anhang.',
             'visitor_read' => 'Vom Besucher gelesen',
+            'seen_by_visitor' => 'Vom Besucher gesehen :elapsed',
             'not_seen' => 'Noch nicht gesehen',
         ],
 
@@ -345,19 +346,15 @@ return [
     'reply_templates' => [
         'looking_into_it' => [
             'label' => 'Wird geprüft',
-            'body' => 'Danke für die Rückmeldung. Ich sehe mir das jetzt an und melde mich in Kürze.',
         ],
         'need_more_detail' => [
             'label' => 'Mehr Details nötig',
-            'body' => 'Könnten Sie etwas genauer beschreiben, was Sie erwartet haben und was stattdessen passiert ist?',
         ],
         'confirm_resolution' => [
             'label' => 'Lösung bestätigen',
-            'body' => 'Danke für Ihre Geduld. Ich gehe davon aus, dass das jetzt gelöst ist, schaue aber gerne weiter nach, falls noch etwas nicht stimmt.',
         ],
         'ticket_follow_up' => [
             'label' => 'Ticket-Nachverfolgung',
-            'body' => 'Ich habe daraus ein Ticket gemacht, damit wir die Nachverfolgung im Blick behalten, ohne den Kontext aus dieser Unterhaltung zu verlieren.',
         ],
     ],
 

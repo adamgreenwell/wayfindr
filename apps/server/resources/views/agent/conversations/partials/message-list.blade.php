@@ -38,7 +38,7 @@
                                 class="message-seen"
                                 @if ((string) $transcriptMessage->id === (string) $latestAgentMessageId) data-agent-message-seen-id="{{ $transcriptMessage->id }}" @endif
                             >
-                                Seen by visitor {{ $transcriptMessage->seen_at->diffForHumans() }}
+                                {{ __('conversations.detail.reply.seen_by_visitor', ['elapsed' => $transcriptMessage->seen_at->diffForHumans()]) }}
                             </span>
                         @elseif ($isAgent && (string) $transcriptMessage->id === (string) $latestAgentMessageId)
                             <span class="message-seen" data-agent-message-seen-id="{{ $transcriptMessage->id }}">{{ __('conversations.detail.reply.not_seen') }}</span>

@@ -13,6 +13,7 @@ use App\Models\Ticket;
 use App\Models\TicketExternalLink;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\AgentReplyTemplate;
 use App\Support\CobrowseConsentState;
 use App\Support\CobrowseReplayPreview;
 use App\Support\CobrowseResyncRequestPolicy;
@@ -1669,4 +1670,28 @@ test('the detail page counts name what they are counting', function (): void {
 
     $near($inEnglish, 'Host context', 'field');
     $near($inEnglish, 'History on this site', 'previous');
+});
+
+test('a reply helper translates its name but never its message', function (): void {
+    // The sharpest boundary on this page, and it is a PRODUCT boundary rather
+    // than a translation one.
+    //
+    // A helper's LABEL is dashboard chrome: it names the helper to the agent
+    // choosing it. Its BODY is a message to the VISITOR -- the composer drops
+    // it into the reply box and the agent sends it. Translating the body would
+    // couple what a visitor receives to the language their agent happens to
+    // read the dashboard in, so a German-speaking agent would send German to an
+    // English visitor without ever choosing to.
+    App::setLocale('de');
+    $german = AgentReplyTemplate::options();
+
+    App::setLocale('en');
+    $english = AgentReplyTemplate::options();
+
+    foreach (array_keys($english) as $key) {
+        // The name changes with the dashboard...
+        expect($german[$key]['label'])->not->toBe($english[$key]['label'])
+            // ...and the message the visitor would receive does not.
+            ->and($german[$key]['body'])->toBe($english[$key]['body']);
+    }
 });

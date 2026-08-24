@@ -131,7 +131,11 @@
                 @foreach ($replyTemplates as $replyTemplateKey => $replyTemplate)
                     <article data-template-preview-item="{{ $replyTemplateKey }}" @if ($selectedReplyTemplate !== $replyTemplateKey) hidden @endif>
                         <strong>{{ $replyTemplate['label'] }}</strong>
-                        <p>{{ $replyTemplate['body'] }}</p>
+                        {{-- The draft itself, not chrome: it is what the VISITOR
+                             would receive, so it is English and says so rather
+                             than being announced as German. See
+                             App\Support\AgentReplyTemplate. --}}
+                        <p lang="{{ str_replace('_', '-', \App\Support\DashboardLanguage::FALLBACK) }}">{{ $replyTemplate['body'] }}</p>
                     </article>
                 @endforeach
             </div>
