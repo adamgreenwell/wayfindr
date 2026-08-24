@@ -1,5 +1,10 @@
-<x-layouts.app title="Conversations" :agent="$agent" :account="$account">
-            <x-page-header title="Conversations" :subtitle="($conversationFilter === 'closed' ? 'Closed visitor conversations' : 'Active visitor conversations').' for '.$account->name.'.'" />
+<x-layouts.app :title="__('conversations.document_title')" :agent="$agent" :account="$account">
+            {{-- One whole sentence per language, not a clause glued to ' for '. --}}
+            <x-page-header
+                :title="__('conversations.document_title')"
+                :subtitle="$conversationFilter === 'closed'
+                    ? __('conversations.page_title_closed', ['account' => $account->name])
+                    : __('conversations.page_title_active', ['account' => $account->name])" />
 
             @php
                 // The lanes carry their own counts, which is what lets the
@@ -11,9 +16,9 @@
             @endphp
 
             <section id="conversations" aria-labelledby="conversations-heading">
-                <h2 id="conversations-heading" class="sr-only">Conversation queue</h2>
+                <h2 id="conversations-heading" class="sr-only">{{ __('conversations.title') }}</h2>
 
-                <nav class="wf-lanes" aria-label="Conversation lanes">
+                <nav class="wf-lanes" aria-label="{{ __('conversations.lanes.region_label') }}">
                     @foreach ($conversationFilters as $filterValue => $filterLabel)
                         @php
                             $filterParams = $conversationQuery;
@@ -68,15 +73,15 @@
                             name="conversation_search"
                             type="search"
                             value="{{ $conversationSearch }}"
-                            placeholder="Subject, support code, or visitor"
+                            placeholder="{{ __('conversations.search.placeholder') }}"
                         >
-                        <span class="wf-filter-help">Search by subject, support code, visitor ID, visitor name, or visitor email.</span>
+                        <span class="wf-filter-help">{{ __('conversations.search.hint') }}</span>
                     </div>
 
                     <div class="wf-filter">
                         <label for="conversation_site">Site</label>
                         <select id="conversation_site" name="conversation_site">
-                            <option value="">Any site</option>
+                            <option value="">{{ __('conversations.sites.any') }}</option>
                             @foreach ($sites as $site)
                                 <option value="{{ $site->id }}" @selected($conversationSite === $site->id)>
                                     {{ $site->name }}
@@ -101,8 +106,8 @@
                         unset($clearParams['conversation_search'], $clearParams['conversation_site'], $clearParams['conversation_presence']);
                     @endphp
                     <div class="wf-filter-actions">
-                        <button class="button" type="submit">Search conversations</button>
-                        <a class="button secondary" href="{{ route('dashboard.conversations.index', $clearParams) }}">Clear filters</a>
+                        <button class="button" type="submit">{{ __('conversations.search.submit') }}</button>
+                        <a class="button secondary" href="{{ route('dashboard.conversations.index', $clearParams) }}">{{ __('conversations.actions.clear_filters') }}</a>
                     </div>
                 </form>
 
@@ -112,9 +117,9 @@
                 </p>
 
                 @if ($activeConversationFilters !== [])
-                    <div class="filter-summary" aria-label="Active conversation filters">
+                    <div class="filter-summary" aria-label="{{ __('conversations.chips.region_label') }}">
                         <div>
-                            <strong>Active conversation filters</strong>
+                            <strong>{{ __('conversations.chips.region_label') }}</strong>
                         </div>
                         <div class="filter-chips">
                             @foreach ($activeConversationFilters as $activeFilter)
@@ -123,7 +128,7 @@
                                     <span aria-hidden="true">x</span>
                                 </a>
                             @endforeach
-                            <a class="filter-chip filter-chip-clear" href="{{ route('dashboard.conversations.index') }}">Clear all conversation filters</a>
+                            <a class="filter-chip filter-chip-clear" href="{{ route('dashboard.conversations.index') }}">{{ __('conversations.actions.clear_all') }}</a>
                         </div>
                     </div>
                 @endif
