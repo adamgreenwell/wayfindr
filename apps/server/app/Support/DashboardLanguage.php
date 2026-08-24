@@ -65,6 +65,11 @@ final class DashboardLanguage
      * been extracted, nothing is translated, so nothing can be inconsistent and
      * `lang="en"` is simply true.
      *
+     * Since the app SHELL was extracted this decides the whole document rather
+     * than only its main region -- the rail, topbar and search speak whatever
+     * the route here says, which is why `<main>` and the breadcrumb no longer
+     * carry a `lang` of their own.
+     *
      * Write routes are here alongside their page because they render it back on
      * a validation failure.
      */

@@ -446,24 +446,23 @@ test('the queue claims to be translated, so a screen reader is told the truth', 
     // direction.
     $world = conversationQueueLanguageWorld();
 
-    // The ROOT is the shell's language, which is still English. The page
-    // region carries the agent's.
+    // One language for the whole document, since the shell was extracted: the
+    // rail, the crumb and the page are all the agent's language now. While the
+    // shell was English this needed a root saying `en`, a `<main>` saying `de`
+    // and a crumb of its own -- all three collapsed when the rail learned to
+    // speak.
     $this->actingAs($world['agents']['de'])
         ->get(route('dashboard.conversations.index'))
         ->assertOk()
-        ->assertSee('<html lang="en"', false)
-        ->assertSee('<main class="page" lang="de"', false)
-        // And the crumb, which on THIS surface takes the rail label -- shell
-        // copy, still English -- inside a page that is German. The queue is the
-        // first surface where those two differ, and the layout's branch for it
-        // was untestable until this PR.
-        ->assertSee('<span class="wf-crumb-current" lang="en">Conversations', false);
+        ->assertSee('<html lang="de"', false)
+        ->assertSee('<span class="wf-crumb-current">Unterhaltungen</span>', false)
+        ->assertDontSee('<main class="page" lang', false);
 
     $this->actingAs($world['agents']['en'])
         ->get(route('dashboard.conversations.index'))
         ->assertOk()
         ->assertSee('<html lang="en"', false)
-        ->assertSee('<main class="page" lang="en"', false);
+        ->assertSee('<span class="wf-crumb-current">Conversations</span>', false);
 });
 
 test('translating a model would put German on pages that are still English', function (): void {
@@ -778,10 +777,11 @@ test('a cobrowse value is escaped, not trusted', function (): void {
  */
 function conversationQueueLanguageAnnouncements(string $html): array
 {
-    if (preg_match('/<main\b[^>]*>(.*)<\/main>/is', $html, $main) === 1) {
-        $html = $main[1];
-    }
-
+    // The WHOLE document, not just `<main>`. The shell is an extracted surface
+    // now -- the rail, the topbar and the search all speak the agent's language
+    // -- and a guard that stops at `<main>` would never have looked at any of
+    // it. It was scoped to the page region back when the shell was English by
+    // design and would have been reported as a leak on every page.
     $html = preg_replace('/<(script|style)\b[^>]*>.*?<\/\1>/is', ' ', $html) ?? $html;
 
     $document = new DOMDocument;
@@ -840,6 +840,8 @@ function conversationQueueLanguageCognates(): array
         'Name' => 'the same word in both languages',
         'Agent' => 'the same word in both languages',
         'Cobrowse' => "the product's own name for the feature, not translated",
+        'Wayfindr' => 'the product name, which is not copy',
+        'Tickets' => 'the same word in both languages',
         'English' => 'an autonym -- the language selector names each language in its own language',
         'Deutsch' => 'an autonym -- see above',
     ];
@@ -952,6 +954,22 @@ test('no English is rendered as German on any extracted surface', function (): v
 
         expect($leaks)->toBe([], "announced as German but never translated, at {$url}");
     }
+
+    // The shell's search help renders only after a support-code lookup has
+    // flashed a status, which no ordinary page state produces -- so a mutation
+    // of that copy survived every other state in this test. A guard is only as
+    // good as the states it visits.
+    // Carries the world's data token, because the flashed value itself is test
+    // DATA -- identical in both renders, correctly -- and would otherwise be
+    // reported as the leak.
+    $flashed = ['support_code_lookup_status' => 'Datenpunkt lookup found nothing'];
+
+    $leaks = conversationQueueLanguageEnglishLeaks(
+        (string) $this->actingAs($agent)->withSession($flashed)->get(route('dashboard.conversations.index'))->assertOk()->getContent(),
+        (string) $this->actingAs($world['agents']['en'])->withSession($flashed)->get(route('dashboard.conversations.index'))->assertOk()->getContent(),
+    );
+
+    expect($leaks)->toBe([], 'announced as German but never translated, in the support-lookup empty state');
 });
 
 test('every cognate on the list still appears, so the list cannot rot', function (): void {

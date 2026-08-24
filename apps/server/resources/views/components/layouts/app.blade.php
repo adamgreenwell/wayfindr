@@ -8,27 +8,24 @@
 ])
 
 <!DOCTYPE html>
-{{-- The SHELL's language, which is not yet the agent's.
+{{-- The whole document's language.
 
-     The navigation, the topbar and the support-code search in this file are
-     still English, so a document that declared itself German would be lying
-     about most of its own chrome -- and a screen reader would pronounce
-     "Conversations" and "Sign out" with German phonetics. That is the same
-     defect as the one the scoped locale fixed, arriving from the other
-     direction: there the body was English inside a German document, here the
-     shell is English inside one.
+     This was split for a while: the root stated the SHELL's language and
+     `<main>` the page's, because the shell was English inside pages that were
+     not. The shell is extracted now, so on a surface that has been extracted
+     every word here is the agent's language, and on one that has not the locale
+     is English and so is everything -- see DashboardLanguage::EXTRACTED_ROUTES.
+     There is no longer a mixed document to describe, so there is one attribute
+     again.
 
-     So the root states the shell's language and the page region below states
-     its own. When the shell itself is extracted this becomes
-     `app()->getLocale()` and the `lang` on `<main>` stops being needed. --}}
-<html lang="{{ str_replace('_', '-', \App\Support\DashboardLanguage::FALLBACK) }}">
+     The recorded exceptions still carry their own `lang`: they are English
+     inside German pages by design, and they say so. --}}
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    {{-- The title is the PAGE's copy, and the page may speak a different
-         language from the shell around it -- see the `lang` on `<html>`. --}}
-    <title lang="{{ str_replace('_', '-', app()->getLocale()) }}">{{ $title }}</title>
+    <title>{{ $title }}</title>
     <script>
         (function () {
             try {
@@ -2760,51 +2757,37 @@
     @if ($agent && $account)
         @php
             $workItems = [
-                ['label' => 'Dashboard', 'icon' => 'dashboard', 'href' => route('dashboard'), 'active' => request()->routeIs('dashboard')],
-                ['label' => 'Conversations', 'icon' => 'conversations', 'href' => route('dashboard.conversations.index'), 'active' => request()->routeIs('dashboard.conversations.*')],
-                ['label' => 'Tickets', 'icon' => 'tickets', 'href' => route('dashboard.tickets.index'), 'active' => request()->routeIs('dashboard.tickets.*')],
-                ['label' => 'Alerts', 'icon' => 'alerts', 'href' => route('dashboard.alerts.index'), 'active' => request()->routeIs('dashboard.alerts.*')],
-                ['label' => 'Visitors', 'icon' => 'visitors', 'href' => route('dashboard.visitors.index'), 'active' => request()->routeIs('dashboard.visitors.*')],
+                ['label' => __('nav.items.dashboard'), 'icon' => 'dashboard', 'href' => route('dashboard'), 'active' => request()->routeIs('dashboard')],
+                ['label' => __('nav.items.conversations'), 'icon' => 'conversations', 'href' => route('dashboard.conversations.index'), 'active' => request()->routeIs('dashboard.conversations.*')],
+                ['label' => __('nav.items.tickets'), 'icon' => 'tickets', 'href' => route('dashboard.tickets.index'), 'active' => request()->routeIs('dashboard.tickets.*')],
+                ['label' => __('nav.items.alerts'), 'icon' => 'alerts', 'href' => route('dashboard.alerts.index'), 'active' => request()->routeIs('dashboard.alerts.*')],
+                ['label' => __('nav.items.visitors'), 'icon' => 'visitors', 'href' => route('dashboard.visitors.index'), 'active' => request()->routeIs('dashboard.visitors.*')],
             ];
 
             // Reporting is account-wide by nature -- it aggregates across every
             // site an agent can see -- so it is admin-only, matching the audit
             // page whose records it reads.
             if ($agent->isAdmin()) {
-                $workItems[] = ['label' => 'Reports', 'icon' => 'reports', 'href' => route('dashboard.reports.index'), 'active' => request()->routeIs('dashboard.reports.*')];
+                $workItems[] = ['label' => __('nav.items.reports'), 'icon' => 'reports', 'href' => route('dashboard.reports.index'), 'active' => request()->routeIs('dashboard.reports.*')];
             }
 
             $manageItems = [
-                ['label' => 'Sites', 'icon' => 'sites', 'href' => route('dashboard.sites.index'), 'active' => request()->routeIs('dashboard.sites.*')],
-                ['label' => 'Account', 'icon' => 'account', 'href' => route('dashboard.account.show'), 'active' => request()->routeIs('dashboard.account.*')],
+                ['label' => __('nav.items.sites'), 'icon' => 'sites', 'href' => route('dashboard.sites.index'), 'active' => request()->routeIs('dashboard.sites.*')],
+                ['label' => __('nav.items.account'), 'icon' => 'account', 'href' => route('dashboard.account.show'), 'active' => request()->routeIs('dashboard.account.*')],
             ];
 
             if ($agent->isPlatformOperator()) {
-                $manageItems[] = ['label' => 'Operator', 'icon' => 'operator', 'href' => route('operator.dashboard'), 'active' => request()->routeIs('operator.*')];
+                $manageItems[] = ['label' => __('nav.items.operator'), 'icon' => 'operator', 'href' => route('operator.dashboard'), 'active' => request()->routeIs('operator.*')];
             }
 
             // The breadcrumb names where you are. The active navigation item is
             // the honest answer when there is one; the page title covers the
             // screens that sit outside the rail, like Profile.
-            $activeNavItem = collect($workItems)->concat($manageItems)->firstWhere('active');
-            $currentLabel = $activeNavItem['label'] ?? $title;
-
-            // The crumb sits outside `<main>`, so it says which language it is
-            // rather than inheriting the root and being pronounced as English.
-            //
-            // Which language depends on where the label came from. A rail label
-            // is the SHELL's copy and the shell is still English; falling back
-            // to the page title borrows the PAGE's, which on an extracted
-            // surface is the agent's own.
-            //
-            // The conversation queue is what makes this a real branch rather
-            // than a theoretical one: it is extracted AND it has a rail item,
-            // so it renders a German page under an English crumb. On #786 there
-            // was no such surface and this was deliberately one value, because
-            // a branch no test can reach is not worth having.
-            $shellLocale = str_replace('_', '-', \App\Support\DashboardLanguage::FALLBACK);
-            $pageLocale = str_replace('_', '-', app()->getLocale());
-            $currentLabelLocale = $activeNavItem !== null ? $shellLocale : $pageLocale;
+            // A rail label or, for the screens outside the rail like Profile,
+            // the page title. Both are now in the document's own language --
+            // the rail was the reason this needed a `lang` of its own, and the
+            // rail is extracted.
+            $currentLabel = collect($workItems)->concat($manageItems)->firstWhere('active')['label'] ?? $title;
         @endphp
 
         <div class="wf-app">
@@ -2814,8 +2797,8 @@
                     <span class="wf-mark-name">Wayfindr</span>
                 </a>
 
-                <nav class="wf-nav" aria-label="Primary navigation">
-                    <p class="wf-nav-heading">Work</p>
+                <nav class="wf-nav" aria-label="{{ __('nav.regions.primary') }}">
+                    <p class="wf-nav-heading">{{ __('nav.groups.work') }}</p>
                     @foreach ($workItems as $item)
                         <a class="wf-nav-link" href="{{ $item['href'] }}" @if ($item['active']) aria-current="page" @endif>
                             <x-icon :name="$item['icon']" />
@@ -2823,7 +2806,7 @@
                         </a>
                     @endforeach
 
-                    <p class="wf-nav-heading">Manage</p>
+                    <p class="wf-nav-heading">{{ __('nav.groups.manage') }}</p>
                     @foreach ($manageItems as $item)
                         <a class="wf-nav-link" href="{{ $item['href'] }}" @if ($item['active']) aria-current="page" @endif>
                             <x-icon :name="$item['icon']" />
@@ -2833,10 +2816,10 @@
                 </nav>
 
                 <div class="wf-rail-foot">
-                    <div class="wf-theme" role="group" aria-label="Colour theme" data-wf-theme-group>
-                        <button type="button" data-wf-theme-set="system" aria-pressed="true">Auto</button>
-                        <button type="button" data-wf-theme-set="light" aria-pressed="false">Light</button>
-                        <button type="button" data-wf-theme-set="dark" aria-pressed="false">Dark</button>
+                    <div class="wf-theme" role="group" aria-label="{{ __('nav.regions.theme') }}" data-wf-theme-group>
+                        <button type="button" data-wf-theme-set="system" aria-pressed="true">{{ __('nav.theme.system') }}</button>
+                        <button type="button" data-wf-theme-set="light" aria-pressed="false">{{ __('nav.theme.light') }}</button>
+                        <button type="button" data-wf-theme-set="dark" aria-pressed="false">{{ __('nav.theme.dark') }}</button>
                     </div>
 
                     <a class="wf-identity" href="{{ route('dashboard.profile.show') }}">
@@ -2846,35 +2829,33 @@
 
                     <form class="wf-signout" method="POST" action="{{ route('logout') }}">
                         @csrf
-                        <button type="submit">Sign out</button>
+                        <button type="submit">{{ __('nav.sign_out') }}</button>
                     </form>
                 </div>
             </aside>
 
             <div class="wf-main">
                 <header class="wf-topbar">
-                    <nav class="wf-crumbs" aria-label="Breadcrumb">
+                    <nav class="wf-crumbs" aria-label="{{ __('nav.regions.breadcrumb') }}">
                         <a href="{{ route('dashboard') }}">{{ $account->name }}</a>
                         <x-icon name="chevron-right" :size="13" />
                         @if ($crumb)
                             <a href="{{ route('operator.dashboard') }}">{{ $currentLabel }}</a>
                             <x-icon name="chevron-right" :size="13" />
-                            <span class="wf-crumb-current" lang="{{ $pageLocale }}">{{ $crumb }}</span>
+                            <span class="wf-crumb-current">{{ $crumb }}</span>
                         @else
-                            <span class="wf-crumb-current" lang="{{ $currentLabelLocale }}">{{ $currentLabel }}</span>
+                            <span class="wf-crumb-current">{{ $currentLabel }}</span>
                         @endif
                     </nav>
 
-                    <form class="wf-topbar-search" method="GET" action="{{ route('dashboard.support-code.lookup') }}" aria-label="Find support trail">
-                        <label class="sr-only" for="shell_support_code">Support code, ticket, or visitor ID</label>
-                        <input id="shell_support_code" name="support_code" type="search" placeholder="Support code, ticket, visitor" autocomplete="off">
-                        <button type="submit">Find</button>
+                    <form class="wf-topbar-search" method="GET" action="{{ route('dashboard.support-code.lookup') }}" aria-label="{{ __('nav.regions.search') }}">
+                        <label class="sr-only" for="shell_support_code">{{ __('nav.search.label') }}</label>
+                        <input id="shell_support_code" name="support_code" type="search" placeholder="{{ __('nav.search.placeholder') }}" autocomplete="off">
+                        <button type="submit">{{ __('nav.search.submit') }}</button>
                     </form>
                 </header>
 
-                {{-- The page's own language, which on an extracted surface is
-                     the agent's and everywhere else is the shell's. --}}
-                <main class="page" lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+                <main class="page">
                     @if (session('support_code_lookup_result'))
                         <p class="status-message">{{ session('support_code_lookup_result') }}</p>
                     @endif
@@ -2882,8 +2863,8 @@
                     @if (session('support_code_lookup_status'))
                         <div class="empty empty-state" role="status">
                             <strong>{{ session('support_code_lookup_status') }}</strong>
-                            <p>Try a support code like WF-ABC123, a ticket reference like Ticket #123, or a visitor ID.</p>
-                            <p>Records outside your support access stay hidden.</p>
+                            <p>{{ __('nav.search.help') }}</p>
+                            <p>{{ __('nav.search.scope') }}</p>
                         </div>
                     @endif
 
