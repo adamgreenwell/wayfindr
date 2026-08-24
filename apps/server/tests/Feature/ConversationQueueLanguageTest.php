@@ -357,3 +357,87 @@ test('the queue claims to be translated, so a screen reader is told the truth', 
         ->assertOk()
         ->assertSee('<html lang="en"', false);
 });
+
+test('translating a model would put German on pages that are still English', function (): void {
+    // The regression this guards is subtle and was real: `attentionLabel()` and
+    // `presenceLabel()` live on models, and a model is read by every surface
+    // that touches it. A `__()` there put `Antwort nötig` inside the
+    // conversation detail page -- which is not extracted, and correctly
+    // declares `<html lang="en">`. That is exactly the mixed-language problem
+    // the per-surface flag exists to prevent, arriving through the model rather
+    // than through the layout.
+    //
+    // So models answer with STATE and extracted surfaces translate at their own
+    // call site. This asserts the unextracted page stays English for an agent
+    // who reads German, which is the correct answer until it is extracted.
+    $world = conversationQueueLanguageWorld();
+
+    $conversation = Conversation::query()->where('support_code', 'WF-LANG03')->firstOrFail();
+
+    $detail = conversationQueueLanguageVisibleText(
+        $this->actingAs($world['agents']['de'])
+            ->get(route('dashboard.conversations.show', $conversation->support_code))
+            ->assertOk()
+            ->getContent()
+    );
+
+    expect($detail)->toContain('Waiting on visitor')
+        ->and($detail)->not->toContain('Wartet auf Besucher');
+
+    // And the queue, which IS extracted, still says it in German -- so this is
+    // measuring where the translation happens rather than that it stopped.
+    $queue = conversationQueueLanguageVisibleText(
+        $this->actingAs($world['agents']['de'])->get(route('dashboard.conversations.index'))->getContent()
+    );
+
+    expect($queue)->toContain('Wartet auf Besucher');
+});
+
+test('the form labels and the untitled fallback are translated', function (): void {
+    // All four are under the comparison test's length floor, or sit on a line
+    // with the conversation's own data. `Untitled conversation` is a normal
+    // production path -- the widget stores a null subject when the visitor
+    // does not give one -- rather than an edge case.
+    $world = conversationQueueLanguageWorld(conversations: 0);
+
+    Conversation::factory()
+        ->for($world['site'])
+        ->for(Visitor::factory()->for($world['site'])->create(['anonymous_id' => 'anon-nosubject']))
+        ->create(['support_code' => 'WF-LANG09', 'subject' => null, 'status' => 'open']);
+
+    $german = conversationQueueLanguageVisibleText(
+        $this->actingAs($world['agents']['de'])->get(route('dashboard.conversations.index'))->getContent()
+    );
+
+    expect($german)->toContain('Unterhaltung ohne Betreff')
+        ->and($german)->not->toContain('Untitled conversation');
+
+    // The three filter labels are read from the `<label>` elements themselves,
+    // not from the page text. Asserting the German page merely CONTAINS
+    // `Suche`, `Website` or `Status` passes while every label is still
+    // English -- all three words appear elsewhere on the page, in the search
+    // hint, the column header and the presence option. Three mutations
+    // survived exactly that before this was rewritten.
+    $labelsOf = function (User $agent): array {
+        $html = (string) $this->actingAs($agent)
+            ->get(route('dashboard.conversations.index'))
+            ->getContent();
+
+        preg_match_all('/<label for="conversation_[^"]+"[^>]*>(.*?)<\/label>/is', $html, $matches);
+
+        return array_map(fn (string $label): string => trim(strip_tags($label)), $matches[1]);
+    };
+
+    $englishLabels = $labelsOf($world['agents']['en']);
+    $germanLabels = $labelsOf($world['agents']['de']);
+
+    expect($englishLabels)->toBe(['Search', 'Site', 'Presence'])
+        ->and($germanLabels)->toBe(['Suche', 'Website', 'Status']);
+
+    $english = conversationQueueLanguageVisibleText(
+        $this->actingAs($world['agents']['en'])->get(route('dashboard.conversations.index'))->getContent()
+    );
+
+    expect($english)->toContain('Untitled conversation')
+        ->and($english)->not->toContain('Unterhaltung ohne Betreff');
+});

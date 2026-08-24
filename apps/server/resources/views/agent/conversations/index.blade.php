@@ -67,7 +67,7 @@
                     @endif
 
                     <div class="wf-filter wf-filter-search">
-                        <label for="conversation_search">Search</label>
+                        <label for="conversation_search">{{ __('conversations.search.label') }}</label>
                         <input
                             id="conversation_search"
                             name="conversation_search"
@@ -79,7 +79,7 @@
                     </div>
 
                     <div class="wf-filter">
-                        <label for="conversation_site">Site</label>
+                        <label for="conversation_site">{{ __('conversations.columns.site') }}</label>
                         <select id="conversation_site" name="conversation_site">
                             <option value="">{{ __('conversations.sites.any') }}</option>
                             @foreach ($sites as $site)
@@ -91,7 +91,7 @@
                     </div>
 
                     <div class="wf-filter">
-                        <label for="conversation_presence">Presence</label>
+                        <label for="conversation_presence">{{ __('conversations.filters_label_presence') }}</label>
                         <select id="conversation_presence" name="conversation_presence">
                             @foreach ($conversationPresenceFilters as $presenceValue => $presenceLabel)
                                 <option value="{{ $presenceValue === 'all' ? '' : $presenceValue }}" @selected($conversationPresence === $presenceValue)>
@@ -186,7 +186,7 @@
                                     <tr>
                                         <td class="wf-queue-subject" style="--wf-row-site: var({{ $conversation->site->resolvedColor()->cssVariable() }})">
                                             <a href="{{ route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'from_queue' => '1'] + $conversationQuery) }}">
-                                                {{ $conversation->subject ?? 'Untitled conversation' }}
+                                                {{ $conversation->subject ?? __('conversations.row.untitled') }}
                                             </a>
                                             <span class="wf-queue-preview" title="{{ $activityPreview['body'] }}">
                                                 <x-support-code-reference
@@ -207,7 +207,7 @@
                                         </td>
                                         <td>
                                             <span class="wf-queue-state" @if ($needsReply) data-tone="waiting" @endif>
-                                                <i aria-hidden="true"></i>{{ $conversation->attentionLabel() }}
+                                                <i aria-hidden="true"></i>{{ __('conversations.row.attention_'.$conversation->attentionState()) }}
                                             </span>
 
                                             {{-- Marks only for what is actually true. A quiet visitor and an
@@ -216,7 +216,7 @@
                                             <span class="wf-queue-marks">
                                                 @if (in_array($presenceState, ['active', 'recent'], true))
                                                     <span class="wf-queue-mark" data-tone="live">
-                                                        <i aria-hidden="true"></i>{{ $conversation->visitor?->presenceLabel() }}
+                                                        <i aria-hidden="true"></i>{{ $conversation->visitor ? __('presence.'.($conversation->visitor->presenceState() === 'unknown' ? 'not_reported' : $conversation->visitor->presenceState())) : '' }}
                                                     </span>
                                                 @endif
                                             </span>

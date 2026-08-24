@@ -250,11 +250,24 @@ class Conversation extends Model
             : 'needs_reply';
     }
 
+    /**
+     * Deliberately NOT translated, and `attentionState()` is why.
+     *
+     * A model is read by every surface that touches it, so a `__()` here puts
+     * German on pages the extraction has not reached -- the conversation detail
+     * page renders this label inside an otherwise English document that
+     * correctly declares `<html lang="en">`. That is the mixed-language problem
+     * the per-surface flag exists to prevent, arriving through the model
+     * instead of through the layout.
+     *
+     * Extracted surfaces translate the STATE at their own call site. This stays
+     * English until the last consumer is extracted, and then it goes away.
+     */
     public function attentionLabel(): string
     {
         return match ($this->attentionState()) {
-            'waiting_on_visitor' => __('conversations.row.attention_waiting_on_visitor'),
-            default => __('conversations.row.attention_needs_reply'),
+            'waiting_on_visitor' => 'Waiting on visitor',
+            default => 'Needs reply',
         };
     }
 

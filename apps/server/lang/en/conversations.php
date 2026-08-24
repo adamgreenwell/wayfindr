@@ -26,6 +26,7 @@ return [
     'search' => [
         'placeholder' => 'Subject, support code, or visitor',
         'hint' => 'Search by subject, support code, visitor ID, visitor name, or visitor email.',
+        'label' => 'Search',
         'submit' => 'Search conversations',
     ],
 
@@ -33,6 +34,7 @@ return [
         'any' => 'Any site',
     ],
 
+    'filters_label_presence' => 'Presence',
     'filters' => [
         'all' => 'All open',
         'new_activity' => 'New activity',
@@ -136,6 +138,7 @@ return [
         'last_report' => 'Last report :value',
         'pressure' => 'Pressure :value',
         'activity' => 'Activity :elapsed',
+        'untitled' => 'Untitled conversation',
         'no_messages' => 'No messages yet',
     ],
 ];

@@ -19,6 +19,7 @@ return [
     'search' => [
         'placeholder' => 'Betreff, Support-Code oder Besucher',
         'hint' => 'Suche nach Betreff, Support-Code, Besucher-ID, Besuchername oder E-Mail-Adresse des Besuchers.',
+        'label' => 'Suche',
         'submit' => 'Unterhaltungen suchen',
     ],
 
@@ -26,6 +27,7 @@ return [
         'any' => 'Alle Websites',
     ],
 
+    'filters_label_presence' => 'Status',
     'filters' => [
         'all' => 'Alle offenen',
         'new_activity' => 'Neue Aktivität',
@@ -129,6 +131,7 @@ return [
         'last_report' => 'Letzte Meldung :value',
         'pressure' => 'Auslastung :value',
         'activity' => 'Aktivität :elapsed',
+        'untitled' => 'Unterhaltung ohne Betreff',
         'no_messages' => 'Noch keine Nachrichten',
     ],
 ];
