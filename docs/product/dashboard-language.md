@@ -121,6 +121,22 @@ already run, the flash after a save, the error under a field — is exactly the
 copy an extraction misses, and a single default render reaches none of it. Every
 miss found by review so far has been on a branch of this kind.
 
+### Copy can be wrong without being English
+
+`'„unbeantwortet\"'` in a single-quoted PHP string keeps its backslash — PHP
+only honours `\\` and `\'` there — so a German agent read `unbeantwortet\"`
+on the page.
+
+No render comparison can see that. The string differs from its English original,
+which is the only question such a test asks. Two catalogue guards cover it
+instead: no value carries a backslash, and German copy uses `„…“` rather than
+straight quotes, which is the same slip a translator makes by habit when the
+surrounding code is English.
+
+The general rule, and the one worth carrying to the surfaces still to come: when
+a guard cannot reach a class of mistake, assert that class directly rather than
+loosening the guard until it produces noise.
+
 ## Not doing
 
 - Machine translation of conversation text. Useful, and it belongs with agent
