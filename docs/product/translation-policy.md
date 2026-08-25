@@ -75,6 +75,14 @@ catalogue must mark it, and the pipeline must honour the mark, because a bulk
 pass over `lang/en/*.php` flattens the distinction in silence and the failure
 mode is a German-speaking agent sending German to an English visitor.
 
+**Checked when the pipeline was built:** the agent-sends rule currently has no
+catalogue surface. `lang/en` carries the reply helper's *label* and its
+explanatory note — chrome, correctly translated — while the bodies live outside
+`lang/` entirely. So the pipeline has no marking mechanism for this, on purpose:
+an unused hook is a hook nobody maintains and everybody trusts. When a body does
+land in a catalogue, the mechanism is a list of key paths in the glossary and a
+carry-through in `CatalogueTranslator`, and this paragraph is the note saying so.
+
 **Ratified cognates** are a seventh, smaller case: `Agent`, `Cobrowse`, `Name`
 and the autonyms already appear identically in both catalogues on purpose, and
 the render-comparison test carries a list that fails when an entry stops being

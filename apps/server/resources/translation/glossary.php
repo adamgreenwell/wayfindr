@@ -165,6 +165,27 @@ return [
     ],
 
     /*
+     * Register, in the form an engine can be handed.
+     *
+     * Prose reasoning is policy section 1. What matters here is the second
+     * line: an engine told only "use the formal address" writes `Senden Sie eine
+     * Nachricht` on a button, and 195 of 841 strings are buttons.
+     */
+    'register' => [
+        'de' => [
+            'address' => 'Formal (Sie/Ihnen/Ihr). Never du.',
+            'action labels' => 'Infinitive, and no address at all: "Nachricht senden", never "Senden Sie eine Nachricht". A control names an action; it does not speak to anyone.',
+            'gendered nouns' => 'Plural takes the participial form (Besuchende). Singular keeps the conventional noun (Besucher) -- German has no neutral singular. Never the colon form (Besucher:innen).',
+            'pronouns' => 'Never the generic masculine. Reword to avoid the pronoun rather than choosing one.',
+        ],
+        'it' => [
+            'address' => 'Formal (Lei). Never tu.',
+            'action labels' => 'UNDECIDED -- do not infer this from German. It is answered when Italian starts, against shipped Italian software.',
+            'gendered nouns' => 'Same wall as German: visitatore/visitatrice has no neutral singular. Expect the German answer to be the right shape.',
+        ],
+    ],
+
+    /*
      * Typographic rules the catalogue guards already enforce for German, kept
      * here so a new language states its own rather than inheriting these.
      */
