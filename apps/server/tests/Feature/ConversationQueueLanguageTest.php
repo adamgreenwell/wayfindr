@@ -26,8 +26,10 @@ use App\Support\DashboardLanguage;
 use App\Support\ExternalIssueSyncStatus;
 use App\Support\ReplyTemplateOptions;
 use App\Support\TicketExternalIssueAttempt;
+use App\Support\VisitorSessionToken;
 use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\File;
 
@@ -2223,6 +2225,79 @@ test('the attachment endpoint answers in the agent language', function (): void 
     expect($message)->not->toBe('')
         ->and($message)->not->toContain('field is required')
         ->and($message)->not->toContain('must be a file');
+});
+
+test('the widget attachment endpoint answers the visitor, not the install', function (): void {
+    // The test above is why the shared upload service began resolving copy at
+    // all. The widget shares that service, and the visitor's language is the
+    // SITE's setting -- it has nothing to do with the language the operator
+    // reads their own dashboard in.
+    //
+    // So on a German install, an English site's visitor was told in German that
+    // their file type was not allowed.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+    $site = $conversation->site;
+    $visitor = $conversation->visitor;
+
+    // The install speaks German. Nothing below should care.
+    config(['app.locale' => 'de']);
+    app()->setLocale('de');
+
+    $cases = [
+        ['en', 'en', 'a site pinned to English'],
+        ['de', 'de', 'a site pinned to German'],
+        // Unpinned means the widget follows the visitor's BROWSER, which the
+        // server never sees. English is the honest answer, and the same one
+        // the widget falls back to -- never the install's German.
+        [null, 'en', 'a site that pins nothing'],
+    ];
+
+    foreach ($cases as [$pinned, $expected, $label]) {
+        $settings = $site->settings ?? [];
+        $settings['locale'] = $pinned;
+        $site->forceFill(['settings' => $settings])->save();
+
+        $response = $this->postJson(
+            route('conversations.attachments.store', $conversation->support_code),
+            [
+                'site_public_key' => $site->public_key,
+                'anonymous_id' => $visitor->anonymous_id,
+                'visitor_token' => app(VisitorSessionToken::class)->issue($site, $visitor),
+                'file' => UploadedFile::fake()->create('payload.exe', 8),
+            ],
+        );
+
+        $response->assertStatus(422);
+
+        expect((string) $response->json('errors.file.0'))
+            ->toBe(__('composer.rejected.type', [], $expected), "{$label} was not answered in {$expected}");
+    }
+});
+
+test('the shared attachment services never resolve copy themselves', function (): void {
+    // The structural half of the test above. These services are called by the
+    // dashboard, by the widget and by a queue worker processing inbound mail --
+    // three readers, three languages, and one of them is nobody at all. A
+    // service that resolves a sentence has answered a question only the calling
+    // surface can answer, and it will be wrong for two of the three.
+    //
+    // `AttachmentRejected` is exempt because it resolves nothing on its own:
+    // its locale is passed in by whichever surface is replying.
+    $exempt = ['AttachmentRejected.php'];
+
+    foreach (glob(app_path('Support/Attachments/*.php')) ?: [] as $file) {
+        if (in_array(basename($file), $exempt, true)) {
+            continue;
+        }
+
+        // Comments first -- this guard's own explanation says `__(`, and a
+        // guard that matches its own documentation reports nothing forever.
+        $source = preg_replace('#/\*.*?\*/|//[^\n]*#s', '', (string) file_get_contents($file));
+
+        expect(preg_match('/(?<![\w$>])__\s*\(/', (string) $source))->toBe(0,
+            basename($file).' resolves copy inside a service three surfaces share');
+    }
 });
 
 test('a write answers in the language of the page it renders back to', function (): void {

@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Widget;
 
 use App\Http\Controllers\Controller;
 use App\Models\ConversationMessageAttachment;
+use App\Support\Attachments\AttachmentRejected;
 use App\Support\Attachments\AttachmentResponder;
 use App\Support\Attachments\AttachmentUploadService;
+use App\Support\Sites\WidgetLanguage;
 use App\Support\VisitorConversationResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -49,7 +51,11 @@ class ConversationAttachmentController extends Controller
 
         // The uploader is the conversation's own visitor — the same principal
         // the resolver just authenticated.
-        $attachment = $uploads->store($conversation, $request->file('file'), $conversation->visitor);
+        try {
+            $attachment = $uploads->store($conversation, $request->file('file'), $conversation->visitor);
+        } catch (AttachmentRejected $rejected) {
+            throw $rejected->toValidationException(WidgetLanguage::toSpeak($conversation->site));
+        }
 
         return response()->json([
             'data' => ['attachment' => $attachment->toPayload()],

@@ -12,6 +12,7 @@ use App\Models\Conversation;
 use App\Models\ConversationMessageAttachment;
 use App\Models\Site;
 use App\Models\Visitor;
+use App\Support\Attachments\AttachmentRejected;
 use App\Support\Attachments\AttachmentUploadService;
 use App\Support\Attachments\Scanning\AttachmentScanner;
 use App\Support\Attachments\Scanning\ClamAvScanner;
@@ -21,7 +22,6 @@ use App\Support\OperatorReadiness;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Validation\ValidationException;
 
 uses(RefreshDatabase::class);
 
@@ -86,7 +86,7 @@ test('an infected upload is rejected, audited, and never stored', function (): v
     $f = scanFixture();
 
     expect(fn () => uploadThroughService($f['conversation'], $f['visitor']))
-        ->toThrow(ValidationException::class);
+        ->toThrow(AttachmentRejected::class);
 
     expect(ConversationMessageAttachment::count())->toBe(0)
         ->and(Storage::disk('attachments')->allFiles())->toBe([]);
@@ -102,7 +102,7 @@ test('an unreachable scanner rejects the upload when fail-closed (default)', fun
     $f = scanFixture();
 
     expect(fn () => uploadThroughService($f['conversation'], $f['visitor']))
-        ->toThrow(ValidationException::class);
+        ->toThrow(AttachmentRejected::class);
 
     expect(ConversationMessageAttachment::count())->toBe(0)
         ->and(AuditEvent::where('action', 'attachment.scan_unavailable')->count())->toBe(1);

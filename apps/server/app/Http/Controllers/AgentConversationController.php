@@ -10,6 +10,7 @@ use App\Models\Site;
 use App\Models\User;
 use App\Notifications\ConversationNeedsReply;
 use App\Support\Attachments\AttachmentBinder;
+use App\Support\Attachments\AttachmentRejected;
 use App\Support\CobrowseAuditTrail;
 use App\Support\CobrowseConsentState;
 use App\Support\CobrowseResyncRequestPolicy;
@@ -371,7 +372,11 @@ class AgentConversationController extends Controller
 
             // Bind the agent's own pending uploads to this reply. A bad
             // reference throws and rolls the whole send back.
-            $binder->bind($conversation, $message, $attachmentIds, $agent);
+            try {
+                $binder->bind($conversation, $message, $attachmentIds, $agent);
+            } catch (AttachmentRejected $rejected) {
+                throw $rejected->toValidationException();
+            }
 
             $previousStatus = (string) $conversation->status;
 

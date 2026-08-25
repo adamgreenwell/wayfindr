@@ -11,7 +11,9 @@ use App\Models\ConversationMessage;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Support\Attachments\AttachmentBinder;
+use App\Support\Attachments\AttachmentRejected;
 use App\Support\Conversations\ConversationLifecycleLog;
+use App\Support\Sites\WidgetLanguage;
 use App\Support\VisitorConversationResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -154,7 +156,13 @@ class ConversationMessageController extends Controller
 
             // Bind the visitor's own pending uploads to this message. A bad
             // reference throws and rolls the whole send back.
-            $binder->bind($conversation, $message, $attachmentIds, $visitor);
+            try {
+                $binder->bind($conversation, $message, $attachmentIds, $visitor);
+            } catch (AttachmentRejected $rejected) {
+                // Answered in the site's language, not the install's. The
+                // throw still escapes the closure, so the send still rolls back.
+                throw $rejected->toValidationException(WidgetLanguage::toSpeak($conversation->site));
+            }
 
             $previousStatus = (string) ($locked?->status ?? $conversation->status);
 

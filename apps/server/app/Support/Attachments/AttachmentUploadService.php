@@ -14,7 +14,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 
 /**
  * Validates and stores an uploaded file as a pending (not-yet-sent) attachment
@@ -39,14 +38,14 @@ class AttachmentUploadService
         $sizeBytes = (int) $file->getSize();
 
         if ($sizeBytes <= 0) {
-            throw ValidationException::withMessages(['file' => __('composer.rejected.unreadable')]);
+            throw AttachmentRejected::file('composer.rejected.unreadable');
         }
 
         $maxFileBytes = (int) config('wayfindr.attachments.max_file_bytes');
 
         if ($sizeBytes > $maxFileBytes) {
-            throw ValidationException::withMessages([
-                'file' => __('composer.rejected.too_large', ['limit' => $this->humanBytes($maxFileBytes)]),
+            throw AttachmentRejected::file('composer.rejected.too_large', [
+                'limit' => $this->humanBytes($maxFileBytes),
             ]);
         }
 
@@ -56,7 +55,7 @@ class AttachmentUploadService
         $allowed = (array) config('wayfindr.attachments.allowed_mime_types', []);
 
         if (! in_array($mimeType, $allowed, true)) {
-            throw ValidationException::withMessages(['file' => __('composer.rejected.type')]);
+            throw AttachmentRejected::file('composer.rejected.type');
         }
 
         $filename = $this->sanitizeFilename($file->getClientOriginalName());
@@ -118,9 +117,7 @@ class AttachmentUploadService
                 ->sum('size_bytes');
 
             if ($existingBytes + $sizeBytes > $maxConversationBytes) {
-                throw ValidationException::withMessages([
-                    'file' => __('composer.rejected.conversation_full'),
-                ]);
+                throw AttachmentRejected::file('composer.rejected.conversation_full');
             }
 
             // The disk is configured with throw => false, so a failed write
@@ -194,9 +191,7 @@ class AttachmentUploadService
                 'threat' => $result->threat,
             ]);
 
-            throw ValidationException::withMessages([
-                'file' => __('composer.rejected.infected'),
-            ]);
+            throw AttachmentRejected::file('composer.rejected.infected');
         }
 
         // Unavailable: the scanner could not verify the file.
@@ -211,9 +206,7 @@ class AttachmentUploadService
                 'error' => $result->error,
             ]);
 
-            throw ValidationException::withMessages([
-                'file' => __('composer.rejected.unscannable'),
-            ]);
+            throw AttachmentRejected::file('composer.rejected.unscannable');
         }
 
         // Fail-open: accept the unscanned file, but leave a clear warning.

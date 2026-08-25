@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Conversation;
 use App\Models\ConversationMessageAttachment;
 use App\Models\User;
+use App\Support\Attachments\AttachmentRejected;
 use App\Support\Attachments\AttachmentResponder;
 use App\Support\Attachments\AttachmentUploadService;
 use Illuminate\Http\JsonResponse;
@@ -52,7 +53,13 @@ class AgentConversationAttachmentController extends Controller
             'file' => ['required', 'file', 'max:'.$maxKilobytes],
         ]);
 
-        $attachment = $uploads->store($conversation, $request->file('file'), $agent);
+        try {
+            $attachment = $uploads->store($conversation, $request->file('file'), $agent);
+        } catch (AttachmentRejected $rejected) {
+            // No locale: `SetDashboardLocale` has already put the agent's
+            // language in place for this route.
+            throw $rejected->toValidationException();
+        }
 
         return response()->json([
             'data' => ['attachment' => $attachment->toPayload()],
