@@ -118,8 +118,13 @@ Start with [data-responsibility.md](docs/privacy/data-responsibility.md), the
 ## Status
 
 Pre-1.0. The latest public release is `v0.7.0` (August 25, 2026), and the next
-development line is `0.7.1`. Self-hosting and upgrades from published artifacts
-are proved repeatable on hosted runners and disposable bare-metal guests.
+development line is `0.7.1`.
+
+Self-hosting and upgrades from published artifacts have been proved repeatable
+on hosted runners and disposable bare-metal guests — **for the artifacts that
+were tested, the most recent being `v0.3.2`**. `v0.7.0` adds ten migrations and
+has not been through that matrix yet; record fresh evidence from its own
+artifact before adopting it anywhere that matters.
 
 `1.0.0` is deliberately scoped to finishing the core support product and proving
 it, rather than to feature parity with every competitor: the remaining Tier 1

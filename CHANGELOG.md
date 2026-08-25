@@ -118,9 +118,16 @@ half of interface language support.
      forever — which means a correctly signed webhook can look perfectly healthy
      while creating nothing at all.
 
-     **If mail is reaching Wayfindr and no conversation appears, it is step 3 or
-     the field names in step 2.** Those are the only two failures that answer
-     `200`; everything else answers `404` or `401` and tells you what is wrong.
+     **Two failures answer `200`, and they are the two you cannot see from the
+     response**: an unusable sender address, and a recipient matching no site.
+     Everything else answers `404` or `401` and tells you what is wrong.
+
+     A third case is quieter still. If the sender and recipient map but the
+     *body*, *subject* or *threading* fields do not, the delivery is **accepted**
+     with defaults — an empty body, no subject, no thread. That shows up as a
+     conversation containing no message text, or as a reply that opens its own
+     conversation instead of joining the original. If mail is arriving and
+     landing oddly rather than not at all, check those field names.
 
   Outbound replies use your existing mail configuration.
 
