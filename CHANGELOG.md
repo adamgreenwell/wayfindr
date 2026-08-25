@@ -91,7 +91,7 @@ half of interface language support.
   1. Set `WAYFINDR_INBOUND_MAIL_SECRET`. Until you do, the endpoint answers `404`
      to everything — an open endpoint that writes conversations is worse than one
      an operator has to enable.
-  2. Point your provider's inbound webhook at `POST /mail/inbound`, signing each
+  2. Point your provider's inbound webhook at `POST /api/mail/inbound`, signing each
      delivery with an `X-Wayfindr-Signature` HMAC-SHA256 of the raw body using
      that secret. A bad signature answers `401`.
   3. **Give each site the address mail arrives at**, under **Sites → the site →
@@ -146,11 +146,16 @@ half of interface language support.
   them.
 
 - **The dashboard speaks German, on some surfaces.** An agent can choose their
-  language under **Profile**, and the queues, the ticket list, the app shell and
-  the profile page follow it. **The conversation detail page does not yet** — it
-  stays English until 0.7.1, and pages that have not been translated render in
-  English rather than showing a half-translated screen. This is deliberate and
-  visible: you will see German in some places and English in others.
+  language under **Profile**, and four surfaces follow it: the profile page
+  itself, the conversation queue, the ticket list, and the app shell around
+  them — the rail, the topbar and the search.
+
+  **The conversation detail page does not yet.** It arrives in 0.7.1. A page
+  that has not been translated renders in English rather than showing a
+  half-translated screen, and the shell renders in whatever language the page
+  it is framing does. So an agent who chooses German sees German on the queue
+  and English the moment they open a conversation. That is deliberate and it is
+  visible; it is not a bug you need to report.
 
 - **A visitor directory.** The desk can now list the visitors it has heard from,
   with a path into each profile and any live conversation. Live presence — who is
