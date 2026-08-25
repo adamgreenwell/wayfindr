@@ -26,7 +26,7 @@ return [
         'stale' => [
             'label' => 'Veraltet',
             'message' => 'In den letzten 2 Minuten ist kein Cobrowse-Bericht eingegangen.',
-            'guidance' => 'Bitten Sie den Besucher zu bestätigen, was er sieht, bevor Sie sich auf die Vorschau verlassen.',
+            'guidance' => 'Bitten Sie den Besucher zu bestätigen, was dort zu sehen ist, bevor Sie sich auf die Vorschau verlassen.',
             'recovery_action' => 'Fordern Sie einen neuen Snapshot an, wenn die Vorschau veraltet wirkt, und klären Sie Details im Chat.',
         ],
         'reconnecting' => [
@@ -108,7 +108,7 @@ return [
         ],
         'unknown' => [
             'label' => 'Snapshot-Zeit muss bestätigt werden',
-            'message' => 'Fragen Sie den Besucher, was er sieht, oder fordern Sie einen neuen Snapshot an, bevor Sie sich auf diese Vorschau verlassen.',
+            'message' => 'Fragen Sie den Besucher, was dort zu sehen ist, oder fordern Sie einen neuen Snapshot an, bevor Sie sich auf diese Vorschau verlassen.',
         ],
         'needs_refresh' => [
             'label' => 'Snapshot braucht möglicherweise eine Aktualisierung',
