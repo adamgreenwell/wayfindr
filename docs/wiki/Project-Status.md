@@ -105,9 +105,12 @@ not evidence of a failed process or restore.
 
 The combined evidence still does not claim destructive-schema downgrade safety,
 real DNS/TLS configuration, real mail delivery, offsite-backup durability, or a
-production restore. No `0.4.0` release is cut for an evidence/docs-only cycle;
-the deployed development revision and the public `v0.3.2` artifact remain
-distinct.
+production restore.
+
+*(Historical: this snapshot was recorded during the `0.4.0` evidence cycle, when
+`v0.3.2` was the public artifact. Releases through `v0.7.0` have been cut since.
+The evidence above stands as a record of what was proved then; it is not a
+statement about the current release.)*
 
 ## Parked or Demand-Gated
 

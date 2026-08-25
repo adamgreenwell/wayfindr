@@ -17,8 +17,9 @@ desk is actually working.
 - say when the desk is open, and take the question when it is not;
 - request consent-based cobrowsing;
 - create a durable ticket from the support session;
-- measure all of it — volume, response and resolution times, reopens, workload,
-  and whether the visitor said it helped.
+- measure the conversations and tickets — volume, response and resolution times,
+  reopens, workload, and whether the visitor said it helped. Help-centre usage
+  and cobrowse sessions are not reported on.
 
 Wayfindr is a Laravel-first monorepo. Laravel owns the core product, while SDKs and integrations make it portable across WordPress, Laravel, Next.js, React, and plain JavaScript sites.
 
@@ -139,8 +140,8 @@ gaps, first-class localization, and hardening. Everything below already ships.
 - per-site support hours in the site's own timezone, an away state, offline
   capture, and a configurable pre-chat form;
 - reporting over conversations and tickets — volume, first-response and
-  resolution times, reopen rates, agent workload — plus visitor satisfaction
-  ratings, each stating the date the install began recording it;
+  resolution times, reopen rates, agent workload — each stating the date the
+  install began recording it, plus visitor satisfaction ratings;
 - per-site widget appearance, and a widget language catalogue with German
   complete;
 - an agent-selectable dashboard language, on the surfaces translated so far;
@@ -158,8 +159,7 @@ gaps, first-class localization, and hardening. Everything below already ships.
 - provider-neutral external issue links plus GitHub/GitLab/Jira issue creation,
   state reflection, and comment relay foundations.
 
-The current `0.4.0` reliability cycle is about proving the self-hosting story
-with repeatable evidence: clean installs, supported upgrades, advisory behavior,
+The self-hosting story is proved with repeatable evidence: clean installs, supported upgrades, advisory behavior,
 backup/restore, rollback, reboot recovery, and deployment-fork readiness. See
 [disposable-vm-evidence.md](docs/self-hosting/disposable-vm-evidence.md) for the
 evidence contract. Product expansion is intentionally demand-gated around ticket

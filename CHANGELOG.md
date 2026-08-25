@@ -161,8 +161,9 @@ half of interface language support.
 
 ### Fixed
 
-- The installer's closing message pointed at a readiness page that had moved,
-  so the last thing a fresh install printed was a link to nothing.
+- The installer's closing message pointed at the readiness page's old address.
+  It still redirects, so nobody was stranded — but the last thing a fresh
+  install printed was a detour rather than the page that owns readiness now.
 
 ## [0.6.0] - 2026-08-21
 

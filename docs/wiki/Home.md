@@ -2,7 +2,7 @@
 
 Wayfindr is an open-source, self-hostable support platform for live chat, email,
 a help centre, consent-based cobrowsing, and durable ticketing — with reporting
-over all of it. The project is pre-1.0: it is a working support desk rather than
+over the conversations and tickets it handles. The project is pre-1.0: it is a working support desk rather than
 a spine, but operators should still treat every installation as an actively
 managed system rather than a set-and-forget appliance.
 
