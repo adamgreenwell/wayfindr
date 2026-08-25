@@ -45,7 +45,7 @@ return [
         'needs_reply' => 'Antwort nötig',
         'assigned_to_me' => 'Mir zugewiesen',
         'unassigned' => 'Nicht zugewiesen',
-        'active' => 'Aktive Besucher',
+        'active' => 'Aktive Besuchende',
         'recent' => 'Vor Kurzem aktiv',
     ],
 

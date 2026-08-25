@@ -31,7 +31,7 @@ return [
         'email_help' => 'Ihre E-Mail-Adresse dient zur Anmeldung. Wenden Sie sich an einen Inhaber, wenn sie geändert werden muss.',
         'language' => 'Sprache des Dashboards',
         'language_default' => 'Voreinstellung der Installation verwenden',
-        'language_help' => 'Gilt nur für Sie. Es ändert das Dashboard für Sie und niemanden sonst und hat keinen Einfluss darauf, welche Sprache das Widget mit Ihren Besuchern spricht — das wird pro Website festgelegt.',
+        'language_help' => 'Gilt nur für Sie. Es ändert das Dashboard für Sie und niemanden sonst und hat keinen Einfluss darauf, welche Sprache das Widget mit Ihren Besuchenden spricht — das wird pro Website festgelegt.',
         'save' => 'Profil speichern',
     ],
 

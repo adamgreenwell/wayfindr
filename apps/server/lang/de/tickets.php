@@ -158,7 +158,7 @@ return [
         'no_closed' => 'Noch keine geschlossenen Tickets.',
         'no_open' => 'Noch keine offenen Tickets.',
         'first_run_detail' => 'Tickets entstehen aus Unterhaltungen: Öffnen Sie einen Verlauf und machen Sie daraus über den Ticket-Tab ein dauerhaftes Ticket.',
-        'waiting_detail' => 'Wenn Besucher dauerhafte Nachverfolgung brauchen, erscheinen Tickets hier.',
+        'waiting_detail' => 'Wenn Besuchende dauerhafte Nachverfolgung brauchen, erscheinen Tickets hier.',
         'search_detail' => 'Die Suche umfasst Ticketnummer, Betreff, Beschreibung, Support-Code, Anfragenden, E-Mail-Adresse und anonyme Besucher-IDs.',
         'search_heading' => 'Keine Tickets entsprechen „:term“.',
         'next_step_detail' => 'Probieren Sie eine andere Warteschlange für nächste Schritte oder setzen Sie den Filter zurück.',
@@ -360,7 +360,7 @@ return [
     'priority_help' => [
         'low' => [
             'description' => 'Wünschenswerte Folgearbeit oder nicht blockierende Frage.',
-            'agent_action' => 'nach aktiven Blockaden von Besuchern bearbeiten.',
+            'agent_action' => 'nach aktiven Blockaden von Besuchenden bearbeiten.',
         ],
         'normal' => [
             'description' => 'Normale Supportanfrage ohne unmittelbare Frist.',
