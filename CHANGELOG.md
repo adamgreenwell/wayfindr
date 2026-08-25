@@ -101,10 +101,17 @@ half of interface language support.
      `from` / `From` / `sender`, recipient from `to` / `To` / `recipient` /
      `OriginalRecipient` (and the `Cc` equivalents), subject from `subject` /
      `Subject`, body from `body` / `TextBody` / `body-plain` / `stripped-text`,
-     and threading from `in_reply_to` / `In-Reply-To` and `references` /
-     `References`. Mailgun and Postmark shapes are both covered by those. A
-     provider that names its fields differently is answered `200 Ignored`, the
-     same as an unrecognised recipient — see the note in step 3.
+     threading from `in_reply_to` / `In-Reply-To` and `references` /
+     `References`, and **the delivery's own id from `message_id` / `MessageID` /
+     `Message-Id` / `message-id`**. Mailgun and Postmark shapes are both covered
+     by those.
+
+     **Send the message id even though nothing rejects you for omitting it.** It
+     is what makes a redelivery safe: a provider that retries after a timeout or
+     a lost response is recognised and ignored. Without it, the retry is treated
+     as a new email — a second conversation, or a threaded reply inserted twice.
+     A provider that names its fields differently is answered `200 Ignored`, the
+     same as an unrecognised recipient.
   3. **Give each site the address mail arrives at**, under **Sites → the site →
      Email to this site**. A delivery whose recipient matches no site's address
      is answered `200 Ignored` — deliberately, so a provider does not retry
