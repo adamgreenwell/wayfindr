@@ -85,12 +85,22 @@ half of interface language support.
   and searchable from inside the widget — so a visitor can find the answer before
   they open a conversation.
 
-- **Email as a conversation channel.** Every ticket used to have to begin as a
-  widget chat, and a customer replying to a Wayfindr notification was replying
-  into nothing. Mail can now open and continue conversations.
+- **Email as a conversation channel — with a caveat worth reading first.** Every
+  ticket used to have to begin as a widget chat, and a customer replying to a
+  Wayfindr notification was replying into nothing. Mail can now open and continue
+  conversations.
 
-  **This is off until you switch it on, and it needs more than a restart.**
-  Three things, and missing the third fails silently:
+  **You cannot point a mail provider straight at it yet.** Wayfindr accepts one
+  signature scheme, its own, and no provider emits it — so using this today means
+  running a small intermediary that verifies your provider and re-signs, and
+  Wayfindr does not ship one. The mechanism is real and tested; the last mile to
+  your provider is not built. It is tracked as
+  [#799](https://github.com/adamgreenwell/wayfindr/issues/799) and is a 1.0.0
+  blocker rather than a nice-to-have.
+
+  If you have that intermediary, or you are posting to Wayfindr from your own
+  code, here is the contract. **Three things, and missing the third fails
+  silently:**
 
   1. Set `WAYFINDR_INBOUND_MAIL_SECRET`. Until you do, the endpoint answers `404`
      to everything — an open endpoint that writes conversations is worse than one
