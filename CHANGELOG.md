@@ -32,7 +32,7 @@ missed while skimming.
 
 Nothing yet.
 
-## [0.7.0] - 2026-08-24
+## [0.7.0] - 2026-08-25
 
 **No operator action required.** Pull, restart, and migrations run themselves.
 
