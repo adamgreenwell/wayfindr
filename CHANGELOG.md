@@ -85,13 +85,21 @@ half of interface language support.
   widget chat, and a customer replying to a Wayfindr notification was replying
   into nothing. Mail can now open and continue conversations.
 
-  **This is off until you switch it on, and it needs more than a restart.** The
-  inbound endpoint refuses every request until `WAYFINDR_INBOUND_MAIL_SECRET` is
-  set — an open endpoint that writes conversations is worse than one an operator
-  has to enable. Once set, point your mail provider's inbound webhook at
-  `POST /mail/inbound` and have it sign each delivery with an `X-Wayfindr-Signature`
-  HMAC-SHA256 of the raw body using that secret. Without the secret the endpoint
-  answers `404`; with a bad signature, `401`.
+  **This is off until you switch it on, and it needs more than a restart.**
+  Three things, and missing the third fails silently:
+
+  1. Set `WAYFINDR_INBOUND_MAIL_SECRET`. Until you do, the endpoint answers `404`
+     to everything — an open endpoint that writes conversations is worse than one
+     an operator has to enable.
+  2. Point your provider's inbound webhook at `POST /mail/inbound`, signing each
+     delivery with an `X-Wayfindr-Signature` HMAC-SHA256 of the raw body using
+     that secret. A bad signature answers `401`.
+  3. **Give each site the address mail arrives at**, under **Sites → the site →
+     Email to this site**. A delivery whose recipient matches no site's address
+     is answered `200 Ignored` — deliberately, so a provider does not retry
+     forever — which means a correctly signed webhook can look perfectly healthy
+     while creating nothing at all. If mail is reaching Wayfindr and no
+     conversation appears, this is why.
 
   Outbound replies use your existing mail configuration.
 
@@ -163,9 +171,9 @@ half of interface language support.
   Nothing you do changes because of this, but reporting can only measure from the
   date your install began keeping it, and the Reports page names that date.
 
-- **The test suite runs against PostgreSQL as well as SQLite.** Every documented
-  install runs PostgreSQL and CI ran neither, so a query valid on only one engine
-  could ship green. Both engines now run on every change. This is invisible in
+- **The test suite runs against PostgreSQL as well as SQLite.** CI ran SQLite
+  only, while every documented install runs PostgreSQL — so a query valid on
+  SQLite and invalid on Postgres could ship green. Both engines now run on every change. This is invisible in
   the product and is the reason several of the above features are trustworthy.
 
 ### Fixed
