@@ -3,11 +3,14 @@
 [Back to Home](Home)
 
 Wayfindr is pre-1.0. As of August 25, 2026, the latest public release is
-`v0.7.0`, and the next development line is `0.7.1`. Self-hosting and upgrades
-from public artifacts are proved repeatable on both hosted runners and
-disposable bare-metal guests, and the product has moved from "the core support
-loop exists" to a support desk reachable by widget, email and help centre, with
-a measurement surface of its own.
+`v0.7.0`, and the next development line is `0.7.1`. The product has moved from
+"the core support loop exists" to a support desk reachable by widget, email and
+help centre, with a measurement surface of its own.
+
+Self-hosting and upgrades from public artifacts have been proved repeatable on
+hosted runners and disposable bare-metal guests — **for the artifacts that were
+tested, the most recent being `v0.3.2`**. `v0.7.0` adds ten migrations and has
+not been through that matrix; see [Releases](Releases).
 
 `1.0.0` is scoped: the remaining Tier 1 gaps plus hardening, not feature
 parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamgreenwell/wayfindr/milestone/1).

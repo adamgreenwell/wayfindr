@@ -110,24 +110,29 @@ half of interface language support.
      is what makes a redelivery safe: a provider that retries after a timeout or
      a lost response is recognised and ignored. Without it, the retry is treated
      as a new email — a second conversation, or a threaded reply inserted twice.
-     A provider that names its fields differently is answered `200 Ignored`, the
-     same as an unrecognised recipient.
+
+     Only the **sender** and **recipient** fields decide whether a delivery is
+     usable at all. The rest have defaults, which is a separate problem
+     described in step 3.
   3. **Give each site the address mail arrives at**, under **Sites → the site →
      Email to this site**. A delivery whose recipient matches no site's address
      is answered `200 Ignored` — deliberately, so a provider does not retry
      forever — which means a correctly signed webhook can look perfectly healthy
      while creating nothing at all.
 
-     **Two failures answer `200`, and they are the two you cannot see from the
-     response**: an unusable sender address, and a recipient matching no site.
-     Everything else answers `404` or `401` and tells you what is wrong.
+     **Three things can go wrong after a delivery is signed correctly, and none
+     of them says so in the response.**
 
-     A third case is quieter still. If the sender and recipient map but the
-     *body*, *subject* or *threading* fields do not, the delivery is **accepted**
-     with defaults — an empty body, no subject, no thread. That shows up as a
-     conversation containing no message text, or as a reply that opens its own
-     conversation instead of joining the original. If mail is arriving and
-     landing oddly rather than not at all, check those field names.
+     - *Nothing appears, response says `200 Ignored`.* Either the sender address
+       is unusable, or the recipient matches no site. Nothing was created.
+     - *A conversation appears but is empty or misthreaded, response says
+       `200 Accepted`.* The sender and recipient mapped; the **body**, **subject**
+       or **threading** fields did not, so the delivery was accepted with
+       defaults. A conversation reading `(no message text)`, or a reply that
+       opened its own conversation instead of joining the original.
+     - *Duplicates appear on a retry.* The message id was not sent — see step 2.
+
+     A `404` or a `401` means the secret or the signature, and both say so.
 
   Outbound replies use your existing mail configuration.
 
