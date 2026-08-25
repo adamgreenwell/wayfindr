@@ -2614,6 +2614,56 @@ test('the cobrowse states the fixture does not reach are translated too', functi
     }
 });
 
+test('a transport with no reports yet says so in German', function (): void {
+    // A third branch the standing fixture cannot show, and the one that got
+    // through: between consent and the first transport heartbeat the value was
+    // the English literal "Not reported", explicitly marked `lang="en"`. The
+    // panel's own no-English guard therefore read it as deliberate and passed.
+    //
+    // The realtime handler already wrote German for this state, so the agent
+    // saw English only until the first update landed -- and that update assigns
+    // `textContent` to this element, which would have destroyed the marker
+    // anyway. Two languages for one state, decided by timing.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+    $session = CobrowseSession::query()->where('conversation_id', $conversation->id)->firstOrFail();
+
+    $metadata = $session->metadata;
+    unset(
+        $metadata['telemetry']['reported_at'],
+        $metadata['page_state']['reported_at'],
+        $metadata['snapshot']['reported_at'],
+        $metadata['mutations']['last_reported_at'],
+    );
+
+    $session->forceFill(['metadata' => $metadata])->save();
+
+    $html = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+
+    $field = $xpath->query('//*[@data-cobrowse-transport-last-report]')->item(0);
+
+    expect($field)->not->toBeNull('the transport field did not render, so this proves nothing');
+
+    expect(trim($field->textContent))->toBe(__('cobrowse.units.not_reported', [], 'de'),
+        'the not-reported transport state is not in the agent\'s language');
+
+    // And it carries no language of its own. The translated value belongs to
+    // the page exactly as the timestamp it stands in for does, so there is
+    // nothing left here for the realtime handler to overwrite.
+    expect($field->hasAttribute('lang'))->toBeFalse('the transport field still declares a language');
+
+    foreach ($xpath->query('.//*[@lang]', $field) as $marked) {
+        $this->fail('the transport field still marks a fragment: "'.trim($marked->textContent).'"');
+    }
+});
+
 test('no unreplaced placeholder ever reaches the page', function (): void {
     // A sentence rendered without its parameters shows `:elapsed` or `:count`
     // to the agent. It looks like copy, it is in the right language, and it is

@@ -489,9 +489,13 @@
                             </div>
                             <div class="meta-item">
                                 <span class="meta-label">{{ __('conversations.detail.cobrowse.last_report') }}</span>
-                                <span class="meta-value" data-cobrowse-transport-last-report><span lang="{{ str_replace('_', '-', ($cobrowseConsent['transport']['state'] ?? null) === 'unavailable'
-                                    ? \App\Support\DashboardLanguage::FALLBACK
-                                    : app()->getLocale()) }}">{{ $cobrowseConsent['transport']['last_report'] }}</span></span>
+                                {{-- Both branches are page-locale: diffForHumans() follows the request
+                                     locale, and the not-reported case is translated here rather than
+                                     arriving as a literal. No marker, which also survives the realtime
+                                     handler assigning textContent to this element. --}}
+                                <span class="meta-value" data-cobrowse-transport-last-report>{{ $cobrowseConsent['transport']['last_report_reported']
+                                    ? $cobrowseConsent['transport']['last_report']
+                                    : __('cobrowse.units.not_reported') }}</span>
                             </div>
                             <div class="meta-item">
                                 <span class="meta-label">{{ __('conversations.detail.cobrowse.reconnects') }}</span>
