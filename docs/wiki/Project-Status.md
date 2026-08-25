@@ -5,7 +5,10 @@
 Wayfindr is pre-1.0. As of August 25, 2026, the latest public release is
 `v0.7.0`, and the next development line is `0.7.1`. The product has moved from
 "the core support loop exists" to a support desk reachable by widget, email and
-help centre, with a measurement surface of its own.
+help centre, with a measurement surface of its own. "Reachable by email" carries
+one qualification: no provider can post to the inbound endpoint directly,
+because Wayfindr verifies a signature scheme none of them emit, so that channel
+needs an intermediary the project does not ship ([#799](https://github.com/adamgreenwell/wayfindr/issues/799)).
 
 Self-hosting and upgrades from public artifacts have been proved repeatable on
 hosted runners and disposable bare-metal guests — **for the artifacts that were
@@ -20,7 +23,10 @@ parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamg
 - Widget install, visitor identity, live chat, agent replies, and durable
   tickets.
 - **Email as a second channel**: mail opens and continues conversations, so a
-  customer replying to a notification is no longer replying into nothing.
+  customer replying to a notification is no longer replying into nothing —
+  once you have put something in front of the inbound endpoint to re-sign for
+  it, which the project does not yet ship
+  ([#799](https://github.com/adamgreenwell/wayfindr/issues/799)).
 - **A help centre**: articles written in the dashboard and searchable from
   inside the widget, so a visitor can find the answer before asking.
 - **Support hours, away state and offline capture**, per site and in the site's

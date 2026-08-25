@@ -2,9 +2,16 @@
 
 Wayfindr is an open-source, self-hostable support platform for live chat, email,
 a help centre, consent-based cobrowsing, and durable ticketing — with reporting
-over the conversations and tickets it handles. The project is pre-1.0: it is a working support desk rather than
-a spine, but operators should still treat every installation as an actively
-managed system rather than a set-and-forget appliance.
+over the conversations and tickets it handles. The project is pre-1.0: it is a
+working support desk rather than a spine, but operators should still treat every
+installation as an actively managed system rather than a set-and-forget
+appliance.
+
+Inbound email is the one capability in that list you cannot wire up unaided.
+Wayfindr verifies its own signature scheme, so a provider's normal webhook setup
+returns `401` until something in front of it verifies the provider and re-signs,
+and no such adapter ships yet
+([#799](https://github.com/adamgreenwell/wayfindr/issues/799)).
 
 ## Start Here
 

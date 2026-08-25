@@ -7,6 +7,13 @@ they ask, or by email. An agent works the queue, replies, cobrowses with
 consent, and turns any of it into a durable ticket. An owner can see whether the
 desk is actually working.
 
+One caveat on email before you evaluate it: mail opens and continues
+conversations, but you cannot point a provider straight at Wayfindr yet. It
+verifies its own signature scheme and no provider emits that scheme, so a
+provider's normal webhook setup returns `401` until something in front of it
+verifies the provider and re-signs — and Wayfindr does not ship that piece
+([#799](https://github.com/adamgreenwell/wayfindr/issues/799)).
+
 - install a small widget on a site, themed to match it and speaking the
   visitor's language;
 - identify anonymous or authenticated visitors, and ask who they are when the
@@ -140,7 +147,8 @@ gaps, first-class localization, and hardening. Everything below already ships.
   retention sweep, malware-scanner hook, and S3-compatible storage routing;
 - durable tickets with assignment, status changes, categories, priorities,
   labels, notes, replies, queue filters, and support reference panels;
-- email as a second conversation channel, inbound and outbound;
+- email as a second conversation channel, outbound, and inbound once the
+  intermediary above is in place ([#799](https://github.com/adamgreenwell/wayfindr/issues/799));
 - a help centre: articles authored in the dashboard, searchable from the widget;
 - per-site support hours in the site's own timezone, an away state, offline
   capture, and a configurable pre-chat form;

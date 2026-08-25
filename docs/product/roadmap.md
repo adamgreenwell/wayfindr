@@ -16,7 +16,8 @@ tier are explicitly post-1.0.
 
 The product has moved past a spine. It now includes:
 
-- Email as a second conversation channel, a searchable help centre inside the
+- Email as a second conversation channel — inbound still needs an intermediary
+  in front of it ([#799](https://github.com/adamgreenwell/wayfindr/issues/799)) — a searchable help centre inside the
   widget, per-site support hours with an away state and offline capture, and a
   configurable pre-chat form.
 - Reporting over conversations and tickets, plus visitor satisfaction ratings.
