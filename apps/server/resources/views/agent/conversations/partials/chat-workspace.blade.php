@@ -91,9 +91,18 @@
                          restored, and no change event ever fires -- so the
                          language has to be right in the markup, not only in the
                          handler. Unknown unless we know the draft came from a
-                         template whose language we know. --}}
-                    lang="{{ $selectedReplyTemplate && isset($replyTemplates[$selectedReplyTemplate])
-                        ? str_replace('_', '-', $replyTemplates[$selectedReplyTemplate]['body_language'] ?? \App\Support\DashboardLanguage::FALLBACK)
+                         template whose language we know.
+
+                         The picker staying selected is not enough. An agent who
+                         chose an English helper and then rewrote it has a draft
+                         in their own words, and the handler cleared the marker
+                         at the first keystroke -- reapplying it here on the
+                         re-render put it straight back. The body has to still BE
+                         the template's for its language to describe it. --}}
+                    @php($restoredTemplate = $selectedReplyTemplate && isset($replyTemplates[$selectedReplyTemplate]) ? $replyTemplates[$selectedReplyTemplate] : null)
+                    @php($restoredIsTemplate = $restoredTemplate !== null && old('body') === ($restoredTemplate['body'] ?? null))
+                    lang="{{ $restoredIsTemplate
+                        ? str_replace('_', '-', $restoredTemplate['body_language'] ?? \App\Support\DashboardLanguage::FALLBACK)
                         : '' }}"
                 >{{ old('body') }}</textarea>
                 <p id="reply-shortcut-help" class="sr-only">{{ __('conversations.detail.reply.shortcut') }}</p>

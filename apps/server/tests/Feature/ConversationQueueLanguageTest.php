@@ -2272,6 +2272,38 @@ test('the widget attachment endpoint answers the visitor, not the install', func
 
         expect((string) $response->json('errors.file.0'))
             ->toBe(__('composer.rejected.type', [], $expected), "{$label} was not answered in {$expected}");
+
+        // And the same for a rejection the FRAMEWORK writes. An oversized file
+        // never reaches the upload service: `validate()` stops it first, so no
+        // catch block can translate it. That rule ran before the site had even
+        // been resolved, which is why this case needs its own upload rather
+        // than trusting the one above.
+        $oversized = $this->postJson(
+            route('conversations.attachments.store', $conversation->support_code),
+            [
+                'site_public_key' => $site->public_key,
+                'anonymous_id' => $visitor->anonymous_id,
+                'visitor_token' => app(VisitorSessionToken::class)->issue($site, $visitor),
+                'file' => UploadedFile::fake()->create(
+                    'huge.txt',
+                    (int) ceil(((int) config('wayfindr.attachments.max_file_bytes')) / 1024) + 64,
+                ),
+            ],
+        );
+
+        $oversized->assertStatus(422);
+
+        $message = (string) $oversized->json('errors.file.0');
+
+        expect($message)->not->toBe('', "{$label} produced no oversize message");
+
+        // Asserted by what the message IS, not by what it is not: a German
+        // message on an English site and an English one on a German site are
+        // the same defect pointing opposite ways.
+        $germanShape = str_contains($message, 'höchstens') && str_contains($message, 'Kilobyte');
+
+        expect($germanShape)->toBe($expected === 'de',
+            "{$label} got the oversize rejection in the wrong language: {$message}");
     }
 });
 
@@ -2465,22 +2497,38 @@ test('a reply template says what language its body is in', function (): void {
     // A validation failure re-renders this page with the draft restored, and no
     // change event ever fires -- so the textarea's language has to be right in
     // the MARKUP, not only in the handler that sets it on selection.
-    $rejected = (string) $this->actingAs($world['agents']['de'])
-        ->from(route('dashboard.conversations.show', $conversation->support_code))
-        ->withSession(['_old_input' => ['body' => 'Thanks for the update.', 'reply_template' => 'looking_into_it']])
-        ->get(route('dashboard.conversations.show', $conversation->support_code))
-        ->assertOk()
-        ->getContent();
+    //
+    // Which language depends on whose words are in the box, and the picker
+    // staying selected does not answer that. This used to assert English for a
+    // draft that had been EDITED -- its fixture body was a truncation of the
+    // template's -- so it required the bug it was written to prevent.
+    $restoredDraftLanguage = function (string $body) use ($world, $conversation): string {
+        $html = (string) $this->actingAs($world['agents']['de'])
+            ->from(route('dashboard.conversations.show', $conversation->support_code))
+            ->withSession(['_old_input' => ['body' => $body, 'reply_template' => 'looking_into_it']])
+            ->get(route('dashboard.conversations.show', $conversation->support_code))
+            ->assertOk()
+            ->getContent();
 
-    $restored = new DOMDocument;
-    @$restored->loadHTML('<?xml encoding="utf-8"?>'.$rejected);
+        $restored = new DOMDocument;
+        @$restored->loadHTML('<?xml encoding="utf-8"?>'.$html);
 
-    $draft = (new DOMXPath($restored))->query('//textarea[@data-reply-body]')->item(0);
+        $draft = (new DOMXPath($restored))->query('//textarea[@data-reply-body]')->item(0);
 
-    expect($draft)->not->toBeNull('no reply draft rendered, so this proves nothing')
-        ->and($draft->hasAttribute('lang'))->toBeTrue('the restored draft inherits the dashboard language')
-        ->and($draft->getAttribute('lang'))->toBe(DashboardLanguage::FALLBACK,
-            'a restored built-in template body does not declare the language it is actually in');
+        expect($draft)->not->toBeNull('no reply draft rendered, so this proves nothing')
+            ->and($draft->hasAttribute('lang'))->toBeTrue('the restored draft inherits the dashboard language');
+
+        return $draft->getAttribute('lang');
+    };
+
+    // Untouched: still the template's words, so still the template's language.
+    expect($restoredDraftLanguage($builtIn['looking_into_it']['body']))->toBe(DashboardLanguage::FALLBACK,
+        'an unedited built-in template body does not declare the language it is actually in');
+
+    // Edited: the agent's words now. The handler clears the marker at the first
+    // keystroke, and re-rendering must not put it back.
+    expect($restoredDraftLanguage('Thanks for the update.'))->toBe('',
+        'an edited draft is still announced as the template language');
 
     // A managed template reports unknown rather than guessing.
     ReplyTemplate::factory()->for($world['account'])->create([
