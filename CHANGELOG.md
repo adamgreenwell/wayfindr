@@ -91,15 +91,29 @@ half of interface language support.
   1. Set `WAYFINDR_INBOUND_MAIL_SECRET`. Until you do, the endpoint answers `404`
      to everything — an open endpoint that writes conversations is worse than one
      an operator has to enable.
-  2. Point your provider's inbound webhook at `POST /api/mail/inbound`, signing each
-     delivery with an `X-Wayfindr-Signature` HMAC-SHA256 of the raw body using
-     that secret. A bad signature answers `401`.
+  2. Point your provider's inbound webhook at `POST /api/mail/inbound`, and have
+     it send an `X-Wayfindr-Signature` header of exactly
+     `sha256=<hex HMAC-SHA256 of the raw body, keyed with that secret>`. **The
+     `sha256=` prefix is part of the value**, not a description of it — a bare
+     hex digest is rejected. A bad or unprefixed signature answers `401`.
+
+     The payload is read flexibly rather than in one fixed shape: sender from
+     `from` / `From` / `sender`, recipient from `to` / `To` / `recipient` /
+     `OriginalRecipient` (and the `Cc` equivalents), subject from `subject` /
+     `Subject`, body from `body` / `TextBody` / `body-plain` / `stripped-text`,
+     and threading from `in_reply_to` / `In-Reply-To` and `references` /
+     `References`. Mailgun and Postmark shapes are both covered by those. A
+     provider that names its fields differently is answered `200 Ignored`, the
+     same as an unrecognised recipient — see the note in step 3.
   3. **Give each site the address mail arrives at**, under **Sites → the site →
      Email to this site**. A delivery whose recipient matches no site's address
      is answered `200 Ignored` — deliberately, so a provider does not retry
      forever — which means a correctly signed webhook can look perfectly healthy
-     while creating nothing at all. If mail is reaching Wayfindr and no
-     conversation appears, this is why.
+     while creating nothing at all.
+
+     **If mail is reaching Wayfindr and no conversation appears, it is step 3 or
+     the field names in step 2.** Those are the only two failures that answer
+     `200`; everything else answers `404` or `401` and tells you what is wrong.
 
   Outbound replies use your existing mail configuration.
 
