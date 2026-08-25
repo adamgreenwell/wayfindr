@@ -64,13 +64,17 @@ half of interface language support.
   resolutions did not hold, who is carrying the queue, and what visitors said
   when asked whether it helped.
 
-  **Two of these numbers are older than the others, and the page says so.**
-  Conversations opened and first-response times are recoverable from data
-  Wayfindr has always kept. Closes, resolution times and reopens are read from a
-  lifecycle log that only started being written in this release — before that,
-  the previous answer was destroyed on every reopen and cannot be backfilled. A
-  flat line before that date is an absence of records, not an absence of work,
-  and only the recording date the page names can tell the two apart.
+  **Some of these numbers are older than the others, and the page says so.**
+  Conversations opened, first-response times and agent replies are recoverable
+  from data Wayfindr has always kept.
+
+  **Conversation** closes, resolution times and reopens are not: they are read
+  from a lifecycle log that starts being written in this release, because before
+  it the previous answer was destroyed on every reopen and cannot be backfilled.
+  **Ticket** closes and reopens have been audited for far longer, so an upgraded
+  desk can describe months of ticket work while its conversation figures are
+  still accumulating. The page states each boundary separately, and a flat line
+  before one of them is an absence of records rather than an absence of work.
 
 - **Satisfaction ratings.** Every other figure reports how *fast* the desk moved.
   A desk can improve volume, first-response and resolution time all at once while
@@ -103,8 +107,16 @@ half of interface language support.
      `Subject`, body from `body` / `TextBody` / `body-plain` / `stripped-text`,
      threading from `in_reply_to` / `In-Reply-To` and `references` /
      `References`, and **the delivery's own id from `message_id` / `MessageID` /
-     `Message-Id` / `message-id`**. Mailgun and Postmark shapes are both covered
-     by those.
+     `Message-Id` / `message-id`**. Mailgun's and Postmark's field *names* are
+     both recognised.
+
+     **Their signatures are not.** `X-Wayfindr-Signature` is Wayfindr's own
+     scheme, and no provider emits it: Mailgun signs a timestamp and token with
+     its own key, Postmark does not HMAC the body with your secret at all. So a
+     provider's inbound webhook cannot be pointed straight at this endpoint —
+     every delivery answers `401`. Something has to sit in front that verifies
+     the provider's own signature and re-signs the body as `sha256=<hex>`. That
+     is a small function or worker, and Wayfindr does not ship one yet.
 
      **Send the message id even though nothing rejects you for omitting it.** It
      is what makes a redelivery safe: a provider that retries after a timeout or
