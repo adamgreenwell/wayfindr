@@ -26,9 +26,11 @@ parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamg
 - **Support hours, away state and offline capture**, per site and in the site's
   own timezone, with a pre-chat form for sites that need to know who is asking.
 - **Reporting**: conversation and ticket volume, first-response and resolution
-  times, reopen rates and per-agent workload — each stating the date this
-  install began recording it — plus visitor satisfaction ratings, which have no
-  recording boundary of their own.
+  times, reopen rates, per-agent workload, and visitor satisfaction ratings.
+  **Resolution times and reopen rates** are read from a lifecycle log that
+  starts when an install upgrades, and the page states that date; volume,
+  first-response times and agent replies come from data the product always
+  kept, so they reach back as far as the install does.
 - **Per-site widget appearance**, and a widget that speaks the visitor's
   language (German ships complete).
 - **A dashboard an agent can read in their own language** on the queues, the

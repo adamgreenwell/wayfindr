@@ -196,10 +196,11 @@ half of interface language support.
   because it is the first surface that makes Wayfindr's visitor data feel like
   surveillance and needs a retention decision before it is built.
 
-- **A read-only public API.** Every route was previously the widget talking to its
-  own backend. There is now an authenticated public surface with a decided
-  isolation model, documented in ADR 0018. Writes are deliberately not included
-  yet.
+- **A read-only public API.** The API surface was previously the widget talking
+  to its own backend, plus inbound webhooks from GitHub, GitLab and Jira — there
+  was nothing an account could call on its own behalf. There is now an
+  authenticated public surface with a decided isolation model, documented in
+  ADR 0018. Writes are deliberately not included yet.
 
 ### Changed
 
