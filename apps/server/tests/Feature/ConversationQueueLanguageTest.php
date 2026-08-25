@@ -2432,6 +2432,58 @@ test('the first conversation is validated in the visitor language too', function
         'a new visitor reading German was answered in English');
 });
 
+test('a framework rejection never shows the agent a column name', function (): void {
+    // The custom rejections on this endpoint have hand-written German. The
+    // FRAMEWORK ones interpolate `:attribute`, and an unnamed field puts the
+    // column into the middle of a German sentence: "body darf höchstens 4000
+    // Zeichen lang sein." Ordinary path -- the composer has no maxlength, so
+    // pasting a long reply reaches it.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+
+    $response = $this->actingAs($world['agents']['de'])
+        ->from(route('dashboard.conversations.show', $conversation->support_code))
+        ->post(route('dashboard.conversations.messages.store', $conversation->support_code), [
+            'body' => str_repeat('a', 4001),
+        ]);
+
+    $response->assertSessionHasErrors('body');
+
+    $message = (string) session('errors')->getBag('default')->first('body');
+
+    expect($message)->not->toBe('', 'the length rule did not reject, so this proves nothing');
+
+    // German, and naming the field the way the interface does.
+    $this->assertStringContainsString(__('validation.attributes.body', [], 'de'), $message,
+        'the reply field is not named in German');
+    $this->assertStringNotContainsString('body', $message,
+        "the agent was shown a column name: {$message}");
+});
+
+test('every field a German page can submit has a German name', function (): void {
+    // The structural half. The test above only reaches `body`; the next field
+    // added to this endpoint would be just as raw and just as invisible.
+    $source = (string) file_get_contents(app_path('Http/Controllers/AgentConversationController.php'));
+
+    $matched = preg_match(
+        '/public function storeMessage\(.*?\$request->validate\(\[(.*?)\]\);/s',
+        $source,
+        $found
+    );
+
+    expect($matched)->toBe(1, 'storeMessage moved; this no longer reads its rules');
+
+    preg_match_all("/'([a-z_]+)(?:\.\*)?' => \[/", $found[1], $fields);
+
+    expect($fields[1])->not->toBe([], 'no validated fields were extracted, so this proves nothing');
+
+    $attributes = require lang_path('de/validation.php');
+
+    foreach (array_unique($fields[1]) as $field) {
+        expect($attributes['attributes'] ?? [])->toHaveKey($field);
+    }
+});
+
 test('a subject of "0" is a subject, not a missing one', function (): void {
     // PHP reads the perfectly good subject "0" as false, so every truthiness
     // test on it told the agent the visitor had written none -- in the queue,
