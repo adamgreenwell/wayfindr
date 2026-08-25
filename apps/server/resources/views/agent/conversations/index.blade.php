@@ -188,7 +188,7 @@
                                     <tr>
                                         <td class="wf-queue-subject" style="--wf-row-site: var({{ $conversation->site->resolvedColor()->cssVariable() }})">
                                             <a href="{{ route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'from_queue' => '1'] + $conversationQuery) }}">
-                                                @if ($conversation->subject)<span lang="">{{ $conversation->subject }}</span>@else{{ __('conversations.row.untitled') }}@endif
+                                                @if (filled($conversation->subject))<span lang="">{{ $conversation->subject }}</span>@else{{ __('conversations.row.untitled') }}@endif
                                             </a>
                                             @php
                                                 // The model hands out keys and timestamps; this surface turns

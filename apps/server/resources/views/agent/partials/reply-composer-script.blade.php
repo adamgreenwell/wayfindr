@@ -172,6 +172,18 @@
 
             if (body) {
                 body.addEventListener('input', function () {
+                    // The draft belongs to the agent the moment they touch it,
+                    // whatever a template put there a second ago. Without this,
+                    // picking an English helper and rewriting it in German left
+                    // the textarea still claiming English, and a screen reader
+                    // read the agent's own German with English pronunciation.
+                    //
+                    // Empty is HTML's "unknown", which is the honest answer for
+                    // something a person just typed.
+                    if (body.getAttribute('lang') !== '') {
+                        body.setAttribute('lang', '');
+                    }
+
                     reportTyping(body.value.trim() !== '');
                 });
             }

@@ -2300,6 +2300,82 @@ test('the shared attachment services never resolve copy themselves', function ()
     }
 });
 
+test('a subject of "0" is a subject, not a missing one', function (): void {
+    // PHP reads the perfectly good subject "0" as false, so every truthiness
+    // test on it told the agent the visitor had written none -- in the queue,
+    // in the detail heading, and in that heading's language marker, which then
+    // announced the visitor's own words as our copy.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+    $conversation->forceFill(['subject' => '0'])->save();
+
+    $queue = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.index'))
+        ->assertOk()
+        ->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$queue);
+    $xpath = new DOMXPath($document);
+
+    // This conversation's own row, so another untitled conversation in the
+    // fixture cannot answer for it either way.
+    $link = $xpath->query('//a[contains(@href, "'.$conversation->support_code.'")]')->item(0);
+
+    expect($link)->not->toBeNull('the conversation did not render in the queue')
+        ->and(trim($link->textContent))->toBe('0', 'the queue called a subject of "0" untitled');
+
+    $detail = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent();
+
+    $this->assertStringNotContainsString(__('conversations.detail.untitled', [], 'de'), $detail,
+        'the detail heading called a subject of "0" untitled');
+
+    // And it is still marked as the visitor's words rather than as ours.
+    $detailDocument = new DOMDocument;
+    @$detailDocument->loadHTML('<?xml encoding="utf-8"?>'.$detail);
+
+    $unknown = [];
+
+    foreach ((new DOMXPath($detailDocument))->query('//*[@lang=""]') as $node) {
+        $unknown[] = trim($node->textContent);
+    }
+
+    expect($unknown)->toContain('0');
+});
+
+test('the draft stops claiming the template language once the agent types', function (): void {
+    // Choosing an English helper marks the textarea English so the inserted
+    // text is announced correctly. The moment the agent edits it the words are
+    // theirs, and a German reply typed over an English template was still being
+    // read with English pronunciation.
+    //
+    // Source-level: the announcement walker strips <script> before it looks at
+    // anything, so no rendered page can show this.
+    $composer = (string) file_get_contents(
+        resource_path('views/agent/partials/reply-composer-script.blade.php')
+    );
+
+    $stripped = (string) preg_replace('#//[^\n]*#', '', $composer);
+
+    // The input handler, closed at ITS OWN indentation. Closing on a shallower
+    // `});` swallowed the rest of the script, which contains an unrelated
+    // setAttribute('lang', '') on an attachment chip -- so deleting the reset
+    // under test left this passing.
+    $matched = preg_match(
+        "/body\.addEventListener\('input', function \(\) \{(.*?)\n                \}\);/s",
+        $stripped,
+        $handler
+    );
+
+    expect($matched)->toBe(1, 'the composer input handler moved; this no longer reads it');
+
+    $this->assertStringContainsString("setAttribute('lang', '')", $handler[1],
+        'editing a draft leaves the template language on the textarea');
+});
+
 test('a write answers in the language of the page it renders back to', function (): void {
     // A linked-ticket action is submitted from BOTH the conversation panel and
     // the ticket page, and its validation runs before the redirect. Listing the

@@ -3,8 +3,8 @@
                  words and is never translated, but the fallback and the support-code
                  line are copy. --}}
             <x-page-header
-                :title="$conversation->subject ?? __('conversations.detail.untitled')"
-                :title-lang="$conversation->subject ? '' : null"
+                :title="filled($conversation->subject) ? $conversation->subject : __('conversations.detail.untitled')"
+                :title-lang="filled($conversation->subject) ? '' : null"
                 :subtitle="__('conversations.detail.support_code', ['code' => $conversation->support_code])"
                 :back-href="$conversationBackUrl"
                 :back-label="__('conversations.detail.back')">
@@ -776,7 +776,7 @@
                                         <a class="text-link" href="{{ route('dashboard.conversations.show', $priorConversation->support_code) }}">
                                             {{ $priorConversation->support_code }}
                                         </a>
-                                        <span class="lede">@if ($priorConversation->subject)<span lang="">{{ $priorConversation->subject }}</span>@else{{ __('conversations.detail.untitled') }}@endif</span>
+                                        <span class="lede">@if (filled($priorConversation->subject))<span lang="">{{ $priorConversation->subject }}</span>@else{{ __('conversations.detail.untitled') }}@endif</span>
                                     </p>
                                 @endforeach
                             </div>
@@ -837,7 +837,7 @@
                             <article class="timeline-item">
                                 <div class="timeline-content">
                                     <a class="text-link" href="{{ route('dashboard.conversations.show', $priorConversation->support_code) }}">
-                                        @if ($priorConversation->subject)<span lang="">{{ $priorConversation->subject }}</span>@else{{ __('conversations.detail.untitled') }}@endif
+                                        @if (filled($priorConversation->subject))<span lang="">{{ $priorConversation->subject }}</span>@else{{ __('conversations.detail.untitled') }}@endif
                                     </a>
                                     <div class="timeline-meta">
                                         <span>{{ $priorConversation->support_code }}</span>

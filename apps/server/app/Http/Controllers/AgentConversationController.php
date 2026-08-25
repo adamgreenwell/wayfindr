@@ -247,7 +247,10 @@ class AgentConversationController extends Controller
                     // needs: whether these are the visitor's words or our
                     // fallback. The marker downstream is conditional on it.
                     'subject' => $candidate->subject,
-                    'subject_fallback' => $candidate->subject === null,
+                    // `filled`, not a truthiness test: PHP reads the perfectly
+                    // good subject "0" as false, and not `=== null` either, so an
+                    // empty string reads as no subject rather than as a blank one.
+                    'subject_fallback' => ! filled($candidate->subject),
                     'current' => $candidate->id === $conversation->id,
                 ])
                 ->values(),
@@ -594,7 +597,7 @@ class AgentConversationController extends Controller
             'priority' => $validated['priority'] ?? 'normal',
             'category' => $validated['category'] ?? null,
             // Stored, not rendered: see DashboardLanguage::forStoredContent().
-            'subject' => $conversation->subject ?: __('conversations.detail.ticket_subject_fallback',
+            'subject' => filled($conversation->subject) ? $conversation->subject : __('conversations.detail.ticket_subject_fallback',
                 ['code' => $conversation->support_code], DashboardLanguage::forStoredContent()),
             'description' => $this->ticketDescription($conversation),
             'metadata' => [
