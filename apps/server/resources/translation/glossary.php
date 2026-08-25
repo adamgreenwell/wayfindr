@@ -110,6 +110,14 @@ return [
             'owner_assignee' => ['term' => 'Zuständig', 'note' => 'Whoever is responsible for a work item: a conversation, a ticket. Takes "zuständige Person" where the sentence needs a noun. A split by SENSE rather than by density, and the one case where the audit found the shipped German already correct and this table wrong -- ratified by use, not proposed.'],
             'email' => ['term' => 'E-Mail', 'note' => 'Hyphen and capital M. "Email" is a different German word.'],
             'support_code' => ['term' => 'Support-Code'],
+
+            // English says `request` for four different things. German has the
+            // words to keep them apart, and the catalogue drifted because
+            // nothing said it had to.
+            'request_action' => ['term' => 'anfordern', 'note' => 'The verb: an agent asks the visitor widget for a snapshot or a cobrowse session. Never "anfragen", which is to enquire rather than to requisition.'],
+            'request_object' => ['term' => 'Anforderung', 'note' => 'The noun that follows the verb. If you "anfordern", the thing is an "Anforderung" -- pairing "anfordern" with "Anfrage" is the mismatch that produced the drift.'],
+            'request_inquiry' => ['term' => 'Anfrage', 'note' => 'What a PERSON asks: the visitor\'s current request, an operational request, a standard support request. Deliberately not swept -- this is the sense "Anfrage" is right for.'],
+            'requester' => ['term' => 'Anfragender', 'note' => 'The person who raised a ticket. A noun for a human, not for a message.'],
             'alert' => ['term' => 'Benachrichtigung', 'note' => 'Against "Warnung", which is louder than most of these are. Must stay distinct from "Nachricht".'],
             'digest' => ['term' => 'Zusammenfassung', 'note' => '"Digest" reads as un-localised English in a B2B interface. Deliberately NOT the time-bound compounds -- there is no daily or weekly variant in the catalogue, because a digest fires when the scheduler runs rather than on a calendar, so "Tageszusammenfassung" would assert a cadence the product does not have. Length watch: profile.readiness_cards.cadence_digest is the bare word "Digest" on a card, and this is nine characters longer.'],
             'summary' => ['term' => 'Ticket-Übersicht', 'confirm' => true, 'note' => 'Only one occurrence -- tickets.row.preview_summary, "Ticket summary". Flagged because the obvious German is "Ticket-Zusammenfassung", which merges it with digest. Weaker than the collision pairs above: the two never share a surface. Wave it through if the merge does not bother you.'],

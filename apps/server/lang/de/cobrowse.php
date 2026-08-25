@@ -74,7 +74,7 @@ return [
     ],
 
     'actions' => [
-        'cancel_request' => 'Anfrage abbrechen',
+        'cancel_request' => 'Anforderung abbrechen',
         'end' => 'Cobrowse beenden',
     ],
 
@@ -88,7 +88,7 @@ return [
             'message' => 'Das Besucher-Widget hat versucht, einen sauberen Snapshot zu senden, konnte dies aber nicht abschließen. Fordern Sie einen weiteren sauberen Snapshot an oder klären Sie den Seitenzustand im Chat.',
         ],
         'expired' => [
-            'label' => 'Snapshot-Anfrage abgelaufen',
+            'label' => 'Snapshot-Anforderung abgelaufen',
             'message' => 'Das Besucher-Widget hat nicht rechtzeitig geantwortet. Fordern Sie einen weiteren sauberen Snapshot an oder fahren Sie im Chat fort.',
         ],
         'delayed' => [
@@ -104,7 +104,7 @@ return [
     'snapshot_recovery' => [
         'pending' => [
             'label' => 'Snapshot-Aktualisierung bereits angefordert',
-            'message' => 'Beim Besucher-Widget wartet bereits eine Anfrage für einen neuen Snapshot. Nutzen Sie den Chat, während es aufholt.',
+            'message' => 'Beim Besucher-Widget wartet bereits eine Anforderung für einen neuen Snapshot. Nutzen Sie den Chat, während es aufholt.',
         ],
         'unknown' => [
             'label' => 'Snapshot-Zeit muss bestätigt werden',
@@ -134,22 +134,22 @@ return [
         ],
         'exhausted' => [
             'label' => 'Wiederholungslimit erreicht',
-            'detail' => 'Das Besucher-Widget hat nach wiederholten Fehlversuchen aufgehört, diese Anfrage-ID zu wiederholen.',
+            'detail' => 'Das Besucher-Widget hat nach wiederholten Fehlversuchen aufgehört, diese Anforderungs-ID zu wiederholen.',
             'badge' => 'Ausgeschöpft',
         ],
         'expired' => [
-            'label' => 'Anfrage abgelaufen',
+            'label' => 'Anforderung abgelaufen',
             'detail' => 'Vor dem Ende des Wiederherstellungsfensters ist keine Antwort des Widgets eingegangen.',
             'badge' => 'Abgelaufen',
         ],
         'retry_available' => [
             'label' => 'Erneuter Versuch möglich',
-            'detail' => 'Der Support kann einen weiteren sauberen Snapshot anfordern, ohne auf die erste Anfrage zu warten.',
+            'detail' => 'Der Support kann einen weiteren sauberen Snapshot anfordern, ohne auf die erste Anforderung zu warten.',
             'badge' => 'Wiederholen',
         ],
         'expires' => [
-            'label' => 'Anfrage läuft ab',
-            'detail' => 'Wayfindr wird diese veraltete Anfrage nach Ablauf des Zeitfensters nicht mehr anbieten.',
+            'label' => 'Anforderung läuft ab',
+            'detail' => 'Wayfindr wird diese veraltete Anforderung nach Ablauf des Zeitfensters nicht mehr anbieten.',
             'badge' => 'Schutzgrenze',
         ],
         'waiting' => [
@@ -162,9 +162,9 @@ return [
             'label' => 'Snapshot-Antwort ignoriert',
             'badge' => 'Ignoriert',
             'expired' => 'Eine Antwort des Widgets ist nach dem Ende des Wiederherstellungsfensters eingegangen.',
-            'mismatched' => 'Eine Antwort des Widgets ist für eine andere Wiederherstellungsanfrage eingegangen.',
+            'mismatched' => 'Eine Antwort des Widgets ist für eine andere Wiederherstellungsanforderung eingegangen.',
             'already_fulfilled' => 'Eine doppelte Antwort des Widgets ist eingegangen, nachdem Wayfindr bereits einen neuen Snapshot angenommen hatte.',
-            'unmatched' => 'Eine Antwort des Widgets konnte der aktiven Wiederherstellungsanfrage nicht zugeordnet werden.',
+            'unmatched' => 'Eine Antwort des Widgets konnte der aktiven Wiederherstellungsanforderung nicht zugeordnet werden.',
         ],
     ],
 
