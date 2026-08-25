@@ -8,12 +8,12 @@ use App\Models\ConversationMessage;
 use App\Models\Site;
 use App\Models\Visitor;
 use App\Support\Attachments\AttachmentBinder;
+use App\Support\Attachments\AttachmentRejected;
 use App\Support\Attachments\AttachmentUploadService;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 
 /**
  * An arriving email, turned into a message on the right conversation.
@@ -243,7 +243,7 @@ final class InboundMailRouter
                 // it is the path that already checks the attachment belongs to
                 // this conversation and this sender.
                 $this->binder->bind($conversation, $stored, [$record->id], $visitor);
-            } catch (ValidationException $exception) {
+            } catch (AttachmentRejected $exception) {
                 $skipped[] = $attachment['name'];
             } finally {
                 @unlink($path);

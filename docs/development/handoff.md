@@ -791,9 +791,13 @@ rewrite those as runtime failures or as current production restore proof.
 
 ### Next
 
-- Do not cut `0.4.0` for evidence tooling and documentation alone. Keep
-  `v0.3.2` as the latest public artifact until an operator-facing or reliability
-  change merits a release.
+- `v0.7.0` is the latest public artifact. The line from here is `0.7.1`, `0.7.2`
+  and so on as features land, with `1.0.0` scoped to the remaining Tier 1 gaps,
+  first-class localization, and hardening — not to feature parity. Tier 2 and
+  the AI tier are post-1.0.
+- Localization is a first-class concern, not a feature: interface language,
+  timezone, and regional formatting belong in first-run setup and the operator
+  console, and every agent-facing timestamp currently renders in UTC.
 - Operate the controlled Forge dogfood instance. Refresh the scheduler and
   backup/restore proof notes only when current operational evidence exists, and
   let real support conversations choose the next branch-sized product slice.

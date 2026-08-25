@@ -6,7 +6,6 @@ use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\ConversationMessageAttachment;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Validation\ValidationException;
 
 /**
  * Binds pending uploads to the message that sends them (ADR 0007). This is the
@@ -35,8 +34,8 @@ class AttachmentBinder
         $maxPerMessage = (int) config('wayfindr.attachments.max_per_message');
 
         if (count($attachmentIds) > $maxPerMessage) {
-            throw ValidationException::withMessages([
-                'attachment_ids' => __('composer.rejected.too_many', ['max' => $maxPerMessage]),
+            throw AttachmentRejected::attachments('composer.rejected.too_many', [
+                'max' => $maxPerMessage,
             ]);
         }
 
@@ -58,9 +57,7 @@ class AttachmentBinder
         // already bound, or does not exist — all rejected identically so the
         // failure leaks nothing.
         if ($candidates->count() !== count($attachmentIds)) {
-            throw ValidationException::withMessages([
-                'attachment_ids' => __('composer.rejected.unavailable'),
-            ]);
+            throw AttachmentRejected::attachments('composer.rejected.unavailable');
         }
 
         // The update re-asserts whereNull so it can only ever claim rows that
@@ -73,9 +70,7 @@ class AttachmentBinder
             ->update(['conversation_message_id' => $message->id]);
 
         if ($bound !== $candidates->count()) {
-            throw ValidationException::withMessages([
-                'attachment_ids' => __('composer.rejected.unavailable'),
-            ]);
+            throw AttachmentRejected::attachments('composer.rejected.unavailable');
         }
 
         return $bound;

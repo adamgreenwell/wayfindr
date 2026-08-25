@@ -172,6 +172,18 @@
 
             if (body) {
                 body.addEventListener('input', function () {
+                    // The draft belongs to the agent the moment they touch it,
+                    // whatever a template put there a second ago. Without this,
+                    // picking an English helper and rewriting it in German left
+                    // the textarea still claiming English, and a screen reader
+                    // read the agent's own German with English pronunciation.
+                    //
+                    // Empty is HTML's "unknown", which is the honest answer for
+                    // something a person just typed.
+                    if (body.getAttribute('lang') !== '') {
+                        body.setAttribute('lang', '');
+                    }
+
                     reportTyping(body.value.trim() !== '');
                 });
             }
@@ -182,7 +194,9 @@
 
                 var nameEl = document.createElement('span');
                 nameEl.className = 'reply-attach-chip-name';
-                nameEl.textContent = file.name || 'attachment';
+                // The agent's own filename, in whatever language they named it.
+                nameEl.setAttribute('lang', '');
+                nameEl.textContent = file.name || @json(__('composer.attachment'));
                 chip.appendChild(nameEl);
 
                 var stateEl = document.createElement('span');
@@ -224,7 +238,17 @@
                 var removeEl = document.createElement('button');
                 removeEl.type = 'button';
                 removeEl.className = 'reply-attach-chip-remove';
-                removeEl.setAttribute('aria-label', @json(__('composer.remove', ['name' => ':name'])).replace(':name', file.name || @json(__('composer.attachment'))));
+                // A FUNCTION replacement, not a string one. `String.replace`
+                // reads `$&`, `` $` `` and `$'` in the replacement as
+                // backreferences, so a file called `$&.pdf` would produce an
+                // aria-label naming `:name.pdf` -- the token, not the file.
+                // A filename is user data and can contain anything.
+                var attachmentName = file.name || @json(__('composer.attachment'));
+
+                removeEl.setAttribute('aria-label',
+                    @json(__('composer.remove', ['name' => ':name'])).replace(':name', function () {
+                        return attachmentName;
+                    }));
                 removeEl.textContent = '×';
                 removeEl.addEventListener('click', function () {
                     if (form.getAttribute('data-submitting') === 'true') {
@@ -269,7 +293,7 @@
                     return response.json().catch(function () {
                         return {};
                     }).then(function (data) {
-                        return { ok: response.ok, data: data };
+                        return { ok: response.ok, status: response.status, data: data };
                     });
                 }).then(function (result) {
                     settleUpload();
@@ -289,7 +313,13 @@
 
                     if (! attachment || ! attachment.id) {
                         chip.className = 'reply-attach-chip reply-attach-chip--error';
-                        stateEl.textContent = (result.data && result.data.message)
+                        // Only a 422 carries a message we wrote and translated.
+                        // Everything else -- a failed storage write, a 403, a
+                        // 404 -- answers with a framework exception message in
+                        // English, and preferring it puts 'Not Found.' on a
+                        // German page. The local fallback is ours and is
+                        // already in the right language.
+                        stateEl.textContent = (result.status === 422 && result.data && result.data.message)
                             ? result.data.message
                             : @json(__('composer.attach_failed'));
 

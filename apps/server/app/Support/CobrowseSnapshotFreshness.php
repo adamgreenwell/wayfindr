@@ -29,7 +29,16 @@ class CobrowseSnapshotFreshness
             ];
         }
 
-        $reportedAtLabel = $reportedAt->diffForHumans();
+        // Formatted in the install's language, not the request's.
+        //
+        // This class is an unextracted surface and the panel that renders it
+        // declares itself English -- but `diffForHumans()` follows whatever
+        // locale the request scoped, so once the conversation route was
+        // extracted this built 'Reported vor 2 Minuten': an English word glued
+        // to a German duration, announced entirely as English.
+        //
+        // A region that says it is English has to be English all the way down.
+        $reportedAtLabel = $reportedAt->locale(DashboardLanguage::FALLBACK)->diffForHumans();
 
         if ($reportedAt->lt(now()->subSeconds(self::STALE_AFTER_SECONDS))) {
             return [

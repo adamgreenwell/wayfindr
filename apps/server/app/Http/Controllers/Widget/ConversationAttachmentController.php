@@ -4,12 +4,15 @@ namespace App\Http\Controllers\Widget;
 
 use App\Http\Controllers\Controller;
 use App\Models\ConversationMessageAttachment;
+use App\Support\Attachments\AttachmentRejected;
 use App\Support\Attachments\AttachmentResponder;
 use App\Support\Attachments\AttachmentUploadService;
+use App\Support\Sites\WidgetLanguage;
 use App\Support\VisitorConversationResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -31,25 +34,45 @@ class ConversationAttachmentController extends Controller
         VisitorConversationResolver $conversations,
         AttachmentUploadService $uploads,
     ): JsonResponse {
-        $maxKilobytes = (int) ceil(((int) config('wayfindr.attachments.max_file_bytes')) / 1024);
-
-        $validated = $request->validate([
+        // Identity FIRST, so the site is known before anything can fail in
+        // words. Validating the file up here rejected an oversized upload with
+        // a framework message in the INSTALL's language, before the site --
+        // and with it the visitor's language -- had been resolved at all.
+        $identity = $request->validate([
             'site_public_key' => ['required', 'string', 'max:255'],
             'anonymous_id' => ['required', 'string', 'max:255'],
             'visitor_token' => ['nullable', 'string', 'max:4096'],
-            'file' => ['required', 'file', 'max:'.$maxKilobytes],
         ]);
 
         $conversation = $conversations->resolve(
             $request,
             $supportCode,
-            $validated['site_public_key'],
-            $validated['anonymous_id'],
+            $identity['site_public_key'],
+            $identity['anonymous_id'],
         );
+
+        // From here every failure is words a VISITOR reads, so the request
+        // speaks the site's language for the rest of its life -- framework
+        // validation included, which no catch block can reach.
+        //
+        // Safe to move: `DashboardLanguage` reads the install default from its
+        // own config key precisely because `App::setLocale()` moves
+        // `app.locale`.
+        App::setLocale(WidgetLanguage::forVisitor($request->input('locale'), $conversation->site));
+
+        $maxKilobytes = (int) ceil(((int) config('wayfindr.attachments.max_file_bytes')) / 1024);
+
+        $request->validate([
+            'file' => ['required', 'file', 'max:'.$maxKilobytes],
+        ]);
 
         // The uploader is the conversation's own visitor — the same principal
         // the resolver just authenticated.
-        $attachment = $uploads->store($conversation, $request->file('file'), $conversation->visitor);
+        try {
+            $attachment = $uploads->store($conversation, $request->file('file'), $conversation->visitor);
+        } catch (AttachmentRejected $rejected) {
+            throw $rejected->toValidationException();
+        }
 
         return response()->json([
             'data' => ['attachment' => $attachment->toPayload()],

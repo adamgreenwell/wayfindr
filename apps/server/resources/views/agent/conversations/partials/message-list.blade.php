@@ -82,12 +82,15 @@
 
                             @if ($attachment->isImage())
                                 <a class="message-attachment message-attachment-image-link" href="{{ $attachmentUrl }}" target="_blank" rel="noopener noreferrer">
-                                    <img class="message-attachment-image" src="{{ $attachmentUrl }}" alt="{{ $attachment->original_filename }}" loading="lazy">
+                                    {{-- `lang` on the img, not around it: alt is an ATTRIBUTE and takes
+                                         its language from its element. The filename is whatever
+                                         the visitor called it. --}}
+                                    <img class="message-attachment-image" src="{{ $attachmentUrl }}" alt="{{ $attachment->original_filename }}" lang="" loading="lazy">
                                 </a>
                             @else
                                 <a class="message-attachment message-attachment-file" href="{{ $attachmentUrl }}" target="_blank" rel="noopener noreferrer" download>
                                     <x-icon name="attachment" :size="14" class="message-attachment-icon" />
-                                    <span class="message-attachment-name">{{ $attachment->original_filename }}</span>
+                                    <span class="message-attachment-name" lang="">{{ $attachment->original_filename }}</span>
                                 </a>
                             @endif
                         @endforeach

@@ -251,6 +251,18 @@ The general rule: **any view that renders a flash should call `__()` on it.**
 `__()` returns a non-key string unchanged, so it costs nothing on surfaces that
 flash literals and prevents a raw key from ever reaching a page.
 
+### Only a validation response carries a message we wrote
+
+The composer prefers the upload endpoint's own `message` over its local
+fallback, which is right for a 422 — that message came from our catalogue. It is
+wrong for everything else. A failed storage write, a 403, a 404: those answer
+with a framework exception message in English, and preferring it puts
+*"Not Found."* on a German page.
+
+**Trust a response's copy only from the status that produces our copy.** The
+local fallback is already in the right language, and it is the safer default for
+every other status.
+
 ### Scoping a locale does nothing for a message built as a PHP string
 
 `ValidationException::withMessages(['file' => 'This file type is not allowed.'])`
@@ -296,10 +308,19 @@ would answer in German on the English ticket page; not listing it put English
 errors on the German conversation panel. Neither is a locale the endpoint can
 have.
 
-So for an unsafe request the locale is resolved from the **referer's** route —
-the surface that will render the answer. Same-origin only, and reads are
-excluded because a GET renders itself. The referer only ever picks a language,
-so a wrong or forged one costs nothing.
+So for an unsafe request the locale is resolved from the route the response will
+render on. Same-origin only, and reads are excluded because a GET renders
+itself. The referer only ever picks a language, so a wrong or forged one costs
+nothing.
+
+**Match `UrlGenerator::previous()` exactly — Referer first, session second.**
+That is the order `redirect()->back()` uses, and getting it backwards diverges
+in the case the session is worst at: with two tabs open, the session's previous
+URL belongs to whichever tab navigated last, so an action submitted from an
+English page could answer in German because a German page was the most recent
+navigation *anywhere*. The session still matters, because
+`Referrer-Policy: no-referrer` strips the header while the redirect still lands
+on the submitting page.
 
 ### The conversation is not the dashboard
 
@@ -482,6 +503,25 @@ in a language they did not choose.
 The payload carries the **timestamp**; the page formats it with
 `Intl.RelativeTimeFormat` in the reading agent's language. Anything a broadcast
 formats is frozen at the moment it is built, so it must not be prose.
+
+### A region that declares English must be English all the way down
+
+`diffForHumans()` follows whatever locale the request scoped. So extracting a
+route changes what an **unextracted** class produces: `CobrowseSnapshotFreshness`
+kept gluing the English word `Reported` to a duration that had quietly become
+German, and the panel that declares itself English then announced the German
+half as English.
+
+An exception has to hold all the way down or it is not an exception. The class
+formats with `->locale(DashboardLanguage::FALLBACK)` so its answer matches the
+declaration it is rendered under.
+
+### A filename is user data, and `String.replace` reads `$&`
+
+Passing user data as the **replacement** argument to `String.prototype.replace`
+expands `$&`, `` $` `` and `$'` as backreferences. A file called `$&.pdf` made an
+aria-label say `:name.pdf` — the token, not the file. Use a function
+replacement, which has no such semantics.
 
 ### An unreplaced placeholder is the same bug wearing a translation
 
