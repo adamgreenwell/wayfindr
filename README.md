@@ -2,13 +2,31 @@
 
 Wayfindr is an open source, self-hostable customer support platform for live chat, cobrowsing, and ticketing.
 
-The project is intentionally early. The first goal is to prove a focused support loop:
+A visitor can reach support through a widget, through the help centre before
+they ask, or by email. An agent works the queue, replies, cobrowses with
+consent, and turns any of it into a durable ticket. An owner can see whether the
+desk is actually working.
 
-- install a small widget on a site,
-- identify anonymous or authenticated visitors,
-- chat with a support agent,
-- request consent-based cobrowsing,
-- create a durable ticket from the support session.
+One caveat on email before you evaluate it: mail opens and continues
+conversations, but you cannot point a provider straight at Wayfindr yet. It
+verifies its own signature scheme and no provider emits that scheme, so a
+provider's normal webhook setup returns `401` until something in front of it
+verifies the provider and re-signs — and Wayfindr does not ship that piece
+([#799](https://github.com/adamgreenwell/wayfindr/issues/799)).
+
+- install a small widget on a site, themed to match it and speaking the
+  visitor's language;
+- identify anonymous or authenticated visitors, and ask who they are when the
+  site needs to know;
+- answer before the question — searchable help-centre articles inside the
+  widget;
+- chat with a support agent, by widget or by email;
+- say when the desk is open, and take the question when it is not;
+- request consent-based cobrowsing;
+- create a durable ticket from the support session;
+- measure the conversations and tickets — volume, response and resolution times,
+  reopens, workload, and whether the visitor said it helped. Help-centre usage
+  and cobrowse sessions are not reported on.
 
 Wayfindr is a Laravel-first monorepo. Laravel owns the core product, while SDKs and integrations make it portable across WordPress, Laravel, Next.js, React, and plain JavaScript sites.
 
@@ -106,11 +124,18 @@ Start with [data-responsibility.md](docs/privacy/data-responsibility.md), the
 
 ## Status
 
-Pre-alpha. The latest public release is `v0.3.2` (August 11, 2026), and the
-next development line is `0.4.0`. Wayfindr now has a usable internal alpha spine
-for the first support loop and a review-gated self-hosting path, but
-release-readiness claims are still being proven on disposable VMs before the
-project should be treated as a boring appliance.
+Pre-1.0. The latest public release is `v0.7.0` (August 25, 2026), and the next
+development line is `0.7.1`.
+
+Self-hosting and upgrades from published artifacts have been proved repeatable
+on hosted runners and disposable bare-metal guests — **for the artifacts that
+were tested, the most recent being `v0.3.2`**. `v0.7.0` adds ten migrations and
+has not been through that matrix yet; record fresh evidence from its own
+artifact before adopting it anywhere that matters.
+
+`1.0.0` is deliberately scoped to finishing the core support product and proving
+it, rather than to feature parity with every competitor: the remaining Tier 1
+gaps, first-class localization, and hardening. Everything below already ships.
 
 - browser and CLI first-run setup;
 - authenticated account owners, admins, agents, and platform operators;
@@ -122,6 +147,21 @@ project should be treated as a boring appliance.
   retention sweep, malware-scanner hook, and S3-compatible storage routing;
 - durable tickets with assignment, status changes, categories, priorities,
   labels, notes, replies, queue filters, and support reference panels;
+- email as a second conversation channel, outbound, and inbound once the
+  intermediary above is in place ([#799](https://github.com/adamgreenwell/wayfindr/issues/799));
+- a help centre: articles authored in the dashboard, searchable from the widget;
+- per-site support hours in the site's own timezone, an away state, offline
+  capture, and a configurable pre-chat form;
+- reporting over conversations and tickets — volume, first-response and
+  resolution times, reopen rates, agent workload, and visitor satisfaction
+  ratings. Resolution and reopen figures are read from lifecycle logs and the
+  page states the date each half began; volume, first responses and agent
+  replies come from data the product always kept;
+- per-site widget appearance, and a widget language catalogue with German
+  complete;
+- an agent-selectable dashboard language, on the surfaces translated so far;
+- a visitor directory, and agent-initiated password recovery;
+- a read-only public API with a decided isolation model;
 - visitor profiles, support-code lookup, and safe cross-record context;
 - alert preferences, dashboard alerts, queued email notifications, welcome
   emails, and mail smoke testing;
@@ -134,8 +174,7 @@ project should be treated as a boring appliance.
 - provider-neutral external issue links plus GitHub/GitLab/Jira issue creation,
   state reflection, and comment relay foundations.
 
-The current `0.4.0` reliability cycle is about proving the self-hosting story
-with repeatable evidence: clean installs, supported upgrades, advisory behavior,
+The self-hosting story is proved for the artifacts tested — most recently `v0.3.2`, not yet `v0.7.0` — with repeatable evidence: clean installs, supported upgrades, advisory behavior,
 backup/restore, rollback, reboot recovery, and deployment-fork readiness. See
 [disposable-vm-evidence.md](docs/self-hosting/disposable-vm-evidence.md) for the
 evidence contract. Product expansion is intentionally demand-gated around ticket

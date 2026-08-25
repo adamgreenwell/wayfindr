@@ -2,16 +2,52 @@
 
 [Back to Home](Home)
 
-Wayfindr is pre-alpha. As of August 12, 2026, the latest public release is
-`v0.3.2`, and the next development line is `0.4.0`. The core support loop
-exists, and the reliability cycle has now proved repeatable self-hosting and
-upgrades from public artifacts on both hosted runners and disposable bare-metal
-guests.
+Wayfindr is pre-1.0. As of August 25, 2026, the latest public release is
+`v0.7.0`, and the next development line is `0.7.1`. The product has moved from
+"the core support loop exists" to a support desk reachable by widget, email and
+help centre, with a measurement surface of its own. "Reachable by email" carries
+one qualification: no provider can post to the inbound endpoint directly,
+because Wayfindr verifies a signature scheme none of them emit, so that channel
+needs an intermediary the project does not ship ([#799](https://github.com/adamgreenwell/wayfindr/issues/799)).
+
+Self-hosting and upgrades from public artifacts have been proved repeatable on
+hosted runners and disposable bare-metal guests — **for the artifacts that were
+tested, the most recent being `v0.3.2`**. `v0.7.0` adds ten migrations and has
+not been through that matrix; see [Releases](Releases).
+
+`1.0.0` is scoped: the remaining Tier 1 gaps plus hardening, not feature
+parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamgreenwell/wayfindr/milestone/1).
 
 ## Shipped Spine
 
 - Widget install, visitor identity, live chat, agent replies, and durable
   tickets.
+- **Email as a second channel**: mail opens and continues conversations, so a
+  customer replying to a notification is no longer replying into nothing —
+  once you have put something in front of the inbound endpoint to re-sign for
+  it, which the project does not yet ship
+  ([#799](https://github.com/adamgreenwell/wayfindr/issues/799)).
+- **A help centre**: articles written in the dashboard and searchable from
+  inside the widget, so a visitor can find the answer before asking.
+- **Support hours, away state and offline capture**, per site and in the site's
+  own timezone, with a pre-chat form for sites that need to know who is asking.
+- **Reporting**: conversation and ticket volume, first-response and resolution
+  times, reopen rates, per-agent workload, and visitor satisfaction ratings.
+  Resolution and reopen figures are read from lifecycle logs, and the two
+  halves have different memories: **conversation** closes began being recorded
+  in this release, while **ticket** closes have been audited since well before
+  it — so an upgraded desk can describe a quarter of ticket work while its
+  conversation figures are still accumulating. The page states each boundary
+  separately. Volume, first-response times and agent replies come from data the
+  product always kept and reach back as far as the install does.
+- **Per-site widget appearance**, and a widget that speaks the visitor's
+  language (German ships complete).
+- **A dashboard an agent can read in their own language** on the queues, the
+  ticket list, the app shell and the profile page. The conversation detail page
+  follows in `0.7.1`.
+- **A visitor directory**, and a read-only public API with a decided isolation
+  model (ADR 0018).
+- **Agent-initiated password recovery.**
 - Consent-based cobrowse observe mode with sanitized snapshots, bounded
   mutations, telemetry, and an inert replay preview.
 - Private conversation-message attachments with visitor and agent UI, retention
@@ -26,8 +62,8 @@ guests.
 
 ## Current Reliability Cycle
 
-The completed `0.4.0` proof cycle was not broad feature expansion. It collected
-clean evidence for:
+The `0.4.0` proof cycle was not broad feature expansion. It collected clean
+evidence for:
 
 - disposable-VM clean installation;
 - supported upgrade and advisory behavior;
@@ -84,9 +120,12 @@ not evidence of a failed process or restore.
 
 The combined evidence still does not claim destructive-schema downgrade safety,
 real DNS/TLS configuration, real mail delivery, offsite-backup durability, or a
-production restore. No `0.4.0` release is cut for an evidence/docs-only cycle;
-the deployed development revision and the public `v0.3.2` artifact remain
-distinct.
+production restore.
+
+*(Historical: this snapshot was recorded during the `0.4.0` evidence cycle, when
+`v0.3.2` was the public artifact. Releases through `v0.7.0` have been cut since.
+The evidence above stands as a record of what was proved then; it is not a
+statement about the current release.)*
 
 ## Parked or Demand-Gated
 
