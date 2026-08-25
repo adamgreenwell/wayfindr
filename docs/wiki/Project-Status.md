@@ -2,7 +2,7 @@
 
 [Back to Home](Home)
 
-Wayfindr is pre-1.0. As of August 24, 2026, the latest public release is
+Wayfindr is pre-1.0. As of August 25, 2026, the latest public release is
 `v0.7.0`, and the next development line is `0.7.1`. Self-hosting and upgrades
 from public artifacts are proved repeatable on both hosted runners and
 disposable bare-metal guests, and the product has moved from "the core support

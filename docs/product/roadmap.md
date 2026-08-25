@@ -2,7 +2,7 @@
 
 This roadmap is directional and should not include private business strategy.
 
-As of August 24, 2026, the latest public release is `v0.7.0`, and the next
+As of August 25, 2026, the latest public release is `v0.7.0`, and the next
 development line is `0.7.1`.
 
 `1.0.0` is scoped to finishing the core support product and proving it, rather
