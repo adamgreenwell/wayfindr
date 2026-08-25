@@ -36,6 +36,15 @@ Nothing yet.
 
 **No operator action required.** Pull, restart, and migrations run themselves.
 
+**One note if your desk is busy.** This release adds ten migrations. All are
+additive and none needs a decision from you, but five of them build indexes —
+on `visitors`, `conversations`, `conversation_messages`, `tickets` and
+`audit_events`. PostgreSQL blocks writes to a table while a non-concurrent index
+builds, so on an install with a large message or audit history the migration
+step may pause the desk for longer than you are used to. On a small install it
+is instant. We have not measured where the line is; take the upgrade at a quiet
+hour if that matters to you.
+
 0.6.0 changed how Wayfindr looks. **0.7.0 changes what it can do.** It is the
 largest functional release since the product went public: a support desk that
 could only be reached through a chat widget can now be reached by email, answers
