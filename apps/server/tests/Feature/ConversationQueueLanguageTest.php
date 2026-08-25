@@ -837,28 +837,35 @@ test('the queue cobrowse cell marks only what is still English', function (): vo
     // And it renders German.
     expect($html)->toContain(__('cobrowse.transport.inactive.label', [], 'de'));
 
-    // `last_report` in the unavailable state is the static English fallback,
-    // and still says so.
-    expect($html)->toContain('Letzte Meldung <span lang="en">Not reported</span>');
+    // `last_report` with no report yet is translated, where it used to be the
+    // English literal marked English. This is the queue's most common row --
+    // a conversation with no cobrowse session at all takes the default payload
+    // -- so it was the most repeated untranslated string on the page, once per
+    // row, and the marker made it look deliberate.
+    expect($html)->toContain('Letzte Meldung <span lang="de">'.__('cobrowse.units.not_reported', [], 'de').'</span>');
 
-    // An English agent gets the same value markup, because the marker is about
-    // the copy's language rather than about the reader's.
+    $this->assertStringNotContainsString(__('cobrowse.units.not_reported', [], 'en'), $html,
+        'the English not-reported literal is still on the German queue');
+
+    // An English agent gets the same sentence in English. The marker follows
+    // the page's language now, because both branches of the value do.
     $inEnglish = (string) $this->actingAs($world['agents']['en'])
         ->get(route('dashboard.conversations.index'))
         ->assertOk()
         ->getContent();
 
-    expect($inEnglish)->toContain('Last report <span lang="en">Not reported</span>');
+    expect($inEnglish)->toContain('Last report <span lang="en">'.__('cobrowse.units.not_reported', [], 'en').'</span>');
 });
 
 test('a localised cobrowse timestamp is marked German, not English', function (): void {
-    // `last_report` is the static "Not reported" ONLY in the `unavailable`
-    // state. Every other state builds it with `diffForHumans()`, which follows
+    // With a report, `last_report` is built by `diffForHumans()`, which follows
     // the page's locale -- so on this route it is already German. Marking that
     // English has a screen reader pronounce German as English, which is the
     // same defect as leaving it unmarked, pointing the other way.
     //
-    // Decided from the state rather than by reading the prose.
+    // Decided from the model's `last_report_reported`, not from the state and
+    // not by reading the prose. The state agreed with the discriminator here,
+    // which is exactly why deciding from it looked correct for so long.
     $world = conversationQueueLanguageWorld();
 
     $this->instance(CobrowseConsentState::class, new class(app(CobrowseReplayPreview::class), app(CobrowseResyncRequestPolicy::class), app(CobrowseSnapshotFreshness::class), app(CobrowseTransportPressure::class)) extends CobrowseConsentState
@@ -874,6 +881,7 @@ test('a localised cobrowse timestamp is marked German, not English', function ()
                 'message' => 'x',
                 // What `diffForHumans()` returns once the locale is German.
                 'last_report' => 'vor 20 Sekunden',
+                'last_report_reported' => true,
                 'pressure' => '2 dropped batches',
                 'guidance' => 'x',
                 'recovery_action' => 'x',
@@ -913,6 +921,10 @@ test('a cobrowse value is escaped, not trusted', function (): void {
                 'has_pressure' => true,
                 'label' => 'Unavailable',
                 'message' => 'x',
+                // Reported, so the value below is what renders. Left unreported
+                // this test would assert escaping of a string the view never
+                // takes from the model.
+                'last_report_reported' => true,
                 'last_report' => '<script>alert(1)</script>',
                 'pressure' => 'No drops reported',
                 'guidance' => 'x',

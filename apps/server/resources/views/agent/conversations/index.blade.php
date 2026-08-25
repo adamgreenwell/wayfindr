@@ -173,7 +173,7 @@
                                         $cobrowseTransport = $cobrowseTransportByConversationId->get($conversation->id, [
                                             'label' => 'Unavailable',
                                             'message' => 'Cobrowse transport is not active.',
-                                            'last_report' => 'Not reported',
+                                            'last_report_reported' => false,
                                             'pressure' => 'No drops reported',
                                             'guidance' => 'Wait for an active cobrowse session before relying on cobrowse.',
                                             'tone' => 'manual',
@@ -267,18 +267,19 @@
 
                                                 $transportCopy = $cobrowseTransport['copy'] ?? 'inactive';
 
-                                                // `last_report` is NOT. It is the static "Not reported" only in
-                                                // the `unavailable` state; every other state builds it with
+                                                // `last_report` is page-locale in BOTH of its branches, so it
+                                                // is marked German either way. With a report it is
                                                 // `diffForHumans()`, which follows the page's locale and returns
-                                                // "vor 20 Sekunden" here. Marking that English would have a
-                                                // screen reader pronounce German as English -- the same defect as
-                                                // leaving it unmarked, pointing the other way.
+                                                // "vor 20 Sekunden" here; with none it is translated below rather
+                                                // than arriving from the model as the literal "Not reported".
                                                 //
-                                                // Decided from the STATE rather than by comparing the prose,
-                                                // which is what the `in_array` below still does and should not.
-                                                $lastReportValue = ($cobrowseTransport['state'] ?? null) === 'unavailable'
-                                                    ? $englishValue
-                                                    : app()->getLocale();
+                                                // It used to be decided from the state, which meant the
+                                                // no-report case -- every row with no cobrowse session, so most
+                                                // of them -- rendered English and said so. The model's own
+                                                // discriminator answers this; the state only happened to agree.
+                                                $lastReport = ($cobrowseTransport['last_report_reported'] ?? false)
+                                                    ? $cobrowseTransport['last_report']
+                                                    : __('cobrowse.units.not_reported');
                                             @endphp
                                             <span
                                                 class="wf-queue-cobrowse"
@@ -288,7 +289,7 @@
                                                 title="{{ __('cobrowse.transport.'.$transportCopy.'.message') }} {{ __('cobrowse.transport.'.$transportCopy.'.'.($cobrowseTransport['guidance_copy'] ?? 'guidance')) }}"
                                             >{{ __('cobrowse.transport.'.$transportCopy.'.label') }}</span>
                                             <span class="wf-queue-preview">
-                                                {!! __('conversations.row.last_report', ['value' => $marked($cobrowseTransport['last_report'], $lastReportValue)]) !!}@if ($cobrowseTransport['has_pressure'] ?? false) &middot; {!! __('conversations.row.pressure', ['value' => $marked($cobrowseTransport['pressure'], $englishValue)]) !!}@endif
+                                                {!! __('conversations.row.last_report', ['value' => $marked($lastReport, app()->getLocale())]) !!}@if ($cobrowseTransport['has_pressure'] ?? false) &middot; {!! __('conversations.row.pressure', ['value' => $marked($cobrowseTransport['pressure'], $englishValue)]) !!}@endif
                                             </span>
                                         </td>
                                         <td>
