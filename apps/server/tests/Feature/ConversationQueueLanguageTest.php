@@ -2676,6 +2676,75 @@ test('a transport with no reports yet says so in German', function (): void {
     }
 });
 
+test('a partial page-state report is still German', function (): void {
+    // The panel's English boundary used to cover these. A visitor page that
+    // reports SOME of itself is an ordinary state -- a browser that gave a
+    // title but no URL, a report before the first scroll -- and every one of
+    // those fields fell back to the literal "Not reported", which then
+    // inherited German and was announced in it.
+    //
+    // The leak guard cannot see these: each is a value, and a string with a
+    // digit in it is skipped as data.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+    $session = CobrowseSession::query()->where('conversation_id', $conversation->id)->firstOrFail();
+
+    $metadata = $session->metadata;
+
+    // Everything the visitor's browser could decline to report, declined at
+    // once -- while the title stays, so the panel still renders.
+    unset(
+        $metadata['page_state']['page_url'],
+        $metadata['page_state']['viewport_width'],
+        $metadata['page_state']['viewport_height'],
+        $metadata['page_state']['scroll_x'],
+        $metadata['page_state']['scroll_y'],
+        $metadata['snapshot']['page_url'],
+        $metadata['mutations']['last_page_url'],
+    );
+
+    $session->forceFill(['metadata' => $metadata])->save();
+
+    $html = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent();
+
+    $page = conversationQueueLanguageVisibleText($html);
+
+    $this->assertStringContainsString(__('cobrowse.units.not_reported', [], 'de'), $page,
+        'the not-reported fallback did not render in German');
+    $this->assertStringNotContainsString(__('cobrowse.units.not_reported', [], 'en'), $page,
+        'an English not-reported literal is still on the German page');
+});
+
+test('a reported byte count is German too', function (): void {
+    // "500 bytes" is a value with an English word welded to it, and the leak
+    // guard skips it for the digit. Every other count on this panel renders
+    // through the catalogue from a `_value`; these two rendered the model's
+    // own sentence, so German agents read "Bytes" as "bytes".
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+    $session = CobrowseSession::query()->where('conversation_id', $conversation->id)->firstOrFail();
+
+    $metadata = $session->metadata;
+    $metadata['telemetry']['payload_bytes'] = 2048;
+    $metadata['telemetry']['max_payload_bytes'] = 4096;
+    $session->forceFill(['metadata' => $metadata])->save();
+
+    $html = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent();
+
+    $page = conversationQueueLanguageVisibleText($html);
+
+    $this->assertStringContainsString(__('cobrowse.units.bytes', ['count' => number_format(2048)], 'de'), $page,
+        'the payload size is not in the agent language');
+    $this->assertStringNotContainsString(__('cobrowse.units.bytes', ['count' => number_format(2048)], 'en'), $page,
+        'the English byte unit is still on the German page');
+});
+
 test('no unreplaced placeholder ever reaches the page', function (): void {
     // A sentence rendered without its parameters shows `:elapsed` or `:count`
     // to the agent. It looks like copy, it is in the right language, and it is

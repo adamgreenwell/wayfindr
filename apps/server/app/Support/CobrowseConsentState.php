@@ -467,10 +467,13 @@ class CobrowseConsentState
             // Their words, or ours. `lang=""` on the fallback would both
             // mispronounce it and hide it from the leak guard.
             'title_reported' => filled($pageState['title'] ?? null),
-            'page_url' => filled($pageState['page_url'] ?? null) ? (string) $pageState['page_url'] : 'Not reported',
+            'page_url' => filled($pageState['page_url'] ?? null) ? (string) $pageState['page_url'] : null,
+            // Same rule as the title: a URL the visitor's browser reported is
+            // theirs, and its absence is ours to say.
+            'page_url_reported' => filled($pageState['page_url'] ?? null),
             'viewport' => $this->formatDimensions($pageState['viewport_width'] ?? null, $pageState['viewport_height'] ?? null),
             'scroll' => $this->formatCoordinates($pageState['scroll_x'] ?? null, $pageState['scroll_y'] ?? null),
-            'visibility_state' => filled($pageState['visibility_state'] ?? null) ? (string) $pageState['visibility_state'] : 'Not reported',
+            'visibility_state' => filled($pageState['visibility_state'] ?? null) ? (string) $pageState['visibility_state'] : null,
             'focus' => ($pageState['focused'] ?? false) ? 'Focused' : 'Not focused',
             'focus_copy' => ($pageState['focused'] ?? false) ? 'focused' : 'not_focused',
         ];
@@ -490,7 +493,8 @@ class CobrowseConsentState
             // Their words, or ours. `lang=""` on the fallback would both
             // mispronounce it and hide it from the leak guard.
             'title_reported' => filled($snapshot['title'] ?? null),
-            'page_url' => filled($snapshot['page_url'] ?? null) ? (string) $snapshot['page_url'] : 'Not reported',
+            'page_url' => filled($snapshot['page_url'] ?? null) ? (string) $snapshot['page_url'] : null,
+            'page_url_reported' => filled($snapshot['page_url'] ?? null),
             'node_count' => number_format((int) ($snapshot['node_count'] ?? 0)).' nodes',
             'node_count_value' => (int) ($snapshot['node_count'] ?? 0),
             'masked_count' => number_format((int) ($snapshot['masked_count'] ?? 0)).' masked',
@@ -566,7 +570,8 @@ class CobrowseConsentState
             'skipped_count_value' => (int) ($mutations['skipped_count'] ?? 0),
             'last_sequence' => 'Sequence '.number_format((int) ($mutations['last_sequence'] ?? 0)),
             'last_sequence_value' => (int) ($mutations['last_sequence'] ?? 0),
-            'last_page_url' => filled($mutations['last_page_url'] ?? null) ? (string) $mutations['last_page_url'] : 'Not reported',
+            'last_page_url' => filled($mutations['last_page_url'] ?? null) ? (string) $mutations['last_page_url'] : null,
+            'last_page_url_reported' => filled($mutations['last_page_url'] ?? null),
         ];
     }
 
@@ -807,19 +812,23 @@ class CobrowseConsentState
         };
     }
 
-    private function formatDimensions(mixed $width, mixed $height): string
+    /**
+     * Null rather than "Not reported": a pair of numbers is not copy, and the
+     * absence of them is. The surface says the words.
+     */
+    private function formatDimensions(mixed $width, mixed $height): ?string
     {
         if (! is_numeric($width) || ! is_numeric($height)) {
-            return 'Not reported';
+            return null;
         }
 
         return number_format((int) $width).' x '.number_format((int) $height);
     }
 
-    private function formatCoordinates(mixed $x, mixed $y): string
+    private function formatCoordinates(mixed $x, mixed $y): ?string
     {
         if (! is_numeric($x) || ! is_numeric($y)) {
-            return 'Not reported';
+            return null;
         }
 
         return number_format((int) $x).', '.number_format((int) $y);

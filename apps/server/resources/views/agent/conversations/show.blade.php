@@ -532,15 +532,15 @@
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.cobrowse.url') }}</span>
-                            <span class="meta-value"><span lang="">{{ $cobrowseConsent['page_state']['page_url'] }}</span></span>
+                            <span class="meta-value">@if ($cobrowseConsent['page_state']['page_url_reported'])<span lang="">{{ $cobrowseConsent['page_state']['page_url'] }}</span>@else{{ __('cobrowse.units.not_reported') }}@endif</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.cobrowse.viewport') }}</span>
-                            <span class="meta-value">{{ $cobrowseConsent['page_state']['viewport'] }}</span>
+                            <span class="meta-value">{{ $cobrowseConsent['page_state']['viewport'] ?? __('cobrowse.units.not_reported') }}</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.cobrowse.scroll') }}</span>
-                            <span class="meta-value">{{ $cobrowseConsent['page_state']['scroll'] }}</span>
+                            <span class="meta-value">{{ $cobrowseConsent['page_state']['scroll'] ?? __('cobrowse.units.not_reported') }}</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.reply.visibility_label') }}</span>
@@ -585,7 +585,7 @@
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.cobrowse.url') }}</span>
-                            <span class="meta-value"><span lang="">{{ $cobrowseConsent['snapshot']['page_url'] }}</span></span>
+                            <span class="meta-value">@if ($cobrowseConsent['snapshot']['page_url_reported'])<span lang="">{{ $cobrowseConsent['snapshot']['page_url'] }}</span>@else{{ __('cobrowse.units.not_reported') }}@endif</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.cobrowse.nodes') }}</span>
@@ -634,7 +634,7 @@
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.cobrowse.url') }}</span>
-                            <span class="meta-value"><span lang="">{{ $cobrowseConsent['mutation_stream']['last_page_url'] }}</span></span>
+                            <span class="meta-value">@if ($cobrowseConsent['mutation_stream']['last_page_url_reported'])<span lang="">{{ $cobrowseConsent['mutation_stream']['last_page_url'] }}</span>@else{{ __('cobrowse.units.not_reported') }}@endif</span>
                         </div>
                     </div>
                 @else
@@ -652,19 +652,19 @@
                 <div class="meta-grid realtime-grid" data-cobrowse-telemetry-grid @if (! $cobrowseConsent['telemetry']) hidden @endif>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.cobrowse.rtt') }}</span>
-                        <span class="meta-value" data-cobrowse-telemetry-rtt>@if (($cobrowseConsent['telemetry']['rtt_value'] ?? null) !== null){{ $cobrowseConsent['telemetry']['rtt'] }}@else{{ __('cobrowse.units.not_reported') }}@endif</span>
+                        <span class="meta-value" data-cobrowse-telemetry-rtt>@if (($cobrowseConsent['telemetry']['rtt_value'] ?? null) !== null){{ __('cobrowse.units.milliseconds', ['count' => number_format($cobrowseConsent['telemetry']['rtt_value'])]) }}@else{{ __('cobrowse.units.not_reported') }}@endif</span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.cobrowse.max_rtt') }}</span>
-                        <span class="meta-value" data-cobrowse-telemetry-max-rtt>@if (($cobrowseConsent['telemetry']['max_rtt_value'] ?? null) !== null){{ $cobrowseConsent['telemetry']['max_rtt'] }}@else{{ __('cobrowse.units.not_reported') }}@endif</span>
+                        <span class="meta-value" data-cobrowse-telemetry-max-rtt>@if (($cobrowseConsent['telemetry']['max_rtt_value'] ?? null) !== null){{ __('cobrowse.units.milliseconds', ['count' => number_format($cobrowseConsent['telemetry']['max_rtt_value'])]) }}@else{{ __('cobrowse.units.not_reported') }}@endif</span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.cobrowse.payload') }}</span>
-                        <span class="meta-value" data-cobrowse-telemetry-payload>@if (($cobrowseConsent['telemetry']['payload_value'] ?? null) !== null){{ $cobrowseConsent['telemetry']['payload'] }}@else{{ __('cobrowse.units.not_reported') }}@endif</span>
+                        <span class="meta-value" data-cobrowse-telemetry-payload>@if (($cobrowseConsent['telemetry']['payload_value'] ?? null) !== null){{ __('cobrowse.units.bytes', ['count' => number_format($cobrowseConsent['telemetry']['payload_value'])]) }}@else{{ __('cobrowse.units.not_reported') }}@endif</span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.cobrowse.max_payload') }}</span>
-                        <span class="meta-value" data-cobrowse-telemetry-max-payload>@if (($cobrowseConsent['telemetry']['max_payload_value'] ?? null) !== null){{ $cobrowseConsent['telemetry']['max_payload'] }}@else{{ __('cobrowse.units.not_reported') }}@endif</span>
+                        <span class="meta-value" data-cobrowse-telemetry-max-payload>@if (($cobrowseConsent['telemetry']['max_payload_value'] ?? null) !== null){{ __('cobrowse.units.bytes', ['count' => number_format($cobrowseConsent['telemetry']['max_payload_value'])]) }}@else{{ __('cobrowse.units.not_reported') }}@endif</span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.cobrowse.dropped_batches') }}</span>
