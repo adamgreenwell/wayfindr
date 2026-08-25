@@ -591,6 +591,14 @@
           page_url: details.pageUrl || null,
         }, details.context, externalId);
 
+        // The FIRST conversation runs the site's intake rules, and their
+        // failures are the first words a new visitor ever reads from us.
+        // Omitted rather than sent as null when there is nothing to say, so a
+        // caller driving the client directly sends the payload it always did.
+        if (currentLocale && currentLocale()) {
+          payload.locale = currentLocale();
+        }
+
         // Only fields the site actually asked for. Sending a blank key for a
         // field it does not ask for is refused by the server, and rightly.
         Object.keys(details.intake || {}).forEach(function (key) {
@@ -609,7 +617,8 @@
           attachment_ids: (attachmentIds && attachmentIds.length) ? attachmentIds : null,
           // What WE resolved, which the server cannot: it sees the site
           // default, never the host page's choice or the visitor's browser.
-          locale: currentLocale ? currentLocale() : null,
+          // withoutNullValues drops it when there is nothing to say.
+          locale: (currentLocale && currentLocale()) || null,
         }));
       },
       uploadAttachment: function (supportCode, file) {

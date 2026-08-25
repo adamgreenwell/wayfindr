@@ -8,11 +8,13 @@ use App\Models\Site;
 use App\Models\Visitor;
 use App\Support\Sites\SiteAvailability;
 use App\Support\Sites\SiteIntake;
+use App\Support\Sites\WidgetLanguage;
 use App\Support\VisitorContextSanitizer;
 use App\Support\VisitorSessionToken;
 use App\Support\WidgetSiteResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\App;
 
 class ConversationController extends Controller
 {
@@ -23,6 +25,11 @@ class ConversationController extends Controller
         // rather than one. The alternative is trusting the widget about what it
         // was asked to collect, which is not a thing a public endpoint may do.
         $site = WidgetSiteResolver::resolveOrFail((string) $request->input('site_public_key'));
+
+        // Before validate(), because the intake rules below are the first words
+        // a NEW visitor reads from us and they are written by the framework --
+        // no catch block reaches those.
+        App::setLocale(WidgetLanguage::forVisitor($request->input('locale'), $site));
         $intake = SiteIntake::for($site);
         $away = ! SiteAvailability::for($site)->open;
         // What we already hold for this visitor, read from the record rather

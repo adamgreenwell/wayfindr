@@ -1992,6 +1992,10 @@ test('renders the embedded conversation timeline and refreshes replies', async (
     visitor_token: 'visitor-token-123',
     subject: 'Can you help me?',
     page_url: 'https://docs.example.test/install',
+    // The first conversation runs the site's intake rules, and their failures
+    // are the first words a new visitor reads from us -- so it carries the
+    // language the widget resolved, which the server cannot work out alone.
+    locale: 'en',
   });
   assert.deepEqual(
     messageSummaries(widget),

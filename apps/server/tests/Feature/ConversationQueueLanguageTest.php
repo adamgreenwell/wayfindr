@@ -2384,6 +2384,54 @@ test('the widget can say which language it actually resolved', function (): void
             'an unsupported locale was not ignored in favour of the site default');
 });
 
+test('the first conversation is validated in the visitor language too', function (): void {
+    // The endpoint a NEW visitor hits, whose intake rules are the first words
+    // we ever write to them -- and they are written by the framework, so no
+    // catch block reaches them. It resolves the site before validating (the
+    // intake rules need it), which is exactly where the language belongs.
+    $world = conversationQueueLanguageWorld();
+    $site = $world['site'];
+
+    config(['app.locale' => 'de']);
+    app()->setLocale('de');
+
+    // Ask for an email so there is a rule a visitor can fail.
+    $settings = $site->settings ?? [];
+    $settings['locale'] = 'de';
+    $settings['intake'] = ['enabled' => true, 'fields' => ['email' => 'required']];
+    $site->forceFill(['settings' => $settings])->save();
+
+    $start = function (?string $requested) use ($site) {
+        return $this->postJson(route('conversations.store'), array_filter([
+            'site_public_key' => $site->public_key,
+            'anonymous_id' => 'anon-first-'.($requested ?? 'none'),
+            'locale' => $requested,
+            'body' => 'Hallo',
+            'visitor_email' => 'not-an-email',
+        ], fn ($value): bool => $value !== null));
+    };
+
+    $message = function ($response): string {
+        $errors = $response->json('errors') ?? [];
+
+        expect($errors)->not->toBe([],
+            'the intake rule did not reject, so this proves nothing: '.$response->status());
+
+        return (string) (reset($errors)[0] ?? '');
+    };
+
+    // Asserted on a word only one of the catalogues has, so the attribute name
+    // Laravel builds from the field does not decide whether this passes.
+    $germanShape = fn (string $text): bool => str_contains($text, 'gültige');
+
+    // The host page overrides this German site to English.
+    expect($germanShape($message($start('en'))))->toBeFalse(
+        'a new visitor on an English override was answered in the site language');
+
+    expect($germanShape($message($start('de'))))->toBeTrue(
+        'a new visitor reading German was answered in English');
+});
+
 test('a subject of "0" is a subject, not a missing one', function (): void {
     // PHP reads the perfectly good subject "0" as false, so every truthiness
     // test on it told the agent the visitor had written none -- in the queue,
