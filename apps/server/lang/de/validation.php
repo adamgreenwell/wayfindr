@@ -72,6 +72,23 @@ return [
      * spells them.
      */
     'attributes' => [
+        // Every field a German page can submit, because the framework rules
+        // interpolate `:attribute` and an unnamed one puts the column name into
+        // the middle of a German sentence: "body darf höchstens 4000 Zeichen
+        // lang sein." The house terms come from the shipped catalogues -- a
+        // reply helper is an Antworthilfe, not a Vorlage.
+        'assignee_id' => 'Zuweisung',
+        'attachment_ids' => 'Anhänge',
+        'body' => 'Antwort',
+        'label_name' => 'Label',
+        'message' => 'Nachricht',
+        'note_template' => 'Notizhilfe',
+        'pending_note' => 'Notiz zum Wartestatus',
+        'post_to_external' => 'Veröffentlichung im verknüpften Issue',
+        'reason' => 'Grund',
+        'reopen_note' => 'Notiz zur Wiedereröffnung',
+        'reply_template' => 'Antworthilfe',
+        'target_agent_id' => 'Eskalationsziel',
         'resolution_note' => 'Abschlussnotiz',
         'file' => 'Datei',
         'alert_cadence' => 'Häufigkeit',
