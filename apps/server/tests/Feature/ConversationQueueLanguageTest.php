@@ -105,6 +105,24 @@ function conversationQueueLanguageTicketStates(array $world, Conversation $conve
  *
  * @return array{account: Account, site: Site, agents: array<string, User>}
  */
+/**
+ * The conversation the fixture gave a cobrowse session to.
+ *
+ * NOT `Conversation::query()->firstOrFail()`. Without an ORDER BY, "first" is
+ * whatever the planner feels like returning: SQLite hands back the earliest
+ * inserted row, PostgreSQL makes no such promise, and the fixture attaches its
+ * only cobrowse session to exactly one of three conversations. Five tests in
+ * this file were one planner decision away from ModelNotFoundException, and on
+ * PostgreSQL one of them took it.
+ *
+ * Reading the session FIRST removes the coin flip: there is only one, so its
+ * conversation is the one that can answer questions about cobrowse.
+ */
+function conversationQueueLanguageCobrowseSession(): CobrowseSession
+{
+    return CobrowseSession::query()->firstOrFail();
+}
+
 function conversationQueueLanguageWorld(int $conversations = 3): array
 {
     // Support codes are unique account-wide, so a test that builds two worlds
@@ -2038,8 +2056,8 @@ test('a cobrowse timestamp never travels without its language', function (): voi
     // and drives every branch through a real session rather than a shape I
     // invented, so a branch I have not thought of is still covered.
     $world = conversationQueueLanguageWorld();
-    $conversation = Conversation::query()->firstOrFail();
-    $session = CobrowseSession::query()->where('conversation_id', $conversation->id)->firstOrFail();
+    $session = conversationQueueLanguageCobrowseSession();
+    $conversation = $session->conversation;
 
     $branches = [
         'pending' => ['requested_at' => now()->subSeconds(15)->toJSON(), 'fulfilled_at' => null],
