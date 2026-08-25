@@ -731,7 +731,7 @@ test('the form labels and the untitled fallback are translated', function (): vo
     $germanLabels = $labelsOf($world['agents']['de']);
 
     expect($englishLabels)->toBe(['Search', 'Site', 'Presence'])
-        ->and($germanLabels)->toBe(['Suche', 'Website', 'Status']);
+        ->and($germanLabels)->toBe(['Suche', 'Website', 'Präsenzstatus']);
 
     $english = conversationQueueLanguageVisibleText(
         $this->actingAs($world['agents']['en'])->get(route('dashboard.conversations.index'))->getContent()
@@ -768,11 +768,11 @@ test('the attention lane heading is a sentence, not a clause in a number slot', 
 
     // The shape that was broken: a whole clause dropped into the slot the other
     // lanes fill with a number.
-    expect($german)->not->toContain('benötigt Aufmerksamkeit von')
-        ->and($german)->not->toContain('benötigen Aufmerksamkeit von')
+    expect($german)->not->toContain('erfordert Aufmerksamkeit von')
+        ->and($german)->not->toContain('erfordern Aufmerksamkeit von')
         ->and($english)->not->toContain('needs attention shown of');
 
-    expect($german)->toContain('1 von 3 passenden Unterhaltungen benötigt Aufmerksamkeit')
+    expect($german)->toContain('1 von 3 passenden Unterhaltungen erfordert Aufmerksamkeit')
         ->and($english)->toContain('1 of 3 matching conversations needs attention')
         // Dative, not nominative: German inflects the adjective for case too,
         // and every sentence using this count reads "von :matching".

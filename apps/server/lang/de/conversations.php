@@ -6,8 +6,8 @@
  *
  * Worth noting for the next translator: several plural forms here are
  * deliberately identical on both sides of the `|`. German does not change the
- * verb for number the way English does -- "1 benötigt Aufmerksamkeit" and
- * "3 benötigen Aufmerksamkeit" differ, but "1 geschlossen" and "3 geschlossen"
+ * verb for number the way English does -- "1 erfordert Aufmerksamkeit" and
+ * "3 erfordern Aufmerksamkeit" differ, but "1 geschlossen" and "3 geschlossen"
  * do not. Identical halves are the correct translation, not a copy-paste slip.
  */
 return [
@@ -28,20 +28,20 @@ return [
         'any' => 'Alle Websites',
     ],
 
-    'filters_label_presence' => 'Status',
+    'filters_label_presence' => 'Präsenzstatus',
     'filters' => [
         'all' => 'Alle offenen',
         'new_activity' => 'Neue Aktivität',
         'needs_reply' => 'Antwort nötig',
         'assigned_to_me' => 'Mir zugewiesen',
         'unassigned' => 'Nicht zugewiesen',
-        'cobrowse_attention' => 'Cobrowse-Aufmerksamkeit',
+        'cobrowse_attention' => 'Cobrowse-Handlungsbedarf',
         'closed' => 'Geschlossen',
     ],
 
     'lanes' => [
         'region_label' => 'Unterhaltungs-Spuren',
-        'new_activity' => 'Benötigt Aufmerksamkeit',
+        'new_activity' => 'Handlungsbedarf',
         'needs_reply' => 'Antwort nötig',
         'assigned_to_me' => 'Mir zugewiesen',
         'unassigned' => 'Nicht zugewiesen',
@@ -53,7 +53,7 @@ return [
         'region_label' => 'Aktive Unterhaltungsfilter',
         'site' => 'Website: :name',
         'search' => 'Suche: :term',
-        'presence' => 'Status: :label',
+        'presence' => 'Präsenzstatus: :label',
     ],
 
     'actions' => [
@@ -67,8 +67,8 @@ return [
 
     'counts' => [
         'conversations' => '{1} 1 Unterhaltung|[2,*] :count Unterhaltungen',
-        'needs_attention' => '{1} 1 benötigt Aufmerksamkeit|[2,*] :count benötigen Aufmerksamkeit',
-        'cobrowse_attention' => '{1} 1 Cobrowse-Sitzung benötigt Aufmerksamkeit|[2,*] :count Cobrowse-Sitzungen benötigen Aufmerksamkeit',
+        'needs_attention' => '{1} 1 erfordert Aufmerksamkeit|[2,*] :count erfordern Aufmerksamkeit',
+        'cobrowse_attention' => '{1} 1 Cobrowse-Sitzung erfordert Aufmerksamkeit|[2,*] :count Cobrowse-Sitzungen erfordern Aufmerksamkeit',
         'closed' => '{1} 1 geschlossen|[2,*] :count geschlossen',
         'open_matching' => '{1} 1 offener Treffer|[2,*] :count offene Treffer',
         'matches' => '{1} 1 Unterhaltung entspricht|[2,*] :count Unterhaltungen entsprechen',
@@ -86,7 +86,7 @@ return [
         // (entspricht/entsprechen) for number, so a sentence built around a
         // correctly pluralised count was still wrong on either side of it.
         'lane_narrowed_heading' => ':shown von :matching angezeigt',
-        'lane_narrowed_attention_heading' => '{1} :shown von :matching benötigt Aufmerksamkeit|[2,*] :shown von :matching benötigen Aufmerksamkeit',
+        'lane_narrowed_attention_heading' => '{1} :shown von :matching erfordert Aufmerksamkeit|[2,*] :shown von :matching erfordern Aufmerksamkeit',
         'lane_narrowed_detail' => '{1} Es wird :shown nach dem Support-Spur-Filter „:lane“ angezeigt. :matching den übrigen Filtern.|[2,*] Es werden :shown nach dem Support-Spur-Filter „:lane“ angezeigt. :matching den übrigen Filtern.',
         'filtered_detail' => '{1} Es wird :shown angezeigt, die den aktuellen Filtern entspricht.|[2,*] Es werden :shown angezeigt, die den aktuellen Filtern entsprechen.',
         'open_heading' => ':open offen · :attention · :cobrowse',
@@ -94,19 +94,19 @@ return [
 
     'empty' => [
         'no_match_filters' => 'Keine Unterhaltungen entsprechen diesen Filtern.',
-        'no_new_activity' => 'Keine Unterhaltungen benötigen Aufmerksamkeit.',
-        'no_cobrowse_attention' => 'Keine aktiven Cobrowse-Sitzungen benötigen Aufmerksamkeit.',
+        'no_new_activity' => 'Keine Unterhaltungen erfordern Aufmerksamkeit.',
+        'no_cobrowse_attention' => 'Keine aktiven Cobrowse-Sitzungen erfordern Aufmerksamkeit.',
         'no_closed' => 'Noch keine geschlossenen Unterhaltungen.',
         'no_active' => 'Noch keine aktiven Unterhaltungen.',
         'no_search_match' => 'Keine Unterhaltungen entsprechen „:term“.',
         'search_covers' => 'Die Suche umfasst Betreff, Support-Code, Besucher-ID, Besuchername und E-Mail-Adresse des Besuchers.',
-        'refine_detail' => 'Probieren Sie einen anderen Website- oder Statusfilter, oder setzen Sie die Filter zurück, um zur breiteren Warteschlange zurückzukehren.',
+        'refine_detail' => 'Probieren Sie einen anderen Website- oder Präsenzstatusfilter, oder setzen Sie die Filter zurück, um zur breiteren Warteschlange zurückzukehren.',
         'closed_detail' => 'Geschlossene Unterhaltungen erscheinen hier, sobald Agenten Support-Threads schließen.',
         'default_detail' => 'Neue Besucher-Unterhaltungen erscheinen hier, sobald der Support beginnt.',
         'first_run_detail' => 'Neue Besucher-Unterhaltungen erscheinen hier, sobald der Support beginnt. Unterhaltungen entstehen, wenn ein Besucher das Widget auf einer verbundenen Website öffnet.',
         'lane_detail' => 'Probieren Sie eine andere Support-Spur oder setzen Sie den Spurfilter zurück. :matching den übrigen Filtern.',
         'lane_assigned_to_me' => 'Ihnen sind in dieser Warteschlange keine Unterhaltungen zugewiesen.',
-        'lane_cobrowse_attention' => 'Keine aktiven Cobrowse-Sitzungen benötigen Aufmerksamkeit.',
+        'lane_cobrowse_attention' => 'Keine aktiven Cobrowse-Sitzungen erfordern Aufmerksamkeit.',
         'lane_needs_reply' => 'Derzeit benötigt keine Unterhaltung eine Antwort.',
         'lane_new_activity' => 'Derzeit benötigt keine Unterhaltung Aufmerksamkeit.',
         'lane_unassigned' => 'Keine nicht zugewiesenen Unterhaltungen in dieser Warteschlange.',
@@ -116,7 +116,7 @@ return [
         'subject' => 'Betreff',
         'site' => 'Website',
         'visitor' => 'Besucher',
-        'attention' => 'Aufmerksamkeit',
+        'attention' => 'Handlungsbedarf',
         'read' => 'Gelesen',
         'cobrowse' => 'Cobrowse',
         'assigned' => 'Zugewiesen',
@@ -143,7 +143,7 @@ return [
         ],
 
         'tones' => [
-            'attention' => 'Aufmerksamkeit',
+            'attention' => 'Handlungsbedarf',
             'ready' => 'Bereit',
             'manual' => 'Manuell',
         ],
@@ -214,7 +214,7 @@ return [
             'email' => 'E-Mail-Adresse',
             'site' => 'Website',
             'status' => 'Status',
-            'presence' => 'Status',
+            'presence' => 'Präsenzstatus',
             'opened' => 'Geöffnet',
             'last_seen' => 'Zuletzt gesehen',
             'latest_activity' => 'Letzte Aktivität',

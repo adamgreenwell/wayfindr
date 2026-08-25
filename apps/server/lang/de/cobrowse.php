@@ -6,11 +6,11 @@ return [
     'transport' => [
         'exhausted' => [
             'label' => 'Wiederholungslimit erreicht',
-            'message' => 'Wiederholungslimit für neue Schnappschüsse erreicht.',
-            'guidance' => 'Fordern Sie einen weiteren Schnappschuss an, sobald sich die Besucherübertragung beruhigt hat.',
-            'recovery_action' => 'Fordern Sie einen weiteren Schnappschuss an, sobald sich die Besucherübertragung beruhigt hat.',
+            'message' => 'Wiederholungslimit für neue Snapshots erreicht.',
+            'guidance' => 'Fordern Sie einen weiteren Snapshot an, sobald sich die Besucherübertragung beruhigt hat.',
+            'recovery_action' => 'Fordern Sie einen weiteren Snapshot an, sobald sich die Besucherübertragung beruhigt hat.',
         ],
-        'recovery_locked' => 'Es wurde bereits ein neuer Schnappschuss angefordert. Warten Sie auf das Besucher-Widget, bevor Sie es erneut versuchen.',
+        'recovery_locked' => 'Es wurde bereits ein neuer Snapshot angefordert. Warten Sie auf das Besucher-Widget, bevor Sie es erneut versuchen.',
         'inactive' => [
             'label' => 'Nicht verfügbar',
             'message' => 'Die Cobrowse-Übertragung ist nicht aktiv.',
@@ -27,19 +27,19 @@ return [
             'label' => 'Veraltet',
             'message' => 'In den letzten 2 Minuten ist kein Cobrowse-Bericht eingegangen.',
             'guidance' => 'Bitten Sie den Besucher zu bestätigen, was er sieht, bevor Sie sich auf die Vorschau verlassen.',
-            'recovery_action' => 'Fordern Sie einen neuen Schnappschuss an, wenn die Vorschau veraltet wirkt, und klären Sie Details im Chat.',
+            'recovery_action' => 'Fordern Sie einen neuen Snapshot an, wenn die Vorschau veraltet wirkt, und klären Sie Details im Chat.',
         ],
         'reconnecting' => [
             'label' => 'Verbindet neu',
             'message' => 'Die Besucherübertragung hat sich kürzlich neu verbunden; Vorschaudaten können kurz nachhinken.',
             'guidance' => 'Klären Sie im Chat alles, was von schnell wechselndem Seitenzustand abhängt.',
-            'recovery_action' => 'Geben Sie dem Besucher-Widget einen Moment und fordern Sie dann einen neuen Schnappschuss an, wenn die Vorschau weiterhin nachhinkt.',
+            'recovery_action' => 'Geben Sie dem Besucher-Widget einen Moment und fordern Sie dann einen neuen Snapshot an, wenn die Vorschau weiterhin nachhinkt.',
         ],
         'degraded' => [
             'label' => 'Eingeschränkt',
             'message' => 'Cobrowse-Berichte gehen ein, aber die Besucherseite ändert sich schneller, als Wayfindr sie vollständig wiedergeben kann.',
             'guidance' => 'Nutzen Sie die Vorschau zur Orientierung und klären Sie schnell wechselnde Details im Chat.',
-            'recovery_action' => 'Fordern Sie einen neuen Schnappschuss an, sobald sich das Besucher-Widget beruhigt hat, und nutzen Sie den Chat für schnell wechselnde Details.',
+            'recovery_action' => 'Fordern Sie einen neuen Snapshot an, sobald sich das Besucher-Widget beruhigt hat, und nutzen Sie den Chat für schnell wechselnde Details.',
         ],
         'live' => [
             'label' => 'Live',
@@ -80,56 +80,56 @@ return [
 
     'resync' => [
         'fulfilled' => [
-            'label' => 'Neuer Schnappschuss empfangen',
-            'message' => 'Das Besucher-Widget hat einen sauberen, maskierten Schnappschuss gesendet.',
+            'label' => 'Neuer Snapshot empfangen',
+            'message' => 'Das Besucher-Widget hat einen sauberen, maskierten Snapshot gesendet.',
         ],
         'exhausted' => [
-            'label' => 'Wiederholungslimit für Schnappschuss erreicht',
-            'message' => 'Das Besucher-Widget hat versucht, einen sauberen Schnappschuss zu senden, konnte dies aber nicht abschließen. Fordern Sie einen weiteren sauberen Schnappschuss an oder klären Sie den Seitenzustand im Chat.',
+            'label' => 'Wiederholungslimit für Snapshot erreicht',
+            'message' => 'Das Besucher-Widget hat versucht, einen sauberen Snapshot zu senden, konnte dies aber nicht abschließen. Fordern Sie einen weiteren sauberen Snapshot an oder klären Sie den Seitenzustand im Chat.',
         ],
         'expired' => [
-            'label' => 'Schnappschuss-Anfrage abgelaufen',
-            'message' => 'Das Besucher-Widget hat nicht rechtzeitig geantwortet. Fordern Sie einen weiteren sauberen Schnappschuss an oder fahren Sie im Chat fort.',
+            'label' => 'Snapshot-Anfrage abgelaufen',
+            'message' => 'Das Besucher-Widget hat nicht rechtzeitig geantwortet. Fordern Sie einen weiteren sauberen Snapshot an oder fahren Sie im Chat fort.',
         ],
         'delayed' => [
-            'label' => 'Schnappschuss verzögert',
-            'message' => 'Das Besucher-Widget hat noch nicht geantwortet. Fordern Sie einen weiteren sauberen Schnappschuss an oder klären Sie den Seitenzustand im Chat.',
+            'label' => 'Snapshot verzögert',
+            'message' => 'Das Besucher-Widget hat noch nicht geantwortet. Fordern Sie einen weiteren sauberen Snapshot an oder klären Sie den Seitenzustand im Chat.',
         ],
         'pending' => [
-            'label' => 'Neuer Schnappschuss angefordert',
-            'message' => 'Warten darauf, dass das Besucher-Widget einen sauberen Seiten-Schnappschuss sendet.',
+            'label' => 'Neuer Snapshot angefordert',
+            'message' => 'Warten darauf, dass das Besucher-Widget einen sauberen Seiten-Snapshot sendet.',
         ],
     ],
 
     'snapshot_recovery' => [
         'pending' => [
-            'label' => 'Schnappschuss-Aktualisierung bereits angefordert',
-            'message' => 'Beim Besucher-Widget wartet bereits eine Anfrage für einen neuen Schnappschuss. Nutzen Sie den Chat, während es aufholt.',
+            'label' => 'Snapshot-Aktualisierung bereits angefordert',
+            'message' => 'Beim Besucher-Widget wartet bereits eine Anfrage für einen neuen Snapshot. Nutzen Sie den Chat, während es aufholt.',
         ],
         'unknown' => [
-            'label' => 'Schnappschuss-Zeit muss bestätigt werden',
-            'message' => 'Fragen Sie den Besucher, was er sieht, oder fordern Sie einen neuen Schnappschuss an, bevor Sie sich auf diese Vorschau verlassen.',
+            'label' => 'Snapshot-Zeit muss bestätigt werden',
+            'message' => 'Fragen Sie den Besucher, was er sieht, oder fordern Sie einen neuen Snapshot an, bevor Sie sich auf diese Vorschau verlassen.',
         ],
         'needs_refresh' => [
-            'label' => 'Schnappschuss braucht möglicherweise eine Aktualisierung',
-            'message' => 'Fordern Sie einen neuen Schnappschuss an, bevor Sie sich auf diese Vorschau verlassen, oder bestätigen Sie die Seite im Chat.',
+            'label' => 'Snapshot braucht möglicherweise eine Aktualisierung',
+            'message' => 'Fordern Sie einen neuen Snapshot an, bevor Sie sich auf diese Vorschau verlassen, oder bestätigen Sie die Seite im Chat.',
         ],
     ],
 
     'timeline' => [
         'requested' => [
-            'label' => 'Schnappschuss angefordert',
-            'detail' => ':actor hat das Besucher-Widget um einen sauberen, maskierten Schnappschuss gebeten.',
+            'label' => 'Snapshot angefordert',
+            'detail' => ':actor hat das Besucher-Widget um einen sauberen, maskierten Snapshot gebeten.',
             'badge' => 'Angefordert',
         ],
         'responded' => [
             'label' => 'Besucher-Widget hat geantwortet',
-            'detail' => 'Eine neue Cobrowse-Schnappschussantwort ist von der Besucherseite eingegangen.',
+            'detail' => 'Eine neue Cobrowse-Snapshot-Antwort ist von der Besucherseite eingegangen.',
             'badge' => 'Wiederhergestellt',
         ],
         'refreshed' => [
-            'label' => 'Maskierter Schnappschuss aktualisiert',
-            'detail' => 'Der saubere Seiten-Schnappschuss steht in der Agentenvorschau bereit.',
+            'label' => 'Maskierter Snapshot aktualisiert',
+            'detail' => 'Der saubere Seiten-Snapshot steht in der Agentenvorschau bereit.',
             'badge' => 'Vorschau aktualisiert',
         ],
         'exhausted' => [
@@ -144,7 +144,7 @@ return [
         ],
         'retry_available' => [
             'label' => 'Erneuter Versuch möglich',
-            'detail' => 'Der Support kann einen weiteren sauberen Schnappschuss anfordern, ohne auf die erste Anfrage zu warten.',
+            'detail' => 'Der Support kann einen weiteren sauberen Snapshot anfordern, ohne auf die erste Anfrage zu warten.',
             'badge' => 'Wiederholen',
         ],
         'expires' => [
@@ -159,11 +159,11 @@ return [
             'badge' => 'Ausstehend',
         ],
         'ignored' => [
-            'label' => 'Schnappschussantwort ignoriert',
+            'label' => 'Snapshot-Antwort ignoriert',
             'badge' => 'Ignoriert',
             'expired' => 'Eine Antwort des Widgets ist nach dem Ende des Wiederherstellungsfensters eingegangen.',
             'mismatched' => 'Eine Antwort des Widgets ist für eine andere Wiederherstellungsanfrage eingegangen.',
-            'already_fulfilled' => 'Eine doppelte Antwort des Widgets ist eingegangen, nachdem Wayfindr bereits einen neuen Schnappschuss angenommen hatte.',
+            'already_fulfilled' => 'Eine doppelte Antwort des Widgets ist eingegangen, nachdem Wayfindr bereits einen neuen Snapshot angenommen hatte.',
             'unmatched' => 'Eine Antwort des Widgets konnte der aktiven Wiederherstellungsanfrage nicht zugeordnet werden.',
         ],
     ],
@@ -175,15 +175,15 @@ return [
         ],
         'stale' => [
             'label' => 'Veraltet',
-            'message' => 'Der Schnappschuss ist älter als 5 Minuten. Klären Sie es im Chat oder fordern Sie einen neuen Schnappschuss an.',
+            'message' => 'Der Snapshot ist älter als 5 Minuten. Klären Sie es im Chat oder fordern Sie einen neuen Snapshot an.',
         ],
         'aging' => [
             'label' => 'Altert',
-            'message' => 'Der Schnappschuss ist einige Minuten alt. Fordern Sie einen neuen an, wenn sich diese Seite ändert.',
+            'message' => 'Der Snapshot ist einige Minuten alt. Fordern Sie einen neuen an, wenn sich diese Seite ändert.',
         ],
         'fresh' => [
             'label' => 'Aktuell',
-            'message' => 'Der Schnappschuss wurde kürzlich gemeldet.',
+            'message' => 'Der Snapshot wurde kürzlich gemeldet.',
         ],
         'reported' => 'Gemeldet :elapsed',
         'reported_unknown' => 'Meldezeit nicht verfügbar',
@@ -224,7 +224,7 @@ return [
         ],
         'drifting' => [
             'label' => 'Abweichend',
-            'message' => 'Viele Wiedergabe-Aktualisierungen passen nicht mehr zu dieser Vorschau. Fordern Sie einen neuen Schnappschuss an, um neu zu synchronisieren.',
+            'message' => 'Viele Wiedergabe-Aktualisierungen passen nicht mehr zu dieser Vorschau. Fordern Sie einen neuen Snapshot an, um neu zu synchronisieren.',
         ],
         'summary' => ':unresolved von :addressable abgewichen',
     ],
@@ -238,10 +238,10 @@ return [
     ],
 
     'labels' => [
-        'retry_ready_help' => 'Es wird weiterhin gewartet. Sie können jetzt einen weiteren Schnappschuss anfordern.',
-        'retry_ready_recovery' => 'Fordern Sie einen weiteren Schnappschuss an, wenn die Vorschau weiterhin veraltet wirkt.',
-        'request_snapshot' => 'Neuen Schnappschuss anfordern',
-        'request_another_snapshot' => 'Weiteren Schnappschuss anfordern',
+        'retry_ready_help' => 'Es wird weiterhin gewartet. Sie können jetzt einen weiteren Snapshot anfordern.',
+        'retry_ready_recovery' => 'Fordern Sie einen weiteren Snapshot an, wenn die Vorschau weiterhin veraltet wirkt.',
+        'request_snapshot' => 'Neuen Snapshot anfordern',
+        'request_another_snapshot' => 'Weiteren Snapshot anfordern',
         'requested_by' => 'Angefordert von :actor',
         'received' => 'Empfangen :elapsed',
         'expires' => 'Läuft ab :elapsed',
@@ -255,8 +255,8 @@ return [
         'failed' => 'Live-Cobrowse-Aktualisierungen konnten keine Verbindung herstellen.',
         'unauthorized' => 'Die Broadcast-Autorisierung ist fehlgeschlagen.',
         'telemetry_updated' => 'Verbindungstelemetrie live aktualisiert.',
-        'snapshot_received' => 'Neuer Schnappschuss empfangen. Die Vorschau wird aktualisiert …',
-        'snapshot_received_idle' => 'Neuer Schnappschuss live empfangen. Aktualisieren Sie die Vorschau, wenn Sie bereit sind.',
+        'snapshot_received' => 'Neuer Snapshot empfangen. Die Vorschau wird aktualisiert …',
+        'snapshot_received_idle' => 'Neuer Snapshot live empfangen. Aktualisieren Sie die Vorschau, wenn Sie bereit sind.',
         'changes_received' => 'Neue Cobrowse-Änderungen empfangen. Die Vorschau wird aktualisiert …',
         'update_available' => 'Neue Cobrowse-Aktualisierung verfügbar. Aktualisieren Sie die Vorschau, wenn Sie bereit sind.',
         'preview_updated' => 'Die Vorschau wurde mit den neuesten Cobrowse-Änderungen aktualisiert.',
@@ -264,7 +264,7 @@ return [
         'preview_refresh_failed' => 'Die Vorschau konnte nicht automatisch aktualisiert werden. Nutzen Sie „Vorschau aktualisieren“, um es erneut zu versuchen.',
         'preview_failed' => 'Aktualisierung der Vorschau fehlgeschlagen: :reason',
         'transcript_failed' => 'Aktualisierung des Verlaufs fehlgeschlagen: :reason',
-        'retry_limit' => 'Wiederholungslimit für neue Schnappschüsse erreicht. Fordern Sie einen weiteren an, wenn Sie bereit sind.',
+        'retry_limit' => 'Wiederholungslimit für neue Snapshots erreicht. Fordern Sie einen weiteren an, wenn Sie bereit sind.',
     ],
 
     'visibility' => [

@@ -64,7 +64,7 @@ return [
         ],
         'external' => [
             'all' => 'Beliebiges externes Issue',
-            'failed' => 'Benötigt Aufmerksamkeit',
+            'failed' => 'Handlungsbedarf',
             'pending' => 'Synchronisierung ausstehend',
             'linked' => 'Verknüpft',
             'none' => 'Kein externes Issue',
@@ -207,7 +207,7 @@ return [
         'none_label' => 'Noch kein externer Versuch',
         'none_body' => 'Erstellen oder verknüpfen Sie ein externes Issue, wenn dieses Ticket Arbeit in einem anderen Tracker braucht.',
         'failed_label' => ':provider-Synchronisierung fehlgeschlagen',
-        'failed_body' => ':project benötigt Aufmerksamkeit. Anbieterdetails werden nicht angezeigt.',
+        'failed_body' => ':project erfordert Aufmerksamkeit. Anbieterdetails werden nicht angezeigt.',
         'pending_label' => ':provider-Synchronisierung ausstehend',
         'pending_body' => ':project wartet auf die Bestätigung des Anbieters.',
         'linked_label' => ':provider-Verknüpfung aktiv',
