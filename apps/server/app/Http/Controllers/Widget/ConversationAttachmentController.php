@@ -58,7 +58,7 @@ class ConversationAttachmentController extends Controller
         // Safe to move: `DashboardLanguage` reads the install default from its
         // own config key precisely because `App::setLocale()` moves
         // `app.locale`.
-        App::setLocale(WidgetLanguage::toSpeak($conversation->site));
+        App::setLocale(WidgetLanguage::forVisitor($request->input('locale'), $conversation->site));
 
         $maxKilobytes = (int) ceil(((int) config('wayfindr.attachments.max_file_bytes')) / 1024);
 

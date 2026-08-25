@@ -49,6 +49,25 @@ final class WidgetLanguage
     }
 
     /**
+     * The language THIS visitor is reading the widget in.
+     *
+     * The widget resolves host page → browser → site default → English, and
+     * only the first two are knowable on the client. So it tells us, and we
+     * take it if it names a catalogue we ship; anything else falls back to what
+     * the server can work out alone.
+     *
+     * Sanitised rather than validated: a locale we do not ship is not an error
+     * the visitor should see, it is a question we answer ourselves. Validating
+     * it would also mean producing a validation message before we knew which
+     * language to write it in.
+     */
+    public static function forVisitor(mixed $requested, ?Site $site): string
+    {
+        return self::sanitize(is_string($requested) ? $requested : null)
+            ?? self::toSpeak($site);
+    }
+
+    /**
      * The language a server-written answer to this site's visitors must speak.
      *
      * `for()` answers null when the site pins nothing, and null does not mean

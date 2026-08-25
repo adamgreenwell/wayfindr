@@ -2332,6 +2332,58 @@ test('the shared attachment services never resolve copy themselves', function ()
     }
 });
 
+test('the widget can say which language it actually resolved', function (): void {
+    // The site default is the only one of the widget's four inputs the server
+    // can see. The widget resolves host page -> browser -> site default ->
+    // English, so a German-default site showing an English host-page override,
+    // or a German browser on an unpinned site, had the panel in one language
+    // and its upload errors in the other.
+    //
+    // So the widget tells us what it resolved, and we take it when it names a
+    // catalogue we ship.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+    $site = $conversation->site;
+    $visitor = $conversation->visitor;
+
+    config(['app.locale' => 'de']);
+    app()->setLocale('de');
+
+    $upload = function (?string $pinned, ?string $requested) use ($site, $visitor, $conversation) {
+        $settings = $site->settings ?? [];
+        $settings['locale'] = $pinned;
+        $site->forceFill(['settings' => $settings])->save();
+
+        return $this->postJson(
+            route('conversations.attachments.store', $conversation->support_code),
+            array_filter([
+                'site_public_key' => $site->public_key,
+                'anonymous_id' => $visitor->anonymous_id,
+                'visitor_token' => app(VisitorSessionToken::class)->issue($site, $visitor),
+                'locale' => $requested,
+                'file' => UploadedFile::fake()->create('payload.exe', 8),
+            ], fn ($value): bool => $value !== null),
+        );
+    };
+
+    // A host page that overrides a German site to English.
+    expect((string) $upload('de', 'en')->json('errors.file.0'))
+        ->toBe(__('composer.rejected.type', [], 'en'),
+            'the widget said English and was answered in the site default');
+
+    // A German browser on a site that pins nothing.
+    expect((string) $upload(null, 'de')->json('errors.file.0'))
+        ->toBe(__('composer.rejected.type', [], 'de'),
+            'the widget said German and was answered in English');
+
+    // Something we do not ship falls back rather than failing. A locale is a
+    // question we answer, not an error the visitor should be shown -- and
+    // validating it would mean writing a message before knowing its language.
+    expect((string) $upload('de', 'kl')->json('errors.file.0'))
+        ->toBe(__('composer.rejected.type', [], 'de'),
+            'an unsupported locale was not ignored in favour of the site default');
+});
+
 test('a subject of "0" is a subject, not a missing one', function (): void {
     // PHP reads the perfectly good subject "0" as false, so every truthiness
     // test on it told the agent the visitor had written none -- in the queue,

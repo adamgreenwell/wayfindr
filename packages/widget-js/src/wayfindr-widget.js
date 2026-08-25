@@ -512,6 +512,10 @@
     var fetcher = options.fetch || (root && root.fetch ? root.fetch.bind(root) : null);
     var storage = resolveStorageOption(options);
     var visitorToken = options.visitorToken || null;
+    // A function, not a value: the panel re-resolves its language when
+    // bootstrap returns the site default, so a locale captured at construction
+    // would be the one we had before we knew anything.
+    var currentLocale = typeof options.locale === 'function' ? options.locale : null;
     var realtime = resolveRealtime(options, fetcher);
     var maskSelectors = [];
     var sensitiveTerms = [];
@@ -603,6 +607,9 @@
           body: body || null,
           client_message_id: clientMessageId || null,
           attachment_ids: (attachmentIds && attachmentIds.length) ? attachmentIds : null,
+          // What WE resolved, which the server cannot: it sees the site
+          // default, never the host page's choice or the visitor's browser.
+          locale: currentLocale ? currentLocale() : null,
         }));
       },
       uploadAttachment: function (supportCode, file) {
@@ -617,6 +624,10 @@
         form.append('anonymous_id', anonymousId);
         form.append('visitor_token', requireVisitorToken(visitorToken));
         form.append('file', file);
+
+        if (currentLocale && currentLocale()) {
+          form.append('locale', currentLocale());
+        }
 
         return postForm(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/attachments', form);
       },
@@ -864,6 +875,11 @@
     var client = createClient({
       apiBaseUrl: options.apiBaseUrl,
       sitePublicKey: options.sitePublicKey,
+      // `t` is reassigned by applyLocale, so this reads the language in force
+      // now rather than the one we started with.
+      locale: function () {
+        return t.locale;
+      },
       anonymousId: options.anonymousId,
       visitorExternalId: options.visitorExternalId,
       fetch: options.fetch,

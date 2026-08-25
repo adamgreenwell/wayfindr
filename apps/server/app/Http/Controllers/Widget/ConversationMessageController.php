@@ -107,7 +107,7 @@ class ConversationMessageController extends Controller
             $identity['anonymous_id'],
         );
 
-        App::setLocale(WidgetLanguage::toSpeak($conversation->site));
+        App::setLocale(WidgetLanguage::forVisitor($request->input('locale'), $conversation->site));
 
         $validated = $request->validate([
             'body' => ['nullable', 'string', 'max:4000'],
