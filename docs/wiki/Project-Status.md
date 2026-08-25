@@ -27,10 +27,13 @@ parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamg
   own timezone, with a pre-chat form for sites that need to know who is asking.
 - **Reporting**: conversation and ticket volume, first-response and resolution
   times, reopen rates, per-agent workload, and visitor satisfaction ratings.
-  **Resolution times and reopen rates** are read from a lifecycle log that
-  starts when an install upgrades, and the page states that date; volume,
-  first-response times and agent replies come from data the product always
-  kept, so they reach back as far as the install does.
+  Resolution and reopen figures are read from lifecycle logs, and the two
+  halves have different memories: **conversation** closes began being recorded
+  in this release, while **ticket** closes have been audited since well before
+  it — so an upgraded desk can describe a quarter of ticket work while its
+  conversation figures are still accumulating. The page states each boundary
+  separately. Volume, first-response times and agent replies come from data the
+  product always kept and reach back as far as the install does.
 - **Per-site widget appearance**, and a widget that speaks the visitor's
   language (German ships complete).
 - **A dashboard an agent can read in their own language** on the queues, the

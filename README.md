@@ -145,8 +145,10 @@ gaps, first-class localization, and hardening. Everything below already ships.
 - per-site support hours in the site's own timezone, an away state, offline
   capture, and a configurable pre-chat form;
 - reporting over conversations and tickets — volume, first-response and
-  resolution times, reopen rates, agent workload — each stating the date the
-  install began recording it, plus visitor satisfaction ratings;
+  resolution times, reopen rates, agent workload, and visitor satisfaction
+  ratings. Resolution and reopen figures are read from lifecycle logs and the
+  page states the date each half began; volume, first responses and agent
+  replies come from data the product always kept;
 - per-site widget appearance, and a widget language catalogue with German
   complete;
 - an agent-selectable dashboard language, on the surfaces translated so far;
@@ -164,7 +166,7 @@ gaps, first-class localization, and hardening. Everything below already ships.
 - provider-neutral external issue links plus GitHub/GitLab/Jira issue creation,
   state reflection, and comment relay foundations.
 
-The self-hosting story is proved with repeatable evidence: clean installs, supported upgrades, advisory behavior,
+The self-hosting story is proved for the artifacts tested — most recently `v0.3.2`, not yet `v0.7.0` — with repeatable evidence: clean installs, supported upgrades, advisory behavior,
 backup/restore, rollback, reboot recovery, and deployment-fork readiness. See
 [disposable-vm-evidence.md](docs/self-hosting/disposable-vm-evidence.md) for the
 evidence contract. Product expansion is intentionally demand-gated around ticket
