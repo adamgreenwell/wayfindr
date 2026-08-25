@@ -91,8 +91,9 @@ return [
 
             // --- the domain -------------------------------------------------
 
-            'visitor_plural' => ['term' => 'Besuchende', 'note' => 'The default. Neutral participial form: screen-reader clean, grammatically standard, no punctuation forced into a label. Use for counts, tables and lists.'],
-            'visitor_singular' => ['term' => 'Besucher', 'note' => 'The fallback, for dense singular microcopy where "Besuchende(r)" is clunky -- a filter option, a badge, a row label. Not a licence to prefer it; see policy section 8 for which wins where.'],
+            'visitor_plural' => ['term' => 'Besuchende', 'note' => 'Plural only, and the plural is the whole of it: five strings. An adjectival noun, neutral and screen-reader clean in "die Besuchenden".'],
+            'visitor_singular' => ['term' => 'Besucher', 'note' => 'Every singular, sentence and label alike. NOT a fallback for clunkiness -- German has no neutral singular of the participle ("der/die Besuchende" carries gender in the article), and nineteen bare labels are forced to this word anyway, so a different word in sentences would put two names for one referent on one screen. Policy section 8 has the count.'],
+            'visitor_compound' => ['term' => 'Besucher-', 'note' => 'Forty-seven of the ninety occurrences, where the word is a modifier rather than a noun: Besucher-ID, Besucherprofil, Besucherseite, Besucher-Widget. Not a decision -- "Besuchendenprofil" is not written.'],
             'visit_abstract' => ['term' => 'Besuch', 'note' => 'Where the sentence can name the visit rather than the person, it should. "Zugriff" serves the same purpose for access-shaped phrasing.'],
             'conversation' => ['term' => 'Unterhaltung', 'note' => '"Konversation" is a cognate and reads stilted; "Chat" belongs to the widget and would blur the two surfaces.'],
             'ticket' => ['term' => 'Ticket'],

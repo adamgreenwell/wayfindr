@@ -173,44 +173,54 @@ carrying its shortest strings have been looked at.
 
 ## 8. Gendered nouns in German
 
-**Decided: neutral rewording by default, generic masculine as the fallback in
-tight singular microcopy, and the colon form is not used.**
+**Decided: the plural takes `Besuchende`, the singular keeps `Besucher`,
+compounds keep `Besucher-`, the colon form is not used, and generic masculine
+*pronouns* are removed wherever they appear.**
 
-`Besucher` is ninety occurrences and the most frequent term in the catalogue, so
-this is the entry with the widest blast radius in the table.
+This section originally promised something German does not deliver, and the
+correction is worth keeping rather than tidying away.
 
-**The colon form is rejected on accessibility grounds first.** Screen readers
-render `Besucher:innen` inconsistently across VoiceOver, NVDA and JAWS — a
-pause, an explicit *"Besucher Doppelpunkt innen"*, or the suffix swallowed
-entirely. This codebase has spent real effort on what gets announced, and a
-form whose pronunciation depends on the reader's engine and settings undoes some
-of it. That it also remains polarising in DACH B2B is the second reason, not the
-first.
+**`Besuchende` is an adjectival noun.** The plural — `die Besuchenden` — is
+genuinely neutral and costs nothing. The singular is `der Besuchende` or `die
+Besuchende`, and **there is no neutral singular form**. In the singular the
+participle does not remove gender; it relocates it from the noun to the article.
+A policy written on the assumption that "neutral rewording by default" scales
+across a catalogue is a policy written about the plural only.
 
-**The default is the participial form**, `Besuchende` — screen-reader clean,
-grammatically standard, inclusive without forcing punctuation into a label. It
-carries counts, tables and lists: `Anzahl Besuchende`.
+Measured against the ninety occurrences, the decision surface is small:
 
-**The fallback is `Besucher`**, for dense singular microcopy where
-`Besuchende(r)` turns clumsy: a filter option, a badge, a row label. The
-participle strictly means *people currently in the act of visiting*, which is
-comfortable in the plural and stiff in the singular — and the singular is where
-most of these ninety occurrences live.
+| | count | |
+| --- | --- | --- |
+| Compounds — `Besucher-ID`, `Besucherprofil`, `Besucherseite` | 47 | The word is a modifier, not a noun. `Besuchendenprofil` is not written. Never a decision. |
+| Plural | 5 | `Besuchende`. The whole plural surface. |
+| Singular bare labels — a column header, a tab, a chip | 19 | No participle fits. Forced to `Besucher`. |
+| Singular sentences | 24 | The only real choice. |
 
-Where a sentence can name the visit instead of the person, it should:
-`Besuch`, or `Zugriff` for access-shaped phrasing. That avoids the choice
-entirely and is usually the better German.
+**The 24 keep `Besucher`, and the reason is consistency rather than
+convention.** The truly neutral singular does exist — `die besuchende Person`,
+grammatically feminine and semantically neutral, already this catalogue's style
+in `zuständige Person`. But nineteen labels are *forced* to say `Besucher`, so
+adopting it in sentences would put two names for one referent on a single
+screen: a `Besucher` column header above a sentence about `die besuchende
+Person`. That is the §3 collision failure inverted — one concept, two words —
+and it is a worse outcome than the one it fixes.
 
-**This rule is held by the reviewer, not by a guard, and the policy says so
-rather than implying otherwise.** "Where syntactically smooth" is a judgement
-made per string; no test can evaluate it, and an engine handed one term for
-*visitor* will use that term ninety times. So the glossary carries three
-entries — `visitor_plural`, `visitor_singular`, `visit_abstract` — which forces
-each string to pick one deliberately instead of inheriting a default. It is the
-same shape as the interpolated-fragment case in
-[dashboard-language.md](dashboard-language.md): where a guard cannot reach a
-class of mistake and asserting the class directly is not possible either, the
-rule is written down and the review carries it.
+**What is not forced is the pronoun, so the pronoun goes.** Two strings read
+`was er sieht` where the English deliberately says *what they see*; English chose
+singular *they* and German collapsed it to *he*. Both now read `was dort zu
+sehen ist`. This is the one place a person was actually being gendered inside a
+sentence, it was fixable without introducing a second name, and it cost nothing.
+
+**The colon form remains rejected**, on accessibility grounds first. Screen
+readers render `Besucher:innen` inconsistently across VoiceOver, NVDA and JAWS —
+a pause, an explicit *"Besucher Doppelpunkt innen"*, or the suffix swallowed
+entirely. This codebase has spent real effort on what gets announced. That the
+form also remains polarising in DACH B2B is the second reason, not the first.
+
+**Italian will hit the same wall.** `visitatore` / `visitatrice` has no neutral
+singular either, and the equivalent of the `Person` construction carries the
+same two-names-for-one-referent cost. Expect the answer to be the same shape and
+do not expect the participle trick to travel.
 
 ## 9. What "reviewed" means, and where it stops
 
