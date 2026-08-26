@@ -48,6 +48,28 @@ test('what is left still answers which page', function (): void {
         ->toBe('https://shop.test:8443/pricing');
 });
 
+test('a dangerous scheme is dropped even when it parses perfectly', function (): void {
+    // These values are rendered as clickable `href`s on the agent ticket page,
+    // and the widget endpoints are public -- so the URL is attacker-controlled
+    // and an agent is the target.
+    //
+    // The earlier test below passed for the WRONG REASON and hid this:
+    // `javascript:alert(1)` has no host, so it was rejected by the host check
+    // rather than by any scheme rule. Give it one and it walks straight
+    // through: `javascript://evil.test/%0Aalert(document.domain)` parses with a
+    // scheme, a host and a path, and looks entirely ordinary to every check
+    // that is not an allowlist.
+    expect(VisitorPageUrl::sanitise('javascript://evil.test/%0Aalert(document.domain)'))->toBeNull()
+        ->and(VisitorPageUrl::sanitise('data://text/html;base64,PHNjcmlwdD4='))->toBeNull()
+        ->and(VisitorPageUrl::sanitise('vbscript://x.test/foo'))->toBeNull()
+        ->and(VisitorPageUrl::sanitise('file://etc/passwd'))->toBeNull()
+        ->and(VisitorPageUrl::sanitise('FTP://files.test/x'))->toBeNull();
+
+    // And the two that are a page address survive, in either case.
+    expect(VisitorPageUrl::sanitise('http://shop.test/ok'))->toBe('http://shop.test/ok')
+        ->and(VisitorPageUrl::sanitise('HTTPS://shop.test/ok'))->toBe('HTTPS://shop.test/ok');
+});
+
 test('an unparseable URL is dropped rather than kept', function (): void {
     // "Leave it alone if you cannot read it" keeps precisely the inputs least
     // likely to be an ordinary page address.

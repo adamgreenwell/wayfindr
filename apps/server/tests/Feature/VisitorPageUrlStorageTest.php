@@ -7,6 +7,7 @@ use App\Models\Ticket;
 use App\Models\Visitor;
 use App\Support\VisitorContextSanitizer;
 use App\Support\Visitors\StoredPageUrlSweep;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -373,4 +374,19 @@ test('a retained page url that is already clean is left exactly as it is', funct
     );
 
     expect($merged['last_page_url'])->toBe('https://shop.test/docs/install');
+});
+
+test('the sweep is scheduled, not only run at deploy time', function (): void {
+    // The deploy's own pass cannot be the last word: activation stops NEW
+    // requests reaching the old release but does not cancel ones already
+    // executing, and those still run the unsanitised writer. A request that
+    // began before activation can write after the sweep passed its row.
+    //
+    // It also covers Docker and Compose installs, which upgrade without ever
+    // running the Forge script.
+    $events = collect(app(Schedule::class)->events())
+        ->map(fn ($event): string => (string) $event->command);
+
+    expect($events->filter(fn (string $c): bool => str_contains($c, 'wayfindr:sanitise-page-urls')))
+        ->not->toBeEmpty('the sweep is not scheduled, so a straggler write is never cleaned');
 });

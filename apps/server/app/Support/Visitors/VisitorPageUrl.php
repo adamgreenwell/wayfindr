@@ -33,6 +33,19 @@ final class VisitorPageUrl
     private const MAX_LENGTH = 2048;
 
     /**
+     * The only schemes a visitor's page address may have.
+     *
+     * An allowlist because these values are rendered as clickable `href`s on
+     * the agent ticket page. `javascript://evil.test/%0Aalert(document.domain)`
+     * parses with a host and a path and is a perfectly ordinary-looking URL to
+     * every check that is not this one -- and the widget endpoints are public,
+     * so the value is attacker-controlled.
+     *
+     * Laravel's `url` rule does not help: it accepts any scheme.
+     */
+    private const ALLOWED_SCHEMES = ['http', 'https'];
+
+    /**
      * @param  array<int, string>  $keepParameters  query parameters this site asked to keep
      */
     public static function sanitise(?string $url, array $keepParameters = []): ?string
@@ -52,6 +65,14 @@ final class VisitorPageUrl
         // Unparseable is not "leave it alone" -- an input this class cannot
         // reason about is the one most likely to carry something odd.
         if ($parts === false || ! isset($parts['host'], $parts['scheme'])) {
+            return null;
+        }
+
+        // Checked BEFORE anything is rebuilt. Requiring a host is not a scheme
+        // check: `javascript:alert(1)` has no host and was already rejected,
+        // which made the guard look present while
+        // `javascript://evil.test/%0Aalert(1)` walked past it with both.
+        if (! in_array(strtolower($parts['scheme']), self::ALLOWED_SCHEMES, true)) {
             return null;
         }
 

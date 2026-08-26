@@ -86,6 +86,13 @@ cd "$FORGE_SITE_PATH/apps/server"
 #
 # Idempotent, so on every deploy after this one it costs a table scan and
 # reports nothing rewritten.
+#
+# NOT the last word, either. Activation stops NEW requests reaching the old
+# release but does not cancel ones already executing, and those are still
+# running the unsanitised writer -- so a request that began before activation
+# can write after this sweep has passed its row. The scheduled daily run in
+# routes/console.php is what catches those, and what covers the install shapes
+# that never run this script.
 echo "Sweeping stored page addresses."
 forge_php artisan wayfindr:sanitise-page-urls
 
