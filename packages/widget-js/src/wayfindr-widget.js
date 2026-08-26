@@ -512,6 +512,10 @@
     var fetcher = options.fetch || (root && root.fetch ? root.fetch.bind(root) : null);
     var storage = resolveStorageOption(options);
     var visitorToken = options.visitorToken || null;
+    // A function, not a value: the panel re-resolves its language when
+    // bootstrap returns the site default, so a locale captured at construction
+    // would be the one we had before we knew anything.
+    var currentLocale = typeof options.locale === 'function' ? options.locale : null;
     var realtime = resolveRealtime(options, fetcher);
     var maskSelectors = [];
     var sensitiveTerms = [];
@@ -587,6 +591,14 @@
           page_url: details.pageUrl || null,
         }, details.context, externalId);
 
+        // The FIRST conversation runs the site's intake rules, and their
+        // failures are the first words a new visitor ever reads from us.
+        // Omitted rather than sent as null when there is nothing to say, so a
+        // caller driving the client directly sends the payload it always did.
+        if (currentLocale && currentLocale()) {
+          payload.locale = currentLocale();
+        }
+
         // Only fields the site actually asked for. Sending a blank key for a
         // field it does not ask for is refused by the server, and rightly.
         Object.keys(details.intake || {}).forEach(function (key) {
@@ -603,6 +615,10 @@
           body: body || null,
           client_message_id: clientMessageId || null,
           attachment_ids: (attachmentIds && attachmentIds.length) ? attachmentIds : null,
+          // What WE resolved, which the server cannot: it sees the site
+          // default, never the host page's choice or the visitor's browser.
+          // withoutNullValues drops it when there is nothing to say.
+          locale: (currentLocale && currentLocale()) || null,
         }));
       },
       uploadAttachment: function (supportCode, file) {
@@ -617,6 +633,10 @@
         form.append('anonymous_id', anonymousId);
         form.append('visitor_token', requireVisitorToken(visitorToken));
         form.append('file', file);
+
+        if (currentLocale && currentLocale()) {
+          form.append('locale', currentLocale());
+        }
 
         return postForm(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/attachments', form);
       },
@@ -864,6 +884,11 @@
     var client = createClient({
       apiBaseUrl: options.apiBaseUrl,
       sitePublicKey: options.sitePublicKey,
+      // `t` is reassigned by applyLocale, so this reads the language in force
+      // now rather than the one we started with.
+      locale: function () {
+        return t.locale;
+      },
       anonymousId: options.anonymousId,
       visitorExternalId: options.visitorExternalId,
       fetch: options.fetch,

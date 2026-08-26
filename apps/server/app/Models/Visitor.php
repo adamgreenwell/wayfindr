@@ -76,6 +76,25 @@ class Visitor extends Model
         };
     }
 
+    /**
+     * How recently the visitor was seen, as a KEY plus the moment.
+     *
+     * Keys rather than sentences -- a model has no surface-scoped locale. The
+     * English below stays for the surfaces that are not extracted.
+     *
+     * @return array{key: string, seen_at: CarbonInterface|null}
+     */
+    public function presenceCue(): array
+    {
+        if (! $this->last_seen_at) {
+            return ['key' => 'no_heartbeat', 'seen_at' => null];
+        }
+
+        return $this->presenceState() === 'active'
+            ? ['key' => 'seen_recently', 'seen_at' => null]
+            : ['key' => 'seen_at', 'seen_at' => $this->last_seen_at];
+    }
+
     public function presenceDetail(): string
     {
         if (! $this->last_seen_at) {

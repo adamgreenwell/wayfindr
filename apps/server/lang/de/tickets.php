@@ -222,6 +222,67 @@ return [
         'project_unknown' => 'Projekt nicht erfasst',
     ],
 
+    'next_action' => [
+        'needs_reply' => [
+            'title' => 'Dem Besucher antworten',
+            'body' => 'Der Besucher hat zuletzt geantwortet. Senden Sie eine klare Antwort und markieren Sie das Ticket dann als wartend oder schließen Sie es, sobald das Ergebnis feststeht.',
+            'cta' => 'Zur Antwort springen',
+        ],
+        'needs_owner' => [
+            'title' => 'Zuständige Person zuweisen',
+            'body' => 'Für dieses Ticket ist noch niemand zuständig. Weisen Sie es jemandem zu, bevor die Arbeit verloren geht.',
+            'cta' => 'Ticket zuweisen',
+        ],
+        'waiting_on_customer' => [
+            'title' => 'Auf den Kunden warten',
+            'body' => 'Der Agent hat zuletzt geantwortet. Behalten Sie das Ticket im Blick und nehmen Sie den Faden wieder auf, sobald der Besucher antwortet.',
+            'cta' => 'Statusaktionen prüfen',
+        ],
+        'resolved' => [
+            'title' => 'Lösung prüfen',
+            'body' => 'Dieses Ticket ist geschlossen. Öffnen Sie es nur wieder, wenn der Kunde zurückkommt oder sich das Ergebnis ändert.',
+            'cta' => 'Statusaktionen prüfen',
+        ],
+        'needs_agent' => [
+            'title' => 'Nächste Aktualisierung hinzufügen',
+            'body' => 'Dieses Ticket ist zugewiesen und bereit für eine Agentenaktualisierung. Fügen Sie eine Antwort, eine interne Notiz oder eine Statusänderung hinzu.',
+            'cta' => 'Aktionen prüfen',
+        ],
+    ],
+
+    'status_readiness' => [
+        'reply_before_closing' => [
+            'title' => 'Vor dem Schließen antworten',
+            'detail' => 'Der Besucher hat zuletzt geantwortet. Jetzt zu schließen könnte den Kunden warten lassen. Nutzen Sie „wartend“ oder schließen Sie erst nach einer Agentenaktualisierung oder einem bestätigten Ergebnis.',
+            'cta' => 'Zur Antwort springen',
+        ],
+        'assign_first' => [
+            'title' => 'Vor Statusänderungen zuweisen',
+            'detail' => 'Weisen Sie eine zuständige Person zu, bevor Sie den Status ändern, damit die Nachverfolgung nicht abreißt.',
+            'cta' => 'Ticket zuweisen',
+        ],
+        'pending' => [
+            'title' => 'Wartendes Ticket',
+            'detail' => 'Dieses Ticket wartet. Öffnen Sie es wieder, wenn der Besucher antwortet oder neue Arbeit ansteht.',
+            'cta' => 'Option zum Wiederöffnen prüfen',
+        ],
+        'calm' => [
+            'title' => 'Die Lebenszyklus-Optionen sind ruhig',
+            'detail' => 'Der Agent hat zuletzt geantwortet. Markieren Sie das Ticket als wartend, wenn Sie auf den Besucher warten, oder schließen Sie es, sobald das Ergebnis feststeht.',
+            'cta' => 'Statusaktionen prüfen',
+        ],
+        'closed' => [
+            'title' => 'Geschlossenes Ticket',
+            'detail' => 'Öffnen Sie es nur wieder, wenn der Kunde zurückkommt oder sich das Ergebnis ändert. Nutzen Sie die Notiz zum Wiederöffnen, damit die nächste Person genug Kontext hat.',
+            'cta' => 'Option zum Wiederöffnen prüfen',
+        ],
+        'default' => [
+            'title' => 'Die Lebenszyklus-Optionen sind ruhig',
+            'detail' => 'Fügen Sie die nächste Aktualisierung, eine interne Notiz oder den Wartestatus hinzu, oder schließen Sie das Ticket, sobald das Ergebnis klar ist.',
+            'cta' => 'Statusaktionen prüfen',
+        ],
+    ],
+
     'row' => [
         'attention_needs_reply' => 'Antwort nötig',
         'attention_needs_owner' => 'Zuständige Person nötig',
@@ -261,5 +322,82 @@ return [
         'reply_visibility' => 'Antwortsichtbarkeit:',
         'none' => 'Keine',
         'unassigned' => 'Nicht zugewiesen',
+    ],
+
+    'guidance' => [
+        'category_aria' => 'Kategorieleitfaden',
+        'priority_aria' => 'Prioritätsleitfaden',
+        'agent_move' => 'Nächster Schritt: :action',
+    ],
+
+    'category_help' => [
+        'question' => [
+            'description' => 'Allgemeine Frage oder Hilfe zur Anwendung.',
+            'guidance' => 'Verwenden für: Klärung, Produktberatung oder „Wie mache ich …?“-Fragen.',
+        ],
+        'bug' => [
+            'description' => 'Etwas ist defekt oder funktioniert nicht wie erwartet.',
+            'guidance' => 'Verwenden für: defektes, unerwartetes oder reproduzierbares Verhalten.',
+        ],
+        'billing' => [
+            'description' => 'Preise, Rechnung, Zahlung oder Abrechnung des Kontos.',
+            'guidance' => 'Verwenden für: Preise, Rechnungen, Zahlungen, Verlängerungen oder Änderungen am Abrechnungskonto.',
+        ],
+        'access' => [
+            'description' => 'Anmeldung, Berechtigungen oder Zugriff auf das Konto.',
+            'guidance' => 'Verwenden für: Anmeldung, Rollen, gesperrte Konten, Berechtigungen oder Identitäts- und Zugriffsfragen.',
+        ],
+        'task' => [
+            'description' => 'Folgearbeiten, Konfiguration oder betriebliche Anfrage.',
+            'guidance' => 'Verwenden für: Einrichtung, Konfiguration, betriebliche Arbeiten oder geplante Folgeschritte.',
+        ],
+        'other' => [
+            'description' => 'Alles, was in keine der anderen Kategorien passt.',
+            'guidance' => 'Sparsam verwenden; Kontext ergänzen, damit später neu kategorisiert werden kann.',
+        ],
+    ],
+
+    'priority_help' => [
+        'low' => [
+            'description' => 'Wünschenswerte Folgearbeit oder nicht blockierende Frage.',
+            'agent_action' => 'nach aktiven Blockaden von Besuchern bearbeiten.',
+        ],
+        'normal' => [
+            'description' => 'Normale Supportanfrage ohne unmittelbare Frist.',
+            'agent_action' => 'in normaler Reihenfolge der Warteschlange beantworten.',
+        ],
+        'high' => [
+            'description' => 'Zeitkritisches Problem, das einen wichtigen Kundenprozess betrifft.',
+            'agent_action' => 'heute noch vorantreiben.',
+        ],
+        'urgent' => [
+            'description' => 'Geschäftskritisch, aktive Störung oder blockierter Produktivbetrieb.',
+            'agent_action' => 'sofort zuweisen und den Besucher auf dem Laufenden halten.',
+        ],
+    ],
+
+    'flash' => [
+        'reply_sent' => 'Antwort gesendet.',
+        'assignee_updated' => 'Ticket-Zuständigkeit aktualisiert.',
+        'closed' => 'Ticket geschlossen.',
+        'escalated' => 'Ticket eskaliert.',
+        'label_added' => 'Ticket-Label hinzugefügt.',
+        'label_removed' => 'Ticket-Label entfernt.',
+        'marked_pending' => 'Ticket als wartend markiert.',
+        'note_added' => 'Notiz hinzugefügt.',
+        'note_added_posted' => 'Notiz hinzugefügt und im verknüpften Issue veröffentlicht.',
+        'note_added_not_posted' => 'Notiz hinzugefügt, aber der externe Kommentar konnte nicht veröffentlicht werden. Siehe Ticket-Aktivität.',
+        'reopened' => 'Ticket wieder geöffnet.',
+        'updated' => 'Ticket aktualisiert.',
+    ],
+
+    'errors' => [
+        'note_required' => 'Bitte geben Sie eine interne Notiz ein.',
+        'label_needs_content' => 'Verwenden Sie mindestens einen Buchstaben oder eine Ziffer für das Label.',
+        'label_reserved' => 'Dieser Label-Name ist für die Ticket-Filterung reserviert.',
+        'reply_helper' => 'Wählen Sie eine verfügbare Antwortvorlage.',
+        'reply_required' => 'Bitte geben Sie eine Antwort ein.',
+        'assignee_not_on_site' => 'Wählen Sie einen Agenten, der dieser Website zugewiesen ist.',
+        'escalate_other_agent' => 'Wählen Sie einen anderen Agenten, an den dieses Ticket eskaliert werden soll.',
     ],
 ];

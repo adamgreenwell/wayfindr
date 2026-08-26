@@ -80,6 +80,17 @@ final class DashboardLanguage
         'dashboard.profile.password.update',
         'dashboard.conversations.index',
         'dashboard.tickets.index',
+        'dashboard.conversations.show',
+        // The detail page's own endpoints. It replaces its transcript from
+        // `messages.index` and posts replies to `messages.store`, and an
+        // unlisted route renders English -- so a refreshed partial arrived in a
+        // different language from the page around it.
+        'dashboard.conversations.messages.index',
+        'dashboard.conversations.messages.store',
+        // And the attachment endpoint. The composer prefers the response's own
+        // message over its local fallback, so an oversized file answered in
+        // English replaced the German live state on an ordinary upload.
+        'dashboard.conversations.attachments.store',
     ];
 
     /**
@@ -89,11 +100,45 @@ final class DashboardLanguage
      * everywhere else -- including for an install whose own default is German,
      * because an unextracted page has no German to show.
      */
-    public static function forRequest(?User $agent, ?string $routeName): string
+    public static function forRequest(?User $agent, ?string $routeName, ?string $rendersBackTo = null): string
     {
-        return $routeName !== null && in_array($routeName, self::EXTRACTED_ROUTES, true)
+        if ($routeName !== null && in_array($routeName, self::EXTRACTED_ROUTES, true)) {
+            return self::for($agent);
+        }
+
+        // A write that renders back onto an extracted page belongs to that
+        // page, whoever owns the endpoint.
+        //
+        // Listing the write route alongside its own page (above) only works
+        // when the endpoint serves one surface. A linked-ticket action does
+        // not: the same `AgentTicketController::close()` is submitted from the
+        // ticket page and from the conversation panel, and its validation runs
+        // before the redirect. Listing it would answer in German on the English
+        // ticket page; not listing it put English errors on the German
+        // conversation page. Neither is a locale for the endpoint to have --
+        // the language belongs to whichever surface will render the answer.
+        return $rendersBackTo !== null && in_array($rendersBackTo, self::EXTRACTED_ROUTES, true)
             ? self::for($agent)
             : self::FALLBACK;
+    }
+
+    /**
+     * The language for content that is STORED rather than rendered.
+     *
+     * A ticket's subject and description are written once and read by everyone
+     * -- other agents on other language settings, notification emails, the API,
+     * and whatever external issue tracker the account has linked. Generating
+     * them in the creating agent's language puts one person's dashboard
+     * preference into shared data permanently, where nothing can translate it
+     * back.
+     *
+     * The install's own language is the neutral answer: it is what every
+     * unextracted surface already renders, and it does not change with whoever
+     * happened to press the button.
+     */
+    public static function forStoredContent(): string
+    {
+        return self::for(null);
     }
 
     /**

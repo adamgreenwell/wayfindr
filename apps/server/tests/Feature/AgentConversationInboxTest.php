@@ -3648,7 +3648,7 @@ test('agent can close an open conversation', function (): void {
         ->from('/dashboard/conversations/WF-CLOSE1')
         ->post('/dashboard/conversations/WF-CLOSE1/close')
         ->assertRedirect('/dashboard/conversations/WF-CLOSE1')
-        ->assertSessionHas('status', 'Conversation closed.');
+        ->assertSessionHas('status', 'conversations.flash.closed');
 
     $conversation->refresh();
 
@@ -3682,7 +3682,7 @@ test('agent can reopen a closed conversation', function (): void {
         ->from('/dashboard/conversations/WF-REOPEN1')
         ->post('/dashboard/conversations/WF-REOPEN1/reopen')
         ->assertRedirect('/dashboard/conversations/WF-REOPEN1')
-        ->assertSessionHas('status', 'Conversation reopened.');
+        ->assertSessionHas('status', 'conversations.flash.reopened');
 
     $conversation->refresh();
 
@@ -3708,7 +3708,7 @@ test('agent reply reopens a closed conversation', function (): void {
             'body' => 'I can keep helping here.',
         ])
         ->assertRedirect('/dashboard/conversations/WF-REPLYOP')
-        ->assertSessionHas('status', 'Reply sent.');
+        ->assertSessionHas('status', 'conversations.flash.reply_sent');
 
     $conversation->refresh();
 
@@ -3747,7 +3747,7 @@ test('agent reply clears that agents typing signal', function (): void {
             'body' => 'I can help with that.',
         ])
         ->assertRedirect('/dashboard/conversations/WF-REPLYTYPE')
-        ->assertSessionHas('status', 'Reply sent.');
+        ->assertSessionHas('status', 'conversations.flash.reply_sent');
 
     $typingSignals = $conversation->fresh()->metadata['agent_typing'] ?? [];
 
@@ -3778,7 +3778,7 @@ test('agent can claim an unassigned conversation', function (): void {
         ->from('/dashboard/conversations/WF-CLAIM1')
         ->post('/dashboard/conversations/WF-CLAIM1/claim')
         ->assertRedirect('/dashboard/conversations/WF-CLAIM1')
-        ->assertSessionHas('status', 'Conversation claimed.');
+        ->assertSessionHas('status', 'conversations.flash.claimed');
 
     expect($conversation->fresh()->assigned_agent_id)->toBe($agent->id);
 
@@ -3805,7 +3805,7 @@ test('assigned agent can release a conversation', function (): void {
         ->from('/dashboard/conversations/WF-RELEASE1')
         ->post('/dashboard/conversations/WF-RELEASE1/release')
         ->assertRedirect('/dashboard/conversations/WF-RELEASE1')
-        ->assertSessionHas('status', 'Conversation released.');
+        ->assertSessionHas('status', 'conversations.flash.released');
 
     expect($conversation->fresh()->assigned_agent_id)->toBeNull();
 });
@@ -4064,7 +4064,7 @@ test('agent can create a ticket from their account conversation', function (): v
             'priority' => 'high',
         ])
         ->assertRedirect('/dashboard/conversations/WF-TICKET1')
-        ->assertSessionHas('status', 'Ticket created.');
+        ->assertSessionHas('status', 'conversations.flash.ticket_created');
 
     $this->assertDatabaseHas('tickets', [
         'account_id' => $account->id,
@@ -4339,21 +4339,21 @@ test('ticket detail and actions preserve ticket queue return context', function 
             'timeline_filter' => 'conversation',
         ])
         ->assertRedirect($expectedFilteredDetailUrl)
-        ->assertSessionHas('status', 'Ticket note added.');
+        ->assertSessionHas('status', 'tickets.flash.note_added');
 
     $this->actingAs($agent)
         ->post("/dashboard/tickets/{$ticket->id}/notes", $returnQuery + [
             'body' => 'Customer needs a careful follow-up.',
         ])
         ->assertRedirect($expectedDetailUrl)
-        ->assertSessionHas('status', 'Ticket note added.');
+        ->assertSessionHas('status', 'tickets.flash.note_added');
 
     $this->actingAs($agent)
         ->post("/dashboard/tickets/{$ticket->id}/labels", $returnQuery + [
             'label_name' => 'Needs Dev',
         ])
         ->assertRedirect($expectedDetailUrl)
-        ->assertSessionHas('status', 'Ticket label added.');
+        ->assertSessionHas('status', 'tickets.flash.label_added');
 
     $newLabelId = DB::table('ticket_labels')
         ->where('account_id', $account->id)
@@ -4363,14 +4363,14 @@ test('ticket detail and actions preserve ticket queue return context', function 
     $this->actingAs($agent)
         ->delete("/dashboard/tickets/{$ticket->id}/labels/{$newLabelId}", $returnQuery)
         ->assertRedirect($expectedDetailUrl)
-        ->assertSessionHas('status', 'Ticket label removed.');
+        ->assertSessionHas('status', 'tickets.flash.label_removed');
 
     $this->actingAs($agent)
         ->post("/dashboard/tickets/{$ticket->id}/replies", $returnQuery + [
             'message' => 'I can keep helping from the ticket.',
         ])
         ->assertRedirect($expectedDetailUrl)
-        ->assertSessionHas('status', 'Reply sent.');
+        ->assertSessionHas('status', 'tickets.flash.reply_sent');
 
     $this->actingAs($agent)
         ->put("/dashboard/tickets/{$ticket->id}", $returnQuery + [
@@ -4380,35 +4380,35 @@ test('ticket detail and actions preserve ticket queue return context', function 
             'priority' => 'high',
         ])
         ->assertRedirect($expectedDetailUrl)
-        ->assertSessionHas('status', 'Ticket updated.');
+        ->assertSessionHas('status', 'tickets.flash.updated');
 
     $this->actingAs($agent)
         ->put("/dashboard/tickets/{$ticket->id}/assignee", $returnQuery + [
             'assignee_id' => $assignee->id,
         ])
         ->assertRedirect($expectedDetailUrl)
-        ->assertSessionHas('status', 'Ticket assignee updated.');
+        ->assertSessionHas('status', 'tickets.flash.assignee_updated');
 
     $this->actingAs($agent)
         ->post("/dashboard/tickets/{$ticket->id}/pending", $returnQuery + [
             'pending_note' => 'Waiting on customer confirmation.',
         ])
         ->assertRedirect($expectedDetailUrl)
-        ->assertSessionHas('status', 'Ticket marked pending.');
+        ->assertSessionHas('status', 'tickets.flash.marked_pending');
 
     $this->actingAs($agent)
         ->post("/dashboard/tickets/{$ticket->id}/close", $returnQuery + [
             'resolution_note' => 'Confirmed the support path is covered.',
         ])
         ->assertRedirect($expectedDetailUrl)
-        ->assertSessionHas('status', 'Ticket closed.');
+        ->assertSessionHas('status', 'tickets.flash.closed');
 
     $this->actingAs($agent)
         ->post("/dashboard/tickets/{$ticket->id}/reopen", $returnQuery + [
             'reopen_note' => 'Need one more pass.',
         ])
         ->assertRedirect($expectedDetailUrl)
-        ->assertSessionHas('status', 'Ticket reopened.');
+        ->assertSessionHas('status', 'tickets.flash.reopened');
 
     $this->actingAs($agent)
         ->post("/dashboard/tickets/{$ticket->id}/escalations", $returnQuery + [
@@ -4416,7 +4416,7 @@ test('ticket detail and actions preserve ticket queue return context', function 
             'reason' => 'Needs another site-aware agent.',
         ])
         ->assertRedirect($expectedDetailUrl)
-        ->assertSessionHas('status', 'Ticket escalated.');
+        ->assertSessionHas('status', 'tickets.flash.escalated');
 });
 
 test('agent can add a provider neutral external link to a ticket', function (): void {
@@ -4774,7 +4774,7 @@ test('agent can add an internal note to a ticket record', function (): void {
             'body' => 'Customer wants an update before noon.',
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Ticket note added.');
+        ->assertSessionHas('status', 'tickets.flash.note_added');
 
     $this->assertDatabaseHas('audit_events', [
         'account_id' => $account->id,
@@ -4861,7 +4861,7 @@ test('agent can add an internal note from a ticket helper', function (): void {
             'body' => '',
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Ticket note added.');
+        ->assertSessionHas('status', 'tickets.flash.note_added');
 
     $activity = AuditEvent::query()
         ->where('subject_type', Ticket::class)
@@ -4924,7 +4924,7 @@ test('agent can add and remove labels on a ticket', function (): void {
             'label_name' => 'Needs Dev',
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Ticket label added.');
+        ->assertSessionHas('status', 'tickets.flash.label_added');
 
     $label = DB::table('ticket_labels')
         ->where('account_id', $account->id)
@@ -4949,7 +4949,7 @@ test('agent can add and remove labels on a ticket', function (): void {
         ->from("/dashboard/tickets/{$ticket->id}")
         ->delete("/dashboard/tickets/{$ticket->id}/labels/{$label->id}")
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Ticket label removed.');
+        ->assertSessionHas('status', 'tickets.flash.label_removed');
 
     $this->assertDatabaseMissing('ticket_label_ticket', [
         'ticket_id' => $ticket->id,
@@ -5057,7 +5057,7 @@ test('ticket labels are scoped to the agent account', function (): void {
             'label_name' => 'Needs Dev',
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Ticket label added.');
+        ->assertSessionHas('status', 'tickets.flash.label_added');
 
     $ownLabel = DB::table('ticket_labels')
         ->where('account_id', $account->id)
@@ -5116,7 +5116,7 @@ test('agent can send a visitor reply from a linked ticket record', function (): 
             'message' => 'I can help from the ticket.',
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Reply sent.');
+        ->assertSessionHas('status', 'tickets.flash.reply_sent');
 
     $reply = $conversation->messages()->latest('id')->firstOrFail();
 
@@ -5252,7 +5252,7 @@ test('agent can send a visitor reply from a ticket helper', function (): void {
             'message' => '',
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Reply sent.');
+        ->assertSessionHas('status', 'tickets.flash.reply_sent');
 
     $reply = $conversation->messages()->latest('id')->firstOrFail();
 
@@ -5358,7 +5358,7 @@ test('agent can update ticket fields from the detail page', function (): void {
             'priority' => 'high',
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Ticket updated.');
+        ->assertSessionHas('status', 'tickets.flash.updated');
 
     expect($ticket->fresh())
         ->category->toBe('bug')
@@ -5479,7 +5479,7 @@ test('agent can close a ticket from its detail page', function (): void {
         ->from("/dashboard/tickets/{$ticket->id}")
         ->post("/dashboard/tickets/{$ticket->id}/close")
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Ticket closed.');
+        ->assertSessionHas('status', 'tickets.flash.closed');
 
     expect($ticket->fresh())
         ->status->toBe('closed')
@@ -5535,7 +5535,7 @@ test('agent can close a ticket with a resolution note', function (): void {
             'resolution_note' => 'Confirmed the checkout button works after cache clear.',
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Ticket closed.');
+        ->assertSessionHas('status', 'tickets.flash.closed');
 
     $activity = AuditEvent::query()
         ->where('subject_type', Ticket::class)
@@ -5579,7 +5579,7 @@ test('agent can mark a ticket pending from its detail page', function (): void {
         ->from("/dashboard/tickets/{$ticket->id}")
         ->post("/dashboard/tickets/{$ticket->id}/pending")
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Ticket marked pending.');
+        ->assertSessionHas('status', 'tickets.flash.marked_pending');
 
     expect($ticket->fresh())
         ->status->toBe('pending')
@@ -5644,7 +5644,7 @@ test('creating a ticket from a conversation is idempotent', function (): void {
             'priority' => 'urgent',
         ])
         ->assertRedirect('/dashboard/conversations/WF-TICKET2')
-        ->assertSessionHas('status', 'Ticket already exists.');
+        ->assertSessionHas('status', 'conversations.flash.ticket_exists');
 
     $this->assertDatabaseCount('tickets', 1);
 });
@@ -5681,7 +5681,7 @@ test('agent can close a linked ticket from their account conversation', function
         ->from('/dashboard/conversations/WF-TICKETCLOSE')
         ->post("/dashboard/tickets/{$ticket->id}/close")
         ->assertRedirect('/dashboard/conversations/WF-TICKETCLOSE')
-        ->assertSessionHas('status', 'Ticket closed.');
+        ->assertSessionHas('status', 'tickets.flash.closed');
 
     expect($ticket->fresh())
         ->status->toBe('closed')
@@ -5808,7 +5808,7 @@ test('agent can close a linked ticket with a resolution note from the conversati
             'resolution_note' => 'Confirmed the visitor can complete checkout.',
         ])
         ->assertRedirect('/dashboard/conversations/WF-CONVRESOLVE')
-        ->assertSessionHas('status', 'Ticket closed.');
+        ->assertSessionHas('status', 'tickets.flash.closed');
 
     $activity = AuditEvent::query()
         ->where('subject_type', Ticket::class)
@@ -5903,7 +5903,7 @@ test('agent can reopen a linked ticket from their account conversation', functio
         ->from('/dashboard/conversations/WF-TICKETOPEN')
         ->post("/dashboard/tickets/{$ticket->id}/reopen")
         ->assertRedirect('/dashboard/conversations/WF-TICKETOPEN')
-        ->assertSessionHas('status', 'Ticket reopened.');
+        ->assertSessionHas('status', 'tickets.flash.reopened');
 
     expect($ticket->fresh())
         ->status->toBe('open')
@@ -5967,7 +5967,7 @@ test('agent can reassign a linked ticket to another account agent', function ():
             'assignee_id' => $assignee->id,
         ])
         ->assertRedirect('/dashboard/conversations/WF-ASSIGNT1')
-        ->assertSessionHas('status', 'Ticket assignee updated.');
+        ->assertSessionHas('status', 'tickets.flash.assignee_updated');
 
     expect($ticket->fresh()->assignee_id)->toBe($assignee->id);
 
@@ -6016,7 +6016,7 @@ test('agent can clear a linked ticket assignee', function (): void {
             'assignee_id' => '',
         ])
         ->assertRedirect('/dashboard/conversations/WF-UNASSIGNT')
-        ->assertSessionHas('status', 'Ticket assignee updated.');
+        ->assertSessionHas('status', 'tickets.flash.assignee_updated');
 
     expect($ticket->fresh()->assignee_id)->toBeNull();
 
@@ -6264,7 +6264,7 @@ test('agent conversation page can update visitor presence from live events', fun
         ->assertSee('data-visitor-presence-detail', false)
         ->assertSee('data-visitor-presence-last-seen', false)
         ->assertSee('conversation.presence.updated')
-        ->assertSee('last_seen_label')
+        ->assertSee('last_seen_at')
         ->assertSee('updateVisitorPresence')
         ->assertSee('"presenceEventName":"conversation.presence.updated"', false);
 });
@@ -6305,7 +6305,7 @@ test('agent conversation page can update visitor read receipts from live events'
         ->assertSee('data-agent-message-seen-id="'.$message->id.'"', false)
         ->assertSee('conversation.read.updated')
         ->assertSee('message_id')
-        ->assertSee('seen_label')
+        ->assertSee('seen_at')
         ->assertSee('updateVisitorRead')
         ->assertSee('querySelector(\'[data-agent-message-seen-id="\' + messageId + \'"]\')', false)
         ->assertSee('"readEventName":"conversation.read.updated"', false);
@@ -6440,7 +6440,7 @@ test('agent can request cobrowse consent for their account conversation', functi
         ->from('/dashboard/conversations/WF-REQUEST1')
         ->post('/dashboard/conversations/WF-REQUEST1/cobrowse/request')
         ->assertRedirect('/dashboard/conversations/WF-REQUEST1')
-        ->assertSessionHas('status', 'Cobrowse requested.');
+        ->assertSessionHas('status', 'conversations.flash.cobrowse_requested');
 
     $this->assertDatabaseHas('cobrowse_sessions', [
         'conversation_id' => $conversation->id,
@@ -6486,7 +6486,7 @@ test('agent cobrowse request is idempotent while a session is active', function 
         ->from('/dashboard/conversations/WF-REQUEST2')
         ->post('/dashboard/conversations/WF-REQUEST2/cobrowse/request')
         ->assertRedirect('/dashboard/conversations/WF-REQUEST2')
-        ->assertSessionHas('status', 'Cobrowse request already active.');
+        ->assertSessionHas('status', 'conversations.flash.cobrowse_already_active');
 
     $this->assertDatabaseCount('cobrowse_sessions', 1);
 });
@@ -6518,7 +6518,7 @@ test('agent can end an active cobrowse session', function (): void {
         ->from('/dashboard/conversations/WF-END1')
         ->post('/dashboard/conversations/WF-END1/cobrowse/end')
         ->assertRedirect('/dashboard/conversations/WF-END1')
-        ->assertSessionHas('status', 'Cobrowse session ended.');
+        ->assertSessionHas('status', 'conversations.flash.cobrowse_ended');
 
     expect($session->fresh())
         ->status->toBe('ended')
@@ -6573,7 +6573,7 @@ test('agent can request a fresh cobrowse snapshot for a granted session', functi
             ->from('/dashboard/conversations/WF-RESYNC')
             ->post('/dashboard/conversations/WF-RESYNC/cobrowse/resync')
             ->assertRedirect('/dashboard/conversations/WF-RESYNC')
-            ->assertSessionHas('status', 'Fresh cobrowse snapshot requested.');
+            ->assertSessionHas('status', 'conversations.flash.snapshot_requested');
 
         $session->refresh();
 
@@ -6607,7 +6607,7 @@ test('agent can request a fresh cobrowse snapshot for a granted session', functi
             ->assertSee('Snapshot requested')
             ->assertSee('Waiting on visitor widget')
             ->assertSee('Retry opens 1 minute from now.')
-            ->assertSee('Expires 5 minutes from now');
+            ->assertSeeInOrder(['Expires', '5 minutes from now']);
     } finally {
         Carbon::setTestNow();
     }
@@ -6646,7 +6646,7 @@ test('agent cannot replace a fresh pending cobrowse resync request with another 
             ->from('/dashboard/conversations/WF-RESYNC4')
             ->post('/dashboard/conversations/WF-RESYNC4/cobrowse/resync')
             ->assertRedirect('/dashboard/conversations/WF-RESYNC4')
-            ->assertSessionHas('status', 'Fresh cobrowse snapshot already requested.');
+            ->assertSessionHas('status', 'conversations.flash.snapshot_already_requested');
 
         expect($session->fresh()->metadata['resync_request'])
             ->id->toBe('resync_existing')
@@ -6703,7 +6703,7 @@ test('agent can replace a delayed pending cobrowse resync request', function ():
             ->from('/dashboard/conversations/WF-RESYNC5')
             ->post('/dashboard/conversations/WF-RESYNC5/cobrowse/resync')
             ->assertRedirect('/dashboard/conversations/WF-RESYNC5')
-            ->assertSessionHas('status', 'Fresh cobrowse snapshot requested.');
+            ->assertSessionHas('status', 'conversations.flash.snapshot_requested');
 
         $session->refresh();
 
@@ -6757,7 +6757,7 @@ test('agent can replace an exhausted cobrowse resync request', function (): void
             ->from('/dashboard/conversations/WF-RESYNC-EXHAUSTED-RETRY')
             ->post('/dashboard/conversations/WF-RESYNC-EXHAUSTED-RETRY/cobrowse/resync')
             ->assertRedirect('/dashboard/conversations/WF-RESYNC-EXHAUSTED-RETRY')
-            ->assertSessionHas('status', 'Fresh cobrowse snapshot requested.');
+            ->assertSessionHas('status', 'conversations.flash.snapshot_requested');
 
         $session->refresh();
 
@@ -6814,7 +6814,7 @@ test('agent can see a fulfilled cobrowse resync request', function (): void {
             ->assertSee('data-state="fulfilled"', false)
             ->assertSee('Fresh snapshot received')
             ->assertSee('The visitor widget sent a clean masked snapshot.')
-            ->assertSee('Received 20 seconds ago')
+            ->assertSeeInOrder(['Received', '20 seconds ago'])
             ->assertSee('Recovery timeline')
             ->assertSee('Snapshot requested')
             ->assertSee('Visitor widget responded')
@@ -6859,7 +6859,7 @@ test('agent can see delayed cobrowse resync guidance', function (): void {
             ->assertSee('data-state="delayed"', false)
             ->assertSee('Fresh snapshot delayed')
             ->assertSee('The visitor widget has not answered yet. Request another clean snapshot or confirm the page state through chat.')
-            ->assertSee('Expires 3 minutes from now')
+            ->assertSeeInOrder(['Expires', '3 minutes from now'])
             ->assertSee('Recovery timeline')
             ->assertSee('Snapshot requested')
             ->assertSee('Retry available')
@@ -7001,7 +7001,7 @@ test('agent can see expired cobrowse resync guidance', function (): void {
             ->assertSee('data-state="expired"', false)
             ->assertSee('Fresh snapshot expired')
             ->assertSee('The visitor widget did not answer in time. Request another clean snapshot or continue through chat.')
-            ->assertSee('Expired 1 minute ago')
+            ->assertSeeInOrder(['Expired', '1 minute ago'])
             ->assertSee('Recovery timeline')
             ->assertSee('Snapshot requested')
             ->assertSee('Snapshot response ignored')
@@ -7032,7 +7032,7 @@ test('agent cannot request a fresh cobrowse snapshot before consent is granted',
         ->from('/dashboard/conversations/WF-NORESYNC')
         ->post('/dashboard/conversations/WF-NORESYNC/cobrowse/resync')
         ->assertRedirect('/dashboard/conversations/WF-NORESYNC')
-        ->assertSessionHas('status', 'Cobrowse must be active before requesting a fresh snapshot.');
+        ->assertSessionHas('status', 'conversations.flash.cobrowse_needed_for_snapshot');
 
     expect($session->fresh()->metadata ?? [])->not->toHaveKey('resync_request');
 });
@@ -7805,6 +7805,35 @@ test('agent can see a sandboxed cobrowse replay preview on a conversation', func
         ->assertSee('Visitor viewport 1,456px')
         ->assertDontSee('steal-token')
         ->assertDontSee('mutation-token');
+
+    // The substring assertions above are not enough on their own, and a real
+    // bug proved it: putting an element inside the `title` attribute closed it
+    // early, so `sandbox` and `srcdoc` became fallback TEXT rather than
+    // attributes. Every assertion above still passed while the preview
+    // rendered blank and the realtime script could not find the frame.
+    //
+    // So the frame is inspected as the browser parses it, not as a string.
+    $page = (string) $this->actingAs($agent)->get('/dashboard/conversations/WF-REPLAY')->getContent();
+
+    $document = new DOMDocument;
+    $previous = libxml_use_internal_errors(true);
+    $document->loadHTML('<?xml encoding="utf-8"?>'.$page, LIBXML_NOERROR | LIBXML_NOWARNING);
+    libxml_clear_errors();
+    libxml_use_internal_errors($previous);
+
+    $frame = (new DOMXPath($document))->query('//iframe[@data-cobrowse-replay-frame]')->item(0);
+
+    expect($frame)->toBeInstanceOf(DOMElement::class, 'the replay iframe is not parsed as an element with its data attribute');
+
+    foreach (['sandbox', 'srcdoc', 'title'] as $attribute) {
+        expect($frame->hasAttribute($attribute))->toBeTrue(
+            "the replay iframe lost its {$attribute} attribute, so the browser sees it as text"
+        );
+    }
+
+    expect($frame->getAttribute('srcdoc'))->toContain('Updated public copy.')
+        ->and(trim($frame->getAttribute('title')))->not->toBe('')
+        ->and($frame->getAttribute('title'))->not->toContain('<');
 });
 
 test('agent can fetch the sanitized cobrowse replay preview as json for live refresh', function (): void {

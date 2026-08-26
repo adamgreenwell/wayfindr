@@ -19,7 +19,11 @@
             >
                 {{ $tab['label'] }}
                 @if (! empty($tab['badge']))
-                    <span class="tabs__badge">{{ $tab['badge'] }}</span>
+                    {{-- A badge may declare its own language: a value from a
+                         vocabulary that is not translated yet has to say so
+                         rather than inherit the document (#749). --}}
+                    @php($badgeLang = isset($tab['badge_lang']) ? ' lang="'.e(str_replace('_', '-', $tab['badge_lang'])).'"' : '')
+                    <span class="tabs__badge"{!! $badgeLang !!}>{{ $tab['badge'] }}</span>
                 @endif
             </button>
         @endforeach

@@ -4,7 +4,39 @@ Status: **in progress.** The plumbing is shipped and the agent profile page is
 translated, with one recorded exception below. The remaining views are being
 extracted surface by surface.
 
+### Copy an agent reads, and copy an agent SENDS
+
+The dashboard language is a preference about what **the agent reads**. It must
+never decide what **a visitor receives**.
+
+A reply helper is the case that makes this concrete: its *label* is chrome — it
+names the helper to the agent choosing it — while its *body* is a draft message
+to the visitor, dropped into the composer and sent. Translating the body would
+mean a German-speaking agent sending German to an English visitor without ever
+choosing to. The visitor's language belongs to the widget (ADR 0017) and has
+nothing to do with this setting.
+
+So the label is translated, the body is not, and the body carries `lang="en"`
+because it genuinely is English sitting in a German page.
+
+**The same rule governs realtime payloads.** One broadcast reaches every agent
+watching a conversation, and they do not all read the same language — so a
+payload carries `state` and `detail_key`, never prose, and each page renders
+those into its own agent's words.
+
 ### The recorded exceptions
+
+The conversation **detail** page carries the largest one. Its cobrowse panel is
+supplied by the `CobrowseConsentState` family — nine support classes and roughly
+a hundred and thirty strings, shared with the widget and the operator console —
+so the panel declares `lang="en"` and that vocabulary extracts as its own
+change. The headings *around* it are this page's and are translated, the same
+split the queue's cobrowse cell uses.
+
+Two mechanisms exist so an exception can say so: `x-tab-panel` merges
+`$attributes`, and a tab may pass `badge_lang` for a badge that sits outside its
+own panel. Without them the attribute was silently dropped.
+
 
 The profile page shows a mail-readiness sentence built by `OperatorReadiness`.
 That class holds the **operator console's** vocabulary — around a thousand lines
@@ -110,6 +142,397 @@ second by asserting that **every GET-able route in `EXTRACTED_ROUTES` is
 audited** — it fails when a surface is extracted without being added, which is
 exactly how the ticket queue got its states. The catalogue list has no such
 check yet and is worth one when a fifth catalogue lands.
+
+### An element cannot go inside an attribute, or inside an `<option>`
+
+Two containers take **text only**, and a language marker put inside either of
+them looks correct and does nothing.
+
+A bulk edit that wraps every `__()` on a page will break an attribute, because
+one of them is always in a `title`:
+
+```blade
+title="<x-lang>{{ __('...') }}</x-lang>"   {{-- the span's quote closes title --}}
+```
+
+Every attribute after it is then parsed as fallback text. On the cobrowse
+`<iframe>` that meant `sandbox` and `srcdoc` stopped being attributes at all:
+the preview rendered blank and the realtime script could not find the frame. It
+looks like a formatting change and it is a functional outage.
+
+An `<option>` fails more quietly. `<option><span lang="">{{ $site->name }}</span></option>`
+parses to the text alone — the span is discarded, the name inherits the document
+language, and nothing anywhere reports a problem.
+
+**Both take the attribute on the element itself.** Guarded by `no language
+marker is rendered inside an attribute`, which scans every Blade file for
+element markup inside a quoted attribute value *and* inside an `<option>`.
+
+*(The guard strips Blade comments first: its own documentation says the word
+`<option>`, and the regex matched from inside that comment to the real closing
+tag.)*
+
+### A value and its language travel together or not at all
+
+`formatResyncRequest()` has five branches, each hand-listing its keys. Three
+received the language field and two did not — so a German `diffForHumans()`
+value was announced as English on exactly the states a *pending* resync
+produces, which are the common ones.
+
+Fixing the two branches would have left the sixth branch to come. The pair is
+built together instead:
+
+```php
+...$this->momentPair('requested_at', $requestedAt, 'Request time unavailable'),
+```
+
+A machine timestamp is exempt and the guard knows it: `retry_at` is `toJSON()`
+for a `data-` attribute the script parses, not prose anyone hears.
+
+### Marking a half-extracted surface: state the majority, reset the minority
+
+A surface part-way through extraction has translated chrome around untranslated
+values, and assistive technology has to be told which is which. There are two
+ways to do it and only one of them is safe.
+
+Marking each untranslated **value** looks tidier and is wrong: it is complete
+only if you find every English fragment, and you will not. The cobrowse panel
+had thirty-five English values, and marking all of them still left bare chrome
+words — `Received`, `Expires`, `Expired` — sitting in the markup between a label
+and its timestamp, announced as German the moment the panel-level marker came
+off.
+
+So the region **states its own majority language**, and every translated
+fragment inside resets to the document's:
+
+```blade
+<x-tab-panel id="cobrowse" lang="en">
+    <h2><x-lang>{{ __('conversations.detail.tabs.cobrowse') }}</x-lang></h2>
+    <p>{{ $cobrowseConsent['message'] }}</p>   {{-- English: no marker needed --}}
+```
+
+That is complete by construction: anything missed stays English, which it is.
+The reverse approach fails silently in the direction that is hardest to see.
+
+Both failures are real and they are mirror images — marking the whole panel
+English made a screen reader pronounce the German headings with English rules;
+taking the marker off left the English chrome announced as German. The tests
+assert **both** directions, per text node with its effective language, because
+an element-level check reads a nested reset as part of the text around it.
+
+### Codex puts findings in two places, and one of them has no thread
+
+Findings arrive as inline review comments **and** in the review body. Only the
+inline ones become resolvable threads, so a "zero unresolved threads" check
+reports a clean PR while a body-level finding sits unaddressed. One was found
+by accident, while fixing the *verdict detection*, minutes before a merge.
+
+Read both:
+
+```bash
+gh api repos/OWNER/REPO/pulls/N/reviews --paginate \
+  --jq '.[] | select(.user.login=="chatgpt-codex-connector[bot]") | "\(.commit_id) \(.body)"'
+```
+
+The verdict lives on the **review object**, not in issue comments — `commit_id`
+is the reliable field, and a clean verdict's body says `**Reviewed commit:**`
+with no findings under it.
+
+### The flash belongs to the destination, not the controller
+
+A page that renders `__(session('status'))` makes every controller that can
+redirect to it one of *its* surfaces. `AgentTicketController` flashes from the
+ticket page and from the conversation page — `redirect()->back()` decides — so
+its twelve status strings are keys now, and the ticket page translates them too.
+That page is not extracted, so `__()` answers in the install default there:
+English, correctly, and without a second code path.
+
+The general rule: **any view that renders a flash should call `__()` on it.**
+`__()` returns a non-key string unchanged, so it costs nothing on surfaces that
+flash literals and prevents a raw key from ever reaching a page.
+
+### Only a validation response carries a message we wrote
+
+The composer prefers the upload endpoint's own `message` over its local
+fallback, which is right for a 422 — that message came from our catalogue. It is
+wrong for everything else. A failed storage write, a 403, a 404: those answer
+with a framework exception message in English, and preferring it puts
+*"Not Found."* on a German page.
+
+**Trust a response's copy only from the status that produces our copy.** The
+local fallback is already in the right language, and it is the safer default for
+every other status.
+
+### Scoping a locale does nothing for a message built as a PHP string
+
+`ValidationException::withMessages(['file' => 'This file type is not allowed.'])`
+is English whatever locale is active. Route scoping only decides which
+catalogue `__()` reads — it cannot reach a literal.
+
+Two paths that reach an extracted surface were full of them: the attachment
+upload service, which the German composer posts to, and the linked-ticket
+actions, which redirect back to the German panel. Twelve messages between them,
+and Codex found one — the guard found the other eleven.
+
+Guarded by `nothing on an extracted path throws a literal validation message`,
+which reads every `withMessages([...])` block in those files and fails on any
+prose literal.
+
+### Content that is stored is not content that is rendered
+
+The sharpest version of the rule this whole document circles.
+
+A ticket's subject and description are written **once** and read by everyone:
+other agents on other language settings, notification emails, the API, and
+whatever external issue tracker the account has linked. Generating them in the
+creating agent's language puts one person's dashboard preference into shared
+data permanently, where nothing can translate it back — the agent who picked
+German has decided what an English colleague reads next year.
+
+`DashboardLanguage::forStoredContent()` names the distinction: the **install's**
+own language, which is what every unextracted surface already renders and does
+not change with whoever pressed the button.
+
+The test to reach for: create the record as a German agent, and assert the
+stored value is the install's language *and specifically not* the German. The
+second half matters — without it the assertion passes on an English-only
+install, which is every install today.
+
+### A write answers in the language of the page it renders back to
+
+Listing a write route beside its own page works only while the endpoint serves
+one surface. A linked-ticket action serves two: the same
+`AgentTicketController::close()` is submitted from the ticket page and from the
+conversation panel, and its **validation runs before the redirect**. Listing it
+would answer in German on the English ticket page; not listing it put English
+errors on the German conversation panel. Neither is a locale the endpoint can
+have.
+
+So for an unsafe request the locale is resolved from the route the response will
+render on. Same-origin only, and reads are excluded because a GET renders
+itself. The referer only ever picks a language, so a wrong or forged one costs
+nothing.
+
+**Match `UrlGenerator::previous()` exactly — Referer first, session second.**
+That is the order `redirect()->back()` uses, and getting it backwards diverges
+in the case the session is worst at: with two tabs open, the session's previous
+URL belongs to whichever tab navigated last, so an action submitted from an
+English page could answer in German because a German page was the most recent
+navigation *anywhere*. The session still matters, because
+`Referrer-Policy: no-referrer` strips the header while the redirect still lands
+on the submitting page.
+
+### The conversation is not the dashboard
+
+The transcript is the page's primary content and has nothing to do with the
+language the agent reads the *chrome* in. A visitor writes in whatever they came
+in with; an agent replies in whatever they chose to reply in. Letting message
+bodies inherit `lang="de"` from the document has a screen reader pronounce an
+English conversation with German rules — on the one part of the page people
+actually read.
+
+The **subject** is the same thing wearing a heading: it is the `<h1>`, the queue
+switcher, the queue row and the prior-conversation list. All of it the visitor's
+words. Its *fallback* is our copy and stays in the document language, so the
+mark is conditional on the subject existing.
+
+Same for the reply draft: selecting a template makes the textarea the template's
+language, and selecting **"write a custom reply"** has to clear it again — that
+branch returns early, so the clear happens before the return or the agent writes
+German into an element still claiming English.
+
+`lang=""` everywhere here, for the same reason it is right on a managed reply
+template.
+
+**Where the line falls.** Authored *text* gets `lang=""` — a conversation
+subject, a ticket subject, a ticket activity body, a message body, a site name,
+a managed reply template's name and body. A **person's name** does not: a name
+is a name in any language, and marking every agent name would be a much wider
+change for nothing a screen reader can use.
+
+**Testing this has a trap.** `getAttribute('lang')` returns `''` for an
+attribute that is *absent*, so asserting the value alone cannot tell "declared
+unknown" from "declared nothing" — and the second one inherits German. Assert
+`hasAttribute()` first.
+
+### Normalising a null throws away the distinction the marker needs
+
+The switcher's controller replaced a missing subject with the translated
+fallback before the view ever saw it:
+
+```php
+'subject' => $candidate->subject ?? __('conversations.detail.untitled'),   // WRONG
+```
+
+The view's marker is conditional on the subject existing, and by then it could
+no longer tell — so our own copy got wrapped in `lang=""` along with the
+visitor's words. The presence travels separately now.
+
+**Generally: normalise at the point of USE, not on the way to it.** A `??` that
+merges "absent" into "present" erases exactly what a downstream conditional
+needs.
+
+### A guard that only reads one spelling reports clean
+
+The literal-validation-message guard used `/=> *'([^']*)'/` — single quotes
+only. It missed `"A message can include at most {$max} attachment(s)."`, which
+is the one message in that file that *had* to be interpolated, and therefore the
+one most likely to be written with double quotes.
+
+A guard that recognises only the easy spelling is worse than no guard, because
+it reports clean over exactly the cases that needed the attention.
+
+### A missing formatter is not missing data
+
+`Intl.RelativeTimeFormat` is absent in some embedded webviews that support
+WebSockets perfectly well. Treating that as "no timestamp" replaced a real
+*"seen 2 minutes ago"* with *"no visitor heartbeat yet"* — a different fact, not
+a degraded one, on every event.
+
+`fillElapsed()` returns **null** when it cannot produce a value, distinct from
+the fallback it returns when the data really is missing, and callers route
+through a writer that skips a null and leaves the server-rendered text alone.
+
+### The language of a value nobody owns is `lang=""`
+
+A reply template's body is not chrome and not the dashboard's copy. A built-in
+is English, and says so. A **managed** template is written by the account in
+whatever language it works in, and neither English nor the agent's language is
+a defensible guess — HTML has an answer for this and it is `lang=""`, meaning
+unknown. The picker carries it too, because selecting a template rewrites the
+textarea and the draft stops being the agent's language at that moment.
+
+Guessing here is worse than admitting: a screen reader acts on the claim.
+
+### An endpoint the page calls is part of the page
+
+`EXTRACTED_ROUTES` scopes the locale per route, so an endpoint the page posts to
+answers in the install default unless it is listed. The transcript endpoint was
+caught early; the **attachment** endpoint was not, and the composer prefers the
+response's own `message` over its local fallback — so an oversized file put
+English into a German page on an ordinary upload.
+
+When a surface is extracted, list every endpoint it calls, not just the ones
+that render markup.
+
+### Copy wrapped around data is invisible to the leak guard
+
+The detail page's `<title>` stayed `Conversation WF-…` through five rounds of
+auditing. The leak guard skips any sentence containing a data token — the
+support code, the account name, an email — because that token renders
+identically in both languages and would otherwise be reported as a leak. A
+sentence *built around* one is discarded with it.
+
+The row-copy test exists for the same reason on the queue. The page title needed
+its own, because it is the tab and the first thing a screen reader announces,
+and it is the one string a page never renders in its body.
+
+### A guard is only as good as the states it visits
+
+Said once already about the support-lookup empty state, and true again for the
+opposite reason. The leak audit's fixture creates tickets and messages, so the
+**ticket-creation form and the empty transcript never rendered** — and mutations
+of the category options, both guidance components and the empty transcript all
+survived every state it visited.
+
+The audit now also walks a conversation that has neither, and asserts that it
+has neither before trusting the result. First-run states are not an edge case
+here: they are the only states in which half this page's copy exists.
+
+Four gaps of this shape have been found in this file so far, and the pattern is
+always the same — **a branch the fixture cannot reach is a branch nothing
+guards**:
+
+| what was invisible | because the fixture had |
+|---|---|
+| ticket-creation choices | tickets already |
+| the empty transcript | messages already |
+| the transcript sender roles | *no* messages |
+| the `Unknown visitor` fallback | a visitor with an id |
+| the recovery timeline | no resync request |
+| the ignored-response branch | no ignored responses |
+
+Every one of them was a real finding first and a fixture change second. When a
+guard passes, ask what it rendered — not just what it asserted.
+
+Some of this cannot be reached by rendering at all, and is checked at the
+source instead: **`every catalogue file answers the same set of keys`** compares
+`lang/en` against `lang/de` for every file, so a key added to one language and
+not the other fails immediately rather than waiting for a state to render it.
+It also lists every German string identical to its English — a real cognate, or
+a missed translation — and each one has to be named deliberately. That list is
+the shortlist for the native-speaker pass.
+
+Copy inside a `<script>` is invisible to all of this: the announcement walker
+strips scripts before it looks at anything. The reply composer and the realtime
+handlers are checked at the source instead, against the rule that every word
+they write comes from the catalogue.
+
+### `diffForHumans()` follows the page locale, so a model must report the language
+
+The trap under all of this. A field that looks English in the source can be
+German at runtime:
+
+```php
+'ended_at' => $this->formatMoment($session->ended_at, 'Still active'),
+```
+
+With a timestamp that is `diffForHumans()` — *"vor 20 Sekunden"* for a German
+agent. Without one it is the static English fallback. **Same field, two
+languages, decided by data the view cannot see.** Marking it English mispronounces
+the German; leaving it unmarked mispronounces the English.
+
+The view must not guess by comparing the prose. The model reports it:
+
+```php
+private function momentLanguage(mixed $moment): string
+{
+    return ! $moment || ! method_exists($moment, 'diffForHumans')
+        ? DashboardLanguage::FALLBACK
+        : app()->getLocale();
+}
+```
+
+### A broadcast carries timestamps, never durations
+
+Same rule as labels, one step further. `visitorReadPayload()` used to send
+`seen_label` — a duration formatted by `diffForHumans()` in whichever agent's
+request happened to build the broadcast. Every other agent watching then read it
+in a language they did not choose.
+
+The payload carries the **timestamp**; the page formats it with
+`Intl.RelativeTimeFormat` in the reading agent's language. Anything a broadcast
+formats is frozen at the moment it is built, so it must not be prose.
+
+### A region that declares English must be English all the way down
+
+`diffForHumans()` follows whatever locale the request scoped. So extracting a
+route changes what an **unextracted** class produces: `CobrowseSnapshotFreshness`
+kept gluing the English word `Reported` to a duration that had quietly become
+German, and the panel that declares itself English then announced the German
+half as English.
+
+An exception has to hold all the way down or it is not an exception. The class
+formats with `->locale(DashboardLanguage::FALLBACK)` so its answer matches the
+declaration it is rendered under.
+
+### A filename is user data, and `String.replace` reads `$&`
+
+Passing user data as the **replacement** argument to `String.prototype.replace`
+expands `$&`, `` $` `` and `$'` as backreferences. A file called `$&.pdf` made an
+aria-label say `:name.pdf` — the token, not the file. Use a function
+replacement, which has no such semantics.
+
+### An unreplaced placeholder is the same bug wearing a translation
+
+A sentence rendered without its parameters shows `:elapsed` or `:count` to the
+agent. It is in the right language, it looks like copy, and it is nonsense — so
+neither the comparison nor the raw-key check can see it. A mutation that pinned
+a timing value to null rendered *"Wartet seit :elapsed auf Antwort"*, which
+still contained every German word the assertions were looking for.
+
+The guard collects placeholder names **from the catalogues**, so it cannot go
+stale as sentences gain parameters.
 
 ### A raw key on the page is always a bug, and needs its own guard
 

@@ -1,13 +1,21 @@
-<x-layouts.app title="Conversation {{ $conversation->support_code }}" :agent="$agent" :account="$account">
-            <x-page-header :title="$conversation->subject ?? 'Untitled conversation'" :subtitle="'Support code '.$conversation->support_code" :back-href="$conversationBackUrl" back-label="Back to conversations">
+<x-layouts.app :title="__('conversations.detail_document_title', ['code' => $conversation->support_code])" :agent="$agent" :account="$account">
+            {{-- Whole sentences from the catalogue: a subject is the visitor's own
+                 words and is never translated, but the fallback and the support-code
+                 line are copy. --}}
+            <x-page-header
+                :title="filled($conversation->subject) ? $conversation->subject : __('conversations.detail.untitled')"
+                :title-lang="filled($conversation->subject) ? '' : null"
+                :subtitle="__('conversations.detail.support_code', ['code' => $conversation->support_code])"
+                :back-href="$conversationBackUrl"
+                :back-label="__('conversations.detail.back')">
                 @if ($conversationSiblings['total'] > 1)
                     <x-slot:actions>
                         {{-- Move through the queue without returning to it. The
                              list, the order and the neighbours all come from the
                              same query the queue itself runs. --}}
-                        <nav class="wf-switcher" aria-label="Move through the conversation queue">
+                        <nav class="wf-switcher" aria-label="{{ __('conversations.detail.nav.move') }}">
                             @if ($conversationSiblings['previous'])
-                                <a class="wf-switcher-step" rel="prev" aria-label="Previous conversation in this queue"
+                                <a class="wf-switcher-step" rel="prev" aria-label="{{ __('conversations.detail.nav.previous') }}"
                                    href="{{ route('dashboard.conversations.show', ['supportCode' => $conversationSiblings['previous'], 'from_queue' => '1'] + $conversationReturnQuery) }}">&#8593;</a>
                             @else
                                 <span class="wf-switcher-step" aria-hidden="true" data-disabled="true">&#8593;</span>
@@ -15,7 +23,7 @@
 
                             <details class="wf-switcher-list">
                                 <summary>
-                                    {{ $conversationSiblings['position'] }} of {{ $conversationSiblings['total'] }}
+                                    {{ __('conversations.detail.tabs.position', ['position' => $conversationSiblings['position'], 'total' => $conversationSiblings['total']]) }}
                                     <x-icon name="chevron-down" :size="12" />
                                 </summary>
                                 <div class="wf-switcher-menu">
@@ -24,13 +32,13 @@
                                             class="wf-switcher-item"
                                             href="{{ route('dashboard.conversations.show', ['supportCode' => $sibling['support_code'], 'from_queue' => '1'] + $conversationReturnQuery) }}"
                                             @if ($sibling['current']) aria-current="true" @endif
-                                        >{{ $sibling['subject'] }}</a>
+                                        >@if ($sibling['subject_fallback']){{ __('conversations.detail.untitled') }}@else<span lang="">{{ $sibling['subject'] }}</span>@endif</a>
                                     @endforeach
                                 </div>
                             </details>
 
                             @if ($conversationSiblings['next'])
-                                <a class="wf-switcher-step" rel="next" aria-label="Next conversation in this queue"
+                                <a class="wf-switcher-step" rel="next" aria-label="{{ __('conversations.detail.nav.next') }}"
                                    href="{{ route('dashboard.conversations.show', ['supportCode' => $conversationSiblings['next'], 'from_queue' => '1'] + $conversationReturnQuery) }}">&#8595;</a>
                             @else
                                 <span class="wf-switcher-step" aria-hidden="true" data-disabled="true">&#8595;</span>
@@ -41,17 +49,21 @@
             </x-page-header>
 
             @if (session('status'))
-                <p class="status-message">{{ session('status') }}</p>
+                <p class="status-message">{{ __(session('status')) }}</p>
             @endif
 
             <x-tabs
                 id="conversation-workspace"
-                label="Conversation workspace"
+                :label="__('conversations.detail.tabs.workspace')"
                 :tabs="[
-                    ['id' => 'conversation', 'label' => 'Conversation'],
-                    ['id' => 'cobrowse', 'label' => 'Cobrowse', 'badge' => $cobrowseConsent['transport']['label'] ?? null],
-                    ['id' => 'visitor', 'label' => 'Visitor'],
-                    ['id' => 'ticket', 'label' => 'Ticket', 'badge' => $tickets->isEmpty() ? null : $tickets->count().' linked'],
+                    ['id' => 'conversation', 'label' => __('conversations.detail.tabs.conversation')],
+                    // The cobrowse badge is a VALUE from CobrowseConsentState and is
+                    // still the recorded exception -- see the panel's own `lang`.
+                    // The badge is a VALUE from CobrowseConsentState and sits outside
+                    // the panel that declares itself English, so it carries its own.
+                    ['id' => 'cobrowse', 'label' => __('conversations.detail.tabs.cobrowse'), 'badge' => $cobrowseConsent['transport']['label'] ?? null, 'badge_lang' => \App\Support\DashboardLanguage::FALLBACK],
+                    ['id' => 'visitor', 'label' => __('conversations.detail.tabs.visitor')],
+                    ['id' => 'ticket', 'label' => __('conversations.detail.tabs.ticket'), 'badge' => $tickets->isEmpty() ? null : trans_choice('conversations.detail.tabs.linked_badge', $tickets->count(), ['count' => $tickets->count()])],
                 ]"
             >
                 <x-tab-panel id="conversation" active>
@@ -60,27 +72,27 @@
 
             <section class="section" aria-labelledby="conversation-context-heading">
                 <div class="section-header">
-                    <h2 id="conversation-context-heading">Context</h2>
-                    <span class="lede">{{ ucfirst($conversation->status) }}</span>
+                    <h2 id="conversation-context-heading">{{ __('conversations.detail.headings.context') }}</h2>
+                    <span class="lede">{{ __('conversations.detail.statuses.'.$conversation->status) }}</span>
                 </div>
 
                 <div class="meta-grid">
                     <div class="meta-item">
-                        <span class="meta-label">Site</span>
-                        <span class="meta-value">{{ $conversation->site->name }}</span>
+                        <span class="meta-label">{{ __('conversations.detail.context.site') }}</span>
+                        <span class="meta-value"><span lang="">{{ $conversation->site->name }}</span></span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Visitor</span>
-                        <span class="meta-value">{{ $conversation->visitor->anonymous_id ?? 'Unknown visitor' }}</span>
+                        <span class="meta-label">{{ __('conversations.detail.context.visitor') }}</span>
+                        <span class="meta-value">{{ $conversation->visitor->anonymous_id ?? __('conversations.detail.unknown_visitor') }}</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Assigned to</span>
-                        <span class="meta-value">{{ $conversation->assignedAgent?->name ?? 'Unassigned' }}</span>
+                        <span class="meta-label">{{ __('conversations.detail.context.assigned_to') }}</span>
+                        <span class="meta-value">{{ $conversation->assignedAgent?->name ?? __('conversations.detail.context.unassigned') }}</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Opened</span>
+                        <span class="meta-label">{{ __('conversations.detail.context.opened') }}</span>
                         <span class="meta-value">{{ $conversation->created_at->diffForHumans() }}</span>
-                        <span class="lede">Last activity {{ $conversation->last_message_at?->diffForHumans() ?? 'none yet' }}</span>
+                        <span class="lede">{{ __('conversations.detail.context.last_activity', ['elapsed' => $conversation->last_message_at?->diffForHumans() ?? __('conversations.detail.context.last_activity_none')]) }}</span>
                     </div>
                 </div>
 
@@ -90,14 +102,14 @@
                             @csrf
                             @include('agent.conversations.partials.return-query-fields')
 
-                            <button class="button" type="submit">Claim conversation</button>
+                            <button class="button" type="submit">{{ __('conversations.detail.ticket.claim') }}</button>
                         </form>
                     @elseif ($conversation->assigned_agent_id === $agent->id)
                         <form class="section-form" method="POST" action="{{ route('dashboard.conversations.release', $conversation->support_code) }}">
                             @csrf
                             @include('agent.conversations.partials.return-query-fields')
 
-                            <button class="button secondary" type="submit">Release conversation</button>
+                            <button class="button secondary" type="submit">{{ __('conversations.detail.ticket.release') }}</button>
                         </form>
                     @endif
 
@@ -106,17 +118,32 @@
                         @include('agent.conversations.partials.return-query-fields')
 
                         <button class="button {{ $conversation->status === 'closed' ? '' : 'secondary' }}" type="submit">
-                            {{ $conversation->status === 'closed' ? 'Reopen conversation' : 'Close conversation' }}
+                            {{ $conversation->status === 'closed' ? __('conversations.detail.context.reopen') : __('conversations.detail.context.close') }}
                         </button>
                     </form>
                 </div>
             </section>
                 </x-tab-panel>
 
-                <x-tab-panel id="cobrowse">
+                {{-- THE RECORDED EXCEPTION for this page.
+
+                     Every value in this panel comes from the CobrowseConsentState
+                     family -- nine support classes and roughly a hundred and thirty
+                     strings, shared with the widget and the operator console. They
+                     extract as their own change; the headings around them are this
+                     page's and are translated.
+
+                     So the marker goes on each English VALUE, not on the panel.
+                     Marking the panel told a screen reader to pronounce the German
+                     headings inside it with English rules -- an exception that
+                     swallows the copy it was meant to sit beside. Each <x-english>
+                     below disappears when the value it wraps gains a key.
+                     An exception assistive technology cannot see is a defect, not an
+                     exception. See docs/product/dashboard-language.md. --}}
+                <x-tab-panel id="cobrowse" lang="{{ str_replace('_', '-', \App\Support\DashboardLanguage::FALLBACK) }}">
             <section class="section" aria-labelledby="cobrowse-heading">
                 <div class="section-header">
-                    <h2 id="cobrowse-heading">Cobrowse</h2>
+                    <h2 id="cobrowse-heading"><x-lang>{{ __('conversations.detail.tabs.cobrowse') }}</x-lang></h2>
                     <span class="lede">{{ $cobrowseConsent['label'] }}</span>
                 </div>
 
@@ -130,7 +157,7 @@
                         data-pending="{{ $cobrowseConsent['snapshot_recovery']['status'] === 'pending' ? 'true' : 'false' }}"
                     >
                         <div>
-                            <span class="meta-label">Snapshot refresh guidance</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.snapshot_guidance') }}</x-lang></span>
                             <strong data-cobrowse-snapshot-recovery-label>{{ $cobrowseConsent['snapshot_recovery']['label'] }}</strong>
                             <p class="lede" data-cobrowse-snapshot-recovery-message>{{ $cobrowseConsent['snapshot_recovery']['message'] }}</p>
                         </div>
@@ -142,7 +169,7 @@
                         @csrf
                         @include('agent.conversations.partials.return-query-fields')
 
-                        <button class="button" type="submit">Request cobrowse</button>
+                        <button class="button" type="submit"><x-lang>{{ __('conversations.detail.cobrowse.request') }}</x-lang></button>
                     </form>
                 @elseif (in_array($cobrowseConsent['status'], ['pending', 'granted'], true))
                     @if ($cobrowseConsent['status'] === 'granted')
@@ -167,8 +194,8 @@
                                 @csrf
                                 @include('agent.conversations.partials.return-query-fields')
 
-                                <button class="button secondary" type="submit" disabled data-resync-retry-button>Fresh snapshot already requested</button>
-                                <p class="field-help" data-resync-retry-help>Waiting for the visitor widget before requesting another snapshot.</p>
+                                <button class="button secondary" type="submit" disabled data-resync-retry-button><x-lang>{{ __('conversations.detail.cobrowse.fresh_requested') }}</x-lang></button>
+                                <p class="field-help" data-resync-retry-help><x-lang>{{ __('conversations.detail.cobrowse.fresh_waiting') }}</x-lang></p>
                             </form>
                         @else
                             <form class="section-form" method="POST" action="{{ route('dashboard.conversations.cobrowse.resync', $conversation->support_code) }}">
@@ -197,18 +224,18 @@
                         </div>
                         <span class="lede">
                             Requested by {{ $cobrowseConsent['resync_request']['requested_by'] }}
-                            {{ $cobrowseConsent['resync_request']['requested_at'] }}
+                            <span lang="{{ str_replace('_', '-', $cobrowseConsent['resync_request']['requested_at_language'] ?? \App\Support\DashboardLanguage::FALLBACK) }}">{{ $cobrowseConsent['resync_request']['requested_at'] }}</span>
                             @if (filled($cobrowseConsent['resync_request']['fulfilled_at'] ?? null))
                                 <br>
-                                Received {{ $cobrowseConsent['resync_request']['fulfilled_at'] }}
+                                Received <span lang="{{ str_replace('_', '-', $cobrowseConsent['resync_request']['fulfilled_at_language'] ?? \App\Support\DashboardLanguage::FALLBACK) }}">{{ $cobrowseConsent['resync_request']['fulfilled_at'] }}</span>
                             @endif
                             @if (filled($cobrowseConsent['resync_request']['expires_at'] ?? null))
                                 <br>
-                                Expires {{ $cobrowseConsent['resync_request']['expires_at'] }}
+                                Expires <span lang="{{ str_replace('_', '-', $cobrowseConsent['resync_request']['expires_at_language'] ?? \App\Support\DashboardLanguage::FALLBACK) }}">{{ $cobrowseConsent['resync_request']['expires_at'] }}</span>
                             @endif
                             @if (filled($cobrowseConsent['resync_request']['expired_at'] ?? null))
                                 <br>
-                                Expired {{ $cobrowseConsent['resync_request']['expired_at'] }}
+                                Expired <span lang="{{ str_replace('_', '-', $cobrowseConsent['resync_request']['expired_at_language'] ?? \App\Support\DashboardLanguage::FALLBACK) }}">{{ $cobrowseConsent['resync_request']['expired_at'] }}</span>
                             @endif
                         </span>
                     </div>
@@ -217,7 +244,7 @@
 
                 @if ($cobrowseConsent['replay_preview'])
                     <div class="section-header">
-                        <strong>Replay preview</strong>
+                        <strong><x-lang>{{ __('conversations.detail.cobrowse.replay_preview') }}</x-lang></strong>
                         <span class="lede">
                             <span data-cobrowse-replay-applied>{{ $cobrowseConsent['replay_preview']['applied_mutations'] }}</span>
                             /
@@ -244,9 +271,15 @@
 
                     <div class="cobrowse-preview-frame">
                         <div class="cobrowse-preview-scale">
+                            {{-- The title is translated, but an element cannot go inside an
+                                 attribute: the span's own quote closes `title` early and every
+                                 attribute after it -- sandbox, srcdoc -- is parsed as text, which
+                                 blanks the preview. An attribute takes its language from its
+                                 element, so `lang` goes on the iframe. --}}
                             <iframe
                                 class="cobrowse-preview"
-                                title="Cobrowse replay preview"
+                                lang="{{ str_replace('_', '-', app()->getLocale()) }}"
+                                title="{{ __('conversations.detail.cobrowse.replay_heading') }}"
                                 sandbox
                                 srcdoc="{{ $cobrowseConsent['replay_preview']['srcdoc'] }}"
                                 data-cobrowse-replay-frame
@@ -363,7 +396,7 @@
                         })();
                     </script>
                 @else
-                    <p class="empty realtime-note" data-cobrowse-replay-empty>No replay preview yet.</p>
+                    <p class="empty realtime-note" data-cobrowse-replay-empty><x-lang>{{ __('conversations.detail.cobrowse.no_replay') }}</x-lang></p>
                 @endif
 
                 @if ($cobrowseConsent['transport'])
@@ -375,7 +408,7 @@
                     @endphp
 
                     <div class="section-header" data-cobrowse-transport-panel data-state="{{ $cobrowseConsent['transport']['state'] }}">
-                        <strong>Transport health</strong>
+                        <strong><x-lang>{{ __('conversations.detail.cobrowse.transport_health') }}</x-lang></strong>
                         <span class="lede" data-cobrowse-transport-label>{{ $cobrowseConsent['transport']['label'] }}</span>
                     </div>
 
@@ -385,42 +418,42 @@
                 @if ($realtime)
                     <div class="live-update" data-cobrowse-update-panel data-state="idle">
                         <div>
-                            <strong>Cobrowse updates</strong>
-                            <p class="lede" data-cobrowse-update-status>Waiting for live cobrowse updates.</p>
+                            <strong><x-lang>{{ __('conversations.detail.cobrowse.updates') }}</x-lang></strong>
+                            <p class="lede" data-cobrowse-update-status><x-lang>{{ __('conversations.detail.cobrowse.waiting') }}</x-lang></p>
                         </div>
-                        <button class="button secondary" type="button" data-cobrowse-refresh hidden>Refresh preview</button>
+                        <button class="button secondary" type="button" data-cobrowse-refresh hidden><x-lang>{{ __('conversations.detail.cobrowse.refresh_preview') }}</x-lang></button>
                     </div>
                 @endif
 
                 {{-- Everything below is session diagnostics: useful when debugging a
                      specific cobrowse session, ambient noise otherwise. Collapsed by
                      default; the realtime script's targets stay in the DOM. --}}
-                <x-details-disclosure summary="Session diagnostics" data-cobrowse-diagnostics>
+                <x-details-disclosure :summary="__('conversations.detail.context.session_diagnostics')" :summary-lang="app()->getLocale()" data-cobrowse-diagnostics>
                     @if ($cobrowseConsent['lifecycle'])
                         <div class="section-header">
-                            <strong>Session timeline</strong>
+                            <strong><x-lang>{{ __('conversations.detail.cobrowse.session_timeline') }}</x-lang></strong>
                         </div>
 
                         <div class="meta-grid realtime-grid">
                             <div class="meta-item">
-                                <span class="meta-label">Requested by</span>
+                                <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.requested_by') }}</x-lang></span>
                                 <span class="meta-value">{{ $cobrowseConsent['lifecycle']['requested_by'] }}</span>
                             </div>
                             <div class="meta-item">
-                                <span class="meta-label">Requested</span>
-                                <span class="meta-value">{{ $cobrowseConsent['lifecycle']['requested_at'] }}</span>
+                                <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.requested') }}</x-lang></span>
+                                <span class="meta-value"><span lang="{{ str_replace('_', '-', $cobrowseConsent['lifecycle']['requested_at_language'] ?? \App\Support\DashboardLanguage::FALLBACK) }}">{{ $cobrowseConsent['lifecycle']['requested_at'] }}</span></span>
                             </div>
                             <div class="meta-item">
-                                <span class="meta-label">Consent granted</span>
-                                <span class="meta-value">{{ $cobrowseConsent['lifecycle']['consented_at'] }}</span>
+                                <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.consent') }}</x-lang></span>
+                                <span class="meta-value"><span lang="{{ str_replace('_', '-', $cobrowseConsent['lifecycle']['consented_at_language'] ?? \App\Support\DashboardLanguage::FALLBACK) }}">{{ $cobrowseConsent['lifecycle']['consented_at'] }}</span></span>
                             </div>
                             <div class="meta-item">
-                                <span class="meta-label">Stopped</span>
-                                <span class="meta-value">{{ $cobrowseConsent['lifecycle']['ended_at'] }}</span>
+                                <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.stopped') }}</x-lang></span>
+                                <span class="meta-value"><span lang="{{ str_replace('_', '-', $cobrowseConsent['lifecycle']['ended_at_language'] ?? \App\Support\DashboardLanguage::FALLBACK) }}">{{ $cobrowseConsent['lifecycle']['ended_at'] }}</span></span>
                             </div>
                             @if ($cobrowseConsent['lifecycle']['ended_at'] !== 'Still active')
                                 <div class="meta-item">
-                                    <span class="meta-label">Stopped by</span>
+                                    <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.stopped_by') }}</x-lang></span>
                                     <span class="meta-value">{{ $cobrowseConsent['lifecycle']['ended_by'] }}</span>
                                 </div>
                             @endif
@@ -429,8 +462,8 @@
 
                     @if (! empty($cobrowseConsent['resync_request']['recovery_timeline'] ?? []))
                         <div class="section-header">
-                            <strong>Recovery timeline</strong>
-                            <span class="lede">Fresh snapshot path</span>
+                            <strong><x-lang>{{ __('conversations.detail.cobrowse.recovery_timeline') }}</x-lang></strong>
+                            <span class="lede"><x-lang>{{ __('conversations.detail.cobrowse.fresh_path') }}</x-lang></span>
                         </div>
 
                         <div class="timeline-list">
@@ -440,7 +473,7 @@
                                         <strong>{{ $timelineItem['label'] }}</strong>
                                         <p class="message-body">{{ $timelineItem['detail'] }}</p>
                                         <div class="timeline-meta">
-                                            <span>{{ $timelineItem['occurred_at'] }}</span>
+                                            <span lang="{{ str_replace('_', '-', $timelineItem['occurred_at_language'] ?? \App\Support\DashboardLanguage::FALLBACK) }}">{{ $timelineItem['occurred_at'] }}</span>
                                             <span>{{ $timelineItem['badge'] }}</span>
                                         </div>
                                     </div>
@@ -451,32 +484,34 @@
 
                     @if ($cobrowseConsent['transport'])
                         <div class="section-header">
-                            <strong>Transport detail</strong>
+                            <strong><x-lang>{{ __('conversations.detail.cobrowse.transport_detail') }}</x-lang></strong>
                         </div>
 
                         <div class="meta-grid realtime-grid">
                             <div class="meta-item">
-                                <span class="meta-label">State</span>
+                                <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.state') }}</x-lang></span>
                                 <span class="meta-value" data-cobrowse-transport-state-label>{{ $cobrowseConsent['transport']['label'] }}</span>
                             </div>
                             <div class="meta-item">
-                                <span class="meta-label">Last report</span>
-                                <span class="meta-value" data-cobrowse-transport-last-report>{{ $cobrowseConsent['transport']['last_report'] }}</span>
+                                <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.last_report') }}</x-lang></span>
+                                <span class="meta-value" data-cobrowse-transport-last-report><span lang="{{ str_replace('_', '-', ($cobrowseConsent['transport']['state'] ?? null) === 'unavailable'
+                                    ? \App\Support\DashboardLanguage::FALLBACK
+                                    : app()->getLocale()) }}">{{ $cobrowseConsent['transport']['last_report'] }}</span></span>
                             </div>
                             <div class="meta-item">
-                                <span class="meta-label">Reconnects</span>
+                                <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.reconnects') }}</x-lang></span>
                                 <span class="meta-value" data-cobrowse-transport-reconnects>{{ $cobrowseConsent['transport']['reconnects'] }}</span>
                             </div>
                             <div class="meta-item">
-                                <span class="meta-label">Pressure</span>
+                                <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.pressure') }}</x-lang></span>
                                 <span class="meta-value" data-cobrowse-transport-pressure>{{ $cobrowseConsent['transport']['pressure'] }}</span>
                             </div>
                             <div class="meta-item">
-                                <span class="meta-label">Agent guidance</span>
+                                <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.guidance') }}</x-lang></span>
                                 <span class="meta-value" data-cobrowse-transport-guidance>{{ $cobrowseConsent['transport']['guidance'] }}</span>
                             </div>
                             <div class="meta-item">
-                                <span class="meta-label">Recovery action</span>
+                                <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.recovery_action') }}</x-lang></span>
                                 <span
                                     class="meta-value"
                                     data-cobrowse-transport-recovery
@@ -488,42 +523,42 @@
 
                 @if ($cobrowseConsent['page_state'])
                     <div class="section-header">
-                        <strong>Visitor page</strong>
+                        <strong><x-lang>{{ __('conversations.detail.cobrowse.visitor_page') }}</x-lang></strong>
                     </div>
 
                     <div class="meta-grid realtime-grid">
                         <div class="meta-item">
-                            <span class="meta-label">Title</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.ticket.title') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['page_state']['title'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">URL</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.url') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['page_state']['page_url'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">Viewport</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.viewport') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['page_state']['viewport'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">Scroll</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.scroll') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['page_state']['scroll'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">Visibility</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.reply.visibility_label') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['page_state']['visibility_state'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">Focus</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.focus') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['page_state']['focus'] }}</span>
                         </div>
                     </div>
                 @else
-                    <p class="empty realtime-note">No visitor page state yet.</p>
+                    <p class="empty realtime-note"><x-lang>{{ __('conversations.detail.context.no_page_state') }}</x-lang></p>
                 @endif
 
                 @if ($cobrowseConsent['snapshot'])
                     <div class="section-header">
-                        <strong>Page snapshot</strong>
+                        <strong><x-lang>{{ __('conversations.detail.cobrowse.page_snapshot') }}</x-lang></strong>
                         <span
                             class="readiness-status"
                             data-status="{{ $cobrowseConsent['snapshot']['freshness']['tone'] }}"
@@ -533,28 +568,28 @@
 
                     <div class="meta-grid realtime-grid">
                         <div class="meta-item">
-                            <span class="meta-label">Snapshot freshness</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.snapshot_freshness') }}</x-lang></span>
                             <span class="meta-value" data-cobrowse-snapshot-freshness-label>{{ $cobrowseConsent['snapshot']['freshness']['label'] }}</span>
                             <span class="lede" data-cobrowse-snapshot-freshness-message>{{ $cobrowseConsent['snapshot']['freshness']['message'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">Reported</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.reported') }}</x-lang></span>
                             <span class="meta-value" data-cobrowse-snapshot-freshness-reported>{{ $cobrowseConsent['snapshot']['freshness']['reported_label'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">Title</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.ticket.title') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['snapshot']['title'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">URL</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.url') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['snapshot']['page_url'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">Nodes</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.nodes') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['snapshot']['node_count'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">Masked</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.masked') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['snapshot']['masked_count'] }}</span>
                         </div>
                     </div>
@@ -565,42 +600,42 @@
                         </article>
                     </div>
                 @else
-                    <p class="empty realtime-note">No sanitized page snapshot yet.</p>
+                    <p class="empty realtime-note"><x-lang>{{ __('conversations.detail.cobrowse.no_snapshot') }}</x-lang></p>
                 @endif
 
                 @if ($cobrowseConsent['mutation_stream'])
                     <div class="section-header">
-                        <strong>Mutation stream</strong>
+                        <strong><x-lang>{{ __('conversations.detail.cobrowse.mutation_stream') }}</x-lang></strong>
                     </div>
 
                     <div class="meta-grid realtime-grid">
                         <div class="meta-item">
-                            <span class="meta-label">Batches</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.batches') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['mutation_stream']['batch_count'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">Mutations</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.mutations') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['mutation_stream']['mutation_count'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">Dropped</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.dropped') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['mutation_stream']['dropped_count'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">Skipped</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.skipped') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['mutation_stream']['skipped_count'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">Last sequence</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.last_sequence') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['mutation_stream']['last_sequence'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">URL</span>
+                            <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.url') }}</x-lang></span>
                             <span class="meta-value">{{ $cobrowseConsent['mutation_stream']['last_page_url'] }}</span>
                         </div>
                     </div>
                 @else
-                    <p class="empty realtime-note">No mutation stream diagnostics yet.</p>
+                    <p class="empty realtime-note"><x-lang>{{ __('conversations.detail.cobrowse.no_mutations') }}</x-lang></p>
                 @endif
 
 
@@ -608,41 +643,41 @@
                      they live on /dashboard/readiness. --}}
 
                 <div class="section-header" data-cobrowse-telemetry-heading @if (! $cobrowseConsent['telemetry']) hidden @endif>
-                    <strong>Connection telemetry</strong>
+                    <strong><x-lang>{{ __('conversations.detail.cobrowse.telemetry') }}</x-lang></strong>
                 </div>
 
                 <div class="meta-grid realtime-grid" data-cobrowse-telemetry-grid @if (! $cobrowseConsent['telemetry']) hidden @endif>
                     <div class="meta-item">
-                        <span class="meta-label">RTT</span>
-                        <span class="meta-value" data-cobrowse-telemetry-rtt>{{ $cobrowseConsent['telemetry']['rtt'] ?? 'Not reported' }}</span>
+                        <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.rtt') }}</x-lang></span>
+                        <span class="meta-value" data-cobrowse-telemetry-rtt>@isset($cobrowseConsent['telemetry']['rtt']){{ $cobrowseConsent['telemetry']['rtt'] }}@else<x-lang>{{ __('conversations.detail.context.not_reported') }}</x-lang>@endisset</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Max RTT</span>
-                        <span class="meta-value" data-cobrowse-telemetry-max-rtt>{{ $cobrowseConsent['telemetry']['max_rtt'] ?? 'Not reported' }}</span>
+                        <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.max_rtt') }}</x-lang></span>
+                        <span class="meta-value" data-cobrowse-telemetry-max-rtt>@isset($cobrowseConsent['telemetry']['max_rtt']){{ $cobrowseConsent['telemetry']['max_rtt'] }}@else<x-lang>{{ __('conversations.detail.context.not_reported') }}</x-lang>@endisset</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Payload</span>
-                        <span class="meta-value" data-cobrowse-telemetry-payload>{{ $cobrowseConsent['telemetry']['payload'] ?? 'Not reported' }}</span>
+                        <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.payload') }}</x-lang></span>
+                        <span class="meta-value" data-cobrowse-telemetry-payload>@isset($cobrowseConsent['telemetry']['payload']){{ $cobrowseConsent['telemetry']['payload'] }}@else<x-lang>{{ __('conversations.detail.context.not_reported') }}</x-lang>@endisset</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Max payload</span>
-                        <span class="meta-value" data-cobrowse-telemetry-max-payload>{{ $cobrowseConsent['telemetry']['max_payload'] ?? 'Not reported' }}</span>
+                        <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.max_payload') }}</x-lang></span>
+                        <span class="meta-value" data-cobrowse-telemetry-max-payload>@isset($cobrowseConsent['telemetry']['max_payload']){{ $cobrowseConsent['telemetry']['max_payload'] }}@else<x-lang>{{ __('conversations.detail.context.not_reported') }}</x-lang>@endisset</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Dropped batches</span>
+                        <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.dropped_batches') }}</x-lang></span>
                         <span class="meta-value" data-cobrowse-telemetry-dropped-batches>{{ $cobrowseConsent['telemetry']['dropped_batches'] ?? '0' }}</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Reconnects</span>
+                        <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.reconnects') }}</x-lang></span>
                         <span class="meta-value" data-cobrowse-telemetry-reconnects>{{ $cobrowseConsent['telemetry']['reconnects'] ?? '0' }}</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Samples</span>
+                        <span class="meta-label"><x-lang>{{ __('conversations.detail.cobrowse.samples') }}</x-lang></span>
                         <span class="meta-value" data-cobrowse-telemetry-samples>{{ $cobrowseConsent['telemetry']['samples'] ?? '0' }}</span>
                     </div>
                 </div>
 
-                <p class="empty realtime-note" data-cobrowse-telemetry-empty @if ($cobrowseConsent['telemetry']) hidden @endif>No cobrowse connection telemetry yet.</p>
+                <p class="empty realtime-note" data-cobrowse-telemetry-empty @if ($cobrowseConsent['telemetry']) hidden @endif><x-lang>{{ __('conversations.detail.cobrowse.no_telemetry') }}</x-lang></p>
                 </x-details-disclosure>
             </section>
                 </x-tab-panel>
@@ -650,69 +685,72 @@
                 <x-tab-panel id="visitor">
             <section class="section" aria-labelledby="visitor-context-heading">
                 <div class="section-header">
-                    <h2 id="visitor-context-heading">Visitor at a glance</h2>
+                    <h2 id="visitor-context-heading">{{ __('conversations.detail.context.heading') }}</h2>
                     <div class="section-actions">
-                        <span class="lede">Safe context only</span>
+                        <span class="lede">{{ __('conversations.detail.context.safe_only') }}</span>
                         @if ($conversation->visitor)
-                            <a class="button secondary" href="{{ route('dashboard.visitors.show', $conversation->visitor) }}">Open visitor profile</a>
+                            <a class="button secondary" href="{{ route('dashboard.visitors.show', $conversation->visitor) }}">{{ __('conversations.detail.context.open_profile') }}</a>
                         @endif
                     </div>
                 </div>
 
                 <div class="meta-grid">
                     <div class="meta-item">
-                        <span class="meta-label">Visitor</span>
+                        <span class="meta-label">{{ __('conversations.detail.context.visitor') }}</span>
                         <span class="meta-value">{{ $visitorContext['name'] ?: $visitorContext['anonymous_id'] }}</span>
                     </div>
                     @if ($visitorContext['email'])
                         <div class="meta-item">
-                            <span class="meta-label">Email</span>
+                            <span class="meta-label">{{ __('conversations.detail.context.email') }}</span>
                             <span class="meta-value">{{ $visitorContext['email'] }}</span>
                         </div>
                     @endif
                     @if ($visitorContext['reason'])
                         <div class="meta-item">
-                            <span class="meta-label">What this is about</span>
-                            <span class="meta-value">{{ $visitorContext['reason'] }}</span>
+                            <span class="meta-label">{{ __('conversations.detail.context.about') }}</span>
+                            {{-- The visitor's own words, typed before the conversation started. --}}
+                            <span class="meta-value" lang="">{{ $visitorContext['reason'] }}</span>
                         </div>
                     @endif
                     <div class="meta-item">
-                        <span class="meta-label">Host visitor ID</span>
-                        <span class="meta-value">{{ $visitorContext['external_id'] ?? 'Not provided' }}</span>
+                        <span class="meta-label">{{ __('conversations.detail.context.host_visitor_id') }}</span>
+                        <span class="meta-value">{{ $visitorContext['external_id'] ?? __('conversations.detail.context.not_provided') }}</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Presence</span>
-                        <span class="readiness-status" data-status="{{ in_array($visitorContext['presence']['state'], ['active', 'recent'], true) ? 'ready' : 'manual' }}" data-visitor-presence-label aria-live="polite">
+                        <span class="meta-label">{{ __('conversations.detail.context.presence') }}</span>
+                        {{-- The script that refreshes this cannot reach the catalogue, so its
+                             fallback is handed over as data. --}}
+                        <span class="readiness-status" data-status="{{ in_array($visitorContext['presence']['state'], ['active', 'recent'], true) ? 'ready' : 'manual' }}" data-fallback="{{ __('conversations.detail.context.not_reported') }}" data-visitor-presence-label aria-live="polite">
                             {{ $visitorContext['presence']['label'] }}
                         </span>
                         <span class="lede" data-visitor-presence-detail>{{ $visitorContext['presence']['detail'] }}</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Last seen</span>
-                        <span class="meta-value" data-visitor-presence-last-seen>{{ $visitorContext['last_seen_at']?->diffForHumans() ?? 'Not reported' }}</span>
+                        <span class="meta-label">{{ __('conversations.detail.context.last_seen') }}</span>
+                        <span class="meta-value" data-visitor-presence-last-seen>{{ $visitorContext['last_seen_at']?->diffForHumans() ?? __('conversations.detail.context.not_reported') }}</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Latest page</span>
-                        <span class="meta-value">{{ $visitorContext['last_page_url'] ?? 'Not reported' }}</span>
+                        <span class="meta-label">{{ __('conversations.detail.context.latest_page') }}</span>
+                        <span class="meta-value">{{ $visitorContext['last_page_url'] ?? __('conversations.detail.context.not_reported') }}</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Entry page</span>
-                        <span class="meta-value">{{ $visitorContext['started_page_url'] ?? 'Not reported' }}</span>
+                        <span class="meta-label">{{ __('conversations.detail.context.entry_page') }}</span>
+                        <span class="meta-value">{{ $visitorContext['started_page_url'] ?? __('conversations.detail.context.not_reported') }}</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">History on this site</span>
-                        <span class="meta-value">{{ $priorConversations->count() }} previous</span>
+                        <span class="meta-label">{{ __('conversations.detail.context.history') }}</span>
+                        <span class="meta-value">{{ trans_choice('conversations.detail.context.previous_count', $priorConversations->count(), ['count' => $priorConversations->count()]) }}</span>
                     </div>
                 </div>
 
                 <div class="section-header">
-                    <strong>Support references</strong>
-                    <span class="lede">Current and same-visitor records</span>
+                    <strong>{{ __('conversations.detail.headings.references') }}</strong>
+                    <span class="lede">{{ __('conversations.detail.references.records') }}</span>
                 </div>
 
                 <div class="meta-grid">
                     <div class="meta-item">
-                        <span class="meta-label">Current support code</span>
+                        <span class="meta-label">{{ __('conversations.detail.references.current') }}</span>
                         <span class="meta-value">
                             <x-support-code-reference
                                 :code="$conversation->support_code"
@@ -721,15 +759,15 @@
                         </span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Visitor reference</span>
+                        <span class="meta-label">{{ __('conversations.detail.references.visitor_reference') }}</span>
                         <span class="meta-value">{{ $visitorContext['external_id'] ?? $visitorContext['anonymous_id'] }}</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Same visitor support codes</span>
-                        <span class="meta-value">{{ $priorConversations->count() }} previous</span>
+                        <span class="meta-label">{{ __('conversations.detail.references.same_visitor') }}</span>
+                        <span class="meta-value">{{ trans_choice('conversations.detail.context.previous_count', $priorConversations->count(), ['count' => $priorConversations->count()]) }}</span>
                         @if ($priorConversations->isEmpty())
                             <div class="notice-list">
-                                <p>No previous support codes yet.</p>
+                                <p>{{ __('conversations.detail.references.none') }}</p>
                             </div>
                         @else
                             <div class="notice-list">
@@ -738,44 +776,47 @@
                                         <a class="text-link" href="{{ route('dashboard.conversations.show', $priorConversation->support_code) }}">
                                             {{ $priorConversation->support_code }}
                                         </a>
-                                        <span class="lede">{{ $priorConversation->subject ?? 'Untitled conversation' }}</span>
+                                        <span class="lede">@if (filled($priorConversation->subject))<span lang="">{{ $priorConversation->subject }}</span>@else{{ __('conversations.detail.untitled') }}@endif</span>
                                     </p>
                                 @endforeach
                             </div>
                         @endif
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Reference note</span>
-                        <span class="meta-value">Use these references when the visitor or another agent needs to find this support trail again.</span>
+                        <span class="meta-label">{{ __('conversations.detail.references.note') }}</span>
+                        <span class="meta-value">{{ __('conversations.detail.references.lede') }}</span>
                     </div>
                 </div>
 
                 <div class="notice-copy notice-copy-bordered">
-                    <p><strong>Data boundary</strong></p>
-                    <p>Use this context to answer the current request. Do not collect, export, or infer extra visitor data without consent.</p>
+                    <p><strong>{{ __('conversations.detail.cobrowse.data_boundary') }}</strong></p>
+                    <p>{{ __('conversations.detail.context.boundary') }}</p>
                 </div>
 
                 <div class="section-header">
-                    <strong>Host context</strong>
-                    <span class="lede">{{ count($visitorContext['host_context']) }} fields</span>
+                    <strong>{{ __('conversations.detail.context.host_context') }}</strong>
+                    <span class="lede">{{ trans_choice('conversations.detail.context.field_count', count($visitorContext['host_context']), ['count' => count($visitorContext['host_context'])]) }}</span>
                 </div>
 
                 @if ($visitorContext['host_context'] === [])
-                    <p class="empty">No host-provided context yet.</p>
+                    <p class="empty">{{ __('conversations.detail.context.no_host_context') }}</p>
                 @else
                     <div class="table-wrap">
                         <table>
                             <thead>
                                 <tr>
-                                    <th scope="col">Field</th>
-                                    <th scope="col">Value</th>
+                                    <th scope="col">{{ __('conversations.detail.context.field') }}</th>
+                                    <th scope="col">{{ __('conversations.detail.context.value') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @foreach ($visitorContext['host_context'] as $field => $value)
                                     <tr>
-                                        <td>{{ $field }}</td>
-                                        <td>{{ $value }}</td>
+                                        {{-- Host context is whatever the customer's own
+                                             site chose to send: their field names, their
+                                             values, their language. --}}
+                                        <td lang="">{{ $field }}</td>
+                                        <td lang="">{{ $value }}</td>
                                     </tr>
                                 @endforeach
                             </tbody>
@@ -784,35 +825,36 @@
                 @endif
 
                 <div class="section-header">
-                    <strong>Prior conversations</strong>
-                    <span class="lede">{{ $priorConversations->count() }} previous</span>
+                    <strong>{{ __('conversations.detail.context.prior') }}</strong>
+                    <span class="lede">{{ trans_choice('conversations.detail.context.previous_count', $priorConversations->count(), ['count' => $priorConversations->count()]) }}</span>
                 </div>
 
                 @if ($priorConversations->isEmpty())
-                    <p class="empty">No prior conversations for this visitor on this site.</p>
+                    <p class="empty">{{ __('conversations.detail.context.no_prior') }}</p>
                 @else
                     <div class="timeline-list">
                         @foreach ($priorConversations as $priorConversation)
                             <article class="timeline-item">
                                 <div class="timeline-content">
                                     <a class="text-link" href="{{ route('dashboard.conversations.show', $priorConversation->support_code) }}">
-                                        {{ $priorConversation->subject ?? 'Untitled conversation' }}
+                                        @if (filled($priorConversation->subject))<span lang="">{{ $priorConversation->subject }}</span>@else{{ __('conversations.detail.untitled') }}@endif
                                     </a>
                                     <div class="timeline-meta">
                                         <span>{{ $priorConversation->support_code }}</span>
-                                        <span>{{ ucfirst($priorConversation->status) }}</span>
-                                        <span>Owner: {{ $priorConversation->assignedAgent?->name ?? 'Unassigned' }}</span>
-                                        <span>Last activity: {{ $priorConversation->last_message_at?->diffForHumans() ?? $priorConversation->created_at->diffForHumans() }}</span>
+                                        <span>{{ __('conversations.detail.statuses.'.$priorConversation->status) }}</span>
+                                        <span>{{ __('conversations.detail.context.owner_label', ['name' => $priorConversation->assignedAgent?->name ?? __('conversations.detail.context.unassigned')]) }}</span>
+                                        <span>{{ __('conversations.detail.context.last_activity_label', ['elapsed' => $priorConversation->last_message_at?->diffForHumans() ?? $priorConversation->created_at->diffForHumans()]) }}</span>
                                     </div>
                                     <div class="timeline-meta">
-                                        <strong>Linked ticket</strong>
+                                        <strong>{{ __('conversations.detail.ticket.heading') }}</strong>
                                         @forelse ($priorConversation->tickets as $ticket)
                                             <a class="text-link" href="{{ route('dashboard.tickets.show', $ticket) }}">
-                                                {{ $ticket->subject }}
+                                                <span lang="">{{ $ticket->subject }}</span>
                                             </a>
-                                            <span>{{ ucfirst($ticket->status) }}</span>
+                                            {{-- A TICKET status, from the ticket catalogue rather than this one. --}}
+                                            <span>{{ __('tickets.statuses.'.$ticket->status) }}</span>
                                         @empty
-                                            <span>No ticket</span>
+                                            <span>{{ __('conversations.detail.ticket.none') }}</span>
                                         @endforelse
                                     </div>
                                 </div>
@@ -826,8 +868,8 @@
                 <x-tab-panel id="ticket">
             <section class="section" aria-labelledby="tickets-heading">
                 <div class="section-header">
-                    <h2 id="tickets-heading">Ticket</h2>
-                    <span class="lede">{{ $tickets->isEmpty() ? 'Not created' : $tickets->count().' linked' }}</span>
+                    <h2 id="tickets-heading">{{ __('conversations.detail.tabs.ticket') }}</h2>
+                    <span class="lede">{{ $tickets->isEmpty() ? __('conversations.detail.tabs.not_created') : trans_choice('conversations.detail.tabs.linked_badge', $tickets->count(), ['count' => $tickets->count()]) }}</span>
                 </div>
 
                 @if ($tickets->isEmpty())
@@ -836,11 +878,11 @@
                         @include('agent.conversations.partials.return-query-fields')
 
                         <div class="field">
-                            <label for="category">Category</label>
+                            <label for="category">{{ __('conversations.detail.ticket.category') }}</label>
                             <select id="category" name="category">
-                                <option value="">Uncategorized</option>
+                                <option value="">{{ __('conversations.detail.ticket.uncategorized') }}</option>
                                 @foreach ($ticketCategories as $value => $category)
-                                    <option value="{{ $value }}" @selected(old('category') === $value)>{{ $category['label'] }}</option>
+                                    <option value="{{ $value }}" @selected(old('category') === $value)>{{ __('tickets.categories.'.$value) }}</option>
                                 @endforeach
                             </select>
                             <x-ticket-category-guidance :categories="$ticketCategoryGuidance" />
@@ -850,10 +892,10 @@
                         </div>
 
                         <div class="field">
-                            <label for="priority">Priority</label>
+                            <label for="priority">{{ __('conversations.detail.ticket.priority') }}</label>
                             <select id="priority" name="priority">
                                 @foreach ($ticketPriorities as $value => $priority)
-                                    <option value="{{ $value }}" @selected(old('priority', 'normal') === $value)>{{ $priority['label'] }}</option>
+                                    <option value="{{ $value }}" @selected(old('priority', 'normal') === $value)>{{ __('tickets.priorities.'.$value) }}</option>
                                 @endforeach
                             </select>
                             <x-ticket-priority-guidance :priorities="$ticketPriorityGuidance" />
@@ -862,7 +904,7 @@
                             @enderror
                         </div>
 
-                        <button class="button" type="submit">Create ticket</button>
+                        <button class="button" type="submit">{{ __('conversations.detail.ticket.create') }}</button>
                     </form>
                 @else
                     @include('agent.conversations.partials.linked-ticket-work')
@@ -926,6 +968,8 @@
                 var previewDriftStatus = document.querySelector('[data-cobrowse-replay-drift-status]');
                 var previewDriftMessage = document.querySelector('[data-cobrowse-replay-drift-message]');
                 var previewViewportLabel = document.querySelector('[data-cobrowse-viewport-label]');
+                var realtimeLabels = @json($realtimeLabels);
+
                 var visitorPresenceLabel = document.querySelector('[data-visitor-presence-label]');
                 var visitorPresenceDetail = document.querySelector('[data-visitor-presence-detail]');
                 var visitorPresenceLastSeen = document.querySelector('[data-visitor-presence-last-seen]');
@@ -1153,17 +1197,105 @@
                         : 'manual';
                 }
 
+                var relativeTimeFormat = (function () {
+                    try {
+                        return new Intl.RelativeTimeFormat(realtimeLabels.locale || 'en', {numeric: 'auto'});
+                    } catch (error) {
+                        return null;
+                    }
+                })();
+
+                // Durations arrive as timestamps and are formatted here. A
+                // duration formatted on the server is frozen in whichever
+                // agent's request built the broadcast, and every other agent
+                // watching then reads it in a language they did not choose.
+                function elapsedSince(timestamp) {
+                    if (!timestamp || !relativeTimeFormat) {
+                        return null;
+                    }
+
+                    var moment = Date.parse(timestamp);
+
+                    if (!Number.isFinite(moment)) {
+                        return null;
+                    }
+
+                    var seconds = Math.round((moment - Date.now()) / 1000);
+                    var units = [
+                        ['year', 31536000],
+                        ['month', 2592000],
+                        ['day', 86400],
+                        ['hour', 3600],
+                        ['minute', 60],
+                    ];
+
+                    for (var index = 0; index < units.length; index += 1) {
+                        if (Math.abs(seconds) >= units[index][1]) {
+                            return relativeTimeFormat.format(
+                                Math.round(seconds / units[index][1]),
+                                units[index][0]
+                            );
+                        }
+                    }
+
+                    return relativeTimeFormat.format(seconds, 'second');
+                }
+
+                // A template whose `:elapsed` cannot be filled must not reach the
+                // page: `Seen :elapsed` is the right language and still nonsense.
+                //
+                // Returns null when it cannot produce anything, which is NOT the
+                // same as the fallback. A browser without Intl.RelativeTimeFormat
+                // can still have a perfectly good timestamp, and treating that as
+                // missing telemetry would replace a real "seen 2 minutes ago" with
+                // "no visitor heartbeat yet" -- a different fact, on every event.
+                // The caller leaves the server-rendered text alone instead.
+                function fillElapsed(template, timestamp, fallback) {
+                    if (!template) {
+                        return fallback;
+                    }
+
+                    if (template.indexOf(':elapsed') === -1) {
+                        return template;
+                    }
+
+                    if (!timestamp) {
+                        return fallback;
+                    }
+
+                    var elapsed = elapsedSince(timestamp);
+
+                    return elapsed === null ? null : template.replace(':elapsed', elapsed);
+                }
+
+                // Skips the write when there is nothing trustworthy to write.
+                function setTextIfKnown(target, value) {
+                    if (target && value !== null) {
+                        target.textContent = value;
+                    }
+                }
+
                 function updateVisitorPresence(visitorPresence) {
                     if (!hasPresenceTargets || !visitorPresence) {
                         return;
                     }
 
-                    visitorPresenceLabel.textContent = visitorPresence.label || 'Not reported';
-                    visitorPresenceLabel.dataset.status = presenceStatusFor(visitorPresence.state || 'unknown');
-                    visitorPresenceDetail.textContent = visitorPresence.detail || 'No visitor heartbeat yet.';
+                    // Same rule as the read receipt: state travels, words are local.
+                    var presenceState = visitorPresence.state || 'unknown';
+
+                    visitorPresenceLabel.textContent = realtimeLabels.presence[presenceState]
+                        || visitorPresenceLabel.dataset.fallback;
+                    visitorPresenceLabel.dataset.status = presenceStatusFor(presenceState);
+                    setTextIfKnown(visitorPresenceDetail, fillElapsed(
+                        realtimeLabels.presenceDetail[visitorPresence.detail_key],
+                        visitorPresence.last_seen_at,
+                        realtimeLabels.presenceDetail.no_heartbeat
+                    ));
 
                     if (visitorPresenceLastSeen) {
-                        visitorPresenceLastSeen.textContent = visitorPresence.last_seen_label || 'Not reported';
+                        setTextIfKnown(visitorPresenceLastSeen, visitorPresence.last_seen_at
+                            ? elapsedSince(visitorPresence.last_seen_at)
+                            : realtimeLabels.lastSeenUnknown);
                     }
                 }
 
@@ -1181,7 +1313,12 @@
                     }
 
                     visitorReadLabels.forEach(function (visitorReadLabel) {
-                        visitorReadLabel.textContent = visitorRead.label || 'No agent reply yet';
+                        // The payload's own `label` is deliberately ignored: one
+                        // broadcast reaches every agent watching, and they do not
+                        // all read the same language. The STATE travels; the words
+                        // come from this page, in this agent's language.
+                        visitorReadLabel.textContent = realtimeLabels.read[visitorRead.state || 'none']
+                            || realtimeLabels.read.none;
 
                         if (visitorReadLabel.hasAttribute('data-status')) {
                             visitorReadLabel.dataset.status = readStatusFor(visitorRead.state || 'none');
@@ -1189,7 +1326,13 @@
                     });
 
                     visitorReadDetails.forEach(function (visitorReadDetail) {
-                        visitorReadDetail.textContent = visitorRead.detail || 'No agent reply has been sent.';
+                        // The payload's own `detail` is ignored for the same
+                        // reason its `label` is.
+                        setTextIfKnown(visitorReadDetail, fillElapsed(
+                            realtimeLabels.readDetail[visitorRead.state || 'none'],
+                            visitorRead.seen_at,
+                            realtimeLabels.readDetail.none
+                        ));
                     });
 
                     var messageId = visitorRead.message_id ? String(visitorRead.message_id) : '';
@@ -1202,13 +1345,17 @@
                     }
 
                     if (visitorRead.state === 'seen') {
-                        agentMessageSeen.textContent = 'Seen by visitor ' + (visitorRead.seen_label || 'just now');
+                        setTextIfKnown(agentMessageSeen, fillElapsed(
+                            realtimeLabels.transcript.seen,
+                            visitorRead.seen_at,
+                            realtimeLabels.transcript.seen_unknown
+                        ) ?? realtimeLabels.transcript.seen_unknown);
 
                         return;
                     }
 
                     if (visitorRead.state === 'unseen') {
-                        agentMessageSeen.textContent = 'Not seen yet';
+                        agentMessageSeen.textContent = realtimeLabels.transcript.unseen;
                     }
                 }
 
@@ -1581,7 +1728,9 @@
                             var total = items.length;
 
                             if (transcriptCount) {
-                                transcriptCount.textContent = total + ' total';
+                                transcriptCount.textContent = (total === 1
+                                    ? transcriptCount.dataset.totalOne
+                                    : transcriptCount.dataset.totalMany.replace(':count', total));
                             }
 
                             // Only a genuinely new message means the visitor stopped

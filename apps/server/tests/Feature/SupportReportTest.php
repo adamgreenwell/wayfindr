@@ -195,8 +195,12 @@ test('a close whose episode start predates recording is counted, not measured', 
     // have been closed and reopened while nothing was writing it down.
     recordingBeganAt(CarbonImmutable::now()->subDays(5));
 
-    $recent = conversationOpenedAt($world, CarbonImmutable::now()->subDays(4), 'closed');
-    lifecycleEventAt($recent, ConversationLifecycleLog::CLOSED, CarbonImmutable::now()->subDays(4)->addHour());
+    // One anchor, same reason as the reopen test below: two now() calls a
+    // second apart make this 3601.
+    $recentOpenedAt = CarbonImmutable::now()->subDays(4);
+
+    $recent = conversationOpenedAt($world, $recentOpenedAt, 'closed');
+    lifecycleEventAt($recent, ConversationLifecycleLog::CLOSED, $recentOpenedAt->addHour());
 
     // Measuring this one from its creation would charge the close with eighty
     // days of work that was already finished, and quietly drag the median up.
@@ -221,8 +225,14 @@ test('a reopen makes an old conversation measurable again', function (): void {
     // ending in this close is fully on the record even though the conversation
     // is not.
     $conversation = conversationOpenedAt($world, CarbonImmutable::now()->subDays(80), 'closed');
-    lifecycleEventAt($conversation, ConversationLifecycleLog::REOPENED, CarbonImmutable::now()->subDays(3), ['previous_status' => 'closed', 'actor' => 'visitor']);
-    lifecycleEventAt($conversation, ConversationLifecycleLog::CLOSED, CarbonImmutable::now()->subDays(3)->addMinutes(45));
+    // Both moments from ONE anchor. Built from two separate now() calls this
+    // asserted 2700 seconds and got 2701 whenever the clock crossed a second
+    // between them -- which is rare locally and reliable enough in CI to have
+    // blocked a merge. The tests around this one avoid it with setTime().
+    $reopenedAt = CarbonImmutable::now()->subDays(3);
+
+    lifecycleEventAt($conversation, ConversationLifecycleLog::REOPENED, $reopenedAt, ['previous_status' => 'closed', 'actor' => 'visitor']);
+    lifecycleEventAt($conversation, ConversationLifecycleLog::CLOSED, $reopenedAt->addMinutes(45));
 
     $resolution = reportFor($world, 7)->resolution();
 

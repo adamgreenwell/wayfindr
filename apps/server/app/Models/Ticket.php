@@ -216,6 +216,17 @@ class Ticket extends Model
     /**
      * @return array{title: string, body: string, cta: string, href: string}
      */
+    /**
+     * The next-action state as a catalogue key -- see `attentionLabelKey()`.
+     * `nextAction()` keeps its English for surfaces not yet extracted.
+     */
+    public function nextActionKey(): string
+    {
+        return in_array($this->attentionState(), ['needs_reply', 'needs_owner', 'waiting_on_customer', 'resolved'], true)
+            ? $this->attentionState()
+            : 'needs_agent';
+    }
+
     public function nextAction(): array
     {
         return match ($this->attentionState()) {
@@ -255,6 +266,27 @@ class Ticket extends Model
     /**
      * @return array{title: string, detail: string, cta: string, href: string, tone: string}
      */
+    /**
+     * Which status-readiness cue applies, as a catalogue key.
+     * `statusActionReadiness()` keeps its English for unextracted surfaces.
+     */
+    public function statusActionReadinessKey(): string
+    {
+        $latestMessage = $this->latestConversationMessage();
+
+        if ($this->status !== 'closed' && $latestMessage?->sender_type === Visitor::class) {
+            return 'reply_before_closing';
+        }
+
+        return match ($this->attentionState()) {
+            'needs_reply' => 'reply_before_closing',
+            'needs_owner' => 'assign_first',
+            'waiting_on_customer' => $this->status === 'pending' ? 'pending' : 'calm',
+            'resolved' => 'closed',
+            default => 'default',
+        };
+    }
+
     public function statusActionReadiness(): array
     {
         $latestMessage = $this->latestConversationMessage();

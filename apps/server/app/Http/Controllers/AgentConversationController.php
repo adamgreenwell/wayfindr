@@ -10,11 +10,13 @@ use App\Models\Site;
 use App\Models\User;
 use App\Notifications\ConversationNeedsReply;
 use App\Support\Attachments\AttachmentBinder;
+use App\Support\Attachments\AttachmentRejected;
 use App\Support\CobrowseAuditTrail;
 use App\Support\CobrowseConsentState;
 use App\Support\CobrowseResyncRequestPolicy;
 use App\Support\Conversations\ConversationLifecycleLog;
 use App\Support\Conversations\ConversationQueueQuery;
+use App\Support\DashboardLanguage;
 use App\Support\Mail\ConversationReplyMailer;
 use App\Support\ReplyTemplateOptions;
 use App\Support\TicketCategory;
@@ -74,6 +76,49 @@ class AgentConversationController extends Controller
 
         return view('agent.conversations.show', [
             'account' => $agent->account()->firstOrFail(),
+            // Every word the page's realtime handlers can render, in THIS
+            // agent's language. A broadcast payload carries state, never prose:
+            // it reaches every agent watching the conversation and they do not
+            // all read the same language (#749).
+            'realtimeLabels' => [
+                'read' => [
+                    'seen' => __('tickets.read_state.seen'),
+                    'unseen' => __('tickets.read_state.unseen'),
+                    'none' => __('tickets.read_state.none'),
+                ],
+                'presence' => [
+                    'active' => __('presence.active'),
+                    'recent' => __('presence.recent'),
+                    'quiet' => __('presence.quiet'),
+                    'unknown' => __('presence.not_reported'),
+                    'not_reported' => __('presence.not_reported'),
+                ],
+                'presenceDetail' => [
+                    'seen_recently' => __('conversations.detail.context.seen_recently'),
+                    // Carries `:elapsed`. The duration is filled in on the page
+                    // from the payload's timestamp, never sent pre-formatted --
+                    // see the note on `locale` below.
+                    'seen_at' => __('conversations.detail.context.seen_at'),
+                    'no_heartbeat' => __('conversations.detail.no_heartbeat'),
+                ],
+                'readDetail' => [
+                    'seen' => __('tickets.read_state.detail_seen'),
+                    'unseen' => __('tickets.read_state.detail_unseen'),
+                    'none' => __('tickets.read_state.detail_none'),
+                ],
+                'transcript' => [
+                    'seen' => __('conversations.detail.reply.seen_by_visitor'),
+                    'seen_unknown' => __('tickets.read_state.seen'),
+                    'unseen' => __('conversations.detail.reply.not_seen'),
+                ],
+                'lastSeenUnknown' => __('conversations.detail.context.not_reported'),
+                // A broadcast payload reaches every agent watching, so any
+                // duration formatted server-side is frozen in whichever agent's
+                // request happened to build it. The payload therefore carries a
+                // timestamp, and the page formats it -- in this agent's language,
+                // which is what this is for.
+                'locale' => str_replace('_', '-', app()->getLocale()),
+            ],
             'accountAgents' => $this->supportAgentsForSite($conversation->site),
             'agent' => $agent,
             'cobrowseConsent' => $cobrowseConsent,
@@ -114,7 +159,7 @@ class AgentConversationController extends Controller
             ->get();
 
         return response()->view('agent.conversations.partials.message-list', [
-            'emptyMessage' => 'No messages yet.',
+            'emptyMessage' => __('conversations.detail.no_messages'),
             'transcriptMessages' => $messages,
             'supportCode' => $conversation->support_code,
             // The realtime refresh replaces the rendered transcript wholesale.
@@ -198,7 +243,14 @@ class AgentConversationController extends Controller
                 ->slice($windowStart, self::SWITCHER_MENU_WINDOW * 2 + 1)
                 ->map(fn (Conversation $candidate): array => [
                     'support_code' => $candidate->support_code,
-                    'subject' => $candidate->subject ?? 'Untitled conversation',
+                    // Normalising here would erase the one thing the surface
+                    // needs: whether these are the visitor's words or our
+                    // fallback. The marker downstream is conditional on it.
+                    'subject' => $candidate->subject,
+                    // `filled`, not a truthiness test: PHP reads the perfectly
+                    // good subject "0" as false, and not `=== null` either, so an
+                    // empty string reads as no subject rather than as a blank one.
+                    'subject_fallback' => ! filled($candidate->subject),
                     'current' => $candidate->id === $conversation->id,
                 ])
                 ->values(),
@@ -295,7 +347,7 @@ class AgentConversationController extends Controller
 
             if (! $resolvedTemplate) {
                 throw ValidationException::withMessages([
-                    'reply_template' => 'Choose an available reply helper.',
+                    'reply_template' => __('conversations.validation.reply_template'),
                 ]);
             }
         }
@@ -306,7 +358,7 @@ class AgentConversationController extends Controller
 
         if ($body === '' && $attachmentIds === []) {
             throw ValidationException::withMessages([
-                'body' => 'Please enter a reply or attach a file.',
+                'body' => __('conversations.validation.body'),
             ]);
         }
 
@@ -323,7 +375,11 @@ class AgentConversationController extends Controller
 
             // Bind the agent's own pending uploads to this reply. A bad
             // reference throws and rolls the whole send back.
-            $binder->bind($conversation, $message, $attachmentIds, $agent);
+            try {
+                $binder->bind($conversation, $message, $attachmentIds, $agent);
+            } catch (AttachmentRejected $rejected) {
+                throw $rejected->toValidationException();
+            }
 
             $previousStatus = (string) $conversation->status;
 
@@ -356,7 +412,7 @@ class AgentConversationController extends Controller
 
         return redirect()
             ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
-            ->with('status', 'Reply sent.');
+            ->with('status', 'conversations.flash.reply_sent');
     }
 
     /**
@@ -463,7 +519,7 @@ class AgentConversationController extends Controller
 
         return redirect()
             ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
-            ->with('status', 'Conversation closed.');
+            ->with('status', 'conversations.flash.closed');
     }
 
     public function reopen(Request $request, string $supportCode, ConversationLifecycleLog $lifecycle): RedirectResponse
@@ -480,7 +536,7 @@ class AgentConversationController extends Controller
 
         return redirect()
             ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
-            ->with('status', 'Conversation reopened.');
+            ->with('status', 'conversations.flash.reopened');
     }
 
     public function claim(Request $request, string $supportCode): RedirectResponse
@@ -496,7 +552,7 @@ class AgentConversationController extends Controller
 
         return redirect()
             ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
-            ->with('status', 'Conversation claimed.');
+            ->with('status', 'conversations.flash.claimed');
     }
 
     public function release(Request $request, string $supportCode): RedirectResponse
@@ -512,7 +568,7 @@ class AgentConversationController extends Controller
 
         return redirect()
             ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
-            ->with('status', 'Conversation released.');
+            ->with('status', 'conversations.flash.released');
     }
 
     public function storeTicket(Request $request, string $supportCode, VisitorContextSanitizer $visitorContextSanitizer): RedirectResponse
@@ -529,7 +585,7 @@ class AgentConversationController extends Controller
         if ($conversation->tickets()->exists()) {
             return redirect()
                 ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
-                ->with('status', 'Ticket already exists.');
+                ->with('status', 'conversations.flash.ticket_exists');
         }
 
         $ticket = $conversation->tickets()->create([
@@ -540,7 +596,9 @@ class AgentConversationController extends Controller
             'status' => 'open',
             'priority' => $validated['priority'] ?? 'normal',
             'category' => $validated['category'] ?? null,
-            'subject' => $conversation->subject ?: 'Conversation '.$conversation->support_code,
+            // Stored, not rendered: see DashboardLanguage::forStoredContent().
+            'subject' => filled($conversation->subject) ? $conversation->subject : __('conversations.detail.ticket_subject_fallback',
+                ['code' => $conversation->support_code], DashboardLanguage::forStoredContent()),
             'description' => $this->ticketDescription($conversation),
             'metadata' => [
                 'source' => 'conversation',
@@ -571,7 +629,7 @@ class AgentConversationController extends Controller
 
         return redirect()
             ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
-            ->with('status', 'Ticket created.');
+            ->with('status', 'conversations.flash.ticket_created');
     }
 
     /**
@@ -609,7 +667,7 @@ class AgentConversationController extends Controller
         if ($this->activeCobrowseSession($conversation)) {
             return redirect()
                 ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
-                ->with('status', 'Cobrowse request already active.');
+                ->with('status', 'conversations.flash.cobrowse_already_active');
         }
 
         $cobrowseSession = $conversation->cobrowseSessions()->create([
@@ -626,7 +684,7 @@ class AgentConversationController extends Controller
 
         return redirect()
             ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
-            ->with('status', 'Cobrowse requested.');
+            ->with('status', 'conversations.flash.cobrowse_requested');
     }
 
     public function endCobrowse(Request $request, string $supportCode): RedirectResponse
@@ -638,7 +696,7 @@ class AgentConversationController extends Controller
         if (! $cobrowseSession) {
             return redirect()
                 ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
-                ->with('status', 'No active cobrowse session.');
+                ->with('status', 'conversations.flash.cobrowse_none');
         }
 
         $cobrowseSession = $cobrowseSession->updateAtomically(function (CobrowseSession $session) use ($agent): void {
@@ -658,7 +716,7 @@ class AgentConversationController extends Controller
 
         return redirect()
             ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
-            ->with('status', 'Cobrowse session ended.');
+            ->with('status', 'conversations.flash.cobrowse_ended');
     }
 
     public function requestCobrowseResync(Request $request, string $supportCode, CobrowseResyncRequestPolicy $resyncRequestPolicy, CobrowseAuditTrail $cobrowseAuditTrail): RedirectResponse
@@ -670,7 +728,7 @@ class AgentConversationController extends Controller
         if (! $cobrowseSession || $cobrowseSession->status !== 'granted') {
             return redirect()
                 ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
-                ->with('status', 'Cobrowse must be active before requesting a fresh snapshot.');
+                ->with('status', 'conversations.flash.cobrowse_needed_for_snapshot');
         }
 
         $isActive = true;
@@ -709,13 +767,13 @@ class AgentConversationController extends Controller
         if (! $isActive) {
             return redirect()
                 ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
-                ->with('status', 'Cobrowse must be active before requesting a fresh snapshot.');
+                ->with('status', 'conversations.flash.cobrowse_needed_for_snapshot');
         }
 
         if ($alreadyPending) {
             return redirect()
                 ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
-                ->with('status', 'Fresh cobrowse snapshot already requested.');
+                ->with('status', 'conversations.flash.snapshot_already_requested');
         }
 
         if (is_array($newRequest)) {
@@ -726,7 +784,7 @@ class AgentConversationController extends Controller
 
         return redirect()
             ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
-            ->with('status', 'Fresh cobrowse snapshot requested.');
+            ->with('status', 'conversations.flash.snapshot_requested');
     }
 
     private function conversationForAgent(User $agent, string $supportCode, string $ability): Conversation
@@ -766,7 +824,7 @@ class AgentConversationController extends Controller
         $conversationMetadata = $conversation->metadata ?? [];
 
         return [
-            'anonymous_id' => $visitor?->anonymous_id ?? 'Unknown visitor',
+            'anonymous_id' => $visitor?->anonymous_id ?? __('conversations.detail.unknown_visitor'),
             'external_id' => $visitorContextSanitizer->sanitizeIdentifier($visitor?->external_id),
             // What the visitor typed into the pre-chat form, if the site asked.
             // Collecting an answer nobody can see makes the field pointless, so
@@ -777,8 +835,20 @@ class AgentConversationController extends Controller
             'last_seen_at' => $visitor?->last_seen_at,
             'presence' => [
                 'state' => $visitor?->presenceState() ?? 'unknown',
-                'label' => $visitor?->presenceLabel() ?? 'Not reported',
-                'detail' => $visitor?->presenceDetail() ?? 'No visitor heartbeat yet.',
+                // The visitor's presence STATE translated here, because the
+                // model hands out English -- see Visitor::presenceLabel().
+                'label' => $visitor
+                    ? __('presence.'.($visitor->presenceState() === 'unknown' ? 'not_reported' : $visitor->presenceState()))
+                    : __('conversations.detail.not_reported'),
+                // The presence CUE translated here, because the model hands out
+                // keys -- see Visitor::presenceCue().
+                'detail' => $visitor
+                    ? ($visitor->presenceCue()['seen_at']
+                        ? __('conversations.detail.context.seen_at', ['elapsed' => $visitor->presenceCue()['seen_at']->diffForHumans()])
+                        : ($visitor->presenceCue()['key'] === 'seen_recently'
+                            ? __('conversations.detail.context.seen_recently')
+                            : __('conversations.detail.no_heartbeat')))
+                    : __('conversations.detail.no_heartbeat'),
             ],
             'last_page_url' => $this->contextString($visitorMetadata['last_page_url'] ?? null),
             'started_page_url' => $this->contextString($conversationMetadata['started_page_url'] ?? null),
@@ -887,7 +957,7 @@ class AgentConversationController extends Controller
 
                 $senderName = $message->sender_type === User::class
                     ? ($message->sender?->name ?? 'Agent')
-                    : 'Visitor';
+                    : __('conversations.detail.visitor_actor', [], DashboardLanguage::forStoredContent());
 
                 return $senderName.': '.$body;
             })
@@ -895,7 +965,8 @@ class AgentConversationController extends Controller
             ->implode(PHP_EOL.PHP_EOL);
 
         if ($messages === '') {
-            return 'Created from conversation '.$conversation->support_code.'.';
+            return __('conversations.detail.ticket_from_conversation',
+                ['code' => $conversation->support_code], DashboardLanguage::forStoredContent());
         }
 
         return $messages;

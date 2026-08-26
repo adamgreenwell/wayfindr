@@ -229,6 +229,67 @@ return [
         'project_unknown' => 'Project not recorded',
     ],
 
+    'next_action' => [
+        'needs_reply' => [
+            'title' => 'Reply to visitor',
+            'body' => 'Visitor replied last. Send a clear response, then mark the ticket pending or close it when the outcome is settled.',
+            'cta' => 'Jump to reply',
+        ],
+        'needs_owner' => [
+            'title' => 'Assign an owner',
+            'body' => 'No agent owns this ticket yet. Assign someone before work gets lost.',
+            'cta' => 'Assign ticket',
+        ],
+        'waiting_on_customer' => [
+            'title' => 'Wait on customer',
+            'body' => 'Agent replied last. Keep the ticket visible, then reopen the loop when the visitor answers.',
+            'cta' => 'Review status actions',
+        ],
+        'resolved' => [
+            'title' => 'Review resolution',
+            'body' => 'This ticket is closed. Reopen it only if the customer comes back or the outcome changes.',
+            'cta' => 'Review status actions',
+        ],
+        'needs_agent' => [
+            'title' => 'Add the next update',
+            'body' => 'This ticket is assigned and ready for an agent update. Add a reply, internal note, or status change.',
+            'cta' => 'Review actions',
+        ],
+    ],
+
+    'status_readiness' => [
+        'reply_before_closing' => [
+            'title' => 'Reply before closing',
+            'detail' => 'Visitor replied last. Closing now may leave the customer waiting. Use pending or close only after an agent update or a confirmed outcome.',
+            'cta' => 'Jump to reply',
+        ],
+        'assign_first' => [
+            'title' => 'Assign before status changes',
+            'detail' => 'Assign an owner before changing status so follow-up does not drift.',
+            'cta' => 'Assign ticket',
+        ],
+        'pending' => [
+            'title' => 'Pending ticket',
+            'detail' => 'This ticket is pending. Reopen it when the visitor answers or new work is needed.',
+            'cta' => 'Review reopen option',
+        ],
+        'calm' => [
+            'title' => 'Lifecycle options are calm',
+            'detail' => 'Agent replied last. Mark pending if you are waiting on the visitor, or close once the outcome is settled.',
+            'cta' => 'Review status actions',
+        ],
+        'closed' => [
+            'title' => 'Closed ticket',
+            'detail' => 'Reopen only if the customer comes back or the outcome changes. Use the reopen note to leave the next agent enough context.',
+            'cta' => 'Review reopen option',
+        ],
+        'default' => [
+            'title' => 'Lifecycle options are calm',
+            'detail' => 'Add the next update, internal note, pending state, or close once the outcome is clear.',
+            'cta' => 'Review status actions',
+        ],
+    ],
+
     'row' => [
         'attention_needs_reply' => 'Needs reply',
         'attention_needs_owner' => 'Needs owner',
@@ -268,5 +329,82 @@ return [
         'reply_visibility' => 'Reply visibility:',
         'none' => 'None',
         'unassigned' => 'Unassigned',
+    ],
+
+    'guidance' => [
+        'category_aria' => 'Category guide',
+        'priority_aria' => 'Priority guide',
+        'agent_move' => 'Agent move: :action',
+    ],
+
+    'category_help' => [
+        'question' => [
+            'description' => 'General question or how-to help.',
+            'guidance' => 'Use for: clarification, product guidance, or "how do I?" support.',
+        ],
+        'bug' => [
+            'description' => 'Something broken or not working as expected.',
+            'guidance' => 'Use for: broken, unexpected, or reproducible behavior.',
+        ],
+        'billing' => [
+            'description' => 'Pricing, invoice, payment, or account billing issue.',
+            'guidance' => 'Use for: pricing, invoices, payments, renewals, or billing-account changes.',
+        ],
+        'access' => [
+            'description' => 'Login, permissions, or account access issue.',
+            'guidance' => 'Use for: login, roles, locked accounts, permissions, or identity/access issues.',
+        ],
+        'task' => [
+            'description' => 'Follow-up work, configuration, or operational request.',
+            'guidance' => 'Use for: setup, configuration, operational work, or planned follow-up.',
+        ],
+        'other' => [
+            'description' => 'Anything that does not fit the other categories.',
+            'guidance' => 'Use sparingly; add context so it can be recategorized later.',
+        ],
+    ],
+
+    'priority_help' => [
+        'low' => [
+            'description' => 'Nice-to-have follow-up or non-blocking question.',
+            'agent_action' => 'handle after active visitor blockers.',
+        ],
+        'normal' => [
+            'description' => 'Standard support request with no immediate deadline.',
+            'agent_action' => 'answer in normal queue order.',
+        ],
+        'high' => [
+            'description' => 'Time-sensitive issue affecting an important customer workflow.',
+            'agent_action' => 'keep it moving today.',
+        ],
+        'urgent' => [
+            'description' => 'Business-critical, active outage, or blocked production work.',
+            'agent_action' => 'assign immediately and keep the visitor updated.',
+        ],
+    ],
+
+    'flash' => [
+        'reply_sent' => 'Reply sent.',
+        'assignee_updated' => 'Ticket assignee updated.',
+        'closed' => 'Ticket closed.',
+        'escalated' => 'Ticket escalated.',
+        'label_added' => 'Ticket label added.',
+        'label_removed' => 'Ticket label removed.',
+        'marked_pending' => 'Ticket marked pending.',
+        'note_added' => 'Ticket note added.',
+        'note_added_posted' => 'Ticket note added and posted to the linked issue.',
+        'note_added_not_posted' => 'Ticket note added, but the external comment could not be posted. See ticket activity.',
+        'reopened' => 'Ticket reopened.',
+        'updated' => 'Ticket updated.',
+    ],
+
+    'errors' => [
+        'note_required' => 'Please enter an internal note.',
+        'label_needs_content' => 'Use at least one letter or number for the label.',
+        'label_reserved' => 'That label name is reserved for ticket filtering.',
+        'reply_helper' => 'Choose an available reply helper.',
+        'reply_required' => 'Please enter a reply.',
+        'assignee_not_on_site' => 'Choose an agent assigned to this site.',
+        'escalate_other_agent' => 'Choose another agent to escalate this ticket to.',
     ],
 ];

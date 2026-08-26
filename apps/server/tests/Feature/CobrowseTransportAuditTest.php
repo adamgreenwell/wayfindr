@@ -26,7 +26,7 @@ test('agent snapshot resync requests create metadata-only audit events', functio
             ->from('/dashboard/conversations/WF-AUDIT1')
             ->post('/dashboard/conversations/WF-AUDIT1/cobrowse/resync')
             ->assertRedirect('/dashboard/conversations/WF-AUDIT1')
-            ->assertSessionHas('status', 'Fresh cobrowse snapshot requested.');
+            ->assertSessionHas('status', 'conversations.flash.snapshot_requested');
 
         $session->refresh();
         $requestId = $session->metadata['resync_request']['id'];

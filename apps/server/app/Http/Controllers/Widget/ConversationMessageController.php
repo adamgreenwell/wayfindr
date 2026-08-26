@@ -11,10 +11,13 @@ use App\Models\ConversationMessage;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Support\Attachments\AttachmentBinder;
+use App\Support\Attachments\AttachmentRejected;
 use App\Support\Conversations\ConversationLifecycleLog;
+use App\Support\Sites\WidgetLanguage;
 use App\Support\VisitorConversationResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -89,22 +92,29 @@ class ConversationMessageController extends Controller
 
     public function store(Request $request, string $supportCode, VisitorConversationResolver $conversations, AttachmentBinder $binder): JsonResponse
     {
-        $validated = $request->validate([
+        // Identity first: everything after this answers the visitor, and the
+        // language they are owed comes from the site.
+        $identity = $request->validate([
             'site_public_key' => ['required', 'string', 'max:255'],
             'anonymous_id' => ['required', 'string', 'max:255'],
             'visitor_token' => ['nullable', 'string', 'max:4096'],
-            'body' => ['nullable', 'string', 'max:4000'],
-            'client_message_id' => ['nullable', 'string', 'max:128'],
-            'attachment_ids' => ['nullable', 'array'],
-            'attachment_ids.*' => ['integer', 'min:1'],
         ]);
 
         $conversation = $conversations->resolve(
             $request,
             $supportCode,
-            $validated['site_public_key'],
-            $validated['anonymous_id'],
+            $identity['site_public_key'],
+            $identity['anonymous_id'],
         );
+
+        App::setLocale(WidgetLanguage::forVisitor($request->input('locale'), $conversation->site));
+
+        $validated = $request->validate([
+            'body' => ['nullable', 'string', 'max:4000'],
+            'client_message_id' => ['nullable', 'string', 'max:128'],
+            'attachment_ids' => ['nullable', 'array'],
+            'attachment_ids.*' => ['integer', 'min:1'],
+        ]);
         $this->recordVisitorPresence($conversation);
 
         $body = trim((string) ($validated['body'] ?? ''));
@@ -154,7 +164,13 @@ class ConversationMessageController extends Controller
 
             // Bind the visitor's own pending uploads to this message. A bad
             // reference throws and rolls the whole send back.
-            $binder->bind($conversation, $message, $attachmentIds, $visitor);
+            try {
+                $binder->bind($conversation, $message, $attachmentIds, $visitor);
+            } catch (AttachmentRejected $rejected) {
+                // Answered in the site's language, not the install's. The
+                // throw still escapes the closure, so the send still rolls back.
+                throw $rejected->toValidationException();
+            }
 
             $previousStatus = (string) ($locked?->status ?? $conversation->status);
 

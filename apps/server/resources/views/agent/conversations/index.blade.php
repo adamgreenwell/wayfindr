@@ -83,9 +83,11 @@
                         <select id="conversation_site" name="conversation_site">
                             <option value="">{{ __('conversations.sites.any') }}</option>
                             @foreach ($sites as $site)
-                                <option value="{{ $site->id }}" @selected($conversationSite === $site->id)>
-                                    {{ $site->name }}
-                                </option>
+                                {{-- `lang` on the option itself: an <option> takes text
+                                     content only, so a nested element is dropped by the
+                                     parser and the name would inherit the document
+                                     language after all. --}}
+                                <option value="{{ $site->id }}" lang="" @selected($conversationSite === $site->id)>{{ $site->name }}</option>
                             @endforeach
                         </select>
                     </div>
@@ -186,7 +188,7 @@
                                     <tr>
                                         <td class="wf-queue-subject" style="--wf-row-site: var({{ $conversation->site->resolvedColor()->cssVariable() }})">
                                             <a href="{{ route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'from_queue' => '1'] + $conversationQuery) }}">
-                                                {{ $conversation->subject ?? __('conversations.row.untitled') }}
+                                                @if (filled($conversation->subject))<span lang="">{{ $conversation->subject }}</span>@else{{ __('conversations.row.untitled') }}@endif
                                             </a>
                                             @php
                                                 // The model hands out keys and timestamps; this surface turns
@@ -215,7 +217,7 @@
                                         <td>
                                             <a class="wf-queue-site" href="{{ route('dashboard.sites.show', $conversation->site) }}">
                                                 <span class="wf-site-dot" style="background: var({{ $conversation->site->resolvedColor()->cssVariable() }})" aria-hidden="true"></span>
-                                                {{ $conversation->site->name }}
+                                                <span lang="">{{ $conversation->site->name }}</span>
                                             </a>
                                         </td>
                                         <td>

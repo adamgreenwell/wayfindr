@@ -262,9 +262,9 @@ class CobrowseConsentState
     {
         return [
             'requested_by' => $session->requestedBy?->name ?? 'Unknown agent',
-            'requested_at' => $this->formatMoment($session->created_at),
-            'consented_at' => $this->formatMoment($session->consented_at, 'Not granted yet'),
-            'ended_at' => $this->formatMoment($session->ended_at, 'Still active'),
+            ...$this->momentPair('requested_at', $session->created_at),
+            ...$this->momentPair('consented_at', $session->consented_at, 'Not granted yet'),
+            ...$this->momentPair('ended_at', $session->ended_at, 'Still active'),
             'ended_by' => $this->endedByLabel($session->metadata ?? []),
         ];
     }
@@ -283,6 +283,41 @@ class CobrowseConsentState
         }
 
         return 'Not recorded';
+    }
+
+    /**
+     * Which language `formatMoment()` will answer in.
+     *
+     * A real timestamp is rendered by `diffForHumans()`, which follows the
+     * page locale and returns German to a German agent. The fallback is a
+     * static English phrase. Same field, two languages, decided by whether the
+     * moment exists -- so the caller cannot know from the string, and must not
+     * guess by comparing the prose.
+     */
+    private function momentLanguage(mixed $moment): string
+    {
+        return ! $moment || ! method_exists($moment, 'diffForHumans')
+            ? DashboardLanguage::FALLBACK
+            : app()->getLocale();
+    }
+
+    /**
+     * A formatted moment and the language it is in, as one spreadable pair.
+     *
+     * These shapes are hand-listed per branch, and adding the value without
+     * its language is a silent defect: the view then marks a German
+     * `diffForHumans()` value as English. Five branches, three of which got
+     * the language keys by hand and two of which did not -- so they are no
+     * longer separable.
+     *
+     * @return array<string, string>
+     */
+    private function momentPair(string $field, mixed $moment, string $missing = 'Not recorded'): array
+    {
+        return [
+            $field => $this->formatMoment($moment, $missing),
+            $field.'_language' => $this->momentLanguage($moment),
+        ];
     }
 
     private function formatMoment(mixed $moment, string $missing = 'Not recorded'): string
@@ -462,9 +497,9 @@ class CobrowseConsentState
                 'label' => 'Fresh snapshot received',
                 'message' => 'The visitor widget sent a clean masked snapshot.',
                 'requested_by' => filled($request['requested_by_name'] ?? null) ? (string) $request['requested_by_name'] : 'Support',
-                'requested_at' => $this->formatMoment($requestedAt, 'Request time unavailable'),
-                'fulfilled_at' => $this->formatMoment($fulfilledAt, 'Receipt time unavailable'),
-                'snapshot_reported_at' => $this->formatMoment($snapshotReportedAt, 'Snapshot report time unavailable'),
+                ...$this->momentPair('requested_at', $requestedAt, 'Request time unavailable'),
+                ...$this->momentPair('fulfilled_at', $fulfilledAt, 'Receipt time unavailable'),
+                ...$this->momentPair('snapshot_reported_at', $snapshotReportedAt, 'Snapshot report time unavailable'),
                 'recovery_timeline' => $timeline,
             ];
         }
@@ -475,9 +510,9 @@ class CobrowseConsentState
                 'label' => 'Fresh snapshot retry limit reached',
                 'message' => 'The visitor widget tried to send a clean snapshot but could not complete it. Request another clean snapshot or confirm the page state through chat.',
                 'requested_by' => filled($request['requested_by_name'] ?? null) ? (string) $request['requested_by_name'] : 'Support',
-                'requested_at' => $this->formatMoment($requestedAt, 'Request time unavailable'),
-                'expires_at' => $this->formatMoment($expiresAt, 'Expiry unavailable'),
-                'attempts_exhausted_at' => $this->formatMoment($attemptsExhaustedAt, 'Retry limit time unavailable'),
+                ...$this->momentPair('requested_at', $requestedAt, 'Request time unavailable'),
+                ...$this->momentPair('expires_at', $expiresAt, 'Expiry unavailable'),
+                ...$this->momentPair('attempts_exhausted_at', $attemptsExhaustedAt, 'Retry limit time unavailable'),
                 'recovery_timeline' => $timeline,
             ];
         }
@@ -488,8 +523,8 @@ class CobrowseConsentState
                 'label' => 'Fresh snapshot expired',
                 'message' => 'The visitor widget did not answer in time. Request another clean snapshot or continue through chat.',
                 'requested_by' => filled($request['requested_by_name'] ?? null) ? (string) $request['requested_by_name'] : 'Support',
-                'requested_at' => $this->formatMoment($requestedAt, 'Request time unavailable'),
-                'expired_at' => $this->formatMoment($expiresAt, 'Expiry unavailable'),
+                ...$this->momentPair('requested_at', $requestedAt, 'Request time unavailable'),
+                ...$this->momentPair('expired_at', $expiresAt, 'Expiry unavailable'),
                 'recovery_timeline' => $timeline,
             ];
         }
@@ -500,8 +535,8 @@ class CobrowseConsentState
                 'label' => 'Fresh snapshot delayed',
                 'message' => 'The visitor widget has not answered yet. Request another clean snapshot or confirm the page state through chat.',
                 'requested_by' => filled($request['requested_by_name'] ?? null) ? (string) $request['requested_by_name'] : 'Support',
-                'requested_at' => $this->formatMoment($requestedAt, 'Request time unavailable'),
-                'expires_at' => $this->formatMoment($expiresAt, 'Expiry unavailable'),
+                ...$this->momentPair('requested_at', $requestedAt, 'Request time unavailable'),
+                ...$this->momentPair('expires_at', $expiresAt, 'Expiry unavailable'),
                 'recovery_timeline' => $timeline,
             ];
         }
@@ -511,8 +546,8 @@ class CobrowseConsentState
             'label' => 'Fresh snapshot requested',
             'message' => 'Waiting for the visitor widget to send a clean page snapshot.',
             'requested_by' => filled($request['requested_by_name'] ?? null) ? (string) $request['requested_by_name'] : 'Support',
-            'requested_at' => $this->formatMoment($requestedAt, 'Just requested'),
-            'expires_at' => $this->formatMoment($expiresAt, 'Expiry unavailable'),
+            ...$this->momentPair('requested_at', $requestedAt, 'Just requested'),
+            ...$this->momentPair('expires_at', $expiresAt, 'Expiry unavailable'),
             'retry_at' => $retryAt?->toJSON() ?? '',
             'recovery_timeline' => $timeline,
         ];
@@ -530,7 +565,7 @@ class CobrowseConsentState
                 'state' => 'complete',
                 'label' => 'Snapshot requested',
                 'detail' => $requestedBy.' asked the visitor widget for a clean masked snapshot.',
-                'occurred_at' => $this->formatMoment($requestedAt, 'Request time unavailable'),
+                ...$this->momentPair('occurred_at', $requestedAt, 'Request time unavailable'),
                 'badge' => 'Requested',
             ],
         ];
@@ -540,7 +575,7 @@ class CobrowseConsentState
                 'state' => 'complete',
                 'label' => 'Visitor widget responded',
                 'detail' => 'A fresh cobrowse snapshot response arrived from the visitor page.',
-                'occurred_at' => $this->formatMoment($fulfilledAt, 'Receipt time unavailable'),
+                ...$this->momentPair('occurred_at', $fulfilledAt, 'Receipt time unavailable'),
                 'badge' => 'Recovered',
             ];
 
@@ -549,7 +584,7 @@ class CobrowseConsentState
                     'state' => 'complete',
                     'label' => 'Masked snapshot refreshed',
                     'detail' => 'The clean page snapshot is available in the agent preview.',
-                    'occurred_at' => $this->formatMoment($snapshotReportedAt, 'Snapshot report time unavailable'),
+                    ...$this->momentPair('occurred_at', $snapshotReportedAt, 'Snapshot report time unavailable'),
                     'badge' => 'Preview updated',
                 ];
             }
@@ -562,7 +597,7 @@ class CobrowseConsentState
                 'state' => 'exhausted',
                 'label' => 'Retry limit reached',
                 'detail' => 'The visitor widget stopped retrying this request ID after repeated failures.',
-                'occurred_at' => $this->formatMoment($attemptsExhaustedAt, 'Retry limit time unavailable'),
+                ...$this->momentPair('occurred_at', $attemptsExhaustedAt, 'Retry limit time unavailable'),
                 'badge' => 'Exhausted',
             ];
 
@@ -574,7 +609,7 @@ class CobrowseConsentState
                 'state' => 'expired',
                 'label' => 'Request expired',
                 'detail' => 'No widget response arrived before the recovery window closed.',
-                'occurred_at' => $this->formatMoment($expiresAt, 'Expiry unavailable'),
+                ...$this->momentPair('occurred_at', $expiresAt, 'Expiry unavailable'),
                 'badge' => 'Expired',
             ];
 
@@ -586,7 +621,7 @@ class CobrowseConsentState
                 'state' => 'delayed',
                 'label' => 'Retry available',
                 'detail' => 'Support can request another clean snapshot without waiting on the first request.',
-                'occurred_at' => $this->formatMoment($retryAt, 'Retry time unavailable'),
+                ...$this->momentPair('occurred_at', $retryAt, 'Retry time unavailable'),
                 'badge' => 'Retry',
             ];
 
@@ -594,7 +629,7 @@ class CobrowseConsentState
                 'state' => 'pending',
                 'label' => 'Request expires',
                 'detail' => 'Wayfindr will stop advertising this stale request after the expiration window.',
-                'occurred_at' => $this->formatMoment($expiresAt, 'Expiry unavailable'),
+                ...$this->momentPair('occurred_at', $expiresAt, 'Expiry unavailable'),
                 'badge' => 'Guardrail',
             ];
 
@@ -605,7 +640,7 @@ class CobrowseConsentState
             'state' => 'pending',
             'label' => 'Waiting on visitor widget',
             'detail' => 'Retry opens '.$this->formatMoment($retryAt, 'when the retry window opens').'.',
-            'occurred_at' => $this->formatMoment($retryAt, 'Retry time unavailable'),
+            ...$this->momentPair('occurred_at', $retryAt, 'Retry time unavailable'),
             'badge' => 'Pending',
         ];
 
@@ -630,7 +665,8 @@ class CobrowseConsentState
                 'state' => 'ignored',
                 'label' => 'Snapshot response ignored',
                 'detail' => $this->ignoredResyncResponseDetail((string) ($ignoredResponse['reason'] ?? 'unknown')),
-                'occurred_at' => $this->formatMoment(
+                ...$this->momentPair(
+                    'occurred_at',
                     $this->parseReportedAt($ignoredResponse['ignored_at'] ?? null),
                     'Ignored response time unavailable'
                 ),

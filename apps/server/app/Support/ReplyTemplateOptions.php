@@ -32,6 +32,12 @@ final class ReplyTemplateOptions
                 $this->managedKey($template) => [
                     'label' => $template->name,
                     'body' => $template->body,
+                    // Both are written by the account, in whatever language it
+                    // works in. `lang=""` is HTML's "unknown", which is the
+                    // honest answer -- claiming either English or the agent's
+                    // language would be a guess a screen reader then acts on.
+                    'label_language' => '',
+                    'body_language' => '',
                     'managed_id' => $template->id,
                 ],
             ])

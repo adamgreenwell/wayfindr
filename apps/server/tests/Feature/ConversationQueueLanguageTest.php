@@ -6,13 +6,17 @@
 
 use App\Models\Account;
 use App\Models\AuditEvent;
+use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\ConversationMessageAttachment;
+use App\Models\ReplyTemplate;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\TicketExternalLink;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\AgentReplyTemplate;
 use App\Support\CobrowseConsentState;
 use App\Support\CobrowseReplayPreview;
 use App\Support\CobrowseResyncRequestPolicy;
@@ -20,10 +24,14 @@ use App\Support\CobrowseSnapshotFreshness;
 use App\Support\CobrowseTransportPressure;
 use App\Support\DashboardLanguage;
 use App\Support\ExternalIssueSyncStatus;
+use App\Support\ReplyTemplateOptions;
 use App\Support\TicketExternalIssueAttempt;
+use App\Support\VisitorSessionToken;
 use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\App;
+use Illuminate\Support\Facades\File;
 
 uses(RefreshDatabase::class);
 
@@ -97,6 +105,24 @@ function conversationQueueLanguageTicketStates(array $world, Conversation $conve
  *
  * @return array{account: Account, site: Site, agents: array<string, User>}
  */
+/**
+ * The conversation the fixture gave a cobrowse session to.
+ *
+ * NOT `Conversation::query()->firstOrFail()`. Without an ORDER BY, "first" is
+ * whatever the planner feels like returning: SQLite hands back the earliest
+ * inserted row, PostgreSQL makes no such promise, and the fixture attaches its
+ * only cobrowse session to exactly one of three conversations. Five tests in
+ * this file were one planner decision away from ModelNotFoundException, and on
+ * PostgreSQL one of them took it.
+ *
+ * Reading the session FIRST removes the coin flip: there is only one, so its
+ * conversation is the one that can answer questions about cobrowse.
+ */
+function conversationQueueLanguageCobrowseSession(): CobrowseSession
+{
+    return CobrowseSession::query()->firstOrFail();
+}
+
 function conversationQueueLanguageWorld(int $conversations = 3): array
 {
     // Support codes are unique account-wide, so a test that builds two worlds
@@ -134,6 +160,45 @@ function conversationQueueLanguageWorld(int $conversations = 3): array
             'sender_type' => $i % 2 === 0 ? Visitor::class : User::class,
             'sender_id' => $i % 2 === 0 ? $visitor->id : $agentFor($account)->id,
             'body' => 'Datenpunkt message body '.$i,
+        ]);
+    }
+
+    // A granted cobrowse session, so the detail page's cobrowse panel actually
+    // renders. Without one the panel is nearly all absent, and the marker tests
+    // above assert over a handful of elements while believing they cover it --
+    // a mutation that mismarked a lifecycle timestamp survived for exactly this
+    // reason.
+    $first = Conversation::query()->where('support_code', 'WF-LANG'.$run.'1')->first();
+
+    if ($first) {
+        CobrowseSession::factory()->for($first)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(2),
+            'ended_at' => null,
+            'metadata' => [
+                'telemetry' => [
+                    'reported_at' => now()->subSeconds(20)->toJSON(),
+                    'reconnects' => 0,
+                    'dropped_batches' => 0,
+                ],
+                // A fulfilled resync request, so the recovery timeline renders.
+                // Without one the timeline is absent and its timestamps are
+                // audited nowhere -- a mutation that dropped their language
+                // marker survived every other state in this file.
+                'resync_request' => [
+                    'id' => 'resync-language-fixture',
+                    'requested_by_name' => 'Support',
+                    'requested_at' => now()->subMinutes(2)->toJSON(),
+                    'fulfilled_at' => now()->subSeconds(30)->toJSON(),
+                    'fulfilled_snapshot_reported_at' => now()->subSeconds(25)->toJSON(),
+                    // An ignored response, so the timeline's `ignored` branch
+                    // renders. Without one that branch built its timestamp the
+                    // old way and no test could see it.
+                    'ignored_responses' => [
+                        ['reason' => 'stale', 'ignored_at' => now()->subSeconds(40)->toJSON()],
+                    ],
+                ],
+            ],
         ]);
     }
 
@@ -493,19 +558,29 @@ test('the shared support-code control speaks the surface it is rendered on', fun
         ->and($german)->not->toContain('>Copy</button>')
         ->and($german)->not->toContain('Open support record');
 
-    // The conversation DETAIL page is not extracted, and renders the same
-    // component -- so it is English there, for the same German agent, in the
-    // same session. That is the property that makes translating a shared view
-    // safe, and it is only observable on a page that actually renders one.
+    // A page still outside `EXTRACTED_ROUTES` renders the same component in
+    // English, for the same German agent in the same session -- the property
+    // that makes translating a shared view safe.
+    //
+    // This used the conversation detail page until that surface was extracted
+    // too, which is the recurring cost of a contrast built on "not done yet":
+    // it expires. The ticket detail page is the contrast now.
     $conversation = Conversation::query()->orderByDesc('id')->firstOrFail();
 
-    $detail = (string) $this->actingAs($world['agents']['de'])
-        ->get(route('dashboard.conversations.show', $conversation->support_code))
+    $ticket = Ticket::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($conversation)
+        ->for($conversation->visitor, 'requester')
+        ->create(['category' => 'task', 'priority' => 'low', 'status' => 'open', 'subject' => 'Datenpunkt contrast', 'description' => 'Datenpunkt body']);
+
+    $unextracted = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.tickets.show', $ticket))
         ->assertOk()
         ->getContent();
 
-    expect($detail)->toContain('>Copy</button>')
-        ->and($detail)->not->toContain('>Kopieren</button>');
+    expect($unextracted)->toContain('>Copy</button>')
+        ->and($unextracted)->not->toContain('>Kopieren</button>');
 });
 
 test('the queue claims to be translated, so a screen reader is told the truth', function (): void {
@@ -548,23 +623,21 @@ test('translating a model would put German on pages that are still English', fun
     // who reads German, which is the correct answer until it is extracted.
     $world = conversationQueueLanguageWorld();
 
-    // The conversation with an AGENT message last, which is the state whose
-    // label this test is about. Looked up by that rather than by a support code
-    // the world now numbers per run.
-    $conversation = Conversation::query()
-        ->whereHas('messages', fn ($query) => $query->where('sender_type', User::class))
-        ->orderByDesc('id')
-        ->firstOrFail();
-
-    $detail = conversationQueueLanguageVisibleText(
+    // The visitors directory, which is still outside `EXTRACTED_ROUTES`. This
+    // used the conversation detail page until that surface was extracted too:
+    // the point is that a model's English survives on a page nobody has
+    // translated, so the page has to be one nobody has translated.
+    $unextracted = conversationQueueLanguageVisibleText(
         $this->actingAs($world['agents']['de'])
-            ->get(route('dashboard.conversations.show', $conversation->support_code))
+            ->get(route('dashboard.visitors.index'))
             ->assertOk()
             ->getContent()
     );
 
-    expect($detail)->toContain('Waiting on visitor')
-        ->and($detail)->not->toContain('Wartet auf Besucher');
+    // `Visitor::presenceLabel()` answers English from the model, and this page
+    // reads it directly.
+    expect($unextracted)->toContain('Active recently')
+        ->and($unextracted)->not->toContain('Kürzlich aktiv');
 
     // And the queue, which IS extracted, still says it in German -- so this is
     // measuring where the translation happens rather than that it stopped.
@@ -844,6 +917,28 @@ test('a cobrowse value is escaped, not trusted', function (): void {
  *
  * @return array<int, array{text: string, language: string}>
  */
+/**
+ * Prose an agent reads, as opposed to identifiers that merely contain spaces.
+ *
+ * A class list -- `reply-attach-chip reply-attach-chip--error` -- has spaces
+ * and letters and is not copy. Every token in one is lowercase kebab-case,
+ * which no English sentence is.
+ */
+function conversationQueueLanguageIsProse(string $literal): bool
+{
+    if (preg_match('/[A-Za-z]{2,}\s+[A-Za-z]{2,}/', $literal) !== 1) {
+        return false;
+    }
+
+    foreach (preg_split('/\s+/', trim($literal)) ?: [] as $token) {
+        if (preg_match('/^[a-z0-9-]+$/', $token) !== 1) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function conversationQueueLanguageAnnouncements(string $html): array
 {
     // The WHOLE document, not just `<main>`. The shell is an extracted surface
@@ -911,6 +1006,7 @@ function conversationQueueLanguageCognates(): array
         'Cobrowse' => "the product's own name for the feature, not translated",
         'Wayfindr' => 'the product name, which is not copy',
         'Tickets' => 'the same word in both languages',
+        'Ticket' => 'the same word in both languages, singular',
         'Status' => 'the same word in both languages',
         'Normal' => 'the same word in both languages, as a priority',
         'Label' => 'a loanword German uses as-is',
@@ -1035,6 +1131,11 @@ test('no English is rendered as German on any extracted surface', function (): v
         // A refinement that matches nothing, which is a DIFFERENT empty state
         // from the search one and carries its own message.
         route('dashboard.tickets.index', ['ticket_priority' => 'urgent']),
+        route('dashboard.conversations.show', $conversation->support_code),
+        route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'context']),
+        route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'ticket']),
+        route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'cobrowse']),
+        route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'references']),
     ];
 
     // Every GET-able extracted route is covered, whether or not it is listed
@@ -1045,14 +1146,21 @@ test('no English is rendered as German on any extracted surface', function (): v
     foreach (DashboardLanguage::EXTRACTED_ROUTES as $name) {
         $route = app('router')->getRoutes()->getByName($name);
 
-        if ($route === null || ! in_array('GET', $route->methods(), true) || str_contains($route->uri(), '{')) {
+        if ($route === null || ! in_array('GET', $route->methods(), true)) {
             continue;
         }
+
+        // A route WITH parameters is matched by its static prefix rather than
+        // skipped. Skipping them silently is how `conversations.show` joined
+        // the extracted list and was never audited -- the guard passed because
+        // it had quietly decided not to look.
+        $prefix = rtrim('/'.ltrim(explode('{', $route->uri())[0], '/'), '/');
+        $matched = collect($covered)->contains(fn (string $path): bool => str_starts_with($path, $prefix));
 
         // Not `expect()->toContain()`: that is variadic, so a message passed
         // as a second argument becomes a second required value and the failure
         // reports the message itself as missing.
-        $this->assertContains('/'.ltrim($route->uri(), '/'), $covered, "extracted route not audited: {$name}");
+        $this->assertTrue($matched, "extracted route not audited: {$name} ({$route->uri()})");
     }
 
     foreach ($states as $url) {
@@ -1079,6 +1187,76 @@ test('no English is rendered as German on any extracted surface', function (): v
     );
 
     expect($leaks)->toBe([], 'announced as German but never translated, in the support-lookup empty state');
+
+    // Same lesson again, from the other direction. The ticket-creation form and
+    // the empty transcript exist only BEFORE a conversation has tickets or
+    // messages, and the world above has both -- so mutations of the category
+    // options, the priority guide and the empty transcript survived every state
+    // visited above. A world with neither reaches all three.
+    $bare = conversationQueueLanguageWorld();
+    $bareConversation = Conversation::query()
+        ->where('site_id', $bare['site']->id)
+        ->orderBy('id')
+        ->firstOrFail();
+
+    expect($bareConversation->messages()->count())->toBe(0, 'the bare conversation has messages, so it renders no empty transcript')
+        ->and($bareConversation->tickets()->count())->toBe(0, 'the bare conversation has tickets, so it renders no creation form');
+
+    foreach (['ticket', 'transcript'] as $tab) {
+        $url = route('dashboard.conversations.show', [
+            'supportCode' => $bareConversation->support_code,
+            'tab' => $tab,
+        ]);
+
+        $leaks = conversationQueueLanguageEnglishLeaks(
+            (string) $this->actingAs($bare['agents']['de'])->get($url)->assertOk()->getContent(),
+            (string) $this->actingAs($bare['agents']['en'])->get($url)->assertOk()->getContent(),
+        );
+
+        expect($leaks)->toBe([], "announced as German but never translated, at {$url}");
+    }
+
+    // And a transcript that HAS messages. The conversation above has none, so
+    // every message-level label -- the sender roles among them -- went
+    // unrendered and unaudited on this page.
+    $spoken = Conversation::query()
+        ->where('site_id', $bare['site']->id)
+        ->whereHas('messages')
+        ->orderBy('id')
+        ->firstOrFail();
+
+    expect($spoken->messages()->count())->toBeGreaterThan(0, 'the conversation has no messages, so it renders no transcript');
+
+    $url = route('dashboard.conversations.show', $spoken->support_code);
+
+    $leaks = conversationQueueLanguageEnglishLeaks(
+        (string) $this->actingAs($bare['agents']['de'])->get($url)->assertOk()->getContent(),
+        (string) $this->actingAs($bare['agents']['en'])->get($url)->assertOk()->getContent(),
+    );
+
+    expect($leaks)->toBe([], "announced as German but never translated, at {$url}");
+
+    // And a visitor with no anonymous id. The column is nullable, so this is a
+    // real production state, and every fixture above gives its visitor one --
+    // so the `Unknown visitor` fallback rendered nowhere and was audited
+    // nowhere. Fallback branches need a fixture as much as happy paths do;
+    // this is the third state gap this test has been taught.
+    $namelessVisitor = Visitor::factory()->for($bare['site'])->create(['anonymous_id' => null]);
+    $nameless = Conversation::factory()
+        ->for($bare['site'])
+        ->for($namelessVisitor)
+        ->create(['support_code' => 'WF-LANGNONAME', 'subject' => 'Datenpunkt nameless', 'status' => 'open']);
+
+    expect($nameless->visitor->anonymous_id)->toBeNull('the visitor has an id, so the fallback never renders');
+
+    $url = route('dashboard.conversations.show', $nameless->support_code);
+
+    $leaks = conversationQueueLanguageEnglishLeaks(
+        (string) $this->actingAs($bare['agents']['de'])->get($url)->assertOk()->getContent(),
+        (string) $this->actingAs($bare['agents']['en'])->get($url)->assertOk()->getContent(),
+    );
+
+    expect($leaks)->toBe([], "announced as German but never translated, at {$url}");
 });
 
 test('a filter chip translates its label, not only the value it wraps', function (): void {
@@ -1145,6 +1323,12 @@ test('every cognate on the list still appears, so the list cannot rot', function
         ),
         conversationQueueLanguageAnnouncements(
             (string) $this->actingAs($world['agents']['de'])->get(route('dashboard.tickets.index'))->getContent()
+        ),
+        // The detail page too: `Ticket` singular is a tab label and appears
+        // nowhere else, so without this the anti-rot check fails for a cognate
+        // that is perfectly real.
+        conversationQueueLanguageAnnouncements(
+            (string) $this->actingAs($world['agents']['de'])->get(route('dashboard.conversations.show', $conversation->support_code))->getContent()
         ),
     ), 'text');
 
@@ -1216,6 +1400,1479 @@ test('a model hands out keys, so an agent gets their own language and not a proc
         ->and($conversation->queueActivityPreview()['label'])->toBe('No activity preview yet');
 });
 
+test('live updates render every field in the reading agent language', function (): void {
+    // The realtime handlers do not re-render server-side, so a translated page
+    // can revert to English the moment an event arrives. These tables are what
+    // the page substitutes in, so they must be complete: a missing entry falls
+    // through to a fallback and quietly replaces correct copy with wrong copy.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+
+    // The realtime block is gated on a configured broadcaster, so without this
+    // the page renders no script at all and the assertions below would pass
+    // over an empty page rather than a translated one.
+    config([
+        'broadcasting.default' => 'reverb',
+        'broadcasting.connections.reverb.key' => 'language-test-key',
+        'broadcasting.connections.reverb.options.host' => 'localhost',
+        'broadcasting.connections.reverb.options.port' => 8080,
+        'broadcasting.connections.reverb.options.scheme' => 'http',
+    ]);
+
+    foreach (['de', 'en'] as $locale) {
+        $page = (string) $this->actingAs($world['agents'][$locale])
+            ->get(route('dashboard.conversations.show', $conversation->support_code))
+            ->assertOk()
+            ->getContent();
+
+        preg_match('/var realtimeLabels = (\{.*?\});/s', $page, $found);
+
+        expect($found)->not->toBe([], "no realtime label table rendered in {$locale}");
+
+        $labels = json_decode(html_entity_decode($found[1], ENT_QUOTES), true);
+
+        expect($labels)->toBeArray();
+
+        // Every key the payloads can emit needs an entry. `seen_at` is the one
+        // that was missing: a visitor with a heartbeat who has gone quiet fell
+        // through to "no heartbeat yet", which is a different fact.
+        foreach (['seen_recently', 'seen_at', 'no_heartbeat'] as $key) {
+            expect($labels['presenceDetail'][$key] ?? null)->toBeString()
+                ->and($labels['presenceDetail'][$key])->not->toBe('');
+        }
+
+        foreach (['seen', 'unseen', 'none'] as $key) {
+            expect($labels['readDetail'][$key] ?? null)->toBeString();
+        }
+
+        foreach (['seen', 'seen_unknown', 'unseen'] as $key) {
+            expect($labels['transcript'][$key] ?? null)->toBeString();
+        }
+
+        expect($labels['locale'] ?? null)->toBe($locale);
+
+        if ($locale === 'de') {
+            // Not merely present -- actually translated. An entry that resolves
+            // to the English string is the bug this test exists for.
+            expect($labels['presenceDetail']['seen_at'])->toBe(__('conversations.detail.context.seen_at', [], 'de'))
+                ->and($labels['presenceDetail']['seen_at'])->not->toBe(__('conversations.detail.context.seen_at', [], 'en'))
+                ->and($labels['transcript']['seen'])->not->toBe(__('conversations.detail.reply.seen_by_visitor', [], 'en'))
+                ->and($labels['readDetail']['seen'])->not->toBe(__('tickets.read_state.detail_seen', [], 'en'));
+        }
+
+        // Templates that take a duration must still carry their placeholder --
+        // the page fills it from a timestamp, so a table that shipped a
+        // pre-formatted duration would be frozen in one agent's language.
+        expect($labels['presenceDetail']['seen_at'])->toContain(':elapsed')
+            ->and($labels['transcript']['seen'])->toContain(':elapsed');
+    }
+});
+
+test('the cobrowse panel announces both its languages correctly', function (): void {
+    // The panel is half-extracted: its chrome is translated, its vocabulary is
+    // not. Both halves have to announce correctly, and the two failures are
+    // mirror images -- marking the whole panel English made a screen reader
+    // pronounce the German headings with English rules, and taking the marker
+    // off left bare English words like "Received" announced as German.
+    //
+    // So the panel states English and every translated fragment resets. That
+    // is complete by construction: anything missed stays English, which it is.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+
+    $page = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent();
+
+    $announcements = conversationQueueLanguageAnnouncements($page);
+
+    $languageOf = function (string $needle) use ($announcements): ?string {
+        foreach ($announcements as $announcement) {
+            if ($needle !== '' && str_contains($announcement['text'], $needle)) {
+                return $announcement['language'];
+            }
+        }
+
+        return null;
+    };
+
+    // Translated chrome, announced in the agent's language.
+    $heading = __('conversations.detail.tabs.cobrowse', [], 'de');
+
+    expect($languageOf($heading))->toBe('de', 'the translated cobrowse heading is not announced as German');
+
+    // Untranslated vocabulary, announced as English.
+    $consent = app(CobrowseConsentState::class)->forConversation($conversation);
+
+    foreach (['label', 'message'] as $field) {
+        $value = trim((string) ($consent[$field] ?? ''));
+
+        expect($value)->not->toBe('', "the cobrowse {$field} rendered empty, so this proves nothing");
+        expect($languageOf($value))->toBe('en', "the untranslated cobrowse {$field} is not announced as English");
+    }
+});
+
+test('every extracted page translates its document title', function (): void {
+    // The `<title>` is the tab and the first thing a screen reader announces
+    // for the page, and the leak guard could not see this one: the detail
+    // page's title carries the support code, and any sentence containing a
+    // data token is excluded wholesale as data. Copy wrapped around data is
+    // invisible to that heuristic -- the same blind spot the row-copy test
+    // exists for, in the one place a page names itself.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+
+    $titleOf = function (string $url, string $locale) use ($world): string {
+        $html = (string) $this->actingAs($world['agents'][$locale])->get($url)->assertOk()->getContent();
+
+        preg_match('#<title>(.*?)</title>#is', $html, $found);
+
+        return trim(html_entity_decode($found[1] ?? '', ENT_QUOTES));
+    };
+
+    $urls = [
+        route('dashboard.profile.show'),
+        route('dashboard.conversations.index'),
+        route('dashboard.tickets.index'),
+        route('dashboard.conversations.show', $conversation->support_code),
+    ];
+
+    foreach ($urls as $url) {
+        $german = $titleOf($url, 'de');
+        $english = $titleOf($url, 'en');
+
+        expect($german)->not->toBe('', "no document title rendered at {$url}");
+
+        // A title that is the same word in both languages is fine, but it has
+        // to be a word already declared as one -- not a new coincidence.
+        if (array_key_exists($german, conversationQueueLanguageCognates())) {
+            continue;
+        }
+
+        expect($german)->not->toBe($english, "the document title at {$url} is identical in both languages");
+    }
+});
+
+test('a ticket is stored in the install language, not the creating agent\'s', function (): void {
+    // A ticket's subject and description are written once and read by everyone:
+    // other agents on other language settings, notification emails, the API,
+    // and whatever external issue tracker the account has linked. Generating
+    // them in the creating agent's language puts one person's dashboard
+    // preference into shared data permanently, where nothing translates it back.
+    $world = conversationQueueLanguageWorld();
+
+    // A conversation with no subject and no messages, so BOTH fallbacks fire.
+    $bare = Conversation::factory()
+        ->for($world['site'])
+        ->for(Visitor::factory()->for($world['site'])->create(['anonymous_id' => 'anon-stored']))
+        ->create(['support_code' => 'WF-LANGSTORED', 'subject' => '', 'status' => 'open']);
+
+    $this->actingAs($world['agents']['de'])
+        ->from(route('dashboard.conversations.show', $bare->support_code))
+        ->post(route('dashboard.conversations.tickets.store', $bare->support_code), [
+            'priority' => 'normal',
+        ])
+        ->assertRedirect();
+
+    $ticket = $bare->tickets()->firstOrFail();
+
+    $installLanguage = DashboardLanguage::forStoredContent();
+
+    expect($ticket->subject)->toBe(__('conversations.detail.ticket_subject_fallback',
+        ['code' => $bare->support_code], $installLanguage))
+        ->and($ticket->description)->toBe(__('conversations.detail.ticket_from_conversation',
+            ['code' => $bare->support_code], $installLanguage));
+
+    // And specifically NOT the German the creating agent was reading.
+    expect($ticket->subject)->not->toBe(__('conversations.detail.ticket_subject_fallback',
+        ['code' => $bare->support_code], 'de'))
+        ->and($ticket->description)->not->toBe(__('conversations.detail.ticket_from_conversation',
+            ['code' => $bare->support_code], 'de'));
+});
+
+test('nothing on an extracted path throws a literal validation message', function (): void {
+    // Scoping a route's locale does nothing for a message built as a PHP
+    // string: `ValidationException::withMessages(['file' => 'This file type is
+    // not allowed.'])` is English whatever locale is active. The upload path
+    // reaches the German composer, and the linked-ticket assignment reaches the
+    // German panel, so every message they can throw has to come from the
+    // catalogue.
+    $files = [
+        'app/Support/Attachments/AttachmentUploadService.php',
+        'app/Support/Attachments/AttachmentBinder.php',
+        'app/Http/Controllers/AgentTicketController.php',
+    ];
+
+    $literals = [];
+
+    foreach ($files as $file) {
+        $source = file_get_contents(base_path($file));
+
+        expect($source)->not->toBeFalse("{$file} is gone; this guard no longer reads it");
+
+        // Each `withMessages([...])` block, and the strings inside it.
+        foreach (preg_split('/withMessages\(\[/', $source) as $index => $chunk) {
+            if ($index === 0) {
+                continue;
+            }
+
+            $block = substr($chunk, 0, strpos($chunk, '])') ?: strlen($chunk));
+
+            // BOTH quote forms. The single-quote-only version of this regex
+            // shipped, and missed `"A message can include at most {$max}
+            // attachment(s)."` -- which is the one message here that had to be
+            // interpolated, and so the one most likely to be written with
+            // double quotes. A guard that only recognises the easy spelling is
+            // worse than none, because it reports clean.
+            preg_match_all('/=> *"([^"\\\\\n]*)"|=> *\'([^\'\\\\\n]*)\'/', $block, $found);
+
+            foreach (array_filter(array_merge($found[1], $found[2])) as $literal) {
+                if (conversationQueueLanguageIsProse($literal)) {
+                    $literals[] = basename($file).': '.$literal;
+                }
+            }
+        }
+    }
+
+    expect($literals)->toBe([], 'a validation message on an extracted path is a PHP string rather than a catalogue key');
+});
+
+test('the transcript declares its own language, not the dashboard\'s', function (): void {
+    // A conversation's content has nothing to do with the language the agent
+    // reads the dashboard in: the visitor wrote in whatever they came in with.
+    // Inheriting `lang="de"` from the document has a screen reader pronounce an
+    // English conversation with German rules.
+    $world = conversationQueueLanguageWorld();
+    $spoken = Conversation::query()
+        ->where('site_id', $world['site']->id)
+        ->whereHas('messages')
+        ->orderBy('id')
+        ->firstOrFail();
+
+    $html = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $spoken->support_code))
+        ->assertOk()
+        ->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+
+    $bodies = $xpath->query('//*[contains(@class, "message-body")]');
+
+    expect($bodies->length)->toBeGreaterThan(0, 'no message bodies rendered, so this proves nothing');
+
+    foreach ($bodies as $body) {
+        expect($body->hasAttribute('lang'))->toBeTrue('a message body inherits the document language');
+        expect($body->getAttribute('lang'))->toBe('', 'a message body claims a language it cannot know');
+    }
+
+    // A neighbour with no subject. The switcher's fallback is OUR copy and has
+    // to stay in the document language rather than being marked unknown along
+    // with the visitor-authored ones -- which means the controller must not
+    // normalise null away before the view can tell them apart.
+    //
+    // Asserted on the view data rather than the rendered switcher: that menu
+    // only renders for a conversation with siblings in its window, and the
+    // contract being protected here is the shape, not the markup.
+    Conversation::factory()
+        ->for($world['site'])
+        ->for($spoken->visitor)
+        ->create(['support_code' => 'WF-LANGNOSUBJ', 'subject' => null, 'status' => 'open']);
+
+    // `from_queue=1` or the switcher is deliberately empty: a conversation
+    // opened from a notification or a ticket has no queue to have neighbours in.
+    $siblings = $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', [
+            'supportCode' => $spoken->support_code,
+            'from_queue' => '1',
+        ]))
+        ->assertOk()
+        ->viewData('conversationSiblings');
+
+    $untitledSibling = collect($siblings['items'])->firstWhere('support_code', 'WF-LANGNOSUBJ');
+
+    expect($untitledSibling)->not->toBeNull('the untitled neighbour is not in the switcher, so this proves nothing')
+        ->and($untitledSibling['subject'])->toBeNull('the controller normalised the subject away, so the view cannot tell copy from content')
+        ->and($untitledSibling['subject_fallback'])->toBeTrue();
+
+    $titledSibling = collect($siblings['items'])->firstWhere('support_code', $spoken->support_code);
+
+    expect($titledSibling['subject'])->toBe($spoken->subject)
+        ->and($titledSibling['subject_fallback'])->toBeFalse();
+
+    // Two attachments on the transcript -- an image and a file -- so both the
+    // alt text and the visible name render. A filename is whatever the person
+    // called it, and the image variant carries it in an ATTRIBUTE.
+    $attachedTo = $spoken->messages()->orderBy('id')->firstOrFail();
+
+    ConversationMessageAttachment::factory()->for($attachedTo, 'message')->create([
+        'original_filename' => 'Datenpunkt receipt.png',
+        'mime_type' => 'image/png',
+    ]);
+    ConversationMessageAttachment::factory()->for($attachedTo, 'message')->create([
+        'original_filename' => 'Datenpunkt invoice.pdf',
+        'mime_type' => 'application/pdf',
+    ]);
+
+    // A linked ticket, so its work panel renders -- its heading is the stored
+    // subject, which is the visitor's words copied across or an agent's own,
+    // and either way not the dashboard's language.
+    Ticket::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($spoken)
+        ->for($spoken->visitor, 'requester')
+        ->create(['status' => 'open', 'priority' => 'normal', 'subject' => 'Datenpunkt linked subject']);
+
+    $html = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $spoken->support_code))
+        ->assertOk()
+        ->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+
+    expect($xpath->query('//h3[contains(@id, "-work-heading")]')->length)
+        ->toBeGreaterThan(0, 'no linked ticket panel rendered, so this proves nothing');
+
+    // Every user-authored value on this page, found by walking rather than by
+    // naming them: the conversation subject, the linked ticket's subject, the
+    // ticket activity body, the site name. Codex found these one file at a
+    // time across three rounds; this is the sweep that should have come first.
+    $authored = [
+        '//*[contains(@class, "message-body")]',
+        '//h3[contains(@id, "-work-heading")]',
+        // A filename is the visitor's or the agent's own words too, and the
+        // image variant carries it in an ATTRIBUTE, so the marker is on the
+        // element rather than around it.
+        '//*[contains(@class, "message-attachment-name")]',
+        '//img[contains(@class, "message-attachment-image")]',
+    ];
+
+    // Each selector must MATCH something. A foreach over an empty NodeList
+    // passes silently, which is how ten previous assertions in this file
+    // managed to prove nothing.
+    $matched = [];
+
+    foreach ($authored as $selector) {
+        $matched[$selector] = $xpath->query($selector)->length;
+
+        foreach ($xpath->query($selector) as $node) {
+            expect($node->hasAttribute('lang'))->toBeTrue(
+                "a user-authored value at {$selector} inherits the dashboard language");
+            expect($node->getAttribute('lang'))->toBe('',
+                "a user-authored value at {$selector} claims a language it cannot know");
+        }
+    }
+
+    foreach ($matched as $selector => $count) {
+        expect($count)->toBeGreaterThan(0, "nothing matched {$selector}, so that assertion proved nothing");
+    }
+
+    // The subject is the same thing wearing a heading. It is the page's primary
+    // heading, and it also appears in the queue switcher and in prior
+    // conversations -- all of it the visitor's own words.
+    $heading = $xpath->query('//h1')->item(0);
+
+    expect($heading)->not->toBeNull()
+        ->and(trim($heading->textContent))->toBe($spoken->subject, 'the heading is not the subject, so this proves nothing')
+        // hasAttribute FIRST: getAttribute returns '' for an attribute that is
+        // absent, so asserting the value alone cannot tell "declared unknown"
+        // from "declared nothing" -- and the second one inherits German.
+        ->and($heading->hasAttribute('lang'))->toBeTrue('the conversation subject inherits the dashboard language')
+        ->and($heading->getAttribute('lang'))->toBe('', 'the conversation subject claims a language it cannot know');
+});
+
+test('a write finds its destination without a Referer header', function (): void {
+    // `Referrer-Policy: no-referrer` -- set by browsers, embedded webviews and
+    // reverse proxies -- strips the header while `redirect()->back()` still
+    // lands on the conversation page, because that reads the SESSION's previous
+    // URL. Resolving the locale from the header alone meant the redirect and
+    // the locale disagreed about where the response was going.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+    $agent = $world['agents']['de'];
+
+    $ticket = Ticket::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($conversation)
+        ->for($conversation->visitor, 'requester')
+        ->create(['status' => 'open', 'subject' => 'Datenpunkt referer', 'priority' => 'normal']);
+
+    // `from()` seeds the session's previous URL; the header is sent as well, so
+    // it is stripped explicitly here to leave only the session to answer.
+    $this->actingAs($agent)
+        ->from(route('dashboard.conversations.show', $conversation->support_code))
+        ->withHeaders(['referer' => ''])
+        ->post(route('dashboard.tickets.close', $ticket), ['resolution_note' => str_repeat('a', 4001)])
+        ->assertSessionHasErrors('resolution_note');
+
+    expect((string) session('errors')->getBag('default')->first('resolution_note'))
+        ->toBe(__('validation.max.string', [
+            'attribute' => __('validation.attributes.resolution_note', [], 'de'),
+            'max' => 4000,
+        ], 'de'));
+});
+
+test('the realtime handlers hard-code no copy of their own', function (): void {
+    // This reads the source rather than the page, which is unusual and is the
+    // point: the realtime handlers only run when a broadcast arrives, so no
+    // request-based test reaches them, and a table-shape assertion proves the
+    // words are AVAILABLE without proving the handler uses them. Two mutations
+    // proved exactly that -- both reverted a field to English and both passed.
+    //
+    // Every word these handlers write comes from the label table, so any prose
+    // literal among them is a bug by construction, whatever it currently says.
+    //
+    // Scoped to the handlers this page owns. The cobrowse handlers in the same
+    // script still hard-code roughly forty English strings; that vocabulary is
+    // its own change, and these names grow to cover them when it lands.
+    $source = file_get_contents(resource_path('views/agent/conversations/show.blade.php'));
+
+    $handlers = ['updateVisitorPresence', 'updateVisitorRead', 'fillElapsed', 'elapsedSince'];
+
+    // The reply composer is a whole script rather than a few handlers, and the
+    // announcement walker strips <script> before it looks at anything -- so no
+    // amount of page-level auditing can see this copy. Checked at the source.
+    $composer = file_get_contents(resource_path('views/agent/partials/reply-composer-script.blade.php'));
+
+    // NOT expect()->toContain($x, $message): toContain is variadic, so the
+    // message becomes a second required value and the assertion reports the
+    // message itself as missing.
+    $this->assertStringContainsString('data-reply-composer', $composer,
+        'the composer script moved; this no longer reads it');
+
+    $stripped = preg_replace('#//[^\n]*#', '', $composer);
+    $stripped = preg_replace('/@json\([^)]*\)/', 'null', $stripped);
+
+    preg_match_all("/'([^'\\\\\n]*)'/", $stripped, $composerFound);
+
+    $composerProse = array_values(array_unique(array_filter(
+        $composerFound[1],
+        conversationQueueLanguageIsProse(...)
+    )));
+
+    expect($composerProse)->toBe([], 'the reply composer hard-codes copy instead of reading the catalogue');
+
+    // A response message is only ours when the response is a 422. Anything else
+    // -- a failed storage write, a 403, a 404 -- answers with a framework
+    // exception message in English, and preferring it puts 'Not Found.' on a
+    // German page. No request test reaches an upload's error branch.
+    $this->assertStringContainsString('result.status === 422 && result.data && result.data.message', $composer,
+        'the composer trusts a response message from a status that does not carry translated copy');
+
+    // The upload chip is built in script, so no request test renders it. Its
+    // name is the file the person chose, in whatever language they named it --
+    // the same treatment the transcript's attachment names get server-side.
+    $this->assertStringContainsString("nameEl.setAttribute('lang', '')", $composer,
+        'the live attachment chip announces a filename in the dashboard language');
+
+    // A filename is user data and goes into `String.replace` as a REPLACEMENT,
+    // where `$&`, '$' followed by a backtick, and "$'" are read as
+    // backreferences. A file called `$&.pdf` would name `:name.pdf` in the
+    // aria-label. A function replacement has no such semantics.
+    expect(preg_match("/\.replace\(':name', *(?!function)[a-zA-Z@]/", $composer))->toBe(0,
+        'a filename is passed to String.replace as a replacement string, where $& expands');
+
+    // A browser without Intl.RelativeTimeFormat still has perfectly good
+    // timestamps. Treating the missing FORMATTER as missing DATA replaced a
+    // real "seen 2 minutes ago" with "no visitor heartbeat yet" on every
+    // event -- a different fact, not a degraded one.
+    //
+    // No request test reaches this: it is what the page does when a browser
+    // API is absent. The contract is asserted at the source instead --
+    // fillElapsed returns null rather than the fallback, and every caller
+    // routes through a writer that skips a null.
+    $page = file_get_contents(resource_path('views/agent/conversations/show.blade.php'));
+
+    $this->assertStringContainsString("return elapsed === null ? null : template.replace(':elapsed', elapsed);", $page,
+        'fillElapsed treats an unavailable formatter as missing data again');
+
+    $this->assertStringContainsString('function setTextIfKnown(', $page,
+        'the writer that skips an unknown value is gone');
+
+    // Choosing "write a custom reply" has no body, so the template handler
+    // returns early. The draft's language has to be cleared BEFORE that return
+    // or the agent writes their own reply into an element still claiming the
+    // previous template's language. No request test reaches a change event.
+    $composerSource = file_get_contents(resource_path('views/agent/partials/reply-composer-script.blade.php'));
+    $clear = strpos($composerSource, "templateTarget.setAttribute('lang', '')");
+    $earlyReturn = strpos($composerSource, 'if (! body || ! templateTarget) {');
+
+    expect($clear)->not->toBeFalse('the draft language is never cleared')
+        ->and($earlyReturn)->not->toBeFalse('the early return moved; this guard no longer reads it')
+        ->and($clear)->toBeLessThan($earlyReturn,
+            'the draft language is cleared after the early return, so leaving a template keeps its language');
+
+    // And nothing writes a fillElapsed result directly any more.
+    expect(preg_match('/\.textContent = fillElapsed\(/', $page))->toBe(0,
+        'a handler writes fillElapsed straight to the page, so a null lands as "null"');
+
+    foreach ($handlers as $handler) {
+        $open = strpos($source, 'function '.$handler.'(');
+
+        // Without this the test passes by finding nothing -- which is how an
+        // earlier version of it passed with the bug reintroduced.
+        expect($open)->not->toBeFalse("the realtime handler {$handler} no longer exists under that name");
+
+        $brace = strpos($source, '{', $open);
+        $depth = 0;
+        $close = null;
+
+        for ($index = $brace; $index < strlen($source); $index++) {
+            if ($source[$index] === '{') {
+                $depth++;
+            } elseif ($source[$index] === '}') {
+                $depth--;
+
+                if ($depth === 0) {
+                    $close = $index;
+
+                    break;
+                }
+            }
+        }
+
+        expect($close)->not->toBeNull("could not find the end of {$handler}");
+
+        $body = preg_replace('#//[^\n]*#', '', substr($source, $open, $close - $open + 1));
+
+        preg_match_all("/'([^'\\\\\n]*)'/", $body, $found);
+
+        $prose = array_values(array_unique(array_filter(
+            $found[1],
+            conversationQueueLanguageIsProse(...)
+        )));
+
+        expect($prose)->toBe([], "{$handler} hard-codes copy instead of reading the label table");
+    }
+});
+
+test('nothing German is marked as English', function (): void {
+    // The mirror of the cobrowse-panel finding. Marking translated copy as
+    // English is the same defect pointing the other way, and it is the easier
+    // one to introduce: a value that looks English in the source can be
+    // `diffForHumans()`, which follows the page locale and returns German.
+    //
+    // Nothing caught this. Re-wrapping a locale-following timestamp in the
+    // English marker passed every other test in this file.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+
+    $urls = [
+        route('dashboard.profile.show'),
+        route('dashboard.conversations.index'),
+        route('dashboard.tickets.index'),
+        route('dashboard.conversations.show', $conversation->support_code),
+    ];
+
+    // Carbon's German relative time, which is what these fields actually emit.
+    $germanElapsed = '/\bvor \d+ (Sekunde|Minute|Stunde|Tag|Woche|Monat|Jahr)/u';
+
+    foreach ($urls as $url) {
+        $page = (string) $this->actingAs($world['agents']['de'])->get($url)->assertOk()->getContent();
+
+        // Per text node with its EFFECTIVE language, not per element: a region
+        // marked English legitimately contains translated fragments that reset
+        // to the document language, and an element-level check reads those
+        // nested resets as part of the English text.
+        foreach (conversationQueueLanguageAnnouncements($page) as $announcement) {
+            if (! str_starts_with($announcement['language'], 'en')) {
+                continue;
+            }
+
+            expect(preg_match($germanElapsed, $announcement['text']))->toBe(0,
+                "German announced as English at {$url}: \"{$announcement['text']}\"");
+        }
+    }
+});
+
+test('no language marker is rendered inside an attribute', function (): void {
+    // An element cannot go inside an attribute value. Wrapping a translated
+    // string in <x-lang> is right in element content and catastrophic in an
+    // attribute: the span's own quote closes the attribute early, and every
+    // attribute after it is parsed as text. On an <iframe> that silently blanked
+    // the cobrowse preview and hid it from the realtime script.
+    //
+    // A bulk edit that wraps every `__()` on a page will do this, because one
+    // of them is always in a title. Attributes take their language from their
+    // element, so `lang` goes on the element instead.
+    $offenders = [];
+
+    foreach (File::allFiles(resource_path('views')) as $file) {
+        if ($file->getExtension() !== 'php') {
+            continue;
+        }
+
+        $contents = $file->getContents();
+
+        if (preg_match_all('/\b[a-z-]+="[^"]*<[a-z]/i', $contents, $found) > 0) {
+            foreach ($found[0] as $match) {
+                $offenders[] = $file->getRelativePathname().': '.$match;
+            }
+        }
+    }
+
+    expect($offenders)->toBe([], 'element markup rendered inside an attribute value');
+
+    // Same trap, different container. An <option> takes TEXT content only, so a
+    // nested <span lang=""> is dropped by the parser and the value inherits the
+    // document language after all -- the markup looks right and does nothing.
+    // The attribute belongs on the <option> itself.
+    $inOptions = [];
+
+    foreach (File::allFiles(resource_path('views')) as $file) {
+        if ($file->getExtension() !== 'php') {
+            continue;
+        }
+
+        // Blade comments stripped first: this very guard is documented in a
+        // comment that says the word `<option>`, and the regex matched from
+        // inside it to the real closing tag.
+        $contents = preg_replace('/\{\{--.*?--\}\}/s', '', $file->getContents()) ?? '';
+
+        if (preg_match_all('/<option\b[^>]*>(.*?)<\/option>/is', $contents, $found) > 0) {
+            foreach ($found[1] as $content) {
+                if (preg_match('/<[a-z]/i', $content) === 1) {
+                    $inOptions[] = $file->getRelativePathname().': '.trim(preg_replace('/\s+/', ' ', $content));
+                }
+            }
+        }
+    }
+
+    expect($inOptions)->toBe([], 'element markup inside an <option>, which only takes text');
+});
+
+test('a cobrowse timestamp never travels without its language', function (): void {
+    // Five branches hand-list their keys. Three got the language field and two
+    // did not, so a German diffForHumans() value was marked English on exactly
+    // the states a pending resync produces -- the common ones.
+    //
+    // `momentPair()` makes them inseparable; this asserts it stayed that way,
+    // and drives every branch through a real session rather than a shape I
+    // invented, so a branch I have not thought of is still covered.
+    $world = conversationQueueLanguageWorld();
+    $session = conversationQueueLanguageCobrowseSession();
+    $conversation = $session->conversation;
+
+    $branches = [
+        'pending' => ['requested_at' => now()->subSeconds(15)->toJSON(), 'fulfilled_at' => null],
+        'delayed' => ['requested_at' => now()->subMinutes(4)->toJSON(), 'fulfilled_at' => null],
+        'fulfilled' => ['requested_at' => now()->subMinutes(2)->toJSON(), 'fulfilled_at' => now()->toJSON()],
+        'exhausted' => ['requested_at' => now()->subMinutes(2)->toJSON(), 'fulfilled_at' => null, 'attempts_exhausted_at' => now()->toJSON()],
+        'expired' => ['requested_at' => now()->subHour()->toJSON(), 'fulfilled_at' => null],
+    ];
+
+    $state = app(CobrowseConsentState::class);
+    $checked = 0;
+
+    foreach ($branches as $name => $request) {
+        $session->forceFill(['metadata' => [
+            'resync_request' => array_merge(['id' => 'resync_'.$name, 'requested_by_name' => 'Support'], $request),
+        ]])->save();
+
+        $payload = $state->forConversation($conversation->fresh());
+
+        $walk = function (array $node, string $path) use (&$walk, &$checked, $name): void {
+            foreach ($node as $key => $value) {
+                if (is_array($value)) {
+                    $walk($value, $path.'.'.$key);
+
+                    continue;
+                }
+
+                if (is_string($key) && str_ends_with($key, '_at') && is_string($value)) {
+                    // A machine timestamp is not prose and has no language:
+                    // `retry_at` is toJSON() for a data- attribute the script
+                    // parses. Only the diffForHumans() values are announced.
+                    if ($value === '' || preg_match('/^\d{4}-\d{2}-\d{2}T/', $value) === 1) {
+                        continue;
+                    }
+
+                    $checked++;
+
+                    // NOT toHaveKey($key, $message): its second argument is the
+                    // expected VALUE, so the message is compared against the
+                    // data and the test fails for the wrong reason -- or passes
+                    // for one. Same trap as toContain()'s variadic second arg.
+                    expect(array_key_exists($key.'_language', $node))->toBeTrue(
+                        "{$name}: {$path}.{$key} is rendered without reporting its language"
+                    );
+                }
+            }
+        };
+
+        $walk($payload, $name);
+    }
+
+    expect($checked)->toBeGreaterThan(0, 'no timestamp fields were produced, so this proves nothing');
+});
+
+test('every catalogue file answers the same set of keys', function (): void {
+    // A key added to one language and not the other resolves to the raw key
+    // string on the page -- German text with `tickets.flash.closed` in it. The
+    // raw-key guard catches that only on states it renders; this catches it at
+    // the source, for every key, including ones no test reaches.
+    $missing = [];
+    $identical = [];
+
+    foreach (glob(lang_path('de/*.php')) ?: [] as $file) {
+        $name = basename($file, '.php');
+        $englishFile = lang_path('en/'.$name.'.php');
+
+        // Laravel ships English for validation, so there is no en/ file to
+        // compare against; every other catalogue must have both halves.
+        if (! file_exists($englishFile)) {
+            continue;
+        }
+
+        $flatten = function (array $values, string $prefix = '') use (&$flatten): array {
+            $flat = [];
+
+            foreach ($values as $key => $value) {
+                $flat = array_merge($flat, is_array($value)
+                    ? $flatten($value, $prefix.$key.'.')
+                    : [$prefix.$key => $value]);
+            }
+
+            return $flat;
+        };
+
+        $english = $flatten(require $englishFile);
+        $german = $flatten(require $file);
+
+        foreach (array_keys($english) as $key) {
+            if (! array_key_exists($key, $german)) {
+                $missing[] = "de/{$name}: {$key}";
+            } elseif ($german[$key] === $english[$key]) {
+                $identical[] = "{$name}.{$key} = ".$english[$key];
+            }
+        }
+
+        foreach (array_keys($german) as $key) {
+            if (! array_key_exists($key, $english)) {
+                $missing[] = "en/{$name}: {$key}";
+            }
+        }
+    }
+
+    expect($missing)->toBe([], 'a catalogue key exists in one language and not the other');
+
+    // A translation identical to its English is usually a missed string rather
+    // than a real cognate, so every one is named here deliberately. German
+    // support vocabulary borrows most of these wholesale; `Cobrowse` is a
+    // product term. This list is also the shortlist for the native-speaker
+    // pass -- these are the words most likely to be wrong.
+    $expectedCognates = [
+        'conversations.columns.cobrowse = Cobrowse',
+        'conversations.detail.headings.ticket = Ticket',
+        'conversations.detail.tabs.ticket = Ticket',
+        'conversations.detail.tabs.cobrowse = Cobrowse',
+        'conversations.detail.cobrowse.heading = Cobrowse',
+        'conversations.detail.cobrowse.url = URL',
+        'conversations.detail.roles.agent = Agent',
+        'conversations.detail.context.status = Status',
+        'nav.items.tickets = Tickets',
+        'profile.roles.agent = Agent',
+        'profile.details.name = Name',
+        'tickets.document_title = Tickets',
+        'tickets.columns.status = Status',
+        'tickets.columns.labels = Labels',
+        'tickets.columns.label = Label',
+        'tickets.priorities.normal = Normal',
+        'tickets.chips.status = Status: :value',
+        'tickets.chips.label = Label: :value',
+        'tickets.row.actor_system = System',
+    ];
+
+    expect(array_values(array_diff($identical, $expectedCognates)))->toBe([],
+        'a German string is identical to its English -- a real cognate, or a missed translation?');
+});
+
+test('an action on the detail page answers in the agent language', function (): void {
+    // The page translates `session('status')`, so a controller that flashes an
+    // English literal puts English feedback on a German page. Ticket actions
+    // reach here through `redirect()->back()`, so they are this page's flashes
+    // even though they belong to another controller.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+    $agent = $world['agents']['de'];
+
+    $ticket = Ticket::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($conversation)
+        ->for($conversation->visitor, 'requester')
+        ->create(['status' => 'open', 'subject' => 'Datenpunkt flash', 'priority' => 'normal']);
+
+    $this->actingAs($agent)
+        ->from(route('dashboard.conversations.show', $conversation->support_code))
+        ->post(route('dashboard.tickets.close', $ticket))
+        ->assertRedirect();
+
+    $flashed = session('status');
+
+    expect($flashed)->toBeString()->not->toBe('');
+
+    // The flash must be a key, and that key must answer in German here.
+    expect(__($flashed, [], 'de'))->not->toBe($flashed, "the flashed status '{$flashed}' is not a catalogue key")
+        ->and(__($flashed, [], 'de'))->not->toBe(__($flashed, [], 'en'));
+});
+
+test('the attachment endpoint answers in the agent language', function (): void {
+    // The composer prefers the response's own message over its local fallback,
+    // so an endpoint outside EXTRACTED_ROUTES puts English into a German page
+    // on something as ordinary as an oversized file.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+
+    expect(DashboardLanguage::EXTRACTED_ROUTES)
+        ->toContain('dashboard.conversations.attachments.store');
+
+    $response = $this->actingAs($world['agents']['de'])
+        ->postJson(route('dashboard.conversations.attachments.store', $conversation->support_code), []);
+
+    $response->assertStatus(422);
+
+    $message = (string) ($response->json('message') ?? '');
+
+    expect($message)->not->toBe('')
+        ->and($message)->not->toContain('field is required')
+        ->and($message)->not->toContain('must be a file');
+});
+
+test('the widget attachment endpoint answers the visitor, not the install', function (): void {
+    // The test above is why the shared upload service began resolving copy at
+    // all. The widget shares that service, and the visitor's language is the
+    // SITE's setting -- it has nothing to do with the language the operator
+    // reads their own dashboard in.
+    //
+    // So on a German install, an English site's visitor was told in German that
+    // their file type was not allowed.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+    $site = $conversation->site;
+    $visitor = $conversation->visitor;
+
+    // The install speaks German. Nothing below should care.
+    config(['app.locale' => 'de']);
+    app()->setLocale('de');
+
+    $cases = [
+        ['en', 'en', 'a site pinned to English'],
+        ['de', 'de', 'a site pinned to German'],
+        // Unpinned means the widget follows the visitor's BROWSER, which the
+        // server never sees. English is the honest answer, and the same one
+        // the widget falls back to -- never the install's German.
+        [null, 'en', 'a site that pins nothing'],
+    ];
+
+    foreach ($cases as [$pinned, $expected, $label]) {
+        $settings = $site->settings ?? [];
+        $settings['locale'] = $pinned;
+        $site->forceFill(['settings' => $settings])->save();
+
+        $response = $this->postJson(
+            route('conversations.attachments.store', $conversation->support_code),
+            [
+                'site_public_key' => $site->public_key,
+                'anonymous_id' => $visitor->anonymous_id,
+                'visitor_token' => app(VisitorSessionToken::class)->issue($site, $visitor),
+                'file' => UploadedFile::fake()->create('payload.exe', 8),
+            ],
+        );
+
+        $response->assertStatus(422);
+
+        expect((string) $response->json('errors.file.0'))
+            ->toBe(__('composer.rejected.type', [], $expected), "{$label} was not answered in {$expected}");
+
+        // And the same for a rejection the FRAMEWORK writes. An oversized file
+        // never reaches the upload service: `validate()` stops it first, so no
+        // catch block can translate it. That rule ran before the site had even
+        // been resolved, which is why this case needs its own upload rather
+        // than trusting the one above.
+        $oversized = $this->postJson(
+            route('conversations.attachments.store', $conversation->support_code),
+            [
+                'site_public_key' => $site->public_key,
+                'anonymous_id' => $visitor->anonymous_id,
+                'visitor_token' => app(VisitorSessionToken::class)->issue($site, $visitor),
+                'file' => UploadedFile::fake()->create(
+                    'huge.txt',
+                    (int) ceil(((int) config('wayfindr.attachments.max_file_bytes')) / 1024) + 64,
+                ),
+            ],
+        );
+
+        $oversized->assertStatus(422);
+
+        $message = (string) $oversized->json('errors.file.0');
+
+        expect($message)->not->toBe('', "{$label} produced no oversize message");
+
+        // Asserted by what the message IS, not by what it is not: a German
+        // message on an English site and an English one on a German site are
+        // the same defect pointing opposite ways.
+        $germanShape = str_contains($message, 'höchstens') && str_contains($message, 'Kilobyte');
+
+        expect($germanShape)->toBe($expected === 'de',
+            "{$label} got the oversize rejection in the wrong language: {$message}");
+    }
+});
+
+test('the shared attachment services never resolve copy themselves', function (): void {
+    // The structural half of the test above. These services are called by the
+    // dashboard, by the widget and by a queue worker processing inbound mail --
+    // three readers, three languages, and one of them is nobody at all. A
+    // service that resolves a sentence has answered a question only the calling
+    // surface can answer, and it will be wrong for two of the three.
+    //
+    // `AttachmentRejected` is exempt because it resolves nothing on its own:
+    // its locale is passed in by whichever surface is replying.
+    $exempt = ['AttachmentRejected.php'];
+
+    foreach (glob(app_path('Support/Attachments/*.php')) ?: [] as $file) {
+        if (in_array(basename($file), $exempt, true)) {
+            continue;
+        }
+
+        // Comments first -- this guard's own explanation says `__(`, and a
+        // guard that matches its own documentation reports nothing forever.
+        $source = preg_replace('#/\*.*?\*/|//[^\n]*#s', '', (string) file_get_contents($file));
+
+        expect(preg_match('/(?<![\w$>])__\s*\(/', (string) $source))->toBe(0,
+            basename($file).' resolves copy inside a service three surfaces share');
+    }
+});
+
+test('the widget can say which language it actually resolved', function (): void {
+    // The site default is the only one of the widget's four inputs the server
+    // can see. The widget resolves host page -> browser -> site default ->
+    // English, so a German-default site showing an English host-page override,
+    // or a German browser on an unpinned site, had the panel in one language
+    // and its upload errors in the other.
+    //
+    // So the widget tells us what it resolved, and we take it when it names a
+    // catalogue we ship.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+    $site = $conversation->site;
+    $visitor = $conversation->visitor;
+
+    config(['app.locale' => 'de']);
+    app()->setLocale('de');
+
+    $upload = function (?string $pinned, ?string $requested) use ($site, $visitor, $conversation) {
+        $settings = $site->settings ?? [];
+        $settings['locale'] = $pinned;
+        $site->forceFill(['settings' => $settings])->save();
+
+        return $this->postJson(
+            route('conversations.attachments.store', $conversation->support_code),
+            array_filter([
+                'site_public_key' => $site->public_key,
+                'anonymous_id' => $visitor->anonymous_id,
+                'visitor_token' => app(VisitorSessionToken::class)->issue($site, $visitor),
+                'locale' => $requested,
+                'file' => UploadedFile::fake()->create('payload.exe', 8),
+            ], fn ($value): bool => $value !== null),
+        );
+    };
+
+    // A host page that overrides a German site to English.
+    expect((string) $upload('de', 'en')->json('errors.file.0'))
+        ->toBe(__('composer.rejected.type', [], 'en'),
+            'the widget said English and was answered in the site default');
+
+    // A German browser on a site that pins nothing.
+    expect((string) $upload(null, 'de')->json('errors.file.0'))
+        ->toBe(__('composer.rejected.type', [], 'de'),
+            'the widget said German and was answered in English');
+
+    // Something we do not ship falls back rather than failing. A locale is a
+    // question we answer, not an error the visitor should be shown -- and
+    // validating it would mean writing a message before knowing its language.
+    expect((string) $upload('de', 'kl')->json('errors.file.0'))
+        ->toBe(__('composer.rejected.type', [], 'de'),
+            'an unsupported locale was not ignored in favour of the site default');
+});
+
+test('the first conversation is validated in the visitor language too', function (): void {
+    // The endpoint a NEW visitor hits, whose intake rules are the first words
+    // we ever write to them -- and they are written by the framework, so no
+    // catch block reaches them. It resolves the site before validating (the
+    // intake rules need it), which is exactly where the language belongs.
+    $world = conversationQueueLanguageWorld();
+    $site = $world['site'];
+
+    config(['app.locale' => 'de']);
+    app()->setLocale('de');
+
+    // Ask for an email so there is a rule a visitor can fail.
+    $settings = $site->settings ?? [];
+    $settings['locale'] = 'de';
+    $settings['intake'] = ['enabled' => true, 'fields' => ['email' => 'required']];
+    $site->forceFill(['settings' => $settings])->save();
+
+    $start = function (?string $requested) use ($site) {
+        return $this->postJson(route('conversations.store'), array_filter([
+            'site_public_key' => $site->public_key,
+            'anonymous_id' => 'anon-first-'.($requested ?? 'none'),
+            'locale' => $requested,
+            'body' => 'Hallo',
+            'visitor_email' => 'not-an-email',
+        ], fn ($value): bool => $value !== null));
+    };
+
+    $message = function ($response): string {
+        $errors = $response->json('errors') ?? [];
+
+        expect($errors)->not->toBe([],
+            'the intake rule did not reject, so this proves nothing: '.$response->status());
+
+        return (string) (reset($errors)[0] ?? '');
+    };
+
+    // Asserted on a word only one of the catalogues has, so the attribute name
+    // Laravel builds from the field does not decide whether this passes.
+    $germanShape = fn (string $text): bool => str_contains($text, 'gültige');
+
+    // The host page overrides this German site to English.
+    expect($germanShape($message($start('en'))))->toBeFalse(
+        'a new visitor on an English override was answered in the site language');
+
+    expect($germanShape($message($start('de'))))->toBeTrue(
+        'a new visitor reading German was answered in English');
+});
+
+test('a framework rejection never shows the agent a column name', function (): void {
+    // The custom rejections on this endpoint have hand-written German. The
+    // FRAMEWORK ones interpolate `:attribute`, and an unnamed field puts the
+    // column into the middle of a German sentence: "body darf höchstens 4000
+    // Zeichen lang sein." Ordinary path -- the composer has no maxlength, so
+    // pasting a long reply reaches it.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+
+    $response = $this->actingAs($world['agents']['de'])
+        ->from(route('dashboard.conversations.show', $conversation->support_code))
+        ->post(route('dashboard.conversations.messages.store', $conversation->support_code), [
+            'body' => str_repeat('a', 4001),
+        ]);
+
+    $response->assertSessionHasErrors('body');
+
+    $message = (string) session('errors')->getBag('default')->first('body');
+
+    expect($message)->not->toBe('', 'the length rule did not reject, so this proves nothing');
+
+    // German, and naming the field the way the interface does.
+    $this->assertStringContainsString(__('validation.attributes.body', [], 'de'), $message,
+        'the reply field is not named in German');
+    $this->assertStringNotContainsString('body', $message,
+        "the agent was shown a column name: {$message}");
+});
+
+test('every field a German page can submit has a German name', function (): void {
+    // The structural half. The test above only reaches `body`; the next field
+    // added to this endpoint would be just as raw and just as invisible.
+    $source = (string) file_get_contents(app_path('Http/Controllers/AgentConversationController.php'));
+
+    $matched = preg_match(
+        '/public function storeMessage\(.*?\$request->validate\(\[(.*?)\]\);/s',
+        $source,
+        $found
+    );
+
+    expect($matched)->toBe(1, 'storeMessage moved; this no longer reads its rules');
+
+    preg_match_all("/'([a-z_]+)(?:\.\*)?' => \[/", $found[1], $fields);
+
+    expect($fields[1])->not->toBe([], 'no validated fields were extracted, so this proves nothing');
+
+    $attributes = require lang_path('de/validation.php');
+
+    foreach (array_unique($fields[1]) as $field) {
+        expect($attributes['attributes'] ?? [])->toHaveKey($field);
+    }
+});
+
+test('a subject of "0" is a subject, not a missing one', function (): void {
+    // PHP reads the perfectly good subject "0" as false, so every truthiness
+    // test on it told the agent the visitor had written none -- in the queue,
+    // in the detail heading, and in that heading's language marker, which then
+    // announced the visitor's own words as our copy.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+    $conversation->forceFill(['subject' => '0'])->save();
+
+    $queue = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.index'))
+        ->assertOk()
+        ->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$queue);
+    $xpath = new DOMXPath($document);
+
+    // This conversation's own row, so another untitled conversation in the
+    // fixture cannot answer for it either way.
+    $link = $xpath->query('//a[contains(@href, "'.$conversation->support_code.'")]')->item(0);
+
+    expect($link)->not->toBeNull('the conversation did not render in the queue')
+        ->and(trim($link->textContent))->toBe('0', 'the queue called a subject of "0" untitled');
+
+    $detail = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent();
+
+    $this->assertStringNotContainsString(__('conversations.detail.untitled', [], 'de'), $detail,
+        'the detail heading called a subject of "0" untitled');
+
+    // And it is still marked as the visitor's words rather than as ours.
+    $detailDocument = new DOMDocument;
+    @$detailDocument->loadHTML('<?xml encoding="utf-8"?>'.$detail);
+
+    $unknown = [];
+
+    foreach ((new DOMXPath($detailDocument))->query('//*[@lang=""]') as $node) {
+        $unknown[] = trim($node->textContent);
+    }
+
+    expect($unknown)->toContain('0');
+});
+
+test('the draft stops claiming the template language once the agent types', function (): void {
+    // Choosing an English helper marks the textarea English so the inserted
+    // text is announced correctly. The moment the agent edits it the words are
+    // theirs, and a German reply typed over an English template was still being
+    // read with English pronunciation.
+    //
+    // Source-level: the announcement walker strips <script> before it looks at
+    // anything, so no rendered page can show this.
+    $composer = (string) file_get_contents(
+        resource_path('views/agent/partials/reply-composer-script.blade.php')
+    );
+
+    $stripped = (string) preg_replace('#//[^\n]*#', '', $composer);
+
+    // The input handler, closed at ITS OWN indentation. Closing on a shallower
+    // `});` swallowed the rest of the script, which contains an unrelated
+    // setAttribute('lang', '') on an attachment chip -- so deleting the reset
+    // under test left this passing.
+    $matched = preg_match(
+        "/body\.addEventListener\('input', function \(\) \{(.*?)\n                \}\);/s",
+        $stripped,
+        $handler
+    );
+
+    expect($matched)->toBe(1, 'the composer input handler moved; this no longer reads it');
+
+    $this->assertStringContainsString("setAttribute('lang', '')", $handler[1],
+        'editing a draft leaves the template language on the textarea');
+});
+
+test('a write answers in the language of the page it renders back to', function (): void {
+    // A linked-ticket action is submitted from BOTH the conversation panel and
+    // the ticket page, and its validation runs before the redirect. Listing the
+    // endpoint would answer in German on the English ticket page; not listing
+    // it put English errors on the German conversation page. The language
+    // belongs to whichever surface renders the answer.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+    $agent = $world['agents']['de'];
+
+    $ticket = Ticket::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($conversation)
+        ->for($conversation->visitor, 'requester')
+        ->create(['status' => 'open', 'subject' => 'Datenpunkt locale', 'priority' => 'normal']);
+
+    $tooLong = ['resolution_note' => str_repeat('a', 4001)];
+
+    $errorFor = function (string $from) use ($agent, $ticket, $tooLong): string {
+        $this->actingAs($agent)->from($from)
+            ->post(route('dashboard.tickets.close', $ticket), $tooLong)
+            ->assertSessionHasErrors('resolution_note');
+
+        return (string) session('errors')->getBag('default')->first('resolution_note');
+    };
+
+    // Submitted from the conversation panel, which IS extracted.
+    $germanError = $errorFor(route('dashboard.conversations.show', $conversation->support_code));
+
+    expect($germanError)->toBe(__('validation.max.string', [
+        'attribute' => __('validation.attributes.resolution_note', [], 'de'),
+        'max' => 4000,
+    ], 'de'));
+
+    // Two tabs: the session's previous URL is the conversation page (the most
+    // recent navigation anywhere), but THIS request came from the ticket page.
+    // The redirect follows the header, so the locale must too -- reading the
+    // session first answered in German on an English page.
+    $this->actingAs($agent)
+        ->from(route('dashboard.conversations.show', $conversation->support_code))
+        ->withHeaders(['referer' => route('dashboard.tickets.show', $ticket)])
+        ->post(route('dashboard.tickets.close', $ticket), $tooLong)
+        ->assertSessionHasErrors('resolution_note');
+
+    expect((string) session('errors')->getBag('default')->first('resolution_note'))
+        ->not->toBe(__('validation.max.string', [
+            'attribute' => __('validation.attributes.resolution_note', [], 'de'),
+            'max' => 4000,
+        ], 'de'), 'a stale session URL outvoted the Referer this request actually carried');
+
+    // Submitted from the ticket page, which is NOT extracted, so the same
+    // endpoint answers in English -- the page that will render it.
+    $englishError = $errorFor(route('dashboard.tickets.show', $ticket));
+
+    expect($englishError)->not->toBe('')
+        ->and($englishError)->not->toBe($germanError)
+        ->and($englishError)->toContain('4000');
+});
+
+test('a reply template says what language its body is in', function (): void {
+    // The body is what the VISITOR receives, not chrome. A built-in is English
+    // and says so. A managed one is written by the account in whatever language
+    // it works in, so it reports `lang=""` -- HTML's "unknown". Claiming either
+    // English or the agent's language would be a guess a screen reader acts on.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+
+    $builtIn = AgentReplyTemplate::options();
+
+    expect($builtIn)->not->toBe([]);
+
+    foreach ($builtIn as $key => $template) {
+        expect($template['body_language'] ?? null)->toBe(DashboardLanguage::FALLBACK,
+            "the built-in template {$key} does not declare its body language");
+    }
+
+    $page = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent();
+
+    // The picker carries it too, because selecting a template rewrites the
+    // textarea and the draft stops being the agent's language at that moment.
+    expect($page)->toContain('data-body-lang="en"');
+
+    // A validation failure re-renders this page with the draft restored, and no
+    // change event ever fires -- so the textarea's language has to be right in
+    // the MARKUP, not only in the handler that sets it on selection.
+    //
+    // Which language depends on whose words are in the box, and the picker
+    // staying selected does not answer that. This used to assert English for a
+    // draft that had been EDITED -- its fixture body was a truncation of the
+    // template's -- so it required the bug it was written to prevent.
+    $restoredDraftLanguage = function (string $body) use ($world, $conversation): string {
+        $html = (string) $this->actingAs($world['agents']['de'])
+            ->from(route('dashboard.conversations.show', $conversation->support_code))
+            ->withSession(['_old_input' => ['body' => $body, 'reply_template' => 'looking_into_it']])
+            ->get(route('dashboard.conversations.show', $conversation->support_code))
+            ->assertOk()
+            ->getContent();
+
+        $restored = new DOMDocument;
+        @$restored->loadHTML('<?xml encoding="utf-8"?>'.$html);
+
+        $draft = (new DOMXPath($restored))->query('//textarea[@data-reply-body]')->item(0);
+
+        expect($draft)->not->toBeNull('no reply draft rendered, so this proves nothing')
+            ->and($draft->hasAttribute('lang'))->toBeTrue('the restored draft inherits the dashboard language');
+
+        return $draft->getAttribute('lang');
+    };
+
+    // Untouched: still the template's words, so still the template's language.
+    expect($restoredDraftLanguage($builtIn['looking_into_it']['body']))->toBe(DashboardLanguage::FALLBACK,
+        'an unedited built-in template body does not declare the language it is actually in');
+
+    // Edited: the agent's words now. The handler clears the marker at the first
+    // keystroke, and re-rendering must not put it back.
+    expect($restoredDraftLanguage('Thanks for the update.'))->toBe('',
+        'an edited draft is still announced as the template language');
+
+    // A managed template reports unknown rather than guessing.
+    ReplyTemplate::factory()->for($world['account'])->create([
+        'name' => 'Datenpunkt Vorlage',
+        'body' => 'Wir prüfen das und melden uns gleich.',
+        'is_active' => true,
+    ]);
+
+    $managed = app(ReplyTemplateOptions::class)->forAgent($world['agents']['de']);
+
+    expect($managed)->not->toBe([]);
+
+    foreach ($managed as $key => $template) {
+        expect($template['body_language'] ?? null)->toBe('',
+            "the managed template {$key} claims a language it cannot know");
+        expect($template['label_language'] ?? null)->toBe('',
+            "the managed template {$key} claims to know its own NAME's language");
+    }
+
+    // And the picker itself, rendered with that template in place -- the option
+    // is what a screen reader reads when the agent opens the menu, and it is a
+    // different element from the preview that was already marked.
+    $withManaged = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent();
+
+    $pickerDocument = new DOMDocument;
+    @$pickerDocument->loadHTML('<?xml encoding="utf-8"?>'.$withManaged);
+
+    $option = null;
+
+    foreach ((new DOMXPath($pickerDocument))->query('//select[@data-template-picker]/option') as $candidate) {
+        if (str_contains($candidate->textContent, 'Datenpunkt Vorlage')) {
+            $option = $candidate;
+        }
+    }
+
+    expect($option)->not->toBeNull('the managed template is not in the picker, so this proves nothing')
+        ->and($option->hasAttribute('lang'))->toBeTrue('a managed template name inherits the dashboard language')
+        ->and($option->getAttribute('lang'))->toBe('', 'a managed template name claims a language it cannot know');
+});
+
+test('a region that declares English is English all the way down', function (): void {
+    // `diffForHumans()` follows whatever locale the request scoped, so once
+    // this route was extracted an unextracted class started building 'Reported
+    // vor 2 Minuten' -- an English word glued to a German duration, rendered
+    // inside a panel that declares itself English and therefore announced
+    // entirely as English.
+    //
+    // An exception has to hold all the way down or it is not an exception.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+
+    $freshness = app(CobrowseSnapshotFreshness::class);
+
+    // Rendered under a German request, as the extracted route now is.
+    $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk();
+
+    $formatted = $freshness->format(now()->subMinutes(2)->toJSON());
+
+    expect($formatted['reported_label'])->toBeString();
+
+    // NOT expect()->not->toContain($needle, $message): toContain is variadic,
+    // so the message becomes a second needle and the assertion always passes.
+    // Third time in this file. The habit that works is to reach for
+    // assertStringNotContainsString whenever a message is wanted.
+    $this->assertStringNotContainsString('vor ', $formatted['reported_label'],
+        'the English freshness label carries a German duration');
+});
+
+test('this file never passes a message to a variadic matcher', function (): void {
+    // Three times in this file I have written
+    //
+    //     expect($x)->not->toContain($needle, 'why this matters');
+    //
+    // `toContain` is variadic: the message becomes a SECOND NEEDLE, and the
+    // negated form then asserts that neither appears -- which is trivially true
+    // of a sentence nobody renders. The assertion always passes. `toHaveKey`
+    // has the same shape with its second argument being the expected VALUE.
+    //
+    // Each time it hid a real defect that only a mutation caught, and the third
+    // was minutes after writing the comment warning about it. Knowing the trap
+    // is clearly not enough, so it is mechanical now.
+    //
+    // Scoped to this file because this is where it keeps happening; a
+    // suite-wide version would be a policy decision rather than a fix.
+    // Comments stripped first. This is the SECOND guard in this file to match
+    // its own documentation -- the `<option>` one did it too -- because a
+    // source guard's explanation necessarily contains the thing it looks for.
+    // Any guard that reads code has to exclude the prose about that code.
+    $source = preg_replace('#//[^\n]*#', '', file_get_contents(__FILE__)) ?? '';
+
+    preg_match_all("/->(toContain|toHaveKey)\(\s*([^,()]+),\s*'([^']{12,})'\s*\)/", $source, $found, PREG_SET_ORDER);
+
+    $offenders = [];
+
+    foreach ($found as $match) {
+        // A message has spaces and reads like a sentence; a second needle
+        // rarely does both.
+        if (str_contains($match[3], ' ') && preg_match('/\b(the|a|is|not|so|and|for|that|this|no|its)\b/', $match[3]) === 1) {
+            $offenders[] = '->'.$match[1]."(..., '".$match[3]."')";
+        }
+    }
+
+    expect($offenders)->toBe([], 'a message passed to a variadic matcher, where it becomes a second needle and the assertion always passes');
+});
+
+test('no unreplaced placeholder ever reaches the page', function (): void {
+    // A sentence rendered without its parameters shows `:elapsed` or `:count`
+    // to the agent. It looks like copy, it is in the right language, and it is
+    // nonsense -- so no comparison or key check can see it.
+    //
+    // This exists because a mutation survived them both: pinning a timing value
+    // to null rendered "Wartet seit :elapsed auf Antwort", which still contains
+    // every German word the assertions were looking for.
+    //
+    // The placeholder names come from the catalogues, so the guard cannot go
+    // stale as sentences gain parameters.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+
+    conversationQueueLanguageTicketStates($world, $conversation);
+
+    $placeholders = [];
+
+    foreach (glob(lang_path('en/*.php')) ?: [] as $file) {
+        $walk = function (array $values) use (&$walk, &$placeholders): void {
+            foreach ($values as $value) {
+                if (is_array($value)) {
+                    $walk($value);
+
+                    continue;
+                }
+
+                if (is_string($value) && preg_match_all('/:([a-z][a-z_]{2,})/', $value, $found) > 0) {
+                    $placeholders = array_merge($placeholders, $found[1]);
+                }
+            }
+        };
+
+        $walk(require $file);
+    }
+
+    $placeholders = array_values(array_unique($placeholders));
+
+    expect($placeholders)->not->toBe([]);
+
+    $states = [
+        route('dashboard.profile.show'),
+        route('dashboard.conversations.index'),
+        route('dashboard.tickets.index'),
+        route('dashboard.conversations.show', $conversation->support_code),
+    ];
+
+    foreach (['de', 'en'] as $locale) {
+        foreach ($states as $url) {
+            $text = conversationQueueLanguageVisibleText(
+                (string) $this->actingAs($world['agents'][$locale])->get($url)->assertOk()->getContent()
+            );
+
+            foreach ($placeholders as $placeholder) {
+                $this->assertStringNotContainsString(
+                    ':'.$placeholder,
+                    $text,
+                    "unreplaced :{$placeholder} rendered at {$url} in {$locale}"
+                );
+            }
+        }
+    }
+});
+
 test('no raw catalogue key ever reaches the page', function (): void {
     // A missing key renders as `conversations.row.something` -- readable enough
     // to look like copy in a screenshot and wrong to everybody.
@@ -1261,6 +2918,8 @@ test('no raw catalogue key ever reaches the page', function (): void {
         route('dashboard.tickets.index', ['ticket_status' => 'closed']),
         route('dashboard.tickets.index', ['ticket_attention' => 'needs_owner']),
         route('dashboard.tickets.index', ['ticket_search' => 'zzzz']),
+        route('dashboard.conversations.show', $conversation->support_code),
+        route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'cobrowse']),
     ];
 
     foreach (['de', 'en'] as $locale) {
@@ -1601,4 +3260,128 @@ test('every external attempt branch is translated, including the fall-through', 
 
     expect($german['body'])->toContain('Projekt nicht erfasst')
         ->and($german['body'])->not->toContain('Project not recorded');
+});
+
+test('the detail page counts name what they are counting', function (): void {
+    // No comparison guard can see this one: swapping one count for another
+    // still renders German, just the wrong German -- "0 Felder" where the page
+    // means "0 früher". Same class as the ticket queue's status heading.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+
+    $german = conversationQueueLanguageVisibleText(
+        (string) $this->actingAs($world['agents']['de'])
+            ->get(route('dashboard.conversations.show', $conversation->support_code))
+            ->assertOk()
+            ->getContent()
+    );
+
+    // Anchored to the section each count belongs to. A page-wide
+    // `assertStringContainsString` passes while one of three call sites is
+    // wrong, because the other two still render the word -- which is exactly
+    // what a mutation of one of them proved.
+    $near = function (string $text, string $heading, string $expected): void {
+        $at = mb_strpos($text, $heading);
+
+        $this->assertNotFalse($at, "section heading missing: {$heading}");
+        $this->assertStringContainsString($expected, mb_substr($text, $at, 160), "count under: {$heading}");
+    };
+
+    $near($german, 'Host-Kontext', 'Feld');
+    $near($german, 'Verlauf auf dieser Website', 'früher');
+
+    $inEnglish = conversationQueueLanguageVisibleText(
+        (string) $this->actingAs($world['agents']['en'])
+            ->get(route('dashboard.conversations.show', $conversation->support_code))
+            ->assertOk()
+            ->getContent()
+    );
+
+    $near($inEnglish, 'Host context', 'field');
+    $near($inEnglish, 'History on this site', 'previous');
+});
+
+test('a reply helper translates its name but never its message', function (): void {
+    // The sharpest boundary on this page, and it is a PRODUCT boundary rather
+    // than a translation one.
+    //
+    // A helper's LABEL is dashboard chrome: it names the helper to the agent
+    // choosing it. Its BODY is a message to the VISITOR -- the composer drops
+    // it into the reply box and the agent sends it. Translating the body would
+    // couple what a visitor receives to the language their agent happens to
+    // read the dashboard in, so a German-speaking agent would send German to an
+    // English visitor without ever choosing to.
+    App::setLocale('de');
+    $german = AgentReplyTemplate::options();
+
+    App::setLocale('en');
+    $english = AgentReplyTemplate::options();
+
+    foreach (array_keys($english) as $key) {
+        // The name changes with the dashboard...
+        expect($german[$key]['label'])->not->toBe($english[$key]['label'])
+            // ...and the message the visitor would receive does not.
+            ->and($german[$key]['body'])->toBe($english[$key]['body']);
+    }
+});
+
+test('every detail-page action confirms itself in the agent language', function (): void {
+    // The flash is written in one request and read in the next, so the KEY
+    // travels and the page translates it -- the same rule the profile page
+    // follows. Asserting the session holds a key proves nothing about what the
+    // agent sees, so this follows the redirect.
+    $world = conversationQueueLanguageWorld(conversations: 1);
+    $conversation = Conversation::query()->firstOrFail();
+    $agent = $world['agents']['de'];
+
+    $this->actingAs($agent)
+        ->from(route('dashboard.conversations.show', $conversation->support_code))
+        ->followingRedirects()
+        ->post(route('dashboard.conversations.close', $conversation->support_code))
+        ->assertOk()
+        ->assertSee('Unterhaltung geschlossen.')
+        ->assertDontSee('Conversation closed.')
+        // A raw key reaching the page is the specific failure of flashing one.
+        ->assertDontSee('conversations.flash');
+
+    $this->actingAs($world['agents']['en'])
+        ->from(route('dashboard.conversations.show', $conversation->support_code))
+        ->followingRedirects()
+        ->post(route('dashboard.conversations.reopen', $conversation->support_code))
+        ->assertOk()
+        ->assertSee('Conversation reopened.')
+        ->assertDontSee('Unterhaltung wieder geöffnet.');
+});
+
+test('the linked ticket panel is translated, values and all', function (): void {
+    // The comparison guard cannot judge these: the timing values carry an
+    // elapsed time (digits) and the preview body carries the message itself
+    // (data), so both segments are discarded before they are compared. Same
+    // blind spots as the queue rows, same answer.
+    $world = conversationQueueLanguageWorld(conversations: 1);
+    $conversation = Conversation::query()->firstOrFail();
+
+    // A ticket with no messages and no description, so the preview falls back
+    // to copy rather than quoting a visitor.
+    Ticket::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($conversation)
+        ->for($conversation->visitor, 'requester')
+        ->create(['category' => 'task', 'priority' => 'low', 'status' => 'open', 'subject' => 'Datenpunkt linked', 'description' => null]);
+
+    $german = conversationQueueLanguageVisibleText(
+        (string) $this->actingAs($world['agents']['de'])
+            ->get(route('dashboard.conversations.show', $conversation->support_code))
+            ->assertOk()
+            ->getContent()
+    );
+
+    foreach (['Geöffnet', 'Wartet', 'Noch keine Aktivitätsvorschau', 'Öffnen Sie das Ticket'] as $expected) {
+        $this->assertStringContainsString($expected, $german, "linked ticket panel: {$expected}");
+    }
+
+    foreach (['Opened ', 'Waiting on', 'No activity preview yet', 'Open the ticket to add context'] as $english) {
+        $this->assertStringNotContainsString($english, $german, "English left in the linked ticket panel: {$english}");
+    }
 });
