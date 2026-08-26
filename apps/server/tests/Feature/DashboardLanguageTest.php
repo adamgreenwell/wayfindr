@@ -433,6 +433,7 @@ test('the language selector names each language in its own language', function (
     expect(DashboardLanguage::SUPPORTED)->toBe([
         'en' => 'English',
         'de' => 'Deutsch',
+        'it' => 'Italiano',
     ]);
 
     foreach (DashboardLanguage::SUPPORTED as $label) {
