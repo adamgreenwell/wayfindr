@@ -833,6 +833,30 @@ test('the help text and the command agree about what --retranslate does', functi
         ->and($signature)->toContain('never overwritten');
 });
 
+test('an inflected token is refused rather than restored', function (): void {
+    // An engine that appends a letter -- `WFZ0s` for `WFZ0`, which is exactly
+    // what a translator does to a token sitting in a plural context -- used to
+    // count as one clean occurrence. `strtr` restored the substring, `:count`
+    // became `:counts`, and the leftover check passed because `WFZ0` was gone.
+    // Laravel then renders a literal `:counts` to an agent.
+    $glossary = Glossary::load();
+    $protector = new Protector($glossary);
+
+    $masked = $protector->mask('Waiting for :count');
+    $token = array_key_first($masked->map);
+
+    // Non-ASCII deliberately included: the two languages this ships are full
+    // of them, so an engine inflecting a token will reach for one, and an
+    // ASCII-only boundary would wave `WFZ0è` straight through to `:countè`.
+    foreach (["{$token}s", "{$token}en", "x{$token}", "{$token}è", "{$token}ü", "{$token}ß", "è{$token}"] as $mangled) {
+        expect(fn () => $protector->restore(str_replace($token, $mangled, $masked->text), $masked, 'probe'))
+            ->toThrow(TranslationFailed::class);
+    }
+
+    // Untouched still round-trips.
+    expect($protector->restore($masked->text, $masked, 'probe'))->toBe('Waiting for :count');
+});
+
 test('a token never collides with text the source already contains', function (): void {
     // If a catalogue string already contains `WFZ0`, the first placeholder is
     // assigned a token the text already holds. The source occurrence then
@@ -898,6 +922,150 @@ test('a declared cognate is actually identical in that language', function (): v
             }
         }
     }
+});
+
+test('a redraft separates what it replaces from what it adds', function (): void {
+    // The two sidecars are different documents and merging them the same way is
+    // destructive. `.missing.php` holds keys the catalogue lacks, so its entries
+    // are additions. `.redraft.php` holds a proposal for EVERY key, so the old
+    // shared header -- "merge the entries into the file beside it" -- meant
+    // pasting machine output over reviewed translations.
+    //
+    // And the first correction over-claimed in the other direction: it said
+    // every entry HAS a counterpart, which is false when the catalogue is
+    // incomplete. An operator told to compare entry-by-entry would skip exactly
+    // the keys with nothing to compare against, and leave the gap they came to
+    // close.
+    $command = new class extends TranslateCatalogueCommand
+    {
+        public bool $retranslating = false;
+
+        public function header(string $name, CataloguePlan $plan, array $additions = []): string
+        {
+            return $this->fragmentHeader($name, $plan, $additions);
+        }
+
+        public function option($key = null)
+        {
+            return $key === 'retranslate' ? $this->retranslating : parent::option($key);
+        }
+    };
+
+    $plan = new CataloguePlan(catalogue: 'nav', targetLocale: 'de');
+
+    $missing = $command->header('nav', $plan);
+
+    $command->retranslating = true;
+    $noAdditions = $command->header('nav', $plan);
+    $withAdditions = $command->header('nav', $plan, ['items.reports', 'items.visitors']);
+
+    expect($missing)->toContain('Keys missing')
+        ->and($noAdditions)->not->toContain('Keys missing')
+        ->and($noAdditions)->toContain('EVERY key')
+        ->and($noAdditions)->toContain('never by pasting')
+        // Silent when there is nothing to say, rather than claiming zero.
+        ->and($noAdditions)->not->toContain('ADDITIONS')
+        // And explicit, by name, when there is.
+        ->and($withAdditions)->toContain('2 of them are ADDITIONS')
+        ->and($withAdditions)->toContain('items.reports')
+        ->and($withAdditions)->toContain('items.visitors');
+});
+
+test('restore either reproduces the source exactly or refuses, across generated inputs', function (): void {
+    // Five defects in this class arrived one adversarial input at a time --
+    // prefix shadowing, duplicate counts, source collision, ASCII inflection,
+    // Unicode inflection -- because every test it had was built from
+    // placeholders behaving normally. Enumerating the next bad input is a race
+    // nobody wins, so this asserts the invariant instead.
+    //
+    // The FIRST version of this test shared the blind spot of the code it
+    // tested: it checked that each original appeared the right number of
+    // times, and `:counts` contains `:count`, so inflection passed. It also
+    // generated strings too short to hold the eleven tokens that make `WFZ1`
+    // shadow `WFZ10`. It caught one of three historical defects.
+    //
+    // So the outcome is now asserted per mangling: an untouched or
+    // word-translated body must restore EXACTLY, and a body with a damaged
+    // token must throw. No middle ground, because the middle ground is what
+    // every one of the five produced.
+    mt_srand(20260826);
+
+    $glossary = Glossary::load();
+    $protector = new Protector($glossary);
+
+    $words = ['Waiting', 'für', 'visitatore', 'ticket', 'Snapshot', 'più', 'größer', '—', 'Wayfindr', 'WF-ABC123', 'WFZ0'];
+    $slots = [':count', ':elapsed', ':name', ':code', ':site', ':lane', ':value', ':total', ':shown', ':matching', ':project', ':reason', ':actor', ':term', '{1}', '[2,*]'];
+
+    $exact = 0;
+    $refused = 0;
+
+    for ($i = 0; $i < 400; $i++) {
+        // Long enough, often enough, to exceed ten distinct tokens -- the
+        // threshold at which a shorter token becomes a prefix of a longer one.
+        $pieces = [];
+
+        for ($n = mt_rand(2, 16); $n > 0; $n--) {
+            $pieces[] = mt_rand(0, 2) === 0
+                ? $words[mt_rand(0, count($words) - 1)]
+                : $slots[mt_rand(0, count($slots) - 1)];
+        }
+
+        $source = implode(' ', $pieces);
+        $masked = $protector->mask($source);
+        $tokens = array_keys($masked->map);
+
+        if ($tokens === []) {
+            continue;
+        }
+
+        $token = $tokens[mt_rand(0, count($tokens) - 1)];
+        $kind = mt_rand(0, 10);
+
+        [$mangled, $mustRestoreTo] = match ($kind) {
+            0 => [$masked->text, $source],
+            1 => [
+                str_replace(' ', ' übersetzt ', $masked->text),
+                str_replace(' ', ' übersetzt ', $source),
+            ],
+            2 => [str_replace($token, $token.'s', $masked->text), null],
+            3 => [str_replace($token, $token.'è', $masked->text), null],
+            4 => [str_replace($token, 'x'.$token, $masked->text), null],
+            5 => [str_replace($token, '', $masked->text), null],
+            6 => [str_replace($token, $token.' '.$token, $masked->text), null],
+            // The generator's own blind spots, added after review found two
+            // defects this loop could not reach. A property test is only as
+            // good as the inputs it invents, and these three were not in it:
+            // a combining mark and a connector both continue a word without
+            // being a letter or a number, and an engine can INVENT a protected
+            // value rather than damaging its token.
+            7 => [str_replace($token, $token."\u{0301}", $masked->text), null],
+            8 => [str_replace($token, $token.'_x', $masked->text), null],
+            9 => [$masked->text.' '.$masked->map[$token], null],
+            default => [strrev($masked->text), null],
+        };
+
+        try {
+            $restored = $protector->restore($mangled, $masked, "case {$i}");
+
+            expect($mustRestoreTo)->not->toBeNull(
+                "case {$i} (kind {$kind}) should have been refused\n  source:   {$source}\n  restored: {$restored}"
+            );
+
+            expect($restored)->toBe(
+                $mustRestoreTo,
+                "case {$i} (kind {$kind}) restored to something else\n  source: {$source}"
+            );
+
+            $exact++;
+        } catch (TranslationFailed) {
+            expect($mustRestoreTo)->toBeNull("case {$i} (kind {$kind}) should have restored cleanly\n  source: {$source}");
+
+            $refused++;
+        }
+    }
+
+    // Both outcomes must occur, or the loop proved nothing.
+    expect($exact)->toBeGreaterThan(0)->and($refused)->toBeGreaterThan(0);
 });
 
 test('nothing is left in English without saying so', function (): void {

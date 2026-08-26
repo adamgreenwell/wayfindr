@@ -138,6 +138,27 @@ final class Protector
         // position and never rescans what it has already written.
         $restored = strtr($translated, $masked->map);
 
+        // The originals must appear as often as their tokens did. The token
+        // accounting above should already guarantee this; asserting it directly
+        // is what would have caught the inflected-token case without anyone
+        // having thought of inflection, which is the argument for keeping a
+        // check that looks redundant.
+        foreach ($masked->map as $token => $original) {
+            $expected = $this->countToken($masked->text, $token);
+            $actual = substr_count($restored, $original);
+
+            // Unequal, not merely fewer. An engine that returns the token AND
+            // invents its value -- `WFZ0 :count` for a source with one
+            // `:count` -- restores to `:count :count`, which `<` waves through.
+            // The token accounting beside this already uses `!==`; this one
+            // did not, which is the same claim checked two ways in one class.
+            if ($actual !== $expected) {
+                throw new TranslationFailed(
+                    trim($context.' restored '.$original.' '.$actual.' time(s) where the source had '.$expected.': '.$restored)
+                );
+            }
+        }
+
         // A token the engine invented, or one it split in half and left a
         // fragment of. Either way the string is not safe to write.
         if (preg_match('/'.preg_quote($masked->prefix, '/').'\d+/', $restored) === 1) {
@@ -159,6 +180,32 @@ final class Protector
      */
     private function countToken(string $text, string $token): int
     {
-        return (int) preg_match_all('/'.preg_quote($token, '/').'(?!\\d)/', $text);
+        // Bounded on both sides by a non-letter, non-number, in UNICODE terms.
+        //
+        // Three iterations, each one a narrower guess than the mistake it was
+        // fixing. Trailing digits stopped `WFZ1` matching inside `WFZ10` and
+        // nothing else. Trailing ASCII alphanumerics stopped `WFZ0s` but not
+        // `xWFZ0`. Both sides in ASCII stopped that, and not `WFZ0è` -- which
+        // is the one that matters here, because the two languages this ships
+        // are full of non-ASCII letters and an engine inflecting a token will
+        // reach for one.
+        //
+        // `\p{L}\p{N}\p{M}\p{Pc}` is the Unicode definition of what continues
+        // a word: letters, numbers, combining MARKS, and CONNECTOR punctuation
+        // such as `_`. The first four boundaries were each a guess at this;
+        // `WFZ0́` (a combining acute) and `WFZ0_suffix` are what the
+        // fourth one still let through.
+        //
+        // Stated as the definition rather than as another list of the
+        // characters someone has reported so far.
+        // Digits alone were enough to keep `WFZ1` from matching inside
+        // `WFZ10`, and left an engine free to inflect a token -- returning
+        // `WFZ0s` for `WFZ0`, which counted as one clean occurrence, restored
+        // to `:counts`, and passed the leftover check because `WFZ0` was gone.
+        // A corrupted Laravel placeholder renders as literal `:counts`.
+        return (int) preg_match_all(
+            '/(?<![\p{L}\p{N}\p{M}\p{Pc}])'.preg_quote($token, '/').'(?![\p{L}\p{N}\p{M}\p{Pc}])/u',
+            $text,
+        );
     }
 }

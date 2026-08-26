@@ -368,9 +368,16 @@ class TranslateCatalogueCommand extends Command
             $suffix = $this->option('retranslate') ? '.redraft.php' : '.missing.php';
             $fragment = dirname($targetPath).'/'.$name.$suffix;
 
+            // Which of these actually have a counterpart. Under `--retranslate`
+            // the plan redrafts every source key, so an INCOMPLETE catalogue
+            // yields a mix: replacements for keys it has, and additions for
+            // keys it does not. The header cannot describe both as one thing.
+            $existingKeys = array_keys(Catalogue::read($targetPath)->values());
+            $additions = array_values(array_diff(array_keys($plan->translated), $existingKeys));
+
             if (! $this->put($fragment, Catalogue::render(
                 Catalogue::nest($plan->translated),
-                $this->fragmentHeader($name, $plan),
+                $this->fragmentHeader($name, $plan, $additions),
             ))) {
                 return;
             }
@@ -481,8 +488,58 @@ class TranslateCatalogueCommand extends Command
         ]);
     }
 
-    private function fragmentHeader(string $name, CataloguePlan $plan): string
+    /**
+     * The header inside the sidecar file.
+     *
+     * Conditional, because the two fragments are not the same document and
+     * merging them the same way is destructive. A `.missing.php` holds keys the
+     * catalogue does not have, so its entries are ADDITIONS. A `.redraft.php`
+     * holds a fresh proposal for every key including ones already reviewed, so
+     * merging it wholesale overwrites reviewed translations with machine output
+     * -- which is precisely what the old header instructed.
+     *
+     * Third surface describing `--retranslate`, after the signature and the
+     * confirmation prompt. Correcting those two and leaving this one is the
+     * same mistake both of them were.
+     */
+    /**
+     * @param  array<int, string>  $additions  drafted keys the target does not have
+     */
+    protected function fragmentHeader(string $name, CataloguePlan $plan, array $additions = []): string
     {
+        if ($this->option('retranslate')) {
+            $lines = [
+                "A fresh draft of EVERY key in lang/{$plan->targetLocale}/{$name}.php, NOT REVIEWED.",
+                '',
+                'Most entries here REPLACE something. Their counterparts in the catalogue',
+                'beside this file have usually been reviewed by a person, so merge those by',
+                'comparing entry against entry and taking what is better -- never by pasting',
+                'this file in wholesale.',
+            ];
+
+            // Said only when true, and named rather than counted, because the
+            // instruction above is wrong for exactly these keys: they have no
+            // counterpart to compare against, and an operator following
+            // "compare entry by entry" would skip them and leave the catalogue
+            // as incomplete as they found it.
+            if ($additions !== []) {
+                $lines[] = '';
+                $lines[] = count($additions).' of them are ADDITIONS -- the catalogue has no such key,';
+                $lines[] = 'so there is nothing to compare and they should simply be added:';
+                $lines[] = '';
+
+                foreach ($additions as $key) {
+                    $lines[] = '  '.$key;
+                }
+            }
+
+            $lines[] = '';
+            $lines[] = 'The catalogue was not regenerated because it carries comments a rewrite';
+            $lines[] = 'would silently drop. Delete this file once you have taken what you want.';
+
+            return implode("\n", $lines);
+        }
+
         return implode("\n", [
             "Keys missing from lang/{$plan->targetLocale}/{$name}.php, drafted and NOT REVIEWED.",
             '',
