@@ -80,6 +80,15 @@ return [
      * spells them.
      */
     'attributes' => [
+        // Twenty-two entries, and the four missing ones are deliberate.
+        // `subject`, `description`, `category` and `priority` are validated by
+        // the ticket store/update path, whose route is NOT in
+        // `EXTRACTED_ROUTES` -- so no locale is scoped there, the page renders
+        // `lang="en"`, and an English message is the correct one. They belong
+        // here, and in the German file beside it, on the day that route is
+        // extracted and not before. `lang/de/validation.php` omits the same
+        // four for the same reason.
+        //
         // Every field an Italian page can submit. Without a name here the rule
         // interpolates the column: "Il campo body non può contenere più di 4000
         // caratteri." House terms come from the glossary -- a reply helper is
