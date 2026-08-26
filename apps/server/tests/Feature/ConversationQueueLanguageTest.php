@@ -904,6 +904,10 @@ test('a localised cobrowse timestamp is marked German, not English', function ()
                 'last_report' => 'vor 20 Sekunden',
                 'last_report_reported' => true,
                 'pressure' => '2 dropped batches',
+                // The counts, which is what the row now composes from. The
+                // English string above is left in place because other callers
+                // still read it; the queue no longer does.
+                'pressure_counts' => ['dropped_batches' => 2, 'skipped_mutations' => 0],
                 'guidance' => 'x',
                 'recovery_action' => 'x',
                 'tone' => 'ready',
@@ -918,9 +922,12 @@ test('a localised cobrowse timestamp is marked German, not English', function ()
 
     expect($html)->toContain('Letzte Meldung <span lang="de">vor 20 Sekunden</span>')
         ->and($html)->not->toContain('<span lang="en">vor 20 Sekunden</span>')
-        // The pressure value beside it IS static English -- English words and
-        // an English pluraliser -- so it stays marked English.
-        ->and($html)->toContain('<span lang="en">2 dropped batches</span>');
+        // The pressure value used to be static English -- English words and an
+        // English pluraliser -- and this asserted that it was at least MARKED
+        // English. It is now composed from the counts in the reader's language,
+        // so there is nothing left to mark and nothing left in English.
+        ->and($html)->toContain(trans_choice('cobrowse.pressure.dropped', 2, ['count' => 2], 'de'))
+        ->and($html)->not->toContain('2 dropped batches');
 });
 
 test('a cobrowse value is escaped, not trusted', function (): void {

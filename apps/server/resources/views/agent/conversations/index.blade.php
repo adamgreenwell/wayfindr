@@ -289,7 +289,7 @@
                                                 title="{{ __('cobrowse.transport.'.$transportCopy.'.message') }} {{ __('cobrowse.transport.'.$transportCopy.'.'.($cobrowseTransport['guidance_copy'] ?? 'guidance')) }}"
                                             >{{ __('cobrowse.transport.'.$transportCopy.'.label') }}</span>
                                             <span class="wf-queue-preview">
-                                                {!! __('conversations.row.last_report', ['value' => $marked($lastReport, app()->getLocale())]) !!}@if ($cobrowseTransport['has_pressure'] ?? false) &middot; {!! __('conversations.row.pressure', ['value' => $marked($cobrowseTransport['pressure'], $englishValue)]) !!}@endif
+                                                {!! __('conversations.row.last_report', ['value' => $marked($lastReport, app()->getLocale())]) !!}@if ($cobrowseTransport['has_pressure'] ?? false) &middot; {{ __('conversations.row.pressure', ['value' => \App\Support\CobrowsePressureSentence::for($cobrowseTransport['pressure_counts'] ?? [])]) }}@endif
                                             </span>
                                         </td>
                                         <td>
