@@ -618,3 +618,17 @@ test('a capitalised pronoun does not slip past the register checks', function ()
     // And still no false positive on correct formal German.
     expect(preg_match($checks['informal address'], 'Fragen Sie den Besucher.'))->toBe(0);
 });
+
+test('a catalogue name that matches nothing fails the run', function (): void {
+    // Silent filtering meant `--catalogue=conversation` -- missing its `s` --
+    // drafted nothing, warned about nothing, and exited 0. An automated run
+    // would report success having produced none of what it was asked for:
+    // the same failure as an unchecked write, work not done and reported done.
+    $this->artisan('wayfindr:translate-catalogue', ['locale' => 'de', '--catalogue' => ['conversation']])
+        ->expectsOutputToContain('No such catalogue: conversation')
+        ->assertExitCode(1);
+
+    // A real name is unaffected.
+    $this->artisan('wayfindr:translate-catalogue', ['locale' => 'de', '--catalogue' => ['nav']])
+        ->assertExitCode(0);
+});

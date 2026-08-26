@@ -98,7 +98,13 @@ class TranslateCatalogueCommand extends Command
         $scores = [];
         $failed = false;
 
-        foreach ($this->catalogues() as $sourcePath) {
+        $catalogues = $this->catalogues();
+
+        if ($catalogues === null) {
+            return self::FAILURE;
+        }
+
+        foreach ($catalogues as $sourcePath) {
             $name = basename($sourcePath, '.php');
             $targetPath = lang_path($locale.'/'.$name.'.php');
 
@@ -184,15 +190,34 @@ class TranslateCatalogueCommand extends Command
     }
 
     /**
-     * @return array<int, string>
+     * The source catalogues this run covers.
+     *
+     * A name that matches nothing is an error rather than an empty result. The
+     * earlier version filtered silently, so `--catalogue=conversation` (missing
+     * its `s`) drafted nothing, printed no warning, and exited 0 -- an
+     * automated run would report success having produced none of what it was
+     * asked for. Same failure as an unchecked write: work not done, reported
+     * as done.
+     *
+     * @return array<int, string>|null null when a requested name matched nothing
      */
-    private function catalogues(): array
+    private function catalogues(): ?array
     {
-        $only = (array) $this->option('catalogue');
         $paths = glob(lang_path('en/*.php')) ?: [];
+        $only = array_values(array_filter((array) $this->option('catalogue')));
 
         if ($only === []) {
             return $paths;
+        }
+
+        $available = array_map(static fn (string $path): string => basename($path, '.php'), $paths);
+        $unmatched = array_diff($only, $available);
+
+        if ($unmatched !== []) {
+            $this->error('No such catalogue: '.implode(', ', $unmatched));
+            $this->line('  available: '.implode(', ', $available));
+
+            return null;
         }
 
         return array_values(array_filter(
@@ -302,7 +327,16 @@ class TranslateCatalogueCommand extends Command
             return;
         }
 
-        @mkdir(dirname($targetPath), 0o755, true);
+        $directory = dirname($targetPath);
+
+        // Same class as the unchecked write below: a locale directory that
+        // cannot be created must not be followed by a report of success.
+        if (! is_dir($directory) && ! @mkdir($directory, 0o755, true) && ! is_dir($directory)) {
+            $this->error("  could not create {$directory}");
+            $this->writeFailed = true;
+
+            return;
+        }
 
         // The rule the class exists for: an existing catalogue is never
         // regenerated. Its in-array comments would go with it, and the loss
