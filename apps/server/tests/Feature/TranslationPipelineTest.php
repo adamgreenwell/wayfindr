@@ -970,3 +970,91 @@ test('a redraft separates what it replaces from what it adds', function (): void
         ->and($withAdditions)->toContain('items.reports')
         ->and($withAdditions)->toContain('items.visitors');
 });
+
+test('restore either reproduces the source exactly or refuses, across generated inputs', function (): void {
+    // Five defects in this class arrived one adversarial input at a time --
+    // prefix shadowing, duplicate counts, source collision, ASCII inflection,
+    // Unicode inflection -- because every test it had was built from
+    // placeholders behaving normally. Enumerating the next bad input is a race
+    // nobody wins, so this asserts the invariant instead.
+    //
+    // The FIRST version of this test shared the blind spot of the code it
+    // tested: it checked that each original appeared the right number of
+    // times, and `:counts` contains `:count`, so inflection passed. It also
+    // generated strings too short to hold the eleven tokens that make `WFZ1`
+    // shadow `WFZ10`. It caught one of three historical defects.
+    //
+    // So the outcome is now asserted per mangling: an untouched or
+    // word-translated body must restore EXACTLY, and a body with a damaged
+    // token must throw. No middle ground, because the middle ground is what
+    // every one of the five produced.
+    mt_srand(20260826);
+
+    $glossary = Glossary::load();
+    $protector = new App\Support\Translation\Protector($glossary);
+
+    $words = ['Waiting', 'für', 'visitatore', 'ticket', 'Snapshot', 'più', 'größer', '—', 'Wayfindr', 'WF-ABC123', 'WFZ0'];
+    $slots = [':count', ':elapsed', ':name', ':code', ':site', ':lane', ':value', ':total', ':shown', ':matching', ':project', ':reason', ':actor', ':term', '{1}', '[2,*]'];
+
+    $exact = 0;
+    $refused = 0;
+
+    for ($i = 0; $i < 400; $i++) {
+        // Long enough, often enough, to exceed ten distinct tokens -- the
+        // threshold at which a shorter token becomes a prefix of a longer one.
+        $pieces = [];
+
+        for ($n = mt_rand(2, 16); $n > 0; $n--) {
+            $pieces[] = mt_rand(0, 2) === 0
+                ? $words[mt_rand(0, count($words) - 1)]
+                : $slots[mt_rand(0, count($slots) - 1)];
+        }
+
+        $source = implode(' ', $pieces);
+        $masked = $protector->mask($source);
+        $tokens = array_keys($masked->map);
+
+        if ($tokens === []) {
+            continue;
+        }
+
+        $token = $tokens[mt_rand(0, count($tokens) - 1)];
+        $kind = mt_rand(0, 7);
+
+        [$mangled, $mustRestoreTo] = match ($kind) {
+            0 => [$masked->text, $source],
+            1 => [
+                str_replace(' ', ' übersetzt ', $masked->text),
+                str_replace(' ', ' übersetzt ', $source),
+            ],
+            2 => [str_replace($token, $token.'s', $masked->text), null],
+            3 => [str_replace($token, $token.'è', $masked->text), null],
+            4 => [str_replace($token, 'x'.$token, $masked->text), null],
+            5 => [str_replace($token, '', $masked->text), null],
+            6 => [str_replace($token, $token.' '.$token, $masked->text), null],
+            default => [strrev($masked->text), null],
+        };
+
+        try {
+            $restored = $protector->restore($mangled, $masked, "case {$i}");
+
+            expect($mustRestoreTo)->not->toBeNull(
+                "case {$i} (kind {$kind}) should have been refused\n  source:   {$source}\n  restored: {$restored}"
+            );
+
+            expect($restored)->toBe(
+                $mustRestoreTo,
+                "case {$i} (kind {$kind}) restored to something else\n  source: {$source}"
+            );
+
+            $exact++;
+        } catch (App\Support\Translation\TranslationFailed) {
+            expect($mustRestoreTo)->toBeNull("case {$i} (kind {$kind}) should have restored cleanly\n  source: {$source}");
+
+            $refused++;
+        }
+    }
+
+    // Both outcomes must occur, or the loop proved nothing.
+    expect($exact)->toBeGreaterThan(0)->and($refused)->toBeGreaterThan(0);
+});
