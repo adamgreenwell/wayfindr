@@ -845,7 +845,10 @@ test('an inflected token is refused rather than restored', function (): void {
     $masked = $protector->mask('Waiting for :count');
     $token = array_key_first($masked->map);
 
-    foreach (["{$token}s", "{$token}en", "x{$token}"] as $mangled) {
+    // Non-ASCII deliberately included: the two languages this ships are full
+    // of them, so an engine inflecting a token will reach for one, and an
+    // ASCII-only boundary would wave `WFZ0è` straight through to `:countè`.
+    foreach (["{$token}s", "{$token}en", "x{$token}", "{$token}è", "{$token}ü", "{$token}ß", "è{$token}"] as $mangled) {
         expect(fn () => $protector->restore(str_replace($token, $mangled, $masked->text), $masked, 'probe'))
             ->toThrow(TranslationFailed::class);
     }

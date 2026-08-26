@@ -175,18 +175,25 @@ final class Protector
      */
     private function countToken(string $text, string $token): int
     {
-        // Bounded on BOTH sides by a non-alphanumeric, not just the trailing
-        // one. A lookahead alone still counted `xWFZ0` as a clean occurrence,
-        // which `strtr` then restored to `x:count`.
+        // Bounded on both sides by a non-letter, non-number, in UNICODE terms.
         //
-        // The boundary excludes any ALPHANUMERIC neighbour, not just digits.
+        // Three iterations, each one a narrower guess than the mistake it was
+        // fixing. Trailing digits stopped `WFZ1` matching inside `WFZ10` and
+        // nothing else. Trailing ASCII alphanumerics stopped `WFZ0s` but not
+        // `xWFZ0`. Both sides in ASCII stopped that, and not `WFZ0è` -- which
+        // is the one that matters here, because the two languages this ships
+        // are full of non-ASCII letters and an engine inflecting a token will
+        // reach for one.
+        //
+        // `\p{L}\p{N}` with the `u` modifier is the boundary the earlier ones
+        // were each approximating.
         // Digits alone were enough to keep `WFZ1` from matching inside
         // `WFZ10`, and left an engine free to inflect a token -- returning
         // `WFZ0s` for `WFZ0`, which counted as one clean occurrence, restored
         // to `:counts`, and passed the leftover check because `WFZ0` was gone.
         // A corrupted Laravel placeholder renders as literal `:counts`.
         return (int) preg_match_all(
-            '/(?<![0-9A-Za-z])'.preg_quote($token, '/').'(?![0-9A-Za-z])/',
+            '/(?<![\p{L}\p{N}])'.preg_quote($token, '/').'(?![\p{L}\p{N}])/u',
             $text,
         );
     }
