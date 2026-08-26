@@ -854,3 +854,48 @@ test('a token never collides with text the source already contains', function ()
     // And the prefix genuinely moves rather than colliding quietly.
     expect($protector->mask('WFZ0 code :count')->prefix)->not->toBe('WFZ');
 });
+
+test('a declared cognate is actually identical in that language', function (): void {
+    // Cognate-ness is per-language and the list used to be global, which looked
+    // right while German was the only language and shipped English into Italian
+    // the moment there was a second: `Agent` and `Name` were skipped as
+    // "identical in every catalogue" while the Italian term table said `agente`
+    // and Italian says `Nome`.
+    //
+    // So the claim is now checked rather than asserted. An entry that is not
+    // genuinely identical in that locale's catalogue fails here, and one that
+    // no English value ever matches is dead weight the list should not carry.
+    $glossary = Glossary::load();
+    $english = [];
+
+    foreach (glob(lang_path('en/*.php')) ?: [] as $path) {
+        foreach (Catalogue::read($path)->values() as $key => $value) {
+            $english[basename($path, '.php').'.'.$key] = $value;
+        }
+    }
+
+    foreach ($glossary->localesWithTerms() as $locale) {
+        $target = [];
+
+        foreach (glob(lang_path($locale.'/*.php')) ?: [] as $path) {
+            foreach (Catalogue::read($path)->values() as $key => $value) {
+                $target[basename($path, '.php').'.'.$key] = $value;
+            }
+        }
+
+        if ($target === []) {
+            continue;
+        }
+
+        foreach ($glossary->cognates($locale) as $cognate) {
+            $keys = array_keys($english, $cognate, true);
+
+            expect($keys)->not->toBe([], "{$locale} declares '{$cognate}' a cognate, but no English value is exactly that");
+
+            foreach ($keys as $key) {
+                expect($target[$key] ?? null)
+                    ->toBe($cognate, "{$locale} declares '{$cognate}' a cognate, but {$key} is not identical");
+            }
+        }
+    }
+});

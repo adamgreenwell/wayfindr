@@ -37,7 +37,7 @@ final class CatalogueTranslator
         bool $retranslate = false,
     ): CataloguePlan {
         $existing = $target?->values() ?? [];
-        $cognates = array_flip($this->glossary->cognates());
+        $cognates = array_flip($this->glossary->cognates($targetLocale));
 
         $translated = [];
         $carried = [];
