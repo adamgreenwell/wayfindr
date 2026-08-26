@@ -832,3 +832,25 @@ test('the help text and the command agree about what --retranslate does', functi
     expect($signature)->not->toContain('overwrites reviewed copy')
         ->and($signature)->toContain('never overwritten');
 });
+
+test('a token never collides with text the source already contains', function (): void {
+    // If a catalogue string already contains `WFZ0`, the first placeholder is
+    // assigned a token the text already holds. The source occurrence then
+    // counts as another placeholder, restoration accepts it, and both are
+    // replaced -- `WFZ0 code :count` becomes `:count code :count` with every
+    // check passing. Lengthening the prefix until it is absent removes the
+    // collision rather than detecting it.
+    $glossary = Glossary::load();
+    $protector = new Protector($glossary);
+
+    foreach (['WFZ0 code :count', 'WFZ WFZZ0 :count', ':count only'] as $source) {
+        $masked = $protector->mask($source);
+
+        expect($masked->text)->not->toBe($source, "nothing was masked in: {$source}")
+            ->and($protector->restore($masked->text, $masked, 'probe'))
+            ->toBe($source, "did not round-trip: {$source}");
+    }
+
+    // And the prefix genuinely moves rather than colliding quietly.
+    expect($protector->mask('WFZ0 code :count')->prefix)->not->toBe('WFZ');
+});

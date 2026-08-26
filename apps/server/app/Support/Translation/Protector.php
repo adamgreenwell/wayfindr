@@ -33,17 +33,31 @@ final class Protector
 
     public function mask(string $text): MaskedText
     {
+        // A token must not already occur in the source. If it does, the first
+        // placeholder is assigned a token the text already contains, the source
+        // occurrence is counted as though it were another placeholder, and
+        // restoration replaces BOTH -- turning `WFZ0 code :count` into
+        // `:count code :count` while every check passes.
+        //
+        // Lengthening the prefix until it is absent costs nothing and removes
+        // the collision rather than detecting it.
+        $prefix = self::TOKEN;
+
+        while (str_contains($text, $prefix)) {
+            $prefix .= 'Z';
+        }
+
         $map = [];
         $next = 0;
 
-        $reserve = function (string $original) use (&$map, &$next): string {
+        $reserve = function (string $original) use (&$map, &$next, $prefix): string {
             $existing = array_search($original, $map, true);
 
             if ($existing !== false) {
                 return (string) $existing;
             }
 
-            $token = self::TOKEN.$next++;
+            $token = $prefix.$next++;
             $map[$token] = $original;
 
             return $token;
@@ -70,7 +84,7 @@ final class Protector
             ) ?? $text;
         }
 
-        return new MaskedText($text, $map);
+        return new MaskedText($text, $map, $prefix);
     }
 
     /**
@@ -126,7 +140,7 @@ final class Protector
 
         // A token the engine invented, or one it split in half and left a
         // fragment of. Either way the string is not safe to write.
-        if (preg_match('/'.self::TOKEN.'\d+/', $restored) === 1) {
+        if (preg_match('/'.preg_quote($masked->prefix, '/').'\d+/', $restored) === 1) {
             throw new TranslationFailed(
                 trim($context.' still carries a protection token after restore: '.$restored)
             );
