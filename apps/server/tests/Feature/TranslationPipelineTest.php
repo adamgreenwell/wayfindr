@@ -791,3 +791,32 @@ test('a failed write leaves nothing behind to be mistaken for a catalogue', func
     array_map('unlink', glob($directory.'/*') ?: []);
     @rmdir($directory);
 });
+
+test('the renderer round-trips every value in every shipped catalogue', function (): void {
+    // The renderer is what writes a catalogue to disk, so a value it cannot
+    // reproduce is a translation silently altered on the way out. Spot-checking
+    // it with a handful of contrived strings misses whatever the real
+    // catalogues happen to contain -- German quotation marks, Italian
+    // apostrophes, plural pipes, placeholders, em dashes, ellipses.
+    //
+    // 1,745 values across en/de/it at the time of writing, and the number grows
+    // on its own as catalogues are added.
+    $checked = 0;
+
+    foreach (glob(lang_path('*/*.php')) ?: [] as $file) {
+        $original = Catalogue::read($file);
+        $values = $original->values();
+
+        $path = sys_get_temp_dir().'/wf-rt-'.bin2hex(random_bytes(6)).'.php';
+        file_put_contents($path, Catalogue::render(Catalogue::nest($values), $original->docblock));
+
+        $reread = Catalogue::read($path);
+        @unlink($path);
+
+        expect($reread->values())->toBe($values, basename(dirname($file)).'/'.basename($file).' did not survive a render');
+
+        $checked += count($values);
+    }
+
+    expect($checked)->toBeGreaterThan(1000);
+});
