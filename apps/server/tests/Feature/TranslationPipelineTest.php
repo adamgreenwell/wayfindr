@@ -750,3 +750,44 @@ class TranslationPipelineShortWriteStream
         return false;
     }
 }
+
+test('a failed write leaves nothing behind to be mistaken for a catalogue', function (): void {
+    // Reporting a failed write is not the same as leaving nothing behind. A
+    // truncated catalogue on disk makes the NEXT run take the existing-file
+    // branch and write a sidecar fragment instead of repairing it, so the
+    // damage outlives the run that caused it -- and Laravel may load the
+    // malformed file meanwhile.
+    $directory = sys_get_temp_dir().'/wf-atomic-'.bin2hex(random_bytes(6));
+    mkdir($directory);
+    $target = $directory.'/nav.php';
+
+    $command = new class extends TranslateCatalogueCommand
+    {
+        public array $errors = [];
+
+        public function put(string $path, string $contents): bool
+        {
+            return parent::put($path, $contents);
+        }
+
+        public function error($string, $verbosity = null): void
+        {
+            $this->errors[] = $string;
+        }
+    };
+
+    // A good write lands, and leaves no temporary file beside it.
+    expect($command->put($target, "<?php\n\nreturn [];\n"))->toBeTrue()
+        ->and(is_file($target))->toBeTrue()
+        ->and(glob($directory.'/*.tmp'))->toBe([]);
+
+    // A write into a directory that does not exist fails, and creates nothing.
+    $missing = $directory.'/nope/nav.php';
+
+    expect($command->put($missing, "<?php\n\nreturn [];\n"))->toBeFalse()
+        ->and(is_file($missing))->toBeFalse()
+        ->and(glob($directory.'/nope/*'))->toBe([]);
+
+    array_map('unlink', glob($directory.'/*') ?: []);
+    @rmdir($directory);
+});

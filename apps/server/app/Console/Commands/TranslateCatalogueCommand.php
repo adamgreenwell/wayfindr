@@ -402,6 +402,20 @@ class TranslateCatalogueCommand extends Command
      */
     protected function put(string $path, string $contents): bool
     {
+        // Written to a sibling temporary file and renamed into place, because
+        // reporting a failed write is not the same as leaving nothing behind.
+        //
+        // A direct write that fills the disk or is interrupted leaves a
+        // truncated catalogue on disk. The run reports failure -- and the file
+        // still exists, so the NEXT run takes the existing-catalogue branch and
+        // writes a sidecar fragment instead of repairing it. Laravel may load
+        // the malformed file in the meantime, which for a PHP catalogue is a
+        // parse error rather than a missing string.
+        //
+        // `rename()` within a directory is atomic on POSIX, so the target only
+        // ever exists complete or not at all -- including when the process is
+        // killed mid-write, which no return-value check can catch.
+        $temporary = $path.'.'.bin2hex(random_bytes(6)).'.tmp';
         $expected = strlen($contents);
 
         // Suppressed deliberately. A short write also raises a PHP warning,
@@ -410,7 +424,7 @@ class TranslateCatalogueCommand extends Command
         // and returns a failure the caller already knows how to propagate.
         // Suppressing it makes this method the single place the failure is
         // reported, and the only place it has to be tested.
-        $written = @file_put_contents($path, $contents);
+        $written = @file_put_contents($temporary, $contents);
 
         // Both conditions, and the honest note is which one fires.
         //
@@ -424,9 +438,20 @@ class TranslateCatalogueCommand extends Command
         // comparison and rules out a class of silent truncation, so it stays --
         // but nobody should read it as the guard doing the work today.
         if ($written === false || $written !== $expected) {
+            @unlink($temporary);
+
             $this->error($written === false
                 ? "  could not write {$path}"
                 : "  short write to {$path}: {$written} of {$expected} bytes");
+            $this->writeFailed = true;
+
+            return false;
+        }
+
+        if (! @rename($temporary, $path)) {
+            @unlink($temporary);
+
+            $this->error("  could not move the finished file into {$path}");
             $this->writeFailed = true;
 
             return false;
