@@ -78,6 +78,17 @@ $ACTIVATE_RELEASE()
 
 cd "$FORGE_SITE_PATH/apps/server"
 
+# AFTER activation, deliberately. The sweep inside `migrate` above ran while the
+# PREVIOUS release was still serving widget traffic with the old unsanitised
+# writers, so anything written after its chunk was passed kept its query string.
+# This pass runs when the only code accepting requests is the code that
+# sanitises on the way in, which is the one that can finish the job.
+#
+# Idempotent, so on every deploy after this one it costs a table scan and
+# reports nothing rewritten.
+echo "Sweeping stored page addresses."
+forge_php artisan wayfindr:sanitise-page-urls
+
 echo "Restarting Laravel queues."
 forge_php artisan queue:restart
 
