@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use App\Support\Visitors\VisitorPageUrl;
+
 class VisitorContextSanitizer
 {
     private const MAX_ITEMS = 10;
@@ -66,7 +68,11 @@ class VisitorContextSanitizer
         $metadata = $metadata ?? [];
 
         if ($pageUrl !== null) {
-            $metadata['last_page_url'] = $pageUrl;
+            // Sanitised, which this class knew how to do for `context` and had
+            // never asked of the URL. SENSITIVE_KEY_PATTERN sits three methods
+            // up; the page address went past it untouched, and reached agents
+            // whole -- reset tokens, invite codes and all.
+            $metadata['last_page_url'] = VisitorPageUrl::sanitise($pageUrl);
         } elseif (! array_key_exists('last_page_url', $metadata)) {
             $metadata['last_page_url'] = null;
         }
