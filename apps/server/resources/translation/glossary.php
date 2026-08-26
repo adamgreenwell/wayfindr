@@ -346,7 +346,15 @@ return [
             // `stai`, `puoi`, `devi` cannot be anything else (`vai` and `fai` are excluded: those ARE legitimate imperative labels) -- and catches
             // informal prose that contains no pronoun at all, which is where
             // `Segna come in sospeso se stai aspettando` was hiding.
-            'informal address' => '/\\b(tu|ti|te|tuo|tuoi|tua|tue|stai|sei|hai|puoi|devi|vuoi|sai)\\b/ui',
+            // Pronouns, 2sg auxiliaries and modals, and the 2sg FUTURE.
+            //
+            // The future was the gap. `Riceverai avvisi` is squarely informal
+            // and carries no pronoun, no auxiliary and no modal, so a
+            // pronoun-and-modal net scored it clean -- and review found it on
+            // a shipped string. Italian's 2sg future ends in `-rai` almost
+            // uniquely, which makes it cheap to catch: measured at zero false
+            // positives across the whole catalogue.
+            'informal address' => '/\\b(tu|ti|te|tuo|tuoi|tua|tue|stai|sei|hai|puoi|devi|vuoi|sai)\\b|\\b\\w{3,}rai\\b/ui',
 
             // Straight DOUBLE quotes only. Italian typography declares
             // caporali, and unlike German this cannot also flag the apostrophe

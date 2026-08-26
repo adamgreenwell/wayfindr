@@ -106,7 +106,7 @@ return [
         'site' => 'Sito',
         'visitor' => 'Visitatore',
         'attention' => 'Attenzione',
-        'read' => 'Leggi',
+        'read' => 'Letto',
         'cobrowse' => 'Cobrowse',
         'assigned' => 'Assegnato',
         'timing' => 'Tempistica',
@@ -123,7 +123,7 @@ return [
         'back' => 'Torna alle conversazioni',
         'support_code' => 'Codice di supporto :code',
         'statuses' => [
-            'open' => 'Apri',
+            'open' => 'Aperto',
             'closed' => 'Chiuso',
         ],
         'tones' => [
@@ -273,7 +273,7 @@ return [
             'recovery_timeline' => 'Cronologia del recupero',
             'recovery_action' => 'Azione di ripristino',
             'guidance' => 'Guida per l\'agente',
-            'page_snapshot' => 'Istanza della pagina',
+            'page_snapshot' => 'Snapshot della pagina',
             'no_snapshot' => 'Nessuno snapshot della pagina sanificata disponibile.',
             'snapshot_freshness' => 'Freschezza dello snapshot',
             'snapshot_guidance' => 'Guida all\'aggiornamento dello snapshot',

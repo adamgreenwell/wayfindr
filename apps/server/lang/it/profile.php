@@ -54,7 +54,7 @@ return [
         'paused' => 'In pausa',
         'quiet_detail' => 'La modalità silenziosa sopprime i nuovi avvisi sulla dashboard e le notifiche email.',
         'listening' => 'Ascolto',
-        'listening_detail' => 'Riceverai avvisi sulla dashboard per il lavoro di supporto idoneo.',
+        'listening_detail' => 'Riceverà avvisi sulla dashboard per il lavoro di supporto idoneo.',
         'scope_label' => 'Ambito degli avvisi',
         'scope_assigned' => 'Assegnato a me',
         'scope_assigned_detail' => 'Solo le conversazioni e i ticket assegnati a lei generano nuovi avvisi.',
