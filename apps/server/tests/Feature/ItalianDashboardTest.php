@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\Visitor;
 use App\Support\DashboardLanguage;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Validator;
 
 uses(RefreshDatabase::class);
 
@@ -114,4 +115,53 @@ test('the ruled Italian vocabulary survives to the page', function (): void {
         ->and($page)->not->toContain('Operatore')
         ->and($page)->not->toContain('Standort')
         ->and($page)->not->toContain('istantanea');
+});
+
+test('every offered language answers a validation failure in its own words', function (): void {
+    // Iterates SUPPORTED rather than naming Italian, so a fourth language
+    // inherits this the day it is offered. That is the shape of the bug it
+    // exists for: Italian became selectable and its validation messages stayed
+    // English, because `lang/it/validation.php` did not exist and Laravel's
+    // per-key fallback made the omission invisible -- a clean English sentence
+    // on an otherwise Italian page, which no catalogue check can see.
+    $leaks = [];
+
+    foreach (array_keys(DashboardLanguage::SUPPORTED) as $locale) {
+        App::setLocale($locale);
+
+        $validator = Validator::make(
+            ['name' => '', 'body' => str_repeat('x', 5000)],
+            ['name' => 'required', 'body' => 'max:4000'],
+        );
+
+        $validator->fails();
+        $messages = $validator->errors()->all();
+
+        foreach ($messages as $message) {
+            if (str_contains($message, 'validation.')) {
+                $leaks[] = "{$locale}: raw translation key -- {$message}";
+            }
+
+            if ($locale === 'en') {
+                // `The body field must not be...` is CORRECT English: `body` is
+                // the humanised column and there is nothing to translate it to.
+                // The two checks below are about translated surfaces only.
+                continue;
+            }
+
+            // The failure the German file was written for: an unnamed attribute
+            // puts the column name into the middle of a translated sentence.
+            if (str_contains($message, ' body ')) {
+                $leaks[] = "{$locale}: column name in a translated sentence -- {$message}";
+            }
+
+            if (str_contains($message, 'field is required')) {
+                $leaks[] = "{$locale}: English message on a {$locale} surface -- {$message}";
+            }
+        }
+    }
+
+    App::setLocale('en');
+
+    expect($leaks)->toBe([]);
 });
