@@ -481,8 +481,36 @@ class TranslateCatalogueCommand extends Command
         ]);
     }
 
-    private function fragmentHeader(string $name, CataloguePlan $plan): string
+    /**
+     * The header inside the sidecar file.
+     *
+     * Conditional, because the two fragments are not the same document and
+     * merging them the same way is destructive. A `.missing.php` holds keys the
+     * catalogue does not have, so its entries are ADDITIONS. A `.redraft.php`
+     * holds a fresh proposal for every key including ones already reviewed, so
+     * merging it wholesale overwrites reviewed translations with machine output
+     * -- which is precisely what the old header instructed.
+     *
+     * Third surface describing `--retranslate`, after the signature and the
+     * confirmation prompt. Correcting those two and leaving this one is the
+     * same mistake both of them were.
+     */
+    protected function fragmentHeader(string $name, CataloguePlan $plan): string
     {
+        if ($this->option('retranslate')) {
+            return implode("\n", [
+                "A fresh draft of EVERY key in lang/{$plan->targetLocale}/{$name}.php, NOT REVIEWED.",
+                '',
+                'Not a list of additions. Every entry here has a counterpart in the catalogue',
+                'beside it, and most of those counterparts have been reviewed by a person --',
+                'so merge this by comparing entry against entry and taking what is better,',
+                'never by pasting it in wholesale.',
+                '',
+                'The catalogue was not regenerated because it carries comments a rewrite',
+                'would silently drop. Delete this file once you have taken what you want.',
+            ]);
+        }
+
         return implode("\n", [
             "Keys missing from lang/{$plan->targetLocale}/{$name}.php, drafted and NOT REVIEWED.",
             '',

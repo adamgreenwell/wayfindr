@@ -899,3 +899,39 @@ test('a declared cognate is actually identical in that language', function (): v
         }
     }
 });
+
+test('a redraft says it is a redraft, not a list of additions', function (): void {
+    // The two sidecars are different documents and merging them the same way
+    // is destructive. `.missing.php` holds keys the catalogue lacks, so its
+    // entries are additions. `.redraft.php` holds a fresh proposal for EVERY
+    // key including reviewed ones, so "merge the entries into the file beside
+    // it" -- the old shared header -- means overwriting reviewed translations
+    // with machine output.
+    $command = new class extends TranslateCatalogueCommand
+    {
+        public bool $retranslating = false;
+
+        public function header(string $name, CataloguePlan $plan): string
+        {
+            return $this->fragmentHeader($name, $plan);
+        }
+
+        public function option($key = null)
+        {
+            return $key === 'retranslate' ? $this->retranslating : parent::option($key);
+        }
+    };
+
+    $plan = new CataloguePlan(catalogue: 'nav', targetLocale: 'de');
+
+    $command->retranslating = false;
+    $missing = $command->header('nav', $plan);
+
+    $command->retranslating = true;
+    $redraft = $command->header('nav', $plan);
+
+    expect($missing)->toContain('Keys missing')
+        ->and($redraft)->not->toContain('Keys missing')
+        ->and($redraft)->toContain('EVERY key')
+        ->and($redraft)->toContain('never by pasting it in wholesale');
+});
