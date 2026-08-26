@@ -385,7 +385,21 @@ test('every language carries the same term keys, so a gap is a failure not a sil
     $glossary = Glossary::load();
     $reference = array_keys($glossary->terms('de'));
 
-    foreach (['it'] as $locale) {
+    // Asserted before the loop, so this test is never vacuous. With one
+    // language in the glossary the loop below has nothing to iterate, and a
+    // test that quietly asserts nothing looks exactly like a passing one.
+    expect($reference)->not->toBeEmpty();
+
+    // Derived from the glossary rather than hardcoded, and that is the whole
+    // point: a literal `['it']` asserts the existence of a term table that may
+    // live on a different branch, which is exactly how this test went red while
+    // the data it needed was still unpushed. Ask the glossary which languages
+    // it actually decides, and the assertion cannot outrun its own data.
+    foreach ($glossary->localesWithTerms() as $locale) {
+        if ($locale === 'de') {
+            continue;
+        }
+
         $terms = array_keys($glossary->terms($locale));
 
         expect(array_diff($reference, $terms))->toBe([], "{$locale} is missing terms the German table decides")
@@ -396,7 +410,7 @@ test('every language carries the same term keys, so a gap is a failure not a sil
 test('every language keeps the declared collisions apart in its own words', function (): void {
     $glossary = Glossary::load();
 
-    foreach (['de', 'it'] as $locale) {
+    foreach ($glossary->localesWithTerms() as $locale) {
         expect($glossary->mergedCollisions($locale))->toBe([], "{$locale} merges a declared collision pair");
     }
 });
