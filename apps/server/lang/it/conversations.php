@@ -45,7 +45,7 @@ return [
     ],
     'lanes' => [
         'region_label' => 'Corsie di conversazione',
-        'new_activity' => 'Richiede attenzione',
+        'new_activity' => 'Da gestire',
         'needs_reply' => 'Richiede risposta',
         'assigned_to_me' => 'Assegnato a me',
         'unassigned' => 'Non assegnato',

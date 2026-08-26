@@ -123,6 +123,26 @@ return [
     ],
 
     /*
+     * Terms that are one English word and two target words.
+     *
+     * Each pair names a sense split the glossary already decides. Their point
+     * here is cross-checking: two languages may disagree about the WORD and
+     * must agree about which SENSE a key is. German rendered
+     * `tickets.statuses.open` as the state and Italian as the imperative, and
+     * nothing noticed -- the collision test proves the two terms differ, never
+     * that a catalogue chose between them correctly.
+     *
+     * A pair belongs here when both sides are declared for every language that
+     * has a term table, since the check compares like with like.
+     */
+    'senses' => [
+        ['open_state', 'open_action'],
+        ['attention_phrase', 'attention_badge'],
+        ['owner_role', 'owner_assignee'],
+        ['reply_noun', 'reply_action'],
+    ],
+
+    /*
      * English term -> target term.
      *
      * `confirm` marks the entries where the proposal is a judgement call rather

@@ -76,7 +76,7 @@ return [
         ],
         'external' => [
             'all' => 'Qualsiasi problema esterno',
-            'failed' => 'Richiede attenzione',
+            'failed' => 'Da gestire',
             'pending' => 'Sincronizzazione in sospeso',
             'linked' => 'Collegato',
             'none' => 'Nessun problema esterno',

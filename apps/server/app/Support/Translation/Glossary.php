@@ -128,6 +128,16 @@ final class Glossary
     }
 
     /**
+     * Pairs that are one English word and two target words.
+     *
+     * @return array<int, array{0: string, 1: string}>
+     */
+    public function senses(): array
+    {
+        return $this->data['senses'] ?? [];
+    }
+
+    /**
      * Terms a draft must not contain => what was decided instead.
      *
      * @return array<string, string>

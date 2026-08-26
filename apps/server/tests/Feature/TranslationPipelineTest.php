@@ -1150,3 +1150,69 @@ test('every plural segment starts with its interval selector', function (): void
 
     expect($offenders)->toBe([]);
 });
+
+test('two languages agree about which sense a key is', function (): void {
+    // The collision test proves a glossary keeps two senses APART. Nothing
+    // proved a catalogue chose between them correctly -- so `tickets.statuses.open`
+    // shipped as `Aperto` in German and `Apri` in Italian, a state and an
+    // imperative for the same key, and every guard passed.
+    //
+    // The languages may disagree about the WORD. They must agree about which
+    // sense the key is, and that is checkable without knowing anything about
+    // either language: find keys where one locale used sense A and another used
+    // sense B, and the pair disagrees about the key rather than the vocabulary.
+    $glossary = Glossary::load();
+    $locales = $glossary->localesWithTerms();
+
+    $values = [];
+
+    foreach ($locales as $locale) {
+        foreach (glob(lang_path($locale.'/*.php')) ?: [] as $path) {
+            if (basename($path) === 'validation.php') {
+                continue;
+            }
+
+            foreach (Catalogue::read($path)->values() as $key => $value) {
+                $values[$locale][basename($path, '.php').'.'.$key] = $value;
+            }
+        }
+    }
+
+    $disagreements = [];
+
+    foreach ($glossary->senses() as [$a, $b]) {
+        // Which sense, if any, each locale's value for a key corresponds to.
+        $senseOf = [];
+
+        foreach ($locales as $locale) {
+            $termA = $glossary->terms($locale)[$a]['term'] ?? null;
+            $termB = $glossary->terms($locale)[$b]['term'] ?? null;
+
+            if ($termA === null || $termB === null || $termA === $termB) {
+                continue;
+            }
+
+            foreach ($values[$locale] ?? [] as $key => $value) {
+                if ($value === $termA) {
+                    $senseOf[$key][$locale] = $a;
+                } elseif ($value === $termB) {
+                    $senseOf[$key][$locale] = $b;
+                }
+            }
+        }
+
+        foreach ($senseOf as $key => $byLocale) {
+            if (count(array_unique($byLocale)) > 1) {
+                $detail = implode(', ', array_map(
+                    static fn (string $l, string $sense): string => "{$l}={$sense}",
+                    array_keys($byLocale),
+                    $byLocale,
+                ));
+
+                $disagreements[] = "{$key}: {$detail}";
+            }
+        }
+    }
+
+    expect($disagreements)->toBe([]);
+});
