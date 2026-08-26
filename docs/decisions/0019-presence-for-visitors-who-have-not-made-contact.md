@@ -73,8 +73,17 @@ one, arriving a few hundred milliseconds earlier.
 
 ### 3. What is reported, named exhaustively
 
-Sent: the site's public key, the visitor's existing anonymous id, a timestamp,
-and the current page URL after sanitising.
+Sent: the site's public key, the visitor's existing anonymous id, and the
+current page URL after sanitising.
+
+**No timestamp.** `last_seen_at` is stamped from server receipt time, exactly as
+bootstrap, conversation start, message fetch and typing already do. A widget
+timestamp would be a value the endpoint cannot verify: a browser with a skewed
+clock reports presence that is wrong in both directions, and this endpoint is
+public and unauthenticated beyond the site key, so a forged one could park a
+row far enough in the future to sit "active" indefinitely and outrun the
+thirty-day prune. Presence is a claim about when WE heard from somebody, which
+is the only part of it we actually know.
 
 **Not sent, and not to be added without another decision:** DOM or page
 contents, form values, scroll or viewport geometry, referrer chains, device or
