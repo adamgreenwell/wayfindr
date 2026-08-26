@@ -138,6 +138,22 @@ final class Protector
         // position and never rescans what it has already written.
         $restored = strtr($translated, $masked->map);
 
+        // The originals must appear as often as their tokens did. The token
+        // accounting above should already guarantee this; asserting it directly
+        // is what would have caught the inflected-token case without anyone
+        // having thought of inflection, which is the argument for keeping a
+        // check that looks redundant.
+        foreach ($masked->map as $token => $original) {
+            $expected = $this->countToken($masked->text, $token);
+            $actual = substr_count($restored, $original);
+
+            if ($actual < $expected) {
+                throw new TranslationFailed(
+                    trim($context.' restored '.$original.' '.$actual.' time(s) where the source had '.$expected.': '.$restored)
+                );
+            }
+        }
+
         // A token the engine invented, or one it split in half and left a
         // fragment of. Either way the string is not safe to write.
         if (preg_match('/'.preg_quote($masked->prefix, '/').'\d+/', $restored) === 1) {
@@ -159,6 +175,19 @@ final class Protector
      */
     private function countToken(string $text, string $token): int
     {
-        return (int) preg_match_all('/'.preg_quote($token, '/').'(?!\\d)/', $text);
+        // Bounded on BOTH sides by a non-alphanumeric, not just the trailing
+        // one. A lookahead alone still counted `xWFZ0` as a clean occurrence,
+        // which `strtr` then restored to `x:count`.
+        //
+        // The boundary excludes any ALPHANUMERIC neighbour, not just digits.
+        // Digits alone were enough to keep `WFZ1` from matching inside
+        // `WFZ10`, and left an engine free to inflect a token -- returning
+        // `WFZ0s` for `WFZ0`, which counted as one clean occurrence, restored
+        // to `:counts`, and passed the leftover check because `WFZ0` was gone.
+        // A corrupted Laravel placeholder renders as literal `:counts`.
+        return (int) preg_match_all(
+            '/(?<![0-9A-Za-z])'.preg_quote($token, '/').'(?![0-9A-Za-z])/',
+            $text,
+        );
     }
 }

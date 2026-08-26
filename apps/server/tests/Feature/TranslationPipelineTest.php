@@ -833,6 +833,27 @@ test('the help text and the command agree about what --retranslate does', functi
         ->and($signature)->toContain('never overwritten');
 });
 
+test('an inflected token is refused rather than restored', function (): void {
+    // An engine that appends a letter -- `WFZ0s` for `WFZ0`, which is exactly
+    // what a translator does to a token sitting in a plural context -- used to
+    // count as one clean occurrence. `strtr` restored the substring, `:count`
+    // became `:counts`, and the leftover check passed because `WFZ0` was gone.
+    // Laravel then renders a literal `:counts` to an agent.
+    $glossary = Glossary::load();
+    $protector = new Protector($glossary);
+
+    $masked = $protector->mask('Waiting for :count');
+    $token = array_key_first($masked->map);
+
+    foreach (["{$token}s", "{$token}en", "x{$token}"] as $mangled) {
+        expect(fn () => $protector->restore(str_replace($token, $mangled, $masked->text), $masked, 'probe'))
+            ->toThrow(TranslationFailed::class);
+    }
+
+    // Untouched still round-trips.
+    expect($protector->restore($masked->text, $masked, 'probe'))->toBe('Waiting for :count');
+});
+
 test('a token never collides with text the source already contains', function (): void {
     // If a catalogue string already contains `WFZ0`, the first placeholder is
     // assigned a token the text already holds. The source occurrence then
