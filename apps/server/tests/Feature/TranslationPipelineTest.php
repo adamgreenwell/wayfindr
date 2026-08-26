@@ -991,7 +991,7 @@ test('restore either reproduces the source exactly or refuses, across generated 
     mt_srand(20260826);
 
     $glossary = Glossary::load();
-    $protector = new App\Support\Translation\Protector($glossary);
+    $protector = new Protector($glossary);
 
     $words = ['Waiting', 'für', 'visitatore', 'ticket', 'Snapshot', 'più', 'größer', '—', 'Wayfindr', 'WF-ABC123', 'WFZ0'];
     $slots = [':count', ':elapsed', ':name', ':code', ':site', ':lane', ':value', ':total', ':shown', ':matching', ':project', ':reason', ':actor', ':term', '{1}', '[2,*]'];
@@ -1048,7 +1048,7 @@ test('restore either reproduces the source exactly or refuses, across generated 
             );
 
             $exact++;
-        } catch (App\Support\Translation\TranslationFailed) {
+        } catch (TranslationFailed) {
             expect($mustRestoreTo)->toBeNull("case {$i} (kind {$kind}) should have restored cleanly\n  source: {$source}");
 
             $refused++;
