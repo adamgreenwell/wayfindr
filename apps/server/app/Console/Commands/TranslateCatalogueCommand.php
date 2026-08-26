@@ -10,6 +10,8 @@ use App\Support\Translation\CatalogueTranslator;
 use App\Support\Translation\Engines\MurfEngine;
 use App\Support\Translation\Engines\PassthroughEngine;
 use App\Support\Translation\Glossary;
+use App\Support\Translation\PolicyScore;
+use App\Support\Translation\PolicyScorer;
 use App\Support\Translation\Protector;
 use App\Support\Translation\TranslationEngine;
 use App\Support\Translation\TranslationFailed;
@@ -22,7 +24,8 @@ class TranslateCatalogueCommand extends Command
         {--engine=passthrough : passthrough|murf}
         {--catalogue=* : Limit to named catalogues, e.g. --catalogue=nav}
         {--write : Write the result instead of only reporting it}
-        {--retranslate : Replace values that already exist -- overwrites reviewed copy}';
+        {--retranslate : Replace values that already exist -- overwrites reviewed copy}
+        {--score : Measure the result against the policy: rejected terms, register, typography}';
 
     protected $description = 'Draft a language catalogue from the English source, the glossary, and the policy.';
 
@@ -86,6 +89,10 @@ class TranslateCatalogueCommand extends Command
         }
 
         $translator = new CatalogueTranslator($engine, $glossary, new Protector($glossary));
+        $scorer = new PolicyScorer($glossary);
+
+        /** @var array<int, PolicyScore> $scores */
+        $scores = [];
         $failed = false;
 
         foreach ($this->catalogues() as $sourcePath) {
@@ -101,6 +108,11 @@ class TranslateCatalogueCommand extends Command
 
             $this->report($plan);
 
+            if ($this->option('score')) {
+                $reviewed = is_file($targetPath) ? Catalogue::read($targetPath)->values() : [];
+                $scores[] = $scorer->score($plan, $reviewed);
+            }
+
             if ($plan->hasFailures()) {
                 $failed = true;
             }
@@ -108,6 +120,10 @@ class TranslateCatalogueCommand extends Command
             if ($this->option('write')) {
                 $this->write($plan, $targetPath, $name);
             }
+        }
+
+        if ($scores !== []) {
+            $this->reportScore($scores);
         }
 
         if (! $this->option('write')) {
@@ -170,6 +186,72 @@ class TranslateCatalogueCommand extends Command
 
         foreach ($plan->review as $key => $why) {
             $this->line("  <comment>review</comment> {$key}: {$why}");
+        }
+    }
+
+    /**
+     * @param  array<int, PolicyScore>  $scores
+     */
+    private function reportScore(array $scores): void
+    {
+        $this->newLine();
+        $this->line('<info>Policy score</info>');
+
+        $scored = 0;
+        $drafted = 0;
+        $agreed = 0;
+        $hasReviewed = false;
+
+        /** @var array<string, array<int, array{key: string, detail: string}>> $all */
+        $all = [];
+
+        foreach ($scores as $score) {
+            $scored += $score->scored;
+            $drafted += $score->drafted;
+
+            if ($score->agreed !== null) {
+                $hasReviewed = true;
+                $agreed += $score->agreed;
+            }
+
+            foreach ($score->violations as $rule => $hits) {
+                foreach ($hits as $hit) {
+                    $all[$rule][] = ['key' => $score->catalogue.'.'.$hit['key'], 'detail' => $hit['detail']];
+                }
+            }
+        }
+
+        $this->line("  {$scored} strings measured, {$drafted} of them newly drafted");
+
+        if ($hasReviewed && $drafted > 0) {
+            $this->line(sprintf(
+                '  %d of %d drafted strings (%.0f%%) match the reviewed catalogue already',
+                $agreed,
+                $drafted,
+                100 * $agreed / $drafted,
+            ));
+        }
+
+        if ($all === []) {
+            $this->line('  <info>no policy violations</info>');
+
+            return;
+        }
+
+        $total = array_sum(array_map('count', $all));
+        $this->newLine();
+        $this->warn("  {$total} policy violation(s) -- review notes, not failures:");
+
+        foreach ($all as $rule => $hits) {
+            $this->line('  <comment>'.$rule.'</comment> x'.count($hits));
+
+            foreach (array_slice($hits, 0, 3) as $hit) {
+                $this->line("      {$hit['key']}: {$hit['detail']}");
+            }
+
+            if (count($hits) > 3) {
+                $this->line('      … and '.(count($hits) - 3).' more');
+            }
         }
     }
 

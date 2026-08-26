@@ -111,6 +111,26 @@ final class Glossary
     }
 
     /**
+     * Terms a draft must not contain => what was decided instead.
+     *
+     * @return array<string, string>
+     */
+    public function rejected(string $locale): array
+    {
+        return $this->data['rejected'][$locale] ?? [];
+    }
+
+    /**
+     * Named regexes a draft is measured against.
+     *
+     * @return array<string, string>
+     */
+    public function checks(string $locale): array
+    {
+        return $this->data['checks'][$locale] ?? [];
+    }
+
+    /**
      * How this language is addressed, as instructions rather than as prose.
      *
      * @return array<string, string>

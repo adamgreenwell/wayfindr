@@ -165,6 +165,62 @@ return [
     ],
 
     /*
+     * Terms a draft must not contain, and what was decided instead.
+     *
+     * Every entry here was ruled on and then observed coming back from a real
+     * engine anyway -- `Konversation` twenty-one times, `Standort` eight,
+     * `Momentaufnahme` six, in one run against Murf. An engine with nowhere to
+     * receive a glossary cannot be blamed for that, which is exactly why the
+     * check belongs on the way back in rather than in a request on the way out.
+     *
+     * Entries must be UNAMBIGUOUS. `Frisch` is rejected as a translation of
+     * `fresh` and is a perfectly good word elsewhere; `älter` is wrong in a
+     * badge and right in `älter als 5 Minuten`, which the catalogue says today.
+     * Neither is listed, because a scorer that cries wolf is one nobody reads.
+     */
+    'rejected' => [
+        'de' => [
+            'Konversation' => 'conversation is Unterhaltung',
+            'Schnappschuss' => 'snapshot is Snapshot',
+            'Momentaufnahme' => 'snapshot is Snapshot',
+            'Standort' => 'site is Website -- Standort is a physical location',
+            'Besucher:innen' => 'the colon form is rejected on accessibility grounds (policy section 8)',
+            'angefragt' => 'request_action is angefordert',
+            // `anfragen` is NOT listed, and the reason is the point of the rule
+            // above: `Anfragender` -- the decided term for a ticket's requester
+            // -- begins with those exact letters, so the entry flagged three
+            // correct strings the first time it ran. German compounds make
+            // substring matching load-bearing (`Konversation` must be caught
+            // inside `Konversationswarteschlange`), which means word boundaries
+            // cannot rescue it and the entry simply does not belong.
+
+        ],
+    ],
+
+    /*
+     * Patterns a draft is measured against, as data rather than as prose.
+     *
+     * The same shape as `protect` above, and the same reasoning: a rule stated
+     * in a paragraph is a rule an engine ignores and a reviewer forgets.
+     */
+    'checks' => [
+        // What the informal-address pattern CANNOT see, stated rather than
+        // papered over: a du-imperative carries no marker word. A real run
+        // returned `Sende eine klare Antwort und setze das Ticket ...`, which is
+        // squarely informal and contains no `du`, `dich`, `dir` or `dein`.
+        // Detecting a bare German verb stem by regex means flagging half the
+        // catalogue, so the check stays narrow and the gap is written down --
+        // register in prose is a thing the reviewer reads for, per policy
+        // section 9.
+        'de' => [
+            'informal address' => '/\b(du|dich|dir|dein[a-z]*)\b/u',
+            'generic masculine pronoun' => '/\b(er|ihn|ihm|seine|seinem|seinen|seiner|seines)\b/u',
+            'straight quote' => '/["\']/u',
+            'unhonoured escape' => '/\\\\/u',
+        ],
+    ],
+
+    /*
      * Register, in the form an engine can be handed.
      *
      * Prose reasoning is policy section 1. What matters here is the second

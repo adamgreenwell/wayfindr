@@ -1,9 +1,11 @@
 <?php
 
 use App\Support\Translation\Catalogue;
+use App\Support\Translation\CataloguePlan;
 use App\Support\Translation\CatalogueTranslator;
 use App\Support\Translation\EngineBrief;
 use App\Support\Translation\Glossary;
+use App\Support\Translation\PolicyScorer;
 use App\Support\Translation\Protector;
 use App\Support\Translation\TranslationEngine;
 use App\Support\Translation\TranslationFailed;
@@ -264,4 +266,109 @@ test('a drafted catalogue carries exactly the keys the English source has', func
 
     expect(array_keys($written->values()))->toBe(array_keys($source->values()))
         ->and($plan->failures)->toBe([]);
+});
+
+test('a rejected term is flagged, inside a German compound as well as alone', function (): void {
+    // Substring matching is load-bearing rather than sloppy: a real run returned
+    // `Konversationswarteschlange`, and the rejected term is buried in the
+    // middle of it. Word boundaries would miss every compound German builds.
+    $scorer = new PolicyScorer(Glossary::load());
+
+    $score = $scorer->score(new CataloguePlan(
+        catalogue: 'probe',
+        targetLocale: 'de',
+        translated: [
+            'compound' => 'Warten auf Live-Konversationsaktualisierungen.',
+            'alone' => 'Der Schnappschuss ist veraltet.',
+            'clean' => 'Die Unterhaltung ist geschlossen.',
+        ],
+    ));
+
+    expect($score->violations['rejected term'] ?? [])->toHaveCount(2)
+        ->and(array_column($score->violations['rejected term'], 'key'))->toBe(['compound', 'alone']);
+});
+
+test('the requester term is not mistaken for the rejected request verb', function (): void {
+    // `Anfragender` -- the decided word for a ticket's requester -- begins with
+    // the exact letters of `anfragen`. The first version of the rejected list
+    // flagged three correct strings, which is how the entry came to be removed
+    // rather than boundary-matched.
+    $score = (new PolicyScorer(Glossary::load()))->score(new CataloguePlan(
+        catalogue: 'probe',
+        targetLocale: 'de',
+        translated: ['requester' => 'Ticket #123, Support-Code, Betreff, Anfragender'],
+    ));
+
+    expect($score->violations)->toBe([]);
+});
+
+test('informal address and the generic masculine pronoun are both counted', function (): void {
+    $score = (new PolicyScorer(Glossary::load()))->score(new CataloguePlan(
+        catalogue: 'probe',
+        targetLocale: 'de',
+        translated: [
+            'informal' => 'Nur Tickets, die dir zugewiesen sind.',
+            'pronoun' => 'Fragen Sie den Besucher, was er sieht.',
+        ],
+    ));
+
+    expect($score->violations)->toHaveKeys(['informal address', 'generic masculine pronoun'])
+        ->and($score->violationCount())->toBe(2);
+});
+
+test('agreement is null with nothing to agree with, and counts only drafted keys', function (): void {
+    // Reporting 0% for a language that has no reviewed copy would be a number
+    // that means nothing wearing the costume of a bad one. And a CARRIED value
+    // agrees by construction, so counting it would inflate the score with
+    // strings the engine never saw.
+    $plan = new CataloguePlan(
+        catalogue: 'probe',
+        targetLocale: 'de',
+        translated: ['a' => 'Suchen', 'b' => 'Falsch'],
+        carried: ['c' => 'Aktualisieren'],
+    );
+
+    $scorer = new PolicyScorer(Glossary::load());
+
+    expect($scorer->score($plan)->agreementPercent())->toBeNull();
+
+    $scored = $scorer->score($plan, ['a' => 'Suchen', 'b' => 'Richtig', 'c' => 'Aktualisieren']);
+
+    expect($scored->drafted)->toBe(2)
+        ->and($scored->agreed)->toBe(1)
+        ->and($scored->agreementPercent())->toBe(50.0)
+        ->and($scored->scored)->toBe(3);
+});
+
+test('the shipped German obeys the policy it was written against', function (): void {
+    // The self-audit, as an assertion. It runs backwards from the usual
+    // direction: adding a term to the glossary's rejected list immediately
+    // measures the catalogue against it, so a decision cannot be recorded in
+    // one place and quietly contradicted in another.
+    $glossary = Glossary::load();
+    $scorer = new PolicyScorer($glossary);
+    $offenders = [];
+
+    foreach (glob(lang_path('en/*.php')) ?: [] as $path) {
+        $name = basename($path, '.php');
+        $target = lang_path('de/'.$name.'.php');
+
+        if (! is_file($target)) {
+            continue;
+        }
+
+        $score = $scorer->score(new CataloguePlan(
+            catalogue: $name,
+            targetLocale: 'de',
+            carried: Catalogue::read($target)->values(),
+        ));
+
+        foreach ($score->violations as $rule => $hits) {
+            foreach ($hits as $hit) {
+                $offenders[] = "{$rule}: {$name}.{$hit['key']} -- {$hit['detail']}";
+            }
+        }
+    }
+
+    expect($offenders)->toBe([]);
 });
