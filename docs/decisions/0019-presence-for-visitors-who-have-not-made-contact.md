@@ -120,9 +120,27 @@ sanitises the host-provided `context` array; it never touched the URL.
 did not have, which is exactly the reassurance an ADR is supposed to stop.
 
 It is now real: `VisitorPageUrl`, shipped in
-[#804](https://github.com/adamgreenwell/wayfindr/pull/804) with a migration
-rewriting rows already stored whole. Presence depends on that landing rather
-than restating the intention.
+[#804](https://github.com/adamgreenwell/wayfindr/pull/804). Presence depends on
+that landing rather than restating the intention.
+
+**The same address is stored in three places, and every one of them counts.**
+Naming only the first is how the first version of that PR shipped a fix that
+looked complete:
+
+| where | what it is |
+| --- | --- |
+| `visitors.metadata.last_page_url` | where they are now |
+| `conversations.metadata.started_page_url` | where they asked from |
+| `tickets.metadata.visitor_context.{last,started}_page_url` | a snapshot, taken at ticket creation |
+
+The entry-page copy is the likelier leak of the two live ones, because people
+ask for help *from* the page that is going wrong. The ticket copy is the one
+that outlives the rest: it is a point-in-time snapshot rather than a reference,
+so sanitising the sources it was copied from never reaches it, and tickets
+outlive the conversations that produced them.
+
+Presence adds a fourth writer to that list. It sanitises for the same reason and
+through the same class.
 
 ### 4. Retention, which this product does not currently have
 
