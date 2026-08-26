@@ -233,6 +233,7 @@ class TranslateCatalogueCommand extends Command
         $scored = 0;
         $drafted = 0;
         $agreed = 0;
+        $comparable = 0;
         $hasReviewed = false;
 
         /** @var array<string, array<int, array{key: string, detail: string}>> $all */
@@ -245,6 +246,7 @@ class TranslateCatalogueCommand extends Command
             if ($score->agreed !== null) {
                 $hasReviewed = true;
                 $agreed += $score->agreed;
+                $comparable += $score->comparable;
             }
 
             foreach ($score->violations as $rule => $hits) {
@@ -256,12 +258,16 @@ class TranslateCatalogueCommand extends Command
 
         $this->line("  {$scored} strings measured, {$drafted} of them newly drafted");
 
-        if ($hasReviewed && $drafted > 0) {
+        // Over what was COMPARABLE, matching `PolicyScore::agreementPercent()`.
+        // Dividing by every drafted key reports one matching counterpart beside
+        // nine genuinely new strings as `1 of 10 (10%)`, which reads as a bad
+        // engine rather than as nine keys the reviewed catalogue never had.
+        if ($hasReviewed && $comparable > 0) {
             $this->line(sprintf(
-                '  %d of %d drafted strings (%.0f%%) match the reviewed catalogue already',
+                '  %d of %d comparable strings (%.0f%%) match the reviewed catalogue already',
                 $agreed,
-                $drafted,
-                100 * $agreed / $drafted,
+                $comparable,
+                100 * $agreed / $comparable,
             ));
         }
 

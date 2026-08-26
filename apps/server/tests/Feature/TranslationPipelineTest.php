@@ -175,8 +175,15 @@ test('a cognate and a fully-protected string never reach the engine at all', fun
         'de',
     );
 
-    expect($engine->seen)->toBe(['Refresh'])
-        ->and($plan->carried['feature'])->toBe('Cobrowse')
+    // The invariant that matters is unchanged: neither reaches the engine.
+    expect($engine->seen)->toBe(['Refresh']);
+
+    // Both are OUTPUT, though. With no target catalogue nothing was carried
+    // from anywhere, and calling a cognate `carried` once cost key parity --
+    // `write()` emits only `translated` for an existing catalogue, so the key
+    // vanished from the fragment.
+    expect($plan->carried)->toBe([])
+        ->and($plan->merged()['feature'])->toBe('Cobrowse')
         ->and($plan->merged()['slot'])->toBe(':count');
 });
 
@@ -533,8 +540,18 @@ test('a drafted catalogue is written in the source key order, not translated-the
 
     $plan = translationPipelineTranslator($engine)->plan($source, null, 'de');
 
-    expect(array_keys($plan->carried))->toBe(['cognate'])
-        ->and(array_keys($plan->merged()))->toBe(['first', 'cognate', 'last']);
+    expect(array_keys($plan->merged()))->toBe(['first', 'cognate', 'last']);
+
+    // And a cognate the TARGET already has is genuinely carried, because there
+    // it really did come from the target.
+    $incremental = translationPipelineTranslator(translationPipelineEngine())->plan(
+        $source,
+        translationPipelineCatalogue(['cognate' => 'Cobrowse']),
+        'de',
+    );
+
+    expect(array_keys($incremental->carried))->toBe(['cognate'])
+        ->and(array_keys($incremental->merged()))->toBe(['first', 'cognate', 'last']);
 });
 
 test('every drafted catalogue lines up against its English source, in order', function (): void {
