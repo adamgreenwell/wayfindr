@@ -80,18 +80,40 @@ and the current page URL after sanitising.
 contents, form values, scroll or viewport geometry, referrer chains, device or
 browser fingerprints, IP-derived location.
 
-The URL is sanitised before it is stored: query strings are dropped unless a
-site opts specific parameters back in. A query string is where a host site puts
-password-reset tokens, invitation codes and email addresses, and a feature that
-answers "which page" must not accidentally answer "with what credentials".
+The URL is sanitised before it is stored, and this ADR specifies what that
+means rather than leaving it to the implementation:
 
-**That sanitiser does not exist yet, and this is the correction that matters
-most in this document.** `VisitorContextSanitizer` sanitises the host-provided
-`context` array; it does not touch the URL. `mergeMetadata()` assigns
-`last_page_url` verbatim, and the only constraint on it is Laravel's `url` rule
-and a length cap. So the safeguard named here is work this decision requires,
-not a property the codebase already has — and writing it down as though it
-existed was exactly the kind of reassurance an ADR is supposed to stop.
+- **The scheme, host, port and path are kept.** They are the answer to "which
+  page", which is the only question this field exists for.
+- **The query string is dropped in full**, unless the site has named specific
+  parameters to keep — and then only those, and only when their value is a
+  scalar.
+- **The fragment is dropped.** It never reaches a server in an ordinary
+  navigation, so a widget reporting one is reporting something the page chose to
+  put in front of us. Single-page apps route with it; they also carry tokens in
+  it, and there is no way to tell which one is in front of you.
+- **Credentials in the authority (`user:pass@`) are dropped.** The URL is
+  rebuilt from the parts named above rather than edited as a string, so anything
+  not named cannot survive.
+- **An unparseable URL is discarded rather than stored as-is.** An input that
+  cannot be reasoned about is the one most likely to be carrying something odd.
+
+Dropped rather than filtered by name, deliberately. Filtering means guessing
+which parameter names are dangerous, and the dangerous ones are frequently the
+shortest — `?t=`, `?k=`, `?c=`. A name-based rule fails exactly where it matters
+most, and fails silently.
+
+**None of this existed when this ADR was first written, and saying so is the
+correction that matters most in this document.** `VisitorContextSanitizer`
+sanitises the host-provided `context` array; it never touched the URL.
+`mergeMetadata()` assigned `last_page_url` verbatim, guarded only by Laravel's
+`url` rule and a length cap — so the first draft named a safeguard the codebase
+did not have, which is exactly the reassurance an ADR is supposed to stop.
+
+It is now real: `VisitorPageUrl`, shipped in
+[#804](https://github.com/adamgreenwell/wayfindr/pull/804) with a migration
+rewriting rows already stored whole. Presence depends on that landing rather
+than restating the intention.
 
 ### 4. Retention, which this product does not currently have
 
@@ -103,8 +125,17 @@ the absence of retention a defect rather than a gap.
 So this ships with the product's **first automatic retention control**:
 
 - A visitor who has **never made contact** — no conversation, no ticket, no
-  message — is deleted after a bounded window. The default is short, and the
-  operator can shorten it.
+  message — is deleted after **30 days**. An operator may shorten that; they may
+  not lengthen it, so 30 days is not merely the default but the product's
+  maximum retention for presence-only rows, and the data inventory can state it
+  as a fact.
+
+  Thirty rather than a vaguer "short", because the number is the decision: it
+  has to be long enough for *returning or new* to mean something on the board
+  [#747](https://github.com/adamgreenwell/wayfindr/issues/747) asked for, and
+  short enough that somebody who wandered past a site once is not still on
+  record a quarter later. A visitor returning after 31 days reads as new, and
+  that is the honest trade rather than an oversight.
 - A visitor who **has** made contact is untouched by this. They are support
   history, and support history is not presence data.
 
