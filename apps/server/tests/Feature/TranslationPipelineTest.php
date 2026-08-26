@@ -1019,7 +1019,7 @@ test('restore either reproduces the source exactly or refuses, across generated 
         }
 
         $token = $tokens[mt_rand(0, count($tokens) - 1)];
-        $kind = mt_rand(0, 7);
+        $kind = mt_rand(0, 10);
 
         [$mangled, $mustRestoreTo] = match ($kind) {
             0 => [$masked->text, $source],
@@ -1032,6 +1032,15 @@ test('restore either reproduces the source exactly or refuses, across generated 
             4 => [str_replace($token, 'x'.$token, $masked->text), null],
             5 => [str_replace($token, '', $masked->text), null],
             6 => [str_replace($token, $token.' '.$token, $masked->text), null],
+            // The generator's own blind spots, added after review found two
+            // defects this loop could not reach. A property test is only as
+            // good as the inputs it invents, and these three were not in it:
+            // a combining mark and a connector both continue a word without
+            // being a letter or a number, and an engine can INVENT a protected
+            // value rather than damaging its token.
+            7 => [str_replace($token, $token."\u{0301}", $masked->text), null],
+            8 => [str_replace($token, $token.'_x', $masked->text), null],
+            9 => [$masked->text.' '.$masked->map[$token], null],
             default => [strrev($masked->text), null],
         };
 
