@@ -5,6 +5,7 @@ use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\Visitor;
+use App\Support\VisitorContextSanitizer;
 use App\Support\Visitors\StoredPageUrlSweep;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -314,4 +315,62 @@ test('a concurrent write during the sweep is not discarded', function (): void {
     // Sanitised from what was ACTUALLY there, and the concurrent context kept.
     expect($metadata['last_page_url'])->toBe('https://shop.test/new')
         ->and($metadata['context'])->toBe(['plan' => 'written-during-sweep']);
+});
+
+test('a writer that omits the page url does not restore a token the sweep removed', function (): void {
+    // The ordering the row lock cannot reach. A request reads the visitor
+    // BEFORE the sweep locks that row, so it holds the old tokenised URL. It
+    // omits `page_url` -- optional on both bootstrap and conversation start --
+    // and its ordinary save() lands after the sweep commits, putting the token
+    // straight back. The lock is irrelevant: the read that matters happened
+    // before it existed.
+    $site = visitorPageUrlSite();
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-restore']);
+
+    DB::table('visitors')->where('id', $visitor->id)->update([
+        'metadata' => json_encode(['last_page_url' => 'https://shop.test/reset?reset_token=restored']),
+    ]);
+
+    // The request's read, taken before the sweep runs.
+    $stale = Visitor::query()->findOrFail($visitor->id);
+    $staleMetadata = $stale->metadata;
+
+    StoredPageUrlSweep::run();
+
+    // The request finishes and writes back what it read. It supplies CONTEXT
+    // and no page_url, which is an ordinary bootstrap for a host page that
+    // passes attributes -- and it is what makes this reachable at all.
+    //
+    // Two earlier versions of this test proved nothing, both because Eloquent
+    // writes only DIRTY attributes: with the metadata unchanged, the column is
+    // simply absent from the UPDATE and the sweep's value survives on its own.
+    // Something has to change metadata for the retained URL to ride along, and
+    // `context` is the everyday thing that does.
+    $stale->forceFill([
+        'metadata' => app(VisitorContextSanitizer::class)->mergeMetadata(
+            $staleMetadata,
+            null,
+            true,
+            ['plan' => 'pro'],
+        ),
+        'last_seen_at' => now(),
+    ])->save();
+
+    $metadata = json_decode((string) DB::table('visitors')->where('id', $visitor->id)->value('metadata'), true);
+
+    expect($metadata['last_page_url'])->toBe('https://shop.test/reset');
+
+    $this->assertStringNotContainsString('restored', json_encode($metadata) ?: '');
+});
+
+test('a retained page url that is already clean is left exactly as it is', function (): void {
+    // Sanitising on the way out must not cost the field its value.
+    $merged = app(VisitorContextSanitizer::class)->mergeMetadata(
+        ['last_page_url' => 'https://shop.test/docs/install'],
+        null,
+        false,
+        null,
+    );
+
+    expect($merged['last_page_url'])->toBe('https://shop.test/docs/install');
 });

@@ -24,6 +24,21 @@ use Illuminate\Database\Migrations\Migration;
  */
 return new class extends Migration
 {
+    /**
+     * NOT inside the migration's own transaction.
+     *
+     * PostgreSQL wraps a migration in one by default, which would make every
+     * per-row transaction in the sweep a savepoint instead -- so each
+     * `SELECT ... FOR UPDATE` would hold its lock until `up()` finished
+     * scanning all three tables rather than releasing it per row.
+     *
+     * This migration deliberately runs while the previous release is still
+     * serving. On a large install that would block writes to every row already
+     * processed, for the length of the whole sweep, which is the opposite of
+     * what a zero-downtime deploy is for.
+     */
+    public $withinTransaction = false;
+
     public function up(): void
     {
         StoredPageUrlSweep::run();
