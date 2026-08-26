@@ -80,10 +80,18 @@ and the current page URL after sanitising.
 contents, form values, scroll or viewport geometry, referrer chains, device or
 browser fingerprints, IP-derived location.
 
-The URL goes through the same sanitiser that already handles
-`metadata.last_page_url`, because a query string is where a host site puts
-password-reset tokens, invitation codes and email addresses. A feature that
+The URL is sanitised before it is stored: query strings are dropped unless a
+site opts specific parameters back in. A query string is where a host site puts
+password-reset tokens, invitation codes and email addresses, and a feature that
 answers "which page" must not accidentally answer "with what credentials".
+
+**That sanitiser does not exist yet, and this is the correction that matters
+most in this document.** `VisitorContextSanitizer` sanitises the host-provided
+`context` array; it does not touch the URL. `mergeMetadata()` assigns
+`last_page_url` verbatim, and the only constraint on it is Laravel's `url` rule
+and a length cap. So the safeguard named here is work this decision requires,
+not a property the codebase already has — and writing it down as though it
+existed was exactly the kind of reassurance an ADR is supposed to stop.
 
 ### 4. Retention, which this product does not currently have
 
@@ -146,6 +154,14 @@ worse than one that changes visibly.
 **Tester visitors are excluded**, as ADR 0016 already required. A heartbeat makes
 this sharper: without the `tester-site-%` exclusion an agent on the tester page
 becomes a row on the live board every time they load it.
+
+**`metadata.last_page_url` already has the exposure this ADR guards against.**
+It is written at bootstrap and conversation start, stored whole, and shown to
+agents in the visitor context panel — so on a site whose URLs carry tokens, that
+data is in the database today, before any of this ships. The sanitiser §3
+requires should be applied there too rather than only on the new path; a rule
+that protects the page a visitor is on now, while the page they opened chat from
+keeps its query string, is not a rule.
 
 **The honest summary for an operator** is that turning this on changes what
 Wayfindr collects about people who never spoke to them, and that is why it is a
