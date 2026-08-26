@@ -78,7 +78,7 @@ return [
     'summary' => [
         'lane_narrowed_heading' => ':shown visualizzati su :matching',
         'lane_narrowed_attention_heading' => '{1} :shown di :matching necessita di attenzione|[2,*] :shown di :matching necessitano di attenzione',
-        'lane_narrowed_detail' => '{1} Visualizzazione di :shown dopo il filtro support-lane di :lane. :matching gli altri filtri di coda.|[2,*] Visualizzazione di :shown dopo il filtro support-lane di :lane. :matching gli altri filtri di coda.',
+        'lane_narrowed_detail' => '{1} Visualizzazione di :shown dopo il filtro della corsia di supporto :lane. :matching gli altri filtri di coda.|[2,*] Visualizzazione di :shown dopo il filtro della corsia di supporto :lane. :matching gli altri filtri di coda.',
         'filtered_detail' => '{1} Visualizzazione di :shown che corrisponde ai filtri di coda attuali.|[2,*] Visualizzazione di :shown che corrispondono ai filtri di coda attuali.',
         'open_heading' => 'Aperte: :open · :attention · :cobrowse',
     ],

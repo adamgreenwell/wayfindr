@@ -98,7 +98,7 @@ return [
             'message' => 'Il widget visitatore ha inviato uno snapshot pulito e mascherato.',
         ],
         'exhausted' => [
-            'label' => 'Limite massimo di tentativi per il fresh snapshot raggiunto',
+            'label' => 'Limite massimo di tentativi per un nuovo snapshot raggiunto',
             'message' => 'Il widget visitatore ha provato a inviare uno snapshot pulito ma non è riuscito a completarlo. Richieda un altro snapshot pulito o confermi lo stato della pagina tramite chat.',
         ],
         'expired' => [

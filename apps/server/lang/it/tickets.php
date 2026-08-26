@@ -135,7 +135,7 @@ return [
             'total' => '{1} :count totale|[2,*] :count totali',
         ],
         'filtered_detail' => '{1} Visualizzazione di :shown che corrisponde ai filtri attuali della coda.|[2,*] Visualizzazione di :shown che corrispondono ai filtri attuali della coda.',
-        'lane_narrowed_detail' => '{1} Visualizzazione di :shown dopo il filtro next-step :lane. :matching gli altri filtri della coda.|[2,*] Visualizzazione di :shown dopo il filtro next-step :lane. :matching gli altri filtri della coda.',
+        'lane_narrowed_detail' => '{1} Visualizzazione di :shown dopo il filtro del prossimo passo :lane. :matching gli altri filtri della coda.|[2,*] Visualizzazione di :shown dopo il filtro del prossimo passo :lane. :matching gli altri filtri della coda.',
     ],
     'empty' => [
         'no_match_filters' => 'Nessun ticket corrisponde a questi filtri.',
@@ -163,7 +163,7 @@ return [
         'default' => 'quel prossimo passo',
     ],
     'external_state' => [
-        'failed' => 'Apra il ticket per esaminare le opzioni di retry sicuro.',
+        'failed' => 'Apra il ticket per esaminare le opzioni sicure per riprovare.',
         'pending' => 'In attesa della conferma dal tracker esterno.',
         'linked' => 'Il riferimento al tracker esterno è allegato.',
         'none' => 'Wayfindr è l\'unico tracker per questo ticket.',
