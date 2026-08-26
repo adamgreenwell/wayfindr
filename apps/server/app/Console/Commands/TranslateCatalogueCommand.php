@@ -26,7 +26,7 @@ class TranslateCatalogueCommand extends Command
         {--engine=passthrough : passthrough|murf}
         {--catalogue=* : Limit to named catalogues, e.g. --catalogue=nav}
         {--write : Write the result instead of only reporting it}
-        {--retranslate : Replace values that already exist -- overwrites reviewed copy}
+        {--retranslate : Redraft every key, not only the missing ones; an existing catalogue is never overwritten}
         {--score : Measure the result against the policy: rejected terms, register, typography}';
 
     protected $description = 'Draft a language catalogue from the English source, the glossary, and the policy.';

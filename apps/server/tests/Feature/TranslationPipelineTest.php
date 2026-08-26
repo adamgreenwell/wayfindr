@@ -820,3 +820,15 @@ test('the renderer round-trips every value in every shipped catalogue', function
 
     expect($checked)->toBeGreaterThan(1000);
 });
+
+test('the help text and the command agree about what --retranslate does', function (): void {
+    // Two surfaces describe this flag: `artisan help` and the confirmation
+    // prompt. The prompt was corrected and the signature was not, so help
+    // promised an overwrite the command explicitly refuses -- and an operator
+    // reads help BEFORE the prompt, when deciding whether to run it at all.
+    $help = new ReflectionProperty(TranslateCatalogueCommand::class, 'signature');
+    $signature = $help->getDefaultValue();
+
+    expect($signature)->not->toContain('overwrites reviewed copy')
+        ->and($signature)->toContain('never overwritten');
+});
