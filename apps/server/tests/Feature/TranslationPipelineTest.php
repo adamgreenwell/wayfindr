@@ -372,3 +372,84 @@ test('the shipped German obeys the policy it was written against', function (): 
 
     expect($offenders)->toBe([]);
 });
+
+test('every language carries the same term keys, so a gap is a failure not a silence', function (): void {
+    // A locale missing a term does not error -- it just quietly translates that
+    // concept however the engine feels, which is the drift the table exists to
+    // stop. Parity makes an omission loud at the point it is introduced.
+    $glossary = Glossary::load();
+    $reference = array_keys($glossary->terms('de'));
+
+    foreach (['it'] as $locale) {
+        $terms = array_keys($glossary->terms($locale));
+
+        expect(array_diff($reference, $terms))->toBe([], "{$locale} is missing terms the German table decides")
+            ->and(array_diff($terms, $reference))->toBe([], "{$locale} decides terms German does not");
+    }
+});
+
+test('every language keeps the declared collisions apart in its own words', function (): void {
+    $glossary = Glossary::load();
+
+    foreach (['de', 'it'] as $locale) {
+        expect($glossary->mergedCollisions($locale))->toBe([], "{$locale} merges a declared collision pair");
+    }
+});
+
+test('a duplicated protection token fails the key instead of doubling a placeholder', function (): void {
+    // Presence is not the guarantee this pipeline claims. An engine that
+    // returns one token twice would write `:elapsed` twice into the catalogue,
+    // and the agent reads a duplicated value in a sentence that parses fine --
+    // no missing token, so nothing downstream can see it.
+    $engine = translationPipelineEngine(
+        static fn (string $t): string => preg_replace('/(WFZ\d+)/', '$1 $1', $t) ?? $t
+    );
+
+    $plan = translationPipelineTranslator($engine)->plan(
+        translationPipelineCatalogue(['waiting' => 'Waiting on visitor for :elapsed']),
+        null,
+        'de',
+    );
+
+    expect($plan->failures)->toHaveKey('waiting')
+        ->and($plan->translated)->not->toHaveKey('waiting');
+});
+
+test('a token is not corrupted by another token that is a prefix of it', function (): void {
+    // WFZ1 is a prefix of WFZ10, and `str_replace` applies its search array in
+    // order: WFZ1 landed first and rewrote WFZ10 into "<whatever WFZ1 stood
+    // for>0". Nothing could see it -- no token survives that, so the
+    // leftover-token check passed on a corrupted string.
+    //
+    // Eleven protected values in one sentence is what it takes to reach, which
+    // is why it had never been reached.
+    // Alphabetic names on purpose: the placeholder pattern stops at a digit,
+    // so `:value10` masks as one token plus a literal "0" and never reaches
+    // eleven distinct tokens at all.
+    $placeholders = [
+        ':alpha', ':bravo', ':charlie', ':delta', ':echo', ':foxtrot',
+        ':golf', ':hotel', ':india', ':juliett', ':kilo',
+    ];
+
+    $source = 'Report '.implode(' ', $placeholders);
+
+    // The engine returns the masked text untouched, so any corruption here is
+    // ours rather than the engine's.
+    $engine = translationPipelineEngine(static fn (string $t): string => $t);
+
+    $plan = translationPipelineTranslator($engine)->plan(
+        translationPipelineCatalogue(['report' => $source]),
+        null,
+        'de',
+    );
+
+    expect($plan->failures)->toBe([]);
+
+    // Every placeholder back, whole, and none of them mangled into a stray
+    // digit -- which is what ":value1" followed by a literal "0" would be.
+    foreach ($placeholders as $placeholder) {
+        expect($plan->translated['report'])->toContain($placeholder);
+    }
+
+    expect($plan->translated['report'])->toBe($source);
+});

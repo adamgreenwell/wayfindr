@@ -74,15 +74,32 @@ final class Protector
     }
 
     /**
-     * @param  array<string, string>  $map
+     * Put the originals back, or refuse to.
+     *
+     * Takes the whole MaskedText rather than just its map, because the SOURCE
+     * is what says how many times each token is supposed to appear. Presence
+     * alone is not the guarantee this pipeline claims: an engine that returns
+     * one token twice would have written the placeholder twice into the
+     * catalogue, and `:count :count` renders as a duplicated number in front of
+     * an agent.
      */
-    public function restore(string $translated, array $map, string $context = ''): string
+    public function restore(string $translated, MaskedText $masked, string $context = ''): string
     {
         $missing = [];
+        $miscounted = [];
 
-        foreach ($map as $token => $original) {
-            if (! str_contains($translated, $token)) {
+        foreach ($masked->map as $token => $original) {
+            $expected = $this->countToken($masked->text, $token);
+            $actual = $this->countToken($translated, $token);
+
+            if ($actual === 0) {
                 $missing[] = $token.' ('.$original.')';
+
+                continue;
+            }
+
+            if ($actual !== $expected) {
+                $miscounted[] = $token.' ('.$original.') '.$expected.'x became '.$actual.'x';
             }
         }
 
@@ -92,7 +109,20 @@ final class Protector
             );
         }
 
-        $restored = str_replace(array_keys($map), array_values($map), $translated);
+        if ($miscounted !== []) {
+            throw new TranslationFailed(
+                trim($context.' returned protection tokens the wrong number of times: '
+                    .implode(', ', $miscounted).' in translation: '.$translated)
+            );
+        }
+
+        // strtr, NOT str_replace. With WFZ1 and WFZ10 both in the map,
+        // str_replace applies the search array in order: WFZ1 lands first and
+        // rewrites WFZ10 into "<whatever WFZ1 stood for>0". Nothing downstream
+        // can see it either -- no token survives, so the leftover check below
+        // passes on a corrupted string. strtr matches the longest key at each
+        // position and never rescans what it has already written.
+        $restored = strtr($translated, $masked->map);
 
         // A token the engine invented, or one it split in half and left a
         // fragment of. Either way the string is not safe to write.
@@ -103,5 +133,18 @@ final class Protector
         }
 
         return $restored;
+    }
+
+    /**
+     * Occurrences of exactly this token.
+     *
+     * `substr_count($text, 'WFZ1')` also counts the WFZ1 inside WFZ10, so a
+     * string with eleven protected items would report counts that never match
+     * and fail every translation. The lookahead stops the token at its own
+     * digits.
+     */
+    private function countToken(string $text, string $token): int
+    {
+        return (int) preg_match_all('/'.preg_quote($token, '/').'(?!\\d)/', $text);
     }
 }

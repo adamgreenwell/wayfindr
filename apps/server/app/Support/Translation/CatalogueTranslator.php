@@ -109,7 +109,7 @@ final class CatalogueTranslator
                 // into the catalogue where `:count` belonged.
                 $assembled[$key][$unit['segment']] = $this->protector->restore(
                     $unit['masked']->text,
-                    $unit['masked']->map,
+                    $unit['masked'],
                     $key,
                 );
 
@@ -119,7 +119,7 @@ final class CatalogueTranslator
             try {
                 $assembled[$key][$unit['segment']] = $this->protector->restore(
                     $returned[$index] ?? '',
-                    $unit['masked']->map,
+                    $unit['masked'],
                     $key,
                 );
             } catch (TranslationFailed $e) {
