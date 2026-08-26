@@ -3248,6 +3248,46 @@ test('this file never passes a message to a variadic matcher', function (): void
     expect($offenders)->toBe([], 'a message passed to a variadic matcher, where it becomes a second needle and the assertion always passes');
 });
 
+test('the snapshot age is German on the first paint, not only after an update', function (): void {
+    // CobrowseSnapshotFreshness pins English deliberately -- a broadcast builds
+    // it too, from a queue worker with no reader whose language it could
+    // follow. The realtime handler never reads that value; it formats the raw
+    // timestamp client-side.
+    //
+    // The server's FIRST paint is the one thing that handler has not
+    // overwritten, and it interpolated the pinned English duration into a
+    // German sentence: "Gemeldet 2 minutes ago".
+    $world = conversationQueueLanguageWorld();
+    $session = conversationQueueLanguageCobrowseSession();
+    $conversation = $session->conversation;
+
+    $metadata = $session->metadata;
+    $metadata['snapshot']['reported_at'] = now()->subMinutes(2)->toJSON();
+    $session->forceFill(['metadata' => $metadata])->save();
+
+    $html = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+
+    $reported = (new DOMXPath($document))
+        ->query('//*[@data-cobrowse-snapshot-freshness-reported]')
+        ->item(0);
+
+    expect($reported)->not->toBeNull('the freshness line did not render, so this proves nothing');
+
+    $text = trim($reported->textContent);
+
+    // German all the way through: the sentence AND the duration inside it.
+    $this->assertStringContainsString('vor ', $text,
+        "the snapshot age is still English on the first paint: {$text}");
+    $this->assertStringNotContainsString('ago', $text,
+        "an English duration is still on the German panel: {$text}");
+});
+
 test('no unreplaced placeholder ever reaches the page', function (): void {
     // A sentence rendered without its parameters shows `:elapsed` or `:count`
     // to the agent. It looks like copy, it is in the right language, and it is

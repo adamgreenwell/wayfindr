@@ -503,8 +503,39 @@ class CobrowseConsentState
             // The visitor's page text, or our copy saying there is none. The
             // first is unknown-language content; the second is chrome.
             'text_reported' => filled($snapshot['text'] ?? null),
-            'freshness' => $this->snapshotFreshness->format($snapshot['reported_at'] ?? null),
+            'freshness' => $this->freshnessFor($snapshot['reported_at'] ?? null),
         ];
+    }
+
+    /**
+     * Snapshot freshness, with a duration this surface can actually read.
+     *
+     * `CobrowseSnapshotFreshness::format()` pins English on purpose: a
+     * BROADCAST builds it too, from a queue worker with no request and no
+     * reader whose language it could follow. Its `reported_at` therefore has to
+     * mean one fixed thing, and the realtime handler ignores it anyway --
+     * `fillElapsed()` formats the raw timestamp client-side in the page's
+     * language.
+     *
+     * The server's INITIAL paint is the one thing that handler has not
+     * overwritten yet, and it was interpolating that English duration into a
+     * German sentence: "Gemeldet 2 minutes ago". Here there IS a reader, so the
+     * duration is remade in their language, under its own key rather than by
+     * overloading one that means something else in the payload.
+     *
+     * @return array<string, mixed>
+     */
+    private function freshnessFor(mixed $reportedAt): array
+    {
+        $freshness = $this->snapshotFreshness->format($reportedAt);
+
+        $moment = $this->transportPressure->parseReportedAt($reportedAt);
+
+        // Null is not the fallback: it says there is no duration to render,
+        // which is a different thing from one that came out empty.
+        $freshness['reported_elapsed'] = $moment?->diffForHumans();
+
+        return $freshness;
     }
 
     /**

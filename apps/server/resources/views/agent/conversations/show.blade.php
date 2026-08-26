@@ -575,9 +575,9 @@
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.cobrowse.reported') }}</span>
-                            <span class="meta-value" data-cobrowse-snapshot-freshness-reported>{{ $cobrowseConsent['snapshot']['freshness']['state'] === 'unknown'
+                            <span class="meta-value" data-cobrowse-snapshot-freshness-reported>{{ ($cobrowseConsent['snapshot']['freshness']['reported_elapsed'] ?? null) === null
                                 ? __('cobrowse.freshness.reported_unknown')
-                                : __('cobrowse.freshness.reported', ['elapsed' => $cobrowseConsent['snapshot']['freshness']['reported_at']]) }}</span>
+                                : __('cobrowse.freshness.reported', ['elapsed' => $cobrowseConsent['snapshot']['freshness']['reported_elapsed']]) }}</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.ticket.title') }}</span>
