@@ -17,7 +17,7 @@
  */
 return [
     'any' => 'Qualsiasi presenza',
-    'active' => 'Attivo di recente',
+    'active' => 'Attivo ora',
     'recent' => 'Attivo di recente',
     'quiet' => 'Poco attivo',
     'not_reported' => 'Non segnalato',

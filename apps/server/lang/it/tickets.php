@@ -210,7 +210,7 @@ return [
             'cta' => 'Assegna ticket',
         ],
         'waiting_on_customer' => [
-            'title' => 'In attesa del cliente',
+            'title' => 'Attendi il cliente',
             'body' => 'L\'agente ha risposto per ultimo. Mantieni il ticket visibile, poi riapri il ciclo quando il visitatore risponde.',
             'cta' => 'Rivedi le azioni di stato',
         ],
