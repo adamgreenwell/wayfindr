@@ -213,13 +213,26 @@ worse than one that changes visibly.
 this sharper: without the `tester-site-%` exclusion an agent on the tester page
 becomes a row on the live board every time they load it.
 
-**`metadata.last_page_url` already has the exposure this ADR guards against.**
-It is written at bootstrap and conversation start, stored whole, and shown to
-agents in the visitor context panel — so on a site whose URLs carry tokens, that
-data is in the database today, before any of this ships. The sanitiser §3
-requires should be applied there too rather than only on the new path; a rule
-that protects the page a visitor is on now, while the page they opened chat from
-keeps its query string, is not a rule.
+**The exposure this ADR guards against already exists, in three fields rather
+than one.** Page addresses were stored whole at bootstrap, at conversation
+start, and in the ticket snapshot taken from both — and shown to agents in the
+visitor panel, the conversation panel and the ticket trail. On a site whose URLs
+carry tokens, that data is in the database today, before any of this ships.
+
+So the sanitiser §3 requires is not a rule for the new path. It applies to every
+writer of a page address, and the historical rewrite covers every column holding
+one, because a rule that protects the page a visitor is on now while the page
+they opened chat from keeps its query string is not a rule. That is
+[#804](https://github.com/adamgreenwell/wayfindr/pull/804), and presence becomes
+the fourth writer to go through it.
+
+**Cobrowse stores page addresses too, and this ADR does not settle those.**
+`cobrowse_sessions.metadata` and the audit events taken from it hold the URL a
+visitor was on when they granted, and that is a different consent context: they
+agreed to share their page, which is the whole feature. Whether agreeing to
+share a page also means keeping its credentials for the life of an audit record
+is a real question and a separate one — it is tracked rather than answered
+here.
 
 **The honest summary for an operator** is that turning this on changes what
 Wayfindr collects about people who never spoke to them, and that is why it is a
