@@ -899,3 +899,55 @@ test('a declared cognate is actually identical in that language', function (): v
         }
     }
 });
+
+test('nothing is left in English without saying so', function (): void {
+    // The complement of the cognate test above. That one checks a declared
+    // cognate is genuinely identical; this checks the reverse -- that anything
+    // identical was DECLARED. Without it, an untranslated value looks exactly
+    // like a deliberate loanword, which is how `Agent` and `Name` sat in the
+    // Italian catalogue contradicting its own term table.
+    $glossary = Glossary::load();
+    $never = array_flip($glossary->neverTranslate());
+    $english = [];
+
+    foreach (glob(lang_path('en/*.php')) ?: [] as $path) {
+        foreach (Catalogue::read($path)->values() as $key => $value) {
+            $english[basename($path, '.php').'.'.$key] = $value;
+        }
+    }
+
+    foreach ($glossary->localesWithTerms() as $locale) {
+        $cognates = array_flip($glossary->cognates($locale));
+        $undeclared = [];
+
+        foreach (glob(lang_path($locale.'/*.php')) ?: [] as $path) {
+            // Laravel's own validation messages are a framework override rather
+            // than extracted copy, and have no English counterpart here.
+            if (basename($path) === 'validation.php') {
+                continue;
+            }
+
+            foreach (Catalogue::read($path)->values() as $key => $value) {
+                $full = basename($path, '.php').'.'.$key;
+
+                if (($english[$full] ?? null) !== $value) {
+                    continue;
+                }
+
+                // Punctuation, digits and bare placeholders are identical in
+                // every language and say nothing about translation.
+                if (preg_match('/^[\W\d\s]*$/u', $value) === 1) {
+                    continue;
+                }
+
+                if (isset($cognates[$value]) || isset($never[$value])) {
+                    continue;
+                }
+
+                $undeclared[] = "{$full} = {$value}";
+            }
+        }
+
+        expect($undeclared)->toBe([], "{$locale} leaves values in English without declaring them cognates");
+    }
+});

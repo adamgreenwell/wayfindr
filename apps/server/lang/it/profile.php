@@ -33,12 +33,12 @@ return [
     'roles' => [
         'owner' => 'Responsabile',
         'admin' => 'Admin',
-        'agent' => 'Agent',
+        'agent' => 'Agente',
     ],
     'details' => [
         'heading' => 'Il suo profilo',
         'lede' => 'Il suo nome e la lingua in cui legge questo',
-        'name' => 'Name',
+        'name' => 'Nome',
         'email_help' => 'La sua email viene utilizzata per l’accesso. Chieda a un titolare se deve essere modificata.',
         'language' => 'Lingua della dashboard',
         'language_default' => 'Usi l\'impostazione predefinita di installazione',

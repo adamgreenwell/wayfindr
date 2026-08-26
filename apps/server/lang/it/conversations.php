@@ -157,7 +157,7 @@ return [
             'heading' => 'Azione successiva',
         ],
         'roles' => [
-            'agent' => 'Agent',
+            'agent' => 'Agente',
             'visitor' => 'Visitatore',
         ],
         'reply' => [

@@ -59,17 +59,53 @@ return [
      * matched them and the claim was never true.
      */
     'cognates' => [
+        // Complete rather than illustrative: a test fails on any value that is
+        // identical to its English source and not listed here, so this is the
+        // whole record of what each language leaves alone and why.
         'de' => [
             'Agent',
             'Cobrowse',
             'Name',
             'Live',
+
+            // Words German genuinely shares, several of them the same
+            // loanwords the render guard already excuses on its own list.
+            'Ticket',
+            'Tickets',
+            'Status',
+            'Label',
+            'Labels',
+            'Normal',
+            'System',
+            ':count ms',
+            'Status: :value',
+            'Label: :value',
         ],
 
-        // `Agent` and `Name` are deliberately ABSENT: Italian translates them.
+        // `Agent` and `Name` are deliberately ABSENT: Italian says `Agente`
+        // and `Nome`, and leaving them here is what shipped English into the
+        // Italian catalogue in the first place.
         'it' => [
             'Cobrowse',
             'Live',
+
+            // Loanwords Italian tech writing uses as-is.
+            'Ticket',
+            'Email',
+            'Account',
+            'Admin',
+            'Bug',
+            'Payload',
+            'Viewport',
+            'Prerendering',
+            'Max RTT',
+            ':count ms',
+
+            // A coined product term rather than a loanword. Italian has no
+            // natural equivalent for the cobrowse timeline sense, so it is
+            // left as the product's own word -- worth a second opinion if
+            // anyone reads it and disagrees.
+            'Guardrail',
         ],
     ],
 

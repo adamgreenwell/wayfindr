@@ -39,7 +39,7 @@ return [
         'theme' => 'Tema colore',
     ],
     'theme' => [
-        'system' => 'Auto',
+        'system' => 'Automatico',
         'light' => 'Chiaro',
         'dark' => 'Scuro',
     ],
