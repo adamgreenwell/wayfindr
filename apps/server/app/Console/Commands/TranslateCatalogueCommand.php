@@ -19,6 +19,8 @@ use Illuminate\Console\Command;
 
 class TranslateCatalogueCommand extends Command
 {
+    private bool $writeFailed = false;
+
     protected $signature = 'wayfindr:translate-catalogue
         {locale : Target locale, e.g. it}
         {--engine=passthrough : passthrough|murf}
@@ -90,6 +92,7 @@ class TranslateCatalogueCommand extends Command
 
         $translator = new CatalogueTranslator($engine, $glossary, new Protector($glossary));
         $scorer = new PolicyScorer($glossary);
+        $this->writeFailed = false;
 
         /** @var array<int, PolicyScore> $scores */
         $scores = [];
@@ -145,7 +148,7 @@ class TranslateCatalogueCommand extends Command
             $this->line('Nothing written. Re-run with --write once the plan reads right.');
         }
 
-        return $failed ? self::FAILURE : self::SUCCESS;
+        return ($failed || $this->writeFailed) ? self::FAILURE : self::SUCCESS;
     }
 
     private function engine(): TranslationEngine
@@ -157,11 +160,27 @@ class TranslateCatalogueCommand extends Command
         };
     }
 
+    /**
+     * Ask the question the run will actually answer.
+     *
+     * The earlier prompt said `Replace existing translations?` and the writer
+     * never replaces an existing catalogue -- it cannot, because regenerating
+     * one deletes the comments inside it. So the confirmed destructive act did
+     * not happen, which is a worse failure than refusing: the operator believes
+     * they authorised an overwrite and no overwrite occurs.
+     *
+     * What `--retranslate` genuinely changes is the PLAN. Every key is
+     * redrafted rather than only the missing ones, and for an existing
+     * catalogue that lands beside it as `<name>.redraft.php` to be merged by
+     * hand. Worth confirming, because it spends engine credit on strings that
+     * already have reviewed copy.
+     */
     private function confirmRetranslate(string $locale): bool
     {
-        $this->warn("--retranslate replaces copy in lang/{$locale} that a person may already have reviewed.");
+        $this->warn("--retranslate redrafts every key in lang/{$locale}, including copy a person has already reviewed.");
+        $this->line('An existing catalogue is never overwritten: the redraft is written beside it for you to merge.');
 
-        return $this->confirm('Replace existing translations?', false);
+        return $this->confirm('Redraft everything?', false);
     }
 
     /**
@@ -283,24 +302,54 @@ class TranslateCatalogueCommand extends Command
         // regenerated. Its in-array comments would go with it, and the loss
         // would look exactly like a successful run.
         if (is_file($targetPath)) {
-            $fragment = dirname($targetPath).'/'.$name.'.missing.php';
+            // Named for what it holds. Under `--retranslate` nothing is
+            // missing -- every key was redrafted -- and calling that file
+            // `.missing.php` misdescribes it to the person merging it.
+            $suffix = $this->option('retranslate') ? '.redraft.php' : '.missing.php';
+            $fragment = dirname($targetPath).'/'.$name.$suffix;
 
-            file_put_contents($fragment, Catalogue::render(
+            if (! $this->put($fragment, Catalogue::render(
                 Catalogue::nest($plan->translated),
                 $this->fragmentHeader($name, $plan),
-            ));
+            ))) {
+                return;
+            }
 
             $this->line("  wrote <info>{$fragment}</info> -- merge by hand; the catalogue beside it carries comments a rewrite would delete");
 
             return;
         }
 
-        file_put_contents($targetPath, Catalogue::render(
+        if (! $this->put($targetPath, Catalogue::render(
             Catalogue::nest($plan->merged()),
             $this->catalogueHeader($name, $plan),
-        ));
+        ))) {
+            return;
+        }
 
         $this->line("  wrote <info>{$targetPath}</info>");
+    }
+
+    /**
+     * Write, and say so only if it happened.
+     *
+     * `file_put_contents()` returns false on an unwritable directory, a full
+     * disk, or a permissions problem, and the earlier version ignored it --
+     * printing `wrote <path>` and exiting 0 while nothing reached the disk. A
+     * drafting tool that reports success it did not achieve is worse than one
+     * that fails, because the operator goes looking for a file that is not
+     * there and concludes the run was the problem.
+     */
+    private function put(string $path, string $contents): bool
+    {
+        if (file_put_contents($path, $contents) === false) {
+            $this->error("  could not write {$path}");
+            $this->writeFailed = true;
+
+            return false;
+        }
+
+        return true;
     }
 
     private function catalogueHeader(string $name, CataloguePlan $plan): string

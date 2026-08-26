@@ -62,8 +62,21 @@ final class PolicyScorer
         // Agreement is counted over the DRAFTED keys only. A carried value
         // agrees with the reviewed catalogue by construction, and including it
         // would inflate the number with strings the engine never saw.
+        // `$comparable` guards a subtler version of the dishonesty this class
+        // already refuses. A partially populated catalogue makes `$reviewed`
+        // non-empty while none of the DRAFTED keys appear in it -- every
+        // comparison then fails, `agreed` stays 0, and the run reports
+        // `0% match` when the truth is there was nothing to match against.
+        $comparable = 0;
+
         foreach ($plan->translated as $key => $value) {
-            if (($reviewed[$key] ?? null) === $value) {
+            if (! array_key_exists($key, $reviewed)) {
+                continue;
+            }
+
+            $comparable++;
+
+            if ($reviewed[$key] === $value) {
                 $agreed++;
             }
         }
@@ -73,7 +86,8 @@ final class PolicyScorer
             scored: count($plan->merged()),
             drafted: count($plan->translated),
             violations: $violations,
-            agreed: $reviewed === [] ? null : $agreed,
+            agreed: $comparable === 0 ? null : $agreed,
+            comparable: $comparable,
         );
     }
 }

@@ -553,3 +553,51 @@ test('every drafted catalogue lines up against its English source, in order', fu
         }
     }
 });
+
+test('agreement is null when nothing drafted has a reviewed counterpart', function (): void {
+    // The subtler form of the number-that-means-nothing. A partially populated
+    // catalogue makes `$reviewed` non-empty while none of the DRAFTED keys are
+    // in it, so every comparison fails, `agreed` stays 0, and the run reports
+    // `0% match` when the truth is there was nothing to match against.
+    $plan = new CataloguePlan(
+        catalogue: 'probe',
+        targetLocale: 'de',
+        translated: ['new_a' => 'Neu A', 'new_b' => 'Neu B'],
+    );
+
+    $scorer = new PolicyScorer(Glossary::load());
+
+    // Reviewed catalogue exists, but covers entirely different keys.
+    $score = $scorer->score($plan, ['unrelated' => 'Etwas anderes']);
+
+    expect($score->comparable)->toBe(0)
+        ->and($score->agreed)->toBeNull()
+        ->and($score->agreementPercent())->toBeNull();
+
+    // And when some of them DO have counterparts, the percentage is over those.
+    $partial = $scorer->score($plan, ['new_a' => 'Neu A', 'unrelated' => 'x']);
+
+    expect($partial->comparable)->toBe(1)
+        ->and($partial->agreed)->toBe(1)
+        ->and($partial->agreementPercent())->toBe(100.0);
+});
+
+test('a capitalised pronoun does not slip past the register checks', function (): void {
+    // Sentence-initial is exactly where an engine puts a pronoun, and it is
+    // capitalised there. Case-sensitive patterns scored `Er sieht die Seite
+    // nicht.` and `Du bist angemeldet.` as clean.
+    $checks = Glossary::load()->checks('de');
+
+    foreach (['Er sieht die Seite nicht.', 'ER SIEHT NICHTS.'] as $offender) {
+        expect(preg_match($checks['generic masculine pronoun'], $offender))
+            ->toBe(1, "missed a capitalised pronoun in: {$offender}");
+    }
+
+    foreach (['Du bist angemeldet.', 'Dein Profil wurde gespeichert.'] as $offender) {
+        expect(preg_match($checks['informal address'], $offender))
+            ->toBe(1, "missed a capitalised informal address in: {$offender}");
+    }
+
+    // And still no false positive on correct formal German.
+    expect(preg_match($checks['informal address'], 'Fragen Sie den Besucher.'))->toBe(0);
+});

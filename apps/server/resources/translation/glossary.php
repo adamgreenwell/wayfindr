@@ -314,12 +314,18 @@ return [
         // register in prose is a thing the reviewer reads for, per policy
         // section 9.
         'de' => [
-            // Second-person-singular verb forms as well as pronouns. German is
-            // clean on both today; the forms are here so it stays that way,
-            // because informal prose can carry no pronoun at all -- Italian hid
-            // `se stai aspettando` from a pronoun-only net for a whole draft.
-            'informal address' => '/\b(du|dich|dir|dein[a-z]*|bist|hast|kannst|musst|willst|weißt|wirst)\b/u',
-            'generic masculine pronoun' => '/\b(er|ihn|ihm|seine|seinem|seinen|seiner|seines)\b/u',
+            // Both halves, because they answer different failures.
+            //
+            // The 2sg VERB FORMS catch informal prose carrying no pronoun at
+            // all -- Italian hid `se stai aspettando` from a pronoun-only net
+            // for a whole draft. German is clean on them today and they are
+            // here so it stays that way.
+            //
+            // The `i` FLAG catches the same pronouns capitalised, which is
+            // where an engine actually puts them: `Er sieht die Seite nicht.`
+            // and `Du bist angemeldet.` both scored clean without it.
+            'informal address' => '/\b(du|dich|dir|dein[a-z]*|bist|hast|kannst|musst|willst|weißt|wirst)\b/ui',
+            'generic masculine pronoun' => '/\b(er|ihn|ihm|seine|seinem|seinen|seiner|seines)\b/ui',
             'straight quote' => '/["\']/u',
             'unhonoured escape' => '/\\\\/u',
         ],
