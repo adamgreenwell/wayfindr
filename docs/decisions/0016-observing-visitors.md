@@ -2,6 +2,14 @@
 
 Date: 2026-08-22
 
+> **§1 and §4 are amended by
+> [ADR 0019](0019-presence-for-visitors-who-have-not-made-contact.md)
+> (2026-08-26).** The deferral in §4 has been answered: Wayfindr will observe
+> visitors who have not made contact, on a per-site operator switch, with
+> visitor-facing disclosure and bounded retention. So §1's "loading a page does
+> not record a visitor" is now the default rather than an invariant. §2 and §3
+> stand unchanged.
+
 ## Context
 
 [#747](https://github.com/adamgreenwell/wayfindr/issues/747) asks for live visitor
