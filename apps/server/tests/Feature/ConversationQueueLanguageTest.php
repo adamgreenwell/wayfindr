@@ -1087,6 +1087,7 @@ function conversationQueueLanguageCognates(): array
         'Labels' => 'a loanword German uses as-is',
         'English' => 'an autonym -- the language selector names each language in its own language',
         'Deutsch' => 'an autonym -- see above',
+        'Italiano' => 'an autonym -- see above',
     ];
 }
 

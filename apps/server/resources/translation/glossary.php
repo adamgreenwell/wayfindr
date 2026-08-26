@@ -59,17 +59,59 @@ return [
      * matched them and the claim was never true.
      */
     'cognates' => [
+        // Complete rather than illustrative: a test fails on any value that is
+        // identical to its English source and not listed here, so this is the
+        // whole record of what each language leaves alone and why.
         'de' => [
             'Agent',
             'Cobrowse',
             'Name',
             'Live',
+
+            // Words German genuinely shares, several of them the same
+            // loanwords the render guard already excuses on its own list.
+            'Ticket',
+            'Tickets',
+            'Status',
+            'Label',
+            'Labels',
+            'Normal',
+            'System',
+            ':count ms',
+            'Status: :value',
+            'Label: :value',
         ],
 
-        // `Agent` and `Name` are deliberately ABSENT: Italian translates them.
+        // `Agent` and `Name` are deliberately ABSENT: Italian says `Agente`
+        // and `Nome`, and leaving them here is what shipped English into the
+        // Italian catalogue in the first place.
         'it' => [
             'Cobrowse',
             'Live',
+
+            // Loanwords Italian tech writing uses as-is.
+            'Ticket',
+            'Email',
+            'Account',
+            'Admin',
+            'Bug',
+            'Payload',
+            'Viewport',
+
+            // The DOM/keyboard sense, which Italian borrows. `Messa a
+            // fuoco` is the OPTICAL sense and would be wrong here -- this
+            // label sits in the telemetry grid beside `Viewport` and
+            // reports which element the visitor's page had focused.
+            'Focus',
+            'Prerendering',
+            'Max RTT',
+            ':count ms',
+
+            // A coined product term rather than a loanword. Italian has no
+            // natural equivalent for the cobrowse timeline sense, so it is
+            // left as the product's own word -- worth a second opinion if
+            // anyone reads it and disagrees.
+            'Guardrail',
         ],
     ],
 
@@ -87,6 +129,26 @@ return [
     ],
 
     /*
+     * Terms that are one English word and two target words.
+     *
+     * Each pair names a sense split the glossary already decides. Their point
+     * here is cross-checking: two languages may disagree about the WORD and
+     * must agree about which SENSE a key is. German rendered
+     * `tickets.statuses.open` as the state and Italian as the imperative, and
+     * nothing noticed -- the collision test proves the two terms differ, never
+     * that a catalogue chose between them correctly.
+     *
+     * A pair belongs here when both sides are declared for every language that
+     * has a term table, since the check compares like with like.
+     */
+    'senses' => [
+        ['open_state', 'open_action'],
+        ['attention_phrase', 'attention_badge'],
+        ['owner_role', 'owner_assignee'],
+        ['reply_noun', 'reply_action'],
+    ],
+
+    /*
      * English term -> target term.
      *
      * `confirm` marks the entries where the proposal is a judgement call rather
@@ -98,6 +160,71 @@ return [
      * mostly the ones where the obvious word is wrong.
      */
     'terms' => [
+
+        'it' => [
+
+            // --- the domain -------------------------------------------------
+            'visitor_singular' => ['term' => 'visitatore', 'note' => 'Generic masculine, and Italian offers no alternative at all -- not even the neutral plural German gets from a participle. Policy section 8 reasoning applies with less to weigh: there is no second option to reject.'],
+            'visitor_plural' => ['term' => 'visitatori', 'note' => 'Generic masculine plural. NOT a split by number the way German is -- Italian has one word and this table records that rather than inventing a distinction.'],
+            'visitor_compound' => ['term' => 'ID visitatore', 'note' => 'Not a compound at all. German welds `Besucher-ID`; Italian postmodifies -- `ID visitatore`, `pagina del visitatore`, `widget del visitatore`. The entry exists so the shape is decided once instead of per string.'],
+            'visit_abstract' => ['term' => 'visita', 'note' => 'Where a sentence can name the visit rather than the person.'],
+            'conversation' => ['term' => 'conversazione', 'note' => 'The cognate is right here, unlike German, where `Konversation` was rejected as stilted. Same word, opposite ruling, for a reason that belongs to each language.'],
+            'ticket' => ['term' => 'ticket', 'note' => 'Loanword, standard in Italian support tooling.'],
+            'message' => ['term' => 'messaggio'],
+            'reply_noun' => ['term' => 'risposta'],
+            'reply_action' => ['term' => 'Rispondi', 'note' => 'Bare imperative -- see the register note on action labels.'],
+            'site' => ['term' => 'sito', 'note' => 'Held apart from `pagina` by the collision pair. Italian makes this easy where German did not.'],
+            'page' => ['term' => 'pagina'],
+            'queue' => ['term' => 'coda'],
+            'agent' => ['term' => 'agente', 'note' => 'The sharpest problem in this table. Italian helpdesk software overwhelmingly calls this person `operatore`, so the obvious word is spoken for by the OTHER role. `agente` is chosen to keep them apart and is slightly less idiomatic for it.'],
+            'operator' => ['term' => 'gestore', 'note' => 'Runs the install. NOT `operatore` -- see `agent` above; in Italian support vocabulary that word means the person answering tickets, so using it here would swap the two roles for every Italian reader. `amministratore` is unavailable too, because `Admin` is already a distinct role in the catalogue.'],
+            'account' => ['term' => 'account', 'note' => 'Loanword, standard. `conto` is a bank account and `profilo` is the settings page.'],
+            'owner_role' => ['term' => 'titolare', 'note' => 'The account role.'],
+            'owner_assignee' => ['term' => 'responsabile', 'note' => 'Whoever is responsible for a conversation or a ticket. The same split by SENSE that German makes with Inhaber/Zuständig.'],
+            'email' => ['term' => 'email', 'note' => 'Invariable loanword. `indirizzo email` where the sentence needs the address specifically.'],
+            'support_code' => ['term' => 'codice di supporto', 'note' => 'Against the compressed `codice supporto`, which reads more like a product name than a thing you can quote to someone.'],
+            'request_action' => ['term' => 'Richiedi', 'note' => 'The verb: an agent asks the visitor widget for a snapshot or a session.'],
+            'request_object' => ['term' => 'richiesta', 'note' => 'The thing that verb produces.'],
+            'request_inquiry' => ['term' => 'richiesta', 'note' => 'Italian does NOT separate this the way German separates Anforderung from Anfrage -- both senses are `richiesta`. `domanda` is a question rather than a request and would be worse. Recorded as a deliberate merge so the next reader knows it was considered, not missed.'],
+            'requester' => ['term' => 'richiedente', 'note' => 'The person who raised a ticket.'],
+            'alert' => ['term' => 'avviso', 'note' => 'Held apart from `messaggio`.'],
+            'digest' => ['term' => 'riepilogo'],
+            'summary' => ['term' => 'sintesi', 'note' => 'Split from `digest` on purpose, the same collision German has between Zusammenfassung and a ticket summary. Italian has two words where German reaches for one.'],
+            'snapshot' => ['term' => 'snapshot', 'note' => 'Loanword, as in German. `istantanea` is correct Italian and reads as photography.'],
+            'lane' => ['term' => 'corsia', 'note' => 'The swimlane sense, and the direct counterpart of the German `Spur`. Italian diagramming says `corsie`.'],
+            'presence' => ['term' => 'presenza', 'note' => 'No compound needed. German had to build `Präsenzstatus` because bare `Status` was taken; Italian `presenza` and `stato` are already different words, so the collision that forced the German compound does not exist here.'],
+            'status' => ['term' => 'stato'],
+            'attention_phrase' => ['term' => 'Richiede attenzione', 'note' => 'For sentences and full status strings.'],
+            'attention_badge' => ['term' => 'Da gestire', 'note' => 'For badges, chips and column headers. Against `Azione richiesta`, which is accurate and puts a second `richiesta` on screen beside the request vocabulary.'],
+            // --- states -----------------------------------------------------
+            'open_state' => ['term' => 'Aperto', 'note' => 'The adjective.'],
+            'open_action' => ['term' => 'Apri', 'note' => 'The imperative. Italian keeps these apart naturally, where English spells them the same.'],
+            'closed' => ['term' => 'Chiuso'],
+            'active' => ['term' => 'Attivo'],
+            'pending' => ['term' => 'In attesa'],
+            'assigned' => ['term' => 'Assegnato'],
+            'unassigned' => ['term' => 'Non assegnato'],
+            'read' => ['term' => 'Letto', 'note' => 'Past participle. The catalogue entry is a filter, not a command.'],
+            'seen' => ['term' => 'Visto'],
+            'ready' => ['term' => 'Pronto'],
+            'ended' => ['term' => 'Terminato'],
+            'quiet' => ['term' => 'Poco attivo', 'note' => 'A degree on the recency scale, not a binary. `presence.php` documents itself as how recently a visitor was SEEN -- Active recently, Recently active, Quiet, Not reported -- so this is presence recency rather than channel volume, which rules out `Silenzioso` and `Calmo`. `Inattivo` was rejected for collapsing the scale into the Attivo/Inattivo binary, and `Assente` for overlapping `Not reported`, which is already the rung below. German needs no equivalent adjustment: `Ruhig` sits outside the activity axis where `Inattivo` sits on it.'],
+            'fresh' => ['term' => 'Nuovo', 'note' => 'The three-step freshness scale, reviewed together or not at all: Nuovo -> Vecchio -> Obsoleto.'],
+            'aging' => ['term' => 'Vecchio'],
+            'stale' => ['term' => 'Obsoleto'],
+            // --- actions ----------------------------------------------------
+            //
+            // Bare second-person-singular imperative, always. A control commands
+            // the machine rather than addressing the reader, so `Lei` never
+            // appears here. See the register entry.
+            'search' => ['term' => 'Cerca'],
+            'copy' => ['term' => 'Copia'],
+            'refresh' => ['term' => 'Aggiorna'],
+            'retry' => ['term' => 'Riprova'],
+            'close_action' => ['term' => 'Chiudi'],
+            'sign_out' => ['term' => 'Esci'],
+            'send_message' => ['term' => 'Invia messaggio', 'note' => 'The worked example: not `Invii un messaggio`, and not `Inviare un messaggio`.'],
+        ],
 
         'de' => [
 
@@ -191,6 +318,24 @@ return [
      * Neither is listed, because a scorer that cries wolf is one nobody reads.
      */
     'rejected' => [
+        // Italian starts empty, and that is the discipline rather than an
+        // oversight. Every German entry here was ruled on AND then observed
+        // coming back from a real engine; seeding a list from what an engine
+        // might do produces entries nobody measured, which is how a scorer
+        // starts crying wolf. It gets populated from the first scored run.
+        // Filled from the first scored Italian run, which is the process this
+        // list is supposed to follow: every entry was observed coming back from
+        // a real engine rather than predicted. `inviare` is deliberately absent
+        // -- the same run returned `File da inviare` and `a inviare uno
+        // snapshot`, both correct, and an infinitive after a preposition is not
+        // the same mistake as an infinitive on a button.
+        'it' => [
+            'bigliett' => 'ticket is `ticket`, invariable in the plural -- `biglietto` is a travel or cinema ticket',
+            'istantanea' => 'snapshot is snapshot',
+            'operatore' => 'agent is agente and operator is gestore -- in Italian support vocabulary this word means the agent, so it swaps the two roles',
+            'proprietario' => 'owner_role is titolare, owner_assignee is responsabile',
+        ],
+
         'de' => [
             'Konversation' => 'conversation is Unterhaltung',
             'Schnappschuss' => 'snapshot is Snapshot',
@@ -216,6 +361,69 @@ return [
      * in a paragraph is a rule an engine ignores and a reviewer forgets.
      */
     'checks' => [
+        // Italian has NO straight-quote check, and the omission is the point:
+        // `dell'agente` and `un'attività` are correct Italian, so the German
+        // rule would flag most of the catalogue. A check is per-locale because
+        // the mistakes are.
+        'it' => [
+            // Pronouns alone are a weak net for Italian. `te` was missing and
+            // let `assegnati a te` through; more usefully, the second-person
+            // singular of the common auxiliaries and modals is unambiguous --
+            // `stai`, `puoi`, `devi` cannot be anything else (`vai` and `fai` are excluded: those ARE legitimate imperative labels) -- and catches
+            // informal prose that contains no pronoun at all, which is where
+            // `Segna come in sospeso se stai aspettando` was hiding.
+            // Pronouns, 2sg auxiliaries and modals, and the 2sg FUTURE.
+            //
+            // The future was the gap. `Riceverai avvisi` is squarely informal
+            // and carries no pronoun, no auxiliary and no modal, so a
+            // pronoun-and-modal net scored it clean -- and review found it on
+            // a shipped string. Italian's 2sg future ends in `-rai` almost
+            // uniquely, which makes it cheap to catch: measured at zero false
+            // positives across the whole catalogue.
+            'informal address' => '/\\b(tu|ti|te|tuo|tuoi|tua|tue|stai|sei|hai|puoi|devi|vuoi|sai)\\b|\\b\\w{3,}rai\\b/ui',
+
+            // The two checks above look at PRONOUNS and VERB ENDINGS. Neither
+            // sees the register mistake Italian actually makes, because the
+            // informal imperative of an `-are` verb is spelled exactly like the
+            // ordinary third-person indicative: `continua` is informal in
+            // `o continua tramite chat` and formal in `la modalita' continua a
+            // sopprimere`. The word alone cannot decide.
+            //
+            // What decides is POSITION. A shipped mistake was always a verb
+            // coordinated onto a formal instruction (`Richieda ... o continua`,
+            // `Crei o allega`, `Provi ... oppure cancella`) or one opening a
+            // prose sentence (`Inserisci una risposta`). And the check applies
+            // only to PROSE: `Cancella filtri` and `Apri ticket` are button
+            // labels, where the bare imperative is exactly right, so the
+            // lookahead requires sentence punctuation before anything fires.
+            //
+            // The verb list is the part that can go stale, and did: a first
+            // pass listed only the verbs whose defects had already been found,
+            // so it scored the catalogue clean while `Assegna questo ticket`
+            // and `Consulta l'attivita'` sat in it. The list below was derived
+            // instead from the CONTROL LABELS -- short, unpunctuated strings,
+            // which is precisely where this product's imperative vocabulary
+            // lives -- and then hand-filtered to verbs. Extend it the same way
+            // rather than one defect at a time.
+            //
+            // It stays a net, not a proof: a verb the product has never used
+            // on a button is not in it.
+            'informal imperative in prose' => '/(?=.*[.!?])(?:\\b(?:o|oppure|e|ed)\\s+|(?:^|[.!?]\\s+))(aggiorna|allega|annulla|apri|applica|assegna|attendi|cambia|cancella|carica|cerca|chiudi|collega|conferma|consulta|continua|controlla|copia|crea|disconnetti|elimina|gestisci|imposta|includi|inserisci|invia|libera|mantieni|metti|modifica|mostra|prova|riapri|richiedi|rilascia|rimuovi|riprova|rispondi|rivedi|rivendica|salva|scegli|scorri|scrivi|segna|seleziona|termina|torna|trova|usa|verifica)\\b/uis',
+
+            // The NEGATIVE informal imperative is the one shape Italian spells
+            // unambiguously: `non` followed by a bare infinitive. Formal is
+            // `non` plus the subjunctive, so `Non raccogliere` and `Non
+            // includere` are informal no matter what surrounds them. The
+            // `{4,}` keeps short adverbs that merely end in `-re` (`sempre`,
+            // `oltre`) from matching. Zero false positives measured.
+            'negative informal imperative' => '/\\bnon\\s+\\w{4,}re\\b/ui',
+
+            // Straight DOUBLE quotes only. Italian typography declares
+            // caporali, and unlike German this cannot also flag the apostrophe
+            // in `dell'agente`, which is correct and everywhere.
+            'straight double quote' => '/"/u',
+        ],
+
         // What the informal-address pattern CANNOT see, stated rather than
         // papered over: a du-imperative carries no marker word. A real run
         // returned `Sende eine klare Antwort und setze das Ticket ...`, which is
@@ -225,12 +433,17 @@ return [
         // register in prose is a thing the reviewer reads for, per policy
         // section 9.
         'de' => [
-            // Case-INSENSITIVE, and the flag is load-bearing. A pronoun at the
-            // start of a sentence is capitalised, so `Er sieht die Seite nicht.`
-            // and `Du bist angemeldet.` both scored clean against the earlier
-            // `/u` patterns -- and sentence-initial is exactly where an engine
-            // puts a pronoun.
-            'informal address' => '/\b(du|dich|dir|dein[a-z]*)\b/ui',
+            // Both halves, because they answer different failures.
+            //
+            // The 2sg VERB FORMS catch informal prose carrying no pronoun at
+            // all -- Italian hid `se stai aspettando` from a pronoun-only net
+            // for a whole draft. German is clean on them today and they are
+            // here so it stays that way.
+            //
+            // The `i` FLAG catches the same pronouns capitalised, which is
+            // where an engine actually puts them: `Er sieht die Seite nicht.`
+            // and `Du bist angemeldet.` both scored clean without it.
+            'informal address' => '/\b(du|dich|dir|dein[a-z]*|bist|hast|kannst|musst|willst|weißt|wirst)\b/ui',
             'generic masculine pronoun' => '/\b(er|ihn|ihm|seine|seinem|seinen|seiner|seines)\b/ui',
             'straight quote' => '/["\']/u',
             'unhonoured escape' => '/\\\\/u',
@@ -252,9 +465,10 @@ return [
             'pronouns' => 'Never the generic masculine. Reword to avoid the pronoun rather than choosing one.',
         ],
         'it' => [
-            'address' => 'Formal (Lei). Never tu.',
-            'action labels' => 'UNDECIDED -- do not infer this from German. It is answered when Italian starts, against shipped Italian software.',
-            'gendered nouns' => 'Same wall as German: visitatore/visitatrice has no neutral singular. Expect the German answer to be the right shape.',
+            'address' => 'Formal (Lei) in prose. Never tu.',
+            'action labels' => 'Bare second-person-singular imperative: "Salva", "Invia", "Cerca". NOT the Lei imperative ("Salvi", "Invii"), which reads wrong on a control, and NOT the infinitive ("Salvare"), which is the French convention. Same principle as German -- a control commands the machine rather than addressing the reader -- reached with a different form.',
+            'descriptions' => 'Third person for tooltips and action explanations: "Apre un file", "Risponde a questo messaggio".',
+            'gendered nouns' => 'Generic masculine. Italian has no neutral at all -- not even the neutral plural German gets from a participle -- so visitatore/visitatori throughout, and no split by number.',
         ],
     ],
 
@@ -263,6 +477,11 @@ return [
      * here so a new language states its own rather than inheriting these.
      */
     'typography' => [
+        'it' => [
+            'quotes' => ['open' => '«', 'close' => '»'],
+            'no_backslash' => true,
+        ],
+
         'de' => [
             'quotes' => ['open' => '„', 'close' => '“'],
             'no_backslash' => true,

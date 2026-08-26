@@ -358,6 +358,19 @@ test('every shipped catalogue obeys the policy it was written against', function
     // one place and quietly contradicted in another.
     $glossary = Glossary::load();
     $scorer = new PolicyScorer($glossary);
+
+    // The Italian register checks read POSITION, because the informal
+    // imperative of an `-are` verb is spelled like the indicative. One
+    // position stays genuinely ambiguous: a sentence-initial verb whose
+    // subject has been dropped. English says `It changes the dashboard for
+    // you`, German says `Es aendert`, and Italian drops the pronoun -- so
+    // `Cambia la dashboard` is a correct indicative wearing the exact shape
+    // of an informal imperative. Recorded here with its reason rather than
+    // dropping `cambia` from the check, which would blind it everywhere else.
+    $allowed = [
+        'it informal imperative in prose: profile.details.language_help',
+    ];
+
     $offenders = [];
 
     foreach (['de', 'it'] as $locale) {
@@ -377,6 +390,10 @@ test('every shipped catalogue obeys the policy it was written against', function
 
             foreach ($score->violations as $rule => $hits) {
                 foreach ($hits as $hit) {
+                    if (in_array("{$locale} {$rule}: {$name}.{$hit['key']}", $allowed, true)) {
+                        continue;
+                    }
+
                     $offenders[] = "{$locale} {$rule}: {$name}.{$hit['key']} -- {$hit['detail']}";
                 }
             }
@@ -1066,4 +1083,430 @@ test('restore either reproduces the source exactly or refuses, across generated 
 
     // Both outcomes must occur, or the loop proved nothing.
     expect($exact)->toBeGreaterThan(0)->and($refused)->toBeGreaterThan(0);
+});
+
+test('nothing is left in English without saying so', function (): void {
+    // The complement of the cognate test above. That one checks a declared
+    // cognate is genuinely identical; this checks the reverse -- that anything
+    // identical was DECLARED. Without it, an untranslated value looks exactly
+    // like a deliberate loanword, which is how `Agent` and `Name` sat in the
+    // Italian catalogue contradicting its own term table.
+    $glossary = Glossary::load();
+    $never = array_flip($glossary->neverTranslate());
+    $english = [];
+
+    foreach (glob(lang_path('en/*.php')) ?: [] as $path) {
+        foreach (Catalogue::read($path)->values() as $key => $value) {
+            $english[basename($path, '.php').'.'.$key] = $value;
+        }
+    }
+
+    foreach ($glossary->localesWithTerms() as $locale) {
+        $cognates = array_flip($glossary->cognates($locale));
+        $undeclared = [];
+
+        foreach (glob(lang_path($locale.'/*.php')) ?: [] as $path) {
+            // Laravel's own validation messages are a framework override rather
+            // than extracted copy, and have no English counterpart here.
+            if (basename($path) === 'validation.php') {
+                continue;
+            }
+
+            foreach (Catalogue::read($path)->values() as $key => $value) {
+                $full = basename($path, '.php').'.'.$key;
+
+                if (($english[$full] ?? null) !== $value) {
+                    continue;
+                }
+
+                // Punctuation, digits and bare placeholders are identical in
+                // every language and say nothing about translation.
+                if (preg_match('/^[\W\d\s]*$/u', $value) === 1) {
+                    continue;
+                }
+
+                if (isset($cognates[$value]) || isset($never[$value])) {
+                    continue;
+                }
+
+                $undeclared[] = "{$full} = {$value}";
+            }
+        }
+
+        expect($undeclared)->toBe([], "{$locale} leaves values in English without declaring them cognates");
+    }
+});
+
+test('every plural segment starts with its interval selector', function (): void {
+    // Laravel reads `{1}` and `[2,*]` only at the START of a segment. Anywhere
+    // else they are ordinary text, so the selector renders to the agent -- an
+    // Italian queue showed `Le sessioni cobrowse [2,*] 2 richiedono attenzione`
+    // because the engine put the words in front of the interval.
+    //
+    // The existing plural guard counted `|` separators and never looked at what
+    // followed them, so seven strings passed it while being broken.
+    $offenders = [];
+
+    foreach (glob(lang_path('*/*.php')) ?: [] as $path) {
+        $locale = basename(dirname($path));
+
+        foreach (Catalogue::read($path)->values() as $key => $value) {
+            if (! str_contains($value, '|')) {
+                continue;
+            }
+
+            foreach (explode('|', $value) as $index => $segment) {
+                if (preg_match('/^\s*(\{\d+\}|\[\d+,(?:\d+|\*)\])/', $segment) === 1) {
+                    continue;
+                }
+
+                $offenders[] = "{$locale}/".basename($path, '.php').".{$key} segment {$index}: {$segment}";
+            }
+        }
+    }
+
+    expect($offenders)->toBe([]);
+});
+
+test('two languages agree about which sense a key is', function (): void {
+    // The collision test proves a glossary keeps two senses APART. Nothing
+    // proved a catalogue chose between them correctly -- so `tickets.statuses.open`
+    // shipped as `Aperto` in German and `Apri` in Italian, a state and an
+    // imperative for the same key, and every guard passed.
+    //
+    // The languages may disagree about the WORD. They must agree about which
+    // sense the key is, and that is checkable without knowing anything about
+    // either language: find keys where one locale used sense A and another used
+    // sense B, and the pair disagrees about the key rather than the vocabulary.
+    $glossary = Glossary::load();
+    $locales = $glossary->localesWithTerms();
+
+    $values = [];
+
+    foreach ($locales as $locale) {
+        foreach (glob(lang_path($locale.'/*.php')) ?: [] as $path) {
+            if (basename($path) === 'validation.php') {
+                continue;
+            }
+
+            foreach (Catalogue::read($path)->values() as $key => $value) {
+                $values[$locale][basename($path, '.php').'.'.$key] = $value;
+            }
+        }
+    }
+
+    $disagreements = [];
+
+    foreach ($glossary->senses() as [$a, $b]) {
+        // Which sense, if any, each locale's value for a key corresponds to.
+        $senseOf = [];
+
+        foreach ($locales as $locale) {
+            $termA = $glossary->terms($locale)[$a]['term'] ?? null;
+            $termB = $glossary->terms($locale)[$b]['term'] ?? null;
+
+            if ($termA === null || $termB === null || $termA === $termB) {
+                continue;
+            }
+
+            // Case-INSENSITIVELY, and that is not a detail. A glossary stores
+            // Italian terms the way Italian writes them mid-sentence
+            // (`titolare`), while a UI label capitalises (`Titolare`), so an
+            // exact comparison silently matched nothing for Italian. German
+            // capitalises its nouns in both places and matched, leaving one
+            // locale in the pair -- and one locale cannot disagree with
+            // itself. That is precisely how `profile.roles.owner` shipped as
+            // the assignee term with this test passing.
+            foreach ($values[$locale] ?? [] as $key => $value) {
+                $folded = mb_strtolower($value);
+
+                if ($folded === mb_strtolower($termA)) {
+                    $senseOf[$key][$locale] = $a;
+                } elseif ($folded === mb_strtolower($termB)) {
+                    $senseOf[$key][$locale] = $b;
+                }
+            }
+        }
+
+        foreach ($senseOf as $key => $byLocale) {
+            if (count(array_unique($byLocale)) > 1) {
+                $detail = implode(', ', array_map(
+                    static fn (string $l, string $sense): string => "{$l}={$sense}",
+                    array_keys($byLocale),
+                    $byLocale,
+                ));
+
+                $disagreements[] = "{$key}: {$detail}";
+            }
+        }
+    }
+
+    expect($disagreements)->toBe([]);
+});
+
+test('an italian plural branch inflects something', function (): void {
+    // Italian adjectives and verbs agree with number; English ones do not. So
+    // a machine draft that maps `:count open` onto `:count aperto` produces a
+    // plural branch identical to its singular, and every existing guard passes
+    // -- the glossary term is right, the placeholder is intact, the selector is
+    // present. `2 aperto`, `2 chiuso`, `2 collegato` and `:shown ... necessita
+    // attenzione` all shipped that way.
+    //
+    // The tell is cheap: strip the selector and the count, and if the two
+    // branches are then the SAME STRING, the plural inflected nothing. That is
+    // usually a bug and occasionally correct, so the exceptions are listed
+    // with their reason rather than the check being softened.
+    //
+    // German is deliberately not checked here: its predicate adjectives do not
+    // inflect, so `2 geschlossen` is right and this rule would be noise.
+    $invariable = [
+        // `ticket` is an unadapted loanword; Italian does not pluralise it.
+        'tickets.counts.tickets',
+        // `in sospeso` is a prepositional phrase, invariable by construction.
+        'tickets.summary.heading.pending',
+        // Both branches are one noun phrase (`Visualizzazione di ...`); the
+        // number lives inside `:shown`, and nothing else agrees with it.
+        'conversations.summary.lane_narrowed_detail',
+        'tickets.summary.lane_narrowed_detail',
+    ];
+
+    $uninflected = [];
+
+    foreach (glob(lang_path('it/*.php')) ?: [] as $path) {
+        foreach (Catalogue::read($path)->values() as $key => $value) {
+            $qualified = basename($path, '.php').'.'.$key;
+
+            if (! str_contains($value, '|') || ! str_contains($value, '[2,*]')) {
+                continue;
+            }
+
+            [$one, $many] = explode('|', $value, 2);
+
+            $bare = static fn (string $segment): string => trim(preg_replace(
+                ['/^\{1\}|^\[2,\*\]/', '/:count|(?<![\p{L}\d])1(?![\p{L}\d])/u'],
+                ['', '#'],
+                $segment,
+            ) ?? '');
+
+            if ($bare($one) === $bare($many) && ! in_array($qualified, $invariable, true)) {
+                $uninflected[] = "{$qualified}: {$value}";
+            }
+        }
+    }
+
+    expect($uninflected)->toBe([]);
+});
+
+test('a bare label uses the term its own key names', function (): void {
+    // Policy section 3 says the glossary binds every string, and nothing
+    // enforced it. So `nav.sign_out` shipped as `Disconnetti` while the
+    // glossary settled `Esci`, and the whole reviewed freshness scale
+    // (`Nuovo -> Vecchio -> Obsoleto`) was ignored in favour of `Recente ->
+    // Invecchiamento -> Stantio` -- three labels, one decision, silently
+    // discarded. German shipped the same defect at `freshness.fresh`.
+    //
+    // A general "every string honours the glossary" rule is not checkable:
+    // most terms are inflected, compounded, or absent for good reason. But a
+    // BARE LABEL is checkable, and it is where a term is supposed to appear
+    // verbatim. So the rule is deliberately narrow -- the key's last segment
+    // names a glossary concept (or the one before it, when the last is
+    // `label`/`badge`), and the value is short, unpunctuated and at most two
+    // words. Anything longer is prose and out of scope here.
+    $glossary = Glossary::load();
+
+    // Concepts the product genuinely uses in two senses. The glossary has a
+    // `senses` mechanism for exactly this, but naming the second term is a
+    // vocabulary decision rather than a cleanup, and each of these is already
+    // consistent across its own catalogue -- so they are recorded, not
+    // changed. Resolving them means adding the second sense to the glossary.
+    $twoSenses = [
+        // A presence state (`Poco attivo`/`Ruhig`) and an alert mode.
+        'it/profile.alerts.modes.quiet' => 'quiet: presence state vs alert mode',
+        'de/profile.alerts.modes.quiet' => 'quiet: presence state vs alert mode',
+        // A ticket STATUS reads `In sospeso`/`Wartend` throughout; the
+        // glossary term is the "waiting for" sense used in cobrowse prose.
+        'it/tickets.filters.status.pending' => 'pending: ticket status vs waiting-for',
+        'it/tickets.statuses.pending' => 'pending: ticket status vs waiting-for',
+        'de/tickets.filters.status.pending' => 'pending: ticket status vs waiting-for',
+        'de/tickets.statuses.pending' => 'pending: ticket status vs waiting-for',
+        // The field label is the noun `Suche`; the action is `Suchen`.
+        'de/conversations.search.label' => 'search: field noun vs action verb',
+        'de/tickets.search.label' => 'search: field noun vs action verb',
+        // The nav section is `Betrieb` (operations), not the person.
+        'de/nav.items.operator' => 'operator: the section vs the person',
+    ];
+
+    $unbound = [];
+
+    foreach ($glossary->localesWithTerms() as $locale) {
+        $terms = $glossary->terms($locale);
+
+        foreach (glob(lang_path($locale.'/*.php')) ?: [] as $path) {
+            if (basename($path) === 'validation.php') {
+                continue;
+            }
+
+            foreach (Catalogue::read($path)->values() as $key => $value) {
+                $qualified = $locale.'/'.basename($path, '.php').'.'.$key;
+
+                // Landmark and lane names describe a REGION of the page, not
+                // the concept they are named after.
+                if (str_contains($qualified, '.regions.') || str_contains($qualified, '.lanes.')) {
+                    continue;
+                }
+
+                $segments = explode('.', $key);
+                $concept = end($segments);
+
+                if (in_array($concept, ['label', 'badge'], true) && count($segments) >= 2) {
+                    $concept = $segments[count($segments) - 2];
+                }
+
+                if (! isset($terms[$concept])) {
+                    continue;
+                }
+
+                if (mb_strlen($value) > 26 || preg_match('/[.!?|:]/u', $value) === 1) {
+                    continue;
+                }
+
+                if (count(preg_split('/\s+/u', trim($value)) ?: []) > 2) {
+                    continue;
+                }
+
+                if (isset($twoSenses[$qualified])) {
+                    continue;
+                }
+
+                if (mb_stripos($value, $terms[$concept]['term']) === false) {
+                    $unbound[] = "{$qualified}: want {$terms[$concept]['term']}, got {$value}";
+                }
+            }
+        }
+    }
+
+    expect($unbound)->toBe([]);
+});
+
+test('a control label does not address the agent', function (): void {
+    // The mirror of the register check in the glossary. That one finds the
+    // INFORMAL imperative where prose needs the formal; this finds the formal
+    // where a CONTROL needs the bare imperative, which is the same rule read
+    // from the other end -- `Invii email solo quando...` sat in a select
+    // beside `Invia` and `Preferisci` and addressed the agent where its
+    // neighbours named an action.
+    //
+    // The formal forms are derived rather than listed, so the two checks
+    // cannot drift apart: an `-are` verb takes `-i` (softening `c`/`g` to
+    // `ch`/`gh` -- `cerca` -> `cerchi`, not `cerci`), everything else takes
+    // `-a`. Add a verb to the glossary list and its formal form appears here
+    // for free.
+    $informal = [
+        'aggiorna', 'allega', 'annulla', 'apri', 'applica', 'assegna', 'attendi', 'cambia',
+        'cancella', 'carica', 'cerca', 'chiudi', 'collega', 'conferma', 'consulta', 'continua',
+        'controlla', 'copia', 'crea', 'disconnetti', 'elimina', 'gestisci', 'imposta', 'includi',
+        'inserisci', 'invia', 'libera', 'mantieni', 'metti', 'modifica', 'mostra', 'prova',
+        'riapri', 'richiedi', 'rilascia', 'rimuovi', 'riprova', 'rispondi', 'rivedi', 'rivendica',
+        'salva', 'scegli', 'scorri', 'scrivi', 'segna', 'seleziona', 'termina', 'torna', 'trova',
+        'usa', 'verifica',
+    ];
+
+    $formal = [];
+
+    foreach ($informal as $verb) {
+        if (str_ends_with($verb, 'ca')) {
+            $formal[substr($verb, 0, -2).'chi'] = $verb;
+        } elseif (str_ends_with($verb, 'ga')) {
+            $formal[substr($verb, 0, -2).'ghi'] = $verb;
+        } elseif (str_ends_with($verb, 'a')) {
+            $formal[substr($verb, 0, -1).'i'] = $verb;
+        } else {
+            $formal[substr($verb, 0, -1).'a'] = $verb;
+        }
+    }
+
+    // Sentence punctuation marks prose, but not all prose has it: a lede is a
+    // full sentence with no full stop, and `Usi questo dopo aver ricevuto una
+    // password temporanea` is correctly formal. The catalogue names its prose
+    // consistently, so the key's own last segment settles it.
+    $prose = [
+        'lede', 'help', 'hint', 'detail', 'detail_unknown', 'message', 'guidance', 'body',
+        'description', 'note', 'subtitle', 'intro', 'summary', 'placeholder', 'privacy',
+        'shortcut', 'scope', 'boundary', 'context',
+    ];
+
+    $addressed = [];
+
+    foreach (glob(lang_path('it/*.php')) ?: [] as $path) {
+        foreach (Catalogue::read($path)->values() as $key => $value) {
+            if (preg_match('/[.!?|]/u', $value) === 1) {
+                continue;
+            }
+
+            $segments = explode('.', $key);
+
+            if (in_array(end($segments), $prose, true)) {
+                continue;
+            }
+
+            $first = mb_strtolower(preg_split('/\s+/u', trim($value))[0] ?? '');
+
+            if (isset($formal[$first])) {
+                $where = basename($path, '.php').'.'.$key;
+                $addressed[] = "{$where}: {$value} (control wants {$formal[$first]})";
+            }
+        }
+    }
+
+    expect($addressed)->toBe([]);
+});
+
+test('a borrowed noun keeps one gender', function (): void {
+    // English nouns have no gender, so nothing in the source tells a
+    // translation which one an Italian sentence should agree with -- and the
+    // draft picked per sentence. `snapshot` was masculine in forty places and
+    // feminine in two (`un'altra snapshot pulita`, `La snapshot ... pulita`),
+    // which reads as carelessness rather than as a choice.
+    //
+    // Which gender a loanword takes IS a decision, but it is a linguistic one
+    // and already made: Italian assigns masculine to these by default, and the
+    // catalogue overwhelmingly agrees. So the check is for CONSISTENCY with
+    // that, not a new vocabulary rule -- it looks for feminine determiners and
+    // adjectives sitting next to a masculine loanword.
+    $masculine = [
+        'snapshot', 'widget', 'ticket', 'report', 'replay', 'tracker',
+        'browser', 'file', 'link', 'thread', 'payload', 'batch',
+    ];
+
+    $feminine = [
+        'la', 'le', 'una', "un'", 'questa', 'queste', 'quella', 'quelle',
+        'della', 'delle', 'alla', 'alle', 'nella', 'nelle', 'sulla', 'sulle',
+        'dalla', 'dalle', 'altra', 'altre', 'stessa', 'stesse', 'nuova', 'nuove',
+    ];
+
+    $feminineAdjective = [
+        'pulita', 'pulite', 'nuova', 'nuove', 'aggiornata', 'aggiornate',
+        'vecchia', 'attiva', 'chiusa', 'mascherata', 'scartata', 'scartate',
+    ];
+
+    $nouns = implode('|', $masculine);
+    $pattern = '/\b('.implode('|', $feminine).')\s+('.$nouns.')\b'
+        .'|\b('.$nouns.')\s+('.implode('|', $feminineAdjective).')\b/ui';
+
+    $disagreements = [];
+
+    foreach (glob(lang_path('it/*.php')) ?: [] as $path) {
+        foreach (Catalogue::read($path)->values() as $key => $value) {
+            if (preg_match_all($pattern, $value, $matches, PREG_SET_ORDER) === 0) {
+                continue;
+            }
+
+            foreach ($matches as $match) {
+                $where = basename($path, '.php').'.'.$key;
+                $disagreements[] = "{$where}: {$match[0]}";
+            }
+        }
+    }
+
+    expect($disagreements)->toBe([]);
 });

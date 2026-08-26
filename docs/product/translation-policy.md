@@ -40,11 +40,41 @@ characters or fewer and almost none of them should contain it. An engine told
 only "use the formal address" will produce `Senden Sie eine Nachricht` on a
 button, and it will look wrong to anyone who reads German.
 
-Italian takes `Lei` by the same argument. The form Italian action labels take is
-**an open question** and is not settled here; it gets answered when Italian is
-actually on deck, by someone who can check it against shipped Italian software
-rather than against a rule inferred from German.
+**Italian reaches the same place by a different road, which is why it was not
+inferred from German.** Prose takes `Lei`. Action labels take the bare
+second-person-singular imperative — `Salva`, `Invia`, `Cerca` — and *not* the
+`Lei` imperative (`Salvi`, `Invii`), which reads wrong on a control, nor the
+infinitive (`Salvare`), which is the French convention. The established Italian
+convention is that a button is a command issued to the machine, so it is
+imperative; a dialogue addressing the reader is impersonal or formal, so it is
+`Lei`. Tooltips and action descriptions take the third person — `Apre un file`.
 
+Note what that means for the German rule: *"the infinitive"* was never the
+principle. The principle is **a control does not address anyone**, and each
+language has its own form for that. Expect the third language to need a third
+form.
+
+**Italian register cannot be checked by vocabulary, only by position.** German
+gives itself away with a word: `du`, `dein`, `kannst` are informal wherever they
+appear, so a list finds them. Italian does not. The informal imperative of an
+`-are` verb is spelled exactly like the ordinary third-person indicative, so the
+same six letters are a mistake in one sentence and correct in the next:
+
+    'Richieda un nuovo snapshot o continua tramite chat.'   informal -- wrong
+    'La modalita silenziosa continua a sopprimere gli avvisi.'   indicative -- right
+
+No word list can separate those. What separates them is where the verb sits: the
+mistakes are verbs **coordinated onto a formal instruction** (`Richieda ... o
+continua`, `Crei o allega`) or **opening a prose sentence** (`Inserisci una
+risposta`). And the check applies only to prose, because `Cancella filtri` on a
+button is the correct form by the rule above -- so it fires only when the string
+carries sentence punctuation. The one shape Italian does spell unambiguously is
+the negative: `non` plus a bare infinitive is always informal, since the formal
+takes the subjunctive (`Non includere` -> `Non includa`).
+
+The general lesson is that a register rule needs a spelling in each language
+before it can be enforced, and that spelling may be syntactic rather than
+lexical. Do not assume the next language announces itself with a pronoun.
 ## 2. What is never translated
 
 Six categories, in rising order of how badly it breaks when they are.
@@ -159,6 +189,23 @@ English shape will be wrong the first time a Slavic language is added.
 The English catalogue already puts the verb inside the segment (`matches` /
 `match`) rather than outside it, which is what makes this translatable at all.
 
+**A third rule, learned from the Italian draft: the plural segment has to
+inflect something.** English adjectives do not change with number, so `:count
+open` is the same phrase twice and a segment-by-segment translation happily
+returns `:count aperto` for both. Every guard passes — the glossary term is
+correct, the placeholder survives, the selector is present — and the queue
+renders `2 aperto`, which is wrong in a way no English-shaped check can see.
+
+    '{1} :count aperto|[2,*] :count aperto'      what the draft produced
+    '{1} :count aperto|[2,*] :count aperti'      what Italian requires
+
+So compare the two segments after removing the selector and the count: if they
+are then identical, the plural inflected nothing. That is usually a defect and
+occasionally correct — `ticket` is an unadapted loanword, `in sospeso` is a
+prepositional phrase — so the exceptions are **listed with their reason** rather
+than the rule being relaxed. German is deliberately exempt: its predicate
+adjectives do not inflect, so `2 geschlossen` is right and the rule would be
+noise there. This is per-language for the same reason the register checks are.
 ## 6. Typography belongs to the language
 
 German quotation marks are `„…“`, not `"…"`. This is already enforced by a
@@ -225,10 +272,13 @@ a pause, an explicit *"Besucher Doppelpunkt innen"*, or the suffix swallowed
 entirely. This codebase has spent real effort on what gets announced. That the
 form also remains polarising in DACH B2B is the second reason, not the first.
 
-**Italian will hit the same wall.** `visitatore` / `visitatrice` has no neutral
-singular either, and the equivalent of the `Person` construction carries the
-same two-names-for-one-referent cost. Expect the answer to be the same shape and
-do not expect the participle trick to travel.
+**Italian hits the same wall and has less to work with.** `visitatore` /
+`visitatrice` has no neutral singular — and unlike German it has no neutral
+plural either, since there is no participial noun to fall back on. So Italian
+takes the generic masculine throughout, `visitatore` and `visitatori`, and does
+*not* split by number the way German does. The German table's split is recorded
+in the Italian one as an explicit non-split, so a reader comparing the two finds
+a decision rather than an omission.
 
 ## 9. What "reviewed" means, and where it stops
 
