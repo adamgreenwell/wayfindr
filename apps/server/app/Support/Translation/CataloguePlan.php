@@ -18,6 +18,8 @@ final class CataloguePlan
      * @param  array<string, string>  $carried  key => value kept as-is
      * @param  array<string, string>  $failures  key => why it could not be produced
      * @param  array<string, string>  $review  key => why a human should look
+     * @param  array<int, string>  $order  the source's key order, which the
+     *                                     merged catalogue is written in
      */
     public function __construct(
         public readonly string $catalogue,
@@ -26,6 +28,7 @@ final class CataloguePlan
         public readonly array $carried = [],
         public readonly array $failures = [],
         public readonly array $review = [],
+        public readonly array $order = [],
     ) {}
 
     public function isEmpty(): bool
@@ -40,12 +43,35 @@ final class CataloguePlan
 
     /**
      * Everything the target catalogue should contain, translated and carried
-     * alike, so key parity with the source is structural rather than hoped for.
+     * alike, IN THE SOURCE'S ORDER.
+     *
+     * The order is the point. `translated + carried` produced the right set of
+     * keys and the wrong file: a cognate or an all-placeholder value is never
+     * sent to the engine, so it landed in `carried` and got appended after
+     * every translated key, moving it out of the group it belongs to. Nothing
+     * breaks -- Laravel looks up by key -- but the drafted catalogue stops
+     * lining up against the English one, and lining up against the English one
+     * is how a person reviews it.
      *
      * @return array<string, string>
      */
     public function merged(): array
     {
-        return $this->translated + $this->carried;
+        $all = $this->translated + $this->carried;
+
+        if ($this->order === []) {
+            return $all;
+        }
+
+        $ordered = [];
+
+        foreach ($this->order as $key) {
+            if (array_key_exists($key, $all)) {
+                $ordered[$key] = $all[$key];
+            }
+        }
+
+        // Anything the source did not name still ships rather than vanishing.
+        return $ordered + $all;
     }
 }

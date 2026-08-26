@@ -99,12 +99,26 @@ class TranslateCatalogueCommand extends Command
             $name = basename($sourcePath, '.php');
             $targetPath = lang_path($locale.'/'.$name.'.php');
 
-            $plan = $translator->plan(
-                Catalogue::read($sourcePath),
-                is_file($targetPath) ? Catalogue::read($targetPath) : null,
-                $locale,
-                (bool) $this->option('retranslate'),
-            );
+            // One catalogue's engine failure must not cost the seven that would
+            // have succeeded after it. A gateway timeout on the largest file
+            // took the whole run down the first time this drafted Italian for
+            // real, and the catalogues already written were the only reason it
+            // was not a total loss.
+            try {
+                $plan = $translator->plan(
+                    Catalogue::read($sourcePath),
+                    is_file($targetPath) ? Catalogue::read($targetPath) : null,
+                    $locale,
+                    (bool) $this->option('retranslate'),
+                );
+            } catch (TranslationFailed $e) {
+                $this->newLine();
+                $this->error("{$name}: {$e->getMessage()}");
+                $this->line('  skipped -- re-run to pick it up; catalogues already written are left alone');
+                $failed = true;
+
+                continue;
+            }
 
             $this->report($plan);
 

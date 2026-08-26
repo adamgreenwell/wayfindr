@@ -150,6 +150,7 @@ final class CatalogueTranslator
             carried: $carried,
             failures: $failures,
             review: $review,
+            order: array_keys($source->values()),
         );
     }
 

@@ -76,6 +76,21 @@ final class Glossary
         return $this->data['collisions'] ?? [];
     }
 
+    /**
+     * Every language this glossary decides a vocabulary for.
+     *
+     * Exists so a test can ask rather than hardcode. A literal locale list in a
+     * test asserts that a term table exists, which is a claim about a FILE and
+     * not about the code -- and it goes red the moment the table moves to
+     * another branch while the assertion stays behind.
+     *
+     * @return array<int, string>
+     */
+    public function localesWithTerms(): array
+    {
+        return array_keys($this->data['terms'] ?? []);
+    }
+
     public function hasTermsFor(string $locale): bool
     {
         return isset($this->data['terms'][$locale]);
