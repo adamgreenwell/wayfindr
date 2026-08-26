@@ -76,8 +76,9 @@ one, arriving a few hundred milliseconds earlier.
 Sent: the site's public key, the visitor's existing anonymous id, and the
 current page URL after sanitising.
 
-**No timestamp.** `last_seen_at` is stamped from server receipt time, exactly as
-bootstrap, conversation start, message fetch and typing already do. A widget
+**No timestamp, and no duration.** `last_seen_at` is stamped from server receipt
+time, exactly as bootstrap, conversation start, message fetch and typing already
+do. A widget
 timestamp would be a value the endpoint cannot verify: a browser with a skewed
 clock reports presence that is wrong in both directions, and this endpoint is
 public and unauthenticated beyond the site key, so a forged one could park a
@@ -89,11 +90,47 @@ is the only part of it we actually know.
 contents, form values, scroll or viewport geometry, referrer chains, device or
 browser fingerprints, IP-derived location.
 
+### 3a. How often, and when a visit begins
+
+Two values the payload does not carry and the feature cannot work without.
+
+**The heartbeat reports every 45 seconds** while the page is loaded and the
+visitor has not declined. The number is not free: `VisitorPresence` calls a
+visitor inactive after two minutes, so any cadence at or near that cutoff makes
+a continuously present visitor flicker between *active* and *quiet* for most of
+every interval. Comfortably under the cutoff, with room for one lost report, is
+the requirement — 45 seconds gives two chances to stay inside two minutes.
+
+A hidden tab reports nothing. `visibilitychange` is the honest signal that
+somebody is not looking, and presence decaying to *quiet* while a tab sits in
+the background is correct rather than a gap to paper over.
+
+**A visit needs its own start**, because `last_seen_at` cannot answer "how long
+have they been here" — updating it destroys the very thing the question needs —
+and `visitors.created_at` answers "when did we first ever see them", which is a
+different question that #747 also asks under *returning or new*. So the server
+keeps a current-visit start alongside `last_seen_at`, set when a heartbeat
+arrives from a visitor whose last one is older than the fifteen-minute *recent*
+window, and left alone otherwise.
+
+That reuses a cutoff the product already has rather than inventing a session
+length: a gap long enough to read as *quiet* is long enough to call the next
+report a new visit. Time on site is then the distance between the two fields,
+and both are server-stamped.
+
 The URL is sanitised before it is stored, and this ADR specifies what that
 means rather than leaving it to the implementation:
 
-- **The scheme, host, port and path are kept.** They are the answer to "which
-  page", which is the only question this field exists for.
+- **Only `http` and `https` survive at all.** Every other scheme is discarded,
+  including ones that parse perfectly: these values are rendered as clickable
+  `href`s on the agent ticket page, the widget endpoints are public, so the URL
+  is attacker-controlled and an agent is the target.
+  `javascript://evil.test/%0Aalert(1)` has a scheme, a host and a path and is
+  indistinguishable from a page address to any check that is not an allowlist.
+  Requiring a host is not a scheme rule — it rejects `javascript:alert(1)` and
+  waves the version with a host straight through.
+- **The host, port and path are kept.** They are the answer to "which page",
+  which is the only question this field exists for.
 - **The query string is dropped in full**, unless the site has named specific
   parameters to keep — and then only those, and only when their value is a
   scalar.
