@@ -900,20 +900,25 @@ test('a declared cognate is actually identical in that language', function (): v
     }
 });
 
-test('a redraft says it is a redraft, not a list of additions', function (): void {
-    // The two sidecars are different documents and merging them the same way
-    // is destructive. `.missing.php` holds keys the catalogue lacks, so its
-    // entries are additions. `.redraft.php` holds a fresh proposal for EVERY
-    // key including reviewed ones, so "merge the entries into the file beside
-    // it" -- the old shared header -- means overwriting reviewed translations
-    // with machine output.
+test('a redraft separates what it replaces from what it adds', function (): void {
+    // The two sidecars are different documents and merging them the same way is
+    // destructive. `.missing.php` holds keys the catalogue lacks, so its entries
+    // are additions. `.redraft.php` holds a proposal for EVERY key, so the old
+    // shared header -- "merge the entries into the file beside it" -- meant
+    // pasting machine output over reviewed translations.
+    //
+    // And the first correction over-claimed in the other direction: it said
+    // every entry HAS a counterpart, which is false when the catalogue is
+    // incomplete. An operator told to compare entry-by-entry would skip exactly
+    // the keys with nothing to compare against, and leave the gap they came to
+    // close.
     $command = new class extends TranslateCatalogueCommand
     {
         public bool $retranslating = false;
 
-        public function header(string $name, CataloguePlan $plan): string
+        public function header(string $name, CataloguePlan $plan, array $additions = []): string
         {
-            return $this->fragmentHeader($name, $plan);
+            return $this->fragmentHeader($name, $plan, $additions);
         }
 
         public function option($key = null)
@@ -924,14 +929,20 @@ test('a redraft says it is a redraft, not a list of additions', function (): voi
 
     $plan = new CataloguePlan(catalogue: 'nav', targetLocale: 'de');
 
-    $command->retranslating = false;
     $missing = $command->header('nav', $plan);
 
     $command->retranslating = true;
-    $redraft = $command->header('nav', $plan);
+    $noAdditions = $command->header('nav', $plan);
+    $withAdditions = $command->header('nav', $plan, ['items.reports', 'items.visitors']);
 
     expect($missing)->toContain('Keys missing')
-        ->and($redraft)->not->toContain('Keys missing')
-        ->and($redraft)->toContain('EVERY key')
-        ->and($redraft)->toContain('never by pasting it in wholesale');
+        ->and($noAdditions)->not->toContain('Keys missing')
+        ->and($noAdditions)->toContain('EVERY key')
+        ->and($noAdditions)->toContain('never by pasting')
+        // Silent when there is nothing to say, rather than claiming zero.
+        ->and($noAdditions)->not->toContain('ADDITIONS')
+        // And explicit, by name, when there is.
+        ->and($withAdditions)->toContain('2 of them are ADDITIONS')
+        ->and($withAdditions)->toContain('items.reports')
+        ->and($withAdditions)->toContain('items.visitors');
 });

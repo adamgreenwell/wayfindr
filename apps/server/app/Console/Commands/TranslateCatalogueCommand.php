@@ -368,9 +368,16 @@ class TranslateCatalogueCommand extends Command
             $suffix = $this->option('retranslate') ? '.redraft.php' : '.missing.php';
             $fragment = dirname($targetPath).'/'.$name.$suffix;
 
+            // Which of these actually have a counterpart. Under `--retranslate`
+            // the plan redrafts every source key, so an INCOMPLETE catalogue
+            // yields a mix: replacements for keys it has, and additions for
+            // keys it does not. The header cannot describe both as one thing.
+            $existingKeys = array_keys(Catalogue::read($targetPath)->values());
+            $additions = array_values(array_diff(array_keys($plan->translated), $existingKeys));
+
             if (! $this->put($fragment, Catalogue::render(
                 Catalogue::nest($plan->translated),
-                $this->fragmentHeader($name, $plan),
+                $this->fragmentHeader($name, $plan, $additions),
             ))) {
                 return;
             }
@@ -495,20 +502,42 @@ class TranslateCatalogueCommand extends Command
      * confirmation prompt. Correcting those two and leaving this one is the
      * same mistake both of them were.
      */
-    protected function fragmentHeader(string $name, CataloguePlan $plan): string
+    /**
+     * @param  array<int, string>  $additions  drafted keys the target does not have
+     */
+    protected function fragmentHeader(string $name, CataloguePlan $plan, array $additions = []): string
     {
         if ($this->option('retranslate')) {
-            return implode("\n", [
+            $lines = [
                 "A fresh draft of EVERY key in lang/{$plan->targetLocale}/{$name}.php, NOT REVIEWED.",
                 '',
-                'Not a list of additions. Every entry here has a counterpart in the catalogue',
-                'beside it, and most of those counterparts have been reviewed by a person --',
-                'so merge this by comparing entry against entry and taking what is better,',
-                'never by pasting it in wholesale.',
-                '',
-                'The catalogue was not regenerated because it carries comments a rewrite',
-                'would silently drop. Delete this file once you have taken what you want.',
-            ]);
+                'Most entries here REPLACE something. Their counterparts in the catalogue',
+                'beside this file have usually been reviewed by a person, so merge those by',
+                'comparing entry against entry and taking what is better -- never by pasting',
+                'this file in wholesale.',
+            ];
+
+            // Said only when true, and named rather than counted, because the
+            // instruction above is wrong for exactly these keys: they have no
+            // counterpart to compare against, and an operator following
+            // "compare entry by entry" would skip them and leave the catalogue
+            // as incomplete as they found it.
+            if ($additions !== []) {
+                $lines[] = '';
+                $lines[] = count($additions).' of them are ADDITIONS -- the catalogue has no such key,';
+                $lines[] = 'so there is nothing to compare and they should simply be added:';
+                $lines[] = '';
+
+                foreach ($additions as $key) {
+                    $lines[] = '  '.$key;
+                }
+            }
+
+            $lines[] = '';
+            $lines[] = 'The catalogue was not regenerated because it carries comments a rewrite';
+            $lines[] = 'would silently drop. Delete this file once you have taken what you want.';
+
+            return implode("\n", $lines);
         }
 
         return implode("\n", [
