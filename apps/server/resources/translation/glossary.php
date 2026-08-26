@@ -213,8 +213,13 @@ return [
         // register in prose is a thing the reviewer reads for, per policy
         // section 9.
         'de' => [
-            'informal address' => '/\b(du|dich|dir|dein[a-z]*)\b/u',
-            'generic masculine pronoun' => '/\b(er|ihn|ihm|seine|seinem|seinen|seiner|seines)\b/u',
+            // Case-INSENSITIVE, and the flag is load-bearing. A pronoun at the
+            // start of a sentence is capitalised, so `Er sieht die Seite nicht.`
+            // and `Du bist angemeldet.` both scored clean against the earlier
+            // `/u` patterns -- and sentence-initial is exactly where an engine
+            // puts a pronoun.
+            'informal address' => '/\b(du|dich|dir|dein[a-z]*)\b/ui',
+            'generic masculine pronoun' => '/\b(er|ihn|ihm|seine|seinem|seinen|seiner|seines)\b/ui',
             'straight quote' => '/["\']/u',
             'unhonoured escape' => '/\\\\/u',
         ],

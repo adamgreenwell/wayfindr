@@ -715,3 +715,29 @@ test('German copy does not fall back on the generic masculine pronoun', function
 
     expect($offenders)->toBe([]);
 });
+
+test('a placeholder with a unit suffix still substitutes', function (): void {
+    // Kept from a review finding that turned out to be WRONG, because the
+    // guard is worth having and the reason is worth recording.
+    //
+    // The claim was that `:widthpx` is a placeholder named `widthpx`, so a view
+    // supplying `width` would substitute nothing. Laravel does a PREFIX
+    // replacement rather than a whole-token match: `:width` is replaced inside
+    // `:widthpx`, leaving `px`, and `Visitor viewport 1,456px` renders
+    // correctly -- which `AgentConversationInboxTest` already asserted.
+    //
+    // Verified against Laravel 13.26. This test now pins the behaviour the
+    // catalogue actually relies on, so a future framework change that DID
+    // require whole-token placeholders would fail here rather than in front of
+    // an agent.
+    foreach (['en', 'de'] as $locale) {
+        App::setLocale($locale);
+
+        $rendered = __('cobrowse.units.viewport', ['width' => '1,280']);
+
+        expect($rendered)->toContain('1,280')
+            ->and($rendered)->not->toContain(':width');
+    }
+
+    App::setLocale('en');
+});

@@ -18,6 +18,7 @@ final class PolicyScore
         public readonly int $drafted,
         public readonly array $violations = [],
         public readonly ?int $agreed = null,
+        public readonly int $comparable = 0,
     ) {}
 
     public function violationCount(): int
@@ -34,10 +35,12 @@ final class PolicyScore
      */
     public function agreementPercent(): ?float
     {
-        if ($this->agreed === null || $this->drafted === 0) {
+        if ($this->agreed === null || $this->comparable === 0) {
             return null;
         }
 
-        return 100 * $this->agreed / $this->drafted;
+        // Over what was COMPARABLE, not over everything drafted. A draft with
+        // no reviewed counterpart is not a failed match, it is an absent one.
+        return 100 * $this->agreed / $this->comparable;
     }
 }
