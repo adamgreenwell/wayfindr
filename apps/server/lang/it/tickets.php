@@ -257,7 +257,7 @@ return [
         ],
         'default' => [
             'title' => 'Le opzioni del ciclo di vita sono tranquille',
-            'detail' => 'Aggiunga il prossimo aggiornamento, una nota interna, lo stato in sospeso o chiudi una volta che l’esito è chiaro.',
+            'detail' => 'Aggiunga il prossimo aggiornamento, una nota interna, lo stato in sospeso o chiuda una volta che l’esito è chiaro.',
             'cta' => 'Azioni sullo stato della revisione',
         ],
     ],
@@ -339,15 +339,15 @@ return [
         ],
         'normal' => [
             'description' => 'Richiesta di supporto standard senza scadenza immediata.',
-            'agent_action' => 'rispondi in ordine normale di coda.',
+            'agent_action' => 'rispondere in ordine normale di coda.',
         ],
         'high' => [
             'description' => 'Problema urgente che influisce su un flusso di lavoro importante del cliente.',
-            'agent_action' => 'continua ad andare avanti oggi.',
+            'agent_action' => 'portarlo avanti oggi.',
         ],
         'urgent' => [
             'description' => 'Criticità aziendale, interruzione attiva o blocco del lavoro produttivo.',
-            'agent_action' => 'assegni immediatamente e tenga aggiornato il visitatore.',
+            'agent_action' => 'assegnare immediatamente e tenere aggiornato il visitatore.',
         ],
     ],
     'flash' => [
@@ -365,12 +365,12 @@ return [
         'updated' => 'Ticket aggiornato.',
     ],
     'errors' => [
-        'note_required' => 'Per favore, inserisci una nota interna.',
+        'note_required' => 'Per favore, inserisca una nota interna.',
         'label_needs_content' => 'Usi almeno una lettera o un numero per l\'etichetta.',
         'label_reserved' => 'Quel nome etichetta è riservato al filtraggio dei ticket.',
         'reply_helper' => 'Scelga un assistente di risposta disponibile.',
-        'reply_required' => 'Per favore, inserisci una risposta.',
-        'assignee_not_on_site' => 'Scegli un agente assegnato a questo sito.',
+        'reply_required' => 'Per favore, inserisca una risposta.',
+        'assignee_not_on_site' => 'Scelga un agente assegnato a questo sito.',
         'escalate_other_agent' => 'Scelga un altro agente a cui inoltrare questo ticket.',
     ],
 ];

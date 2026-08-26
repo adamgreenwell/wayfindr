@@ -240,7 +240,7 @@ return [
     'pressure' => [
         'dropped' => '{1} 1 lotto scartato|[2,*] :count lotti scartati',
         'skipped' => '{1} 1 mutazione saltata|[2,*] :count mutazioni saltate',
-        'separator' => ',',
+        'separator' => ', ',
         'none' => 'Nessuna perdita segnalata',
         'none_recent' => 'Nessuna recente interruzione segnalata',
     ],

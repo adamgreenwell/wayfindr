@@ -71,7 +71,7 @@ return [
         'needs_attention' => '{1} 1 necessita di attenzione|[2,*] :count necessitano attenzione',
         'cobrowse_attention' => '{1} 1 sessione di cobrowse richiede attenzione|[2,*] :count sessioni di cobrowse richiedono attenzione',
         'closed' => '{1} 1 chiuso|[2,*] :count chiuso',
-        'open_matching' => '{1} 1 corrispondenza aperta|[2,*] :count corrispondenza aperta',
+        'open_matching' => '{1} 1 corrispondenza aperta|[2,*] :count corrispondenze aperte',
         'matches' => '{1} 1 conversazione corrispondente|[2,*] :count conversazioni corrispondenti',
         'matching_conversations' => '{1} 1 conversazione corrispondente|[2,*] :count conversazioni corrispondenti',
     ],
