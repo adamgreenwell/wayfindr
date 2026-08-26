@@ -338,6 +338,26 @@ class TranslateCatalogueCommand extends Command
             return;
         }
 
+        // A NEW catalogue is written whole or not at all.
+        //
+        // When a key fails -- a lost protection token, a duplicated one --
+        // `plan()` keeps its successful siblings, and writing them alone
+        // creates a catalogue that is missing exactly the keys nobody checked.
+        // Laravel then serves those keys as raw strings to an agent. Worse, the
+        // file now EXISTS, so a retry takes the branch below and writes a
+        // sidecar fragment instead of the catalogue -- leaving it permanently
+        // incomplete, one run after the failure that caused it.
+        //
+        // A fragment beside an existing catalogue is a different case and is
+        // still written: it is merged by hand, by someone who has just been
+        // shown the failures, and Laravel never reads it.
+        if ($plan->hasFailures() && ! is_file($targetPath)) {
+            $this->error('  not writing '.basename($targetPath).': '.count($plan->failures).' key(s) failed, and a partial catalogue would be served as if it were whole');
+            $this->writeFailed = true;
+
+            return;
+        }
+
         // The rule the class exists for: an existing catalogue is never
         // regenerated. Its in-array comments would go with it, and the loss
         // would look exactly like a successful run.
@@ -380,10 +400,33 @@ class TranslateCatalogueCommand extends Command
      * that fails, because the operator goes looking for a file that is not
      * there and concludes the run was the problem.
      */
-    private function put(string $path, string $contents): bool
+    protected function put(string $path, string $contents): bool
     {
-        if (file_put_contents($path, $contents) === false) {
-            $this->error("  could not write {$path}");
+        $expected = strlen($contents);
+
+        // Suppressed deliberately. A short write also raises a PHP warning,
+        // which an error handler turns into an exception and which says less
+        // than the check below -- this reports the path and both byte counts,
+        // and returns a failure the caller already knows how to propagate.
+        // Suppressing it makes this method the single place the failure is
+        // reported, and the only place it has to be tested.
+        $written = @file_put_contents($path, $contents);
+
+        // Both conditions, and the honest note is which one fires.
+        //
+        // The review finding said a disk filling mid-write returns a positive
+        // count shorter than the contents. On PHP 8.5 it does not: a stream
+        // that stalls part-way and one that never completes both make
+        // `file_put_contents()` return `false`, verified with a stream wrapper.
+        // So `=== false` is the branch that actually catches a truncated write
+        // here, and the length comparison is defence for a platform or version
+        // where the documented short-count return does occur. It costs one
+        // comparison and rules out a class of silent truncation, so it stays --
+        // but nobody should read it as the guard doing the work today.
+        if ($written === false || $written !== $expected) {
+            $this->error($written === false
+                ? "  could not write {$path}"
+                : "  short write to {$path}: {$written} of {$expected} bytes");
             $this->writeFailed = true;
 
             return false;

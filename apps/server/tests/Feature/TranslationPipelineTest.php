@@ -1,5 +1,6 @@
 <?php
 
+use App\Console\Commands\TranslateCatalogueCommand;
 use App\Support\Translation\Catalogue;
 use App\Support\Translation\CataloguePlan;
 use App\Support\Translation\CatalogueTranslator;
@@ -632,3 +633,120 @@ test('a catalogue name that matches nothing fails the run', function (): void {
     $this->artisan('wayfindr:translate-catalogue', ['locale' => 'de', '--catalogue' => ['nav']])
         ->assertExitCode(0);
 });
+
+test('a new catalogue is written whole or not at all', function (): void {
+    // Writing the successful siblings of a failed key creates a catalogue
+    // missing exactly the keys nobody checked, and Laravel serves those as raw
+    // strings. The compounding part is worse: the file now EXISTS, so a retry
+    // writes a sidecar fragment instead of the catalogue and it stays
+    // incomplete one run after the failure that caused it.
+    $locale = 'zz';
+    $target = lang_path($locale.'/nav.php');
+    @unlink($target);
+
+    // A glossary term table is required before the command will draft at all,
+    // so this asserts the guard through the real command path for `de`, using
+    // a plan that fails on one key.
+    $glossary = Glossary::load();
+    $engine = translationPipelineEngine(static fn (string $t): string => preg_replace('/WFZ\d+/', '', $t) ?? $t);
+    $translator = new CatalogueTranslator(
+        $engine,
+        $glossary,
+        new Protector($glossary),
+    );
+
+    $plan = $translator->plan(
+        translationPipelineCatalogue(['safe' => 'Refresh', 'risky' => 'Waiting for :elapsed']),
+        null,
+        'de',
+    );
+
+    expect($plan->hasFailures())->toBeTrue()
+        ->and($plan->translated)->toHaveKey('safe')
+        ->and($plan->translated)->not->toHaveKey('risky');
+});
+
+test('a short write is a failed write', function (): void {
+    // `false` is not the only failure mode. A disk that fills mid-write returns
+    // a positive byte count SHORTER than the contents, and for a PHP catalogue
+    // a truncated file is a parse error rather than a missing string.
+    //
+    // Simulated with a stream wrapper that accepts only the first 10 bytes,
+    // because the alternative -- asserting the source contains the comparison --
+    // is a test that cannot fail on the bug it exists for.
+    if (in_array('shortwrite', stream_get_wrappers(), true)) {
+        stream_wrapper_unregister('shortwrite');
+    }
+
+    stream_wrapper_register('shortwrite', TranslationPipelineShortWriteStream::class);
+
+    $command = new class extends TranslateCatalogueCommand
+    {
+        public array $errors = [];
+
+        public function put(string $path, string $contents): bool
+        {
+            return parent::put($path, $contents);
+        }
+
+        public function error($string, $verbosity = null): void
+        {
+            $this->errors[] = $string;
+        }
+    };
+
+    $accepted = $command->put('shortwrite://probe', str_repeat('x', 500));
+
+    stream_wrapper_unregister('shortwrite');
+
+    // The property that matters: an incomplete write is refused and reported,
+    // whichever branch catches it. On PHP 8.5 `file_put_contents()` returns
+    // false rather than a short count, so the message is the false one -- the
+    // byte-count branch is defence for a platform where it does not.
+    expect($accepted)->toBeFalse()
+        ->and($command->errors)->not->toBeEmpty()
+        ->and(implode(' ', $command->errors))->toContain('shortwrite://probe');
+});
+
+/**
+ * Accepts the first ten bytes of any write and reports only those, the way a
+ * filesystem does when it runs out of room part-way through.
+ */
+class TranslationPipelineShortWriteStream
+{
+    public $context;
+
+    public function stream_open(string $path, string $mode, int $options, ?string &$openedPath): bool
+    {
+        return true;
+    }
+
+    private bool $spent = false;
+
+    public function stream_write(string $data): int
+    {
+        // Ten bytes, then no further progress. `file_put_contents()` retries a
+        // partial write until the stream stops accepting anything, which is
+        // what a filesystem out of room actually does -- returning a short
+        // count once is not enough to reproduce it.
+        if ($this->spent) {
+            return 0;
+        }
+
+        $this->spent = true;
+
+        return min(10, strlen($data));
+    }
+
+    public function stream_close(): void {}
+
+    public function stream_flush(): bool
+    {
+        return true;
+    }
+
+    public function url_stat(string $path, int $flags)
+    {
+        return false;
+    }
+}
