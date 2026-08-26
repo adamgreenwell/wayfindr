@@ -8,59 +8,43 @@ use Illuminate\Support\Facades\DB;
  * Rewrite page addresses already stored whole.
  *
  * The forward fix stops new query strings being kept. It does nothing about the
- * ones already in the table -- and those are the reason this matters: a
- * reset token stored last month is on an agent's screen the next time somebody
- * opens that visitor's profile.
+ * ones already in the table -- and those are the reason this matters: a reset
+ * token stored last month is on an agent's screen the next time somebody opens
+ * that visitor's profile.
+ *
+ * THE SAME URL LANDS IN THREE PLACES, and the first draft of this migration
+ * only knew about one:
+ *
+ *   visitors.metadata.last_page_url                       where they are now
+ *   conversations.metadata.started_page_url               where they asked from
+ *   tickets.metadata.visitor_context.{last,started}_page_url
+ *                                                         a snapshot, taken at
+ *                                                         ticket creation and
+ *                                                         durable afterwards
+ *
+ * The ticket copy is the one that would have survived everything else. It is a
+ * point-in-time snapshot rather than a reference, so sanitising the sources it
+ * was copied FROM does not reach it, and tickets outlive the conversations that
+ * produced them.
  *
  * Runs itself rather than waiting for an operator to be told. An upgrade that
  * leaves credentials in a column until somebody reads a release note has not
  * fixed anything.
  *
- * `DB::table` and manual JSON rather than the Eloquent model: this runs against
+ * `DB::table` and manual JSON rather than the Eloquent models: this runs against
  * whatever the schema is on the day it executes, and it must not inherit casts,
  * global scopes or accessors that may have moved on by then. No JSON-path SQL
- * either -- `metadata` is a `json` column and the expression for reaching into
- * it differs between SQLite and PostgreSQL, which is the driver split this
- * repo has been bitten by before.
+ * either -- these are `json` columns and the expression for reaching into them
+ * differs between SQLite and PostgreSQL, which is the driver split this repo has
+ * been bitten by before.
  */
 return new class extends Migration
 {
     public function up(): void
     {
-        DB::table('visitors')
-            ->select('id', 'metadata')
-            ->orderBy('id')
-            ->chunkById(500, function ($visitors): void {
-                foreach ($visitors as $visitor) {
-                    $metadata = $this->decode($visitor->metadata);
-
-                    if ($metadata === null) {
-                        continue;
-                    }
-
-                    $stored = $metadata['last_page_url'] ?? null;
-
-                    if (! is_string($stored) || $stored === '') {
-                        continue;
-                    }
-
-                    $sanitised = VisitorPageUrl::sanitise($stored);
-
-                    if ($sanitised === $stored) {
-                        continue;
-                    }
-
-                    $metadata['last_page_url'] = $sanitised;
-
-                    // Timestamps untouched. This is us correcting our own
-                    // storage, not the visitor doing anything, and bumping
-                    // `updated_at` would move rows in every list that orders by
-                    // it.
-                    DB::table('visitors')
-                        ->where('id', $visitor->id)
-                        ->update(['metadata' => json_encode($metadata)]);
-                }
-            });
+        $this->rewrite('visitors', ['last_page_url']);
+        $this->rewrite('conversations', ['started_page_url']);
+        $this->rewrite('tickets', ['visitor_context.last_page_url', 'visitor_context.started_page_url']);
     }
 
     /**
@@ -71,6 +55,82 @@ return new class extends Migration
      * no reason.
      */
     public function down(): void {}
+
+    /**
+     * @param  array<int, string>  $paths  dot paths within the metadata column
+     */
+    private function rewrite(string $table, array $paths): void
+    {
+        DB::table($table)
+            ->select('id', 'metadata')
+            ->orderBy('id')
+            ->chunkById(500, function ($rows) use ($table, $paths): void {
+                foreach ($rows as $row) {
+                    $metadata = $this->decode($row->metadata);
+
+                    if ($metadata === null) {
+                        continue;
+                    }
+
+                    $changed = false;
+
+                    foreach ($paths as $path) {
+                        if ($this->rewritePath($metadata, explode('.', $path))) {
+                            $changed = true;
+                        }
+                    }
+
+                    if (! $changed) {
+                        continue;
+                    }
+
+                    // Timestamps untouched. This is us correcting our own
+                    // storage, not anybody doing anything, and bumping
+                    // `updated_at` would move rows in every list that orders by
+                    // it -- including the ticket queue.
+                    DB::table($table)
+                        ->where('id', $row->id)
+                        ->update(['metadata' => json_encode($metadata)]);
+                }
+            });
+    }
+
+    /**
+     * @param  array<string, mixed>  $metadata
+     * @param  array<int, string>  $path
+     */
+    private function rewritePath(array &$metadata, array $path): bool
+    {
+        $key = array_shift($path);
+
+        if (! array_key_exists($key, $metadata)) {
+            return false;
+        }
+
+        if ($path !== []) {
+            if (! is_array($metadata[$key])) {
+                return false;
+            }
+
+            return $this->rewritePath($metadata[$key], $path);
+        }
+
+        $stored = $metadata[$key];
+
+        if (! is_string($stored) || $stored === '') {
+            return false;
+        }
+
+        $sanitised = VisitorPageUrl::sanitise($stored);
+
+        if ($sanitised === $stored) {
+            return false;
+        }
+
+        $metadata[$key] = $sanitised;
+
+        return true;
+    }
 
     /**
      * @return array<string, mixed>|null

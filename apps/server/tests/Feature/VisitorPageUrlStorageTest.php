@@ -1,7 +1,9 @@
 <?php
 
 use App\Models\Account;
+use App\Models\Conversation;
 use App\Models\Site;
+use App\Models\Ticket;
 use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -124,4 +126,84 @@ test('the rewrite leaves a row it has nothing to do with alone', function (): vo
     expect(json_decode((string) $after->metadata, true)['last_page_url'])
         ->toBe('https://shop.test/pricing')
         ->and($after->updated_at)->toBe($before->updated_at, 'an untouched row was still written');
+});
+
+test('the conversation entry page is sanitised too', function (): void {
+    // The SECOND writer, and the likelier one: people ask for help FROM the
+    // page that is going wrong. On a reset flow that is the page holding the
+    // token, and this copy is what the agent panels label the entry page.
+    $site = visitorPageUrlSite();
+
+    $token = $this->postJson('/api/widget/bootstrap', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-entry',
+    ])->assertSuccessful()->json('data.visitor.token');
+
+    $this->postJson('/api/conversations', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-entry',
+        'visitor_token' => $token,
+        'body' => 'This link is broken',
+        'page_url' => 'https://shop.test/invite/accept?invite=SECRETCODE',
+    ])->assertSuccessful();
+
+    $conversation = Conversation::query()->latest('id')->firstOrFail();
+
+    expect($conversation->metadata['started_page_url'])->toBe('https://shop.test/invite/accept');
+
+    $this->assertStringNotContainsString('SECRETCODE', json_encode($conversation->metadata) ?: '');
+});
+
+test('historical conversation and ticket copies are rewritten as well', function (): void {
+    // The ticket copy is the one that survives everything else: it is a
+    // point-in-time SNAPSHOT rather than a reference, so sanitising the sources
+    // it was copied from never reaches it -- and tickets outlive the
+    // conversations that produced them.
+    $site = visitorPageUrlSite();
+    $account = $site->account;
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-durable']);
+
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create();
+
+    DB::table('conversations')->where('id', $conversation->id)->update([
+        'metadata' => json_encode([
+            'started_page_url' => 'https://shop.test/reset?reset_token=conv-token',
+            'something_else' => 'kept',
+        ]),
+    ]);
+
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($conversation)
+        ->for($visitor, 'requester')
+        ->create();
+
+    DB::table('tickets')->where('id', $ticket->id)->update([
+        'metadata' => json_encode([
+            'visitor_context' => [
+                'started_page_url' => 'https://shop.test/reset?reset_token=ticket-token',
+                'last_page_url' => 'https://shop.test/help?email=a@b.test',
+                'host_context' => ['plan' => 'pro'],
+            ],
+        ]),
+    ]);
+
+    (require base_path('database/migrations/2026_08_26_000000_sanitise_stored_visitor_page_urls.php'))->up();
+
+    $conversationMetadata = json_decode((string) DB::table('conversations')->where('id', $conversation->id)->value('metadata'), true);
+    $ticketMetadata = json_decode((string) DB::table('tickets')->where('id', $ticket->id)->value('metadata'), true);
+
+    expect($conversationMetadata['started_page_url'])->toBe('https://shop.test/reset')
+        ->and($conversationMetadata['something_else'])->toBe('kept');
+
+    expect($ticketMetadata['visitor_context']['started_page_url'])->toBe('https://shop.test/reset')
+        ->and($ticketMetadata['visitor_context']['last_page_url'])->toBe('https://shop.test/help')
+        ->and($ticketMetadata['visitor_context']['host_context'])->toBe(['plan' => 'pro']);
+
+    $all = json_encode([$conversationMetadata, $ticketMetadata]) ?: '';
+
+    $this->assertStringNotContainsString('conv-token', $all);
+    $this->assertStringNotContainsString('ticket-token', $all);
+    $this->assertStringNotContainsString('a@b.test', $all);
 });
