@@ -266,3 +266,52 @@ test('the command is the same sweep, reachable by hand', function (): void {
     expect(json_decode((string) DB::table('visitors')->where('id', $visitor->id)->value('metadata'), true)['last_page_url'])
         ->toBe('https://shop.test/p');
 });
+
+test('a concurrent write during the sweep is not discarded', function (): void {
+    // Both passes run while requests are being served. The chunk SELECT decides
+    // which rows are worth touching; if the same snapshot were also what got
+    // written, a widget updating that row in between would have its change
+    // replaced by the stale document -- losing a page change, or a whole
+    // context blob.
+    //
+    // Interposed for real: a listener fires on the chunk SELECT and writes the
+    // row before the sweep reaches it, which is exactly the window. The sweep
+    // re-reads under a lock, so what lands is the sanitised form of the value
+    // that is actually there.
+    $site = visitorPageUrlSite();
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-concurrent']);
+
+    DB::table('visitors')->where('id', $visitor->id)->update([
+        'metadata' => json_encode(['last_page_url' => 'https://shop.test/old?token=stale']),
+    ]);
+
+    $interposed = false;
+
+    DB::listen(function ($query) use ($visitor, &$interposed): void {
+        // The chunk read, not the locking re-read: once, and only for visitors.
+        if ($interposed
+            || ! str_contains($query->sql, 'from "visitors"')
+            || ! str_contains($query->sql, 'order by "id" asc')) {
+            return;
+        }
+
+        $interposed = true;
+
+        DB::table('visitors')->where('id', $visitor->id)->update([
+            'metadata' => json_encode([
+                'last_page_url' => 'https://shop.test/new?token=fresh',
+                'context' => ['plan' => 'written-during-sweep'],
+            ]),
+        ]);
+    });
+
+    StoredPageUrlSweep::run();
+
+    expect($interposed)->toBeTrue('nothing was written during the sweep, so this proves nothing');
+
+    $metadata = json_decode((string) DB::table('visitors')->where('id', $visitor->id)->value('metadata'), true);
+
+    // Sanitised from what was ACTUALLY there, and the concurrent context kept.
+    expect($metadata['last_page_url'])->toBe('https://shop.test/new')
+        ->and($metadata['context'])->toBe(['plan' => 'written-during-sweep']);
+});

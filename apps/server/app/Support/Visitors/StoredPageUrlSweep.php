@@ -87,19 +87,70 @@ final class StoredPageUrlSweep
                         continue;
                     }
 
-                    // Timestamps untouched. This is us correcting our own
-                    // storage, not anybody doing anything, and bumping
-                    // `updated_at` would move rows in every list that orders by
-                    // it -- including the ticket queue.
-                    DB::table($table)
-                        ->where('id', $row->id)
-                        ->update(['metadata' => json_encode($metadata)]);
-
-                    $count++;
+                    if (self::rewriteRow($table, (int) $row->id, $paths)) {
+                        $count++;
+                    }
                 }
             });
 
         return $count;
+    }
+
+    /**
+     * Re-read under a lock, and write what is there NOW.
+     *
+     * The chunk above decides which rows are worth touching. It cannot be the
+     * thing that writes them: both passes run while requests are being served,
+     * so between selecting a chunk and updating a row a widget can have written
+     * that row's metadata -- a new page, a new context blob -- and replacing the
+     * whole document from the earlier snapshot would silently discard it.
+     *
+     * A row-level lock and a fresh decode inside a transaction removes the
+     * window rather than narrowing it. Not a compare-and-swap on the column:
+     * PostgreSQL's `json` type has no equality operator, so `where('metadata',
+     * $raw)` is not portable, and the cast that would make it work is not either.
+     *
+     * @param  array<int, string>  $paths
+     */
+    private static function rewriteRow(string $table, int $id, array $paths): bool
+    {
+        return (bool) DB::transaction(function () use ($table, $id, $paths): bool {
+            $fresh = DB::table($table)->where('id', $id)->lockForUpdate()->first();
+
+            if ($fresh === null) {
+                // Deleted while we were working, which is a fine outcome.
+                return false;
+            }
+
+            $metadata = self::decode($fresh->metadata);
+
+            if ($metadata === null) {
+                return false;
+            }
+
+            $changed = false;
+
+            foreach ($paths as $path) {
+                if (self::rewritePath($metadata, explode('.', $path))) {
+                    $changed = true;
+                }
+            }
+
+            if (! $changed) {
+                // The value moved on and is already clean -- a sanitising
+                // writer got there first. Nothing to do, and nothing lost.
+                return false;
+            }
+
+            // Timestamps untouched. This is us correcting our own storage, not
+            // anybody doing anything, and bumping `updated_at` would move rows
+            // in every list that orders by it -- including the ticket queue.
+            DB::table($table)
+                ->where('id', $id)
+                ->update(['metadata' => json_encode($metadata)]);
+
+            return true;
+        });
     }
 
     /**
