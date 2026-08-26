@@ -141,7 +141,7 @@ return [
         ],
         'refreshed' => [
             'label' => 'Snapshot mascherato aggiornato',
-            'detail' => 'La snapshot della pagina pulita è disponibile nell\'anteprima dell\'agente.',
+            'detail' => 'Lo snapshot pulito della pagina è disponibile nell\'anteprima dell\'agente.',
             'badge' => 'Anteprima aggiornata',
         ],
         'exhausted' => [

@@ -1387,3 +1387,126 @@ test('a bare label uses the term its own key names', function (): void {
 
     expect($unbound)->toBe([]);
 });
+
+test('a control label does not address the agent', function (): void {
+    // The mirror of the register check in the glossary. That one finds the
+    // INFORMAL imperative where prose needs the formal; this finds the formal
+    // where a CONTROL needs the bare imperative, which is the same rule read
+    // from the other end -- `Invii email solo quando...` sat in a select
+    // beside `Invia` and `Preferisci` and addressed the agent where its
+    // neighbours named an action.
+    //
+    // The formal forms are derived rather than listed, so the two checks
+    // cannot drift apart: an `-are` verb takes `-i` (softening `c`/`g` to
+    // `ch`/`gh` -- `cerca` -> `cerchi`, not `cerci`), everything else takes
+    // `-a`. Add a verb to the glossary list and its formal form appears here
+    // for free.
+    $informal = [
+        'aggiorna', 'allega', 'annulla', 'apri', 'applica', 'assegna', 'attendi', 'cambia',
+        'cancella', 'carica', 'cerca', 'chiudi', 'collega', 'conferma', 'consulta', 'continua',
+        'controlla', 'copia', 'crea', 'disconnetti', 'elimina', 'gestisci', 'imposta', 'includi',
+        'inserisci', 'invia', 'libera', 'mantieni', 'metti', 'modifica', 'mostra', 'prova',
+        'riapri', 'richiedi', 'rilascia', 'rimuovi', 'riprova', 'rispondi', 'rivedi', 'rivendica',
+        'salva', 'scegli', 'scorri', 'scrivi', 'segna', 'seleziona', 'termina', 'torna', 'trova',
+        'usa', 'verifica',
+    ];
+
+    $formal = [];
+
+    foreach ($informal as $verb) {
+        if (str_ends_with($verb, 'ca')) {
+            $formal[substr($verb, 0, -2).'chi'] = $verb;
+        } elseif (str_ends_with($verb, 'ga')) {
+            $formal[substr($verb, 0, -2).'ghi'] = $verb;
+        } elseif (str_ends_with($verb, 'a')) {
+            $formal[substr($verb, 0, -1).'i'] = $verb;
+        } else {
+            $formal[substr($verb, 0, -1).'a'] = $verb;
+        }
+    }
+
+    // Sentence punctuation marks prose, but not all prose has it: a lede is a
+    // full sentence with no full stop, and `Usi questo dopo aver ricevuto una
+    // password temporanea` is correctly formal. The catalogue names its prose
+    // consistently, so the key's own last segment settles it.
+    $prose = [
+        'lede', 'help', 'hint', 'detail', 'detail_unknown', 'message', 'guidance', 'body',
+        'description', 'note', 'subtitle', 'intro', 'summary', 'placeholder', 'privacy',
+        'shortcut', 'scope', 'boundary', 'context',
+    ];
+
+    $addressed = [];
+
+    foreach (glob(lang_path('it/*.php')) ?: [] as $path) {
+        foreach (Catalogue::read($path)->values() as $key => $value) {
+            if (preg_match('/[.!?|]/u', $value) === 1) {
+                continue;
+            }
+
+            $segments = explode('.', $key);
+
+            if (in_array(end($segments), $prose, true)) {
+                continue;
+            }
+
+            $first = mb_strtolower(preg_split('/\s+/u', trim($value))[0] ?? '');
+
+            if (isset($formal[$first])) {
+                $where = basename($path, '.php').'.'.$key;
+                $addressed[] = "{$where}: {$value} (control wants {$formal[$first]})";
+            }
+        }
+    }
+
+    expect($addressed)->toBe([]);
+});
+
+test('a borrowed noun keeps one gender', function (): void {
+    // English nouns have no gender, so nothing in the source tells a
+    // translation which one an Italian sentence should agree with -- and the
+    // draft picked per sentence. `snapshot` was masculine in forty places and
+    // feminine in two (`un'altra snapshot pulita`, `La snapshot ... pulita`),
+    // which reads as carelessness rather than as a choice.
+    //
+    // Which gender a loanword takes IS a decision, but it is a linguistic one
+    // and already made: Italian assigns masculine to these by default, and the
+    // catalogue overwhelmingly agrees. So the check is for CONSISTENCY with
+    // that, not a new vocabulary rule -- it looks for feminine determiners and
+    // adjectives sitting next to a masculine loanword.
+    $masculine = [
+        'snapshot', 'widget', 'ticket', 'report', 'replay', 'tracker',
+        'browser', 'file', 'link', 'thread', 'payload', 'batch',
+    ];
+
+    $feminine = [
+        'la', 'le', 'una', "un'", 'questa', 'queste', 'quella', 'quelle',
+        'della', 'delle', 'alla', 'alle', 'nella', 'nelle', 'sulla', 'sulle',
+        'dalla', 'dalle', 'altra', 'altre', 'stessa', 'stesse', 'nuova', 'nuove',
+    ];
+
+    $feminineAdjective = [
+        'pulita', 'pulite', 'nuova', 'nuove', 'aggiornata', 'aggiornate',
+        'vecchia', 'attiva', 'chiusa', 'mascherata', 'scartata', 'scartate',
+    ];
+
+    $nouns = implode('|', $masculine);
+    $pattern = '/\b('.implode('|', $feminine).')\s+('.$nouns.')\b'
+        .'|\b('.$nouns.')\s+('.implode('|', $feminineAdjective).')\b/ui';
+
+    $disagreements = [];
+
+    foreach (glob(lang_path('it/*.php')) ?: [] as $path) {
+        foreach (Catalogue::read($path)->values() as $key => $value) {
+            if (preg_match_all($pattern, $value, $matches, PREG_SET_ORDER) === 0) {
+                continue;
+            }
+
+            foreach ($matches as $match) {
+                $where = basename($path, '.php').'.'.$key;
+                $disagreements[] = "{$where}: {$match[0]}";
+            }
+        }
+    }
+
+    expect($disagreements)->toBe([]);
+});

@@ -97,6 +97,12 @@ return [
             'Bug',
             'Payload',
             'Viewport',
+
+            // The DOM/keyboard sense, which Italian borrows. `Messa a
+            // fuoco` is the OPTICAL sense and would be wrong here -- this
+            // label sits in the telemetry grid beside `Viewport` and
+            // reports which element the visitor's page had focused.
+            'Focus',
             'Prerendering',
             'Max RTT',
             ':count ms',
