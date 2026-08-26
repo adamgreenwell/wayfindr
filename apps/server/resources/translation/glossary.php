@@ -376,6 +376,31 @@ return [
             // positives across the whole catalogue.
             'informal address' => '/\\b(tu|ti|te|tuo|tuoi|tua|tue|stai|sei|hai|puoi|devi|vuoi|sai)\\b|\\b\\w{3,}rai\\b/ui',
 
+            // The two checks above look at PRONOUNS and VERB ENDINGS. Neither
+            // sees the register mistake Italian actually makes, because the
+            // informal imperative of an `-are` verb is spelled exactly like the
+            // ordinary third-person indicative: `continua` is informal in
+            // `o continua tramite chat` and formal in `la modalita' continua a
+            // sopprimere`. The word alone cannot decide.
+            //
+            // What decides is POSITION. A shipped mistake was always a verb
+            // coordinated onto a formal instruction (`Richieda ... o continua`,
+            // `Crei o allega`, `Provi ... oppure cancella`) or one opening a
+            // prose sentence (`Inserisci una risposta`). And the check applies
+            // only to PROSE: `Cancella filtri` and `Apri ticket` are button
+            // labels, where the bare imperative is exactly right, so the
+            // lookahead requires sentence punctuation before anything fires.
+            // Measured across all 904 Italian values: five hits, all real.
+            'informal imperative in prose' => '/(?=.*[.!?])(?:\\b(?:o|oppure|e|ed)\\s+|(?:^|[.!?]\\s+))(continua|allega|collega|cancella|riprova|crea|richiedi|attendi|usa|scrivi|apri|chiudi|prova|aggiorna|controlla|seleziona|scegli|inserisci|includi|carica|elimina|rimuovi|imposta|verifica)\\b/uis',
+
+            // The NEGATIVE informal imperative is the one shape Italian spells
+            // unambiguously: `non` followed by a bare infinitive. Formal is
+            // `non` plus the subjunctive, so `Non raccogliere` and `Non
+            // includere` are informal no matter what surrounds them. The
+            // `{4,}` keeps short adverbs that merely end in `-re` (`sempre`,
+            // `oltre`) from matching. Zero false positives measured.
+            'negative informal imperative' => '/\\bnon\\s+\\w{4,}re\\b/ui',
+
             // Straight DOUBLE quotes only. Italian typography declares
             // caporali, and unlike German this cannot also flag the apostrophe
             // in `dell'agente`, which is correct and everywhere.

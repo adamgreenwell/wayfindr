@@ -32,7 +32,7 @@ return [
         'type' => 'Questo tipo di file non è consentito.',
         'conversation_full' => 'Questa conversazione ha raggiunto il limite di spazio per gli allegati.',
         'infected' => 'Questo file è stato rifiutato da una scansione di sicurezza.',
-        'unscannable' => 'Questo file non può essere analizzato per la presenza di malware e non è stato accettato. Riprova tra poco.',
+        'unscannable' => 'Questo file non può essere analizzato per la presenza di malware e non è stato accettato. Riprovi tra poco.',
         'unavailable' => 'Uno o più allegati non sono disponibili.',
     ],
 ];

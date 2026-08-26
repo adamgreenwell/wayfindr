@@ -26,7 +26,7 @@ return [
     'search' => [
         'label' => 'Cerca',
         'placeholder' => 'Ticket #123, codice di supporto, oggetto, richiedente',
-        'hint' => 'Cerchi per numero di ticket, oggetto, descrizione, codice di supporto, richiedente, email o visitatore anonimo ID.',
+        'hint' => 'Cerchi per numero di ticket, oggetto, descrizione, codice di supporto, richiedente, email o ID visitatore anonimo.',
         'submit' => 'Applica filtri',
     ],
     'columns' => [
@@ -129,12 +129,12 @@ return [
     'summary' => [
         'lane_narrowed_heading' => ':shown visualizzati su :matching',
         'heading' => [
-            'open' => '{1} :count aperto|[2,*] :count aperto',
+            'open' => '{1} :count aperto|[2,*] :count aperti',
             'pending' => '{1} :count in sospeso|[2,*] :count in sospeso',
-            'closed' => '{1} :count chiuso|[2,*] :count chiuso',
-            'total' => '{1} :count totale|[2,*] :count totale',
+            'closed' => '{1} :count chiuso|[2,*] :count chiusi',
+            'total' => '{1} :count totale|[2,*] :count totali',
         ],
-        'filtered_detail' => '{1} Visualizzazione di :shown che corrispondono ai filtri attuali della coda.|[2,*] Visualizzazione di :shown che corrispondono ai filtri attuali della coda.',
+        'filtered_detail' => '{1} Visualizzazione di :shown che corrisponde ai filtri attuali della coda.|[2,*] Visualizzazione di :shown che corrispondono ai filtri attuali della coda.',
         'lane_narrowed_detail' => '{1} Visualizzazione di :shown dopo il filtro next-step :lane. :matching gli altri filtri della coda.|[2,*] Visualizzazione di :shown dopo il filtro next-step :lane. :matching gli altri filtri della coda.',
     ],
     'empty' => [
@@ -145,17 +145,17 @@ return [
         'no_open' => 'Nessun ticket aperto al momento.',
         'first_run_detail' => 'I ticket vengono creati dalle conversazioni: apra un thread e lo trasformi in un ticket permanente dalla sua scheda Ticket.',
         'waiting_detail' => 'Quando i visitatori necessitano di un follow-up duraturo, i ticket verranno indirizzati qui.',
-        'search_detail' => 'La ricerca copre numero del ticket, oggetto, descrizione, codice di supporto, richiedente, email e visitatore anonimo IDs.',
+        'search_detail' => 'La ricerca copre numero del ticket, oggetto, descrizione, codice di supporto, richiedente, email e ID visitatore anonimo.',
         'search_heading' => 'Nessun ticket corrisponde a «:term».',
-        'next_step_detail' => 'Provi un\'altra coda dei prossimi passaggi o cancella il filtro dei prossimi passaggi.',
+        'next_step_detail' => 'Provi un\'altra coda dei prossimi passaggi o cancelli il filtro dei prossimi passaggi.',
         'next_step_heading' => 'Nessun ticket richiede :phrase al momento.',
-        'external_detail' => 'Provi un altro stato del problema esterno o cancella il filtro del problema esterno.',
+        'external_detail' => 'Provi un altro stato del problema esterno o cancelli il filtro del problema esterno.',
         'external_heading' => 'Nessun ticket corrisponde a quello stato esterno del problema.',
         'refine_detail' => 'Provi a cancellare un filtro, ad ampliare lo stato oppure a cercare tramite codice di supporto se ne ha uno.',
     ],
     'attention_phrase' => [
         'escalated' => 'revisione recente dell\'escalation',
-        'needs_reply' => 'una risposta del visitatore',
+        'needs_reply' => 'una risposta al visitatore',
         'needs_owner' => 'un responsabile',
         'needs_agent' => 'un aggiornamento dell\'agente',
         'waiting_on_customer' => 'follow-up con il cliente',
@@ -186,7 +186,7 @@ return [
     ],
     'external_attempt' => [
         'none_label' => 'Nessun tentativo esterno finora',
-        'none_body' => 'Crei o collega un problema esterno quando questo ticket richiede lavoro in un altro tracker.',
+        'none_body' => 'Crei o colleghi un problema esterno quando questo ticket richiede lavoro in un altro tracker.',
         'failed_label' => 'Sincronizzazione :provider non riuscita',
         'failed_body' => ':project necessita di attenzione. Dettagli del provider non divulgati.',
         'pending_label' => 'Sincronizzazione :provider in sospeso',

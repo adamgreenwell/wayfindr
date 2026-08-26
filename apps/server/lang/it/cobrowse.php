@@ -103,7 +103,7 @@ return [
         ],
         'expired' => [
             'label' => 'Snapshot recente scaduto',
-            'message' => 'Il widget visitatore non ha risposto in tempo. Richieda un altro snapshot pulito o continua tramite chat.',
+            'message' => 'Il widget visitatore non ha risposto in tempo. Richieda un altro snapshot pulito o continui tramite chat.',
         ],
         'delayed' => [
             'label' => 'Snapshot recente in ritardo',
@@ -156,7 +156,7 @@ return [
         ],
         'retry_available' => [
             'label' => 'Riprova disponibile',
-            'detail' => 'Il supporto può richiedere un\'altra snapshot pulita senza dover attendere la prima richiesta.',
+            'detail' => 'Il supporto può richiedere un altro snapshot pulito senza dover attendere la prima richiesta.',
             'badge' => 'Riprova',
         ],
         'expires' => [
@@ -166,8 +166,8 @@ return [
         ],
         'waiting' => [
             'label' => 'In attesa del widget visitatore',
-            'detail' => 'Riprova apre :elapsed.',
-            'detail_unknown' => 'Retry si apre quando si apre la finestra di ripetizione.',
+            'detail' => 'Un nuovo tentativo sarà disponibile :elapsed.',
+            'detail_unknown' => 'Un nuovo tentativo sarà disponibile all\'apertura della finestra di ripetizione.',
             'badge' => 'In sospeso',
         ],
         'ignored' => [

@@ -1192,10 +1192,20 @@ test('two languages agree about which sense a key is', function (): void {
                 continue;
             }
 
+            // Case-INSENSITIVELY, and that is not a detail. A glossary stores
+            // Italian terms the way Italian writes them mid-sentence
+            // (`titolare`), while a UI label capitalises (`Titolare`), so an
+            // exact comparison silently matched nothing for Italian. German
+            // capitalises its nouns in both places and matched, leaving one
+            // locale in the pair -- and one locale cannot disagree with
+            // itself. That is precisely how `profile.roles.owner` shipped as
+            // the assignee term with this test passing.
             foreach ($values[$locale] ?? [] as $key => $value) {
-                if ($value === $termA) {
+                $folded = mb_strtolower($value);
+
+                if ($folded === mb_strtolower($termA)) {
                     $senseOf[$key][$locale] = $a;
-                } elseif ($value === $termB) {
+                } elseif ($folded === mb_strtolower($termB)) {
                     $senseOf[$key][$locale] = $b;
                 }
             }
@@ -1215,4 +1225,85 @@ test('two languages agree about which sense a key is', function (): void {
     }
 
     expect($disagreements)->toBe([]);
+});
+
+test('an italian plural branch inflects something', function (): void {
+    // Italian adjectives and verbs agree with number; English ones do not. So
+    // a machine draft that maps `:count open` onto `:count aperto` produces a
+    // plural branch identical to its singular, and every existing guard passes
+    // -- the glossary term is right, the placeholder is intact, the selector is
+    // present. `2 aperto`, `2 chiuso`, `2 collegato` and `:shown ... necessita
+    // attenzione` all shipped that way.
+    //
+    // The tell is cheap: strip the selector and the count, and if the two
+    // branches are then the SAME STRING, the plural inflected nothing. That is
+    // usually a bug and occasionally correct, so the exceptions are listed
+    // with their reason rather than the check being softened.
+    //
+    // German is deliberately not checked here: its predicate adjectives do not
+    // inflect, so `2 geschlossen` is right and this rule would be noise.
+    $invariable = [
+        // `ticket` is an unadapted loanword; Italian does not pluralise it.
+        'tickets.counts.tickets',
+        // `in sospeso` is a prepositional phrase, invariable by construction.
+        'tickets.summary.heading.pending',
+        // Both branches are one noun phrase (`Visualizzazione di ...`); the
+        // number lives inside `:shown`, and nothing else agrees with it.
+        'conversations.summary.lane_narrowed_detail',
+        'tickets.summary.lane_narrowed_detail',
+    ];
+
+    $uninflected = [];
+
+    foreach (glob(lang_path('it/*.php')) ?: [] as $path) {
+        foreach (Catalogue::read($path)->values() as $key => $value) {
+            $qualified = basename($path, '.php').'.'.$key;
+
+            if (! str_contains($value, '|') || ! str_contains($value, '[2,*]')) {
+                continue;
+            }
+
+            [$one, $many] = explode('|', $value, 2);
+
+            $bare = static fn (string $segment): string => trim(preg_replace(
+                ['/^\{1\}|^\[2,\*\]/', '/:count|(?<![\p{L}\d])1(?![\p{L}\d])/u'],
+                ['', '#'],
+                $segment,
+            ) ?? '');
+
+            if ($bare($one) === $bare($many) && ! in_array($qualified, $invariable, true)) {
+                $uninflected[] = "{$qualified}: {$value}";
+            }
+        }
+    }
+
+    expect($uninflected)->toBe([]);
+});
+
+test('a shipped catalogue trips none of its own register checks', function (): void {
+    // The checks existed only to score DRAFTS. Nothing ran them against what
+    // actually shipped, so every check was one edit away from being decorative
+    // -- a reviewer could hand-fix a string into the informal register and no
+    // test would notice, which is how `Non includere` and `o continua` reached
+    // a pull request in a catalogue whose glossary forbids both.
+    //
+    // Running them over the shipped files closes that gap and costs nothing:
+    // both locales are clean today, so any future hit is a real regression.
+    $glossary = Glossary::load();
+    $violations = [];
+
+    foreach ($glossary->localesWithTerms() as $locale) {
+        foreach ($glossary->checks($locale) as $name => $pattern) {
+            foreach (glob(lang_path($locale.'/*.php')) ?: [] as $path) {
+                foreach (Catalogue::read($path)->values() as $key => $value) {
+                    if (preg_match($pattern, $value, $match) === 1) {
+                        $where = $locale.'/'.basename($path, '.php').'.'.$key;
+                        $violations[] = "{$where} [{$name}] {$match[0]}";
+                    }
+                }
+            }
+        }
+    }
+
+    expect($violations)->toBe([]);
 });

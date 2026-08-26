@@ -31,7 +31,7 @@ return [
         'member_since_unknown' => 'Sconosciuto',
     ],
     'roles' => [
-        'owner' => 'Responsabile',
+        'owner' => 'Titolare',
         'admin' => 'Admin',
         'agent' => 'Agente',
     ],
