@@ -20,7 +20,7 @@
  * /
  */
 return [
-    'document_title' => 'Biglietti',
+    'document_title' => 'Ticket',
     'title' => 'Coda dei ticket',
     'subtitle' => 'Lavoro di supporto strutturato per :account.',
     'search' => [
@@ -122,9 +122,9 @@ return [
         'show_all' => 'Mostra tutti i ticket',
     ],
     'counts' => [
-        'tickets' => '{1} 1 ticket|Biglietti [2,*] :count',
-        'matches' => '{1} 1 ticket corrispondente|[2,*] :count biglietti corrispondenti',
-        'matching_tickets' => '{1} 1 biglietto corrispondente|Biglietti corrispondenti [2,*] :count',
+        'tickets' => '{1} 1 ticket|[2,*] :count ticket',
+        'matches' => '{1} 1 ticket corrispondente|[2,*] :count ticket corrispondenti',
+        'matching_tickets' => '{1} 1 ticket corrispondente|[2,*] :count ticket corrispondenti',
     ],
     'summary' => [
         'lane_narrowed_heading' => ':shown visualizzati su :matching',

@@ -69,7 +69,7 @@ return [
     'counts' => [
         'conversations' => '{1} 1 conversazione|[2,*] :count conversazioni',
         'needs_attention' => '{1} 1 necessita di attenzione|[2,*] :count necessitano attenzione',
-        'cobrowse_attention' => '{1} 1 sessione di cobrowse richiede attenzione|Le sessioni cobrowse [2,*] :count richiedono attenzione',
+        'cobrowse_attention' => '{1} 1 sessione di cobrowse richiede attenzione|[2,*] :count sessioni di cobrowse richiedono attenzione',
         'closed' => '{1} 1 chiuso|[2,*] :count chiuso',
         'open_matching' => '{1} 1 corrispondenza aperta|[2,*] :count corrispondenza aperta',
         'matches' => '{1} 1 conversazione corrispondente|[2,*] :count conversazioni corrispondenti',
@@ -206,7 +206,7 @@ return [
             'assigned_to' => 'Assegnato a',
             'owner_label' => 'Responsabile: :name',
             'previous_count' => '{1} 1 precedente|[2,*] :count precedente',
-            'field_count' => '{1} 1 campo|campi [2,*] :count',
+            'field_count' => '{1} 1 campo|[2,*] :count campi',
             'seen_recently' => 'Visto negli ultimi 2 minuti',
             'seen_at' => 'Visto :elapsed',
             'unassigned' => 'Non assegnato',

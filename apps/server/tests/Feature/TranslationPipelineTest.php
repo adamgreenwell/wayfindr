@@ -1119,3 +1119,34 @@ test('nothing is left in English without saying so', function (): void {
         expect($undeclared)->toBe([], "{$locale} leaves values in English without declaring them cognates");
     }
 });
+
+test('every plural segment starts with its interval selector', function (): void {
+    // Laravel reads `{1}` and `[2,*]` only at the START of a segment. Anywhere
+    // else they are ordinary text, so the selector renders to the agent -- an
+    // Italian queue showed `Le sessioni cobrowse [2,*] 2 richiedono attenzione`
+    // because the engine put the words in front of the interval.
+    //
+    // The existing plural guard counted `|` separators and never looked at what
+    // followed them, so seven strings passed it while being broken.
+    $offenders = [];
+
+    foreach (glob(lang_path('*/*.php')) ?: [] as $path) {
+        $locale = basename(dirname($path));
+
+        foreach (Catalogue::read($path)->values() as $key => $value) {
+            if (! str_contains($value, '|')) {
+                continue;
+            }
+
+            foreach (explode('|', $value) as $index => $segment) {
+                if (preg_match('/^\s*(\{\d+\}|\[\d+,(?:\d+|\*)\])/', $segment) === 1) {
+                    continue;
+                }
+
+                $offenders[] = "{$locale}/".basename($path, '.php').".{$key} segment {$index}: {$segment}";
+            }
+        }
+    }
+
+    expect($offenders)->toBe([]);
+});

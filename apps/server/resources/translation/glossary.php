@@ -304,6 +304,7 @@ return [
         // snapshot`, both correct, and an infinitive after a preposition is not
         // the same mistake as an infinitive on a button.
         'it' => [
+            'bigliett' => 'ticket is `ticket`, invariable in the plural -- `biglietto` is a travel or cinema ticket',
             'istantanea' => 'snapshot is snapshot',
             'operatore' => 'agent is agente and operator is gestore -- in Italian support vocabulary this word means the agent, so it swaps the two roles',
             'proprietario' => 'owner_role is titolare, owner_assignee is responsabile',
