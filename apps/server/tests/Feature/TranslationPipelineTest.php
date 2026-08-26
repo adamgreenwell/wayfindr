@@ -358,6 +358,19 @@ test('every shipped catalogue obeys the policy it was written against', function
     // one place and quietly contradicted in another.
     $glossary = Glossary::load();
     $scorer = new PolicyScorer($glossary);
+
+    // The Italian register checks read POSITION, because the informal
+    // imperative of an `-are` verb is spelled like the indicative. One
+    // position stays genuinely ambiguous: a sentence-initial verb whose
+    // subject has been dropped. English says `It changes the dashboard for
+    // you`, German says `Es aendert`, and Italian drops the pronoun -- so
+    // `Cambia la dashboard` is a correct indicative wearing the exact shape
+    // of an informal imperative. Recorded here with its reason rather than
+    // dropping `cambia` from the check, which would blind it everywhere else.
+    $allowed = [
+        'it informal imperative in prose: profile.details.language_help',
+    ];
+
     $offenders = [];
 
     foreach (['de', 'it'] as $locale) {
@@ -377,6 +390,10 @@ test('every shipped catalogue obeys the policy it was written against', function
 
             foreach ($score->violations as $rule => $hits) {
                 foreach ($hits as $hit) {
+                    if (in_array("{$locale} {$rule}: {$name}.{$hit['key']}", $allowed, true)) {
+                        continue;
+                    }
+
                     $offenders[] = "{$locale} {$rule}: {$name}.{$hit['key']} -- {$hit['detail']}";
                 }
             }
@@ -1280,30 +1297,93 @@ test('an italian plural branch inflects something', function (): void {
     expect($uninflected)->toBe([]);
 });
 
-test('a shipped catalogue trips none of its own register checks', function (): void {
-    // The checks existed only to score DRAFTS. Nothing ran them against what
-    // actually shipped, so every check was one edit away from being decorative
-    // -- a reviewer could hand-fix a string into the informal register and no
-    // test would notice, which is how `Non includere` and `o continua` reached
-    // a pull request in a catalogue whose glossary forbids both.
+test('a bare label uses the term its own key names', function (): void {
+    // Policy section 3 says the glossary binds every string, and nothing
+    // enforced it. So `nav.sign_out` shipped as `Disconnetti` while the
+    // glossary settled `Esci`, and the whole reviewed freshness scale
+    // (`Nuovo -> Vecchio -> Obsoleto`) was ignored in favour of `Recente ->
+    // Invecchiamento -> Stantio` -- three labels, one decision, silently
+    // discarded. German shipped the same defect at `freshness.fresh`.
     //
-    // Running them over the shipped files closes that gap and costs nothing:
-    // both locales are clean today, so any future hit is a real regression.
+    // A general "every string honours the glossary" rule is not checkable:
+    // most terms are inflected, compounded, or absent for good reason. But a
+    // BARE LABEL is checkable, and it is where a term is supposed to appear
+    // verbatim. So the rule is deliberately narrow -- the key's last segment
+    // names a glossary concept (or the one before it, when the last is
+    // `label`/`badge`), and the value is short, unpunctuated and at most two
+    // words. Anything longer is prose and out of scope here.
     $glossary = Glossary::load();
-    $violations = [];
+
+    // Concepts the product genuinely uses in two senses. The glossary has a
+    // `senses` mechanism for exactly this, but naming the second term is a
+    // vocabulary decision rather than a cleanup, and each of these is already
+    // consistent across its own catalogue -- so they are recorded, not
+    // changed. Resolving them means adding the second sense to the glossary.
+    $twoSenses = [
+        // A presence state (`Poco attivo`/`Ruhig`) and an alert mode.
+        'it/profile.alerts.modes.quiet' => 'quiet: presence state vs alert mode',
+        'de/profile.alerts.modes.quiet' => 'quiet: presence state vs alert mode',
+        // A ticket STATUS reads `In sospeso`/`Wartend` throughout; the
+        // glossary term is the "waiting for" sense used in cobrowse prose.
+        'it/tickets.filters.status.pending' => 'pending: ticket status vs waiting-for',
+        'it/tickets.statuses.pending' => 'pending: ticket status vs waiting-for',
+        'de/tickets.filters.status.pending' => 'pending: ticket status vs waiting-for',
+        'de/tickets.statuses.pending' => 'pending: ticket status vs waiting-for',
+        // The field label is the noun `Suche`; the action is `Suchen`.
+        'de/conversations.search.label' => 'search: field noun vs action verb',
+        'de/tickets.search.label' => 'search: field noun vs action verb',
+        // The nav section is `Betrieb` (operations), not the person.
+        'de/nav.items.operator' => 'operator: the section vs the person',
+    ];
+
+    $unbound = [];
 
     foreach ($glossary->localesWithTerms() as $locale) {
-        foreach ($glossary->checks($locale) as $name => $pattern) {
-            foreach (glob(lang_path($locale.'/*.php')) ?: [] as $path) {
-                foreach (Catalogue::read($path)->values() as $key => $value) {
-                    if (preg_match($pattern, $value, $match) === 1) {
-                        $where = $locale.'/'.basename($path, '.php').'.'.$key;
-                        $violations[] = "{$where} [{$name}] {$match[0]}";
-                    }
+        $terms = $glossary->terms($locale);
+
+        foreach (glob(lang_path($locale.'/*.php')) ?: [] as $path) {
+            if (basename($path) === 'validation.php') {
+                continue;
+            }
+
+            foreach (Catalogue::read($path)->values() as $key => $value) {
+                $qualified = $locale.'/'.basename($path, '.php').'.'.$key;
+
+                // Landmark and lane names describe a REGION of the page, not
+                // the concept they are named after.
+                if (str_contains($qualified, '.regions.') || str_contains($qualified, '.lanes.')) {
+                    continue;
+                }
+
+                $segments = explode('.', $key);
+                $concept = end($segments);
+
+                if (in_array($concept, ['label', 'badge'], true) && count($segments) >= 2) {
+                    $concept = $segments[count($segments) - 2];
+                }
+
+                if (! isset($terms[$concept])) {
+                    continue;
+                }
+
+                if (mb_strlen($value) > 26 || preg_match('/[.!?|:]/u', $value) === 1) {
+                    continue;
+                }
+
+                if (count(preg_split('/\s+/u', trim($value)) ?: []) > 2) {
+                    continue;
+                }
+
+                if (isset($twoSenses[$qualified])) {
+                    continue;
+                }
+
+                if (mb_stripos($value, $terms[$concept]['term']) === false) {
+                    $unbound[] = "{$qualified}: want {$terms[$concept]['term']}, got {$value}";
                 }
             }
         }
     }
 
-    expect($violations)->toBe([]);
+    expect($unbound)->toBe([]);
 });

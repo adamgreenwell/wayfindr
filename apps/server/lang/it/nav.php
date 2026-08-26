@@ -50,5 +50,5 @@ return [
         'help' => 'Provi con un codice di supporto come WF-ABC123, un riferimento ticket come Ticket #123 o un visitatore ID.',
         'scope' => 'I record al di fuori del suo accesso di supporto rimangono nascosti.',
     ],
-    'sign_out' => 'Disconnetti',
+    'sign_out' => 'Esci',
 ];

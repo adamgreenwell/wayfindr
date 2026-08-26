@@ -390,8 +390,19 @@ return [
             // only to PROSE: `Cancella filtri` and `Apri ticket` are button
             // labels, where the bare imperative is exactly right, so the
             // lookahead requires sentence punctuation before anything fires.
-            // Measured across all 904 Italian values: five hits, all real.
-            'informal imperative in prose' => '/(?=.*[.!?])(?:\\b(?:o|oppure|e|ed)\\s+|(?:^|[.!?]\\s+))(continua|allega|collega|cancella|riprova|crea|richiedi|attendi|usa|scrivi|apri|chiudi|prova|aggiorna|controlla|seleziona|scegli|inserisci|includi|carica|elimina|rimuovi|imposta|verifica)\\b/uis',
+            //
+            // The verb list is the part that can go stale, and did: a first
+            // pass listed only the verbs whose defects had already been found,
+            // so it scored the catalogue clean while `Assegna questo ticket`
+            // and `Consulta l'attivita'` sat in it. The list below was derived
+            // instead from the CONTROL LABELS -- short, unpunctuated strings,
+            // which is precisely where this product's imperative vocabulary
+            // lives -- and then hand-filtered to verbs. Extend it the same way
+            // rather than one defect at a time.
+            //
+            // It stays a net, not a proof: a verb the product has never used
+            // on a button is not in it.
+            'informal imperative in prose' => '/(?=.*[.!?])(?:\\b(?:o|oppure|e|ed)\\s+|(?:^|[.!?]\\s+))(aggiorna|allega|annulla|apri|applica|assegna|attendi|cambia|cancella|carica|cerca|chiudi|collega|conferma|consulta|continua|controlla|copia|crea|disconnetti|elimina|gestisci|imposta|includi|inserisci|invia|libera|mantieni|metti|modifica|mostra|prova|riapri|richiedi|rilascia|rimuovi|riprova|rispondi|rivedi|rivendica|salva|scegli|scorri|scrivi|segna|seleziona|termina|torna|trova|usa|verifica)\\b/uis',
 
             // The NEGATIVE informal imperative is the one shape Italian spells
             // unambiguously: `non` followed by a bare infinitive. Formal is

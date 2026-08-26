@@ -185,15 +185,15 @@ return [
             'message' => 'Usi la chat per confermare cosa vede il visitatore prima di fare affidamento su questa anteprima.',
         ],
         'stale' => [
-            'label' => 'Stantio',
+            'label' => 'Obsoleto',
             'message' => 'Lo snapshot ha più di 5 minuti. Confermi tramite chat o richieda uno snapshot aggiornato.',
         ],
         'aging' => [
-            'label' => 'Invecchiamento',
+            'label' => 'Vecchio',
             'message' => 'Lo snapshot ha alcuni minuti. Richieda un nuovo snapshot se questa pagina sta cambiando.',
         ],
         'fresh' => [
-            'label' => 'Recente',
+            'label' => 'Nuovo',
             'message' => 'Lo snapshot è stato segnalato di recente.',
         ],
         'reported' => 'Segnalato :elapsed',

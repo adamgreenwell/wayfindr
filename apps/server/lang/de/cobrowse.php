@@ -182,7 +182,7 @@ return [
             'message' => 'Der Snapshot ist einige Minuten alt. Fordern Sie einen neuen an, wenn sich diese Seite ändert.',
         ],
         'fresh' => [
-            'label' => 'Aktuell',
+            'label' => 'Neu',
             'message' => 'Der Snapshot wurde kürzlich gemeldet.',
         ],
         'reported' => 'Gemeldet :elapsed',
