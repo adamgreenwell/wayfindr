@@ -14,6 +14,10 @@
  * your attention.
  *
  * 1 plural string(s) need their segment count checked against it.
+ * /
+ * /
+ * /
+ * /
  */
 return [
     'document_title' => 'Profilo agente',
@@ -34,12 +38,12 @@ return [
     'details' => [
         'heading' => 'Il suo profilo',
         'lede' => 'Il suo nome e la lingua in cui legge questo',
+        'name' => 'Name',
         'email_help' => 'La sua email viene utilizzata per l’accesso. Chieda a un titolare se deve essere modificata.',
         'language' => 'Lingua della dashboard',
-        'language_default' => 'Usa l\'impostazione predefinita di installazione',
+        'language_default' => 'Usi l\'impostazione predefinita di installazione',
         'language_help' => 'Solo suo. Cambia la dashboard solo per lei e per nessun altro, e non influisce sulla lingua in cui il widget parla ai suoi visitatori — quella è impostata per ogni sito.',
         'save' => 'Salva profilo',
-        'name' => 'Name',
     ],
     'readiness' => [
         'heading' => 'Prontezza allerta',
@@ -53,11 +57,11 @@ return [
         'listening_detail' => 'Riceverai avvisi sulla dashboard per il lavoro di supporto idoneo.',
         'scope_label' => 'Ambito degli avvisi',
         'scope_assigned' => 'Assegnato a me',
-        'scope_assigned_detail' => 'Solo le conversazioni e i ticket assegnati a te generano nuovi avvisi.',
+        'scope_assigned_detail' => 'Solo le conversazioni e i ticket assegnati a lei generano nuovi avvisi.',
         'scope_quiet' => 'Modalità silenziosa',
         'scope_quiet_detail' => 'Il suo ambito è in pausa finché la modalità silenziosa non viene disattivata.',
         'scope_all' => 'Tutto il lavoro di supporto',
-        'scope_all_detail' => 'Le conversazioni e i ticket che puoi gestire possono generare nuovi avvisi.',
+        'scope_all_detail' => 'Le conversazioni e i ticket che può gestire possono generare nuovi avvisi.',
         'email_label' => 'Consegna email',
         'email_off' => 'Solo dashboard',
         'email_off_detail' => 'Le notifiche email sono disattivate per il suo profilo.',
@@ -97,7 +101,7 @@ return [
         ],
         'cadences' => [
             'immediate' => 'Invia avvisi email non appena si verificano',
-            'unattended' => 'Invia email solo quando un visitatore aspetta senza essere visto',
+            'unattended' => 'Invii email solo quando un visitatore aspetta senza essere visto',
             'digest' => 'Preferisci la consegna in formato riepilogativo quando disponibile',
         ],
     ],
@@ -118,7 +122,7 @@ return [
     ],
     'password' => [
         'heading' => 'Cambia password',
-        'lede' => 'Usa questo dopo aver ricevuto una password temporanea',
+        'lede' => 'Usi questo dopo aver ricevuto una password temporanea',
         'current' => 'Password attuale',
         'new' => 'Nuova password',
         'confirm' => 'Conferma nuova password',

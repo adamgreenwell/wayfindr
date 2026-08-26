@@ -14,6 +14,7 @@
  * your attention.
  *
  * No plural strings in this catalogue.
+ * /
  */
 return [
     'groups' => [
@@ -46,7 +47,7 @@ return [
         'label' => 'Codice di supporto, ticket o visitatore ID',
         'placeholder' => 'Codice di supporto, ticket, visitatore',
         'submit' => 'Trova',
-        'help' => 'Prova con un codice di supporto come WF-ABC123, un riferimento ticket come Ticket #123 o un visitatore ID.',
+        'help' => 'Provi con un codice di supporto come WF-ABC123, un riferimento ticket come Ticket #123 o un visitatore ID.',
         'scope' => 'I record al di fuori del suo accesso di supporto rimangono nascosti.',
     ],
     'sign_out' => 'Disconnetti',

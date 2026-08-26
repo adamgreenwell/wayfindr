@@ -502,3 +502,40 @@ test('a status that is not transient fails immediately rather than retrying', fu
         docblock: '', terms: [], neverTranslate: [], register: [],
     )))->toThrow(TranslationFailed::class, 'after 1 attempt');
 });
+
+test('a drafted catalogue is written in the source key order, not translated-then-carried', function (): void {
+    // `translated + carried` gave the right SET and the wrong file. A cognate is
+    // never sent to the engine, so it landed in `carried` and got appended after
+    // every translated key -- out of the group it belongs to. Laravel looks up
+    // by key so nothing breaks, and the drafted catalogue stops lining up
+    // against the English one, which is how a person reviews it.
+    $engine = translationPipelineEngine();
+
+    $source = translationPipelineCatalogue([
+        'first' => 'Search',
+        'cognate' => 'Cobrowse',
+        'last' => 'Refresh',
+    ]);
+
+    $plan = translationPipelineTranslator($engine)->plan($source, null, 'de');
+
+    expect(array_keys($plan->carried))->toBe(['cognate'])
+        ->and(array_keys($plan->merged()))->toBe(['first', 'cognate', 'last']);
+});
+
+test('every drafted catalogue lines up against its English source, in order', function (): void {
+    foreach (glob(lang_path('en/*.php')) ?: [] as $path) {
+        $name = basename($path, '.php');
+
+        foreach (['de', 'it'] as $locale) {
+            $target = lang_path($locale.'/'.$name.'.php');
+
+            if (! is_file($target)) {
+                continue;
+            }
+
+            expect(array_keys(Catalogue::read($target)->values()))
+                ->toBe(array_keys(Catalogue::read($path)->values()), "{$locale}/{$name} does not match the English key order");
+        }
+    }
+});

@@ -291,7 +291,18 @@ return [
         // rule would flag most of the catalogue. A check is per-locale because
         // the mistakes are.
         'it' => [
-            'informal address' => '/\\b(tu|ti|tuo|tuoi|tua|tue)\\b/ui',
+            // Pronouns alone are a weak net for Italian. `te` was missing and
+            // let `assegnati a te` through; more usefully, the second-person
+            // singular of the common auxiliaries and modals is unambiguous --
+            // `stai`, `puoi`, `devi` cannot be anything else (`vai` and `fai` are excluded: those ARE legitimate imperative labels) -- and catches
+            // informal prose that contains no pronoun at all, which is where
+            // `Segna come in sospeso se stai aspettando` was hiding.
+            'informal address' => '/\\b(tu|ti|te|tuo|tuoi|tua|tue|stai|sei|hai|puoi|devi|vuoi|sai)\\b/ui',
+
+            // Straight DOUBLE quotes only. Italian typography declares
+            // caporali, and unlike German this cannot also flag the apostrophe
+            // in `dell'agente`, which is correct and everywhere.
+            'straight double quote' => '/"/u',
         ],
 
         // What the informal-address pattern CANNOT see, stated rather than
@@ -303,7 +314,11 @@ return [
         // register in prose is a thing the reviewer reads for, per policy
         // section 9.
         'de' => [
-            'informal address' => '/\b(du|dich|dir|dein[a-z]*)\b/u',
+            // Second-person-singular verb forms as well as pronouns. German is
+            // clean on both today; the forms are here so it stays that way,
+            // because informal prose can carry no pronoun at all -- Italian hid
+            // `se stai aspettando` from a pronoun-only net for a whole draft.
+            'informal address' => '/\b(du|dich|dir|dein[a-z]*|bist|hast|kannst|musst|willst|weißt|wirst)\b/u',
             'generic masculine pronoun' => '/\b(er|ihn|ihm|seine|seinem|seinen|seiner|seines)\b/u',
             'straight quote' => '/["\']/u',
             'unhonoured escape' => '/\\\\/u',

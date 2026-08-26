@@ -14,6 +14,9 @@
  * your attention.
  *
  * 14 plural string(s) need their segment count checked against it.
+ * /
+ * /
+ * /
  */
 return [
     'document_title' => 'Conversazioni',
@@ -23,7 +26,7 @@ return [
     'page_title_closed' => 'Conversazioni visitatore chiuse per :account.',
     'search' => [
         'placeholder' => 'Oggetto, codice di supporto o visitatore',
-        'hint' => 'Cerca per oggetto, codice di supporto, visitatore ID, nome del visitatore o email del visitatore.',
+        'hint' => 'Cerchi per oggetto, codice di supporto, visitatore ID, nome del visitatore o email del visitatore.',
         'label' => 'Cerca',
         'submit' => 'Cerca conversazioni',
     ],
@@ -85,13 +88,13 @@ return [
         'no_cobrowse_attention' => 'Nessuna sessione cobrowse attiva richiede attenzione.',
         'no_closed' => 'Nessuna conversazione chiusa al momento.',
         'no_active' => 'Nessuna conversazione attiva al momento.',
-        'no_search_match' => 'Nessuna conversazione corrisponde a ":term".',
+        'no_search_match' => 'Nessuna conversazione corrisponde a «:term».',
         'search_covers' => 'La ricerca copre oggetto, codice di supporto, visitatore ID, nome del visitatore ed email del visitatore.',
-        'refine_detail' => 'Prova un altro sito o filtro di presenza, oppure cancella i filtri per tornare alla coda più ampia.',
+        'refine_detail' => 'Provi un altro sito o filtro di presenza, oppure cancella i filtri per tornare alla coda più ampia.',
         'closed_detail' => 'Le conversazioni chiuse appariranno qui dopo che gli agenti avranno chiuso i thread di supporto.',
         'default_detail' => 'Le nuove conversazioni dei visitatori appariranno qui all\'avvio dell\'assistenza.',
         'first_run_detail' => 'Le nuove conversazioni dei visitatori appariranno qui all\'avvio del supporto. Le conversazioni iniziano quando un visitatore apre il widget su un sito collegato.',
-        'lane_detail' => 'Prova un\'altra corsia di supporto o cancella il filtro della corsia. :matching gli altri filtri della coda.',
+        'lane_detail' => 'Provi un\'altra corsia di supporto o cancella il filtro della corsia. :matching gli altri filtri della coda.',
         'lane_assigned_to_me' => 'Nessuna conversazione le è stata assegnata in questa coda.',
         'lane_cobrowse_attention' => 'Nessuna sessione cobrowse attiva richiede attenzione.',
         'lane_needs_reply' => 'Nessuna conversazione richiede una risposta in questo momento.',
@@ -104,9 +107,9 @@ return [
         'visitor' => 'Visitatore',
         'attention' => 'Attenzione',
         'read' => 'Leggi',
+        'cobrowse' => 'Cobrowse',
         'assigned' => 'Assegnato',
         'timing' => 'Tempistica',
-        'cobrowse' => 'Cobrowse',
     ],
     'detail' => [
         'untitled' => 'Conversazione senza titolo',
@@ -137,13 +140,13 @@ return [
         'tabs' => [
             'workspace' => 'Area di lavoro conversazione',
             'conversation' => 'Conversazione',
+            'cobrowse' => 'Cobrowse',
             'visitor' => 'Visitatore',
             'ticket' => 'Ticket',
             'linked_badge' => '{1} 1 collegato|[2,*] :count collegato',
             'not_created' => 'Non creato',
             'position' => ':position di :total',
             'transcript_total' => '{1} 1 totale|[2,*] :count totale',
-            'cobrowse' => 'Cobrowse',
         ],
         'nav' => [
             'move' => 'Sposta attraverso la coda delle conversazioni',
@@ -154,8 +157,8 @@ return [
             'heading' => 'Azione successiva',
         ],
         'roles' => [
-            'visitor' => 'Visitatore',
             'agent' => 'Agent',
+            'visitor' => 'Visitatore',
         ],
         'reply' => [
             'heading' => 'Rispondi',
@@ -168,7 +171,7 @@ return [
             'privacy' => 'Non includere dettagli sensibili nelle risposte, a meno che il visitatore non li abbia forniti qui.',
             'assist' => 'Assistenza risposta',
             'helper' => 'Assistente di risposta',
-            'helper_note' => 'Gli assistenti di risposta offrono un punto di partenza che puoi modificare. Wayfindr non scrive mai una risposta per te.',
+            'helper_note' => 'Gli assistenti di risposta offrono un punto di partenza che può modificare. Wayfindr non scrive mai una risposta per lei.',
             'custom' => 'Scrivi una risposta personalizzata',
             'writing_own' => 'Scrivendo questa da solo',
             'context' => 'Contesto della risposta',
@@ -211,7 +214,7 @@ return [
             'prior' => 'Conversazioni precedenti',
             'history' => 'Cronologia su questo sito',
             'safe_only' => 'Solo contesto sicuro',
-            'boundary' => 'Utilizza questo contesto per rispondere alla richiesta attuale. Non raccogliere, esportare o dedurre ulteriori dati dei visitatori senza consenso.',
+            'boundary' => 'Utilizzi questo contesto per rispondere alla richiesta attuale. Non raccogliere, esportare o dedurre ulteriori dati dei visitatori senza consenso.',
             'no_host_context' => 'Nessun contesto fornito dall\'host al momento.',
             'no_prior' => 'Nessuna conversazione precedente per questo visitatore su questo sito.',
             'last_activity' => 'Ultima attività :elapsed',
@@ -228,8 +231,8 @@ return [
             'heading' => 'Ticket collegato',
             'work' => 'Lavoro ticket collegato',
             'actions' => 'Azioni ticket',
-            'lede' => 'Mantieni la proprietà e il ciclo di vita vicino alla conversazione.',
-            'create_hint' => 'Crea o allega un ticket quando il passo successivo richiede un follow-up duraturo.',
+            'lede' => 'Mantenga la proprietà e il ciclo di vita vicino alla conversazione.',
+            'create_hint' => 'Crei o allega un ticket quando il passo successivo richiede un follow-up duraturo.',
             'create' => 'Crea ticket',
             'open' => 'Apri ticket',
             'assign' => 'Assegna ticket',
@@ -248,7 +251,7 @@ return [
         ],
         'references' => [
             'heading' => 'Riferimenti di supporto',
-            'lede' => 'Utilizza questi riferimenti quando il visitatore o un altro agente ha bisogno di trovare nuovamente questa traccia di supporto.',
+            'lede' => 'Utilizzi questi riferimenti quando il visitatore o un altro agente ha bisogno di trovare nuovamente questa traccia di supporto.',
             'current' => 'Codice di supporto attuale',
             'same_visitor' => 'Stessi codici di supporto visitatore',
             'records' => 'Record attuali e dello stesso visitatore',
@@ -257,6 +260,7 @@ return [
             'none' => 'Nessun codice di supporto precedente.',
         ],
         'cobrowse' => [
+            'heading' => 'Cobrowse',
             'request' => 'Richiedi cobrowse',
             'consent' => 'Consenso concesso',
             'updates' => 'Aggiornamenti Cobrowse',
@@ -311,11 +315,10 @@ return [
             'last_sequence' => 'Ultima sequenza',
             'last_report' => 'Ultimo rapporto',
             'pressure' => 'Pressione',
-            'heading' => 'Cobrowse',
         ],
     ],
     'validation' => [
-        'reply_template' => 'Scegli un assistente di risposta disponibile.',
+        'reply_template' => 'Scelga un assistente di risposta disponibile.',
         'body' => 'Inserisci una risposta o allega un file.',
     ],
     'reply_templates' => [

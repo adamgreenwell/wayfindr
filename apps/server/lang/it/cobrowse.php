@@ -14,52 +14,56 @@
  * your attention.
  *
  * 5 plural string(s) need their segment count checked against it.
+ * /
+ * /
+ * /
+ * /
  */
 return [
     'transport' => [
         'exhausted' => [
             'label' => 'Limite di tentativi raggiunto',
             'message' => 'Limite massimo di tentativi per snapshot aggiornato raggiunto.',
-            'guidance' => 'Richiedi un altro nuovo snapshot quando il trasporto del visitatore si stabilizza.',
-            'recovery_action' => 'Richiedi un altro nuovo snapshot quando il trasporto del visitatore si stabilizza.',
+            'guidance' => 'Richieda un altro nuovo snapshot quando il trasporto del visitatore si stabilizza.',
+            'recovery_action' => 'Richieda un altro nuovo snapshot quando il trasporto del visitatore si stabilizza.',
         ],
-        'recovery_locked' => 'Snapshot aggiornato già richiesto. Attendi il widget del visitatore prima di riprovare.',
+        'recovery_locked' => 'Snapshot aggiornato già richiesto. Attenda il widget del visitatore prima di riprovare.',
         'inactive' => [
             'label' => 'Non disponibile',
             'message' => 'Il trasporto Cobrowse non è attivo.',
-            'guidance' => 'Attendi una sessione cobrowse attiva prima di fare affidamento su cobrowse.',
-            'recovery_action' => 'Attendi che la pagina del visitatore segnali prima di richiedere il ripristino.',
+            'guidance' => 'Attenda una sessione cobrowse attiva prima di fare affidamento su cobrowse.',
+            'recovery_action' => 'Attenda che la pagina del visitatore segnali prima di richiedere il ripristino.',
         ],
         'no_reports' => [
             'label' => 'Non disponibile',
             'message' => 'Non sono ancora arrivati report di trasporto cobrowse.',
-            'guidance' => 'Attendi che la pagina del visitatore invii un report prima di fare affidamento su cobrowse.',
-            'recovery_action' => 'Attendi che la pagina del visitatore invii il report prima di richiedere il recupero.',
+            'guidance' => 'Attenda che la pagina del visitatore invii un report prima di fare affidamento su cobrowse.',
+            'recovery_action' => 'Attenda che la pagina del visitatore invii il report prima di richiedere il recupero.',
         ],
         'stale' => [
             'label' => 'Obsoleto',
             'message' => 'Nessun report cobrowse è arrivato negli ultimi 2 minuti.',
-            'guidance' => 'Chiedi al visitatore di confermare ciò che vede prima di fare affidamento sull\'anteprima.',
-            'recovery_action' => 'Richiedi un nuovo snapshot se l\'anteprima sembra non aggiornata e conferma i dettagli tramite chat.',
+            'guidance' => 'Chieda al visitatore di confermare ciò che vede prima di fare affidamento sull\'anteprima.',
+            'recovery_action' => 'Richieda un nuovo snapshot se l\'anteprima sembra non aggiornata e confermi i dettagli tramite chat.',
         ],
         'reconnecting' => [
             'label' => 'Riconnessione',
             'message' => 'Il trasporto del visitatore si è riconnesso di recente; i dati dell\'anteprima potrebbero subire un breve ritardo.',
-            'guidance' => 'Usa la chat per confermare qualsiasi cosa che dipenda da uno stato della pagina in rapido cambiamento.',
-            'recovery_action' => 'Attendi un momento che il widget visitatore si stabilizzi, poi richiedi un nuovo snapshot se l’anteprima è ancora in ritardo.',
+            'guidance' => 'Usi la chat per confermare qualsiasi cosa che dipenda da uno stato della pagina in rapido cambiamento.',
+            'recovery_action' => 'Attenda un momento che il widget visitatore si stabilizzi, poi richieda un nuovo snapshot se l’anteprima è ancora in ritardo.',
         ],
         'degraded' => [
             'label' => 'Degradato',
             'message' => 'I report Cobrowse stanno arrivando, ma la pagina del visitatore sta cambiando più velocemente di quanto Wayfindr possa riprodurre completamente.',
-            'guidance' => 'Usa l’anteprima per orientarti e conferma i dettagli che cambiano rapidamente tramite chat.',
-            'recovery_action' => 'Richiedi un nuovo snapshot una volta che il widget visitatore si è stabilizzato e usa la chat per i dettagli che cambiano rapidamente.',
+            'guidance' => 'Usi l’anteprima per orientarsi e confermi i dettagli che cambiano rapidamente tramite chat.',
+            'recovery_action' => 'Richieda un nuovo snapshot una volta che il widget visitatore si è stabilizzato e usi la chat per i dettagli che cambiano rapidamente.',
         ],
         'live' => [
+            'label' => 'Live',
             'message' => 'I report Cobrowse stanno arrivando normalmente.',
             'guidance' => 'L\'anteprima è abbastanza aggiornata da poter essere utilizzata insieme alla chat.',
-            'guidance_pressure' => 'Usa la chat per confermare tutto ciò che dipende da uno stato della pagina che cambia rapidamente.',
+            'guidance_pressure' => 'Usi la chat per confermare tutto ciò che dipende da uno stato della pagina che cambia rapidamente.',
             'recovery_action' => 'Nessuna azione di ripristino necessaria.',
-            'label' => 'Live',
         ],
     ],
     'consent' => [
@@ -95,15 +99,15 @@ return [
         ],
         'exhausted' => [
             'label' => 'Limite massimo di tentativi per il fresh snapshot raggiunto',
-            'message' => 'Il widget visitatore ha provato a inviare uno snapshot pulito ma non è riuscito a completarlo. Richiedi un altro snapshot pulito o conferma lo stato della pagina tramite chat.',
+            'message' => 'Il widget visitatore ha provato a inviare uno snapshot pulito ma non è riuscito a completarlo. Richieda un altro snapshot pulito o confermi lo stato della pagina tramite chat.',
         ],
         'expired' => [
             'label' => 'Snapshot recente scaduto',
-            'message' => 'Il widget visitatore non ha risposto in tempo. Richiedi un altro snapshot pulito o continua tramite chat.',
+            'message' => 'Il widget visitatore non ha risposto in tempo. Richieda un altro snapshot pulito o continua tramite chat.',
         ],
         'delayed' => [
             'label' => 'Snapshot recente in ritardo',
-            'message' => 'Il widget visitatore non ha ancora risposto. Richiedi un altro snapshot pulito o conferma lo stato della pagina tramite chat.',
+            'message' => 'Il widget visitatore non ha ancora risposto. Richieda un altro snapshot pulito o confermi lo stato della pagina tramite chat.',
         ],
         'pending' => [
             'label' => 'Snapshot aggiornato richiesto',
@@ -113,15 +117,15 @@ return [
     'snapshot_recovery' => [
         'pending' => [
             'label' => 'Aggiornamento dello snapshot già richiesto',
-            'message' => 'Una nuova richiesta di snapshot è già in attesa sul widget del visitatore. Usa la chat mentre si aggiorna.',
+            'message' => 'Una nuova richiesta di snapshot è già in attesa sul widget del visitatore. Usi la chat mentre si aggiorna.',
         ],
         'unknown' => [
             'label' => 'L\'orario dello snapshot necessita di conferma',
-            'message' => 'Chiedi al visitatore cosa vede oppure richiedi un nuovo snapshot prima di fare affidamento su questa anteprima.',
+            'message' => 'Chieda al visitatore cosa vede oppure richieda un nuovo snapshot prima di fare affidamento su questa anteprima.',
         ],
         'needs_refresh' => [
             'label' => 'Potrebbe essere necessario aggiornare lo snapshot',
-            'message' => 'Richiedi un nuovo snapshot prima di fare affidamento su questa anteprima, oppure conferma la pagina tramite chat.',
+            'message' => 'Richieda un nuovo snapshot prima di fare affidamento su questa anteprima, oppure confermi la pagina tramite chat.',
         ],
     ],
     'timeline' => [
@@ -178,15 +182,15 @@ return [
     'freshness' => [
         'unknown' => [
             'label' => 'Ora sconosciuta',
-            'message' => 'Usa la chat per confermare cosa vede il visitatore prima di fare affidamento su questa anteprima.',
+            'message' => 'Usi la chat per confermare cosa vede il visitatore prima di fare affidamento su questa anteprima.',
         ],
         'stale' => [
             'label' => 'Stantio',
-            'message' => 'Lo snapshot ha più di 5 minuti. Conferma tramite chat o richiedi uno snapshot aggiornato.',
+            'message' => 'Lo snapshot ha più di 5 minuti. Confermi tramite chat o richieda uno snapshot aggiornato.',
         ],
         'aging' => [
             'label' => 'Invecchiamento',
-            'message' => 'Lo snapshot ha alcuni minuti. Richiedi un nuovo snapshot se questa pagina sta cambiando.',
+            'message' => 'Lo snapshot ha alcuni minuti. Richieda un nuovo snapshot se questa pagina sta cambiando.',
         ],
         'fresh' => [
             'label' => 'Recente',
@@ -225,11 +229,11 @@ return [
         ],
         'watch' => [
             'label' => 'Leggera deviazione',
-            'message' => 'Alcuni aggiornamenti di replay non corrispondono a questa anteprima. Conferma le aree che cambiano rapidamente tramite chat.',
+            'message' => 'Alcuni aggiornamenti di replay non corrispondono a questa anteprima. Confermi le aree che cambiano rapidamente tramite chat.',
         ],
         'drifting' => [
             'label' => 'Deriva',
-            'message' => 'Molti aggiornamenti di replay non corrispondono più a questa anteprima. Richiedi un nuovo snapshot per risincronizzare.',
+            'message' => 'Molti aggiornamenti di replay non corrispondono più a questa anteprima. Richieda un nuovo snapshot per risincronizzare.',
         ],
         'summary' => ':unresolved di :addressable ha subito uno spostamento',
     ],
@@ -241,8 +245,8 @@ return [
         'none_recent' => 'Nessuna recente interruzione segnalata',
     ],
     'labels' => [
-        'retry_ready_help' => 'In attesa. Puoi richiedere subito un nuovo snapshot aggiornato.',
-        'retry_ready_recovery' => 'Richiedi un altro nuovo snapshot se l\'anteprima sembra ancora non aggiornata.',
+        'retry_ready_help' => 'In attesa. Può richiedere subito un nuovo snapshot aggiornato.',
+        'retry_ready_recovery' => 'Richieda un altro nuovo snapshot se l\'anteprima sembra ancora non aggiornata.',
         'request_snapshot' => 'Richiedi un nuovo snapshot',
         'request_another_snapshot' => 'Richiedi un altro snapshot aggiornato',
         'requested_by' => 'Richiesto da :actor',
@@ -258,15 +262,15 @@ return [
         'unauthorized' => 'Autorizzazione alla trasmissione non riuscita.',
         'telemetry_updated' => 'Telemetria della connessione aggiornata in tempo reale.',
         'snapshot_received' => 'Nuovo snapshot ricevuto. Aggiornamento dell\'anteprima in corso…',
-        'snapshot_received_idle' => 'Snapshot live ricevuto. Aggiorna l\'anteprima quando sei pronto.',
+        'snapshot_received_idle' => 'Snapshot live ricevuto. Aggiorni l\'anteprima quando è pronto.',
         'changes_received' => 'Nuove modifiche di cobrowse ricevute. Aggiornamento dell\'anteprima in corso…',
-        'update_available' => 'Nuovo aggiornamento cobrowse disponibile. Aggiorna l\'anteprima quando sei pronto.',
+        'update_available' => 'Nuovo aggiornamento cobrowse disponibile. Aggiorni l\'anteprima quando è pronto.',
         'preview_updated' => 'Anteprima aggiornata con le ultime modifiche di cobrowse.',
         'preview_refreshing' => 'Aggiornamento dell\'anteprima in corso…',
-        'preview_refresh_failed' => 'Impossibile aggiornare automaticamente l\'anteprima. Usa Aggiorna anteprima per riprovare.',
+        'preview_refresh_failed' => 'Impossibile aggiornare automaticamente l\'anteprima. Usi Aggiorna anteprima per riprovare.',
         'preview_failed' => 'Aggiornamento dell\'anteprima non riuscito: :reason',
         'transcript_failed' => 'Aggiornamento della trascrizione non riuscito: :reason',
-        'retry_limit' => 'Limite massimo di tentativi per un nuovo snapshot raggiunto. Richiedi un altro nuovo snapshot quando sei pronto.',
+        'retry_limit' => 'Limite massimo di tentativi per un nuovo snapshot raggiunto. Richieda un altro nuovo snapshot quando è pronto.',
     ],
     'visibility' => [
         'visible' => 'Visibile',

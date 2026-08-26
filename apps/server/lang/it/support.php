@@ -14,6 +14,7 @@
  * your attention.
  *
  * No plural strings in this catalogue.
+ * /
  */
 return [
     'copy' => 'Copia',
