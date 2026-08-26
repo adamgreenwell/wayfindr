@@ -219,15 +219,15 @@
                             <span lang="{{ str_replace('_', '-', $cobrowseConsent['resync_request']['requested_at_language'] ?? \App\Support\DashboardLanguage::FALLBACK) }}">{{ $cobrowseConsent['resync_request']['requested_at'] }}</span>
                             @if (filled($cobrowseConsent['resync_request']['fulfilled_at'] ?? null))
                                 <br>
-                                <x-lang :is="$cobrowseConsent['resync_request']['fulfilled_at_language'] ?? \App\Support\DashboardLanguage::FALLBACK">{{ __('cobrowse.labels.received', ['elapsed' => $cobrowseConsent['resync_request']['fulfilled_at']]) }}</x-lang>
+                                {!! __('cobrowse.labels.received', ['elapsed' => '<span lang="'.e(str_replace('_', '-', $cobrowseConsent['resync_request']['fulfilled_at_language'] ?? \App\Support\DashboardLanguage::FALLBACK)).'">'.e($cobrowseConsent['resync_request']['fulfilled_at']).'</span>']) !!}
                             @endif
                             @if (filled($cobrowseConsent['resync_request']['expires_at'] ?? null))
                                 <br>
-                                <x-lang :is="$cobrowseConsent['resync_request']['expires_at_language'] ?? \App\Support\DashboardLanguage::FALLBACK">{{ __('cobrowse.labels.expires', ['elapsed' => $cobrowseConsent['resync_request']['expires_at']]) }}</x-lang>
+                                {!! __('cobrowse.labels.expires', ['elapsed' => '<span lang="'.e(str_replace('_', '-', $cobrowseConsent['resync_request']['expires_at_language'] ?? \App\Support\DashboardLanguage::FALLBACK)).'">'.e($cobrowseConsent['resync_request']['expires_at']).'</span>']) !!}
                             @endif
                             @if (filled($cobrowseConsent['resync_request']['expired_at'] ?? null))
                                 <br>
-                                <x-lang :is="$cobrowseConsent['resync_request']['expired_at_language'] ?? \App\Support\DashboardLanguage::FALLBACK">{{ __('cobrowse.labels.expired', ['elapsed' => $cobrowseConsent['resync_request']['expired_at']]) }}</x-lang>
+                                {!! __('cobrowse.labels.expired', ['elapsed' => '<span lang="'.e(str_replace('_', '-', $cobrowseConsent['resync_request']['expired_at_language'] ?? \App\Support\DashboardLanguage::FALLBACK)).'">'.e($cobrowseConsent['resync_request']['expired_at']).'</span>']) !!}
                             @endif
                         </span>
                     </div>

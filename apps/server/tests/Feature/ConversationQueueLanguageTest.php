@@ -3864,3 +3864,51 @@ test('the linked ticket panel is translated, values and all', function (): void 
         $this->assertStringNotContainsString($english, $german, "English left in the linked ticket panel: {$english}");
     }
 });
+
+test('a German cobrowse sentence is never marked English because its value is', function (): void {
+    // The leak guard reads the effective `lang` and skips anything declaring
+    // itself English, which is correct for a recorded exception and blind to a
+    // MISMARKED region. So this asserts the thing the guard cannot: a sentence
+    // that comes from the German catalogue must not sit inside `lang="en"`.
+    //
+    // The bug: `x-lang` wrapped the whole `Läuft ab :elapsed` sentence and took
+    // its language from the VALUE, so an unparseable timestamp -- which makes
+    // `expiresAt()` null and the formatter emit the English `Expiry
+    // unavailable` -- marked the German sentence as English too. A wrong marker
+    // is not a smaller mistake than a missing one.
+    $world = conversationQueueLanguageWorld();
+    $session = conversationQueueLanguageCobrowseSession();
+    $conversation = $session->conversation;
+
+    $metadata = $session->metadata;
+    $metadata['resync_request'] = [
+        'id' => 'resync-unparseable-fixture',
+        'requested_by_name' => 'Support',
+        'requested_at' => 'not-a-timestamp',
+        'fulfilled_at' => null,
+    ];
+
+    $session->forceFill(['metadata' => $metadata])->save();
+
+    $html = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent();
+
+    // Every German catalogue sentence for this panel, wherever it appears, must
+    // not be inside a region announcing itself as English.
+    foreach (['cobrowse.labels.expires', 'cobrowse.labels.received', 'cobrowse.labels.expired'] as $key) {
+        $sentence = trim(str_replace(':elapsed', '', __($key, [], 'de')));
+
+        if ($sentence === '' || ! str_contains($html, $sentence)) {
+            continue;
+        }
+
+        $before = substr($html, 0, strpos($html, $sentence));
+        $openedEnglish = strrpos($before, '<span lang="en">');
+        $closedSince = $openedEnglish === false ? false : strpos($before, '</span>', $openedEnglish);
+
+        expect($openedEnglish === false || $closedSince !== false)
+            ->toBeTrue("German sentence for {$key} is inside an English-marked region");
+    }
+});
