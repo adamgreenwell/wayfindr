@@ -4,11 +4,14 @@ use App\Support\Translation\Catalogue;
 use App\Support\Translation\CataloguePlan;
 use App\Support\Translation\CatalogueTranslator;
 use App\Support\Translation\EngineBrief;
+use App\Support\Translation\Engines\MurfEngine;
 use App\Support\Translation\Glossary;
 use App\Support\Translation\PolicyScorer;
 use App\Support\Translation\Protector;
 use App\Support\Translation\TranslationEngine;
 use App\Support\Translation\TranslationFailed;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 
 /**
  * An engine that records what it was handed and can be told to misbehave.
@@ -340,7 +343,7 @@ test('agreement is null with nothing to agree with, and counts only drafted keys
         ->and($scored->scored)->toBe(3);
 });
 
-test('the shipped German obeys the policy it was written against', function (): void {
+test('every shipped catalogue obeys the policy it was written against', function (): void {
     // The self-audit, as an assertion. It runs backwards from the usual
     // direction: adding a term to the glossary's rejected list immediately
     // measures the catalogue against it, so a decision cannot be recorded in
@@ -349,23 +352,25 @@ test('the shipped German obeys the policy it was written against', function (): 
     $scorer = new PolicyScorer($glossary);
     $offenders = [];
 
-    foreach (glob(lang_path('en/*.php')) ?: [] as $path) {
-        $name = basename($path, '.php');
-        $target = lang_path('de/'.$name.'.php');
+    foreach (['de', 'it'] as $locale) {
+        foreach (glob(lang_path('en/*.php')) ?: [] as $path) {
+            $name = basename($path, '.php');
+            $target = lang_path($locale.'/'.$name.'.php');
 
-        if (! is_file($target)) {
-            continue;
-        }
+            if (! is_file($target)) {
+                continue;
+            }
 
-        $score = $scorer->score(new CataloguePlan(
-            catalogue: $name,
-            targetLocale: 'de',
-            carried: Catalogue::read($target)->values(),
-        ));
+            $score = $scorer->score(new CataloguePlan(
+                catalogue: $name,
+                targetLocale: $locale,
+                carried: Catalogue::read($target)->values(),
+            ));
 
-        foreach ($score->violations as $rule => $hits) {
-            foreach ($hits as $hit) {
-                $offenders[] = "{$rule}: {$name}.{$hit['key']} -- {$hit['detail']}";
+            foreach ($score->violations as $rule => $hits) {
+                foreach ($hits as $hit) {
+                    $offenders[] = "{$locale} {$rule}: {$name}.{$hit['key']} -- {$hit['detail']}";
+                }
             }
         }
     }
@@ -452,4 +457,48 @@ test('a token is not corrupted by another token that is a prefix of it', functio
     }
 
     expect($plan->translated['report'])->toBe($source);
+});
+
+test('a transient gateway failure is waited out rather than surfaced', function (): void {
+    // A 504 on the largest catalogue cost it from an eight-catalogue draft the
+    // first time this ran for real. The batch is slow work at the far end and a
+    // gateway in front of it gives up before the service does.
+    Sleep::fake();
+
+    Http::fake([
+        'api.murf.ai/*' => Http::sequence()
+            ->push('<html>504</html>', 504)
+            ->push('<html>502</html>', 502)
+            ->push(['translations' => [['source_text' => 'Refresh', 'translated_text' => 'Aggiorna']]], 200),
+    ]);
+
+    $engine = new MurfEngine('test-key');
+
+    $out = $engine->translate(['Refresh'], new EngineBrief(
+        sourceLocale: 'en', targetLocale: 'it', catalogue: 'nav',
+        docblock: '', terms: [], neverTranslate: [], register: [],
+    ));
+
+    expect($out)->toBe(['Aggiorna']);
+
+    // Two failures, so two waits, and they grow rather than hammering.
+    Sleep::assertSequence([
+        Sleep::for(2)->seconds(),
+        Sleep::for(4)->seconds(),
+    ]);
+});
+
+test('a status that is not transient fails immediately rather than retrying', function (): void {
+    // 402 means the account is out of credit. Waiting eight seconds and asking
+    // again four times does not add credit, it just makes the failure slower.
+    Http::fake([
+        'api.murf.ai/*' => Http::response('{"error":"payment required"}', 402),
+    ]);
+
+    $engine = new MurfEngine('test-key');
+
+    expect(fn () => $engine->translate(['Refresh'], new EngineBrief(
+        sourceLocale: 'en', targetLocale: 'it', catalogue: 'nav',
+        docblock: '', terms: [], neverTranslate: [], register: [],
+    )))->toThrow(TranslationFailed::class, 'after 1 attempt');
 });

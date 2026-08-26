@@ -8,7 +8,9 @@ use App\Support\Translation\EngineBrief;
 use App\Support\Translation\TranslationEngine;
 use App\Support\Translation\TranslationFailed;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 
 /**
  * Murf's translation endpoint.
@@ -53,6 +55,18 @@ final class MurfEngine implements TranslationEngine
     private const BATCH = 10;
 
     private const MAX_CHARS = 4000;
+
+    /**
+     * A long batch of translation is slow work at the other end, and a gateway
+     * in front of it will give up before the service does. A 504 mid-run cost
+     * the largest catalogue of an eight-catalogue draft the first time this ran
+     * for real, so a transient status is waited out rather than surfaced.
+     */
+    private const ATTEMPTS = 4;
+
+    private const RETRYABLE = [408, 429, 500, 502, 503, 504];
+
+    private const TIMEOUT_SECONDS = 90;
 
     /**
      * The catalogue speaks in bare language tags; Murf wants a region.
@@ -132,24 +146,9 @@ final class MurfEngine implements TranslationEngine
      * @param  array<int, string>  $batch
      * @return array<int, string>
      */
-    private function translateBatch(array $batch, string $key, string $target): array
+    private function translateBatch(array $batch, #[\SensitiveParameter] string $key, string $target): array
     {
-        try {
-            $response = Http::withHeaders(['api-key' => $key])
-                ->asJson()
-                ->post(self::ENDPOINT, [
-                    'targetLanguage' => $target,
-                    'texts' => array_values($batch),
-                ]);
-        } catch (ConnectionException) {
-            throw new TranslationFailed('Murf request failed before a response was received.');
-        }
-
-        if (! $response->successful()) {
-            throw new TranslationFailed(
-                'Murf returned '.$response->status().': '.mb_substr((string) $response->body(), 0, 200)
-            );
-        }
+        $response = $this->post($batch, $key, $target);
 
         $translations = $response->json('translations');
 
@@ -186,5 +185,62 @@ final class MurfEngine implements TranslationEngine
         }
 
         return $out;
+    }
+
+    /**
+     * Post one batch, waiting out anything transient.
+     *
+     * @param  array<int, string>  $batch
+     */
+    private function post(array $batch, #[\SensitiveParameter] string $key, string $target): Response
+    {
+        $attempt = 0;
+
+        while (true) {
+            $attempt++;
+
+            try {
+                $response = Http::withHeaders(['api-key' => $key])
+                    ->timeout(self::TIMEOUT_SECONDS)
+                    ->asJson()
+                    ->post(self::ENDPOINT, [
+                        'targetLanguage' => $target,
+                        'texts' => array_values($batch),
+                    ]);
+            } catch (ConnectionException) {
+                if ($attempt >= self::ATTEMPTS) {
+                    throw new TranslationFailed(
+                        'Murf request failed before a response was received, after '.$attempt.' attempts.'
+                    );
+                }
+
+                $this->backOff($attempt);
+
+                continue;
+            }
+
+            if ($response->successful()) {
+                return $response;
+            }
+
+            if (! in_array($response->status(), self::RETRYABLE, true) || $attempt >= self::ATTEMPTS) {
+                throw new TranslationFailed(
+                    'Murf returned '.$response->status().' after '.$attempt.' attempt(s): '
+                        .mb_substr(strip_tags((string) $response->body()), 0, 160)
+                );
+            }
+
+            $this->backOff($attempt);
+        }
+    }
+
+    /**
+     * `Sleep` rather than `usleep`, so the retry path is testable at all.
+     * A test that proves a gateway timeout is waited out should not itself
+     * spend six seconds waiting to prove it.
+     */
+    private function backOff(int $attempt): void
+    {
+        Sleep::for(min(8, 2 ** $attempt))->seconds();
     }
 }

@@ -249,7 +249,17 @@ return [
         // coming back from a real engine; seeding a list from what an engine
         // might do produces entries nobody measured, which is how a scorer
         // starts crying wolf. It gets populated from the first scored run.
-        'it' => [],
+        // Filled from the first scored Italian run, which is the process this
+        // list is supposed to follow: every entry was observed coming back from
+        // a real engine rather than predicted. `inviare` is deliberately absent
+        // -- the same run returned `File da inviare` and `a inviare uno
+        // snapshot`, both correct, and an infinitive after a preposition is not
+        // the same mistake as an infinitive on a button.
+        'it' => [
+            'istantanea' => 'snapshot is snapshot',
+            'operatore' => 'agent is agente and operator is gestore -- in Italian support vocabulary this word means the agent, so it swaps the two roles',
+            'proprietario' => 'owner_role is titolare, owner_assignee is responsabile',
+        ],
 
         'de' => [
             'Konversation' => 'conversation is Unterhaltung',
