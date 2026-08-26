@@ -672,3 +672,72 @@ test('German copy uses German quotation marks', function (): void {
 
     expect($offenders)->toBe([]);
 });
+
+test('German copy does not fall back on the generic masculine pronoun', function (): void {
+    // The English chose singular `they` -- `Ask the visitor to confirm what they
+    // see`. The German collapsed it to `was er sieht`, gendering a person inside
+    // a sentence that had no need to.
+    //
+    // Policy section 8 keeps the NOUN conventional: nineteen bare labels leave
+    // German no alternative to `Besucher`, and a second word for the same
+    // referent on one screen is worse than the thing it fixes. The pronoun is
+    // the part nothing forces, so the pronoun is the part that goes -- and this
+    // is the only guard that can say so. The render comparison cannot: `was er
+    // sieht` differs from `what they see`, which is the only question it asks.
+    //
+    // Scoped to every German string rather than only those naming a visitor,
+    // because the class of mistake is the pronoun rather than the noun it
+    // refers to. Measured at zero offenders across the whole catalogue when
+    // written, so the wider claim is the honest one rather than a hopeful one.
+    //
+    // `sein` is deliberately absent from the pattern: it is the infinitive `to
+    // be` in twenty-three validation messages and a possessive only sometimes,
+    // so including it would produce noise rather than findings.
+    $offenders = [];
+
+    foreach (glob(lang_path('de/*.php')) ?: [] as $file) {
+        $walk = function (array $values, string $path) use (&$walk, &$offenders, $file): void {
+            foreach ($values as $key => $value) {
+                if (is_array($value)) {
+                    $walk($value, $path.$key.'.');
+
+                    continue;
+                }
+
+                if (is_string($value) && preg_match('/\b(er|ihn|ihm|seine|seinem|seinen|seiner|seines)\b/u', $value) === 1) {
+                    $offenders[] = basename($file).': '.$path.$key.' = '.$value;
+                }
+            }
+        };
+
+        $walk(require $file, '');
+    }
+
+    expect($offenders)->toBe([]);
+});
+
+test('a placeholder with a unit suffix still substitutes', function (): void {
+    // Kept from a review finding that turned out to be WRONG, because the
+    // guard is worth having and the reason is worth recording.
+    //
+    // The claim was that `:widthpx` is a placeholder named `widthpx`, so a view
+    // supplying `width` would substitute nothing. Laravel does a PREFIX
+    // replacement rather than a whole-token match: `:width` is replaced inside
+    // `:widthpx`, leaving `px`, and `Visitor viewport 1,456px` renders
+    // correctly -- which `AgentConversationInboxTest` already asserted.
+    //
+    // Verified against Laravel 13.26. This test now pins the behaviour the
+    // catalogue actually relies on, so a future framework change that DID
+    // require whole-token placeholders would fail here rather than in front of
+    // an agent.
+    foreach (['en', 'de'] as $locale) {
+        App::setLocale($locale);
+
+        $rendered = __('cobrowse.units.viewport', ['width' => '1,280']);
+
+        expect($rendered)->toContain('1,280')
+            ->and($rendered)->not->toContain(':width');
+    }
+
+    App::setLocale('en');
+});

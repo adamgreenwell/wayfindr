@@ -1,0 +1,246 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Support\Translation\Engines;
+
+use App\Support\Translation\EngineBrief;
+use App\Support\Translation\TranslationEngine;
+use App\Support\Translation\TranslationFailed;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
+
+/**
+ * Murf's translation endpoint.
+ *
+ * `POST https://api.murf.ai/v1/text/translate`, body `{targetLanguage, texts}`,
+ * billed on output characters. Ten texts per request and four thousand
+ * characters each, per the capability documentation -- the API reference page
+ * states no limits at all, and the two disagree, so the tighter number is used
+ * and the batching is not something to tune without measuring against the real
+ * service.
+ *
+ * **Measured against the full catalogue on 2026-08-26**, 834 strings, so the
+ * trade-off is evidence rather than opinion:
+ *
+ * - 0 protection failures. Every `WFZ` token came back intact, including inside
+ *   plural segments. The masking approach holds against this engine.
+ * - 336 strings (40%) identical to the reviewed German. Prose does best; it
+ *   produced `Keine Unterhaltungen erfordern Aufmerksamkeit.` unprompted.
+ * - 35 glossary violations: `Konversation` x21, `Standort` x8, `Momentaufnahme`
+ *   x6 -- every one of them a term the policy had already ruled against.
+ *   `Standort` is the instructive one: `Sites` became a word meaning physical
+ *   locations, which is wrong in a way only a reader who knows the product can
+ *   see.
+ * - 2 strings in the informal address, against a policy of `Sie`.
+ *
+ * Those are the detectable failures. Undetectable ones exist too -- `eine
+ * Besucher-ID` came back as `einen Besucher ID`, wrong gender and a missing
+ * compound hyphen, which no term-matching scorer catches.
+ *
+ * **It cannot use the brief.** The request body has two fields; there is nowhere
+ * to put a glossary, a register, or the catalogue's own notes. That is not a
+ * criticism of the product -- the endpoint exists to prepare a script for
+ * dubbing, where a paragraph of narration carries its own context -- but it is
+ * the reason `usesBrief()` returns false and the reason the policy does not
+ * make this the default engine. Protection tokens still hold, because they are
+ * enforced on the way back rather than requested on the way out.
+ */
+final class MurfEngine implements TranslationEngine
+{
+    private const ENDPOINT = 'https://api.murf.ai/v1/text/translate';
+
+    private const BATCH = 10;
+
+    private const MAX_CHARS = 4000;
+
+    /**
+     * A long batch of translation is slow work at the other end, and a gateway
+     * in front of it will give up before the service does. A 504 mid-run cost
+     * the largest catalogue of an eight-catalogue draft the first time this ran
+     * for real, so a transient status is waited out rather than surfaced.
+     */
+    private const ATTEMPTS = 4;
+
+    private const RETRYABLE = [408, 429, 500, 502, 503, 504];
+
+    private const TIMEOUT_SECONDS = 90;
+
+    /**
+     * The catalogue speaks in bare language tags; Murf wants a region.
+     *
+     * Only the pairs actually reachable from `DashboardLanguage` and the
+     * roadmap are listed. An unmapped locale is an error rather than a guess,
+     * because guessing `de` into `de-DE` is right and guessing `pt` into
+     * `pt-BR` is a decision about which Portuguese, made by accident.
+     */
+    private const LOCALES = [
+        'de' => 'de-DE',
+        'it' => 'it-IT',
+        'fr' => 'fr-FR',
+        'es' => 'es-ES',
+        'nl' => 'nl-NL',
+        'pl' => 'pl-PL',
+    ];
+
+    public function __construct(private readonly ?string $apiKey = null) {}
+
+    public function name(): string
+    {
+        return 'murf';
+    }
+
+    public function usesBrief(): bool
+    {
+        return false;
+    }
+
+    public function translate(array $texts, EngineBrief $brief): array
+    {
+        if ($texts === []) {
+            return [];
+        }
+
+        $key = $this->apiKey ?? config('services.murf.key');
+
+        if (! is_string($key) || trim($key) === '') {
+            throw new TranslationFailed('No Murf API key. Set MURF_API_KEY.');
+        }
+
+        $target = self::LOCALES[$brief->targetLocale] ?? null;
+
+        if ($target === null) {
+            throw new TranslationFailed(
+                "Murf has no mapping for locale '{$brief->targetLocale}'. Add one to ".self::class.' rather than letting it be guessed.'
+            );
+        }
+
+        foreach ($texts as $text) {
+            if (mb_strlen($text) > self::MAX_CHARS) {
+                throw new TranslationFailed(
+                    'A string exceeds Murf\'s '.self::MAX_CHARS.'-character limit: '.mb_substr($text, 0, 60).'…'
+                );
+            }
+        }
+
+        $out = [];
+
+        foreach (array_chunk($texts, self::BATCH) as $batch) {
+            foreach ($this->translateBatch($batch, $key, $target) as $translated) {
+                $out[] = $translated;
+            }
+        }
+
+        if (count($out) !== count($texts)) {
+            throw new TranslationFailed(
+                'Murf returned '.count($out).' translations for '.count($texts).' inputs.'
+            );
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  array<int, string>  $batch
+     * @return array<int, string>
+     */
+    private function translateBatch(array $batch, #[\SensitiveParameter] string $key, string $target): array
+    {
+        $response = $this->post($batch, $key, $target);
+
+        $translations = $response->json('translations');
+
+        if (! is_array($translations) || count($translations) !== count($batch)) {
+            throw new TranslationFailed(
+                'Murf returned a translations array that does not match the batch it was sent.'
+            );
+        }
+
+        $out = [];
+
+        foreach (array_values($batch) as $index => $source) {
+            $entry = $translations[$index] ?? null;
+            $translated = is_array($entry) ? ($entry['translated_text'] ?? null) : null;
+
+            // The response echoes what it translated. Where it does, hold it to
+            // that -- a reordered batch would otherwise pair every string with
+            // the wrong translation and look entirely successful.
+            $echoed = is_array($entry) ? ($entry['source_text'] ?? null) : null;
+
+            if (is_string($echoed) && $echoed !== $source) {
+                throw new TranslationFailed(
+                    'Murf returned translations out of order: expected '.mb_substr($source, 0, 40).'…, got '.mb_substr($echoed, 0, 40).'…'
+                );
+            }
+
+            if (! is_string($translated) || trim($translated) === '') {
+                throw new TranslationFailed(
+                    'Murf returned no translation for: '.mb_substr($source, 0, 60)
+                );
+            }
+
+            $out[] = $translated;
+        }
+
+        return $out;
+    }
+
+    /**
+     * Post one batch, waiting out anything transient.
+     *
+     * @param  array<int, string>  $batch
+     */
+    private function post(array $batch, #[\SensitiveParameter] string $key, string $target): Response
+    {
+        $attempt = 0;
+
+        while (true) {
+            $attempt++;
+
+            try {
+                $response = Http::withHeaders(['api-key' => $key])
+                    ->timeout(self::TIMEOUT_SECONDS)
+                    ->asJson()
+                    ->post(self::ENDPOINT, [
+                        'targetLanguage' => $target,
+                        'texts' => array_values($batch),
+                    ]);
+            } catch (ConnectionException) {
+                if ($attempt >= self::ATTEMPTS) {
+                    throw new TranslationFailed(
+                        'Murf request failed before a response was received, after '.$attempt.' attempts.'
+                    );
+                }
+
+                $this->backOff($attempt);
+
+                continue;
+            }
+
+            if ($response->successful()) {
+                return $response;
+            }
+
+            if (! in_array($response->status(), self::RETRYABLE, true) || $attempt >= self::ATTEMPTS) {
+                throw new TranslationFailed(
+                    'Murf returned '.$response->status().' after '.$attempt.' attempt(s): '
+                        .mb_substr(strip_tags((string) $response->body()), 0, 160)
+                );
+            }
+
+            $this->backOff($attempt);
+        }
+    }
+
+    /**
+     * `Sleep` rather than `usleep`, so the retry path is testable at all.
+     * A test that proves a gateway timeout is waited out should not itself
+     * spend six seconds waiting to prove it.
+     */
+    private function backOff(int $attempt): void
+    {
+        Sleep::for(min(8, 2 ** $attempt))->seconds();
+    }
+}

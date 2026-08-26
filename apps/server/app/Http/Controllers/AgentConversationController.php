@@ -112,6 +112,77 @@ class AgentConversationController extends Controller
                     'unseen' => __('conversations.detail.reply.not_seen'),
                 ],
                 'lastSeenUnknown' => __('conversations.detail.context.not_reported'),
+                // The cobrowse panel is ordinary localized content now, so its
+                // live writers need words the same way presence and read
+                // receipts do. Keyed by the same `copy` names the server render
+                // uses, so both halves say the same thing.
+                'cobrowseTransport' => collect(['exhausted', 'reconnecting', 'degraded', 'live', 'stale', 'inactive', 'no_reports'])
+                    ->mapWithKeys(fn (string $copy): array => [$copy => [
+                        'label' => __('cobrowse.transport.'.$copy.'.label'),
+                        'message' => __('cobrowse.transport.'.$copy.'.message'),
+                        'guidance' => __('cobrowse.transport.'.$copy.'.guidance'),
+                        'recovery_action' => __('cobrowse.transport.'.$copy.'.recovery_action'),
+                    ]])->all(),
+                'cobrowseDrift' => collect(['steady', 'watch', 'drifting'])
+                    ->mapWithKeys(fn (string $state): array => [$state => [
+                        'label' => __('cobrowse.drift.'.$state.'.label'),
+                        'message' => __('cobrowse.drift.'.$state.'.message'),
+                    ]])->all(),
+                'cobrowseDriftSummary' => __('cobrowse.drift.summary'),
+                'cobrowseRecovery' => collect(['pending', 'unknown', 'needs_refresh'])
+                    ->mapWithKeys(fn (string $copy): array => [$copy => [
+                        'label' => __('cobrowse.snapshot_recovery.'.$copy.'.label'),
+                        'message' => __('cobrowse.snapshot_recovery.'.$copy.'.message'),
+                    ]])->all(),
+                'cobrowseRealtime' => __('cobrowse.realtime'),
+                'cobrowseUnits' => [
+                    // Consumed by applyPreviewState(). Missing entries are not a
+                    // language bug -- `.replace()` on undefined is a TypeError,
+                    // and the whole refresh reports itself as a failure.
+                    'applied' => __('cobrowse.units.applied'),
+                    'skipped' => __('cobrowse.units.skipped'),
+                    'notReported' => __('cobrowse.units.not_reported'),
+                    'viewport' => __('cobrowse.units.viewport'),
+                    'milliseconds' => __('cobrowse.units.milliseconds'),
+                    'bytes' => __('cobrowse.units.bytes'),
+                ],
+                // Both plural branches, resolved here with the placeholder left
+                // in -- the same shape the transcript counter uses for its
+                // data-total-one / data-total-many attributes. A script cannot
+                // read Laravel's pipe syntax, and teaching it to would put the
+                // pluralisation rules in two places.
+                'cobrowsePressure' => [
+                    'droppedOne' => trans_choice('cobrowse.pressure.dropped', 1, ['count' => ':count']),
+                    'droppedMany' => trans_choice('cobrowse.pressure.dropped', 2, ['count' => ':count']),
+                    'skippedOne' => trans_choice('cobrowse.pressure.skipped', 1, ['count' => ':count']),
+                    'skippedMany' => trans_choice('cobrowse.pressure.skipped', 2, ['count' => ':count']),
+                    'separator' => __('cobrowse.pressure.separator'),
+                    'noneRecent' => __('cobrowse.pressure.none_recent'),
+                ],
+                // Snapshot freshness is BROADCAST as prose by
+                // CobrowseStateUpdated, built in whichever agent's request
+                // created the event. The page reads `state` and writes its own
+                // words, same rule as presence and read receipts.
+                'freshness' => [
+                    'unknown' => [
+                        'label' => __('cobrowse.freshness.unknown.label'),
+                        'message' => __('cobrowse.freshness.unknown.message'),
+                    ],
+                    'stale' => [
+                        'label' => __('cobrowse.freshness.stale.label'),
+                        'message' => __('cobrowse.freshness.stale.message'),
+                    ],
+                    'aging' => [
+                        'label' => __('cobrowse.freshness.aging.label'),
+                        'message' => __('cobrowse.freshness.aging.message'),
+                    ],
+                    'fresh' => [
+                        'label' => __('cobrowse.freshness.fresh.label'),
+                        'message' => __('cobrowse.freshness.fresh.message'),
+                    ],
+                    'reported' => __('cobrowse.freshness.reported'),
+                    'reportedUnknown' => __('cobrowse.freshness.reported_unknown'),
+                ],
                 // A broadcast payload reaches every agent watching, so any
                 // duration formatted server-side is frozen in whichever agent's
                 // request happened to build it. The payload therefore carries a

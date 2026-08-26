@@ -68,6 +68,28 @@ class CobrowseTransportPressure
     /**
      * @param  array<string, mixed>  $metadata
      */
+    /**
+     * The counts behind `format()`, for a surface that has to build the
+     * sentence in its own language.
+     *
+     * `format()` glues parts together with ', ' and an English pluraliser. The
+     * structure is the half that does not travel, so a translated surface
+     * composes from these instead of translating the result.
+     *
+     * @return array{dropped_batches: int, skipped_mutations: int, has_recent_report: bool}
+     */
+    public function counts(array $metadata, ?Carbon $latestReport = null): array
+    {
+        $latestReport ??= $this->latestReportAt($metadata);
+        $summary = $this->summarize($metadata, $latestReport);
+
+        return [
+            'dropped_batches' => (int) $summary['dropped_batches'],
+            'skipped_mutations' => (int) $summary['skipped_mutations'],
+            'has_recent_report' => $latestReport !== null,
+        ];
+    }
+
     public function format(array $metadata, ?Carbon $latestReport = null): string
     {
         $latestReport ??= $this->latestReportAt($metadata);
