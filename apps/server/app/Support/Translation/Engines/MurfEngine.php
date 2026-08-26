@@ -20,6 +20,24 @@ use Illuminate\Support\Facades\Http;
  * and the batching is not something to tune without measuring against the real
  * service.
  *
+ * **Measured against the full catalogue on 2026-08-26**, 834 strings, so the
+ * trade-off is evidence rather than opinion:
+ *
+ * - 0 protection failures. Every `WFZ` token came back intact, including inside
+ *   plural segments. The masking approach holds against this engine.
+ * - 336 strings (40%) identical to the reviewed German. Prose does best; it
+ *   produced `Keine Unterhaltungen erfordern Aufmerksamkeit.` unprompted.
+ * - 35 glossary violations: `Konversation` x21, `Standort` x8, `Momentaufnahme`
+ *   x6 -- every one of them a term the policy had already ruled against.
+ *   `Standort` is the instructive one: `Sites` became a word meaning physical
+ *   locations, which is wrong in a way only a reader who knows the product can
+ *   see.
+ * - 2 strings in the informal address, against a policy of `Sie`.
+ *
+ * Those are the detectable failures. Undetectable ones exist too -- `eine
+ * Besucher-ID` came back as `einen Besucher ID`, wrong gender and a missing
+ * compound hyphen, which no term-matching scorer catches.
+ *
  * **It cannot use the brief.** The request body has two fields; there is nowhere
  * to put a glossary, a register, or the catalogue's own notes. That is not a
  * criticism of the product -- the endpoint exists to prepare a script for

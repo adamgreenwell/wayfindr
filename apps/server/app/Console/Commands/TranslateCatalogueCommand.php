@@ -66,7 +66,10 @@ class TranslateCatalogueCommand extends Command
             return self::FAILURE;
         }
 
-        if ($this->option('retranslate') && ! $this->confirmRetranslate($locale)) {
+        // Only the WRITE is dangerous. Planning a retranslation changes nothing
+        // and refusing to do it without a human at the keyboard just makes the
+        // safe way to inspect a run the one you cannot script.
+        if ($this->option('retranslate') && $this->option('write') && ! $this->confirmRetranslate($locale)) {
             return self::FAILURE;
         }
 
