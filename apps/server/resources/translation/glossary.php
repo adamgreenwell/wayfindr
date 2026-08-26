@@ -44,21 +44,33 @@ return [
     ],
 
     /*
-     * Identical in every catalogue on purpose.
+     * Identical in a GIVEN language on purpose.
      *
-     * Ratified by use rather than proposed here: these already appear unchanged
-     * in `lang/de`, and the render-comparison test carries them as exclusions
-     * with a companion test that fails when one stops being used. Adding to this
-     * list is a glossary decision and needs the same review as a term.
+     * Per-locale, because cognate-ness is. A global list looked right while
+     * German was the only language and shipped English into Italian the moment
+     * there was a second: `Agent` and `Name` were skipped as "identical in
+     * every catalogue" when Italian wants `Agente` and `Nome`, contradicting
+     * this file's own term table three sections down.
+     *
+     * Ratified by use rather than proposed here, and now enforced: a test
+     * fails when a declared cognate is not actually identical in that locale's
+     * catalogue, so an entry cannot outlive the thing it excuses -- and
+     * `Filter`, `Support` and `Widget` are gone, because no English value ever
+     * matched them and the claim was never true.
      */
     'cognates' => [
-        'Agent',
-        'Cobrowse',
-        'Name',
-        'Widget',
-        'Support',
-        'Live',
-        'Filter',
+        'de' => [
+            'Agent',
+            'Cobrowse',
+            'Name',
+            'Live',
+        ],
+
+        // `Agent` and `Name` are deliberately ABSENT: Italian translates them.
+        'it' => [
+            'Cobrowse',
+            'Live',
+        ],
     ],
 
     /*

@@ -37,7 +37,7 @@ final class CatalogueTranslator
         bool $retranslate = false,
     ): CataloguePlan {
         $existing = $target?->values() ?? [];
-        $cognates = array_flip($this->glossary->cognates());
+        $cognates = array_flip($this->glossary->cognates($targetLocale));
 
         $translated = [];
         $carried = [];
@@ -54,8 +54,22 @@ final class CatalogueTranslator
                 continue;
             }
 
+            // A cognate reaches here only when the key is ABSENT from the
+            // target -- the branch above would have caught it otherwise. So it
+            // is new OUTPUT that happens not to need an engine, and calling it
+            // `carried` was a lie with consequences: `write()` emits only
+            // `translated` for an existing catalogue, so the key vanished from
+            // the fragment and an incremental run quietly lost key parity.
+            //
+            // Routed through the unit list like any other value, so it is
+            // masked, restored and ordered on exactly the same path.
             if (isset($cognates[$value])) {
-                $carried[$key] = $value;
+                $units[] = [
+                    'key' => $key,
+                    'segment' => 0,
+                    'masked' => $this->protector->mask($value),
+                    'skip' => true,
+                ];
 
                 continue;
             }

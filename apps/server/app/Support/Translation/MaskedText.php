@@ -17,6 +17,7 @@ final class MaskedText
     public function __construct(
         public readonly string $text,
         public readonly array $map,
+        public readonly string $prefix = 'WFZ',
     ) {}
 
     public function isFullyMasked(): bool

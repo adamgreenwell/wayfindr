@@ -26,7 +26,7 @@ class TranslateCatalogueCommand extends Command
         {--engine=passthrough : passthrough|murf}
         {--catalogue=* : Limit to named catalogues, e.g. --catalogue=nav}
         {--write : Write the result instead of only reporting it}
-        {--retranslate : Replace values that already exist -- overwrites reviewed copy}
+        {--retranslate : Redraft every key, not only the missing ones; an existing catalogue is never overwritten}
         {--score : Measure the result against the policy: rejected terms, register, typography}';
 
     protected $description = 'Draft a language catalogue from the English source, the glossary, and the policy.';
@@ -98,7 +98,13 @@ class TranslateCatalogueCommand extends Command
         $scores = [];
         $failed = false;
 
-        foreach ($this->catalogues() as $sourcePath) {
+        $catalogues = $this->catalogues();
+
+        if ($catalogues === null) {
+            return self::FAILURE;
+        }
+
+        foreach ($catalogues as $sourcePath) {
             $name = basename($sourcePath, '.php');
             $targetPath = lang_path($locale.'/'.$name.'.php');
 
@@ -184,15 +190,34 @@ class TranslateCatalogueCommand extends Command
     }
 
     /**
-     * @return array<int, string>
+     * The source catalogues this run covers.
+     *
+     * A name that matches nothing is an error rather than an empty result. The
+     * earlier version filtered silently, so `--catalogue=conversation` (missing
+     * its `s`) drafted nothing, printed no warning, and exited 0 -- an
+     * automated run would report success having produced none of what it was
+     * asked for. Same failure as an unchecked write: work not done, reported
+     * as done.
+     *
+     * @return array<int, string>|null null when a requested name matched nothing
      */
-    private function catalogues(): array
+    private function catalogues(): ?array
     {
-        $only = (array) $this->option('catalogue');
         $paths = glob(lang_path('en/*.php')) ?: [];
+        $only = array_values(array_filter((array) $this->option('catalogue')));
 
         if ($only === []) {
             return $paths;
+        }
+
+        $available = array_map(static fn (string $path): string => basename($path, '.php'), $paths);
+        $unmatched = array_diff($only, $available);
+
+        if ($unmatched !== []) {
+            $this->error('No such catalogue: '.implode(', ', $unmatched));
+            $this->line('  available: '.implode(', ', $available));
+
+            return null;
         }
 
         return array_values(array_filter(
@@ -233,6 +258,7 @@ class TranslateCatalogueCommand extends Command
         $scored = 0;
         $drafted = 0;
         $agreed = 0;
+        $comparable = 0;
         $hasReviewed = false;
 
         /** @var array<string, array<int, array{key: string, detail: string}>> $all */
@@ -245,6 +271,7 @@ class TranslateCatalogueCommand extends Command
             if ($score->agreed !== null) {
                 $hasReviewed = true;
                 $agreed += $score->agreed;
+                $comparable += $score->comparable;
             }
 
             foreach ($score->violations as $rule => $hits) {
@@ -256,12 +283,16 @@ class TranslateCatalogueCommand extends Command
 
         $this->line("  {$scored} strings measured, {$drafted} of them newly drafted");
 
-        if ($hasReviewed && $drafted > 0) {
+        // Over what was COMPARABLE, matching `PolicyScore::agreementPercent()`.
+        // Dividing by every drafted key reports one matching counterpart beside
+        // nine genuinely new strings as `1 of 10 (10%)`, which reads as a bad
+        // engine rather than as nine keys the reviewed catalogue never had.
+        if ($hasReviewed && $comparable > 0) {
             $this->line(sprintf(
-                '  %d of %d drafted strings (%.0f%%) match the reviewed catalogue already',
+                '  %d of %d comparable strings (%.0f%%) match the reviewed catalogue already',
                 $agreed,
-                $drafted,
-                100 * $agreed / $drafted,
+                $comparable,
+                100 * $agreed / $comparable,
             ));
         }
 
@@ -296,7 +327,36 @@ class TranslateCatalogueCommand extends Command
             return;
         }
 
-        @mkdir(dirname($targetPath), 0o755, true);
+        $directory = dirname($targetPath);
+
+        // Same class as the unchecked write below: a locale directory that
+        // cannot be created must not be followed by a report of success.
+        if (! is_dir($directory) && ! @mkdir($directory, 0o755, true) && ! is_dir($directory)) {
+            $this->error("  could not create {$directory}");
+            $this->writeFailed = true;
+
+            return;
+        }
+
+        // A NEW catalogue is written whole or not at all.
+        //
+        // When a key fails -- a lost protection token, a duplicated one --
+        // `plan()` keeps its successful siblings, and writing them alone
+        // creates a catalogue that is missing exactly the keys nobody checked.
+        // Laravel then serves those keys as raw strings to an agent. Worse, the
+        // file now EXISTS, so a retry takes the branch below and writes a
+        // sidecar fragment instead of the catalogue -- leaving it permanently
+        // incomplete, one run after the failure that caused it.
+        //
+        // A fragment beside an existing catalogue is a different case and is
+        // still written: it is merged by hand, by someone who has just been
+        // shown the failures, and Laravel never reads it.
+        if ($plan->hasFailures() && ! is_file($targetPath)) {
+            $this->error('  not writing '.basename($targetPath).': '.count($plan->failures).' key(s) failed, and a partial catalogue would be served as if it were whole');
+            $this->writeFailed = true;
+
+            return;
+        }
 
         // The rule the class exists for: an existing catalogue is never
         // regenerated. Its in-array comments would go with it, and the loss
@@ -340,10 +400,58 @@ class TranslateCatalogueCommand extends Command
      * that fails, because the operator goes looking for a file that is not
      * there and concludes the run was the problem.
      */
-    private function put(string $path, string $contents): bool
+    protected function put(string $path, string $contents): bool
     {
-        if (file_put_contents($path, $contents) === false) {
-            $this->error("  could not write {$path}");
+        // Written to a sibling temporary file and renamed into place, because
+        // reporting a failed write is not the same as leaving nothing behind.
+        //
+        // A direct write that fills the disk or is interrupted leaves a
+        // truncated catalogue on disk. The run reports failure -- and the file
+        // still exists, so the NEXT run takes the existing-catalogue branch and
+        // writes a sidecar fragment instead of repairing it. Laravel may load
+        // the malformed file in the meantime, which for a PHP catalogue is a
+        // parse error rather than a missing string.
+        //
+        // `rename()` within a directory is atomic on POSIX, so the target only
+        // ever exists complete or not at all -- including when the process is
+        // killed mid-write, which no return-value check can catch.
+        $temporary = $path.'.'.bin2hex(random_bytes(6)).'.tmp';
+        $expected = strlen($contents);
+
+        // Suppressed deliberately. A short write also raises a PHP warning,
+        // which an error handler turns into an exception and which says less
+        // than the check below -- this reports the path and both byte counts,
+        // and returns a failure the caller already knows how to propagate.
+        // Suppressing it makes this method the single place the failure is
+        // reported, and the only place it has to be tested.
+        $written = @file_put_contents($temporary, $contents);
+
+        // Both conditions, and the honest note is which one fires.
+        //
+        // The review finding said a disk filling mid-write returns a positive
+        // count shorter than the contents. On PHP 8.5 it does not: a stream
+        // that stalls part-way and one that never completes both make
+        // `file_put_contents()` return `false`, verified with a stream wrapper.
+        // So `=== false` is the branch that actually catches a truncated write
+        // here, and the length comparison is defence for a platform or version
+        // where the documented short-count return does occur. It costs one
+        // comparison and rules out a class of silent truncation, so it stays --
+        // but nobody should read it as the guard doing the work today.
+        if ($written === false || $written !== $expected) {
+            @unlink($temporary);
+
+            $this->error($written === false
+                ? "  could not write {$path}"
+                : "  short write to {$path}: {$written} of {$expected} bytes");
+            $this->writeFailed = true;
+
+            return false;
+        }
+
+        if (! @rename($temporary, $path)) {
+            @unlink($temporary);
+
+            $this->error("  could not move the finished file into {$path}");
             $this->writeFailed = true;
 
             return false;

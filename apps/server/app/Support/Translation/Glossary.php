@@ -61,11 +61,13 @@ final class Glossary
     }
 
     /**
+     * Values this language leaves in English on purpose.
+     *
      * @return array<int, string>
      */
-    public function cognates(): array
+    public function cognates(string $locale): array
     {
-        return $this->data['cognates'] ?? [];
+        return $this->data['cognates'][$locale] ?? [];
     }
 
     /**
