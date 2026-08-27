@@ -592,7 +592,12 @@
         return postJson(fetcher, apiBaseUrl + '/api/widget/presence', withoutNullValues({
           site_public_key: sitePublicKey,
           anonymous_id: anonymousId,
-          page_url: pageUrl || null,
+          // Sanitised HERE, not only by the widget that usually calls it.
+          // createClient() is a public integration surface, so a host calling
+          // client.reportPresence(window.location.href) would otherwise put a
+          // reset token on the wire -- which is the one thing client-side
+          // sanitising exists to prevent.
+          page_url: sanitisePageUrl(pageUrl),
         }));
       },
       startConversation: function (body, details) {
@@ -1786,6 +1791,11 @@
     }
 
     function handleVisibilityChange() {
+      // Presence rides on the handler `destroy()` already removes rather than
+      // registering a second, anonymous one -- an anonymous listener cannot be
+      // removed, so a destroyed widget would keep waking up and reporting.
+      handlePresenceVisibility();
+
       if (canMarkRenderedMessagesSeen()) {
         scheduleRenderedReadReceipt();
 
@@ -1793,6 +1803,23 @@
       }
 
       cancelPendingReadReceipt();
+    }
+
+    function handlePresenceVisibility() {
+      if (!presenceConfig) {
+        return;
+      }
+
+      if (presenceHidden()) {
+        // A hidden tab reports nothing, and decaying to quiet is the honest
+        // answer for somebody who is not looking.
+        stopPresenceTimer();
+
+        return;
+      }
+
+      sendPresence();
+      startPresenceTimer();
     }
 
     function renderCobrowseConsent() {
@@ -2719,25 +2746,6 @@
       });
     }
 
-    if (doc && typeof doc.addEventListener === 'function') {
-      doc.addEventListener('visibilitychange', function () {
-        if (!presenceConfig) {
-          return;
-        }
-
-        if (presenceHidden()) {
-          // A hidden tab reports nothing, and decaying to quiet is the honest
-          // answer for somebody who is not looking.
-          stopPresenceTimer();
-
-          return;
-        }
-
-        sendPresence();
-        startPresenceTimer();
-      });
-    }
-
     function applyBootstrapResult(result) {
       // Language first: everything below renders copy, and rendering it twice
       // would show the visitor the wrong language for a frame.
@@ -2783,11 +2791,19 @@
 
       // Fail closed. If a "no" cannot survive a navigation, we do not get to
       // assume a "yes".
+      //
+      // presenceConfig is cleared before BOTH returns rather than left set:
+      // the visibility handler gates on it, so leaving it truthy meant hiding
+      // and re-showing the tab restarted reporting -- underneath a notice
+      // saying pages were not being shared.
       if (!storageRemembers(storage, key)) {
+        presenceConfig = null;
+
         return;
       }
 
       if (storageGet(storage, key) === 'declined') {
+        presenceConfig = null;
         renderPresenceDeclined();
 
         return;
@@ -2799,6 +2815,8 @@
       // before the visitor could have seen it is the same defect as not having
       // one, arriving a few hundred milliseconds earlier.
       if (!presenceEl || !rootEl.contains(presenceEl)) {
+        presenceConfig = null;
+
         return;
       }
 
@@ -2852,7 +2870,19 @@
     }
 
     function currentHref() {
-      return options.location && options.location.href ? options.location.href : null;
+      // The RESOLVED location, then the DOCUMENT's own. Production embeds pass
+      // neither `options.location` nor a document, so reading the option alone
+      // meant every heartbeat omitted the page and the board could never say
+      // where anybody was.
+      //
+      // The document fallback is not only for tests: a widget mounted into a
+      // document it was handed should report THAT document's address rather
+      // than whatever the surrounding global happens to be.
+      if (location && location.href) {
+        return location.href;
+      }
+
+      return doc && doc.location && doc.location.href ? doc.location.href : null;
     }
 
     function renderPresenceDisclosure() {
@@ -3820,6 +3850,7 @@
         cancelPendingReadReceipt();
         clearAgentTypingExpiry();
         stopMutationStream();
+        stopPresence();
         doc.removeEventListener('visibilitychange', handleVisibilityChange);
         rootEl.remove();
       },

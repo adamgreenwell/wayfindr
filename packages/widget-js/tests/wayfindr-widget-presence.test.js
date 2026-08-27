@@ -29,7 +29,7 @@ async function settle() {
   }
 }
 
-function widgetWithPresence({ reports = true, storage, href, declined } = {}) {
+function widgetWithPresence({ reports = true, storage, href, declined, pollMs = 0 } = {}) {
   const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
     url: href || 'https://shop.example.test/pricing',
   });
@@ -59,7 +59,7 @@ function widgetWithPresence({ reports = true, storage, href, declined } = {}) {
     mutationFlushMs: 0,
     cobrowseStatusPollMs: 0,
     messagePollMs: 0,
-    presencePollMs: 0,
+    presencePollMs: pollMs,
     fetch: async (url, init) => {
       calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
 
@@ -185,4 +185,124 @@ test('the disclosure is on the page before the first report leaves', async () =>
   assert.ok(disclosure, 'no disclosure element exists');
   assert.equal(disclosure.hidden, false, 'the notice is hidden while presence reports');
   assert.equal(presenceCalls(calls).length, 1);
+});
+
+test('hiding and re-showing the tab does not restart a declined visitor', async () => {
+  // The fail-closed returns used to leave `presenceConfig` set, and the
+  // visibility handler gates on exactly that -- so a tab switch restarted
+  // reporting underneath a notice saying pages were not being shared.
+  const { widget, calls, dom } = widgetWithPresence({ declined: true });
+
+  await widget.open();
+  await settle();
+
+  assert.equal(presenceCalls(calls).length, 0);
+
+  Object.defineProperty(dom.window.document, 'visibilityState', { value: 'visible', configurable: true });
+  dom.window.document.dispatchEvent(new dom.window.Event('visibilitychange'));
+  await settle();
+
+  assert.equal(presenceCalls(calls).length, 0, 'a tab switch restarted reporting for somebody who declined');
+});
+
+test('the page is read from the browser location, not only an injected one', async () => {
+  // Production embeds do not pass `options.location`; init() resolves the
+  // browser's. Reading the option meant every heartbeat omitted page_url and
+  // the board could never say where anybody was.
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/deep/page',
+  });
+
+  const calls = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    // location deliberately omitted, exactly as a real embed does.
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: memoryStorage({
+      'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+      'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+    }),
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 0,
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return jsonResponse(200, {
+          data: {
+            site: { public_key: 'site_public_shop', settings: {}, color: 'blue', presence: { reports: true, every: 45 } },
+            visitor: { anonymous_id: 'anon-shop', token: 'visitor-token-shop' },
+          },
+        });
+      }
+
+      return jsonResponse(202, { data: { reports: true } });
+    },
+  });
+
+  await widget.open();
+  await settle();
+
+  const sent = presenceCalls(calls);
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].body.page_url, 'https://shop.example.test/deep/page');
+});
+
+test('the client sanitises a URL a host hands it directly', async () => {
+  // createClient() is a public integration surface. A host calling
+  // reportPresence(window.location.href) must not put a token on the wire just
+  // because it bypassed the widget's own sanitising.
+  const calls = [];
+
+  const client = Wayfindr.createClient({
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    anonymousId: 'anon-direct',
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      return jsonResponse(202, { data: { reports: true } });
+    },
+  });
+
+  await client.reportPresence('https://shop.example.test/reset?reset_token=direct#frag');
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].body.page_url, 'https://shop.example.test/reset');
+});
+
+test('destroying the widget stops it reporting', async (t) => {
+  // Two ways a destroyed widget can keep reporting, and the test has to reach
+  // BOTH: the visibilitychange listener waking it, and the interval it left
+  // running. An earlier version only dispatched a visibility event, which the
+  // existing removeEventListener already covered -- so deleting the timer
+  // teardown changed nothing and the test passed against the bug.
+  //
+  // A real interval, deliberately short, is what reaches the second one.
+  const { widget, calls, dom } = widgetWithPresence({ pollMs: 20 });
+
+  await widget.open();
+  await settle();
+
+  const before = presenceCalls(calls).length;
+
+  assert.ok(before > 0, 'nothing was reported, so this proves nothing');
+
+  widget.destroy();
+
+  Object.defineProperty(dom.window.document, 'visibilityState', { value: 'visible', configurable: true });
+  dom.window.document.dispatchEvent(new dom.window.Event('visibilitychange'));
+
+  // Long enough for several missed ticks of a 20ms interval.
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  await settle();
+
+  assert.equal(presenceCalls(calls).length, before, 'a destroyed widget reported again');
 });
