@@ -76,6 +76,12 @@ class ConversationController extends Controller
             $visitorContextSanitizer,
             $visitor,
         ): Conversation {
+            // Same lock `updatePresence()` takes, for the same reason as
+            // bootstrap: the page-address setting has to be the one in force
+            // at the write, not the one this request saw on arrival.
+            $current = Site::query()->whereKey($site->getKey())->lockForUpdate()->first() ?? $site;
+            $storePageUrl = SitePresenceReporting::for($current)->pageUrls;
+
             $locked = Visitor::query()->whereKey($visitor->getKey())->lockForUpdate()->first();
 
             // Gone means the pruner won the race. Re-created rather than
@@ -93,7 +99,7 @@ class ConversationController extends Controller
                     array_key_exists('context', $validated),
                     $validated['context'] ?? null,
                     $site->domain,
-                    SitePresenceReporting::for($site)->pageUrls,
+                    $storePageUrl,
                 ),
                 'last_web_seen_at' => now(),
                 // Starting a conversation is contact, and this route does not
