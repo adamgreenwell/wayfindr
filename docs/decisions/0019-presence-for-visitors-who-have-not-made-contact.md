@@ -215,9 +215,17 @@ means rather than leaving it to the implementation:
   that looks like an identifier rather than a word is replaced with `…`, so
   `/reset-password/9f2c…` still says which page without saying which token.
 
-  The test is deliberately crude, and it is a heuristic rather than a proof: a
-  UUID, anything 32 characters or longer, or anything at least **six**
-  characters carrying a digit with no word separator.
+  The test is deliberately crude, and it is a heuristic rather than a proof. A
+  segment is judged twice, because a separator is how a slug is written AND how
+  a credential is punctuated — `/invite/ABC-123` walked past a rule that read
+  any hyphen as proof of readability.
+
+  First **whole, with its punctuation removed**: five or more characters of
+  capitals and digits is a code, since sites write `/about` rather than
+  `/ABOUT` while invitation and coupon codes are capitals by convention. Then
+  **part by part**, splitting on `-`, `_` and `.`, where one token-shaped piece
+  condemns the whole segment: a UUID, sixteen characters or more, or six or
+  more carrying a digit.
 
   Six, not twenty, and the difference matters more than it looks. Twenty is
   long enough to feel safe and is not: the dangerous values are frequently
