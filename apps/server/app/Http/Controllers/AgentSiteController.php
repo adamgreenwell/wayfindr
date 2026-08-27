@@ -731,6 +731,15 @@ class AgentSiteController extends Controller
         Visitor::query()
             ->where('site_id', $site->id)
             ->whereNotNull('metadata')
+            // Only rows that actually hold an address. Without this the sweep
+            // takes a lock and an update for EVERY visitor on the site, inside
+            // the operator's own request -- and on an established site that is
+            // most of the table for the sake of the few rows that have one.
+            //
+            // A LIKE rather than a JSON path, because this has to behave the
+            // same on SQLite and PostgreSQL. It over-matches harmlessly: a row
+            // whose key is present but already null re-saves unchanged.
+            ->where('metadata', 'like', '%last_page_url%')
             ->chunkById(200, function ($visitors): void {
                 foreach ($visitors as $visitor) {
                     // Re-read under a lock before writing. `metadata` is one
