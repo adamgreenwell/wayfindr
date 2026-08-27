@@ -762,3 +762,81 @@ test('a visitor pruned mid-request still gets their conversation', function (): 
         ->and(Conversation::query()->where('visitor_id', $recreated->id)->exists())
         ->toBeTrue('the conversation was lost with the visitor');
 });
+
+test('bootstrap does not hand out a token for a visitor it just lost', function (): void {
+    // Eloquent does not treat an update matching zero rows as a failure, so a
+    // prune landing between the read and the write left bootstrap answering
+    // 200 with a session token naming a visitor that no longer exists. Every
+    // conversation and message request afterwards then failed token resolution
+    // with a 401 the visitor could do nothing about -- worse than an error,
+    // because it looks like success right up until they try to say something.
+    $site = presenceSite();
+
+    reportPresence($site, 'anon-lost')->assertSuccessful();
+
+    $visitor = Visitor::query()->where('anonymous_id', 'anon-lost')->firstOrFail();
+    $goneId = $visitor->id;
+    $pruned = false;
+
+    Visitor::retrieved(function (Visitor $read) use (&$pruned, $goneId): void {
+        if ($pruned || $read->id !== $goneId) {
+            return;
+        }
+
+        $pruned = true;
+
+        Visitor::query()->whereKey($goneId)->delete();
+    });
+
+    $response = test()->postJson('/api/widget/bootstrap', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-lost',
+    ])->assertSuccessful();
+
+    expect($pruned)->toBeTrue('the race never happened, so this proves nothing');
+
+    // The token has to name a visitor that is actually there.
+    $token = $response->json('data.visitor.token');
+    $current = Visitor::query()->where('anonymous_id', 'anon-lost')->firstOrFail();
+
+    expect($current->id)->not->toBe($goneId);
+
+    test()->postJson('/api/conversations', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-lost',
+        'visitor_token' => $token,
+        'subject' => 'Still here',
+    ])->assertSuccessful();
+});
+
+test('two first heartbeats for one visitor do not collide', function (): void {
+    // The presence endpoint's own retry, which until now had no test at all.
+    // On PostgreSQL this is not merely a caught exception: a constraint
+    // violation aborts the surrounding transaction, so a retry that is not
+    // isolated runs on a connection refusing every statement.
+    $site = presenceSite();
+    $raced = false;
+
+    Visitor::creating(function (Visitor $creating) use (&$raced, $site): void {
+        if ($raced || $creating->anonymous_id !== 'anon-twin') {
+            return;
+        }
+
+        $raced = true;
+
+        DB::table('visitors')->insert([
+            'site_id' => $site->id,
+            'anonymous_id' => 'anon-twin',
+            'presence_only' => true,
+            'last_seen_at' => now(),
+            'last_web_seen_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    });
+
+    reportPresence($site, 'anon-twin')->assertSuccessful();
+
+    expect($raced)->toBeTrue('the race never happened, so this proves nothing')
+        ->and(Visitor::query()->where('anonymous_id', 'anon-twin')->count())->toBe(1);
+});

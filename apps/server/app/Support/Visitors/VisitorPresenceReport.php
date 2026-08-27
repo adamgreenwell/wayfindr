@@ -7,6 +7,7 @@ namespace App\Support\Visitors;
 use App\Models\Site;
 use App\Models\Visitor;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
 
 /**
@@ -23,7 +24,20 @@ final class VisitorPresenceReport
     public function record(Site $site, string $anonymousId, ?string $pageUrl): Visitor
     {
         try {
-            return $this->stamp($this->resolve($site, $anonymousId), $pageUrl, $site);
+            // Wrapped, because on PostgreSQL a failed statement poisons the
+            // transaction it is in: every statement after a constraint
+            // violation errors with "current transaction is aborted" until a
+            // rollback. Catching the exception is not enough on its own -- the
+            // retry has to run on a connection that is still usable.
+            //
+            // DB::transaction() gives that either way. Standing alone it is a
+            // real transaction; inside a caller's transaction it is a
+            // SAVEPOINT, so the failed insert rolls back to the savepoint and
+            // leaves the outer work intact.
+            //
+            // SQLite does not behave this way, which is why the suite was green
+            // and the PostgreSQL run was not.
+            return DB::transaction(fn (): Visitor => $this->stamp($this->resolve($site, $anonymousId), $pageUrl, $site));
         } catch (UniqueConstraintViolationException) {
             // Two first reports for the same visitor overlapped -- a page-load
             // heartbeat racing bootstrap, or two tabs opened together. Both saw
