@@ -1,0 +1,376 @@
+<?php
+
+/*
+ * Drafted from lang/en/tickets.php. NOT YET REVIEWED.
+ *
+ * Machine output against the glossary in resources/translation/glossary.php
+ * and the rules in docs/product/translation-policy.md. Every value here is a
+ * proposal: the pipeline optimises for a diff somebody can check, not for a
+ * translation nobody has to.
+ *
+ * Review order that actually finds things: the glossary terms first, then the
+ * short strings against the rendered surface, then register in the prose.
+ * Placeholders and plural segments are held by the pipeline and are not worth
+ * your attention.
+ *
+ * 9 plural string(s) need their segment count checked against it.
+ * /
+ * /
+ * /
+ * /
+ */
+return [
+    'document_title' => 'Ticket',
+    'title' => 'Coda dei ticket',
+    'subtitle' => 'Lavoro di supporto strutturato per :account.',
+    'search' => [
+        'label' => 'Cerca',
+        'placeholder' => 'Ticket #123, codice di supporto, oggetto, richiedente',
+        'hint' => 'Cerchi per numero di ticket, oggetto, descrizione, codice di supporto, richiedente, email o ID visitatore anonimo.',
+        'submit' => 'Applica filtri',
+    ],
+    'columns' => [
+        'subject' => 'Oggetto',
+        'status' => 'Stato',
+        'priority' => 'Priorità',
+        'category' => 'Categoria',
+        'labels' => 'Etichette',
+        'assignee' => 'Assegnatario',
+        'next_step' => 'Prossimo passo',
+        'external_issue' => 'Problema esterno',
+        'latest_activity' => 'Ultima attività',
+        'timing' => 'Tempistica',
+        'site' => 'Sito',
+        'label' => 'Etichetta',
+    ],
+    'regions' => [
+        'filters' => 'Filtri attivi dei ticket',
+        'lanes' => 'Corsie dei ticket',
+        'next_steps' => 'Prossimi passi del ticket',
+    ],
+    'filters' => [
+        'assignee' => [
+            'all' => 'Qualsiasi assegnatario',
+            'assigned_to_me' => 'Assegnato a me',
+            'unassigned' => 'Non assegnato',
+        ],
+        'status' => [
+            'open' => 'Tutti aperti',
+            'pending' => 'In sospeso',
+            'closed' => 'Chiuso',
+            'all' => 'Tutti i ticket',
+        ],
+        'priority_any' => 'Qualsiasi priorità',
+        'category_any' => 'Qualsiasi categoria',
+        'category_uncategorized' => 'Non categorizzato',
+        'label_any' => 'Qualsiasi etichetta',
+        'site_any' => 'Qualsiasi sito',
+        'attention' => [
+            'all' => 'Qualsiasi passaggio successivo',
+            'escalated' => 'Recentemente escalato',
+            'needs_reply' => 'Richiede risposta',
+            'needs_owner' => 'Serve un responsabile',
+            'needs_agent' => 'Serve un agente',
+            'waiting_on_customer' => 'In attesa del cliente',
+            'resolved' => 'Risolto',
+        ],
+        'external' => [
+            'all' => 'Qualsiasi problema esterno',
+            'failed' => 'Da gestire',
+            'pending' => 'Sincronizzazione in sospeso',
+            'linked' => 'Collegato',
+            'none' => 'Nessun problema esterno',
+        ],
+    ],
+    'categories' => [
+        'question' => 'Domanda',
+        'bug' => 'Bug',
+        'billing' => 'Fatturazione',
+        'access' => 'Accesso',
+        'task' => 'Compito',
+        'other' => 'Altro',
+    ],
+    'statuses' => [
+        'open' => 'Aperto',
+        'pending' => 'In sospeso',
+        'closed' => 'Chiuso',
+    ],
+    'priorities' => [
+        'low' => 'Basso',
+        'normal' => 'Normale',
+        'high' => 'Alto',
+        'urgent' => 'Urgente',
+    ],
+    'chips' => [
+        'status' => 'Stato: :value',
+        'assignee' => 'Assegnatario: :value',
+        'site' => 'Sito: :value',
+        'priority' => 'Priorità: :value',
+        'category' => 'Categoria: :value',
+        'label' => 'Etichetta: :value',
+        'next_step' => 'Prossimo passo: :value',
+        'external' => 'Problema esterno: :value',
+        'search' => 'Cerca: :value',
+    ],
+    'actions' => [
+        'clear_filters' => 'Cancella filtri',
+        'clear_all' => 'Cancella tutti i filtri dei ticket',
+        'clear_search' => 'Cancella ricerca',
+        'clear_next_step' => 'Cancella filtro prossimo passaggio',
+        'clear_external' => 'Cancella filtro problemi esterni',
+        'open_conversations' => 'Conversazioni aperte',
+        'show_all' => 'Mostra tutti i ticket',
+    ],
+    'counts' => [
+        'tickets' => '{1} 1 ticket|[2,*] :count ticket',
+        'matches' => '{1} 1 ticket corrispondente|[2,*] :count ticket corrispondenti',
+        'matching_tickets' => '{1} 1 ticket corrispondente|[2,*] :count ticket corrispondenti',
+    ],
+    'summary' => [
+        'lane_narrowed_heading' => ':shown visualizzati su :matching',
+        'heading' => [
+            'open' => '{1} :count aperto|[2,*] :count aperti',
+            'pending' => '{1} :count in sospeso|[2,*] :count in sospeso',
+            'closed' => '{1} :count chiuso|[2,*] :count chiusi',
+            'total' => '{1} :count totale|[2,*] :count totali',
+        ],
+        'filtered_detail' => '{1} Visualizzazione di :shown che corrisponde ai filtri attuali della coda.|[2,*] Visualizzazione di :shown che corrispondono ai filtri attuali della coda.',
+        'lane_narrowed_detail' => '{1} Visualizzazione di :shown dopo il filtro del prossimo passo :lane. :matching gli altri filtri della coda.|[2,*] Visualizzazione di :shown dopo il filtro del prossimo passo :lane. :matching gli altri filtri della coda.',
+    ],
+    'empty' => [
+        'no_match_filters' => 'Nessun ticket corrisponde a questi filtri.',
+        'none_yet' => 'Nessun ticket al momento.',
+        'no_pending' => 'Nessun ticket in sospeso al momento.',
+        'no_closed' => 'Nessun ticket chiuso al momento.',
+        'no_open' => 'Nessun ticket aperto al momento.',
+        'first_run_detail' => 'I ticket vengono creati dalle conversazioni: apra un thread e lo trasformi in un ticket permanente dalla sua scheda Ticket.',
+        'waiting_detail' => 'Quando i visitatori necessitano di un follow-up duraturo, i ticket verranno indirizzati qui.',
+        'search_detail' => 'La ricerca copre numero del ticket, oggetto, descrizione, codice di supporto, richiedente, email e ID visitatore anonimo.',
+        'search_heading' => 'Nessun ticket corrisponde a «:term».',
+        'next_step_detail' => 'Provi un\'altra coda dei prossimi passaggi o cancelli il filtro dei prossimi passaggi.',
+        'next_step_heading' => 'Nessun ticket richiede :phrase al momento.',
+        'external_detail' => 'Provi un altro stato del problema esterno o cancelli il filtro del problema esterno.',
+        'external_heading' => 'Nessun ticket corrisponde a quello stato esterno del problema.',
+        'refine_detail' => 'Provi a cancellare un filtro, ad ampliare lo stato oppure a cercare tramite codice di supporto se ne ha uno.',
+    ],
+    'attention_phrase' => [
+        'escalated' => 'revisione recente dell\'escalation',
+        'needs_reply' => 'una risposta al visitatore',
+        'needs_owner' => 'un responsabile',
+        'needs_agent' => 'un aggiornamento dell\'agente',
+        'waiting_on_customer' => 'follow-up con il cliente',
+        'resolved' => 'revisione della risoluzione',
+        'default' => 'quel prossimo passo',
+    ],
+    'external_state' => [
+        'failed' => 'Apra il ticket per esaminare le opzioni sicure per riprovare.',
+        'pending' => 'In attesa della conferma dal tracker esterno.',
+        'linked' => 'Il riferimento al tracker esterno è allegato.',
+        'none' => 'Wayfindr è l\'unico tracker per questo ticket.',
+    ],
+    'lifecycle' => [
+        'pending' => 'Ticket contrassegnato come in sospeso',
+        'closed' => 'Ticket chiuso',
+        'reopened' => 'Ticket riaperto',
+        'unheld' => 'Ticket rimosso dalla sospensione',
+        'escalated' => 'Ticket inoltrato',
+        'default' => 'Aggiornamento del ciclo di vita',
+    ],
+    'read_state' => [
+        'seen' => 'Il visitatore ha visualizzato la risposta',
+        'unseen' => 'Non ancora visto',
+        'none' => 'Nessuna risposta dall\'agente al momento',
+        'detail_none' => 'Nessuna risposta dell\'agente è stata inviata.',
+        'detail_seen' => 'Visto :elapsed',
+        'detail_unseen' => 'L\'ultima risposta dell\'agente non è stata visualizzata.',
+    ],
+    'external_attempt' => [
+        'none_label' => 'Nessun tentativo esterno finora',
+        'none_body' => 'Crei o colleghi un problema esterno quando questo ticket richiede lavoro in un altro tracker.',
+        'failed_label' => 'Sincronizzazione :provider non riuscita',
+        'failed_body' => ':project necessita di attenzione. Dettagli del provider non divulgati.',
+        'pending_label' => 'Sincronizzazione :provider in sospeso',
+        'pending_body' => ':project è in attesa della conferma del provider.',
+        'linked_label' => ':provider collegamento attivo',
+        'linked_body' => ':project è collegato a :reference.',
+        'linked_body_bare' => ':project è collegato.',
+        'removed_label' => ':provider link rimosso',
+        'removed_body' => ':project non è più collegato a :reference.',
+        'removed_body_bare' => 'Il link esterno di :project è stato rimosso.',
+        'created_label' => ':provider segnalazione creata',
+        'created_body' => ':project è collegato a :reference.',
+        'created_body_bare' => ':project è stato creato nel tracker esterno.',
+        'project_unknown' => 'Progetto non registrato',
+    ],
+    'next_action' => [
+        'needs_reply' => [
+            'title' => 'Rispondi al visitatore',
+            'body' => 'Il visitatore ha risposto per ultimo. Invii una risposta chiara, poi segni il ticket come in sospeso o lo chiuda quando l\'esito è stato definito.',
+            'cta' => 'Vai alla risposta',
+        ],
+        'needs_owner' => [
+            'title' => 'Assegna un responsabile',
+            'body' => 'Nessun agente è ancora assegnato a questo ticket. Assegni qualcuno prima che il lavoro vada perso.',
+            'cta' => 'Assegna ticket',
+        ],
+        'waiting_on_customer' => [
+            'title' => 'Attendi il cliente',
+            'body' => 'L\'agente ha risposto per ultimo. Mantenga il ticket visibile, poi riapra il ciclo quando il visitatore risponde.',
+            'cta' => 'Rivedi le azioni di stato',
+        ],
+        'resolved' => [
+            'title' => 'Rivedi la risoluzione',
+            'body' => 'Questo ticket è chiuso. Lo riapra solo se il cliente torna o se l\'esito cambia.',
+            'cta' => 'Rivedi azioni sullo stato',
+        ],
+        'needs_agent' => [
+            'title' => 'Aggiungi il prossimo aggiornamento',
+            'body' => 'Questo ticket è assegnato ed è pronto per un aggiornamento da parte di un agente. Aggiunga una risposta, una nota interna o una modifica di stato.',
+            'cta' => 'Rivedi azioni',
+        ],
+    ],
+    'status_readiness' => [
+        'reply_before_closing' => [
+            'title' => 'Rispondi prima di chiudere',
+            'detail' => 'L\'ultimo a rispondere è stato il visitatore. Chiudere ora potrebbe lasciare il cliente in attesa. Usi «in sospeso» o «chiudi» solo dopo un aggiornamento dell\'agente o un esito confermato.',
+            'cta' => 'Vai alla risposta',
+        ],
+        'assign_first' => [
+            'title' => 'Assegna prima che lo stato cambi',
+            'detail' => 'Assegni un responsabile prima di cambiare lo stato, così il follow-up non si disperde.',
+            'cta' => 'Assegna ticket',
+        ],
+        'pending' => [
+            'title' => 'Ticket in sospeso',
+            'detail' => 'Questo ticket è in sospeso. Lo riapra quando il visitatore risponde o se è necessario nuovo lavoro.',
+            'cta' => 'Rivedi opzione di riapertura',
+        ],
+        'calm' => [
+            'title' => 'Le opzioni del ciclo di vita sono tranquille',
+            'detail' => 'L\'agente ha risposto per ultimo. Segni come in sospeso se sta aspettando il visitatore, oppure chiuda una volta che l\'esito è stato definito.',
+            'cta' => 'Azioni sullo stato di revisione',
+        ],
+        'closed' => [
+            'title' => 'Ticket chiuso',
+            'detail' => 'Riapra solo se il cliente torna o se l\'esito cambia. Usi la nota di riapertura per lasciare al prossimo agente abbastanza contesto.',
+            'cta' => 'Rivedi opzione di riapertura',
+        ],
+        'default' => [
+            'title' => 'Le opzioni del ciclo di vita sono tranquille',
+            'detail' => 'Aggiunga il prossimo aggiornamento, una nota interna, lo stato in sospeso o chiuda una volta che l’esito è chiaro.',
+            'cta' => 'Azioni sullo stato della revisione',
+        ],
+    ],
+    'row' => [
+        'attention_needs_reply' => 'Richiede risposta',
+        'attention_needs_owner' => 'Serve un responsabile',
+        'attention_waiting_on_customer' => 'In attesa del cliente',
+        'attention_resolved' => 'Risolto',
+        'attention_needs_agent' => 'Serve un agente',
+        'description_needs_reply' => 'Il visitatore ha risposto per ultimo.',
+        'description_needs_owner' => 'Assegni questo ticket per farlo avanzare.',
+        'description_resolved' => 'Il ticket è chiuso.',
+        'description_needs_agent' => 'Pronto per un aggiornamento dell\'agente.',
+        'description_waiting_marked_pending' => 'Contrassegnato come in sospeso.',
+        'description_waiting_agent_replied' => 'L\'agente ha risposto per ultimo.',
+        'preview_visitor' => 'Messaggio del visitatore',
+        'preview_agent' => 'Risposta dell\'agente',
+        'preview_message' => 'Ultimo messaggio',
+        'preview_no_text' => 'Il messaggio non ha un\'anteprima del testo.',
+        'opened' => 'Aperto :elapsed',
+        'closed' => 'Chiuso :elapsed',
+        'waiting_on_owner' => 'In attesa del responsabile per :elapsed',
+        'waiting_on_reply' => 'In attesa di risposta per :elapsed',
+        'waiting_on_customer' => 'In attesa del cliente per :elapsed',
+        'waiting_on_update' => 'In attesa di un aggiornamento per :elapsed',
+        'waiting_customer_since_open' => 'In attesa del cliente dall\'apertura del ticket',
+        'waiting_agent_since_open' => 'In attesa di aggiornamento da parte dell\'agente dall\'apertura del ticket',
+        'not_linked' => 'Non collegato',
+        'lifecycle_note' => 'Nota sul ciclo di vita',
+        'latest_attempt' => 'Ultimo tentativo',
+        'escalated_to_you' => 'Escalato a lei',
+        'escalated_recent' => 'Recentemente escalato',
+        'actor_visitor' => 'Visitatore',
+        'actor_system' => 'Sistema',
+        'preview_summary' => 'Riepilogo ticket',
+        'preview_none_body' => 'Apra il ticket per aggiungere contesto o inviare il prossimo aggiornamento.',
+        'preview_none_label' => 'Nessuna anteprima attività disponibile',
+        'no_linked_conversation' => 'Nessuna conversazione collegata',
+        'reply_visibility_none' => 'La visibilità delle risposte inizia una volta che questo ticket è collegato a una conversazione.',
+        'reply_visibility' => 'Visibilità della risposta:',
+        'none' => 'Nessuna',
+        'unassigned' => 'Non assegnato',
+    ],
+    'guidance' => [
+        'category_aria' => 'Guida alle categorie',
+        'priority_aria' => 'Guida alle priorità',
+        'agent_move' => 'Mossa dell\'agente: :action',
+    ],
+    'category_help' => [
+        'question' => [
+            'description' => 'Domanda generale o richiesta di assistenza su come fare qualcosa.',
+            'guidance' => 'Utilizzare per: chiarimenti, guida sul prodotto o supporto «come faccio a?».',
+        ],
+        'bug' => [
+            'description' => 'Qualcosa è rotto o non funziona come previsto.',
+            'guidance' => 'Da utilizzare per: comportamento non funzionante, inaspettato o riproducibile.',
+        ],
+        'billing' => [
+            'description' => 'Problema relativo a prezzi, fatturazione, pagamento o addebito dell’account.',
+            'guidance' => 'Utilizzare per: prezzi, fatture, pagamenti, rinnovi o modifiche all\'account di fatturazione.',
+        ],
+        'access' => [
+            'description' => 'Problema di accesso, permessi o accesso all\'account.',
+            'guidance' => 'Utilizzare per: login, ruoli, account bloccati, permessi o problemi di identità/accesso.',
+        ],
+        'task' => [
+            'description' => 'Richiesta di follow-up, configurazione o operativa.',
+            'guidance' => 'Utilizzare per: configurazione, setup, lavoro operativo o follow-up pianificato.',
+        ],
+        'other' => [
+            'description' => 'Qualsiasi cosa che non rientra nelle altre categorie.',
+            'guidance' => 'Usare con parsimonia; aggiungere contesto in modo che possa essere ricategorizzato in seguito.',
+        ],
+    ],
+    'priority_help' => [
+        'low' => [
+            'description' => 'Domanda di follow-up utile ma non urgente o non bloccante.',
+            'agent_action' => 'gestire dopo i blocchi attivi dei visitatori.',
+        ],
+        'normal' => [
+            'description' => 'Richiesta di supporto standard senza scadenza immediata.',
+            'agent_action' => 'rispondere in ordine normale di coda.',
+        ],
+        'high' => [
+            'description' => 'Problema urgente che influisce su un flusso di lavoro importante del cliente.',
+            'agent_action' => 'portarlo avanti oggi.',
+        ],
+        'urgent' => [
+            'description' => 'Criticità aziendale, interruzione attiva o blocco del lavoro produttivo.',
+            'agent_action' => 'assegnare immediatamente e tenere aggiornato il visitatore.',
+        ],
+    ],
+    'flash' => [
+        'reply_sent' => 'Risposta inviata.',
+        'assignee_updated' => 'Assegnatario del ticket aggiornato.',
+        'closed' => 'Ticket chiuso.',
+        'escalated' => 'Ticket inoltrato.',
+        'label_added' => 'Etichetta del ticket aggiunta.',
+        'label_removed' => 'Etichetta del ticket rimossa.',
+        'marked_pending' => 'Ticket contrassegnato come in sospeso.',
+        'note_added' => 'Nota al ticket aggiunta.',
+        'note_added_posted' => 'Nota al ticket aggiunta e pubblicata sulla segnalazione collegata.',
+        'note_added_not_posted' => 'Nota al ticket aggiunta, ma il commento esterno non può essere pubblicato. Consulti l\'attività del ticket.',
+        'reopened' => 'Ticket riaperto.',
+        'updated' => 'Ticket aggiornato.',
+    ],
+    'errors' => [
+        'note_required' => 'Per favore, inserisca una nota interna.',
+        'label_needs_content' => 'Usi almeno una lettera o un numero per l\'etichetta.',
+        'label_reserved' => 'Quel nome etichetta è riservato al filtraggio dei ticket.',
+        'reply_helper' => 'Scelga un assistente di risposta disponibile.',
+        'reply_required' => 'Per favore, inserisca una risposta.',
+        'assignee_not_on_site' => 'Scelga un agente assegnato a questo sito.',
+        'escalate_other_agent' => 'Scelga un altro agente a cui inoltrare questo ticket.',
+    ],
+];

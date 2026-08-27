@@ -182,7 +182,9 @@ class CobrowseReplayPreview
                 $this->sanitizeBodyStyle((string) ($snapshot['body_style'] ?? ''))
             ),
             'applied_mutations' => number_format($counts['applied']).' applied',
+            'applied_mutations_value' => (int) $counts['applied'],
             'skipped_mutations' => number_format($skipped).' skipped',
+            'skipped_mutations_value' => (int) $skipped,
             'drift' => (new CobrowseReplayDrift)->evaluate($counts),
             'viewport_width' => self::reportedViewportWidth($metadata),
         ];
