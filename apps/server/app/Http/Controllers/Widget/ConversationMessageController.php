@@ -247,7 +247,20 @@ class ConversationMessageController extends Controller
 
     private function recordVisitorPresence(Conversation $conversation): void
     {
-        $conversation->visitor()->update(['last_seen_at' => now()]);
+        // Saved through the model, not `visitor()->update()`. A relationship
+        // update is a mass update: it dispatches no model events, so the
+        // visit-boundary hook on Visitor never ran for this writer. The stock
+        // widget calls refreshMessages() BEFORE bootstrap when a returning
+        // visitor opens the panel, so this was frequently the first write of a
+        // session -- it refreshed the sighting, bootstrap then saw a recent
+        // timestamp and left `current_visit_started_at` alone, and the board
+        // reported a visit still running from the previous session.
+        $visitor = $conversation->visitor;
+
+        if ($visitor !== null) {
+            $visitor->forceFill(['last_web_seen_at' => now()])->save();
+        }
+
         $conversation->load('visitor');
 
         event(new ConversationPresenceUpdated($conversation));

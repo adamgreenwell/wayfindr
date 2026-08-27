@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Carbon;
 
-#[Fillable(['site_id', 'external_id', 'anonymous_id', 'name', 'email', 'metadata', 'last_seen_at', 'current_visit_started_at', 'presence_only'])]
+#[Fillable(['site_id', 'external_id', 'anonymous_id', 'name', 'email', 'metadata', 'last_seen_at', 'last_web_seen_at', 'current_visit_started_at', 'presence_only'])]
 class Visitor extends Model
 {
     use SanitisesStoredPageUrls;
@@ -37,11 +37,27 @@ class Visitor extends Model
     protected static function booted(): void
     {
         static::saving(function (Visitor $visitor): void {
-            if (! $visitor->isDirty('last_seen_at') || $visitor->last_seen_at === null) {
+            if (! $visitor->isDirty('last_web_seen_at') || $visitor->last_web_seen_at === null) {
                 return;
             }
 
-            $previous = $visitor->getOriginal('last_seen_at');
+            // A website sighting is also a sighting, and that is derived here
+            // rather than asked of every writer. `last_seen_at` answers "when
+            // did we last hear from this person by any means" -- the visitor
+            // directory shows it and inbound mail stamps it -- so a web writer
+            // that set only the website column would quietly make somebody look
+            // out of contact. Writers set one field; both end up right.
+            //
+            // Never moved backwards: a heartbeat arriving after an email does
+            // not un-see the email. Mail stamps `last_seen_at` directly and
+            // never reaches this branch at all, which is the whole point --
+            // an email must not start a website visit for somebody sitting in
+            // their mail client.
+            if ($visitor->last_seen_at === null || $visitor->last_seen_at->lt($visitor->last_web_seen_at)) {
+                $visitor->last_seen_at = $visitor->last_web_seen_at;
+            }
+
+            $previous = $visitor->getOriginal('last_web_seen_at');
             $previous = $previous === null ? null : Carbon::parse($previous);
 
             // No previous sighting, or none recorded for the visit: this
@@ -49,7 +65,7 @@ class Visitor extends Model
             // heartbeat has nothing to be "older than", so a rule written only
             // around the gap would never start a visit at all.
             if ($previous === null || $visitor->current_visit_started_at === null) {
-                $visitor->current_visit_started_at = $visitor->last_seen_at;
+                $visitor->current_visit_started_at = $visitor->last_web_seen_at;
 
                 return;
             }
@@ -57,8 +73,8 @@ class Visitor extends Model
             // A gap long enough to read as `quiet` is long enough to be a new
             // visit, which reuses a cutoff the product already has rather than
             // inventing a session length.
-            if ($previous->lt($visitor->last_seen_at->copy()->subMinutes(VisitorPresence::RECENT_MINUTES))) {
-                $visitor->current_visit_started_at = $visitor->last_seen_at;
+            if ($previous->lt($visitor->last_web_seen_at->copy()->subMinutes(VisitorPresence::RECENT_MINUTES))) {
+                $visitor->current_visit_started_at = $visitor->last_web_seen_at;
             }
         });
     }
@@ -79,6 +95,7 @@ class Visitor extends Model
         return [
             'metadata' => 'array',
             'last_seen_at' => 'datetime',
+            'last_web_seen_at' => 'datetime',
             'current_visit_started_at' => 'datetime',
             'presence_only' => 'boolean',
         ];

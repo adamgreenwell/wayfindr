@@ -6,6 +6,7 @@ namespace App\Support\Visitors;
 
 use App\Models\Site;
 use App\Models\Visitor;
+use Illuminate\Database\UniqueConstraintViolationException;
 
 /**
  * Record that somebody is on a site right now (ADR 0019).
@@ -20,18 +21,40 @@ final class VisitorPresenceReport
 {
     public function record(Site $site, string $anonymousId, ?string $pageUrl): Visitor
     {
-        $visitor = Visitor::query()->firstOrNew([
+        try {
+            return $this->stamp($this->resolve($site, $anonymousId), $pageUrl, $site);
+        } catch (UniqueConstraintViolationException) {
+            // Two first reports for the same visitor overlapped -- a page-load
+            // heartbeat racing bootstrap, or two tabs opened together. Both saw
+            // no row, both inserted, and `(site_id, anonymous_id)` let exactly
+            // one win. The loser is not an error: the row it wanted now exists,
+            // so re-read and stamp it.
+            //
+            // Retried once and no more. A second failure is not this race --
+            // the row is there by then -- and a loop would turn some other
+            // constraint problem into a hot one on a public endpoint.
+            return $this->stamp($this->resolve($site, $anonymousId), $pageUrl, $site);
+        }
+    }
+
+    private function resolve(Site $site, string $anonymousId): Visitor
+    {
+        return Visitor::query()->firstOrNew([
             'site_id' => $site->id,
             'anonymous_id' => $anonymousId,
         ]);
+    }
 
+    private function stamp(Visitor $visitor, ?string $pageUrl, Site $site): Visitor
+    {
         $now = now();
 
-        // `current_visit_started_at` is NOT set here. The model maintains it
-        // from whatever replaces `last_seen_at`, so bootstrap, conversation
-        // start, message fetch and typing all get the same transition -- and a
-        // returning visitor who opens the panel before their first heartbeat
-        // still starts a new visit rather than resuming one from days ago.
+        // `current_visit_started_at` is NOT set here, and neither is
+        // `last_seen_at`. The model maintains both from `last_web_seen_at`, so
+        // bootstrap, conversation start, message fetch, typing and this all get
+        // the same transition -- and a returning visitor who opens the panel
+        // before their first heartbeat still starts a new visit rather than
+        // resuming one from days ago.
         // `presence_only` is set ONLY here and ONLY for a row this endpoint is
         // creating. It is positive evidence that retention needs: an existing
         // row might have been created by somebody opening the widget, which
@@ -41,7 +64,7 @@ final class VisitorPresenceReport
 
         $visitor->forceFill([
             'metadata' => $this->metadata($visitor, $pageUrl, $site),
-            'last_seen_at' => $now,
+            'last_web_seen_at' => $now,
         ] + $provenance)->save();
 
         return $visitor;
