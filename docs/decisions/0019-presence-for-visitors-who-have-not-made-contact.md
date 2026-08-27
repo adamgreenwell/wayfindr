@@ -244,6 +244,12 @@ means rather than leaving it to the implementation:
   otherwise is untrue and a worse explanation than none — it describes a sharing
   the visitor cannot decline on account of it not happening.
 
+  **Never sent in a header either.** The browser attaches the full current
+  URL — query string included — as a `Referer`, by default on a same-origin
+  install and cross-origin too on a host serving `Referrer-Policy: unsafe-url`.
+  That undoes every rule above it: the value is sanitised, and the unsanitised
+  original arrives in the same request. Widget requests send no referrer.
+
   **And switching it off clears what was already stored.** The control exists
   for operators whose paths carry secrets, so "from now on" is the wrong scope:
   a visitor who never heartbeats again would keep the address that prompted the
@@ -459,7 +465,20 @@ has an unlimited supply of per-visitor buckets and exactly one address.
 
 Refreshing somebody the site already knows is not counted: it costs nothing
 durable, and throttling it would make the board wrong for precisely the visitors
-it is right about. Over the limit the report is not stored and the client is not
+it is right about.
+
+**Revocation and the writes it races are serialised on the site row.** An
+operator switching presence or page addresses off holds that row's lock across
+the settings write and the cleanup it implies; every writer that could undo
+either — the heartbeat, bootstrap, conversation start — takes the same lock and
+re-reads the setting under it before writing. Without that the cleanup finishes
+first and a request already in flight puts back exactly what it removed, which
+on a visitor's last heartbeat means for the rest of the retention window.
+
+The same lock is why one settings form can no longer overwrite another's:
+`settings` is a single JSON column, so every form reads, modifies and writes the
+whole value, and a form loaded before a revocation would otherwise save the
+revoked value back. Over the limit the report is not stored and the client is not
 told, because a 429 there reports how much quota is left to whoever is probing.
 
 An office where everybody arrives at nine exceeds thirty new visitors a minute
