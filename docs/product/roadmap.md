@@ -25,6 +25,13 @@ The product has moved past a spine. It now includes:
   and an agent-selectable dashboard language on the surfaces translated so far.
 - A visitor directory, agent-initiated password recovery, and a read-only public
   API with a decided isolation model.
+- Visitor presence collection (ADR 0019) — heartbeat, disclosure, decline, and a
+  thirty-day retention window that is the product's first automatic one.
+
+  **Dormant until the board ships.** No dashboard surface writes the per-site
+  switch, so nothing reports and no visitor sees a notice. That is the intended
+  order: the machinery is reviewable on its own, and the toggle arrives with the
+  board that makes it worth enabling.
 
 Underneath that, the original foundation:
 
