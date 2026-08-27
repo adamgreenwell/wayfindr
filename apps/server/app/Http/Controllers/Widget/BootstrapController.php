@@ -14,6 +14,7 @@ use App\Support\Sites\WidgetLanguage;
 use App\Support\VisitorContextSanitizer;
 use App\Support\VisitorSessionToken;
 use App\Support\WidgetSiteResolver;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -31,26 +32,20 @@ class BootstrapController extends Controller
 
         $site = WidgetSiteResolver::resolveOrFail($validated['site_public_key']);
 
-        $visitor = Visitor::query()->firstOrNew([
-            'site_id' => $site->id,
-            'anonymous_id' => $validated['anonymous_id'],
-        ]);
-
-        $visitor->forceFill([
-            'metadata' => $visitorContextSanitizer->mergeMetadata(
-                $visitor->metadata,
-                $validated['page_url'] ?? null,
-                array_key_exists('context', $validated),
-                $validated['context'] ?? null,
-                $site->domain,
-            ),
-            'last_web_seen_at' => now(),
-            // Opening the widget IS making contact -- ADR 0016 §1 says so -- and
-            // this is the endpoint that means it. A row that existed only
-            // because somebody loaded a page stops being presence-only the
-            // moment they open the panel, and stops being prunable with it.
-            'presence_only' => false,
-        ] + $this->externalIdentifierUpdate($site, $visitor, $validated, $visitorContextSanitizer))->save();
+        // Retried once on a duplicate key. A new visitor's first page load can
+        // put bootstrap and the first heartbeat in flight together -- both read
+        // no row, both insert, and `(site_id, anonymous_id)` lets exactly one
+        // win. The presence endpoint already survives losing; this one returned
+        // a 500 and the widget never got its configuration.
+        //
+        // Once and no more: after a conflict the row exists, so a second
+        // failure is some other constraint and a loop would make it a hot one
+        // on a public endpoint.
+        try {
+            $visitor = $this->stampVisitor($site, $validated, $visitorContextSanitizer);
+        } catch (UniqueConstraintViolationException) {
+            $visitor = $this->stampVisitor($site, $validated, $visitorContextSanitizer);
+        }
 
         return response()->json([
             'data' => [
@@ -73,6 +68,35 @@ class BootstrapController extends Controller
      * @return array{name: string, domain: string|null, color: string, public_key: string, availability: array{away: bool, message: string|null, opens_at: string|null, timezone: string}, intake: array{asks: bool, intro: string|null, fields: array<string, string>}, settings: array{mask_selectors: array<int, string>, mask_terms: array<int, string>}}
      */
     /** @param array<string, bool> $known */
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    private function stampVisitor(Site $site, array $validated, VisitorContextSanitizer $visitorContextSanitizer): Visitor
+    {
+        $visitor = Visitor::query()->firstOrNew([
+            'site_id' => $site->id,
+            'anonymous_id' => $validated['anonymous_id'],
+        ]);
+
+        $visitor->forceFill([
+            'metadata' => $visitorContextSanitizer->mergeMetadata(
+                $visitor->metadata,
+                $validated['page_url'] ?? null,
+                array_key_exists('context', $validated),
+                $validated['context'] ?? null,
+                $site->domain,
+            ),
+            'last_web_seen_at' => now(),
+            // Opening the widget IS making contact -- ADR 0016 §1 says so -- and
+            // this is the endpoint that means it. A row that existed only
+            // because somebody loaded a page stops being presence-only the
+            // moment they open the panel, and stops being prunable with it.
+            'presence_only' => false,
+        ] + $this->externalIdentifierUpdate($site, $visitor, $validated, $visitorContextSanitizer))->save();
+
+        return $visitor;
+    }
+
     private function sitePayload(Site $site, array $known): array
     {
         $availability = SiteAvailability::for($site);

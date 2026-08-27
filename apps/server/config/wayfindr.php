@@ -89,6 +89,19 @@ return [
         // browser share an anonymous ID, so this is roughly twenty tabs' worth.
         'presence_per_minute' => (int) env('WAYFINDR_WIDGET_PRESENCE_PER_MINUTE', 30),
 
+        // The cap on creating DURABLE rows, per source IP and site. The two
+        // limits above bound traffic, which is the cheap half: a forged client
+        // rotating anonymous IDs turns each accepted request into a visitor
+        // that lives for the whole retention window, so a ceiling sized for a
+        // busy office is millions of rows a day when spent on creation. A
+        // refresh of somebody already known is not counted.
+        //
+        // Thirty a minute is roughly a genuinely busy site's rate of NEW
+        // visitors from one address; an office where everybody arrives at nine
+        // exceeds it briefly and those visitors are recorded on their next
+        // heartbeat rather than lost.
+        'presence_creations_per_ip_per_minute' => (int) env('WAYFINDR_WIDGET_PRESENCE_CREATIONS_PER_IP_PER_MINUTE', 30),
+
         // The abuse cap, per source IP and site. Covers about nine hundred
         // simultaneous visitors behind one address at the standard cadence;
         // an install that genuinely has more raises it rather than watching
