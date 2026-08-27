@@ -390,3 +390,60 @@ test('the sweep is scheduled, not only run at deploy time', function (): void {
     expect($events->filter(fn (string $c): bool => str_contains($c, 'wayfindr:sanitise-page-urls')))
         ->not->toBeEmpty('the sweep is not scheduled, so a straggler write is never cleaned');
 });
+
+test('a stale typing write cannot restore a cleaned conversation url', function (): void {
+    // The typing endpoints read the whole conversation metadata document, set a
+    // flag, and save it all back. A request that read before the sweep cleaned
+    // the row holds the tokenised entry page, and its save would put it back --
+    // the row lock cannot invalidate a read that already happened.
+    //
+    // There are half a dozen writers shaped like this, which is why the guard
+    // is on the model rather than on any of them.
+    $site = visitorPageUrlSite();
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-typing']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create();
+
+    DB::table('conversations')->where('id', $conversation->id)->update([
+        'metadata' => json_encode(['started_page_url' => 'https://shop.test/reset?reset_token=typing']),
+    ]);
+
+    // The typing request's read, taken before the sweep.
+    $stale = Conversation::query()->findOrFail($conversation->id);
+    $staleMetadata = $stale->metadata;
+
+    StoredPageUrlSweep::run();
+
+    // The typing request finishes: whole document back, plus its own flag.
+    $stale->forceFill([
+        'metadata' => $staleMetadata + ['visitor_typing_at' => now()->toJSON()],
+    ])->save();
+
+    $metadata = json_decode((string) DB::table('conversations')->where('id', $conversation->id)->value('metadata'), true);
+
+    expect($metadata['started_page_url'])->toBe('https://shop.test/reset')
+        ->and($metadata)->toHaveKey('visitor_typing_at');
+
+    $this->assertStringNotContainsString('typing', $metadata['started_page_url']);
+});
+
+test('the ticket snapshot converges on save too', function (): void {
+    // Nested, and the copy that outlives everything else.
+    $site = visitorPageUrlSite();
+    $account = $site->account;
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-ticket-hook']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create();
+
+    $ticket = Ticket::factory()
+        ->for($account)->for($site)->for($conversation)->for($visitor, 'requester')
+        ->create();
+
+    $ticket->forceFill([
+        'metadata' => [
+            'visitor_context' => ['started_page_url' => 'https://shop.test/x?token=nested'],
+        ],
+    ])->save();
+
+    $metadata = json_decode((string) DB::table('tickets')->where('id', $ticket->id)->value('metadata'), true);
+
+    expect($metadata['visitor_context']['started_page_url'])->toBe('https://shop.test/x');
+});
