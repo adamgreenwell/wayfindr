@@ -616,3 +616,29 @@ test('turning presence on is not an ordinary agent decision', function (): void 
 
     expect(SitePresenceReporting::for($site->fresh())->enabled)->toBeFalse();
 });
+
+test('the widget learns about presence without making contact', function (): void {
+    // The endpoint that answers this is the one a page load is allowed to ask.
+    // Bootstrap cannot be: it creates or touches a visitor row and marks them
+    // as having made contact, so asking IT whether to watch people who have not
+    // made contact answers the question by destroying it.
+    $site = presenceSite();
+
+    $response = test()->getJson(route('widget.appearance', ['site_public_key' => $site->public_key]))
+        ->assertOk();
+
+    expect($response->json('data.presence.reports'))->toBeTrue()
+        ->and($response->json('data.presence.every'))
+        ->toBe(SitePresenceReporting::HEARTBEAT_SECONDS);
+
+    // And nothing was recorded by asking.
+    expect(Visitor::query()->count())->toBe(0, 'a configuration read created a visitor');
+});
+
+test('a site that has not opted in says so before anybody reports', function (): void {
+    $site = presenceSite(enabled: false);
+
+    test()->getJson(route('widget.appearance', ['site_public_key' => $site->public_key]))
+        ->assertOk()
+        ->assertJsonPath('data.presence.reports', false);
+});

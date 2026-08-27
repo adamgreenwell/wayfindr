@@ -959,6 +959,14 @@
     rootEl.dir = t.direction;
     rootEl.innerHTML = [
       '<button class="wayfindr-widget__launcher" type="button" aria-controls="' + escapeHtml(panelId) + '" aria-expanded="false">' + escapeHtml(options.launcherLabel || t('launcher.label')) + '</button>',
+      // OUTSIDE the panel, deliberately. The visitors this feature exists to
+      // see are the ones who never open the widget, so a notice that only
+      // appears once they do is not a disclosure -- it is an explanation
+      // offered to the people it does not apply to. ADR 0019 §2.
+      '<div class="wayfindr-widget__presence" role="status" aria-live="polite" hidden>',
+      '  <p class="wayfindr-widget__presence-copy">' + escapeHtml(t('presence.disclosure')) + '</p>',
+      '  <button class="wayfindr-widget__presence-decline" type="button">' + escapeHtml(t('presence.decline')) + '</button>',
+      '</div>',
       '<section id="' + escapeHtml(panelId) + '" class="wayfindr-widget__panel" aria-label="' + escapeHtml(t('panel.aria')) + '" hidden>',
       '  <header class="wayfindr-widget__header">',
       '    <strong>' + escapeHtml(options.title || t('header.title')) + '</strong>',
@@ -1001,10 +1009,6 @@
       '    <button class="wayfindr-widget__rating-send" type="submit"></button>',
       '    <p class="wayfindr-widget__rating-status" role="status" aria-live="polite" hidden></p>',
       '  </form>',
-      '  <div class="wayfindr-widget__presence" hidden>',
-      '    <p class="wayfindr-widget__presence-copy">' + escapeHtml(t('presence.disclosure')) + '</p>',
-      '    <button class="wayfindr-widget__presence-decline" type="button">' + escapeHtml(t('presence.decline')) + '</button>',
-      '  </div>',
       '  <p class="wayfindr-widget__typing" role="status" aria-live="polite" aria-atomic="true" hidden></p>',
       '  <p class="wayfindr-widget__connection" role="status" aria-live="polite" aria-atomic="true" hidden></p>',
       '  <form class="wayfindr-widget__form">',
@@ -1070,6 +1074,10 @@
     var ratingComment = rootEl.querySelector('.wayfindr-widget__rating-comment');
     var ratingSend = rootEl.querySelector('.wayfindr-widget__rating-send');
     var ratingStatus = rootEl.querySelector('.wayfindr-widget__rating-status');
+    // The window that owns this document, not the ambient global: a test
+    // harness (and an embed inside an iframe) hands the widget a document whose
+    // view is not the one this script happens to be running in.
+    var presenceWindow = (doc && doc.defaultView) || root || null;
     var presenceEl = rootEl.querySelector('.wayfindr-widget__presence');
     var presenceCopyEl = rootEl.querySelector('.wayfindr-widget__presence-copy');
     var presenceDeclineEl = rootEl.querySelector('.wayfindr-widget__presence-decline');
@@ -2763,7 +2771,14 @@
       applyHelpAvailability(siteHasArticles(result));
       ratingConfig = siteRatingPrompt(result);
       renderRatingPrompt();
-      applyPresence(result && result.site ? result.site.presence : null);
+
+      // Presence is NOT applied from here, though bootstrap does carry it.
+      // One source, and it has to be the one that runs without the panel:
+      // applying it from both meant opening the widget restarted reporting and
+      // sent a second first-heartbeat, and it meant the config a visitor
+      // browsing silently was acting on could differ from the config a visitor
+      // who opened the panel was acting on. Site configuration arrives with the
+      // rest of the pre-contact configuration, in fetchSiteConfig().
     }
 
     /**
@@ -2811,21 +2826,140 @@
 
       renderPresenceDisclosure();
 
-      // The first report waits for the notice to be IN the document. Reporting
-      // before the visitor could have seen it is the same defect as not having
-      // one, arriving a few hundred milliseconds earlier.
-      if (!presenceEl || !rootEl.contains(presenceEl)) {
-        presenceConfig = null;
+      // The first report waits for the notice to be PAINTED, not merely to
+      // exist. Being in the document is not being visible: the element is
+      // inserted with its styles unresolved, and reporting in the same task
+      // sent the first heartbeat before the browser had any opportunity to
+      // show the visitor anything. Two frames is the ordinary way to say
+      // "after the next paint" -- one schedules before the coming frame, the
+      // second lands after it.
+      //
+      // Re-checked rather than assumed at that point, because two frames is
+      // long enough for the answer to change.
+      afterNextPaint(function () {
+        if (!presenceNoticeVisible() || declineRecorded()) {
+          presenceConfig = null;
+
+          return;
+        }
+
+        sendPresence();
+        startPresenceTimer();
+      });
+    }
+
+    /**
+     * Is the notice actually on screen, rather than merely in the document?
+     *
+     * `offsetParent` is null for an element that is display:none or inside
+     * something that is -- which covers the notice being hidden, an ancestor
+     * being hidden, and the whole widget being removed between frames.
+     */
+    function presenceNoticeVisible() {
+      if (!presenceEl || !rootEl.contains(presenceEl) || presenceEl.hidden) {
+        return false;
+      }
+
+      // Walked structurally first: an ancestor being hidden hides this too, and
+      // the structural answer is the only one available where there is no
+      // layout to ask -- a non-visual environment reports no geometry for
+      // everything, so a check that only asked geometry would either refuse to
+      // report at all or, read the other way round, wave everything through.
+      var node = presenceEl;
+
+      while (node && node !== rootEl.parentNode) {
+        if (node.hidden === true) {
+          return false;
+        }
+
+        if (node.style && node.style.display === 'none') {
+          return false;
+        }
+
+        node = node.parentElement;
+      }
+
+      // Then geometry, which is what catches being hidden by the HOST page's
+      // stylesheet rather than by us -- a class we never see, on an element we
+      // do not own.
+      if (typeof presenceEl.getClientRects !== 'function') {
+        return true;
+      }
+
+      if (presenceEl.getClientRects().length > 0) {
+        return true;
+      }
+
+      // No geometry has two meanings and they are opposites: genuinely hidden,
+      // or an environment that lays nothing out at all. Asking a control
+      // element separates them. If the document's own body has no box either,
+      // there is no layout here and geometry cannot answer -- so the structural
+      // check above stands rather than being overruled by a measurement that
+      // reports every element as invisible.
+      var body = doc && doc.body;
+      var layoutAvailable = Boolean(body && typeof body.getClientRects === 'function'
+        && body.getClientRects().length > 0);
+
+      return !layoutAvailable;
+    }
+
+    function afterNextPaint(run) {
+      var raf = presenceWindow && typeof presenceWindow.requestAnimationFrame === 'function'
+        ? presenceWindow.requestAnimationFrame.bind(presenceWindow)
+        : null;
+
+      if (!raf) {
+        // No rAF means no rendering to wait for -- a test harness or a
+        // non-visual environment. Running late is still running.
+        setTimeout(run, 0);
 
         return;
       }
 
-      sendPresence();
-      startPresenceTimer();
+      raf(function () {
+        raf(run);
+      });
+    }
+
+    /**
+     * Another tab wrote the decline key for this site.
+     *
+     * Scoped to this site's key: a visitor declining on one site says nothing
+     * about another, and reacting to every storage write in the page would
+     * make an unrelated host application able to stop reporting by accident.
+     */
+    function handlePresenceStorageChange(event) {
+      if (!event || event.key !== presenceStorageKey(options.sitePublicKey)) {
+        return;
+      }
+
+      if (event.newValue === 'declined') {
+        stopPresenceTimer();
+        presenceConfig = null;
+        renderPresenceDeclined();
+      }
+    }
+
+    function declineRecorded() {
+      return storageGet(storage, presenceStorageKey(options.sitePublicKey)) === 'declined';
     }
 
     function sendPresence() {
       if (!presenceConfig || presenceHidden()) {
+        return;
+      }
+
+      // The stored decline is re-read on EVERY beat rather than trusted from
+      // the in-memory config. The same site is often open in several tabs, and
+      // "Stop sharing" in one of them writes the site-wide key but can only
+      // stop its own instance -- so every other loaded tab went on reporting
+      // the visitor who had just said no. A decline is a decision about the
+      // person, not about the tab they happened to click in.
+      if (declineRecorded()) {
+        stopPresenceTimer();
+        presenceConfig = null;
+        renderPresenceDeclined();
+
         return;
       }
 
@@ -3004,6 +3138,27 @@
         }
       }
 
+      fetchSiteConfig();
+    }
+
+    /**
+     * Ask for the public configuration a page load is allowed to know.
+     *
+     * Called even when a cached appearance was just applied, which is a change
+     * of role for the cache rather than a change of mind about it: it still
+     * buys the instant paint it was added for, but it is no longer the answer.
+     *
+     * It cannot be, now that presence rides along. The stored appearance has no
+     * expiry, so a visitor who never opens the panel would hold whatever the
+     * site's presence setting was on their first ever visit -- for good. An
+     * operator switching it off would be telling a browser that stopped
+     * listening months ago.
+     *
+     * The request is unauthenticated, writes nothing, and returns the same
+     * bytes to everyone on the site, so it is one cacheable GET per page view
+     * rather than anything a visitor pays for twice.
+     */
+    function fetchSiteConfig() {
       client.fetchAppearance().then(function (result) {
         var appearance = (result && result.appearance) || null;
 
@@ -3011,8 +3166,12 @@
           applyAppearance(appearance);
           rememberAppearance(appearance);
         }
+
+        applyPresence((result && result.presence) || null);
       }).catch(function () {
-        // The default corner is a fine answer to a failed lookup.
+        // The default corner is a fine answer to a failed lookup, and no
+        // answer about presence means no reporting -- which is the direction
+        // an unanswered privacy question has to fail in.
       });
     }
 
@@ -3608,6 +3767,18 @@
     });
     doc.addEventListener('visibilitychange', handleVisibilityChange);
 
+    // A decline made in ANOTHER tab. The per-beat re-read is the guarantee;
+    // this is the promptness -- without it a visitor who clicks "Stop sharing"
+    // watches their other tabs keep reporting for up to a full interval, which
+    // is exactly the moment they are looking for the control to have worked.
+    //
+    // `storage` fires only in the other documents, never in the one that wrote,
+    // which is what makes it the right event: the writing tab has already
+    // stopped itself.
+    if (presenceWindow && typeof presenceWindow.addEventListener === 'function') {
+        presenceWindow.addEventListener('storage', handlePresenceStorageChange);
+    }
+
     function submitComposerForm() {
       if (typeof form.requestSubmit === 'function') {
         form.requestSubmit();
@@ -3852,6 +4023,10 @@
         stopMutationStream();
         stopPresence();
         doc.removeEventListener('visibilitychange', handleVisibilityChange);
+
+        if (presenceWindow && typeof presenceWindow.removeEventListener === 'function') {
+            presenceWindow.removeEventListener('storage', handlePresenceStorageChange);
+        }
         rootEl.remove();
       },
     };
@@ -5963,10 +6138,54 @@
 
       // Rebuilt from named parts, so anything not named -- query, fragment,
       // `user:pass@` credentials -- cannot survive by being forgotten.
-      return parsed.protocol + '//' + parsed.host + parsed.pathname;
+      //
+      // The PATH is redacted too, not copied. The server does this at rest, but
+      // the promise this function makes is that the secret never goes over the
+      // wire -- and `/reset-password/9f2c8a1b...` puts one in the one part that
+      // survives the query and fragment being dropped. Copying the pathname
+      // verbatim sent it to Wayfindr, to every proxy in between, and into
+      // request logs on both sides, where redacting it afterwards cannot reach.
+      return parsed.protocol + '//' + parsed.host + redactPathSegments(parsed.pathname);
     } catch (error) {
       return null;
     }
+  }
+
+  /**
+   * Replace path segments that look like a credential rather than a page name.
+   *
+   * Mirrors VisitorPageUrl::looksOpaque() on the server deliberately: the same
+   * rule on both sides means the agent sees the same string whether it was
+   * redacted here or there, and a disagreement would show up as page addresses
+   * that change shape depending on which path they took.
+   *
+   * Crude, and a heuristic rather than a proof. It will sometimes redact a long
+   * harmless slug, which is the right way round for a rule whose failures are
+   * credentials.
+   */
+  function redactPathSegments(pathname) {
+    if (typeof pathname !== 'string' || pathname === '') {
+      return '';
+    }
+
+    return pathname.split('/').map(function (segment) {
+      return looksOpaqueSegment(segment) ? '[redacted]' : segment;
+    }).join('/');
+  }
+
+  function looksOpaqueSegment(segment) {
+    // A UUID is never a page name.
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(segment)) {
+      return true;
+    }
+
+    if (segment.length >= 40) {
+      return true;
+    }
+
+    // Long, carries a digit, and has no word separator: `my-account-settings`
+    // is a page, `a8f3c19d4b7e2f6a` is not.
+    return segment.length >= 20 && /[0-9]/.test(segment) && !/[-_]/.test(segment);
   }
 
   function storageRemove(storage, key) {
@@ -6080,7 +6299,7 @@
       '.wayfindr-widget__notice{display:grid;gap:10px;margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-surface-2);color:var(--wf-muted);font-size:13px;line-height:1.4}',
       '.wayfindr-widget__notice[data-state="warning"]{background:color-mix(in srgb, var(--wf-signal-hold) 12%, var(--wf-surface));color:color-mix(in srgb, var(--wf-signal-hold) 70%, var(--wf-ink))}',
       '.wayfindr-widget__notice-copy{margin:0}',
-      '.wayfindr-widget__presence{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:8px 12px;font-size:12px;opacity:.85}',
+      '.wayfindr-widget__presence{display:flex;gap:8px;align-items:center;justify-content:flex-end;max-width:min(280px,calc(100vw - 40px));margin-bottom:8px;padding:6px 10px;border:var(--wf-border) solid var(--wf-rule);border-radius:var(--wf-radius);background:var(--wf-surface);color:var(--wf-muted);font-size:12px;line-height:1.35;box-shadow:0 6px 18px rgba(8,37,34,.10)}',
       '.wayfindr-widget__presence-copy{margin:0}',
       '.wayfindr-widget__presence-decline{background:none;border:0;padding:0;font:inherit;text-decoration:underline;cursor:pointer;color:inherit;white-space:nowrap}',
       '.wayfindr-widget__notice-retry{justify-self:start;min-height:34px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);cursor:pointer;padding:0 12px;font:700 13px/1 var(--wf-font-sans)}',

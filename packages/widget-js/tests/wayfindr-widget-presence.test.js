@@ -23,9 +23,14 @@ function memoryStorage(seed) {
   };
 }
 
+// Both phases, deliberately. Presence now crosses a timer boundary on its way
+// out -- the config fetch resolves as a promise, the first report waits for a
+// paint, and where there is no rAF that wait is a timeout. Draining only the
+// check phase left the last hop pending often enough to look like a flake.
 async function settle() {
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 6; i++) {
     await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setTimeout(resolve, 0));
   }
 }
 
@@ -73,6 +78,18 @@ function widgetWithPresence({ reports = true, storage, href, declined, pollMs = 
               presence: { reports, every: 45 },
             },
             visitor: { anonymous_id: 'anon-shop', token: 'visitor-token-shop' },
+          },
+        });
+      }
+
+      // Presence config comes from HERE, not bootstrap: the visitors this
+      // feature exists to see never open the panel, and bootstrap both
+      // requires that and records it as contact.
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, {
+          data: {
+            appearance: { position: 'right' },
+            presence: { reports: reports, every: 45 },
           },
         });
       }
@@ -242,6 +259,18 @@ test('the page is read from the browser location, not only an injected one', asy
         });
       }
 
+      // Presence config comes from HERE, not bootstrap: the visitors this
+      // feature exists to see never open the panel, and bootstrap both
+      // requires that and records it as contact.
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, {
+          data: {
+            appearance: { position: 'right' },
+            presence: { reports: true, every: 45 },
+          },
+        });
+      }
+
       return jsonResponse(202, { data: { reports: true } });
     },
   });
@@ -305,4 +334,188 @@ test('destroying the widget stops it reporting', async (t) => {
   await settle();
 
   assert.equal(presenceCalls(calls).length, before, 'a destroyed widget reported again');
+});
+
+test('a visitor who never opens the widget is reported anyway', async (t) => {
+  // The whole point of the feature, and it did not work. Presence used to be
+  // configured from the bootstrap answer, and bootstrap only runs when the
+  // panel is opened -- so the only visitors ever reported were the ones who
+  // had made contact, which is the population this explicitly is not about.
+  // Worse, opening the panel is itself contact, so by the time a visitor
+  // qualified for a heartbeat the server had already stopped counting them
+  // as presence-only.
+  const { widget, calls } = widgetWithPresence();
+
+  t.after(() => widget.destroy());
+
+  // No widget.open(). Nobody clicked anything.
+  await settle();
+
+  const sent = presenceCalls(calls);
+
+  assert.equal(sent.length, 1, 'a visitor who only loaded the page was never reported');
+  assert.equal(sent[0].body.anonymous_id, 'anon-shop');
+  assert.ok(
+    !calls.some((c) => c.url.endsWith('/api/widget/bootstrap')),
+    'presence made contact on the visitor\'s behalf just to configure itself',
+  );
+});
+
+test('the notice is readable without opening the panel', async (t) => {
+  // A disclosure inside the panel is an explanation offered only to the people
+  // it does not apply to. It has to be on the page, outside the panel, before
+  // the first heartbeat leaves.
+  const { widget, calls } = widgetWithPresence();
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  const notice = widget.root.querySelector('.wayfindr-widget__presence');
+  const panel = widget.root.querySelector('.wayfindr-widget__panel');
+
+  assert.ok(notice, 'no disclosure element exists');
+  assert.equal(notice.hidden, false, 'the notice is hidden while presence reports');
+  assert.equal(panel.hidden, true, 'this test proves nothing if the panel is open');
+  assert.equal(panel.contains(notice), false, 'the notice is inside the panel nobody opened');
+  assert.equal(presenceCalls(calls).length, 1);
+});
+
+test('a decline in another tab stops this one', async (t) => {
+  // Same site, several tabs. "Stop sharing" writes a site-wide key but can
+  // only stop the instance that was clicked -- every other loaded tab went on
+  // reporting the visitor who had just said no.
+  const { widget, calls, dom } = widgetWithPresence({ pollMs: 20 });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  assert.ok(presenceCalls(calls).length > 0, 'nothing was reported, so this proves nothing');
+
+  // What the other tab's click leaves behind, and the event the browser fires
+  // in THIS document as a result.
+  const key = 'wayfindr:site_public_shop:presence-declined';
+  const event = new dom.window.Event('storage');
+
+  event.key = key;
+  event.newValue = 'declined';
+  dom.window.dispatchEvent(event);
+
+  const afterDecline = presenceCalls(calls).length;
+
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  await settle();
+
+  assert.equal(
+    presenceCalls(calls).length,
+    afterDecline,
+    'another tab kept reporting somebody who declined',
+  );
+
+  const notice = widget.root.querySelector('.wayfindr-widget__presence-copy');
+
+  assert.match(notice.textContent, /Not sharing/i, 'the tab still says it is sharing');
+});
+
+test('a decline is honoured even if the storage event never arrives', async (t) => {
+  // The event is the promptness; re-reading the key on every beat is the
+  // guarantee. Storage events are not delivered in every embedding -- a
+  // sandboxed iframe, an extension context -- and the decline still has to win.
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const storage = {
+    getItem: (key) => (values.has(key) ? values.get(key) : null),
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: (key) => values.delete(key),
+  };
+
+  const { widget, calls } = widgetWithPresence({ storage, pollMs: 20 });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  assert.ok(presenceCalls(calls).length > 0, 'nothing was reported, so this proves nothing');
+
+  // The other tab's write, with no event dispatched at all.
+  values.set('wayfindr:site_public_shop:presence-declined', 'declined');
+
+  const afterDecline = presenceCalls(calls).length;
+
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  await settle();
+
+  assert.equal(
+    presenceCalls(calls).length,
+    afterDecline,
+    'the heartbeat trusted its own memory over the visitor\'s decision',
+  );
+});
+
+test('a token in the path never leaves the browser', async (t) => {
+  // The query string and fragment were already dropped, and the path was
+  // copied verbatim -- which is where this product's own reset route puts a
+  // token. Redacting it on the server is too late: it has already crossed
+  // every proxy and landed in access logs on both sides.
+  const { widget, calls } = widgetWithPresence({
+    href: 'https://shop.example.test/reset-password/9f2c8a1b4e6d7c3f0a5b2e8d1c4f7a9b',
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  const sent = presenceCalls(calls);
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].body.page_url, 'https://shop.example.test/reset-password/[redacted]');
+});
+
+test('an ordinary page name survives redaction', async (t) => {
+  // The rule is crude on purpose, but it must not eat the answer to "which
+  // page" on every normal site.
+  const { widget, calls } = widgetWithPresence({
+    href: 'https://shop.example.test/account/billing-preferences',
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  assert.equal(
+    presenceCalls(calls)[0].body.page_url,
+    'https://shop.example.test/account/billing-preferences',
+  );
+});
+
+test('the first report waits for a paint, not just for the notice to exist', async (t) => {
+  // Being in the document is not being visible. The element is inserted with
+  // its styles unresolved, so reporting in the same turn as the config arrived
+  // sent the first heartbeat before the browser had any opportunity to put the
+  // notice in front of anybody.
+  //
+  // Microtasks are how "the same turn" is expressed here: the config resolves
+  // as a promise, so draining promises without letting a frame happen is
+  // exactly the window the visitor would have been reported in.
+  const { widget, calls } = widgetWithPresence();
+
+  t.after(() => widget.destroy());
+
+  for (let i = 0; i < 20; i++) {
+    await Promise.resolve();
+  }
+
+  assert.equal(
+    presenceCalls(calls).length,
+    0,
+    'the first heartbeat left in the same turn the config arrived, before anything could be painted',
+  );
+
+  await settle();
+
+  assert.equal(presenceCalls(calls).length, 1, 'the report never arrived at all');
 });
