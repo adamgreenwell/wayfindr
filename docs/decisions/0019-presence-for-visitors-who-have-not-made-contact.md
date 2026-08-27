@@ -109,6 +109,23 @@ only when the panel is opened, and it records that opening as contact. Asking it
 whether to watch people who have not made contact answers the question by
 destroying it.
 
+That read has **its own throttle**, `WAYFINDR_WIDGET_CONFIG_RATE_LIMIT`
+(default 600 a minute, keyed by site and address like the rest). It shared
+bootstrap's budget until presence needed it on every page load rather than every
+panel opening — at which point passive browsing from one office could exhaust
+the allowance that lets somebody start a conversation, and the visitor who tried
+would be refused for other people's page views. The response is identical for
+everyone on the site and writes nothing, so it is cheap to serve and safe to
+allow generously.
+
+**A tab that stays open picks up a revised setting.** The config read happens
+once per page load, so an afternoon-long tab would otherwise act on whatever was
+true when it loaded — including sending page addresses an operator switched off
+hours before. Bootstrap carries the settings too, and is the freshest answer such
+a tab ever gets, so it updates them underneath the running reporter without
+restarting it. Reporting being turned off takes effect at once rather than
+tidily.
+
 ### 3. What is reported, named exhaustively
 
 Sent: the site's public key, the visitor's existing anonymous id, and the
@@ -181,7 +198,20 @@ means rather than leaving it to the implementation:
   failures are credentials — and it is exactly why the query string is dropped
   WHOLE rather than filtered by this same kind of guessing.
 
-  **And it is not enough, which is why there is a switch.** Three rounds of
+    **When it is off, the notice says so.** A site reporting without page
+  addresses sends only "somebody is here", and a disclosure still claiming
+  otherwise is untrue and a worse explanation than none — it describes a sharing
+  the visitor cannot decline on account of it not happening.
+
+  **And switching it off clears what was already stored.** The control exists
+  for operators whose paths carry secrets, so "from now on" is the wrong scope:
+  a visitor who never heartbeats again would keep the address that prompted the
+  change for the rest of the retention window. Conversation history is left
+  alone — that is a support record somebody wrote in about, and deleting it
+  because a collection setting changed is a different decision from the one
+  being taken.
+
+**And it is not enough, which is why there is a switch.** Three rounds of
   broadening this rule taught the same thing each time: there is no shape that
   separates a short lowercase token from a short lowercase word. `/invite/abcdef`
   is indistinguishable from a page name, and a rule strict enough to catch it
@@ -264,6 +294,16 @@ outlive the conversations that produced them.
 
 Presence adds a fourth writer to that list. It sanitises for the same reason and
 through the same class.
+
+**Presence LABELS read the website column too, not only the visit boundary.**
+Separating the columns stopped an email starting a website visit and stopped
+there: `Visitor::presenceState()` and the conversation queue's presence filter
+still read the cross-channel timestamp, so an email correspondent showed as
+*active* on their profile and in the filter while they sat in their mail client
+— and an agent would offer to cobrowse with a browser that was not open. Both
+now read `last_web_seen_at`. `last_seen_at` keeps its own question, which is the
+one the directory's *Last seen* column asks: when did we last hear from this
+person by any means.
 
 **Two windows on the same site are one visitor, and the last report wins.**
 The anonymous id belongs to the browser, not to the tab, so a visitor with two
