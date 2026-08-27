@@ -43,7 +43,10 @@ class PresenceController extends Controller
         $reporting = SitePresenceReporting::for($site);
 
         if (! $reporting->enabled) {
-            return response()->json(['data' => ['reports' => false]], 200);
+            // The same shape as the accepted answer, so a widget already
+            // reporting has one thing to read and learns from this response
+            // that it should stop.
+            return response()->json(['data' => $reporting->toPayload()], 200);
         }
 
         // A tester visitor is an agent looking at their own site. Recording
@@ -61,6 +64,21 @@ class PresenceController extends Controller
 
         $presence->record($site, $validated['anonymous_id'], $pageUrl);
 
-        return response()->json(['data' => ['reports' => true]], 202);
+        // The current settings ride back on every heartbeat.
+        //
+        // A visitor who never opens the panel never calls bootstrap, so the
+        // configuration they fetched at page load would otherwise be the newest
+        // answer that tab ever gets -- and those are precisely the visitors this
+        // feature exists for. An operator turning presence off, or turning page
+        // addresses off, would be leaving them reporting for as long as the tab
+        // stayed open. Rejecting the write server-side does not help: the
+        // address has already crossed the wire by then.
+        //
+        // Read fresh rather than reusing the value from the top of this method,
+        // so a change committed while this request was working is carried back
+        // rather than a copy of the world from when it started.
+        return response()->json([
+            'data' => SitePresenceReporting::for($site->fresh() ?? $site)->toPayload(),
+        ], 202);
     }
 }

@@ -278,3 +278,28 @@ test('hyphenated page names still read as page names', function (): void {
             ->toBe('https://shop.test/'.$path, $path.' was redacted');
     }
 });
+
+test('a configured scheme is part of the origin', function (): void {
+    // An operator who wrote https:// said which service they meant. The
+    // plain-text one is also the one an attacker on the network can answer for.
+    expect(VisitorPageUrl::forSite('http://shop.test/login', 'https://shop.test'))->toBeNull()
+        ->and(VisitorPageUrl::forSite('https://shop.test/login', 'https://shop.test'))
+        ->toBe('https://shop.test/login')
+        ->and(VisitorPageUrl::forSite('https://shop.test/login', 'http://shop.test'))->toBeNull();
+});
+
+test('a bare host is not a claim about transport', function (): void {
+    // Most operators type the host alone, and it says nothing about scheme.
+    expect(VisitorPageUrl::forSite('http://shop.test/login', 'shop.test'))
+        ->toBe('http://shop.test/login')
+        ->and(VisitorPageUrl::forSite('https://shop.test/login', 'shop.test'))
+        ->toBe('https://shop.test/login');
+});
+
+test('the configured scheme decides which port is the default', function (): void {
+    expect(VisitorPageUrl::forSite('http://shop.test/login', 'http://shop.test'))
+        ->toBe('http://shop.test/login')
+        ->and(VisitorPageUrl::forSite('http://shop.test:80/login', 'http://shop.test'))
+        ->toBe('http://shop.test:80/login')
+        ->and(VisitorPageUrl::forSite('http://shop.test:443/login', 'http://shop.test'))->toBeNull();
+});

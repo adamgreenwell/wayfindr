@@ -1099,6 +1099,33 @@ test('a heartbeat in flight cannot outlive the revocation', function (): void {
         ->toBeFalse('a visitor was recorded for a site that had just revoked presence');
 });
 
+test('the heartbeat answers with the settings in force', function (): void {
+    // A visitor who never opens the panel never calls bootstrap, so the config
+    // they fetched at page load would be the newest answer that tab ever gets
+    // -- and those are exactly the visitors this feature exists for. Rejecting
+    // their writes server-side does not help: the address has already crossed
+    // the wire by then.
+    $site = presenceSite();
+
+    reportPresence($site, 'anon-hears')
+        ->assertSuccessful()
+        ->assertJsonPath('data.reports', true)
+        ->assertJsonPath('data.page_urls', true);
+
+    $site->forceFill(['settings' => ['presence' => ['enabled' => true, 'page_urls' => false]]])->save();
+
+    reportPresence($site, 'anon-hears')
+        ->assertSuccessful()
+        ->assertJsonPath('data.reports', true)
+        ->assertJsonPath('data.page_urls', false);
+
+    $site->forceFill(['settings' => ['presence' => ['enabled' => false]]])->save();
+
+    reportPresence($site, 'anon-hears')
+        ->assertSuccessful()
+        ->assertJsonPath('data.reports', false);
+});
+
 test('the widget learns about presence without making contact', function (): void {
     // The endpoint that answers this is the one a page load is allowed to ask.
     // Bootstrap cannot be: it creates or touches a visitor row and marks them
