@@ -1444,3 +1444,40 @@ test('the presence caption agrees with the state beside it', function (): void {
     expect($payload['state'])->toBe('quiet')
         ->and($payload['last_seen_label'])->toBe($visitor->last_web_seen_at->diffForHumans());
 });
+
+test('bootstrap answers with the settings it actually wrote against', function (): void {
+    // The write reads the locked row while the response was built from the copy
+    // the request arrived with, so a revocation landing in between produced an
+    // answer telling the widget to keep reporting against a setting the write
+    // had already refused.
+    $account = Account::factory()->create();
+    $site = Site::factory()->for($account)->create([
+        'domain' => 'shop.test',
+        'public_key' => 'site_public_answer',
+        'settings' => ['presence' => ['enabled' => true, 'page_urls' => true]],
+    ]);
+
+    $revoked = false;
+
+    Site::retrieved(function (Site $read) use (&$revoked, $site): void {
+        if ($revoked || $read->id !== $site->id) {
+            return;
+        }
+
+        $revoked = true;
+
+        DB::table('sites')->where('id', $site->id)->update([
+            'settings' => json_encode(['presence' => ['enabled' => false]]),
+        ]);
+    });
+
+    $response = test()->postJson('/api/widget/bootstrap', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-answer',
+        'page_url' => 'https://shop.test/pricing',
+    ])->assertSuccessful();
+
+    expect($revoked)->toBeTrue('the race never happened, so this proves nothing')
+        ->and($response->json('data.site.presence.reports'))
+        ->toBeFalse('the answer told the widget to report against a setting the write refused');
+});

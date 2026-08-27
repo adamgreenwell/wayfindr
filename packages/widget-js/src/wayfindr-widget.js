@@ -2812,6 +2812,13 @@
 
       presenceConfig = config && config.reports === true ? config : null;
 
+      // Remembered outside the config, which is cleared when reporting stops.
+      // A site's decision not to keep page addresses has to outlive its
+      // decision to stop watching.
+      if (config && typeof config.page_urls === 'boolean') {
+        presenceReportedPageUrls = config.page_urls;
+      }
+
       if (!presenceConfig) {
         return;
       }
@@ -2912,6 +2919,8 @@
         every: typeof config.every === 'number' ? config.every : presenceConfig.every,
         page_urls: typeof config.page_urls === 'boolean' ? config.page_urls : presenceConfig.page_urls,
       };
+
+      presenceReportedPageUrls = presenceConfig.page_urls !== false;
 
       // The notice describes what is collected, so it changes with it.
       renderPresenceDisclosure();
@@ -3130,7 +3139,12 @@
         return null;
       }
 
-      if (presenceConfig && presenceConfig.page_urls === false) {
+      // `presenceReportedPageUrls`, not `presenceConfig`. Turning presence off
+      // clears the config, and reading the setting from a cleared config makes
+      // it look unknown -- so a site that had said "never keep page addresses"
+      // got them again from bootstrap and conversation start the moment
+      // reporting stopped, which is the wrong direction for that to fail in.
+      if (!presenceReportedPageUrls) {
         return null;
       }
 
@@ -3241,10 +3255,16 @@
     }
 
     /**
-     * Which shape of presence the visitor was declining.
+     * Whether this site keeps page addresses at all.
      *
-     * Read before `presenceConfig` is cleared, because the confirmation has to
-     * describe what actually stopped and by then there is nothing left to ask.
+     * Kept OUTSIDE `presenceConfig`, which is cleared whenever reporting stops
+     * -- by a decline, by the operator switching presence off, by a fail-closed
+     * return. Two things need this after that point: the decline confirmation,
+     * which has to describe what actually stopped, and `pageUrlForReporting()`,
+     * which still runs for bootstrap and conversation start long after any
+     * heartbeat has.
+     *
+     * Defaults to true because a site that has never said otherwise keeps them.
      */
     var presenceReportedPageUrls = true;
 
@@ -6159,47 +6179,62 @@
     return visitorToken;
   }
 
+  /**
+   * Never send the host page's address in a header.
+   *
+   * Everything else in this file works to keep the query string off the wire:
+   * the URL is sanitised before it is sent, the path is redacted, the whole
+   * query is dropped. The browser then attaches the FULL current URL --
+   * including that query string -- as a `Referer` on every request, and on a
+   * same-origin install it does so by default. A host serving
+   * `Referrer-Policy: unsafe-url` sends it cross-origin too.
+   *
+   * So the sanitising was defeated by a header nobody wrote, and the tokens it
+   * exists to strip reached the server and its logs anyway.
+   */
+  var REQUEST_PRIVACY = { referrerPolicy: 'no-referrer' };
+
   function getJson(fetcher, url) {
-    return fetcher(url, {
+    return fetcher(url, Object.assign({
       method: 'GET',
       headers: {
         Accept: 'application/json',
       },
-    }).then(readJsonResponse);
+    }, REQUEST_PRIVACY)).then(readJsonResponse);
   }
 
   function postJson(fetcher, url, payload) {
-    return fetcher(url, {
+    return fetcher(url, Object.assign({
       method: 'POST',
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
-    }).then(readJsonResponse);
+    }, REQUEST_PRIVACY)).then(readJsonResponse);
   }
 
   // Multipart POST for file uploads. Deliberately does NOT set Content-Type —
   // the browser adds the multipart boundary itself.
   function postForm(fetcher, url, formData) {
-    return fetcher(url, {
+    return fetcher(url, Object.assign({
       method: 'POST',
       headers: {
         Accept: 'application/json',
       },
       body: formData,
-    }).then(readJsonResponse);
+    }, REQUEST_PRIVACY)).then(readJsonResponse);
   }
 
   function postJsonRaw(fetcher, url, payload) {
-    return fetcher(url, {
+    return fetcher(url, Object.assign({
       method: 'POST',
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
-    }).then(readRawJsonResponse);
+    }, REQUEST_PRIVACY)).then(readRawJsonResponse);
   }
 
   async function readJsonResponse(response) {
