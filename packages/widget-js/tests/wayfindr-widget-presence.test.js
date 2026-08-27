@@ -732,3 +732,75 @@ test('the notice speaks the site language before the first heartbeat', async (t)
   assert.match(copy.textContent, /Website kann sehen/, 'the notice was not in the site language');
   assert.equal(widget.root.lang, 'de');
 });
+
+test('a site that reports without page addresses sends none', async (t) => {
+  // The server drops it on arrival too, but an address the operator has said
+  // not to keep should never travel -- which is the same argument that put
+  // sanitising in the client at all.
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/invite/ABCDEF',
+  });
+
+  const calls = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 0,
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, {
+          data: {
+            appearance: { position: 'right' },
+            presence: { reports: true, every: 45, page_urls: false },
+          },
+        });
+      }
+
+      return jsonResponse(202, { data: { reports: true } });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  const sent = presenceCalls(calls);
+
+  assert.equal(sent.length, 1, 'the visitor was not reported at all');
+  assert.ok(!('page_url' in sent[0].body), 'a page address was sent despite the site turning them off');
+});
+
+test('an all-letters code in the path is redacted client-side', async (t) => {
+  const { widget, calls } = widgetWithPresence({
+    href: 'https://shop.example.test/invite/ABCDEF',
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  assert.equal(
+    presenceCalls(calls)[0].body.page_url,
+    'https://shop.example.test/invite/[redacted]',
+  );
+});

@@ -2984,7 +2984,13 @@
         return;
       }
 
-      client.reportPresence(sanitisePageUrl(currentHref())).catch(function () {
+      // The page only when the site asked for it. Told by the server rather
+      // than decided here, and the server drops it again on arrival -- but an
+      // address the operator has said not to keep should not travel at all,
+      // which is the whole reason the client sanitises in the first place.
+      var pageUrl = presenceConfig.page_urls === false ? null : sanitisePageUrl(currentHref());
+
+      client.reportPresence(pageUrl).catch(function () {
         // A missed heartbeat is a visitor reading as quiet, which is a fair
         // description of somebody we cannot reach.
       });
@@ -6233,7 +6239,25 @@
     // digit and is kept at any length; `v2` is too short to trip it. The cost
     // is that `iphone15` is redacted, which is the right way round for a rule
     // whose failures are credentials.
-    return segment.length >= 6 && /[0-9]/.test(segment) && !/[-_.]/.test(segment);
+    if (/[-_.]/.test(segment)) {
+      return false;
+    }
+
+    if (segment.length >= 6 && /[0-9]/.test(segment)) {
+      return true;
+    }
+
+    // A credential need not carry a digit. Sixteen letters with no separator is
+    // past the length of the words routes are named after, and an all-capitals
+    // run of five or more is a code rather than a word -- sites write `/about`,
+    // not `/ABOUT`, while invitation codes are capitals by convention. Kept
+    // identical to VisitorPageUrl::looksOpaque(); a disagreement shows up as
+    // addresses that change shape depending on which path they took.
+    if (segment.length >= 16) {
+      return true;
+    }
+
+    return segment.length >= 5 && /^[A-Z0-9]+$/.test(segment);
   }
 
   function storageRemove(storage, key) {
