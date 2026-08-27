@@ -63,12 +63,17 @@ test('an email correspondent is not on the website', function (): void {
     // an agent acting on that goes looking for a browser that does not exist.
     $f = boardFixture();
 
-    Visitor::factory()->for($f['site'])->create([
+    $mailer = Visitor::factory()->for($f['site'])->create([
         'anonymous_id' => null,
         'email' => 'mailer@elsewhere.test',
         'last_seen_at' => now(),
-        'last_web_seen_at' => null,
     ]);
+
+    // Cleared after creating: the factory makes a widget visitor and fills the
+    // website sighting in from `last_seen_at`, and cannot tell an explicit null
+    // from an absent one. An email correspondent is contact with no browser
+    // behind it, which is precisely what this test is about.
+    $mailer->forceFill(['last_web_seen_at' => null])->save();
 
     expect(LiveVisitorBoard::for($f['site']))->toHaveCount(0);
 });
