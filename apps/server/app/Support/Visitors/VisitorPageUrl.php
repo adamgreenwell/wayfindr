@@ -179,7 +179,25 @@ final class VisitorPageUrl
         // reported URL read this one -- so `shop.test:8443` and `[::1]:8000`
         // split into host and port identically on both sides of the comparison
         // rather than by a hand-rolled split that gets IPv6 wrong.
-        $authority = trim((string) preg_replace('#^[a-z][a-z0-9+.-]*://#i', '', trim($expectedHost)));
+        $configured = trim($expectedHost);
+
+        // The scheme, kept rather than stripped and forgotten. An operator who
+        // wrote `https://shop.test` said which service they meant, and
+        // accepting `http://shop.test/login` for it treats two origins as one
+        // -- they can be different servers, and the plain-text one is the one
+        // an attacker on the network can answer for.
+        //
+        // Absent, no constraint: a bare `shop.test` is a host, not a claim
+        // about transport, and most operators type it that way.
+        $expectedScheme = preg_match('#^([a-z][a-z0-9+.-]*)://#i', $configured, $matches) === 1
+            ? strtolower($matches[1])
+            : null;
+
+        if ($expectedScheme !== null && $expectedScheme !== strtolower((string) $parts['scheme'])) {
+            return false;
+        }
+
+        $authority = trim((string) preg_replace('#^[a-z][a-z0-9+.-]*://#i', '', $configured));
         $authority = ltrim(explode('/', $authority)[0], '.');
 
         if ($authority === '' || $host === '') {
@@ -213,7 +231,9 @@ final class VisitorPageUrl
         // agree: a site configured `shop.test` matches `https://shop.test/` and
         // `https://shop.test:443/` both, and a site configured `shop.test:8443`
         // matches neither.
-        $default = strtolower((string) $parts['scheme']) === 'https' ? 443 : 80;
+        // The default port follows the CONFIGURED scheme where there is one, so
+        // `http://shop.test` means port 80 and is not satisfied by 443.
+        $default = ($expectedScheme ?? strtolower((string) $parts['scheme'])) === 'https' ? 443 : 80;
 
         return ($parts['port'] ?? $default) === ($expected['port'] ?? $default);
     }
