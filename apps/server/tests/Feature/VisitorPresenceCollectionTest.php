@@ -1232,12 +1232,16 @@ test('the visitor directory filters on the same sighting it labels', function ()
     $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
     $site = Site::factory()->for($account)->create(['domain' => 'shop.test']);
 
-    $mailer = Visitor::factory()->for($site)->create([
-        'anonymous_id' => null,
-        'email' => 'mailer@elsewhere.test',
+    // A real widget visitor who browsed days ago and emailed today. Keeping an
+    // anonymous_id matters: a NULL one is excluded from this index by the
+    // tester filter regardless of presence, so a fixture without one would
+    // pass whichever column the filter used.
+    $emailedToday = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-emailed-today',
+        'email' => 'known@shop.test',
         'last_seen_at' => now(),
+        'last_web_seen_at' => now()->subDays(3),
     ]);
-    $mailer->forceFill(['last_web_seen_at' => null])->save();
 
     $browsing = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-browsing']);
 
@@ -1247,6 +1251,16 @@ test('the visitor directory filters on the same sighting it labels', function ()
 
     $listed = collect($response->viewData('visitors')->items())->pluck('id');
 
-    expect($listed)->toContain($browsing->id)
-        ->and($listed)->not->toContain($mailer->id, 'an email correspondent was listed as being on the site');
+    expect($listed)->toContain($browsing->id);
+
+    // assertNotContains, NOT expect()->not->toContain($id, $message):
+    // `toContain` is variadic, so a message becomes a second needle and the
+    // negated form asserts that neither appears -- trivially true. This file's
+    // sibling documents the same trap three times over, and it still caught me:
+    // the mutation that reverts the filter column left the test green.
+    test()->assertNotContains(
+        $emailedToday->id,
+        $listed->all(),
+        'somebody whose only activity today was an email was listed as being on the site',
+    );
 });
