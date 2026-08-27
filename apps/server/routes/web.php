@@ -185,6 +185,8 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
 
     Route::put('/dashboard/sites/{site}/rating', [AgentSiteController::class, 'updateRating'])
         ->name('dashboard.sites.rating.update');
+    Route::get('/dashboard/sites/{site}/live', [AgentSiteController::class, 'live'])
+        ->name('dashboard.sites.live');
     Route::put('/dashboard/sites/{site}/presence', [AgentSiteController::class, 'updatePresence'])
         ->name('dashboard.sites.presence.update');
     Route::put('/dashboard/sites/{site}/language', [AgentSiteController::class, 'updateLanguage'])

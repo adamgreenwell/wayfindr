@@ -24,6 +24,7 @@ use App\Support\Sites\SiteRatingPrompt;
 use App\Support\Sites\WidgetAppearance;
 use App\Support\Sites\WidgetLanguage;
 use App\Support\TicketExternalIssueState;
+use App\Support\Visitors\LiveVisitorBoard;
 use App\Support\WidgetRealtimeConfig;
 use DateTimeZone;
 use Illuminate\Http\RedirectResponse;
@@ -635,6 +636,79 @@ class AgentSiteController extends Controller
         return redirect()
             ->route('dashboard.sites.show', $site)
             ->with('status', 'Visitor intake saved.');
+    }
+
+    /**
+     * Who is on this site right now.
+     *
+     * Its own page rather than a tab on the visitor directory, because the two
+     * answer different questions and the difference is the point: the directory
+     * is people, ordered by any contact of any kind, and this is a moment. A
+     * board that shared the directory's ordering would put somebody who emailed
+     * an hour ago above somebody reading a page this second.
+     */
+    public function live(Request $request, Site $site): View
+    {
+        $this->authorizeSiteAbility($request, 'view', $site, 404);
+
+        $agent = $request->user();
+        $reporting = SitePresenceReporting::for($site);
+
+        return view('agent.sites.live', [
+            'agent' => $agent,
+            'account' => $agent?->account,
+            'site' => $site,
+            'reporting' => $reporting,
+            'visitors' => LiveVisitorBoard::for($site),
+            'presentMinutes' => LiveVisitorBoard::PRESENT_MINUTES,
+            'canUpdatePrivacy' => Gate::forUser($agent)->allows('updatePrivacy', $site),
+            'realtime' => $this->presenceRealtimeConfig($site),
+        ]);
+    }
+
+    /**
+     * What the board needs to open a socket, or null if it cannot.
+     *
+     * Null disables the script entirely and the page stays what the server
+     * rendered -- correct at load, going stale quietly, which is a better
+     * failure than a board that looks live and is not.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function presenceRealtimeConfig(Site $site): ?array
+    {
+        if ((string) config('broadcasting.default') !== 'reverb') {
+            return null;
+        }
+
+        $key = config('broadcasting.connections.reverb.key');
+        // The CLIENT host, falling back to the server one. In a containerised
+        // install the server-side address is an internal service name the
+        // browser cannot resolve, which is why the agent conversation page
+        // reads these the same way.
+        $host = config('broadcasting.connections.reverb.options.client_host')
+            ?? config('broadcasting.connections.reverb.options.host');
+        $port = config('broadcasting.connections.reverb.options.client_port')
+            ?? config('broadcasting.connections.reverb.options.port');
+        $scheme = config('broadcasting.connections.reverb.options.client_scheme')
+            ?? config('broadcasting.connections.reverb.options.scheme');
+
+        foreach ([$key, $host, $port, $scheme] as $value) {
+            if (! is_scalar($value) || (string) $value === '') {
+                return null;
+            }
+        }
+
+        return [
+            'appKey' => (string) $key,
+            'authEndpoint' => url('/broadcasting/auth'),
+            'channelName' => 'private-sites.'.$site->id.'.presence',
+            'host' => (string) $host,
+            'port' => (string) $port,
+            'scheme' => (string) $scheme,
+            'eventName' => 'visitor.presence.updated',
+            'presentMinutes' => LiveVisitorBoard::PRESENT_MINUTES,
+        ];
     }
 
     /**

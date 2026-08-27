@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Visitors;
 
+use App\Events\VisitorPresenceUpdated;
 use App\Models\Site;
 use App\Models\Visitor;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -97,6 +98,10 @@ final class VisitorPresenceReport
             'metadata' => $this->metadata($visitor, $pageUrl, $site),
             'last_web_seen_at' => $now,
         ] + $provenance)->save();
+
+        // Announced after the write, so a board that reacts by reading the row
+        // sees what was written rather than what is about to be.
+        event(new VisitorPresenceUpdated($site, $visitor));
 
         return $visitor;
     }
