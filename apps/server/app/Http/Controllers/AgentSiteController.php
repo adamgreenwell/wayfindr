@@ -30,7 +30,6 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -529,11 +528,12 @@ class AgentSiteController extends Controller
             'mask_terms' => ['nullable', 'string', 'max:4000'],
         ]);
 
-        $settings = $site->settings ?? [];
-        $settings['mask_selectors'] = $this->parseMaskSelectors($validated['mask_selectors'] ?? '');
-        $settings['mask_terms'] = $this->parseMaskTerms($validated['mask_terms'] ?? '');
+        $settings = $site->mutateSettings(function (array $settings) use ($validated): array {
+            $settings['mask_selectors'] = $this->parseMaskSelectors($validated['mask_selectors'] ?? '');
+            $settings['mask_terms'] = $this->parseMaskTerms($validated['mask_terms'] ?? '');
 
-        $site->forceFill(['settings' => $settings])->save();
+            return $settings;
+        });
 
         return redirect()
             ->route('dashboard.sites.show', $site)
@@ -595,13 +595,14 @@ class AgentSiteController extends Controller
             'rating_intro' => ['nullable', 'string', 'max:160'],
         ]);
 
-        $settings = $site->settings ?? [];
-        $settings['rating'] = [
-            'enabled' => (bool) ($validated['rating_enabled'] ?? false),
-            'intro' => trim((string) ($validated['rating_intro'] ?? '')) ?: null,
-        ];
+        $settings = $site->mutateSettings(function (array $settings) use ($validated): array {
+            $settings['rating'] = [
+                'enabled' => (bool) ($validated['rating_enabled'] ?? false),
+                'intro' => trim((string) ($validated['rating_intro'] ?? '')) ?: null,
+            ];
 
-        $site->forceFill(['settings' => $settings])->save();
+            return $settings;
+        });
 
         return redirect()
             ->route('dashboard.sites.show', $site)
@@ -625,13 +626,14 @@ class AgentSiteController extends Controller
             $fields[$field] = $validated['intake_fields'][$field] ?? SiteIntake::OFF;
         }
 
-        $settings = $site->settings ?? [];
-        $settings['intake'] = [
-            'fields' => $fields,
-            'intro' => trim((string) ($validated['intake_intro'] ?? '')) ?: null,
-        ];
+        $settings = $site->mutateSettings(function (array $settings) use ($fields, $validated): array {
+            $settings['intake'] = [
+                'fields' => $fields,
+                'intro' => trim((string) ($validated['intake_intro'] ?? '')) ?: null,
+            ];
 
-        $site->forceFill(['settings' => $settings])->save();
+            return $settings;
+        });
 
         return redirect()
             ->route('dashboard.sites.show', $site)
@@ -659,49 +661,41 @@ class AgentSiteController extends Controller
         ]);
 
         $enabled = (bool) ($validated['presence_enabled'] ?? false);
+        $pageUrls = (bool) ($validated['presence_page_urls'] ?? false);
+        $removed = 0;
 
-        $settings = $site->settings ?? [];
-        $settings['presence'] = [
-            'enabled' => $enabled,
-            'page_urls' => (bool) ($validated['presence_page_urls'] ?? false),
-        ];
+        // The settings write and the cleanup are ONE locked transaction, which
+        // is what mutateSettings() is for. A heartbeat in flight takes the same
+        // lock before it writes, so revoking cannot pass over a row a request
+        // already on its way then creates -- and no other settings form can
+        // save its stale copy of this column afterwards and put the revoked
+        // value back.
+        $site->mutateSettings(function (array $settings) use ($site, $enabled, $pageUrls, &$removed): array {
+            $settings['presence'] = ['enabled' => $enabled, 'page_urls' => $pageUrls];
 
-        // Locked, because a heartbeat in flight takes the same lock before it
-        // writes. Without that, revoking presence could pass over a row a
-        // request already on its way then created, leaving one visitor behind
-        // on a site that had just said not to watch anybody.
-        $removed = DB::transaction(function () use ($site, $settings, $enabled): int {
-            Site::query()->whereKey($site->getKey())->lockForUpdate()->first();
-
-            $site->forceFill(['settings' => $settings])->save();
-
-            // Switching it off is a revocation, so the rows collected under it
+            // Switching presence off is a revocation, so the rows it collected
             // go. Leaving them to age out over thirty days would mean the
-            // visitor directory still listing people who never made contact,
-            // on a site whose operator has just said it should not watch them
-            // -- and every surface describing that list would be saying
-            // something the setting contradicts.
+            // visitor directory still listing people who never made contact on
+            // a site whose operator has just said not to watch them. Only rows
+            // this feature created and nobody has since been in touch through:
+            // somebody who arrived as a heartbeat and later wrote in stays.
+            if (! $enabled) {
+                $removed = $this->forgetPresenceOnlyVisitors($site);
+            }
+
+            // Addresses go whenever the switch is off, not only while presence
+            // is on. Contacted visitors are kept, and they hold addresses too
+            // -- written by bootstrap and conversation start -- so an operator
+            // unchecking this box while switching presence off would otherwise
+            // keep exactly the addresses they unchecked it for.
             //
-            // Only rows this feature created and nobody has since been in
-            // touch through. Somebody who arrived as a heartbeat and later
-            // wrote in is a contact, and stays.
-            // Turning page addresses off clears the ones already stored, and
-            // does it INSIDE this transaction. The form recommends this switch
-            // to operators whose paths carry invitation codes or reset tokens,
-            // so "from now on" is the wrong scope -- and a sweep outside the
-            // lock could finish just before an in-flight heartbeat wrote one
-            // back, which is the same scope failure arriving a second later.
-            // Whenever addresses are off, not only while presence is on.
-            // Turning presence off deletes the visitors it collected, but
-            // CONTACTED visitors stay -- and they hold addresses too, written
-            // by bootstrap and conversation start. An operator unchecking the
-            // page-address box while switching presence off would otherwise
-            // have kept exactly the addresses they were unchecking it for.
-            if (! $settings['presence']['page_urls']) {
+            // "From now on" is the wrong scope for a control that exists
+            // because a path held a secret.
+            if (! $pageUrls) {
                 $this->forgetStoredPageUrls($site);
             }
 
-            return $enabled ? 0 : $this->forgetPresenceOnlyVisitors($site);
+            return $settings;
         });
 
         return redirect()
@@ -789,12 +783,13 @@ class AgentSiteController extends Controller
             'widget_locale' => ['nullable', 'string', Rule::in(array_keys(WidgetLanguage::SUPPORTED))],
         ]);
 
-        $settings = $site->settings ?? [];
-        // Null rather than an empty string, so "not configured" is one value
-        // and the widget can tell it from a language it does not carry.
-        $settings['locale'] = WidgetLanguage::sanitize($validated['widget_locale'] ?? null);
+        $settings = $site->mutateSettings(function (array $settings) use ($validated): array {
+            // Null rather than an empty string, so "not configured" is one value
+            // and the widget can tell it from a language it does not carry.
+            $settings['locale'] = WidgetLanguage::sanitize($validated['widget_locale'] ?? null);
 
-        $site->forceFill(['settings' => $settings])->save();
+            return $settings;
+        });
 
         return redirect()
             ->route('dashboard.sites.show', $site)
@@ -845,20 +840,21 @@ class AgentSiteController extends Controller
                 : null;
         }
 
-        $settings = $site->settings ?? [];
-        $availability = is_array($settings['availability'] ?? null) ? $settings['availability'] : [];
+        $settings = $site->mutateSettings(function (array $settings) use ($validated, $weekdays): array {
+            $availability = is_array($settings['availability'] ?? null) ? $settings['availability'] : [];
 
-        $settings['availability'] = [
-            'enabled' => filter_var($validated['availability_enabled'] ?? false, FILTER_VALIDATE_BOOL),
-            'timezone' => $validated['availability_timezone'],
-            'weekdays' => $weekdays,
-            'away_message' => trim((string) ($validated['availability_away_message'] ?? '')) ?: null,
-            // Preserved rather than rewritten: editing the schedule is not the
-            // same action as reopening a desk somebody closed early.
-            'closed_until' => $availability['closed_until'] ?? null,
-        ];
+            $settings['availability'] = [
+                'enabled' => filter_var($validated['availability_enabled'] ?? false, FILTER_VALIDATE_BOOL),
+                'timezone' => $validated['availability_timezone'],
+                'weekdays' => $weekdays,
+                'away_message' => trim((string) ($validated['availability_away_message'] ?? '')) ?: null,
+                // Preserved rather than rewritten: editing the schedule is not the
+                // same action as reopening a desk somebody closed early.
+                'closed_until' => $availability['closed_until'] ?? null,
+            ];
 
-        $site->forceFill(['settings' => $settings])->save();
+            return $settings;
+        });
 
         return redirect()
             ->route('dashboard.sites.show', $site)
@@ -930,13 +926,14 @@ class AgentSiteController extends Controller
      */
     private function storeClosure(Site $site, ?string $closedUntil): void
     {
-        $settings = $site->settings ?? [];
-        $availability = is_array($settings['availability'] ?? null) ? $settings['availability'] : [];
+        $settings = $site->mutateSettings(function (array $settings) use ($closedUntil): array {
+            $availability = is_array($settings['availability'] ?? null) ? $settings['availability'] : [];
 
-        $availability['closed_until'] = $closedUntil;
-        $settings['availability'] = $availability;
+            $availability['closed_until'] = $closedUntil;
+            $settings['availability'] = $availability;
 
-        $site->forceFill(['settings' => $settings])->save();
+            return $settings;
+        });
     }
 
     /**
@@ -1000,16 +997,17 @@ class AgentSiteController extends Controller
             throw ValidationException::withMessages(['widget_accent' => $rejection]);
         }
 
-        $settings = $site->settings ?? [];
+        $settings = $site->mutateSettings(function (array $settings) use ($accent, $validated): array {
 
-        $settings['appearance'] = [
-            'accent' => $accent === '' ? null : $accent,
-            'position' => $validated['widget_position'],
-            'greeting' => trim((string) ($validated['widget_greeting'] ?? '')) ?: null,
-            'placeholder' => trim((string) ($validated['widget_placeholder'] ?? '')) ?: null,
-        ];
+            $settings['appearance'] = [
+                'accent' => $accent === '' ? null : $accent,
+                'position' => $validated['widget_position'],
+                'greeting' => trim((string) ($validated['widget_greeting'] ?? '')) ?: null,
+                'placeholder' => trim((string) ($validated['widget_placeholder'] ?? '')) ?: null,
+            ];
 
-        $site->forceFill(['settings' => $settings])->save();
+            return $settings;
+        });
 
         return redirect()
             ->route('dashboard.sites.show', $site)
