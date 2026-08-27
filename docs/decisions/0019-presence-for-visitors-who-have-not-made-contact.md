@@ -223,9 +223,18 @@ the background is correct rather than a gap to paper over.
 have they been here" — updating it destroys the very thing the question needs —
 and `visitors.created_at` answers "when did we first ever see them", which is a
 different question that #747 also asks under *returning or new*. So the server
-keeps a current-visit start alongside `last_seen_at`, set when a heartbeat
-arrives from a visitor who has **no** previous one, or whose previous one is
-older than the fifteen-minute *recent* window. Left alone otherwise.
+keeps a current-visit start alongside `last_seen_at`, set when a report arrives
+from a visitor who has **no** previous one, or whose previous one is older than
+the fifteen-minute *recent* window. Left alone otherwise.
+
+**Maintained by every writer of `last_seen_at`, not by the heartbeat.** Presence
+is not the only one: bootstrap, conversation start, message fetch and typing all
+stamp it, and a returning visitor whose page reloads a stored conversation hits
+bootstrap *before* their first heartbeat. A rule living in the presence endpoint
+would then see a timestamp refreshed seconds ago, keep the previous visit's
+start, and report a visit spanning days. The transition therefore belongs to the
+model, computed from the value being replaced, so it holds for writers nobody
+has written yet.
 
 The first clause is not pedantry: a presence-only visitor's opening heartbeat
 has nothing to be "older than", so a rule written only around the gap never
@@ -246,9 +255,22 @@ the absence of retention a defect rather than a gap.
 
 So this ships with the product's **first automatic retention control**:
 
-- A visitor who has **never made contact** — no conversation, no ticket, no
-  message — is deleted **30 days after their last heartbeat**, measured from
-  `last_seen_at` rather than `created_at`.
+- A visitor **recorded by presence and only by presence** is deleted **30 days
+  after their last heartbeat**, measured from `last_seen_at` rather than
+  `created_at`.
+
+  **Positive evidence, never an inference from absence.** "No conversation and
+  no ticket" reads like "never made contact" and is not: `BootstrapController`
+  creates a visitor the moment somebody *opens* the widget, which §1 of
+  [ADR 0016](0016-observing-visitors.md) counts as contact. A pruner reasoning
+  from absence would delete every one of those older than the window — on every
+  install, including ones that never enabled presence, irreversibly, on its
+  first scheduled run.
+
+  So a row carries a `presence_only` flag that defaults to **false**. Every row
+  written before this existed is therefore safe by construction; only the
+  presence endpoint sets it, and only when creating; and opening the widget
+  clears it.
 
   Which timestamp is the whole rule. Measured from `created_at`, somebody first
   seen 31 days ago is deleted while they are on the site heartbeating, and
