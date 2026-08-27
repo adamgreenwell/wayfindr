@@ -804,3 +804,144 @@ test('an all-letters code in the path is redacted client-side', async (t) => {
     'https://shop.example.test/invite/[redacted]',
   );
 });
+
+test('the notice says what is actually collected', async (t) => {
+  // A site with page addresses off sends only "somebody is here". A disclosure
+  // claiming otherwise is untrue and a worse explanation than none: it
+  // describes a sharing the visitor cannot stop, because it is not happening.
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/pricing',
+  });
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 0,
+    fetch: async (url) => {
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, {
+          data: { appearance: { position: 'right' }, presence: { reports: true, every: 45, page_urls: false } },
+        });
+      }
+
+      return jsonResponse(202, { data: { reports: true } });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  const copy = widget.root.querySelector('.wayfindr-widget__presence-copy');
+
+  assert.match(copy.textContent, /not told which page/i, 'the notice claimed page sharing that is not happening');
+});
+
+test('a running reporter picks up a revised setting', async (t) => {
+  // fetchSiteConfig() runs once per page load, so a tab open all afternoon
+  // would keep the settings it started with and go on sending page addresses
+  // an operator switched off hours ago. They are dropped before storage, but
+  // they have already crossed the wire.
+  let pageUrls = true;
+
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/pricing',
+  });
+
+  const calls = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 0,
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, {
+          data: { appearance: { position: 'right' }, presence: { reports: true, every: 45, page_urls: true } },
+        });
+      }
+
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return jsonResponse(200, {
+          data: {
+            site: {
+              public_key: 'site_public_shop',
+              settings: {},
+              color: 'blue',
+              presence: { reports: true, every: 45, page_urls: pageUrls },
+            },
+            visitor: { anonymous_id: 'anon-shop', token: 'visitor-token-shop' },
+          },
+        });
+      }
+
+      return jsonResponse(202, { data: { reports: true } });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  assert.ok(presenceCalls(calls)[0].body.page_url, 'the first heartbeat sent no page at all');
+
+  // The operator switches page addresses off; the tab stays open and the
+  // visitor opens the panel, which is the only fresh answer it will get.
+  pageUrls = false;
+
+  await widget.open();
+  await settle();
+
+  const notice = widget.root.querySelector('.wayfindr-widget__presence-copy');
+
+  assert.match(notice.textContent, /not told which page/i, 'the notice still described page sharing');
+
+  const before = presenceCalls(calls).length;
+
+  dom.window.document.dispatchEvent(new dom.window.Event('visibilitychange'));
+  await settle();
+
+  const after = presenceCalls(calls).slice(before);
+
+  assert.ok(after.length > 0, 'no further heartbeat was sent, so this proves nothing');
+  assert.ok(
+    after.every((c) => !('page_url' in c.body)),
+    'the tab kept sending page addresses after the operator switched them off',
+  );
+});

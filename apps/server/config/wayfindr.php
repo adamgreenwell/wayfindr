@@ -84,6 +84,14 @@ return [
 
     'widget_rate_limits' => [
         'bootstrap_per_minute' => (int) env('WAYFINDR_WIDGET_BOOTSTRAP_RATE_LIMIT', 120),
+
+        // Public site configuration, read once per PAGE LOAD rather than once
+        // per panel opening, so it is sized for browsing rather than for
+        // conversations. It shared the bootstrap budget until presence needed
+        // to reach visitors who never open the widget, at which point passive
+        // page views from one office could exhaust the allowance that lets
+        // somebody start a chat.
+        'config_per_minute' => (int) env('WAYFINDR_WIDGET_CONFIG_RATE_LIMIT', 600),
         // Per VISITOR, not per source IP -- see the widget-presence limiter.
         // A 45-second cadence is 1.33 a minute per open tab, and tabs of one
         // browser share an anonymous ID, so this is roughly twenty tabs' worth.

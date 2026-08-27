@@ -42,6 +42,7 @@
       'notice.emptyAgent': 'No messages yet. Replies will show up here.',
       'notice.closed': 'This conversation was closed. Send a new message to reopen it.',
       'presence.disclosure': 'This site can see which of its pages you are on while this widget is loaded.',
+      'presence.disclosureNoPage': 'This site can see that you are here while this widget is loaded. It is not told which page you are on.',
       'presence.decline': 'Stop sharing',
       'presence.declined': 'Not sharing which pages you visit.',
       'notice.retry': 'Try again',
@@ -129,6 +130,7 @@
       'notice.emptyAgent': 'Noch keine Nachrichten. Antworten erscheinen hier.',
       'notice.closed': 'Diese Unterhaltung wurde geschlossen. Senden Sie eine neue Nachricht, um sie wieder zu öffnen.',
       'presence.disclosure': 'Diese Website kann sehen, auf welchen ihrer Seiten Sie sich befinden, solange dieses Widget geladen ist.',
+      'presence.disclosureNoPage': 'Diese Website kann sehen, dass Sie hier sind, solange dieses Widget geladen ist. Welche Seite Sie ansehen, erfährt sie nicht.',
       'presence.decline': 'Nicht mehr teilen',
       'presence.declined': 'Es wird nicht geteilt, welche Seiten Sie besuchen.',
       'notice.retry': 'Erneut versuchen',
@@ -2777,13 +2779,13 @@
       ratingConfig = siteRatingPrompt(result);
       renderRatingPrompt();
 
-      // Presence is NOT applied from here, though bootstrap does carry it.
-      // One source, and it has to be the one that runs without the panel:
-      // applying it from both meant opening the widget restarted reporting and
-      // sent a second first-heartbeat, and it meant the config a visitor
-      // browsing silently was acting on could differ from the config a visitor
-      // who opened the panel was acting on. Site configuration arrives with the
-      // rest of the pre-contact configuration, in fetchSiteConfig().
+      // Presence is not STARTED from here -- that belongs to fetchSiteConfig(),
+      // the one path that runs without the panel -- but a running reporter is
+      // updated, because bootstrap is the freshest answer a long-lived tab
+      // ever gets. fetchSiteConfig() runs once per page load, so a tab left
+      // open all afternoon would otherwise keep the settings it started with
+      // and go on sending page addresses an operator switched off hours ago.
+      refreshPresenceSettings(result && result.site ? result.site.presence : null);
     }
 
     /**
@@ -2842,6 +2844,35 @@
       // Re-checked rather than assumed at that point, because two frames is
       // long enough for the answer to change.
       startPresenceAfterDisclosure();
+    }
+
+    /**
+     * Apply a newer answer to a reporter that is already running.
+     *
+     * Deliberately not applyPresence(): that stops and restarts, which would
+     * send a fresh first-heartbeat and re-run the paint wait every time the
+     * panel opened. This changes the settings underneath a running timer and
+     * leaves the timer alone.
+     *
+     * Turning reporting off is the exception that must be immediate rather
+     * than tidy -- an operator revoking it should not have to wait for the tab
+     * to close.
+     */
+    function refreshPresenceSettings(config) {
+      if (!presenceConfig) {
+        return;
+      }
+
+      if (!config || config.reports !== true) {
+        stopPresence();
+
+        return;
+      }
+
+      presenceConfig = config;
+
+      // The notice describes what is collected, so it changes with it.
+      renderPresenceDisclosure();
     }
 
     /**
@@ -3061,7 +3092,14 @@
       presenceEl.hidden = false;
 
       if (presenceCopyEl) {
-        presenceCopyEl.textContent = t('presence.disclosure');
+        // The notice has to describe what is actually collected. A site with
+        // page addresses switched off sends only "somebody is here", and a
+        // disclosure claiming otherwise is both untrue and a worse explanation
+        // than none -- it describes a sharing the visitor cannot stop because
+        // it is not happening.
+        presenceCopyEl.textContent = presenceConfig && presenceConfig.page_urls === false
+            ? t('presence.disclosureNoPage')
+            : t('presence.disclosure');
       }
 
       if (presenceDeclineEl) {

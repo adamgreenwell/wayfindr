@@ -1061,3 +1061,38 @@ test('a site that has not opted in says so before anybody reports', function ():
         ->assertOk()
         ->assertJsonPath('data.presence.reports', false);
 });
+
+test('reading site configuration does not spend the budget for starting a chat', function (): void {
+    // Presence made this a per-PAGE-LOAD read rather than a per-panel-opening
+    // one. Sharing bootstrap's bucket meant passive browsing from one office
+    // could exhaust it, and the visitor who then tried to start a conversation
+    // got a 429 for somebody else's page views.
+    config()->set('wayfindr.widget_rate_limits.bootstrap_per_minute', 2);
+    config()->set('wayfindr.widget_rate_limits.config_per_minute', 100);
+
+    $site = presenceSite();
+
+    foreach (range(1, 6) as $i) {
+        test()->getJson(route('widget.appearance', ['site_public_key' => $site->public_key]))
+            ->assertOk();
+    }
+
+    // Bootstrap has spent nothing.
+    test()->postJson('/api/widget/bootstrap', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-after-config-reads',
+    ])->assertSuccessful();
+});
+
+test('the configuration read is still bounded', function (): void {
+    config()->set('wayfindr.widget_rate_limits.config_per_minute', 3);
+
+    $site = presenceSite();
+
+    foreach (range(1, 3) as $i) {
+        test()->getJson(route('widget.appearance', ['site_public_key' => $site->public_key]))->assertOk();
+    }
+
+    test()->getJson(route('widget.appearance', ['site_public_key' => $site->public_key]))
+        ->assertStatus(429);
+});
