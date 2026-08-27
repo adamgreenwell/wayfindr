@@ -53,11 +53,18 @@ parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamg
   Reply templates. A German or Italian agent moving from the queue to Reports
   changes language mid-session.
 
-  `DashboardLanguage::EXTRACTED_ROUTES` is the list that decides, and it is the
-  authority rather than this paragraph: a route missing from it renders English
-  by design rather than by accident. That is what makes the remainder a known
-  quantity rather than a surprise — but a prose list will drift from the
-  constant, so read the constant.
+  `DashboardLanguage::EXTRACTED_ROUTES` is the list that decides which **pages**
+  are translated, and it is the authority rather than this paragraph: a page
+  missing from it renders English by design rather than by accident. A prose
+  list will drift from the constant, so read the constant.
+
+  **Write endpoints are the deliberate exception.** A form submitted from a
+  translated page answers in that page's language even when its own route is
+  absent from the constant, because `DashboardLanguage::forRequest()` resolves
+  from the surface the response renders back to. Closing a ticket from the
+  conversation panel produces German validation; the same action from the
+  untranslated ticket page produces English. The language belongs to the page
+  the agent is looking at rather than to the endpoint.
 
   **The two lists are not the same, and the difference matters.** Italian is
   agent-facing only: an Italian-speaking desk reads its own dashboard in
@@ -65,11 +72,18 @@ parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamg
   the widget is a separate catalogue with a separate audience, and reading
   "Italian" as covering both is the wrong conclusion to draw.
 
-  German was drafted during development rather than by a professional
-  translator; Italian was drafted through a translation pipeline with a
-  glossary, a protection scheme for placeholders, and a policy scorer. Both are
-  consistent and grammatical. Have a native speaker read either before you
-  promise it to a customer.
+  **Neither pack has been read by a qualified speaker, and they are unreviewed
+  in different ways.** German was drafted during development: written by hand,
+  in context, by somebody who is not a professional translator. Italian is
+  machine output: eight of its nine files open with `NOT YET REVIEWED` and
+  describe their own values as proposals, produced by a pipeline with a
+  glossary, a protection scheme for placeholders, and a policy scorer.
+
+  Those checks establish mechanical consistency: the same term rendered the same
+  way everywhere, no placeholder lost in translation, the right register
+  attempted. They establish nothing about whether a sentence is good Italian,
+  and the translation policy says so directly. Do not promise either language to
+  a customer until somebody who speaks it has read the rendered screens.
 - **A visitor directory**, and a read-only public API with a decided isolation
   model (ADR 0018).
 - **Agent-initiated password recovery.**
