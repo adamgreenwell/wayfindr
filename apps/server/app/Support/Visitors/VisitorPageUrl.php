@@ -195,9 +195,10 @@ final class VisitorPageUrl
             return false;
         }
 
-        $expectedHostOnly = strtolower($expected['host']);
+        $expectedHostOnly = self::asciiHost($expected['host']);
+        $host = self::asciiHost($host);
 
-        if ($expectedHostOnly === '') {
+        if ($expectedHostOnly === '' || $host === '') {
             return false;
         }
 
@@ -215,6 +216,36 @@ final class VisitorPageUrl
         $default = strtolower((string) $parts['scheme']) === 'https' ? 443 : 80;
 
         return ($parts['port'] ?? $default) === ($expected['port'] ?? $default);
+    }
+
+    /**
+     * One representation of a host, so equal hosts compare equal.
+     *
+     * An operator configures `bücher.example` because that is what they own and
+     * what they typed. The browser reports `xn--bcher-kva.example`, because
+     * that is what the wire carries. They are the same host, and comparing them
+     * as written rejected every page on the site -- silently, since a rejected
+     * address is stored as null and reads as "we did not see one".
+     *
+     * `intl` is not guaranteed present. Without it both sides are simply
+     * lowercased, which is exactly today's behaviour: an install lacking the
+     * extension is no worse off than before, and one that has it stops
+     * discarding a site's own pages.
+     */
+    private static function asciiHost(string $host): string
+    {
+        $host = strtolower(trim($host));
+
+        if ($host === '' || ! function_exists('idn_to_ascii')) {
+            return $host;
+        }
+
+        $ascii = idn_to_ascii($host, IDNA_DEFAULT, INTL_IDNA_VARIANT_UTS46);
+
+        // A host `intl` cannot convert is left as it was rather than emptied:
+        // failing to normalise is not evidence of anything, and an ASCII host
+        // needs no conversion in the first place.
+        return is_string($ascii) && $ascii !== '' ? strtolower($ascii) : $host;
     }
 
     /**
@@ -251,14 +282,32 @@ final class VisitorPageUrl
         $length = mb_strlen($segment);
 
         // Nothing legible is this long in one segment.
-        if ($length >= 40) {
+        if ($length >= 32) {
             return true;
         }
 
-        // Long, carries a digit, and has no word separators: a slug is words
-        // joined by hyphens, a token is not.
-        return $length >= 20
+        // Carries a digit and has no word separator.
+        //
+        // The cutoff was 20, which is long enough to feel safe and is not: the
+        // dangerous values are frequently SHORT. `/invite/A1B2C3` and
+        // `/orders/123456` are both credentials-in-a-path on real sites, and a
+        // rule that waits for twenty characters keeps them whole. Six is the
+        // shortest length at which this can be said without eating ordinary
+        // page names.
+        //
+        // What survives, and why the rule is shaped this way rather than by
+        // length alone: a slug is words joined by hyphens, so `billing-2024`
+        // keeps its separator and is kept. A word without digits is kept at any
+        // length -- `pricing`, `Contact`, `unsubscribe`. A version segment is
+        // kept because it is short -- `v2`, `en-GB`.
+        //
+        // What it costs: `/product/iphone15` is redacted, and that is a real
+        // loss of context on some sites. It is the right way round for a rule
+        // whose failures are credentials, and it is a heuristic rather than a
+        // proof -- which is why the query string is dropped WHOLE rather than
+        // filtered by the same kind of guessing.
+        return $length >= 6
             && preg_match('/\d/', $segment) === 1
-            && preg_match('/[-_]/', $segment) !== 1;
+            && preg_match('/[-_.]/', $segment) !== 1;
     }
 }
