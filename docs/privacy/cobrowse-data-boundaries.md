@@ -25,7 +25,17 @@ Before cobrowse consent, the widget may:
 - bootstrap the site and anonymous visitor,
 - create or update a conversation,
 - send visitor messages,
-- fetch the current cobrowse request status.
+- fetch the current cobrowse request status,
+- report presence, **on a site whose operator has enabled it and to a visitor
+  who has not declined** — see
+  [ADR 0019](../decisions/0019-presence-for-visitors-who-have-not-made-contact.md).
+
+That last one is newer than this document and deserves the distinction spelled
+out, because it looks like an exception to the rule below and is not. A presence
+report carries the page's **address**; cobrowse carries the page's **contents**.
+The gate is different because what is behind it is different — and the address
+is itself stripped of its query string, its fragment, and any path segment that
+looks like a credential before it is stored.
 
 It must not send page snapshots, mutation batches, or cobrowse telemetry until
 consent is granted for an active cobrowse session.
