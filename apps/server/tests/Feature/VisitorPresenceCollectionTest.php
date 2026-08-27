@@ -841,6 +841,99 @@ test('two first heartbeats for one visitor do not collide', function (): void {
         ->and(Visitor::query()->where('anonymous_id', 'anon-twin')->count())->toBe(1);
 });
 
+test('a site can be watched without saying which page', function (): void {
+    // Redaction is a heuristic and cannot be made a proof -- no shape separates
+    // a short lowercase token from a short lowercase word. A site that puts
+    // secrets in path segments gets a real answer instead of a rule that is
+    // right most of the time.
+    $site = presenceSite();
+    $site->forceFill(['settings' => ['presence' => ['enabled' => true, 'page_urls' => false]]])->save();
+
+    reportPresence($site, 'anon-nopage', 'https://shop.test/invite/ABCDEF')->assertSuccessful();
+
+    $visitor = Visitor::query()->where('anonymous_id', 'anon-nopage')->firstOrFail();
+
+    expect($visitor->metadata['last_page_url'] ?? null)->toBeNull('a page address was stored anyway');
+
+    // And the widget is told, so it need not put one on the wire at all. (The
+    // endpoint that carries this to the widget is on the branch above; what
+    // belongs here is that the payload says so.)
+    expect(SitePresenceReporting::for($site->fresh())->toPayload())
+        ->toMatchArray(['reports' => true, 'page_urls' => false]);
+});
+
+test('turning presence off forgets the people it collected', function (): void {
+    // Switching it off is a revocation. Leaving the rows to age out over thirty
+    // days would mean the visitor directory still listing people who never made
+    // contact on a site whose operator has just said not to watch them.
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $site = Site::factory()->for($account)->create([
+        'domain' => 'shop.test',
+        'public_key' => 'site_public_revoke',
+        'settings' => ['presence' => ['enabled' => true]],
+    ]);
+
+    reportPresence($site, 'anon-silent')->assertSuccessful();
+    reportPresence($site, 'anon-spoke')->assertSuccessful();
+
+    $spoke = Visitor::query()->where('anonymous_id', 'anon-spoke')->firstOrFail();
+    Conversation::factory()->for($site)->for($spoke)->create();
+
+    test()->actingAs($owner)
+        ->put(route('dashboard.sites.presence.update', $site), [])
+        ->assertRedirect();
+
+    expect(Visitor::query()->where('anonymous_id', 'anon-silent')->exists())
+        ->toBeFalse('a visitor who never made contact was kept after the operator revoked')
+        ->and(Visitor::query()->where('anonymous_id', 'anon-spoke')->exists())
+        ->toBeTrue('somebody who wrote in was deleted');
+});
+
+test('sustained row creation is bounded, not just bursts', function (): void {
+    // Thirty a minute held all day is 43,200 rows and about 1.3 million across
+    // the retention window, so the burst allowance that makes an office work is
+    // by itself a licence to grow the table without end.
+    config()->set('wayfindr.widget_rate_limits.presence_per_minute', 1000);
+    config()->set('wayfindr.widget_rate_limits.presence_per_ip_per_minute', 1000);
+    config()->set('wayfindr.widget_rate_limits.presence_creations_per_ip_per_minute', 1000);
+    config()->set('wayfindr.widget_rate_limits.presence_creations_per_ip_per_day', 4);
+
+    $site = presenceSite();
+
+    foreach (range(1, 8) as $i) {
+        reportPresence($site, 'anon-day-'.$i)->assertSuccessful();
+    }
+
+    expect(Visitor::query()->where('anonymous_id', 'like', 'anon-day-%')->count())
+        ->toBe(4, 'the daily creation budget did not hold');
+});
+
+test('starting a conversation counts as contact even without bootstrap', function (): void {
+    // This route does not require bootstrap, so the flag meaning "never made
+    // contact" has to be cleared here too. Nothing was at risk -- the pruner
+    // refuses to delete anybody with a conversation -- but the record would
+    // have said something untrue about somebody who had just written in.
+    $site = presenceSite();
+
+    reportPresence($site, 'anon-writes')->assertSuccessful();
+
+    $visitor = Visitor::query()->where('anonymous_id', 'anon-writes')->firstOrFail();
+
+    expect($visitor->presence_only)->toBeTrue();
+
+    $token = app(VisitorSessionToken::class)->issue($site, $visitor);
+
+    test()->postJson('/api/conversations', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-writes',
+        'visitor_token' => $token,
+        'subject' => 'A question',
+    ])->assertSuccessful();
+
+    expect($visitor->fresh()->presence_only)->toBeFalse('a visitor who wrote in is still marked as never having made contact');
+});
+
 test('the widget learns about presence without making contact', function (): void {
     // The endpoint that answers this is the one a page load is allowed to ask.
     // Bootstrap cannot be: it creates or touches a visitor row and marks them

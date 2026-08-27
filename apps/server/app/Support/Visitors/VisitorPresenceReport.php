@@ -111,11 +111,35 @@ final class VisitorPresenceReport
      */
     private function mayCreate(Site $site): bool
     {
+        $fingerprint = hash('sha256', (string) $site->getKey().'|'.(string) request()->ip());
+
+        // TWO windows, because one cannot say both things. A minute-scale limit
+        // has to be generous enough for an office arriving at nine, and thirty
+        // a minute sustained is 43,200 rows a day and roughly 1.3 million
+        // across the retention window -- so the burst allowance that makes the
+        // feature work is also, on its own, a licence to grow the table
+        // indefinitely.
+        //
+        // The daily budget is what bounds that. It is far above any real site's
+        // new visitors from ONE address in a day, and far below what an
+        // unattended script would reach by lunchtime.
         $perMinute = max(1, (int) config('wayfindr.widget_rate_limits.presence_creations_per_ip_per_minute', 30));
+        $perDay = max(1, (int) config('wayfindr.widget_rate_limits.presence_creations_per_ip_per_day', 2000));
 
-        $key = 'presence-create|'.hash('sha256', (string) $site->getKey().'|'.(string) request()->ip());
+        // Checked before it is spent: attempting the minute limit first would
+        // consume it even when the day is already exhausted, and the two
+        // counters would drift apart for no reason.
+        if (RateLimiter::tooManyAttempts('presence-create-day|'.$fingerprint, $perDay)) {
+            return false;
+        }
 
-        return RateLimiter::attempt($key, $perMinute, static fn (): bool => true) !== false;
+        if (RateLimiter::attempt('presence-create|'.$fingerprint, $perMinute, static fn (): bool => true) === false) {
+            return false;
+        }
+
+        RateLimiter::hit('presence-create-day|'.$fingerprint, 86400);
+
+        return true;
     }
 
     /**

@@ -40,23 +40,41 @@ final class SitePresenceReporting
 
     private function __construct(
         public readonly bool $enabled,
+        public readonly bool $pageUrls,
     ) {}
 
     public static function for(Site $site): self
     {
         $config = is_array($site->settings['presence'] ?? null) ? $site->settings['presence'] : [];
 
-        return new self(($config['enabled'] ?? false) === true);
+        return new self(
+            ($config['enabled'] ?? false) === true,
+            // On unless switched off, because "which page" is most of the value
+            // and a site with no secrets in its paths should not have to opt in
+            // to the ordinary case.
+            //
+            // The switch exists because redaction is a heuristic and cannot be
+            // made into a proof: there is no shape that separates a short
+            // lowercase token from a short lowercase word. A site that puts
+            // secrets in path segments has a real answer here rather than a
+            // rule that is right most of the time.
+            ($config['page_urls'] ?? true) === true,
+        );
     }
 
     /**
-     * @return array{reports: bool, every: int}
+     * @return array{reports: bool, every: int, page_urls: bool}
      */
     public function toPayload(): array
     {
         return [
             'reports' => $this->enabled,
             'every' => self::HEARTBEAT_SECONDS,
+            // Told to the widget rather than only enforced here, so a page
+            // address the operator has said not to keep is never put on the
+            // wire in the first place. Enforced on arrival too: the endpoint is
+            // public and the payload is a request, not a promise.
+            'page_urls' => $this->enabled && $this->pageUrls,
         ];
     }
 }

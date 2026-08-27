@@ -40,7 +40,9 @@ class PresenceController extends Controller
         // Off unless the operator turned it on, checked before anything is
         // written. A site that has not opted in stores nothing at all, rather
         // than storing a row and declining to show it.
-        if (! SitePresenceReporting::for($site)->enabled) {
+        $reporting = SitePresenceReporting::for($site);
+
+        if (! $reporting->enabled) {
             return response()->json(['data' => ['reports' => false]], 200);
         }
 
@@ -51,7 +53,13 @@ class PresenceController extends Controller
             return response()->json(['data' => ['reports' => false]], 200);
         }
 
-        $presence->record($site, $validated['anonymous_id'], $validated['page_url'] ?? null);
+        // Dropped here, not merely omitted by the widget. The endpoint is
+        // public, so the widget being told not to send one is a request rather
+        // than a guarantee -- an operator who turned page addresses off has to
+        // get that whoever is calling.
+        $pageUrl = $reporting->pageUrls ? ($validated['page_url'] ?? null) : null;
+
+        $presence->record($site, $validated['anonymous_id'], $pageUrl);
 
         return response()->json(['data' => ['reports' => true]], 202);
     }
