@@ -80,7 +80,10 @@ trait SanitisesStoredPageUrls
             return false;
         }
 
-        $sanitised = VisitorPageUrl::sanitise($stored);
+        // reduce(), not forSite(): a hook sees a stored row and not the site
+        // it belongs to, so re-judging the host here would delete every
+        // address stored before the host rule existed.
+        $sanitised = VisitorPageUrl::reduce($stored);
 
         if ($sanitised === $stored) {
             return false;

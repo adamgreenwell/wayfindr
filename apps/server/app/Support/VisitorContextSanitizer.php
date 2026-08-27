@@ -63,7 +63,11 @@ class VisitorContextSanitizer
      * @param  array<string, mixed>|null  $metadata
      * @return array<string, mixed>
      */
-    public function mergeMetadata(?array $metadata, ?string $pageUrl, bool $contextWasProvided, mixed $context): array
+    /**
+     * @param  string|null  $siteHost  the site's configured domain; a page
+     *                                 address from anywhere else is not stored
+     */
+    public function mergeMetadata(?array $metadata, ?string $pageUrl, bool $contextWasProvided, mixed $context, ?string $siteHost = null): array
     {
         $metadata = $metadata ?? [];
 
@@ -72,7 +76,7 @@ class VisitorContextSanitizer
             // never asked of the URL. SENSITIVE_KEY_PATTERN sits three methods
             // up; the page address went past it untouched, and reached agents
             // whole -- reset tokens, invite codes and all.
-            $metadata['last_page_url'] = VisitorPageUrl::sanitise($pageUrl);
+            $metadata['last_page_url'] = VisitorPageUrl::forSite($pageUrl, $siteHost);
         } elseif (array_key_exists('last_page_url', $metadata)) {
             // The RETAINED value is sanitised too, and this is not belt and
             // braces -- it closes a hole the sweep's row lock cannot reach.
@@ -88,7 +92,7 @@ class VisitorContextSanitizer
             // Sanitising on the way out means every writer converges on the
             // clean value regardless of what it read or when.
             $metadata['last_page_url'] = is_string($metadata['last_page_url'])
-                ? VisitorPageUrl::sanitise($metadata['last_page_url'])
+                ? VisitorPageUrl::reduce($metadata['last_page_url'])
                 : null;
         } else {
             $metadata['last_page_url'] = null;

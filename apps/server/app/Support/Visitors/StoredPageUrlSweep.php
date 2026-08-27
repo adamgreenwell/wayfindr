@@ -179,7 +179,8 @@ final class StoredPageUrlSweep
             return false;
         }
 
-        $sanitised = VisitorPageUrl::sanitise($stored);
+        // reduce(), not forSite(): the sweep has a row, not a site.
+        $sanitised = VisitorPageUrl::reduce($stored);
 
         if ($sanitised === $stored) {
             return false;

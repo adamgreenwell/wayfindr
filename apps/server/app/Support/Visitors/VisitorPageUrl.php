@@ -53,7 +53,37 @@ final class VisitorPageUrl
      */
     private const ALLOWED_SCHEMES = ['http', 'https'];
 
-    public static function sanitise(?string $url): ?string
+    /**
+     * At INGRESS: the address must belong to the site, or it is not stored.
+     *
+     * Separate from `reduce()` on purpose, and the separation is the point. The
+     * host can only be judged where the site is known -- at the endpoint taking
+     * the request. The model hook and the historical sweep run without one, so
+     * if they shared a method with a nullable host they would either wipe every
+     * stored address or quietly accept any host, depending which way the default
+     * fell. Two names means a caller has to say which situation it is in.
+     */
+    public static function forSite(?string $url, ?string $expectedHost): ?string
+    {
+        $reduced = self::reduce($url);
+
+        if ($reduced === null) {
+            return null;
+        }
+
+        $host = parse_url($reduced, PHP_URL_HOST);
+
+        return is_string($host) && self::belongsToSite($host, $expectedHost) ? $reduced : null;
+    }
+
+    /**
+     * AT REST: strip everything that is not a page address, host untouched.
+     *
+     * Used by the model hook and the historical sweep, which see a stored row
+     * and not the site it belongs to. Re-checking the host here would delete
+     * every address ever stored before the host rule existed.
+     */
+    public static function reduce(?string $url): ?string
     {
         if ($url === null) {
             return null;
@@ -91,7 +121,7 @@ final class VisitorPageUrl
             $rebuilt .= ':'.$parts['port'];
         }
 
-        $rebuilt .= $parts['path'] ?? '';
+        $rebuilt .= self::redactPath($parts['path'] ?? '');
 
         // The query string is not rebuilt at all -- it is simply never one of
         // the named parts.
@@ -102,5 +132,78 @@ final class VisitorPageUrl
         // location -- but they also use it for tokens, and we cannot tell which
         // this is. Dropped, and the path still answers "which page".
         return mb_substr($rebuilt, 0, self::MAX_LENGTH);
+    }
+
+    /**
+     * Is this the site's own host?
+     *
+     * A null expectation is not "anything goes" -- it means we have nothing to
+     * check against, so nothing is trusted. A site with no configured domain
+     * stores no page address at all, because we cannot tell its pages from
+     * anybody else's and guessing is the failure this exists to prevent.
+     */
+    private static function belongsToSite(string $host, ?string $expectedHost): bool
+    {
+        if ($expectedHost === null) {
+            return false;
+        }
+
+        $host = strtolower(trim($host));
+        $expected = strtolower(trim((string) preg_replace('#^[a-z]+://#i', '', $expectedHost)));
+        $expected = ltrim(explode('/', $expected)[0], '.');
+
+        if ($expected === '' || $host === '') {
+            return false;
+        }
+
+        // The apex, or a subdomain of it. `www.` and a marketing subdomain are
+        // the same site; `evil-shop.test` is NOT `shop.test`, which is why this
+        // matches on a dot boundary rather than as a suffix.
+        return $host === $expected || str_ends_with($host, '.'.$expected);
+    }
+
+    /**
+     * Replace path segments that look like a credential rather than a page.
+     *
+     * A path is the answer to "which page" and also where this very product
+     * puts a token -- `/reset-password/{token}` is a route in this repository --
+     * so treating the whole path as safe leaves the secret in the one part that
+     * survived the query and fragment being dropped.
+     *
+     * Crude on purpose, and a heuristic rather than a proof. It will sometimes
+     * redact a long harmless slug, which is the right way round for a rule
+     * whose failures are credentials.
+     */
+    private static function redactPath(string $path): string
+    {
+        if ($path === '') {
+            return '';
+        }
+
+        return implode('/', array_map(
+            static fn (string $segment): string => self::looksOpaque($segment) ? '…' : $segment,
+            explode('/', $path),
+        ));
+    }
+
+    private static function looksOpaque(string $segment): bool
+    {
+        // A UUID is never a page name.
+        if (preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $segment) === 1) {
+            return true;
+        }
+
+        $length = mb_strlen($segment);
+
+        // Nothing legible is this long in one segment.
+        if ($length >= 40) {
+            return true;
+        }
+
+        // Long, carries a digit, and has no word separators: a slug is words
+        // joined by hyphens, a token is not.
+        return $length >= 20
+            && preg_match('/\d/', $segment) === 1
+            && preg_match('/[-_]/', $segment) !== 1;
     }
 }

@@ -24,7 +24,13 @@ function visitorPageUrlSite(): Site
 {
     $account = Account::factory()->create();
 
-    return Site::factory()->for($account)->create(['public_key' => 'site_public_pages']);
+    // A configured domain, because a page address is only stored for a site
+    // that has one: the endpoints are public, so without it we cannot tell this
+    // site's pages from an attacker's.
+    return Site::factory()->for($account)->create([
+        'public_key' => 'site_public_pages',
+        'domain' => 'shop.test',
+    ]);
 }
 
 test('bootstrap stores the page without its query string', function (): void {
