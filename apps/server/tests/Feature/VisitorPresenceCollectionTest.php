@@ -1264,3 +1264,65 @@ test('the visitor directory filters on the same sighting it labels', function ()
         'somebody whose only activity today was an email was listed as being on the site',
     );
 });
+
+test('bootstrap cannot restore an address the operator just removed', function (): void {
+    // The heartbeat already reads the setting under the site lock. Bootstrap
+    // and conversation start took the visitor lock but read the setting from
+    // the copy of the site they arrived with, so the cleanup could finish first
+    // and they would write the address back afterwards.
+    $account = Account::factory()->create();
+    $site = Site::factory()->for($account)->create([
+        'domain' => 'shop.test',
+        'public_key' => 'site_public_bootrace',
+        'settings' => ['presence' => ['enabled' => true, 'page_urls' => true]],
+    ]);
+
+    $switched = false;
+
+    Site::retrieved(function (Site $read) use (&$switched, $site): void {
+        if ($switched || $read->id !== $site->id) {
+            return;
+        }
+
+        $switched = true;
+
+        DB::table('sites')->where('id', $site->id)->update([
+            'settings' => json_encode(['presence' => ['enabled' => true, 'page_urls' => false]]),
+        ]);
+    });
+
+    test()->postJson('/api/widget/bootstrap', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-bootrace',
+        'page_url' => 'https://shop.test/invite/ABCDEF',
+    ])->assertSuccessful();
+
+    expect($switched)->toBeTrue('the race never happened, so this proves nothing');
+
+    $visitor = Visitor::query()->where('anonymous_id', 'anon-bootrace')->firstOrFail();
+
+    expect($visitor->metadata['last_page_url'] ?? null)
+        ->toBeNull('bootstrap stored an address after the operator switched them off');
+});
+
+test('the realtime presence payload agrees with itself', function (): void {
+    // State from one column and the moment from the other produced a payload
+    // saying `quiet` and "seen two minutes ago" at once -- and the agent page
+    // interpolates that moment into the detail line, so somebody who had
+    // emailed read as having just been on the site.
+    $account = Account::factory()->create();
+    $site = Site::factory()->for($account)->create(['domain' => 'shop.test']);
+
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-emailed',
+        'last_seen_at' => now(),
+        'last_web_seen_at' => now()->subHours(3),
+    ]);
+
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create();
+
+    $payload = $conversation->visitorPresencePayload();
+
+    expect($payload['state'])->toBe('quiet')
+        ->and($payload['last_seen_at'])->toBe($visitor->last_web_seen_at->toJSON());
+});

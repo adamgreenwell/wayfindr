@@ -102,6 +102,14 @@ class BootstrapController extends Controller
         //
         // Worse than an error, because it looks like success right up until
         // they try to say something.
+        // The site under the same lock `updatePresence()` takes, so the
+        // page-address setting read here is the one in force at the write
+        // rather than the one the request saw on arrival. Without it the
+        // cleanup can finish first and this can store the address again
+        // afterwards, which is the shape the heartbeat already guards against.
+        $current = Site::query()->whereKey($site->getKey())->lockForUpdate()->first() ?? $site;
+        $storePageUrl = SitePresenceReporting::for($current)->pageUrls;
+
         if ($visitor->exists) {
             $locked = Visitor::query()->whereKey($visitor->getKey())->lockForUpdate()->first();
 
@@ -118,7 +126,7 @@ class BootstrapController extends Controller
                 array_key_exists('context', $validated),
                 $validated['context'] ?? null,
                 $site->domain,
-                SitePresenceReporting::for($site)->pageUrls,
+                $storePageUrl,
             ),
             'last_web_seen_at' => now(),
             // Opening the widget IS making contact -- ADR 0016 §1 says so -- and
