@@ -47,12 +47,17 @@ parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamg
   conversation queue, the ticket list, and the conversation detail page with its
   cobrowse panel.
 
-  **The dashboard home, Alerts, Reports, Visitors, site settings and ticket
-  detail are still English**, and a German or Italian agent moving from the
-  queue to Reports changes language mid-session.
-  `DashboardLanguage::EXTRACTED_ROUTES` is the list that decides: a route
-  missing from it renders English by design rather than by accident, which is
-  what makes the remainder a known quantity rather than a surprise.
+  **Most of the dashboard is still English** — the home page, Alerts, Reports,
+  Visitors, site settings, ticket detail, and all of account management:
+  Account, Integrations, API tokens, Operator access, Audit, Labels, Articles,
+  Reply templates. A German or Italian agent moving from the queue to Reports
+  changes language mid-session.
+
+  `DashboardLanguage::EXTRACTED_ROUTES` is the list that decides, and it is the
+  authority rather than this paragraph: a route missing from it renders English
+  by design rather than by accident. That is what makes the remainder a known
+  quantity rather than a surprise — but a prose list will drift from the
+  constant, so read the constant.
 
   **The two lists are not the same, and the difference matters.** Italian is
   agent-facing only: an Italian-speaking desk reads its own dashboard in
