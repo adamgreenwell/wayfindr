@@ -82,7 +82,12 @@ final class LiveVisitorBoard
             // "a customer you know is back", and an agent chooses differently
             // on each.
             'made_contact' => ! $visitor->presence_only,
-            'conversations_count' => (int) ($visitor->conversations_count ?? 0),
+            // Counted rather than defaulted. The board's own query loads this
+            // with withCount(); a broadcast carries one visitor resolved
+            // somewhere else, and letting it fall back to zero meant the first
+            // realtime update silently rewrote "3 conversations" as "0".
+            'conversations_count' => (int) ($visitor->conversations_count ?? $visitor->conversations()->count()),
+            'profile_url' => $visitor->presence_only ? null : route('dashboard.visitors.show', $visitor->id),
         ];
     }
 }

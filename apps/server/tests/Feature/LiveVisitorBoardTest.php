@@ -286,3 +286,49 @@ test('realtime is refused when the browser cannot be told where to connect', fun
         ->assertOk()
         ->assertDontSee('pusher:subscribe', false);
 });
+
+test('the broadcast row carries what the rendered row shows', function (): void {
+    // The board's own query loads the count with withCount(); a broadcast
+    // carries one visitor resolved somewhere else. Letting it default to zero
+    // meant the first heartbeat silently rewrote "3 conversations" as "0" and
+    // dropped the profile link -- within 45 seconds of page load, looking like
+    // the page had lost them.
+    $f = boardFixture();
+
+    $visitor = presentVisitor($f['site'], 'anon-contacted', ['presence_only' => false, 'name' => 'Dana']);
+    Conversation::factory()->for($f['site'])->for($visitor)->create();
+    Conversation::factory()->for($f['site'])->for($visitor)->create();
+
+    // Resolved fresh, exactly as the event does rather than through the board.
+    $broadcast = LiveVisitorBoard::row(Visitor::query()->findOrFail($visitor->id));
+    $rendered = LiveVisitorBoard::for($f['site'])->firstOrFail();
+
+    expect($broadcast['conversations_count'])->toBe(2)
+        ->and($broadcast['conversations_count'])->toBe($rendered['conversations_count'])
+        ->and($broadcast['profile_url'])->toBe($rendered['profile_url'])
+        ->and($broadcast['profile_url'])->not->toBeNull();
+});
+
+test('a stranger has no profile to link to', function (): void {
+    $f = boardFixture();
+
+    presentVisitor($f['site'], 'anon-stranger');
+
+    expect(LiveVisitorBoard::for($f['site'])->firstOrFail()['profile_url'])->toBeNull();
+});
+
+test('a site that stopped watching shows nobody, not everybody', function (): void {
+    // Contacted visitors keep reporting through bootstrap and message fetches,
+    // so an unguarded query put a nonzero count above a paragraph explaining
+    // that the board stays empty by design.
+    $f = boardFixture(enabled: false);
+
+    presentVisitor($f['site'], 'anon-still-here', ['presence_only' => false]);
+
+    $response = test()->actingAs($f['agent'])
+        ->get(route('dashboard.sites.live', $f['site']))
+        ->assertOk()
+        ->assertSee('stays empty by design', false);
+
+    expect($response->viewData('visitors'))->toHaveCount(0);
+});

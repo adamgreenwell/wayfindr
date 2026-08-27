@@ -661,7 +661,12 @@ class AgentSiteController extends Controller
             'account' => $agent?->account,
             'site' => $site,
             'reporting' => $reporting,
-            'visitors' => LiveVisitorBoard::for($site),
+            // Empty when the site does not watch, rather than "whoever the
+            // query happens to match". Contacted visitors keep reporting
+            // through bootstrap and message fetches, so an unguarded query
+            // would put a nonzero count above a paragraph explaining that the
+            // board stays empty by design.
+            'visitors' => $reporting->enabled ? LiveVisitorBoard::for($site) : collect(),
             'presentMinutes' => LiveVisitorBoard::PRESENT_MINUTES,
             'canUpdatePrivacy' => Gate::forUser($agent)->allows('updatePrivacy', $site),
             'realtime' => $this->presenceRealtimeConfig($site),

@@ -41,7 +41,7 @@
                             <tr data-visitor-id="{{ $visitor['id'] }}" data-last-seen="{{ $visitor['last_web_seen_at'] }}">
                                 <td>
                                     @if ($visitor['made_contact'])
-                                        <a href="{{ route('dashboard.visitors.show', $visitor['id']) }}">{{ $visitor['name'] ?? $visitor['email'] ?? 'Visitor '.$visitor['id'] }}</a>
+                                        <a href="{{ $visitor['profile_url'] }}">{{ $visitor['name'] ?? $visitor['email'] ?? 'Visitor '.$visitor['id'] }}</a>
                                         <span class="lede">{{ $visitor['conversations_count'] }} {{ Str::plural('conversation', $visitor['conversations_count']) }}</span>
                                     @else
                                         {{-- No link: there is nothing on the other side of it yet, and
@@ -184,12 +184,37 @@
                     row.dataset.lastSeen = visitor.last_web_seen_at || '';
 
                     var who = document.createElement('td');
-                    var name = document.createElement('span');
 
-                    name.textContent = visitor.made_contact
-                        ? (visitor.name || visitor.email || ('Visitor ' + visitor.id))
-                        : 'Not in touch yet';
-                    who.appendChild(name);
+                    if (visitor.made_contact) {
+                        // The same link and count the server rendered. Rebuilding
+                        // a plainer row meant the profile link and the
+                        // conversation context an agent could see at page load
+                        // vanished on the first heartbeat -- within 45 seconds,
+                        // and looking like the page had simply lost them.
+                        var link = document.createElement('a');
+
+                        link.textContent = visitor.name || visitor.email || ('Visitor ' + visitor.id);
+
+                        if (visitor.profile_url) {
+                            link.href = visitor.profile_url;
+                            who.appendChild(link);
+                        } else {
+                            who.appendChild(document.createTextNode(link.textContent));
+                        }
+
+                        var count = document.createElement('span');
+                        var total = Number(visitor.conversations_count) || 0;
+
+                        count.className = 'lede';
+                        count.textContent = total + (total === 1 ? ' conversation' : ' conversations');
+                        who.appendChild(count);
+                    } else {
+                        var stranger = document.createElement('span');
+
+                        stranger.textContent = 'Not in touch yet';
+                        who.appendChild(stranger);
+                    }
+
                     row.appendChild(who);
 
                     var page = textCell(visitor.page_url, 'Not reported');
