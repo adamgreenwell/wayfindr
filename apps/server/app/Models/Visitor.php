@@ -141,7 +141,14 @@ class Visitor extends Model
 
     public function presenceState(): string
     {
-        $state = VisitorPresence::stateFor($this->last_seen_at);
+        // The WEBSITE sighting, not the cross-channel one. "Active" on a
+        // visitor means somebody is at the other end right now, and after mail
+        // and web were separated `last_seen_at` stopped being able to say that:
+        // an email correspondent read as active while they sat in their mail
+        // client, and an agent offered to cobrowse with a browser that was not
+        // open. `last_seen_at` still answers "when did we last hear from them
+        // by any means", which is what the directory's Last seen column shows.
+        $state = VisitorPresence::stateFor($this->last_web_seen_at);
 
         // This surface has always called the null case "unknown" while the
         // queue filter calls it "not_reported". The name is in the realtime
