@@ -234,3 +234,22 @@ test('a site written in its own script is not a different site', function (): vo
     // And it does not become a way past the host rule.
     expect(VisitorPageUrl::forSite('https://attacker.example/login', 'bücher.example'))->toBeNull();
 });
+
+test('a credential made only of letters is redacted too', function (): void {
+    // The rule required a digit, so a token of pure letters read as a page name.
+    expect(VisitorPageUrl::reduce('https://shop.test/invite/ABCDEF'))
+        ->toBe('https://shop.test/invite/[redacted]')
+        ->and(VisitorPageUrl::reduce('https://shop.test/reset-password/abcdefghijklmnopqrst'))
+        ->toBe('https://shop.test/reset-password/[redacted]');
+});
+
+test('the words a route is actually named after survive', function (): void {
+    // The cost of the broader rule has to stay off ordinary vocabulary.
+    foreach (['notifications', 'recommendations', 'personalization', 'unsubscribe', 'authentication', 'accessibility'] as $word) {
+        expect(VisitorPageUrl::reduce('https://shop.test/'.$word))
+            ->toBe('https://shop.test/'.$word, $word.' was redacted');
+    }
+
+    // And short capitals, which sites do use.
+    expect(VisitorPageUrl::reduce('https://shop.test/FAQ'))->toBe('https://shop.test/FAQ');
+});
