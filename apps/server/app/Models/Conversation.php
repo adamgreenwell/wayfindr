@@ -557,7 +557,12 @@ class Conversation extends Model
             // page interpolates that moment into the detail line, so a visitor
             // who had emailed read as having just been on the site.
             'last_seen_at' => $visitor?->last_web_seen_at?->toJSON(),
-            'last_seen_label' => $visitor?->last_seen_at?->diffForHumans() ?? 'Not reported',
+            // The same timestamp as `last_seen_at` above it, which is the
+            // website sighting. Computed from the cross-channel one, this
+            // caption disagreed with the state beside it: `quiet`, "2 minutes
+            // ago" -- the state describing the website and the words
+            // describing an email.
+            'last_seen_label' => $visitor?->last_web_seen_at?->diffForHumans() ?? 'Not reported',
         ];
     }
 

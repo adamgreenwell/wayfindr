@@ -1327,6 +1327,44 @@ test('the realtime presence payload agrees with itself', function (): void {
         ->and($payload['last_seen_at'])->toBe($visitor->last_web_seen_at->toJSON());
 });
 
+test('another settings form cannot undo a revocation', function (): void {
+    // `settings` is one JSON column, so every form does a read-modify-write of
+    // the whole value. A request that loaded the site before a revocation and
+    // saved after it put the revoked value back -- an operator switching
+    // presence off and then saving the rating prompt could restore it, having
+    // done nothing that looks like enabling anything.
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $site = Site::factory()->for($account)->create([
+        'domain' => 'shop.test',
+        'public_key' => 'site_public_stale',
+        'settings' => ['presence' => ['enabled' => true, 'page_urls' => true]],
+    ]);
+
+    // What a concurrent form holds: the settings as they were BEFORE the
+    // revocation, about to be written back with its own change applied.
+    $staleSettings = $site->settings;
+
+    test()->actingAs($owner)
+        ->put(route('dashboard.sites.presence.update', $site), [])
+        ->assertRedirect();
+
+    expect(SitePresenceReporting::for($site->fresh())->enabled)->toBeFalse();
+
+    // The other form saves, carrying its stale copy plus its own edit.
+    $site->mutateSettings(function (array $settings) use ($staleSettings): array {
+        $stale = $staleSettings;
+        $stale['rating'] = ['enabled' => true, 'intro' => null];
+
+        // A writer that ignored the locked read would write exactly this.
+        return $settings + ['rating' => $stale['rating']];
+    });
+
+    expect(SitePresenceReporting::for($site->fresh())->enabled)
+        ->toBeFalse('a later settings save restored a revoked presence setting')
+        ->and($site->fresh()->settings['rating']['enabled'])->toBeTrue('the other form lost its own change');
+});
+
 test('the widget learns about presence without making contact', function (): void {
     // The endpoint that answers this is the one a page load is allowed to ask.
     // Bootstrap cannot be: it creates or touches a visitor row and marks them
@@ -1386,4 +1424,23 @@ test('the configuration read is still bounded', function (): void {
 
     test()->getJson(route('widget.appearance', ['site_public_key' => $site->public_key]))
         ->assertStatus(429);
+});
+
+test('the presence caption agrees with the state beside it', function (): void {
+    // Computed from the cross-channel timestamp, the caption disagreed with the
+    // state it sits next to: `quiet`, "2 minutes ago" -- the state describing
+    // the website and the words describing an email.
+    $account = Account::factory()->create();
+    $site = Site::factory()->for($account)->create(['domain' => 'shop.test']);
+
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-caption',
+        'last_seen_at' => now(),
+        'last_web_seen_at' => now()->subHours(4),
+    ]);
+
+    $payload = Conversation::factory()->for($site)->for($visitor)->create()->visitorPresencePayload();
+
+    expect($payload['state'])->toBe('quiet')
+        ->and($payload['last_seen_label'])->toBe($visitor->last_web_seen_at->diffForHumans());
 });

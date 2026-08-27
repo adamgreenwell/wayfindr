@@ -2875,7 +2875,18 @@
     var presenceSettingsSequence = 0;
 
     function refreshPresenceSettings(config) {
+      // Nothing running yet: this answer STARTS it rather than being dropped.
+      //
+      // Returning early here meant a visitor who opened the panel while the
+      // page-load config read was still in flight got presence from neither
+      // side -- bootstrap's answer was discarded for having nothing to update,
+      // and the config read that arrived afterwards was discarded for being
+      // overtaken. Opening the panel quickly turned the feature off.
       if (!presenceConfig) {
+        if (config && config.reports === true) {
+          applyPresence(config);
+        }
+
         return;
       }
 
@@ -4095,7 +4106,11 @@
         // empty conversation is created just by picking a file.
         if (!supportCode) {
           var conversation = await client.startConversation(body, {
-            pageUrl: location ? location.href : null,
+            // The same gate bootstrap and the heartbeat use. Without it a
+            // visitor who declined and then sent their first message had the
+            // page they declined to share travel with it -- and land on the
+            // conversation, where it outlives the decline entirely.
+            pageUrl: pageUrlForReporting(),
             context: visitorContext,
             intake: intakeAnswers(),
           });

@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Facades\DB;
 
 #[Fillable(['account_id', 'name', 'domain', 'color', 'public_key', 'settings', 'inbound_address'])]
 class Site extends Model
@@ -88,6 +89,41 @@ class Site extends Model
         }
 
         return $this->eligibleSupportAgents()->whereKey($agent->id)->exists();
+    }
+
+    /**
+     * Change this site's settings under a row lock.
+     *
+     * `settings` is one JSON column, so every writer of it does a read, a
+     * modify and a write of the WHOLE value. Two settings forms saved close
+     * together therefore lose one of the changes -- and worse than losing it,
+     * a request that loaded the site before a revocation and saved after it
+     * puts the revoked value back. An operator switching presence off and then
+     * saving the rating prompt could restore `presence.enabled` and start
+     * collecting again, having done nothing that looks like enabling it.
+     *
+     * The mutation receives the settings as they are AT THE MOMENT OF THE
+     * WRITE, read under the lock, rather than as they were when the request
+     * arrived. Callers that also need to act on the result -- deleting rows a
+     * setting was collecting -- pass a callback that does both, so their work
+     * is inside the same transaction and the same lock.
+     *
+     * @param  callable(array<string, mixed>): array<string, mixed>  $mutate
+     */
+    public function mutateSettings(callable $mutate): array
+    {
+        return DB::transaction(function () use ($mutate): array {
+            $locked = static::query()->whereKey($this->getKey())->lockForUpdate()->first() ?? $this;
+
+            $settings = $mutate(is_array($locked->settings) ? $locked->settings : []);
+
+            $locked->forceFill(['settings' => $settings])->save();
+
+            // The caller holds this instance and will keep reading it.
+            $this->setRawAttributes($locked->getAttributes(), true);
+
+            return $settings;
+        });
     }
 
     public function isArchived(): bool
