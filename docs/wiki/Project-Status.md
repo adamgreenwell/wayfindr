@@ -41,10 +41,23 @@ parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamg
   separately. Volume, first-response times and agent replies come from data the
   product always kept and reach back as far as the install does.
 - **Per-site widget appearance**, and a widget that speaks the visitor's
-  language (German ships complete).
-- **A dashboard an agent can read in their own language** on the queues, the
-  ticket list, the app shell and the profile page. The conversation detail page
-  follows in `0.7.1`.
+  language — **English and German**.
+- **A dashboard an agent can read in their own language** — **English, German
+  and Italian** — across the queues, the ticket list, the app shell, the profile
+  page and the conversation detail page, cobrowse panel included. The detail
+  page was the last surface and landed after `0.7.0`.
+
+  **The two lists are not the same, and the difference matters.** Italian is
+  agent-facing only: an Italian-speaking desk reads its own dashboard in
+  Italian, and its visitors still get English or German. Adding a language to
+  the widget is a separate catalogue with a separate audience, and reading
+  "Italian" as covering both is the wrong conclusion to draw.
+
+  German was drafted during development rather than by a professional
+  translator; Italian was drafted through a translation pipeline with a
+  glossary, a protection scheme for placeholders, and a policy scorer. Both are
+  consistent and grammatical. Have a native speaker read either before you
+  promise it to a customer.
 - **A visitor directory**, and a read-only public API with a decided isolation
   model (ADR 0018).
 - **Agent-initiated password recovery.**
