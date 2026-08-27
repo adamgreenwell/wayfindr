@@ -23,10 +23,14 @@ use App\Http\Controllers\Widget\ConversationController;
 use App\Http\Controllers\Widget\ConversationMessageController;
 use App\Http\Controllers\Widget\ConversationRatingController;
 use App\Http\Controllers\Widget\ConversationTypingController;
+use App\Http\Controllers\Widget\PresenceController;
 use App\Http\Middleware\AuthenticateApiToken;
 use App\Models\ApiToken;
 use Illuminate\Support\Facades\Route;
 
+Route::post('/widget/presence', PresenceController::class)
+    ->middleware('throttle:widget-presence')
+    ->name('widget.presence');
 Route::post('/widget/bootstrap', BootstrapController::class)
     ->middleware('throttle:widget-bootstrap')
     ->name('widget.bootstrap');

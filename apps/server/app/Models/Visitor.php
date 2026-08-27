@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 
-#[Fillable(['site_id', 'external_id', 'anonymous_id', 'name', 'email', 'metadata', 'last_seen_at'])]
+#[Fillable(['site_id', 'external_id', 'anonymous_id', 'name', 'email', 'metadata', 'last_seen_at', 'current_visit_started_at'])]
 class Visitor extends Model
 {
     use SanitisesStoredPageUrls;
@@ -33,12 +33,26 @@ class Visitor extends Model
         return [
             'metadata' => 'array',
             'last_seen_at' => 'datetime',
+            'current_visit_started_at' => 'datetime',
         ];
     }
 
     public function site(): BelongsTo
     {
         return $this->belongsTo(Site::class);
+    }
+
+    /**
+     * Tickets raised by this visitor.
+     *
+     * Exists for the presence pruner, which must never delete a visitor who has
+     * made contact: `tickets.requester_id` is `nullOnDelete`, so removing one
+     * silently detaches their tickets from whoever raised them rather than
+     * failing loudly.
+     */
+    public function tickets(): HasMany
+    {
+        return $this->hasMany(Ticket::class, 'requester_id');
     }
 
     public function conversations(): HasMany

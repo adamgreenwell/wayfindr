@@ -84,6 +84,7 @@ return [
 
     'widget_rate_limits' => [
         'bootstrap_per_minute' => (int) env('WAYFINDR_WIDGET_BOOTSTRAP_RATE_LIMIT', 120),
+        'presence_per_minute' => (int) env('WAYFINDR_WIDGET_PRESENCE_PER_MINUTE', 20),
         'broadcast_auth_per_minute' => (int) env('WAYFINDR_WIDGET_BROADCAST_AUTH_RATE_LIMIT', 120),
         'conversation_per_minute' => (int) env('WAYFINDR_WIDGET_CONVERSATION_RATE_LIMIT', 30),
         'message_per_minute' => (int) env('WAYFINDR_WIDGET_MESSAGE_RATE_LIMIT', 240),
@@ -95,6 +96,13 @@ return [
     // Conversation message attachments (ADR 0007). Limits are server-enforced
     // and independent of the client; the allowlist is matched against the
     // SERVER-detected MIME (never the client's Content-Type).
+    'presence' => [
+        // ADR 0019 §4. Shortening is an operator's to choose; lengthening is
+        // not, and the command clamps to the stated maximum regardless of what
+        // is set here.
+        'retention_days' => (int) env('WAYFINDR_PRESENCE_RETENTION_DAYS', 30),
+    ],
+
     'attachments' => [
         // Which filesystem disk NEW uploads land on: 'attachments' (local
         // private disk, the default) or 'attachments-s3' (S3-compatible).

@@ -110,6 +110,15 @@ class AppServiceProvider extends ServiceProvider
             fn (Request $request): Limit => $this->widgetLimit($request, 'bootstrap_per_minute', 'bootstrap')
         );
 
+        // Presence reports at 45-second intervals, so a genuine tab makes about
+        // 80 an hour. The allowance is per minute and generous enough for
+        // several tabs on one site without letting an unauthenticated endpoint
+        // be a free write loop.
+        RateLimiter::for(
+            'widget-presence',
+            fn (Request $request): Limit => $this->widgetLimit($request, 'presence_per_minute', 'presence')
+        );
+
         RateLimiter::for(
             'widget-broadcast-auth',
             fn (Request $request): Limit => $this->widgetLimit($request, 'broadcast_auth_per_minute', 'broadcast-auth')
