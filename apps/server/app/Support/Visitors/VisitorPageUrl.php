@@ -259,6 +259,12 @@ final class VisitorPageUrl
     {
         $host = strtolower(trim($host));
 
+        // The root label's trailing dot, removed. `shop.test.` is the fully
+        // qualified spelling of `shop.test` and browsers will report either,
+        // while `idn_to_ascii()` keeps the dot -- so the two spellings of one
+        // host compared as different sites and the page was discarded.
+        $host = rtrim($host, '.');
+
         if ($host === '' || ! function_exists('idn_to_ascii')) {
             return $host;
         }
@@ -268,7 +274,7 @@ final class VisitorPageUrl
         // A host `intl` cannot convert is left as it was rather than emptied:
         // failing to normalise is not evidence of anything, and an ASCII host
         // needs no conversion in the first place.
-        return is_string($ascii) && $ascii !== '' ? strtolower($ascii) : $host;
+        return is_string($ascii) && $ascii !== '' ? rtrim(strtolower($ascii), '.') : $host;
     }
 
     /**
