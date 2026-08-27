@@ -61,7 +61,7 @@ class ConversationController extends Controller
                 $validated['context'] ?? null,
                 $site->domain,
             ),
-            'last_seen_at' => now(),
+            'last_web_seen_at' => now(),
         ]
             + $this->externalIdentifierUpdate($site, $visitor, $validated, $visitorContextSanitizer)
             + $this->intakeAnswers($validated))->save();

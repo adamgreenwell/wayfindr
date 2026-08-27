@@ -45,7 +45,7 @@ class BootstrapController extends Controller
                 $validated['context'] ?? null,
                 $site->domain,
             ),
-            'last_seen_at' => now(),
+            'last_web_seen_at' => now(),
             // Opening the widget IS making contact -- ADR 0016 §1 says so -- and
             // this is the endpoint that means it. A row that existed only
             // because somebody loaded a page stops being presence-only the

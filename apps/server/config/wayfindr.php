@@ -84,7 +84,16 @@ return [
 
     'widget_rate_limits' => [
         'bootstrap_per_minute' => (int) env('WAYFINDR_WIDGET_BOOTSTRAP_RATE_LIMIT', 120),
-        'presence_per_minute' => (int) env('WAYFINDR_WIDGET_PRESENCE_PER_MINUTE', 20),
+        // Per VISITOR, not per source IP -- see the widget-presence limiter.
+        // A 45-second cadence is 1.33 a minute per open tab, and tabs of one
+        // browser share an anonymous ID, so this is roughly twenty tabs' worth.
+        'presence_per_minute' => (int) env('WAYFINDR_WIDGET_PRESENCE_PER_MINUTE', 30),
+
+        // The abuse cap, per source IP and site. Covers about nine hundred
+        // simultaneous visitors behind one address at the standard cadence;
+        // an install that genuinely has more raises it rather than watching
+        // its board flicker.
+        'presence_per_ip_per_minute' => (int) env('WAYFINDR_WIDGET_PRESENCE_PER_IP_PER_MINUTE', 1200),
         'broadcast_auth_per_minute' => (int) env('WAYFINDR_WIDGET_BROADCAST_AUTH_RATE_LIMIT', 120),
         'conversation_per_minute' => (int) env('WAYFINDR_WIDGET_CONVERSATION_RATE_LIMIT', 30),
         'message_per_minute' => (int) env('WAYFINDR_WIDGET_MESSAGE_RATE_LIMIT', 240),

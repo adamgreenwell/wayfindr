@@ -18,6 +18,7 @@ use App\Support\SiteInstallHealth;
 use App\Support\SitePurge;
 use App\Support\Sites\SiteAvailability;
 use App\Support\Sites\SiteIntake;
+use App\Support\Sites\SitePresenceReporting;
 use App\Support\Sites\SiteRatingPrompt;
 use App\Support\Sites\WidgetAppearance;
 use App\Support\Sites\WidgetLanguage;
@@ -171,6 +172,8 @@ class AgentSiteController extends Controller
             'externalIssueHealth' => $externalIssueHealth,
             'externalIssueProviderConnections' => $externalIssueProviderConnections,
             'externalIssueProviders' => ExternalIssueProvider::options(),
+            'presenceEnabled' => SitePresenceReporting::for($site)->enabled,
+            'presenceEvery' => SitePresenceReporting::HEARTBEAT_SECONDS,
             'maskSelectors' => $maskSelectors,
             'maskTerms' => $maskTerms,
             'operatorSmokePath' => $readiness->summary()['smoke_path'],
@@ -630,6 +633,35 @@ class AgentSiteController extends Controller
         return redirect()
             ->route('dashboard.sites.show', $site)
             ->with('status', 'Visitor intake saved.');
+    }
+
+    /**
+     * Turn presence reporting on or off for this site (ADR 0019 §1).
+     *
+     * Gated on `updatePrivacy` rather than `update`, because this is not a
+     * preference about how the widget looks. It decides whether the install
+     * records people who never asked it to -- somebody who lands on a pricing
+     * page and leaves. ADR 0019 makes that an operator's decision to take
+     * deliberately, so it belongs behind the same gate as the masking rules and
+     * off until somebody chooses it.
+     */
+    public function updatePresence(Request $request, Site $site): RedirectResponse
+    {
+        $this->authorizeSiteAbility($request, 'view', $site, 404);
+        $this->authorizeSiteAbility($request, 'updatePrivacy', $site);
+
+        $validated = $request->validate([
+            'presence_enabled' => ['nullable', 'boolean'],
+        ]);
+
+        $settings = $site->settings ?? [];
+        $settings['presence'] = ['enabled' => (bool) ($validated['presence_enabled'] ?? false)];
+
+        $site->forceFill(['settings' => $settings])->save();
+
+        return redirect()
+            ->route('dashboard.sites.show', $site)
+            ->with('status', ($settings['presence']['enabled'] ? 'Live visitor presence is on.' : 'Live visitor presence is off.'));
     }
 
     /**

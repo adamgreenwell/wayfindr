@@ -111,13 +111,26 @@ class AppServiceProvider extends ServiceProvider
         );
 
         // Presence reports at 45-second intervals, so a genuine tab makes about
-        // 80 an hour. The allowance is per minute and generous enough for
-        // several tabs on one site without letting an unauthenticated endpoint
-        // be a free write loop.
-        RateLimiter::for(
-            'widget-presence',
-            fn (Request $request): Limit => $this->widgetLimit($request, 'presence_per_minute', 'presence')
-        );
+        // 1.33 requests a minute and 80 an hour.
+        //
+        // TWO limits, because one cannot do this job. Every other widget
+        // limiter is keyed by site and source IP, which is right for endpoints
+        // a visitor hits occasionally -- but this one every visitor hits
+        // continuously, so a shared per-IP bucket divides by the number of
+        // people behind the address. An office, a school or a carrier NAT would
+        // have put roughly sixteen simultaneous visitors over the old ceiling,
+        // and the symptom is not an error anybody reports: valid heartbeats
+        // take a 429 and those visitors flicker to inactive on the board.
+        //
+        // So the everyday quota is per VISITOR, and a much higher per-IP
+        // ceiling stays as the abuse cap -- which is the limit that actually
+        // wants to be there, because the thing worth bounding is a forged
+        // client rotating anonymous IDs to create rows, not a busy office.
+        RateLimiter::for('widget-presence', fn (Request $request): array => [
+            $this->widgetLimit($request, 'presence_per_minute', 'presence')
+                ->by($this->widgetPresenceVisitorKey($request)),
+            $this->widgetLimit($request, 'presence_per_ip_per_minute', 'presence-ip'),
+        ]);
 
         RateLimiter::for(
             'widget-broadcast-auth',
@@ -186,6 +199,30 @@ class AppServiceProvider extends ServiceProvider
         $limit = max(1, (int) config("wayfindr.widget_rate_limits.{$configKey}", 60));
 
         return Limit::perMinute($limit)->by($this->widgetRateLimitKey($request, $scope));
+    }
+
+    /**
+     * The heartbeat's everyday quota belongs to one visitor, not one address.
+     *
+     * Falls back to the IP-scoped key when no anonymous ID is present. That is
+     * not a loophole -- the endpoint requires one, so a request without it is
+     * rejected by validation before it can spend the quota, and keying those to
+     * the address means a client sending malformed requests cannot mint an
+     * unlimited number of empty buckets.
+     */
+    private function widgetPresenceVisitorKey(Request $request): string
+    {
+        $anonymousId = $request->input('anonymous_id');
+
+        if (! is_scalar($anonymousId) || (string) $anonymousId === '') {
+            return $this->widgetRateLimitKey($request, 'presence-anonymous');
+        }
+
+        return implode('|', [
+            'presence-visitor',
+            hash('sha256', $this->widgetSitePublicKeyForRateLimit($request)),
+            hash('sha256', (string) $anonymousId),
+        ]);
     }
 
     private function widgetRateLimitKey(Request $request, string $scope): string

@@ -1,12 +1,18 @@
 <?php
 
 use App\Console\Commands\PrunePresenceVisitorsCommand;
+use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\Ticket;
+use App\Models\User;
 use App\Models\Visitor;
+use App\Support\Mail\InboundMailRouter;
+use App\Support\Mail\InboundMessage;
+use App\Support\Sites\SitePresenceReporting;
 use App\Support\Visitors\VisitorPresence;
+use App\Support\VisitorSessionToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
 
@@ -417,4 +423,196 @@ test('opening the widget later takes a presence row out of scope', function (): 
     $this->artisan('wayfindr:prune-presence-visitors')->assertExitCode(0);
 
     expect(Visitor::query()->whereKey($visitor->id)->exists())->toBeTrue();
+});
+
+test('an inbound email does not put somebody on the website', function (): void {
+    // The live board answers "who is on the site right now". InboundMailRouter
+    // stamps a sighting for every sender, including one whose null anonymous_id
+    // proves they never loaded the widget -- so keying the visit boundary off
+    // the cross-channel timestamp put an email correspondent on the board with
+    // a time-on-site counting up while they sat in their mail client.
+    $site = presenceSite();
+    $site->forceFill(['inbound_address' => 'support@shop.test'])->save();
+
+    $message = InboundMessage::fromPayload([
+        'to' => $site->inbound_address,
+        'from' => 'mailer@elsewhere.test',
+        'subject' => 'Help please',
+        'text' => 'My order has not arrived.',
+    ]);
+
+    app(InboundMailRouter::class)->route($message);
+
+    $visitor = Visitor::query()->where('email', 'mailer@elsewhere.test')->firstOrFail();
+
+    expect($visitor->last_seen_at)->not->toBeNull('an email is still contact')
+        ->and($visitor->anonymous_id)->toBeNull()
+        ->and($visitor->last_web_seen_at)->toBeNull('an email is not a page load')
+        ->and($visitor->current_visit_started_at)->toBeNull('an email started a website visit');
+});
+
+test('a returning visitor who emails does not resume a website visit', function (): void {
+    // The harder half: this visitor HAS an anonymous_id, so a rule that merely
+    // asked "have they ever used the widget" would still fabricate a visit.
+    $site = presenceSite();
+    $site->forceFill(['inbound_address' => 'support@shop.test'])->save();
+
+    reportPresence($site, 'anon-emails-later');
+
+    $visitor = Visitor::query()->where('anonymous_id', 'anon-emails-later')->firstOrFail();
+    $visitor->forceFill([
+        'email' => 'known@shop.test',
+        'last_web_seen_at' => now()->subDays(3),
+        'last_seen_at' => now()->subDays(3),
+        'current_visit_started_at' => now()->subDays(3),
+    ])->save();
+
+    $startedAt = $visitor->fresh()->current_visit_started_at;
+
+    $message = InboundMessage::fromPayload([
+        'to' => $site->inbound_address,
+        'from' => 'known@shop.test',
+        'subject' => 'Following up',
+        'text' => 'Any news?',
+    ]);
+
+    app(InboundMailRouter::class)->route($message);
+
+    $visitor->refresh();
+
+    expect($visitor->last_seen_at->isToday())->toBeTrue('the email was not recorded as contact')
+        ->and($visitor->last_web_seen_at->toDateString())->toBe(now()->subDays(3)->toDateString())
+        ->and($visitor->current_visit_started_at->eq($startedAt))->toBeTrue('the email moved the visit');
+});
+
+test('a website sighting is recorded as contact without the writer saying so', function (): void {
+    // Convergence: a web writer sets the website column and the model derives
+    // the cross-channel one. A writer that had to set both would eventually
+    // set one, and the visitor directory would show somebody as out of touch
+    // while they were on the site.
+    $site = presenceSite();
+
+    reportPresence($site, 'anon-derives');
+
+    $visitor = Visitor::query()->where('anonymous_id', 'anon-derives')->firstOrFail();
+
+    expect($visitor->last_web_seen_at)->not->toBeNull()
+        ->and($visitor->last_seen_at)->not->toBeNull('the sighting was not recorded as contact')
+        ->and($visitor->last_seen_at->eq($visitor->last_web_seen_at))->toBeTrue();
+});
+
+test('fetching messages runs the visit transition like every other writer', function (): void {
+    // The stock widget calls refreshMessages() BEFORE bootstrap when a
+    // returning visitor opens the panel. That writer used a relationship
+    // update, which is a mass update and dispatches no model events -- so it
+    // refreshed the sighting without starting a visit, bootstrap then saw a
+    // recent timestamp and left the old start alone, and the board reported a
+    // visit still running from the previous session.
+    $site = presenceSite();
+
+    reportPresence($site, 'anon-refresh');
+
+    $visitor = Visitor::query()->where('anonymous_id', 'anon-refresh')->firstOrFail();
+
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create();
+
+    $stale = now()->subDays(2);
+    $visitor->forceFill([
+        'last_web_seen_at' => $stale,
+        'last_seen_at' => $stale,
+        'current_visit_started_at' => $stale,
+    ])->save();
+
+    $token = app(VisitorSessionToken::class)->issue($site, $visitor);
+
+    test()->getJson(route('conversations.messages.index', [
+        'supportCode' => $conversation->support_code,
+    ]).'?'.http_build_query([
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-refresh',
+        'visitor_token' => $token,
+    ]))->assertSuccessful();
+
+    $visitor->refresh();
+
+    expect($visitor->current_visit_started_at->isToday())
+        ->toBeTrue('the visit still spans the previous session');
+});
+
+test('one visitor cannot spend another visitor behind the same address', function (): void {
+    // The heartbeat is the one widget endpoint every visitor hits continuously,
+    // so the shared per-IP key every other limiter uses divides the quota by
+    // the number of people behind an office or carrier NAT. The symptom is
+    // silent: valid heartbeats take a 429 and those visitors flicker to
+    // inactive on the board while nobody reports an error.
+    config()->set('wayfindr.widget_rate_limits.presence_per_minute', 2);
+    config()->set('wayfindr.widget_rate_limits.presence_per_ip_per_minute', 1000);
+
+    $site = presenceSite();
+
+    reportPresence($site, 'anon-noisy')->assertSuccessful();
+    reportPresence($site, 'anon-noisy')->assertSuccessful();
+    reportPresence($site, 'anon-noisy')->assertStatus(429);
+
+    // The colleague at the next desk has spent nothing.
+    reportPresence($site, 'anon-quiet')->assertSuccessful();
+});
+
+test('the per-address ceiling still bounds a forged client', function (): void {
+    // Rekeying to the visitor must not remove the abuse cap -- rotating the
+    // anonymous ID is free, and creating rows is the thing worth bounding.
+    config()->set('wayfindr.widget_rate_limits.presence_per_minute', 1000);
+    config()->set('wayfindr.widget_rate_limits.presence_per_ip_per_minute', 3);
+
+    $site = presenceSite();
+
+    foreach (range(1, 3) as $i) {
+        reportPresence($site, 'anon-forged-'.$i)->assertSuccessful();
+    }
+
+    reportPresence($site, 'anon-forged-4')->assertStatus(429);
+});
+
+test('an admin can turn presence on from the dashboard', function (): void {
+    // The product path, end to end. The feature shipped with a setting that
+    // only a factory or a hand-written SQL UPDATE could reach, which is not an
+    // opt-in an operator can give -- ADR 0019 §1 describes a decision somebody
+    // takes deliberately, and there was nowhere to take it.
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $site = Site::factory()->for($account)->create([
+        'domain' => 'shop.test',
+        'settings' => [],
+    ]);
+
+    expect(SitePresenceReporting::for($site)->enabled)->toBeFalse('presence was on by default');
+
+    test()->actingAs($owner)
+        ->put(route('dashboard.sites.presence.update', $site), ['presence_enabled' => '1'])
+        ->assertRedirect(route('dashboard.sites.show', $site));
+
+    expect(SitePresenceReporting::for($site->fresh())->enabled)->toBeTrue();
+
+    // And the switch is what the endpoint actually reads.
+    reportPresence($site->fresh(), 'anon-after-toggle')->assertSuccessful();
+
+    expect(Visitor::query()->where('anonymous_id', 'anon-after-toggle')->exists())->toBeTrue();
+
+    test()->actingAs($owner)
+        ->put(route('dashboard.sites.presence.update', $site), [])
+        ->assertRedirect(route('dashboard.sites.show', $site));
+
+    expect(SitePresenceReporting::for($site->fresh())->enabled)->toBeFalse('it could not be turned back off');
+});
+
+test('turning presence on is not an ordinary agent decision', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+    $site = Site::factory()->for($account)->create(['settings' => []]);
+
+    test()->actingAs($agent)
+        ->put(route('dashboard.sites.presence.update', $site), ['presence_enabled' => '1'])
+        ->assertForbidden();
+
+    expect(SitePresenceReporting::for($site->fresh())->enabled)->toBeFalse();
 });
