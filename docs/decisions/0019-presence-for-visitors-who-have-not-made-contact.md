@@ -103,9 +103,8 @@ means rather than leaving it to the implementation:
   waves the version with a host straight through.
 - **The host, port and path are kept.** They are the answer to "which page",
   which is the only question this field exists for.
-- **The query string is dropped in full**, unless the site has named specific
-  parameters to keep — and then only those, and only when their value is a
-  scalar.
+- **The query string is dropped in full.** No exceptions, and no per-site
+  allowlist — see below.
 - **The fragment is dropped.** It never reaches a server in an ordinary
   navigation, so a widget reporting one is reporting something the page chose to
   put in front of us. Single-page apps route with it; they also carry tokens in
@@ -120,6 +119,22 @@ Dropped rather than filtered by name, deliberately. Filtering means guessing
 which parameter names are dangerous, and the dangerous ones are frequently the
 shortest — `?t=`, `?k=`, `?c=`. A name-based rule fails exactly where it matters
 most, and fails silently.
+
+**And dropped whole rather than with an allowlist**, which is a correction to an
+earlier draft of this ADR rather than the original intention. The sanitiser can
+take a list of parameters to keep, and offering one per site looked like a
+reasonable kindness to an operator whose URLs carry a plan or a campaign.
+
+It cannot work alongside the guarantee that matters more. Sanitising also
+happens in a model `saving` hook, so that no writer — including one holding a
+value read before a cleanup — can put a query string back. That hook runs
+without knowing which site a row belongs to and can only apply the strict rule,
+so a kept parameter would be stripped again by the next ordinary save and the
+operator would watch their configuration vanish for no visible reason.
+
+A rule that no stored page address ever carries a query string is absolute,
+assertable in one line, and cannot be got wrong by a writer that has not been
+written yet. The allowlist is worth revisiting only if the hook is given a site.
 
 **None of this existed when this ADR was first written, and saying so is the
 correction that matters most in this document.** `VisitorContextSanitizer`
