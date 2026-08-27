@@ -328,6 +328,15 @@ outlive the conversations that produced them.
 Presence adds a fourth writer to that list. It sanitises for the same reason and
 through the same class.
 
+**The website column is indexed, because everything now reads it.**
+`(site_id, last_seen_at)` was indexed when the visitor directory ordered and
+filtered on that column; presence moves the directory's *Active* filter, the
+queue's presence filter and the whole board query onto `last_web_seen_at`, so
+the index that made them fast covers a column none of them look at. That matters
+more here than an ordinary ordering index would, because presence changes what
+`visitors` holds — from people who got in touch to everybody who visited — and
+the range scan behind every board refresh runs against the larger table.
+
 **Presence LABELS read the website column too, not only the visit boundary.**
 Separating the columns stopped an email starting a website visit and stopped
 there: `Visitor::presenceState()` and the conversation queue's presence filter
