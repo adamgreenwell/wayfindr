@@ -120,8 +120,27 @@ means rather than leaving it to the implementation:
   indistinguishable from a page address to any check that is not an allowlist.
   Requiring a host is not a scheme rule — it rejects `javascript:alert(1)` and
   waves the version with a host straight through.
-- **The host, port and path are kept.** They are the answer to "which page",
-  which is the only question this field exists for.
+- **The host must belong to the site**, and is dropped otherwise — with the
+  whole address, since a path without a trustworthy host answers nothing. The
+  endpoint is public and the site key is public, so an attacker can submit
+  `https://attacker.example/login`; stored page addresses are rendered as
+  clickable `target="_blank"` links on the agent ticket page, which makes an
+  unchecked host a phishing delivery mechanism aimed at agents. A site with no
+  configured domain therefore stores no page address at all: we cannot tell its
+  own pages from anybody else's, and guessing is the failure mode this rule
+  exists to prevent. `SiteInstallHealth` already treats the configured domain as
+  how a site is identified.
+- **The port and path are kept, with opaque segments redacted.** A path is the
+  answer to "which page" — but it is also where this very product puts a
+  credential: `/reset-password/{token}` is a route in this repository. A segment
+  that looks like an identifier rather than a word is replaced with `…`, so
+  `/reset-password/9f2c…` still says which page without saying which token.
+
+  The test is deliberately crude, and it is a heuristic rather than a proof: a
+  UUID, anything 40 characters or longer, or anything at least 20 characters
+  carrying a digit with no word separators. A long hyphenated slug survives; a
+  token does not. It will occasionally redact something harmless, which is the
+  right way round for a rule whose failures are credentials.
 - **The query string is dropped in full.** No exceptions, and no per-site
   allowlist — see below.
 - **The fragment is dropped.** It never reaches a server in an ordinary
