@@ -1227,3 +1227,19 @@ test('declining confirms what actually stopped', async (t) => {
 
   assert.match(copy, /know you are here/i, 'the confirmation described something that had not changed');
 });
+
+test('the notice names what is kept, not only what is visible', async (t) => {
+  // The record outlives the visit by 30 days, specifically so a later visit is
+  // recognised as a return. Describing only live visibility told the visitor
+  // the truth about the half they are less likely to object to.
+  const { widget } = widgetWithPresence();
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  const copy = widget.root.querySelector('.wayfindr-widget__presence-copy').textContent;
+
+  assert.match(copy, /30 days/, 'the notice did not mention how long the visit is kept');
+  assert.match(copy, /been here before/i, 'the notice did not mention being recognised on a return');
+});
