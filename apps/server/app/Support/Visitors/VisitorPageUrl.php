@@ -309,8 +309,31 @@ final class VisitorPageUrl
         // whose failures are credentials, and it is a heuristic rather than a
         // proof -- which is why the query string is dropped WHOLE rather than
         // filtered by the same kind of guessing.
-        return $length >= 6
-            && preg_match('/\d/', $segment) === 1
-            && preg_match('/[-_.]/', $segment) !== 1;
+        $hasSeparator = preg_match('/[-_.]/', $segment) === 1;
+
+        if ($hasSeparator) {
+            return false;
+        }
+
+        if ($length >= 6 && preg_match('/\d/', $segment) === 1) {
+            return true;
+        }
+
+        // A credential need not carry a digit. `/invite/ABCDEF` and
+        // `/reset-password/abcdefghijklmnopqrst` are both tokens made only of
+        // letters, and a rule that waited for a digit called them page names.
+        //
+        // Two shapes catch them without eating vocabulary. Sixteen letters with
+        // no separator is past the length of the words a route is named after
+        // -- `notifications`, `recommendations`, `personalization` all fit
+        // under it, `internationalization` does not and is the price. And an
+        // all-capitals segment of five or more is a code rather than a word:
+        // sites write `/about`, not `/ABOUT`, while invitation and coupon
+        // codes are capitals by convention.
+        if ($length >= 16) {
+            return true;
+        }
+
+        return $length >= 5 && preg_match('/^[A-Z0-9]+$/', $segment) === 1;
     }
 }
