@@ -413,3 +413,24 @@ test('an archived site does not open a socket it cannot subscribe to', function 
         expect($response->status())->toBeIn([403, 404]);
     }
 });
+
+test('the board resyncs whenever it subscribes', function (): void {
+    // Reverb does not replay, so anything broadcast between the server
+    // rendering the page and the subscription existing is gone -- and after a
+    // reconnect that gap is however long the socket was down.
+    $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
+
+    $authorize = Str::before(
+        Str::after($source, 'function authorize(activeSocket, socketId) {'),
+        'function handleSocketMessage',
+    );
+
+    test()->assertStringContainsString(
+        'pusher:subscribe',
+        $authorize,
+        'the slice is not the authorize function',
+    );
+
+    expect($authorize)->toContain('resyncBoard();')
+        ->and($source)->toContain('function resyncBoard()');
+});

@@ -295,6 +295,42 @@
                     refreshCount();
                 }
 
+                /**
+                 * Re-read the board from the server.
+                 *
+                 * Fetches the page an agent would reload and takes only its
+                 * rows, so a resynced row and a broadcast row cannot disagree
+                 * about what a row looks like -- they are the same markup from
+                 * the same template.
+                 */
+                function resyncBoard() {
+                    fetch(window.location.href, {
+                        credentials: 'same-origin',
+                        headers: { Accept: 'text/html' },
+                    }).then(function (response) {
+                        if (!response.ok) {
+                            throw new Error('resync');
+                        }
+
+                        return response.text();
+                    }).then(function (html) {
+                        var fresh = new DOMParser()
+                            .parseFromString(html, 'text/html')
+                            .querySelector('[data-live-rows]');
+
+                        if (!fresh) {
+                            return;
+                        }
+
+                        rows.replaceChildren.apply(rows, Array.prototype.slice.call(fresh.childNodes));
+                        refreshCount();
+                    }).catch(function () {
+                        // The rows already on the page stay. A failed resync
+                        // leaves the board possibly missing somebody, which is
+                        // exactly what it was a moment ago.
+                    });
+                }
+
                 var socketScheme = config.scheme === 'https' ? 'wss' : 'ws';
                 var socketUrl = socketScheme + '://' + config.host + ':' + config.port + '/app/'
                     + encodeURIComponent(config.appKey) + '?protocol=7&client=wayfindr-board&version=0.0.0&flash=false';
@@ -348,6 +384,15 @@
                         if (statusEl) {
                             statusEl.textContent = 'Updating live.';
                         }
+
+                        // Resync on EVERY successful subscribe, including the
+                        // first. Reverb does not replay, so anything broadcast
+                        // between the server rendering this page and this
+                        // subscription existing is simply gone -- and after a
+                        // reconnect that gap is however long the socket was
+                        // down. The agent conversation page refreshes its
+                        // transcript at exactly this point for the same reason.
+                        resyncBoard();
                     }).catch(function () {
                         if (statusEl) {
                             statusEl.textContent = 'Reconnecting to live updates.';
