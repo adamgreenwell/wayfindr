@@ -127,9 +127,9 @@ test('a token in the PATH is redacted, because this product puts one there', fun
     // query and fragment and calling the path safe leaves the secret in the one
     // part that survived.
     expect(VisitorPageUrl::reduce('https://shop.test/reset-password/9f2c8a1b4e6d7c3f0a5b2e8d1c4f7a9b'))
-        ->toBe('https://shop.test/reset-password/…')
+        ->toBe('https://shop.test/reset-password/[redacted]')
         ->and(VisitorPageUrl::reduce('https://shop.test/u/550e8400-e29b-41d4-a716-446655440000'))
-        ->toBe('https://shop.test/u/…');
+        ->toBe('https://shop.test/u/[redacted]');
 });
 
 test('a page name survives the redaction', function (): void {

@@ -54,6 +54,17 @@ final class VisitorPageUrl
     private const ALLOWED_SCHEMES = ['http', 'https'];
 
     /**
+     * What replaces a path segment that looks like a credential.
+     *
+     * Plain ASCII deliberately. An ellipsis reads better and is at the mercy of
+     * whatever collation an operator's database happens to use -- this value is
+     * a security-relevant redaction and must not depend on that. Brackets also
+     * make it obvious that something was removed rather than that the page is
+     * named "redacted".
+     */
+    private const REDACTED = '[redacted]';
+
+    /**
      * At INGRESS: the address must belong to the site, or it is not stored.
      *
      * Separate from `reduce()` on purpose, and the separation is the point. The
@@ -188,7 +199,7 @@ final class VisitorPageUrl
         }
 
         return implode('/', array_map(
-            static fn (string $segment): string => self::looksOpaque($segment) ? '…' : $segment,
+            static fn (string $segment): string => self::looksOpaque($segment) ? self::REDACTED : $segment,
             explode('/', $path),
         ));
     }
