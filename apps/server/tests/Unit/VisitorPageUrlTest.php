@@ -79,35 +79,6 @@ test('an unparseable URL is dropped rather than kept', function (): void {
         ->and(VisitorPageUrl::sanitise(null))->toBeNull();
 });
 
-test('a site can name parameters back, and gets only those', function (): void {
-    // An operator whose URLs carry a plan or a campaign gets that context back
-    // by naming it -- a decision somebody made, rather than a pattern that
-    // happened not to match. Everything unnamed still goes.
-    $kept = VisitorPageUrl::sanitise(
-        'https://shop.test/pricing?plan=pro&utm_source=email&session=abc',
-        ['plan', 'utm_source'],
-    );
-
-    expect($kept)->toContain('plan=pro')
-        ->and($kept)->toContain('utm_source=email');
-
-    expect($kept)->not->toContain('session');
-    expect($kept)->not->toContain('abc');
-});
-
-test('naming a parameter is case-insensitive but does not widen anything else', function (): void {
-    expect(VisitorPageUrl::sanitise('https://shop.test/p?Plan=pro&token=x', ['plan']))
-        ->toBe('https://shop.test/p?Plan=pro');
-});
-
-test('an array parameter is not kept even when named', function (): void {
-    // `?plan[]=a&plan[]=b` parses to an array. http_build_query would happily
-    // re-encode it, but the value shape is no longer the scalar the allowlist
-    // was reasoning about, so it is skipped rather than guessed at.
-    expect(VisitorPageUrl::sanitise('https://shop.test/p?plan[]=a&plan[]=b', ['plan']))
-        ->toBe('https://shop.test/p');
-});
-
 test('the result is capped to what the column holds', function (): void {
     $long = 'https://shop.test/'.str_repeat('a', 4000);
 

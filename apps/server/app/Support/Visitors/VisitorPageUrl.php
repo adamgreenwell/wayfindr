@@ -21,9 +21,17 @@ namespace App\Support\Visitors;
  * Dropped rather than filtered, deliberately. Filtering means guessing which
  * parameter NAMES are sensitive, and the dangerous ones are frequently the
  * shortest: `?t=`, `?k=`, `?c=`. A name-based rule fails exactly where it
- * matters most, and fails silently. Operators who need specific parameters get
- * them back by naming them, which is a decision somebody made rather than a
- * pattern that happened not to match.
+ * matters most, and fails silently.
+ *
+ * And dropped WHOLE, with no per-site allowlist. This class briefly took one,
+ * because letting an operator keep `?plan=pro` looked like a reasonable
+ * kindness. It cannot coexist with the guarantee that matters more: sanitising
+ * also happens in a model `saving` hook so that no writer can put a query
+ * string back, and that hook runs without knowing which site a row belongs to.
+ * A kept parameter would be stripped again by the next ordinary save, and the
+ * operator would watch their configuration vanish for no visible reason.
+ *
+ * An option nothing can honour is worse than no option, so there is none.
  */
 final class VisitorPageUrl
 {
@@ -45,10 +53,7 @@ final class VisitorPageUrl
      */
     private const ALLOWED_SCHEMES = ['http', 'https'];
 
-    /**
-     * @param  array<int, string>  $keepParameters  query parameters this site asked to keep
-     */
-    public static function sanitise(?string $url, array $keepParameters = []): ?string
+    public static function sanitise(?string $url): ?string
     {
         if ($url === null) {
             return null;
@@ -88,42 +93,14 @@ final class VisitorPageUrl
 
         $rebuilt .= $parts['path'] ?? '';
 
-        $kept = self::keptQuery($parts['query'] ?? '', $keepParameters);
-
-        if ($kept !== '') {
-            $rebuilt .= '?'.$kept;
-        }
-
+        // The query string is not rebuilt at all -- it is simply never one of
+        // the named parts.
+        //
         // The fragment never reaches a server in a normal navigation, so a
         // widget reporting one is reporting something the host page chose to
         // put in front of us. Single-page apps use it for routing, which is a
         // location -- but they also use it for tokens, and we cannot tell which
         // this is. Dropped, and the path still answers "which page".
         return mb_substr($rebuilt, 0, self::MAX_LENGTH);
-    }
-
-    /**
-     * @param  array<int, string>  $keepParameters
-     */
-    private static function keptQuery(string $query, array $keepParameters): string
-    {
-        if ($query === '' || $keepParameters === []) {
-            return '';
-        }
-
-        parse_str($query, $parsed);
-
-        $keep = array_flip(array_map('strtolower', $keepParameters));
-        $kept = [];
-
-        foreach ($parsed as $key => $value) {
-            if (! is_string($value) || ! isset($keep[strtolower((string) $key)])) {
-                continue;
-            }
-
-            $kept[(string) $key] = $value;
-        }
-
-        return $kept === [] ? '' : http_build_query($kept);
     }
 }
