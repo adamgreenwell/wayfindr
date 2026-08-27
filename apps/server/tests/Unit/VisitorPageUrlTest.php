@@ -200,3 +200,41 @@ test('a configured authority that cannot be parsed stores nothing', function ():
     expect(VisitorPageUrl::forSite('https://shop.test/pricing', 'shop.test:not-a-port'))->toBeNull()
         ->and(VisitorPageUrl::forSite('https://shop.test/pricing', ':8443'))->toBeNull();
 });
+
+test('a short secret in the path is redacted too', function (): void {
+    // The old cutoff was twenty characters, which is long enough to feel safe
+    // and is not: the dangerous values are frequently short.
+    expect(VisitorPageUrl::reduce('https://shop.test/invite/A1B2C3'))
+        ->toBe('https://shop.test/invite/[redacted]')
+        ->and(VisitorPageUrl::reduce('https://shop.test/orders/123456'))
+        ->toBe('https://shop.test/orders/[redacted]');
+});
+
+test('ordinary page names survive the shorter cutoff', function (): void {
+    // The cost of tightening it has to stay on the right side of "which page".
+    expect(VisitorPageUrl::reduce('https://shop.test/pricing'))->toBe('https://shop.test/pricing')
+        ->and(VisitorPageUrl::reduce('https://shop.test/blog/billing-2024'))
+        ->toBe('https://shop.test/blog/billing-2024')
+        ->and(VisitorPageUrl::reduce('https://shop.test/v2/account'))
+        ->toBe('https://shop.test/v2/account')
+        ->and(VisitorPageUrl::reduce('https://shop.test/unsubscribe'))
+        ->toBe('https://shop.test/unsubscribe');
+});
+
+test('a site written in its own script is not a different site', function (): void {
+    // The operator configures what they own and typed; the browser reports
+    // punycode. Comparing them as written discarded every page on the site,
+    // and silently -- a rejected address is stored as null, which reads as
+    // "we never saw one".
+    if (! function_exists('idn_to_ascii')) {
+        test()->markTestSkipped('intl is not installed');
+    }
+
+    expect(VisitorPageUrl::forSite('https://xn--bcher-kva.example/preise', 'bücher.example'))
+        ->toBe('https://xn--bcher-kva.example/preise')
+        ->and(VisitorPageUrl::forSite('https://xn--bcher-kva.example/preise', 'xn--bcher-kva.example'))
+        ->toBe('https://xn--bcher-kva.example/preise');
+
+    // And it does not become a way past the host rule.
+    expect(VisitorPageUrl::forSite('https://attacker.example/login', 'bücher.example'))->toBeNull();
+});
