@@ -227,14 +227,68 @@ keeps a current-visit start alongside `last_seen_at`, set when a report arrives
 from a visitor who has **no** previous one, or whose previous one is older than
 the fifteen-minute *recent* window. Left alone otherwise.
 
-**Maintained by every writer of `last_seen_at`, not by the heartbeat.** Presence
-is not the only one: bootstrap, conversation start, message fetch and typing all
-stamp it, and a returning visitor whose page reloads a stored conversation hits
-bootstrap *before* their first heartbeat. A rule living in the presence endpoint
-would then see a timestamp refreshed seconds ago, keep the previous visit's
-start, and report a visit spanning days. The transition therefore belongs to the
-model, computed from the value being replaced, so it holds for writers nobody
-has written yet.
+**Maintained by every writer of the website sighting, not by the heartbeat.**
+Presence is not the only one: bootstrap, conversation start, message fetch and
+typing all stamp it, and a returning visitor whose page reloads a stored
+conversation hits bootstrap *before* their first heartbeat. A rule living in the
+presence endpoint would then see a timestamp refreshed seconds ago, keep the
+previous visit's start, and report a visit spanning days. The transition
+therefore belongs to the model, computed from the value being replaced, so it
+holds for writers nobody has written yet.
+
+**But not every writer of `last_seen_at`, which is a different column.** That
+one answers "when did we last hear from this person by any means", and inbound
+mail stamps it: somebody who emails support has certainly been seen. Keying the
+visit boundary off it put an email correspondent on the board as present, with a
+time-on-site counting up, while they sat in their mail client — and an agent
+acting on that would try to watch a browser that is not there.
+
+Asking "have they ever used the widget" does not separate the two. The harder
+case is a real visitor who browsed last week and today replies to an email
+notification: they have an `anonymous_id`, and the reply would resume a visit
+from days ago.
+
+So **`last_web_seen_at` is the website fact and the visit start is maintained
+from it**, while mail writes the cross-channel column directly and never reaches
+the visit logic. Web writers set only the website column; the model derives the
+cross-channel one from it and never moves it backwards. Converged there rather
+than required of each writer, because a writer that eventually sets one and
+forgets the other makes somebody look out of contact while they are on the site,
+and that failure is silent.
+
+A relationship update is not a writer the model can reach. `visitor()->update()`
+is a mass update and dispatches no model events, so a writer using one is
+outside this rule however well the rule is written — which is not a caveat but a
+requirement on the writers: they save the model.
+
+### 3b. What the heartbeat costs, and the throttle it needs
+
+`docs/product/widget-api-abuse-controls.md` requires a named, tunable throttle
+on every public widget route, and this one cannot borrow the shape the others
+use.
+
+Every other widget limiter is keyed by **site and source IP**, which is right
+for endpoints a visitor hits occasionally. This is the one every visitor hits
+*continuously*: at 45 seconds a single open tab is 1.33 requests a minute and 80
+an hour. A shared per-IP bucket therefore divides the quota by the number of
+people behind the address, and an office, a school or carrier NAT exhausts it at
+roughly sixteen simultaneous visitors.
+
+The symptom would not arrive as a bug report. Valid heartbeats take a 429 and
+those visitors flicker to inactive on the board, which reads as the feature
+being unreliable rather than as a limit being hit.
+
+**Two limits, therefore.** `WAYFINDR_WIDGET_PRESENCE_PER_MINUTE` (default 30) is
+the everyday quota and is keyed **per visitor** — about twenty tabs' worth of
+one browser, since tabs share an anonymous ID.
+`WAYFINDR_WIDGET_PRESENCE_PER_IP_PER_MINUTE` (default 1200) stays keyed by site
+and address as the **abuse cap**, covering roughly nine hundred simultaneous
+visitors behind one address at the standard cadence.
+
+The second is the limit that wanted to be there anyway. The thing worth bounding
+is a forged client rotating anonymous IDs to create rows until §4's sweep
+removes them, not a busy office — and because §1 keeps this off until an
+operator turns it on, the surface is only the sites that chose it.
 
 The first clause is not pedantry: a presence-only visitor's opening heartbeat
 has nothing to be "older than", so a rule written only around the gap never
