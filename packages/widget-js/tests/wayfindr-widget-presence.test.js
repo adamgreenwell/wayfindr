@@ -1345,3 +1345,103 @@ test('a stale settings answer cannot undo a newer one', async (t) => {
     'a stale answer reinstated page addresses a newer answer had turned off',
   );
 });
+
+test('a decline binds bootstrap, not only the heartbeat', async (t) => {
+  // Declining stops the heartbeat. A visitor who then opened the panel had
+  // their page address submitted by bootstrap anyway, so the board and their
+  // profile showed where somebody was who had just asked not to be followed --
+  // and it reached the server before anything could drop it.
+  const { widget, calls } = widgetWithPresence({ declined: true });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  assert.equal(presenceCalls(calls).length, 0, 'a declined visitor was reported');
+
+  await widget.open();
+  await settle();
+
+  const bootstrap = calls.filter((c) => c.url.endsWith('/api/widget/bootstrap'));
+
+  assert.ok(bootstrap.length > 0, 'the panel never bootstrapped, so this proves nothing');
+  assert.ok(
+    bootstrap.every((c) => !c.body.page_url),
+    'bootstrap submitted the page of a visitor who had declined',
+  );
+});
+
+test('an overtaken page-load config cannot reinstate settings', async (t) => {
+  // The config GET starts at page load and can be slow. A visitor who opens
+  // the panel meanwhile gets a bootstrap answer that is NEWER, and applying
+  // the older GET afterwards would reinstate settings the operator changed.
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/pricing',
+  });
+
+  const calls = [];
+  const gate = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 0,
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      // Held open: this is the OLDER answer, and it says reporting is on.
+      if (url.includes('/api/widget/appearance')) {
+        return new Promise((resolve) => {
+          gate.push(() => resolve(jsonResponse(200, {
+            data: { appearance: { position: 'right' }, presence: { reports: true, every: 45, page_urls: true } },
+          })));
+        });
+      }
+
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return jsonResponse(200, {
+          data: {
+            site: { public_key: 'site_public_shop', settings: {}, color: 'blue', presence: { reports: false } },
+            visitor: { anonymous_id: 'anon-shop', token: 'visitor-token-shop' },
+          },
+        });
+      }
+
+      return jsonResponse(202, { data: { reports: true, every: 45, page_urls: true } });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  // The visitor opens the panel while the config read is still in flight.
+  await widget.open();
+  await settle();
+
+  // Now the stale answer lands, saying reporting is on.
+  gate.forEach((release) => release());
+
+  await settle();
+
+  assert.equal(
+    presenceCalls(calls).length,
+    0,
+    'an overtaken config response started reporting the operator had switched off',
+  );
+});

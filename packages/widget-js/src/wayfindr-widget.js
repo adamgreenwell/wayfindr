@@ -2736,7 +2736,11 @@
     function refreshFromBootstrap() {
       var seq = ++bootstrapSequence;
 
-      bootstrapPromise = client.bootstrap(location ? location.href : null, visitorContext).then(function (result) {
+      // The same gate the heartbeat uses. A visitor who declined and then
+      // opened the panel had their page submitted here anyway -- so the board
+      // and their profile showed where somebody was who had just asked not to
+      // be followed, and it reached the server before anything could drop it.
+      bootstrapPromise = client.bootstrap(pageUrlForReporting(), visitorContext).then(function (result) {
         if (seq !== bootstrapSequence) {
           return;
         }
@@ -3071,7 +3075,7 @@
       // than decided here, and the server drops it again on arrival -- but an
       // address the operator has said not to keep should not travel at all,
       // which is the whole reason the client sanitises in the first place.
-      var pageUrl = presenceConfig.page_urls === false ? null : sanitisePageUrl(currentHref());
+      var pageUrl = pageUrlForReporting();
 
       var seq = ++presenceSettingsSequence;
 
@@ -3096,6 +3100,30 @@
         // A missed heartbeat is a visitor reading as quiet, which is a fair
         // description of somebody we cannot reach.
       });
+    }
+
+    /**
+     * The page address this widget is allowed to send, or null.
+     *
+     * Shared by the heartbeat and bootstrap, because a visitor's decline has to
+     * bind both. Declining stops the heartbeat, and a visitor who then opened
+     * the panel had their page address submitted by bootstrap anyway -- so the
+     * board and their profile showed the page of somebody who had just asked
+     * not to be followed.
+     *
+     * Opening the widget is still contact and is still recorded: what the
+     * decline governs is where they are, not whether they are talking to us.
+     */
+    function pageUrlForReporting() {
+      if (declineRecorded()) {
+        return null;
+      }
+
+      if (presenceConfig && presenceConfig.page_urls === false) {
+        return null;
+      }
+
+      return sanitisePageUrl(currentHref());
     }
 
     function startPresenceTimer() {
@@ -3322,7 +3350,17 @@
      * rather than anything a visitor pays for twice.
      */
     function fetchSiteConfig() {
+      var seq = ++presenceSettingsSequence;
+
       client.fetchAppearance().then(function (result) {
+        // Overtaken answers are discarded here too. This request starts at page
+        // load and can be slow; a visitor who opens the panel meanwhile gets a
+        // bootstrap answer that is NEWER, and applying this one afterwards
+        // would reinstate settings the operator had already changed.
+        if (seq !== presenceSettingsSequence) {
+          return;
+        }
+
         var appearance = (result && result.appearance) || null;
 
         if (appearance) {
