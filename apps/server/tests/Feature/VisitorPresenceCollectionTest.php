@@ -572,3 +572,47 @@ test('the per-address ceiling still bounds a forged client', function (): void {
 
     reportPresence($site, 'anon-forged-4')->assertStatus(429);
 });
+
+test('an admin can turn presence on from the dashboard', function (): void {
+    // The product path, end to end. The feature shipped with a setting that
+    // only a factory or a hand-written SQL UPDATE could reach, which is not an
+    // opt-in an operator can give -- ADR 0019 §1 describes a decision somebody
+    // takes deliberately, and there was nowhere to take it.
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $site = Site::factory()->for($account)->create([
+        'domain' => 'shop.test',
+        'settings' => [],
+    ]);
+
+    expect(SitePresenceReporting::for($site)->enabled)->toBeFalse('presence was on by default');
+
+    test()->actingAs($owner)
+        ->put(route('dashboard.sites.presence.update', $site), ['presence_enabled' => '1'])
+        ->assertRedirect(route('dashboard.sites.show', $site));
+
+    expect(SitePresenceReporting::for($site->fresh())->enabled)->toBeTrue();
+
+    // And the switch is what the endpoint actually reads.
+    reportPresence($site->fresh(), 'anon-after-toggle')->assertSuccessful();
+
+    expect(Visitor::query()->where('anonymous_id', 'anon-after-toggle')->exists())->toBeTrue();
+
+    test()->actingAs($owner)
+        ->put(route('dashboard.sites.presence.update', $site), [])
+        ->assertRedirect(route('dashboard.sites.show', $site));
+
+    expect(SitePresenceReporting::for($site->fresh())->enabled)->toBeFalse('it could not be turned back off');
+});
+
+test('turning presence on is not an ordinary agent decision', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+    $site = Site::factory()->for($account)->create(['settings' => []]);
+
+    test()->actingAs($agent)
+        ->put(route('dashboard.sites.presence.update', $site), ['presence_enabled' => '1'])
+        ->assertForbidden();
+
+    expect(SitePresenceReporting::for($site->fresh())->enabled)->toBeFalse();
+});
