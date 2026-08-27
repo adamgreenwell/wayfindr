@@ -31,13 +31,22 @@ The product has moved past a spine. It now includes:
   whole account-management side — Account, Integrations, API tokens, Operator
   access, Audit, Labels, Articles, Reply templates.
 
-  `DashboardLanguage::EXTRACTED_ROUTES` is the list that decides, and it is the
-  only place worth reading: a route missing from it renders English by design
-  rather than by accident. Rather than keep a second list here in prose and let
-  the two drift, treat that constant as the answer — what is written above is a
-  summary of it on the day this was edited. A German agent moving from the queue
-  to Reports changes language mid-session, and finishing that is the remaining
-  half.
+  `DashboardLanguage::EXTRACTED_ROUTES` is the list that decides which **pages**
+  are translated, and it is the only place worth reading: a page missing from it
+  renders English by design rather than by accident. Rather than keep a second
+  list here in prose and let the two drift, treat that constant as the answer —
+  what is written above is a summary of it on the day this was edited.
+
+  **Write endpoints are the exception, and it is deliberate.** A form submitted
+  from a translated page answers in that page's language even when its own route
+  is unlisted, because `DashboardLanguage::forRequest()` resolves from the
+  surface the response renders back to. Closing a ticket from the conversation
+  panel produces German validation; the same action from the untranslated ticket
+  page produces English. The language belongs to the page the agent is looking
+  at, not to the endpoint.
+
+  A German agent moving from the queue to Reports changes language mid-session,
+  and finishing that is the remaining half.
 
   The widget and the dashboard also carry different language sets on purpose
   rather than by omission: Italian is agent-facing, and adding it to the widget
