@@ -69,7 +69,10 @@ class AgentVisitorController extends Controller
         }
 
         if ($presence !== 'all') {
-            VisitorPresence::constrain($query, $presence);
+            // The website sighting, matching presenceState() and the queue. Left on
+            // the shared default, the directory's Active filter answered a
+            // different question from the badge printed next to each row.
+            VisitorPresence::constrain($query, $presence, 'last_web_seen_at');
         }
 
         if ($search !== '') {
