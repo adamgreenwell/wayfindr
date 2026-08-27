@@ -87,7 +87,13 @@ class ConversationController extends Controller
             // Gone means the pruner won the race. Re-created rather than
             // failed: this visitor is here NOW, asking for help, which is the
             // one fact that outranks having been quiet for thirty days.
-            $visitor = $locked ?? Visitor::query()->create([
+            // firstOrCreate, not create. The pruner deleting the row this
+            // request resolved is one ordering; a heartbeat recreating it
+            // before this transaction takes the lock is another, and then an
+            // unconditional insert collides with the replacement on
+            // `(site_id, anonymous_id)` and the visitor is told their message
+            // could not be sent.
+            $visitor = $locked ?? Visitor::query()->firstOrCreate([
                 'site_id' => $site->id,
                 'anonymous_id' => $validated['anonymous_id'],
             ]);
