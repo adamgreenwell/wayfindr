@@ -253,3 +253,28 @@ test('the words a route is actually named after survive', function (): void {
     // And short capitals, which sites do use.
     expect(VisitorPageUrl::reduce('https://shop.test/FAQ'))->toBe('https://shop.test/FAQ');
 });
+
+test('punctuation does not launder a credential', function (): void {
+    // A separator used to end the test, on the reasoning that a slug is words
+    // joined by hyphens. It is also how a credential is punctuated.
+    expect(VisitorPageUrl::reduce('https://shop.test/invite/ABC-123'))
+        ->toBe('https://shop.test/invite/[redacted]')
+        ->and(VisitorPageUrl::reduce('https://shop.test/reset/abc_def123'))
+        ->toBe('https://shop.test/reset/[redacted]')
+        ->and(VisitorPageUrl::reduce('https://shop.test/t/A1B2-C3D4'))
+        ->toBe('https://shop.test/t/[redacted]');
+});
+
+test('hyphenated page names still read as page names', function (): void {
+    foreach ([
+        'billing-preferences',
+        'reset-password',
+        'blog/2024-my-post',
+        'help/how-do-i-cancel',
+        'v2/account',
+        'en-GB/pricing',
+    ] as $path) {
+        expect(VisitorPageUrl::reduce('https://shop.test/'.$path))
+            ->toBe('https://shop.test/'.$path, $path.' was redacted');
+    }
+});

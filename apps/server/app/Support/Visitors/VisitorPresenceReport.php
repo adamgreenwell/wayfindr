@@ -63,6 +63,24 @@ final class VisitorPresenceReport
 
     private function stamp(Visitor $visitor, ?string $pageUrl, Site $site): Visitor
     {
+        // Re-read under a lock before merging metadata.
+        //
+        // `metadata` is one JSON column, so writing it replaces the whole
+        // value. A heartbeat that resolved the row, then waited while bootstrap
+        // committed new host context, would merge into the snapshot it read
+        // first and put the old context back -- erasing what the visitor's own
+        // page had just told us, and restoring a page address they had already
+        // navigated away from.
+        //
+        // Only for a row that exists; a creation has nothing to conflict with.
+        if ($visitor->exists) {
+            $locked = Visitor::query()->whereKey($visitor->getKey())->lockForUpdate()->first();
+
+            if ($locked !== null) {
+                $visitor = $locked;
+            }
+        }
+
         $now = now();
 
         // `current_visit_started_at` is NOT set here, and neither is

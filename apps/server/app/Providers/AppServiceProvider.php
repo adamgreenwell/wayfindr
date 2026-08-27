@@ -126,6 +126,17 @@ class AppServiceProvider extends ServiceProvider
         // ceiling stays as the abuse cap -- which is the limit that actually
         // wants to be there, because the thing worth bounding is a forged
         // client rotating anonymous IDs to create rows, not a busy office.
+        // Public site configuration, read once per page load. Sized for that
+        // rather than for the panel being opened: a page view is not a visitor
+        // doing anything, and several people behind one address browsing
+        // normally must not be able to spend a budget that gates starting a
+        // conversation. The response is identical for everyone on the site and
+        // writes nothing, so it is cheap to serve and safe to allow generously.
+        RateLimiter::for(
+            'widget-config',
+            fn (Request $request): Limit => $this->widgetLimit($request, 'config_per_minute', 'config')
+        );
+
         RateLimiter::for('widget-presence', fn (Request $request): array => [
             $this->widgetLimit($request, 'presence_per_minute', 'presence')
                 ->by($this->widgetPresenceVisitorKey($request)),

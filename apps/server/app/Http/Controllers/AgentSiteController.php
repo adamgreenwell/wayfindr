@@ -763,6 +763,18 @@ class AgentSiteController extends Controller
         // contact, and stays.
         $removed = $enabled ? 0 : $this->forgetPresenceOnlyVisitors($site);
 
+        // Turning page addresses off clears the ones already stored.
+        //
+        // The form recommends this switch to operators whose paths carry
+        // invitation codes or reset tokens, so "from now on" is the wrong
+        // scope: a visitor who does not heartbeat again keeps the address that
+        // prompted the change for up to thirty days, and it is on an agent's
+        // screen the whole time. The operator's decision is about the data,
+        // not about future requests.
+        if ($enabled && ! $settings['presence']['page_urls']) {
+            $this->forgetStoredPageUrls($site);
+        }
+
         return redirect()
             ->route('dashboard.sites.show', $site)
             ->with('status', $this->presenceStatusMessage($enabled, $removed));
@@ -781,6 +793,34 @@ class AgentSiteController extends Controller
         return $removed === 1
             ? 'Live visitor presence is off. 1 visitor who never made contact was deleted.'
             : 'Live visitor presence is off. '.$removed.' visitors who never made contact were deleted.';
+    }
+
+    /**
+     * Drop every page address this site has stored for its visitors.
+     *
+     * Only the visitor rows. A conversation's `started_page_url` is part of a
+     * support record somebody wrote in about, and deleting history because a
+     * collection setting changed is a different decision from the one the
+     * operator just took.
+     */
+    private function forgetStoredPageUrls(Site $site): void
+    {
+        Visitor::query()
+            ->where('site_id', $site->id)
+            ->whereNotNull('metadata')
+            ->chunkById(200, function ($visitors): void {
+                foreach ($visitors as $visitor) {
+                    $metadata = is_array($visitor->metadata) ? $visitor->metadata : [];
+
+                    if (! array_key_exists('last_page_url', $metadata)) {
+                        continue;
+                    }
+
+                    unset($metadata['last_page_url']);
+
+                    $visitor->forceFill(['metadata' => $metadata])->save();
+                }
+            });
     }
 
     private function forgetPresenceOnlyVisitors(Site $site): int
