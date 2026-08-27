@@ -779,7 +779,13 @@ class AgentSiteController extends Controller
             // so "from now on" is the wrong scope -- and a sweep outside the
             // lock could finish just before an in-flight heartbeat wrote one
             // back, which is the same scope failure arriving a second later.
-            if ($enabled && ! $settings['presence']['page_urls']) {
+            // Whenever addresses are off, not only while presence is on.
+            // Turning presence off deletes the visitors it collected, but
+            // CONTACTED visitors stay -- and they hold addresses too, written
+            // by bootstrap and conversation start. An operator unchecking the
+            // page-address box while switching presence off would otherwise
+            // have kept exactly the addresses they were unchecking it for.
+            if (! $settings['presence']['page_urls']) {
                 $this->forgetStoredPageUrls($site);
             }
 

@@ -1243,3 +1243,105 @@ test('the notice names what is kept, not only what is visible', async (t) => {
   assert.match(copy, /30 days/, 'the notice did not mention how long the visit is kept');
   assert.match(copy, /been here before/i, 'the notice did not mention being recognised on a return');
 });
+
+test('the retention promise is conditional, because the deletion is', async (t) => {
+  // Only a visitor who never makes contact is pruned. Somebody who opens the
+  // widget keeps their record indefinitely as part of support history, so
+  // "remembers this visit for 30 days" promised a deletion that does not
+  // happen to most of the people reading it.
+  const { widget } = widgetWithPresence();
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  const copy = widget.root.querySelector('.wayfindr-widget__presence-copy').textContent;
+
+  assert.match(copy, /been here before/i, 'the notice did not mention being recognised on a return');
+  assert.match(copy, /never get in touch/i, 'the notice promised deletion without saying who it applies to');
+  assert.match(copy, /30 days/, 'the notice did not say how long');
+});
+
+test('a stale settings answer cannot undo a newer one', async (t) => {
+  // Heartbeats overlap when one runs longer than the interval, and bootstrap
+  // answers on its own schedule. An older response carrying page_urls:true
+  // would otherwise reinstate addresses a newer one had turned off, for the
+  // life of the tab.
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/pricing',
+  });
+
+  const calls = [];
+  let heartbeats = 0;
+  const gate = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 20,
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, {
+          data: { appearance: { position: 'right' }, presence: { reports: true, every: 45, page_urls: true } },
+        });
+      }
+
+      heartbeats++;
+
+      // The FIRST heartbeat is held open and answers with the old setting; the
+      // second answers immediately with the new one. The first therefore
+      // resolves last, which is the ordering being defended against.
+      if (heartbeats === 1) {
+        return new Promise((resolve) => {
+          gate.push(() => resolve(jsonResponse(202, { data: { reports: true, every: 45, page_urls: true } })));
+        });
+      }
+
+      return jsonResponse(202, { data: { reports: true, every: 45, page_urls: false } });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  await settle();
+
+  // Beats sent before the newer answer arrived legitimately carry a page
+  // address; what matters is what happens AFTER the stale one lands.
+  const beforeRelease = presenceCalls(calls).filter((c) => 'page_url' in c.body).length;
+
+  gate.forEach((release) => release());
+
+  await settle();
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  await settle();
+
+  const afterRelease = presenceCalls(calls).filter((c) => 'page_url' in c.body).length;
+
+  assert.ok(heartbeats > 3, 'not enough heartbeats after the release to observe the ordering');
+  assert.equal(
+    afterRelease,
+    beforeRelease,
+    'a stale answer reinstated page addresses a newer answer had turned off',
+  );
+});

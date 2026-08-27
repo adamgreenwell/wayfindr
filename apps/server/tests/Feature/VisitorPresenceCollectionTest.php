@@ -1192,6 +1192,79 @@ test('a heartbeat in flight cannot restore an address the operator just removed'
         ->toBeNull('an address was stored after the operator switched them off');
 });
 
+test('switching everything off leaves no addresses behind', function (): void {
+    // Turning presence off deletes the visitors it collected, but contacted
+    // visitors stay -- and they hold addresses too, written by bootstrap. An
+    // operator unchecking the page-address box while switching presence off
+    // would otherwise keep exactly the addresses they unchecked it for.
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $site = Site::factory()->for($account)->create([
+        'domain' => 'shop.test',
+        'public_key' => 'site_public_bothoff',
+        'settings' => ['presence' => ['enabled' => true, 'page_urls' => true]],
+    ]);
+
+    test()->postJson('/api/widget/bootstrap', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-contacted',
+        'page_url' => 'https://shop.test/pricing',
+    ])->assertSuccessful();
+
+    $visitor = Visitor::query()->where('anonymous_id', 'anon-contacted')->firstOrFail();
+
+    expect($visitor->metadata['last_page_url'])->toBe('https://shop.test/pricing');
+
+    // Everything off in one submission.
+    test()->actingAs($owner)
+        ->put(route('dashboard.sites.presence.update', $site), [])
+        ->assertRedirect();
+
+    expect($visitor->fresh())->not->toBeNull('a contacted visitor was deleted')
+        ->and($visitor->fresh()->metadata['last_page_url'] ?? null)
+        ->toBeNull('an address survived the operator switching addresses off');
+});
+
+test('the visitor directory filters on the same sighting it labels', function (): void {
+    // Left on the shared default, the Active filter answered a different
+    // question from the badge printed next to each row.
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $site = Site::factory()->for($account)->create(['domain' => 'shop.test']);
+
+    // A real widget visitor who browsed days ago and emailed today. Keeping an
+    // anonymous_id matters: a NULL one is excluded from this index by the
+    // tester filter regardless of presence, so a fixture without one would
+    // pass whichever column the filter used.
+    $emailedToday = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-emailed-today',
+        'email' => 'known@shop.test',
+        'last_seen_at' => now(),
+        'last_web_seen_at' => now()->subDays(3),
+    ]);
+
+    $browsing = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-browsing']);
+
+    $response = test()->actingAs($agent)
+        ->get(route('dashboard.visitors.index', ['presence' => 'active']))
+        ->assertOk();
+
+    $listed = collect($response->viewData('visitors')->items())->pluck('id');
+
+    expect($listed)->toContain($browsing->id);
+
+    // assertNotContains, NOT expect()->not->toContain($id, $message):
+    // `toContain` is variadic, so a message becomes a second needle and the
+    // negated form asserts that neither appears -- trivially true. This file's
+    // sibling documents the same trap three times over, and it still caught me:
+    // the mutation that reverts the filter column left the test green.
+    test()->assertNotContains(
+        $emailedToday->id,
+        $listed->all(),
+        'somebody whose only activity today was an email was listed as being on the site',
+    );
+});
+
 test('the widget learns about presence without making contact', function (): void {
     // The endpoint that answers this is the one a page load is allowed to ask.
     // Bootstrap cannot be: it creates or touches a visitor row and marks them

@@ -52,7 +52,11 @@ class BootstrapController extends Controller
             // leave something usable to retry on.
             $visitor = DB::transaction(fn (): Visitor => $this->stampVisitor($site, $validated, $visitorContextSanitizer));
         } catch (UniqueConstraintViolationException) {
-            $visitor = $this->stampVisitor($site, $validated, $visitorContextSanitizer);
+            // Wrapped as well. Outside a transaction every statement
+            // autocommits, so the lockForUpdate() inside stampVisitor() is
+            // released the moment its select finishes -- which is exactly when
+            // it is supposed to still be held.
+            $visitor = DB::transaction(fn (): Visitor => $this->stampVisitor($site, $validated, $visitorContextSanitizer));
         }
 
         return response()->json([
