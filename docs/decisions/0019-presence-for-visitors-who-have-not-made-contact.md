@@ -64,6 +64,18 @@ presence is on, the widget carries a visible statement that this site can see
 which of its pages you are on while the widget is loaded, and a control to stop
 reporting.
 
+**Outside the panel, beside the launcher.** The notice began inside the panel,
+which was the wrong place by the same logic that justifies the whole feature:
+the visitors presence exists to see are the ones who never open the widget, so a
+notice that appears only when they do is an explanation offered exclusively to
+the people it does not apply to. It is on the page, from the first heartbeat,
+for as long as reporting continues.
+
+That is a real cost — a small persistent element on every page of an opted-in
+site, which is more of a footprint than this product usually asks for. It is the
+price of §1 being an honest opt-in rather than a quiet one, and it is bounded:
+the sites that pay it are the sites that chose it.
+
 Declining is remembered per site in the same storage the anonymous id already
 uses, and a declined visitor reports nothing — not a reduced payload, nothing.
 
@@ -76,9 +88,26 @@ navigation, so a visitor who declined would be reported again on the next page.
 Fail closed, because the alternative is a control that appears to work and does
 not. If we cannot keep a "no", we do not get to assume a "yes".
 
-**The first report waits for the disclosure to exist on the page.** Reporting
-before the visitor could have seen the notice is the same defect as not having
-one, arriving a few hundred milliseconds earlier.
+**The first report waits for the disclosure to be PAINTED**, not merely to
+exist. Reporting before the visitor could have seen the notice is the same
+defect as not having one, arriving a few hundred milliseconds earlier — and
+being in the document is not being visible, because the element is inserted with
+its styles unresolved and a report sent in the same turn beats the browser to
+the screen.
+
+**A decline binds the visitor, not the tab.** It is re-read from storage before
+every heartbeat, and a cross-tab storage event stops the other tabs at once. The
+same site is routinely open several times over, and "Stop sharing" writes a
+site-wide key while only being able to stop the instance that was clicked — so
+without this, a visitor watched their own decline fail in every other tab. The
+re-read is the guarantee, because storage events are not delivered in every
+embedding; the event is the promptness.
+
+**Configuration reaches the widget from an endpoint that writes nothing.** It
+cannot come from bootstrap, which is the natural place to put it: bootstrap runs
+only when the panel is opened, and it records that opening as contact. Asking it
+whether to watch people who have not made contact answers the question by
+destroying it.
 
 ### 3. What is reported, named exhaustively
 
