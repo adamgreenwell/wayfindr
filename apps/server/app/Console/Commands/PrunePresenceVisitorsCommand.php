@@ -48,6 +48,13 @@ class PrunePresenceVisitorsCommand extends Command
         $deleted = 0;
 
         Visitor::query()
+            // POSITIVE evidence, not an inference from absence. A row with no
+            // conversation is not the same as a row nobody ever made contact
+            // through: BootstrapController creates one when somebody opens the
+            // widget, which ADR 0016 counts as contact, and every legacy row
+            // predates this column entirely. Defaulting to false is what stops
+            // the first scheduled run deleting a decade of them.
+            ->where('presence_only', true)
             ->whereNotNull('last_seen_at')
             ->where('last_seen_at', '<', $cutoff)
             // Never made contact, in the three ways contact is recorded. A
@@ -96,6 +103,12 @@ class PrunePresenceVisitorsCommand extends Command
             if ($visitor->last_seen_at === null || $visitor->last_seen_at->greaterThanOrEqualTo($cutoff)) {
                 // They came back while we were working, which is the best
                 // possible reason not to delete somebody.
+                return false;
+            }
+
+            if (! $visitor->presence_only) {
+                // They opened the widget while we were working, which makes
+                // this a contacted visitor and not ours to delete.
                 return false;
             }
 

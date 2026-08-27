@@ -142,3 +142,61 @@ test('a page name survives the redaction', function (): void {
         ->and(VisitorPageUrl::reduce('https://shop.test/pricing'))
         ->toBe('https://shop.test/pricing');
 });
+
+test('a site configured with a port still matches its own pages', function (): void {
+    // localhost:8000 and staging.example.test:8443 are both supported install
+    // shapes. parse_url() hands back the hostname alone, so comparing it against
+    // an unstripped configured value rejected every legitimate page on exactly
+    // the installs that need a port -- and stored null instead.
+    expect(VisitorPageUrl::forSite('http://localhost:8000/pricing', 'localhost:8000'))
+        ->toBe('http://localhost:8000/pricing')
+        ->and(VisitorPageUrl::forSite('https://staging.example.test:8443/docs', 'staging.example.test:8443'))
+        ->toBe('https://staging.example.test:8443/docs');
+
+    // And a port does not weaken the host rule.
+    expect(VisitorPageUrl::forSite('https://attacker.example/login', 'localhost:8000'))->toBeNull();
+});
+
+test('the same host on a different port is a different service', function (): void {
+    // The hole this closes: the configured port was stripped before comparing,
+    // so a site on :8443 vouched for anything else listening on that machine.
+    // Ports are where an admin panel, a database console or a debug server
+    // ends up, and the value lands in an agent-clickable href.
+    expect(VisitorPageUrl::forSite('https://shop.test:9998/admin', 'shop.test:8443'))->toBeNull()
+        ->and(VisitorPageUrl::forSite('http://localhost:9200/_cat/indices', 'localhost:8000'))->toBeNull();
+
+    // Both directions: a site that named a port is not on the default one.
+    expect(VisitorPageUrl::forSite('https://shop.test/pricing', 'shop.test:8443'))->toBeNull();
+
+    // And a site that named no port is not on some other one.
+    expect(VisitorPageUrl::forSite('https://shop.test:9998/admin', 'shop.test'))->toBeNull();
+});
+
+test('the two ways of writing one origin agree', function (): void {
+    // An explicit default port is the same origin as an omitted one, so a
+    // widget reporting either matches a site configured as either.
+    expect(VisitorPageUrl::forSite('https://shop.test:443/pricing', 'shop.test'))
+        ->toBe('https://shop.test:443/pricing')
+        ->and(VisitorPageUrl::forSite('https://shop.test/pricing', 'shop.test:443'))
+        ->toBe('https://shop.test/pricing')
+        ->and(VisitorPageUrl::forSite('http://shop.test:80/pricing', 'shop.test'))
+        ->toBe('http://shop.test:80/pricing');
+
+    // The default depends on the scheme, so :80 is NOT the https origin.
+    expect(VisitorPageUrl::forSite('https://shop.test:80/pricing', 'shop.test'))->toBeNull();
+});
+
+test('the port rule applies to subdomains as well as the apex', function (): void {
+    expect(VisitorPageUrl::forSite('https://www.shop.test:8443/pricing', 'shop.test:8443'))
+        ->toBe('https://www.shop.test:8443/pricing')
+        ->and(VisitorPageUrl::forSite('https://www.shop.test:9998/pricing', 'shop.test:8443'))
+        ->toBeNull();
+});
+
+test('a configured authority that cannot be parsed stores nothing', function (): void {
+    // Fail closed: an operator value we cannot read is not a licence to skip
+    // the check. Storing null loses context; storing an unchecked address
+    // is the bug this class exists to prevent.
+    expect(VisitorPageUrl::forSite('https://shop.test/pricing', 'shop.test:not-a-port'))->toBeNull()
+        ->and(VisitorPageUrl::forSite('https://shop.test/pricing', ':8443'))->toBeNull();
+});

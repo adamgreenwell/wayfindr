@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Carbon;
 
-#[Fillable(['site_id', 'external_id', 'anonymous_id', 'name', 'email', 'metadata', 'last_seen_at', 'current_visit_started_at'])]
+#[Fillable(['site_id', 'external_id', 'anonymous_id', 'name', 'email', 'metadata', 'last_seen_at', 'current_visit_started_at', 'presence_only'])]
 class Visitor extends Model
 {
     use SanitisesStoredPageUrls;
@@ -80,6 +80,7 @@ class Visitor extends Model
             'metadata' => 'array',
             'last_seen_at' => 'datetime',
             'current_visit_started_at' => 'datetime',
+            'presence_only' => 'boolean',
         ];
     }
 

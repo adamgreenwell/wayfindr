@@ -32,10 +32,17 @@ final class VisitorPresenceReport
         // start, message fetch and typing all get the same transition -- and a
         // returning visitor who opens the panel before their first heartbeat
         // still starts a new visit rather than resuming one from days ago.
+        // `presence_only` is set ONLY here and ONLY for a row this endpoint is
+        // creating. It is positive evidence that retention needs: an existing
+        // row might have been created by somebody opening the widget, which
+        // ADR 0016 counts as contact, and no absence of conversations can tell
+        // those apart afterwards.
+        $provenance = $visitor->exists ? [] : ['presence_only' => true];
+
         $visitor->forceFill([
             'metadata' => $this->metadata($visitor, $pageUrl, $site),
             'last_seen_at' => $now,
-        ])->save();
+        ] + $provenance)->save();
 
         return $visitor;
     }
