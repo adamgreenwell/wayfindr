@@ -1199,7 +1199,7 @@
                         </div>
 
                         <p class="field-help">
-                            Page addresses are stored with the query string removed and path segments that look like tokens replaced. That check is a good guess, not a guarantee &mdash; if this site puts invitation codes, order numbers or reset tokens in the path itself, turn this off and presence will record only that somebody is here.
+                            Page addresses are stored with the query string removed and path segments that look like tokens replaced. That check is a good guess, not a guarantee &mdash; if this site puts invitation codes, order numbers or reset tokens in the path itself, turn this off. No page address is then kept for any visitor, whether they were browsing, opened the widget or started a conversation, and the ones already stored are deleted. The page a conversation was started from stays on that conversation, because it is part of a support record somebody wrote in about.
                         </p>
 
                         <p class="field-help">

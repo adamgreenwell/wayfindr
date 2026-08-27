@@ -685,20 +685,18 @@ class AgentSiteController extends Controller
             // Only rows this feature created and nobody has since been in
             // touch through. Somebody who arrived as a heartbeat and later
             // wrote in is a contact, and stays.
+            // Turning page addresses off clears the ones already stored, and
+            // does it INSIDE this transaction. The form recommends this switch
+            // to operators whose paths carry invitation codes or reset tokens,
+            // so "from now on" is the wrong scope -- and a sweep outside the
+            // lock could finish just before an in-flight heartbeat wrote one
+            // back, which is the same scope failure arriving a second later.
+            if ($enabled && ! $settings['presence']['page_urls']) {
+                $this->forgetStoredPageUrls($site);
+            }
+
             return $enabled ? 0 : $this->forgetPresenceOnlyVisitors($site);
         });
-
-        // Turning page addresses off clears the ones already stored.
-        //
-        // The form recommends this switch to operators whose paths carry
-        // invitation codes or reset tokens, so "from now on" is the wrong
-        // scope: a visitor who does not heartbeat again keeps the address that
-        // prompted the change for up to thirty days, and it is on an agent's
-        // screen the whole time. The operator's decision is about the data,
-        // not about future requests.
-        if ($enabled && ! $settings['presence']['page_urls']) {
-            $this->forgetStoredPageUrls($site);
-        }
 
         return redirect()
             ->route('dashboard.sites.show', $site)
@@ -735,7 +733,19 @@ class AgentSiteController extends Controller
             ->whereNotNull('metadata')
             ->chunkById(200, function ($visitors): void {
                 foreach ($visitors as $visitor) {
-                    $metadata = is_array($visitor->metadata) ? $visitor->metadata : [];
+                    // Re-read under a lock before writing. `metadata` is one
+                    // JSON column, so a save replaces the whole value: writing
+                    // the copy this loop read would erase host context that
+                    // bootstrap or a conversation committed in between -- and
+                    // this runs at exactly the moment such writes are likely,
+                    // because operators change this setting on a live site.
+                    $locked = Visitor::query()->whereKey($visitor->getKey())->lockForUpdate()->first();
+
+                    if ($locked === null) {
+                        continue;
+                    }
+
+                    $metadata = is_array($locked->metadata) ? $locked->metadata : [];
 
                     if (! array_key_exists('last_page_url', $metadata)) {
                         continue;
@@ -743,7 +753,7 @@ class AgentSiteController extends Controller
 
                     unset($metadata['last_page_url']);
 
-                    $visitor->forceFill(['metadata' => $metadata])->save();
+                    $locked->forceFill(['metadata' => $metadata])->save();
                 }
             });
     }

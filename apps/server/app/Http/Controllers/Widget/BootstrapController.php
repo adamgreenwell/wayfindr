@@ -8,6 +8,7 @@ use App\Models\Site;
 use App\Models\Visitor;
 use App\Support\Sites\SiteAvailability;
 use App\Support\Sites\SiteIntake;
+use App\Support\Sites\SitePresenceReporting;
 use App\Support\Sites\SiteRatingPrompt;
 use App\Support\Sites\WidgetAppearance;
 use App\Support\Sites\WidgetLanguage;
@@ -113,6 +114,7 @@ class BootstrapController extends Controller
                 array_key_exists('context', $validated),
                 $validated['context'] ?? null,
                 $site->domain,
+                SitePresenceReporting::for($site)->pageUrls,
             ),
             'last_web_seen_at' => now(),
             // Opening the widget IS making contact -- ADR 0016 §1 says so -- and
