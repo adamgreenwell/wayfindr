@@ -44,6 +44,7 @@ final class DashboardLanguage
     public const SUPPORTED = [
         'en' => 'English',
         'de' => 'Deutsch',
+        'it' => 'Italiano',
     ];
 
     public const FALLBACK = 'en';

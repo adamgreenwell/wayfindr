@@ -40,6 +40,9 @@ class CobrowseReplayDrift
         $addressable = $applied + $unresolved;
         $ratio = $addressable > 0 ? $unresolved / $addressable : 0.0;
         $summary = number_format($unresolved).' of '.number_format($addressable).' drifted';
+        // The counts travel too: the surface owns the word order, and 'X of Y
+        // drifted' does not survive a translation that puts the verb elsewhere.
+        $counts = ['unresolved' => number_format($unresolved), 'addressable' => number_format($addressable)];
 
         if ($addressable < self::MIN_SAMPLE || $unresolved === 0) {
             return [
@@ -47,6 +50,8 @@ class CobrowseReplayDrift
                 'label' => 'Aligned',
                 'message' => 'Replay updates are landing on the expected nodes.',
                 'summary' => $summary,
+                'summary_counts' => $counts,
+                'summary_counts' => $counts,
                 'drift_count' => $unresolved,
                 'addressable' => $addressable,
                 'ratio' => round($ratio, 2),
@@ -61,6 +66,8 @@ class CobrowseReplayDrift
                 'label' => 'Drifting',
                 'message' => 'Many replay updates no longer match this preview. Request a fresh snapshot to resync.',
                 'summary' => $summary,
+                'summary_counts' => $counts,
+                'summary_counts' => $counts,
                 'drift_count' => $unresolved,
                 'addressable' => $addressable,
                 'ratio' => round($ratio, 2),
@@ -75,6 +82,8 @@ class CobrowseReplayDrift
                 'label' => 'Minor drift',
                 'message' => 'Some replay updates did not match this preview. Confirm fast-changing areas through chat.',
                 'summary' => $summary,
+                'summary_counts' => $counts,
+                'summary_counts' => $counts,
                 'drift_count' => $unresolved,
                 'addressable' => $addressable,
                 'ratio' => round($ratio, 2),
@@ -88,6 +97,7 @@ class CobrowseReplayDrift
             'label' => 'Aligned',
             'message' => 'Replay updates are landing on the expected nodes.',
             'summary' => $summary,
+            'summary_counts' => $counts,
             'drift_count' => $unresolved,
             'addressable' => $addressable,
             'ratio' => round($ratio, 2),

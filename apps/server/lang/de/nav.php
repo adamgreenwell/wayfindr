@@ -12,7 +12,7 @@ return [
         'conversations' => 'Unterhaltungen',
         'tickets' => 'Tickets',
         'alerts' => 'Benachrichtigungen',
-        'visitors' => 'Besucher',
+        'visitors' => 'Besuchende',
         'reports' => 'Berichte',
         'sites' => 'Websites',
         'account' => 'Konto',

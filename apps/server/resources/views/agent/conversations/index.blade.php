@@ -173,7 +173,7 @@
                                         $cobrowseTransport = $cobrowseTransportByConversationId->get($conversation->id, [
                                             'label' => 'Unavailable',
                                             'message' => 'Cobrowse transport is not active.',
-                                            'last_report' => 'Not reported',
+                                            'last_report_reported' => false,
                                             'pressure' => 'No drops reported',
                                             'guidance' => 'Wait for an active cobrowse session before relying on cobrowse.',
                                             'tone' => 'manual',
@@ -248,53 +248,48 @@
                                         </td>
                                         <td>
                                             @php
-                                                // Every string CobrowseConsentState supplies is still English --
-                                                // the recorded exception in docs/product/dashboard-language.md --
-                                                // and it is being rendered inside a region marked with the agent's
-                                                // language, so each piece has to say what it actually is.
-                                                //
-                                                // The label, message and guidance are wholly English, so the
-                                                // element carrying them is marked. The two below are mixed: a
-                                                // German label wrapping an English value, in one sentence whose
-                                                // word order the catalogue owns. Splitting the sentence to wrap
-                                                // the value would be exactly the fragment concatenation this
-                                                // extraction refuses, so the marked value is passed IN as the
-                                                // placeholder -- escaped here, with only our own catalogue string
-                                                // rendered unescaped around it.
+                                                // The label, message and guidance are translated now, so the
+                                                // element carrying them no longer claims English. The two below
+                                                // are mixed: a German label wrapping a value that may be English,
+                                                // in one sentence whose word order the catalogue owns. Splitting
+                                                // the sentence to wrap the value would be exactly the fragment
+                                                // concatenation this extraction refuses, so the marked value is
+                                                // passed IN as the placeholder -- escaped here, with only our own
+                                                // catalogue string rendered unescaped around it.
                                                 $marked = fn (string $value, string $language): string => '<span lang="'
                                                     .e(str_replace('_', '-', $language))
                                                     .'">'.e($value).'</span>';
 
-                                                // `pressure` is always English: English words, and an English
-                                                // pluraliser building "2 dropped batches".
+                                                // `pressure` is still English: English words, and an English
+                                                // pluraliser building "2 dropped batches". It belongs to
+                                                // CobrowseTransportPressure, which is not extracted yet.
                                                 $englishValue = \App\Support\DashboardLanguage::FALLBACK;
 
-                                                // `last_report` is NOT. It is the static "Not reported" only in
-                                                // the `unavailable` state; every other state builds it with
+                                                $transportCopy = $cobrowseTransport['copy'] ?? 'inactive';
+
+                                                // `last_report` is page-locale in BOTH of its branches, so it
+                                                // is marked German either way. With a report it is
                                                 // `diffForHumans()`, which follows the page's locale and returns
-                                                // "vor 20 Sekunden" here. Marking that English would have a
-                                                // screen reader pronounce German as English -- the same defect as
-                                                // leaving it unmarked, pointing the other way.
+                                                // "vor 20 Sekunden" here; with none it is translated below rather
+                                                // than arriving from the model as the literal "Not reported".
                                                 //
-                                                // Decided from the STATE rather than by comparing the prose,
-                                                // which is what the `in_array` below still does and should not.
-                                                $lastReportValue = ($cobrowseTransport['state'] ?? null) === 'unavailable'
-                                                    ? $englishValue
-                                                    : app()->getLocale();
+                                                // It used to be decided from the state, which meant the
+                                                // no-report case -- every row with no cobrowse session, so most
+                                                // of them -- rendered English and said so. The model's own
+                                                // discriminator answers this; the state only happened to agree.
+                                                $lastReport = ($cobrowseTransport['last_report_reported'] ?? false)
+                                                    ? $cobrowseTransport['last_report']
+                                                    : __('cobrowse.units.not_reported');
                                             @endphp
                                             <span
                                                 class="wf-queue-cobrowse"
-                                                lang="{{ str_replace('_', '-', \App\Support\DashboardLanguage::FALLBACK) }}"
                                                 @if ($cobrowseTransport['tone'] !== 'manual')
                                                     data-tone="{{ $cobrowseTransport['tone'] === 'ready' ? 'live' : 'attention' }}"
                                                 @endif
-                                                title="{{ $cobrowseTransport['message'] }} {{ $cobrowseTransport['guidance'] }}"
-                                            >{{ $cobrowseTransport['label'] }}</span>
+                                                title="{{ __('cobrowse.transport.'.$transportCopy.'.message') }} {{ __('cobrowse.transport.'.$transportCopy.'.'.($cobrowseTransport['guidance_copy'] ?? 'guidance')) }}"
+                                            >{{ __('cobrowse.transport.'.$transportCopy.'.label') }}</span>
                                             <span class="wf-queue-preview">
-                                                {{-- The `in_array` below compares against English prose and will
-                                                     need to move to a state key when that vocabulary is
-                                                     extracted. --}}
-                                                {!! __('conversations.row.last_report', ['value' => $marked($cobrowseTransport['last_report'], $lastReportValue)]) !!}@if (! in_array($cobrowseTransport['pressure'], ['No drops reported', 'No recent drops reported'], true)) &middot; {!! __('conversations.row.pressure', ['value' => $marked($cobrowseTransport['pressure'], $englishValue)]) !!}@endif
+                                                {!! __('conversations.row.last_report', ['value' => $marked($lastReport, app()->getLocale())]) !!}@if ($cobrowseTransport['has_pressure'] ?? false) &middot; {{ __('conversations.row.pressure', ['value' => \App\Support\CobrowsePressureSentence::for($cobrowseTransport['pressure_counts'] ?? [])]) }}@endif
                                             </span>
                                         </td>
                                         <td>

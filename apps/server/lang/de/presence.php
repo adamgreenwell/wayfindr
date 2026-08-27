@@ -2,7 +2,7 @@
 
 // See lang/en/presence.php for why this is its own catalogue.
 return [
-    'any' => 'Beliebiger Status',
+    'any' => 'Beliebiger Präsenzstatus',
     'active' => 'Kürzlich aktiv',
     'recent' => 'Vor Kurzem aktiv',
     'quiet' => 'Ruhig',

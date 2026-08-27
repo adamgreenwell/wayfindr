@@ -181,6 +181,38 @@ function conversationQueueLanguageWorld(int $conversations = 3): array
                     'reconnects' => 0,
                     'dropped_batches' => 0,
                 ],
+                // A snapshot, a mutation stream and page state, so the
+                // replay preview, the drift line, the snapshot panel and the
+                // page-state grid all render. Without these that half of the
+                // panel is absent and every assertion over it is vacuous --
+                // two mutations survived on exactly that.
+                'snapshot' => [
+                    'reported_at' => now()->subMinutes(9)->toJSON(),
+                    'node_count' => 120,
+                    'masked_count' => 4,
+                    'html' => '<p>Datenpunkt</p>',
+                    'text' => 'Datenpunkt snapshot text',
+                    'page_url' => 'https://datenpunkt.test/checkout',
+                    'title' => 'Datenpunkt checkout',
+                ],
+                'mutations' => [
+                    'batch_count' => 3,
+                    'mutation_count' => 7,
+                    'dropped_count' => 2,
+                    'skipped_count' => 1,
+                    'last_sequence' => 12,
+                    'last_page_url' => 'https://datenpunkt.test/checkout',
+                ],
+                'page_state' => [
+                    'viewport_width' => 1440,
+                    'viewport_height' => 900,
+                    'scroll_x' => 0,
+                    'scroll_y' => 240,
+                    'focused' => true,
+                    'page_url' => 'https://datenpunkt.test/checkout',
+                    'title' => 'Datenpunkt checkout',
+                    'visibility_state' => 'visible',
+                ],
                 // A fulfilled resync request, so the recovery timeline renders.
                 // Without one the timeline is absent and its timestamps are
                 // audited nowhere -- a mutation that dropped their language
@@ -294,7 +326,13 @@ function conversationQueueLanguageSentences(string $html): array
  */
 function conversationQueueLanguageExceptions(): array
 {
-    return ['Unavailable'];
+    // Empty, and deliberately kept rather than deleted.
+    //
+    // It held 'Unavailable' while the cobrowse vocabulary was untranslated. The
+    // test below asserted every entry still RENDERED, so that extracting
+    // cobrowse would fail it and force the entry out rather than let a stale
+    // exemption quietly cover a real miss. That is exactly what happened.
+    return [];
 }
 
 test('nothing on the conversation queue reads the same in both languages', function (): void {
@@ -438,8 +476,14 @@ test('the recorded exception is still real', function (): void {
     );
 
     foreach (conversationQueueLanguageExceptions() as $exception) {
-        expect($rendered)->toContain($exception);
+        $this->assertContains($exception, $rendered,
+            "the exemption '{$exception}' no longer renders, so it is covering nothing and should be removed");
     }
+
+    // An empty list is the goal, not a hole: when it empties, the exemption
+    // machinery must stop granting anything at all.
+    expect(conversationQueueLanguageExceptions())->toBe([],
+        'an exemption was added -- record why in docs/product/dashboard-language.md');
 });
 
 test('the row copy an elapsed time hides is translated too', function (): void {
@@ -687,7 +731,7 @@ test('the form labels and the untitled fallback are translated', function (): vo
     $germanLabels = $labelsOf($world['agents']['de']);
 
     expect($englishLabels)->toBe(['Search', 'Site', 'Presence'])
-        ->and($germanLabels)->toBe(['Suche', 'Website', 'Status']);
+        ->and($germanLabels)->toBe(['Suche', 'Website', 'Präsenzstatus']);
 
     $english = conversationQueueLanguageVisibleText(
         $this->actingAs($world['agents']['en'])->get(route('dashboard.conversations.index'))->getContent()
@@ -724,11 +768,11 @@ test('the attention lane heading is a sentence, not a clause in a number slot', 
 
     // The shape that was broken: a whole clause dropped into the slot the other
     // lanes fill with a number.
-    expect($german)->not->toContain('benötigt Aufmerksamkeit von')
-        ->and($german)->not->toContain('benötigen Aufmerksamkeit von')
+    expect($german)->not->toContain('erfordert Aufmerksamkeit von')
+        ->and($german)->not->toContain('erfordern Aufmerksamkeit von')
         ->and($english)->not->toContain('needs attention shown of');
 
-    expect($german)->toContain('1 von 3 passenden Unterhaltungen benötigt Aufmerksamkeit')
+    expect($german)->toContain('1 von 3 passenden Unterhaltungen erfordert Aufmerksamkeit')
         ->and($english)->toContain('1 of 3 matching conversations needs attention')
         // Dative, not nominative: German inflects the adjective for case too,
         // and every sentence using this count reads "von :matching".
@@ -790,17 +834,15 @@ test('zero takes the plural, which no explicit rule in the catalogue says', func
         ->and($english)->not->toContain('0 conversation matching');
 });
 
-test('the cobrowse exception says it is English, value and all', function (): void {
-    // Every string CobrowseConsentState supplies is still English, and it is
-    // rendered inside a region marked with the agent's language -- so without
-    // saying so, a screen reader pronounces the one deliberately untranslated
-    // cell on the page with German phonetics. Same rule the profile page's
-    // exception follows.
+test('the queue cobrowse cell marks only what is still English', function (): void {
+    // This test used to assert the whole cell claimed English. The transport
+    // vocabulary is extracted now, so the cell inherits the document language
+    // and only the values that are STILL English carry a marker.
     //
-    // The awkward half is the two mixed sentences: a German label wrapping an
-    // English value. Splitting them to wrap the value would be the fragment
-    // concatenation this extraction refuses, so the marked value goes in as the
-    // placeholder instead.
+    // The awkward half is unchanged: a German label wrapping a value that may
+    // be English, in one sentence whose word order the catalogue owns.
+    // Splitting it to wrap the value would be the fragment concatenation this
+    // extraction refuses, so the marked value goes in as the placeholder.
     $world = conversationQueueLanguageWorld();
 
     $html = (string) $this->actingAs($world['agents']['de'])
@@ -808,31 +850,43 @@ test('the cobrowse exception says it is English, value and all', function (): vo
         ->assertOk()
         ->getContent();
 
-    // The wholly-English cell: label, and the message/guidance in its title.
-    expect($html)->toContain('class="wf-queue-cobrowse"')
-        ->and($html)->toMatch('/<span\s+class="wf-queue-cobrowse"\s+lang="en"/');
+    expect($html)->toContain('class="wf-queue-cobrowse"');
 
-    // And the English value inside an otherwise German sentence.
-    expect($html)->toContain('Letzte Meldung <span lang="en">Not reported</span>');
+    // The cell no longer claims English, because its copy is translated.
+    expect($html)->not->toMatch('/<span\s+class="wf-queue-cobrowse"\s+lang="en"/');
 
-    // An English agent gets the same markup, because the exception is about
-    // the copy's language rather than about the reader's.
+    // And it renders German.
+    expect($html)->toContain(__('cobrowse.transport.inactive.label', [], 'de'));
+
+    // `last_report` with no report yet is translated, where it used to be the
+    // English literal marked English. This is the queue's most common row --
+    // a conversation with no cobrowse session at all takes the default payload
+    // -- so it was the most repeated untranslated string on the page, once per
+    // row, and the marker made it look deliberate.
+    expect($html)->toContain('Letzte Meldung <span lang="de">'.__('cobrowse.units.not_reported', [], 'de').'</span>');
+
+    $this->assertStringNotContainsString(__('cobrowse.units.not_reported', [], 'en'), $html,
+        'the English not-reported literal is still on the German queue');
+
+    // An English agent gets the same sentence in English. The marker follows
+    // the page's language now, because both branches of the value do.
     $inEnglish = (string) $this->actingAs($world['agents']['en'])
         ->get(route('dashboard.conversations.index'))
         ->assertOk()
         ->getContent();
 
-    expect($inEnglish)->toContain('Last report <span lang="en">Not reported</span>');
+    expect($inEnglish)->toContain('Last report <span lang="en">'.__('cobrowse.units.not_reported', [], 'en').'</span>');
 });
 
 test('a localised cobrowse timestamp is marked German, not English', function (): void {
-    // `last_report` is the static "Not reported" ONLY in the `unavailable`
-    // state. Every other state builds it with `diffForHumans()`, which follows
+    // With a report, `last_report` is built by `diffForHumans()`, which follows
     // the page's locale -- so on this route it is already German. Marking that
     // English has a screen reader pronounce German as English, which is the
     // same defect as leaving it unmarked, pointing the other way.
     //
-    // Decided from the state rather than by reading the prose.
+    // Decided from the model's `last_report_reported`, not from the state and
+    // not by reading the prose. The state agreed with the discriminator here,
+    // which is exactly why deciding from it looked correct for so long.
     $world = conversationQueueLanguageWorld();
 
     $this->instance(CobrowseConsentState::class, new class(app(CobrowseReplayPreview::class), app(CobrowseResyncRequestPolicy::class), app(CobrowseSnapshotFreshness::class), app(CobrowseTransportPressure::class)) extends CobrowseConsentState
@@ -841,11 +895,19 @@ test('a localised cobrowse timestamp is marked German, not English', function ()
         {
             return [
                 'state' => 'live',
+                'copy' => 'live',
+                'guidance_copy' => 'guidance',
+                'has_pressure' => true,
                 'label' => 'Live',
                 'message' => 'x',
                 // What `diffForHumans()` returns once the locale is German.
                 'last_report' => 'vor 20 Sekunden',
+                'last_report_reported' => true,
                 'pressure' => '2 dropped batches',
+                // The counts, which is what the row now composes from. The
+                // English string above is left in place because other callers
+                // still read it; the queue no longer does.
+                'pressure_counts' => ['dropped_batches' => 2, 'skipped_mutations' => 0],
                 'guidance' => 'x',
                 'recovery_action' => 'x',
                 'tone' => 'ready',
@@ -860,9 +922,12 @@ test('a localised cobrowse timestamp is marked German, not English', function ()
 
     expect($html)->toContain('Letzte Meldung <span lang="de">vor 20 Sekunden</span>')
         ->and($html)->not->toContain('<span lang="en">vor 20 Sekunden</span>')
-        // The pressure value beside it IS static English -- English words and
-        // an English pluraliser -- so it stays marked English.
-        ->and($html)->toContain('<span lang="en">2 dropped batches</span>');
+        // The pressure value used to be static English -- English words and an
+        // English pluraliser -- and this asserted that it was at least MARKED
+        // English. It is now composed from the counts in the reader's language,
+        // so there is nothing left to mark and nothing left in English.
+        ->and($html)->toContain(trans_choice('cobrowse.pressure.dropped', 2, ['count' => 2], 'de'))
+        ->and($html)->not->toContain('2 dropped batches');
 });
 
 test('a cobrowse value is escaped, not trusted', function (): void {
@@ -879,8 +944,15 @@ test('a cobrowse value is escaped, not trusted', function (): void {
         {
             return [
                 'state' => 'unavailable',
+                'copy' => 'inactive',
+                'guidance_copy' => 'guidance',
+                'has_pressure' => true,
                 'label' => 'Unavailable',
                 'message' => 'x',
+                // Reported, so the value below is what renders. Left unreported
+                // this test would assert escaping of a string the view never
+                // takes from the model.
+                'last_report_reported' => true,
                 'last_report' => '<script>alert(1)</script>',
                 'pressure' => 'No drops reported',
                 'guidance' => 'x',
@@ -1009,10 +1081,13 @@ function conversationQueueLanguageCognates(): array
         'Ticket' => 'the same word in both languages, singular',
         'Status' => 'the same word in both languages',
         'Normal' => 'the same word in both languages, as a priority',
+        'Live' => 'the same word in both languages, as a transport state',
+        'URL' => 'the same word in both languages',
         'Label' => 'a loanword German uses as-is',
         'Labels' => 'a loanword German uses as-is',
         'English' => 'an autonym -- the language selector names each language in its own language',
         'Deutsch' => 'an autonym -- see above',
+        'Italiano' => 'an autonym -- see above',
     ];
 }
 
@@ -1468,15 +1543,15 @@ test('live updates render every field in the reading agent language', function (
     }
 });
 
-test('the cobrowse panel announces both its languages correctly', function (): void {
-    // The panel is half-extracted: its chrome is translated, its vocabulary is
-    // not. Both halves have to announce correctly, and the two failures are
-    // mirror images -- marking the whole panel English made a screen reader
-    // pronounce the German headings with English rules, and taking the marker
-    // off left bare English words like "Received" announced as German.
+test('the cobrowse panel is an ordinary part of the page now', function (): void {
+    // This test used to assert the panel declared itself English and reset each
+    // translated fragment inside it. The vocabulary is extracted, so the
+    // declaration is gone and so are the hundred resets that existed only to
+    // undo it. The assertion inverted rather than being deleted, which is the
+    // whole point of having written it as a condition to be met.
     //
-    // So the panel states English and every translated fragment resets. That
-    // is complete by construction: anything missed stays English, which it is.
+    // What is still marked is marked for what it IS: the visitor's own page
+    // title and URLs are neither our English nor the agent's German.
     $world = conversationQueueLanguageWorld();
     $conversation = Conversation::query()->firstOrFail();
 
@@ -1485,31 +1560,34 @@ test('the cobrowse panel announces both its languages correctly', function (): v
         ->assertOk()
         ->getContent();
 
-    $announcements = conversationQueueLanguageAnnouncements($page);
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$page);
+    $xpath = new DOMXPath($document);
 
-    $languageOf = function (string $needle) use ($announcements): ?string {
-        foreach ($announcements as $announcement) {
-            if ($needle !== '' && str_contains($announcement['text'], $needle)) {
-                return $announcement['language'];
-            }
+    $panel = $xpath->query('//*[@data-tab-panel="cobrowse"]')->item(0);
+
+    expect($panel)->not->toBeNull()
+        ->and($panel->hasAttribute('lang'))->toBeFalse('the cobrowse panel still declares a language of its own');
+
+    // Nothing inside it claims English any more.
+    foreach ($xpath->query('.//*[@lang="en"]', $panel) as $marked) {
+        $this->fail('the cobrowse panel still marks copy as English: "'.trim($marked->textContent).'"');
+    }
+
+    // And the heading is announced in the agent's language, by inheritance
+    // rather than by a reset.
+    $heading = $xpath->query('.//*[@id="cobrowse-heading"]', $panel)->item(0);
+
+    expect($heading)->not->toBeNull()
+        ->and(trim($heading->textContent))->toBe(__('conversations.detail.tabs.cobrowse', [], 'de'));
+
+    for ($node = $heading; $node instanceof DOMElement; $node = $node->parentNode) {
+        if ($node->hasAttribute('lang')) {
+            expect($node->getAttribute('lang'))->toBe('de',
+                'the cobrowse heading inherits a language that is not the document\'s');
+
+            break;
         }
-
-        return null;
-    };
-
-    // Translated chrome, announced in the agent's language.
-    $heading = __('conversations.detail.tabs.cobrowse', [], 'de');
-
-    expect($languageOf($heading))->toBe('de', 'the translated cobrowse heading is not announced as German');
-
-    // Untranslated vocabulary, announced as English.
-    $consent = app(CobrowseConsentState::class)->forConversation($conversation);
-
-    foreach (['label', 'message'] as $field) {
-        $value = trim((string) ($consent[$field] ?? ''));
-
-        expect($value)->not->toBe('', "the cobrowse {$field} rendered empty, so this proves nothing");
-        expect($languageOf($value))->toBe('en', "the untranslated cobrowse {$field} is not announced as English");
     }
 });
 
@@ -1818,6 +1896,86 @@ test('a write finds its destination without a Referer header', function (): void
         ], 'de'));
 });
 
+test('every extracted cobrowse group renders translated', function (): void {
+    // The leak guard cannot see inside this panel and will not until the
+    // extraction finishes: the panel declares English, so an untranslated
+    // string in it is announced English -- correctly -- and skipped.
+    //
+    // So each group that HAS been extracted is asserted here explicitly. The
+    // list grows as the vocabulary lands, and when it covers the panel the
+    // marker comes off and the ordinary guards take over.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+
+    $page = conversationQueueLanguageVisibleText(
+        (string) $this->actingAs($world['agents']['de'])
+            ->get(route('dashboard.conversations.show', $conversation->support_code))
+            ->assertOk()
+            ->getContent()
+    );
+
+    $extracted = [
+        'cobrowse.consent.granted.label',
+        'cobrowse.consent.granted.message',
+        'cobrowse.actions.end',
+        'cobrowse.resync.fulfilled.label',
+        'cobrowse.resync.fulfilled.message',
+        'cobrowse.timeline.requested.label',
+        'cobrowse.timeline.responded.detail',
+        'cobrowse.timeline.ignored.label',
+        'cobrowse.freshness.fresh.label',
+        'cobrowse.units.unknown_agent',
+    ];
+
+    // Plain keys only: a trans_choice entry resolves to its raw
+    // '{1} one|[2,*] many' form through __(), which never matches a page.
+    foreach ($extracted as $key) {
+        $german = __($key, [], 'de');
+
+        expect($german)->not->toContain('|', "{$key} is a trans_choice entry; this guard only reads plain keys");
+        $english = __($key, [], 'en');
+
+        expect($german)->not->toBe($key, "the key {$key} does not resolve in German");
+
+        $this->assertStringContainsString($german, $page,
+            "the extracted cobrowse key {$key} did not render in German");
+
+        if ($german !== $english) {
+            $this->assertStringNotContainsString($english, $page,
+                "the English for {$key} is still on the German page");
+        }
+    }
+
+    // A session that is still running must not show who stopped it. Asserted
+    // before the session is ended below, because the alternative -- branching
+    // on whether the ended-at text reads 'Still active' -- fails in the
+    // direction that shows MORE than it should once that fallback is
+    // translated, and no language assertion would notice.
+    $this->assertStringNotContainsString(__('conversations.detail.cobrowse.stopped_by', [], 'de'), $page,
+        'an active cobrowse session is showing who ended it');
+
+    // The lifecycle's `ended_by` row only renders once a session has ended, so
+    // nothing above reaches it -- a mutation that made endedByCopy() disagree
+    // with endedByLabel() survived every other test in this file. Seventh
+    // branch in this suite that needed a state before it could be guarded.
+    CobrowseSession::query()
+        ->where('conversation_id', $conversation->id)
+        ->update(['status' => 'ended', 'ended_at' => now()->subMinute()]);
+
+    $ended = conversationQueueLanguageVisibleText(
+        (string) $this->actingAs($world['agents']['de'])
+            ->get(route('dashboard.conversations.show', $conversation->support_code))
+            ->assertOk()
+            ->getContent()
+    );
+
+    $this->assertStringContainsString(__('conversations.detail.cobrowse.stopped_by', [], 'de'), $ended,
+        'an ended cobrowse session does not show who stopped it');
+    $this->assertStringContainsString(__('cobrowse.units.not_recorded', [], 'de'), $ended,
+        'the ended-by fallback did not render in German');
+    $this->assertStringNotContainsString(__('cobrowse.units.not_recorded', [], 'en'), $ended,
+        'the English ended-by fallback is still on the German page');
+});
 test('the realtime handlers hard-code no copy of their own', function (): void {
     // This reads the source rather than the page, which is unusual and is the
     // point: the realtime handlers only run when a broadcast arrives, so no
@@ -1833,7 +1991,7 @@ test('the realtime handlers hard-code no copy of their own', function (): void {
     // its own change, and these names grow to cover them when it lands.
     $source = file_get_contents(resource_path('views/agent/conversations/show.blade.php'));
 
-    $handlers = ['updateVisitorPresence', 'updateVisitorRead', 'fillElapsed', 'elapsedSince'];
+    $handlers = ['updateVisitorPresence', 'updateVisitorRead', 'fillElapsed', 'elapsedSince', 'updateSnapshotFreshness', 'transportHealthFromTelemetry', 'updateTransportHealth', 'recoveryFromSnapshotFreshness', 'updateSnapshotRecovery', 'droppedBatchPressure'];
 
     // The reply composer is a whole script rather than a few handlers, and the
     // announcement walker strips <script> before it looks at anything -- so no
@@ -1973,6 +2131,46 @@ test('nothing German is marked as English', function (): void {
     // Carbon's German relative time, which is what these fields actually emit.
     $germanElapsed = '/\bvor \d+ (Sekunde|Minute|Stunde|Tag|Woche|Monat|Jahr)/u';
 
+    // And every German string we ship that differs from its English. A
+    // translated value rendered inside a region marked English is the same
+    // defect as an untranslated one left unmarked, and the date pattern above
+    // only ever caught the timestamps -- it missed a catalogue value sitting
+    // in the cobrowse panel, which the panel is entitled to declare English.
+    $germanStrings = [];
+
+    foreach (glob(lang_path('de/*.php')) ?: [] as $file) {
+        $englishFile = lang_path('en/'.basename($file));
+
+        if (! file_exists($englishFile)) {
+            continue;
+        }
+
+        $flatten = function (array $values) use (&$flatten): array {
+            $flat = [];
+
+            foreach ($values as $key => $value) {
+                $flat = is_array($value) ? array_merge($flat, $flatten($value)) : array_merge($flat, [$key => $value]);
+            }
+
+            return $flat;
+        };
+
+        $english = array_flip($flatten(require $englishFile));
+
+        foreach ($flatten(require $file) as $value) {
+            // Long enough to be a sentence rather than a word that could
+            // coincide, and genuinely different from the English.
+            if (is_string($value) && mb_strlen($value) > 8 && ! array_key_exists($value, $english)
+                && ! str_contains($value, ':') && ! str_contains($value, '|')) {
+                $germanStrings[] = $value;
+            }
+        }
+    }
+
+    $germanStrings = array_values(array_unique($germanStrings));
+
+    expect($germanStrings)->not->toBe([]);
+
     foreach ($urls as $url) {
         $page = (string) $this->actingAs($world['agents']['de'])->get($url)->assertOk()->getContent();
 
@@ -1987,6 +2185,12 @@ test('nothing German is marked as English', function (): void {
 
             expect(preg_match($germanElapsed, $announcement['text']))->toBe(0,
                 "German announced as English at {$url}: \"{$announcement['text']}\"");
+
+            foreach ($germanStrings as $german) {
+                if (str_contains($announcement['text'], $german)) {
+                    $this->fail("German announced as English at {$url}: \"{$german}\"");
+                }
+            }
         }
     }
 });
@@ -2168,6 +2372,9 @@ test('every catalogue file answers the same set of keys', function (): void {
     // product term. This list is also the shortlist for the native-speaker
     // pass -- these are the words most likely to be wrong.
     $expectedCognates = [
+        'cobrowse.transport.live.label = Live',
+        'cobrowse.pressure.separator = , ',
+        'cobrowse.units.milliseconds = :count ms',
         'conversations.columns.cobrowse = Cobrowse',
         'conversations.detail.headings.ticket = Ticket',
         'conversations.detail.tabs.ticket = Ticket',
@@ -2742,6 +2949,246 @@ test('a reply template says what language its body is in', function (): void {
         ->and($option->getAttribute('lang'))->toBe('', 'a managed template name claims a language it cannot know');
 });
 
+test('every label the page reads is a label the controller supplies', function (): void {
+    // A missing entry here is not a language bug. `realtimeLabels.cobrowseUnits
+    // .applied.replace(...)` on an undefined value is a TypeError, so the whole
+    // handler dies -- and in the preview's case a SUCCESSFUL refresh reported
+    // itself as a failure. I shipped exactly that: two keys consumed, neither
+    // supplied, every test green.
+    //
+    // Nothing executes this script in the suite, so the two halves are compared
+    // instead: every dotted path the source reads must resolve in the table the
+    // controller renders.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+
+    config([
+        'broadcasting.default' => 'reverb',
+        'broadcasting.connections.reverb.key' => 'language-test-key',
+        'broadcasting.connections.reverb.options.host' => 'localhost',
+        'broadcasting.connections.reverb.options.port' => 8080,
+        'broadcasting.connections.reverb.options.scheme' => 'http',
+    ]);
+
+    $page = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent();
+
+    preg_match('/var realtimeLabels = (\{.*?\});/s', $page, $found);
+
+    expect($found)->not->toBe([], 'no realtime label table rendered');
+
+    $labels = json_decode(html_entity_decode($found[1], ENT_QUOTES), true);
+
+    expect($labels)->toBeArray();
+
+    // Dotted paths only -- a bracket lookup is dynamic and cannot be resolved
+    // from the source, and those already fall back with `||`.
+    preg_match_all('/realtimeLabels((?:\.[A-Za-z_][A-Za-z0-9_]*)+)/', $page, $paths);
+
+    $missing = [];
+
+    foreach (array_unique($paths[1]) as $path) {
+        $node = $labels;
+
+        foreach (array_filter(explode('.', $path)) as $segment) {
+            // Once the path resolves to a string the rest is a method call on
+            // it -- `.replace`, `.toLocaleString`. The label itself is what
+            // this checks, not what the script then does with it.
+            if (is_string($node)) {
+                break;
+            }
+
+            if (! is_array($node) || ! array_key_exists($segment, $node)) {
+                $missing[] = 'realtimeLabels'.$path;
+
+                continue 2;
+            }
+
+            $node = $node[$segment];
+        }
+    }
+
+    expect($missing)->toBe([], 'the page reads a label the controller never supplies, which is a TypeError at runtime');
+});
+
+test('the cobrowse states the fixture does not reach are translated too', function (): void {
+    // Two branches the standing fixture cannot show: a page the widget could
+    // not name, and a resync still pending (the fixture's is fulfilled). Both
+    // survived a mutation because neither renders in the default state.
+    //
+    // The untitled fallback is the more interesting one -- it is OUR copy
+    // wearing the visitor's clothes, and marking it `lang=""` both mispronounces
+    // it and hides it from the leak guard, which skips unknown-language text by
+    // design. A wrong marker is not a smaller mistake than a missing one.
+    $world = conversationQueueLanguageWorld();
+    $session = conversationQueueLanguageCobrowseSession();
+    $conversation = $session->conversation;
+
+    $metadata = $session->metadata;
+    $metadata['snapshot']['title'] = null;
+    $metadata['page_state']['title'] = null;
+    $metadata['resync_request'] = [
+        'id' => 'resync-pending-fixture',
+        'requested_by_name' => 'Support',
+        'requested_at' => now()->subSeconds(30)->toJSON(),
+        'fulfilled_at' => null,
+    ];
+
+    $session->forceFill(['metadata' => $metadata])->save();
+
+    $html = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent();
+
+    $page = conversationQueueLanguageVisibleText($html);
+
+    $this->assertStringContainsString(__('cobrowse.units.untitled_page', [], 'de'), $page,
+        'the untitled-page fallback did not render in German');
+    $this->assertStringNotContainsString(__('cobrowse.units.untitled_page', [], 'en'), $page,
+        'the English untitled-page fallback is still on the German page');
+
+    // The retry timer's copy travels in data- attributes, which the
+    // announcement walker does not read -- it only knows the accessible ones.
+    // Asserted directly.
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+
+    $form = (new DOMXPath($document))->query('//form[@data-resync-retry-form]')->item(0);
+
+    expect($form)->not->toBeNull('no pending retry form rendered, so this proves nothing');
+
+    foreach ([
+        'data-retry-label' => 'cobrowse.labels.request_another_snapshot',
+        'data-retry-ready-help' => 'cobrowse.labels.retry_ready_help',
+        'data-retry-ready-recovery' => 'cobrowse.labels.retry_ready_recovery',
+    ] as $attribute => $key) {
+        expect($form->getAttribute($attribute))->toBe(__($key, [], 'de'),
+            "{$attribute} is not the German the timer will write");
+    }
+});
+
+test('a transport with no reports yet says so in German', function (): void {
+    // A third branch the standing fixture cannot show, and the one that got
+    // through: between consent and the first transport heartbeat the value was
+    // the English literal "Not reported", explicitly marked `lang="en"`. The
+    // panel's own no-English guard therefore read it as deliberate and passed.
+    //
+    // The realtime handler already wrote German for this state, so the agent
+    // saw English only until the first update landed -- and that update assigns
+    // `textContent` to this element, which would have destroyed the marker
+    // anyway. Two languages for one state, decided by timing.
+    $world = conversationQueueLanguageWorld();
+    $session = conversationQueueLanguageCobrowseSession();
+    $conversation = $session->conversation;
+
+    $metadata = $session->metadata;
+    unset(
+        $metadata['telemetry']['reported_at'],
+        $metadata['page_state']['reported_at'],
+        $metadata['snapshot']['reported_at'],
+        $metadata['mutations']['last_reported_at'],
+    );
+
+    $session->forceFill(['metadata' => $metadata])->save();
+
+    $html = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+
+    $field = $xpath->query('//*[@data-cobrowse-transport-last-report]')->item(0);
+
+    expect($field)->not->toBeNull('the transport field did not render, so this proves nothing');
+
+    expect(trim($field->textContent))->toBe(__('cobrowse.units.not_reported', [], 'de'),
+        'the not-reported transport state is not in the agent\'s language');
+
+    // And it carries no language of its own. The translated value belongs to
+    // the page exactly as the timestamp it stands in for does, so there is
+    // nothing left here for the realtime handler to overwrite.
+    expect($field->hasAttribute('lang'))->toBeFalse('the transport field still declares a language');
+
+    foreach ($xpath->query('.//*[@lang]', $field) as $marked) {
+        $this->fail('the transport field still marks a fragment: "'.trim($marked->textContent).'"');
+    }
+});
+
+test('a partial page-state report is still German', function (): void {
+    // The panel's English boundary used to cover these. A visitor page that
+    // reports SOME of itself is an ordinary state -- a browser that gave a
+    // title but no URL, a report before the first scroll -- and every one of
+    // those fields fell back to the literal "Not reported", which then
+    // inherited German and was announced in it.
+    //
+    // The leak guard cannot see these: each is a value, and a string with a
+    // digit in it is skipped as data.
+    $world = conversationQueueLanguageWorld();
+    $session = conversationQueueLanguageCobrowseSession();
+    $conversation = $session->conversation;
+
+    $metadata = $session->metadata;
+
+    // Everything the visitor's browser could decline to report, declined at
+    // once -- while the title stays, so the panel still renders.
+    unset(
+        $metadata['page_state']['page_url'],
+        $metadata['page_state']['viewport_width'],
+        $metadata['page_state']['viewport_height'],
+        $metadata['page_state']['scroll_x'],
+        $metadata['page_state']['scroll_y'],
+        $metadata['snapshot']['page_url'],
+        $metadata['mutations']['last_page_url'],
+    );
+
+    $session->forceFill(['metadata' => $metadata])->save();
+
+    $html = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent();
+
+    $page = conversationQueueLanguageVisibleText($html);
+
+    $this->assertStringContainsString(__('cobrowse.units.not_reported', [], 'de'), $page,
+        'the not-reported fallback did not render in German');
+    $this->assertStringNotContainsString(__('cobrowse.units.not_reported', [], 'en'), $page,
+        'an English not-reported literal is still on the German page');
+});
+
+test('a reported byte count is German too', function (): void {
+    // "500 bytes" is a value with an English word welded to it, and the leak
+    // guard skips it for the digit. Every other count on this panel renders
+    // through the catalogue from a `_value`; these two rendered the model's
+    // own sentence, so German agents read "Bytes" as "bytes".
+    $world = conversationQueueLanguageWorld();
+    $session = conversationQueueLanguageCobrowseSession();
+    $conversation = $session->conversation;
+
+    $metadata = $session->metadata;
+    $metadata['telemetry']['payload_bytes'] = 2048;
+    $metadata['telemetry']['max_payload_bytes'] = 4096;
+    $session->forceFill(['metadata' => $metadata])->save();
+
+    $html = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent();
+
+    $page = conversationQueueLanguageVisibleText($html);
+
+    $this->assertStringContainsString(__('cobrowse.units.bytes', ['count' => number_format(2048)], 'de'), $page,
+        'the payload size is not in the agent language');
+    $this->assertStringNotContainsString(__('cobrowse.units.bytes', ['count' => number_format(2048)], 'en'), $page,
+        'the English byte unit is still on the German page');
+});
+
 test('a region that declares English is English all the way down', function (): void {
     // `diffForHumans()` follows whatever locale the request scoped, so once
     // this route was extracted an unextracted class started building 'Reported
@@ -2807,6 +3254,46 @@ test('this file never passes a message to a variadic matcher', function (): void
     }
 
     expect($offenders)->toBe([], 'a message passed to a variadic matcher, where it becomes a second needle and the assertion always passes');
+});
+
+test('the snapshot age is German on the first paint, not only after an update', function (): void {
+    // CobrowseSnapshotFreshness pins English deliberately -- a broadcast builds
+    // it too, from a queue worker with no reader whose language it could
+    // follow. The realtime handler never reads that value; it formats the raw
+    // timestamp client-side.
+    //
+    // The server's FIRST paint is the one thing that handler has not
+    // overwritten, and it interpolated the pinned English duration into a
+    // German sentence: "Gemeldet 2 minutes ago".
+    $world = conversationQueueLanguageWorld();
+    $session = conversationQueueLanguageCobrowseSession();
+    $conversation = $session->conversation;
+
+    $metadata = $session->metadata;
+    $metadata['snapshot']['reported_at'] = now()->subMinutes(2)->toJSON();
+    $session->forceFill(['metadata' => $metadata])->save();
+
+    $html = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+
+    $reported = (new DOMXPath($document))
+        ->query('//*[@data-cobrowse-snapshot-freshness-reported]')
+        ->item(0);
+
+    expect($reported)->not->toBeNull('the freshness line did not render, so this proves nothing');
+
+    $text = trim($reported->textContent);
+
+    // German all the way through: the sentence AND the duration inside it.
+    $this->assertStringContainsString('vor ', $text,
+        "the snapshot age is still English on the first paint: {$text}");
+    $this->assertStringNotContainsString('ago', $text,
+        "an English duration is still on the German panel: {$text}");
 });
 
 test('no unreplaced placeholder ever reaches the page', function (): void {
@@ -3383,5 +3870,53 @@ test('the linked ticket panel is translated, values and all', function (): void 
 
     foreach (['Opened ', 'Waiting on', 'No activity preview yet', 'Open the ticket to add context'] as $english) {
         $this->assertStringNotContainsString($english, $german, "English left in the linked ticket panel: {$english}");
+    }
+});
+
+test('a German cobrowse sentence is never marked English because its value is', function (): void {
+    // The leak guard reads the effective `lang` and skips anything declaring
+    // itself English, which is correct for a recorded exception and blind to a
+    // MISMARKED region. So this asserts the thing the guard cannot: a sentence
+    // that comes from the German catalogue must not sit inside `lang="en"`.
+    //
+    // The bug: `x-lang` wrapped the whole `Läuft ab :elapsed` sentence and took
+    // its language from the VALUE, so an unparseable timestamp -- which makes
+    // `expiresAt()` null and the formatter emit the English `Expiry
+    // unavailable` -- marked the German sentence as English too. A wrong marker
+    // is not a smaller mistake than a missing one.
+    $world = conversationQueueLanguageWorld();
+    $session = conversationQueueLanguageCobrowseSession();
+    $conversation = $session->conversation;
+
+    $metadata = $session->metadata;
+    $metadata['resync_request'] = [
+        'id' => 'resync-unparseable-fixture',
+        'requested_by_name' => 'Support',
+        'requested_at' => 'not-a-timestamp',
+        'fulfilled_at' => null,
+    ];
+
+    $session->forceFill(['metadata' => $metadata])->save();
+
+    $html = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent();
+
+    // Every German catalogue sentence for this panel, wherever it appears, must
+    // not be inside a region announcing itself as English.
+    foreach (['cobrowse.labels.expires', 'cobrowse.labels.received', 'cobrowse.labels.expired'] as $key) {
+        $sentence = trim(str_replace(':elapsed', '', __($key, [], 'de')));
+
+        if ($sentence === '' || ! str_contains($html, $sentence)) {
+            continue;
+        }
+
+        $before = substr($html, 0, strpos($html, $sentence));
+        $openedEnglish = strrpos($before, '<span lang="en">');
+        $closedSince = $openedEnglish === false ? false : strpos($before, '</span>', $openedEnglish);
+
+        expect($openedEnglish === false || $closedSince !== false)
+            ->toBeTrue("German sentence for {$key} is inside an English-marked region");
     }
 });
