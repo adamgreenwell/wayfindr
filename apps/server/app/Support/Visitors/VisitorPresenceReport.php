@@ -6,7 +6,6 @@ namespace App\Support\Visitors;
 
 use App\Models\Site;
 use App\Models\Visitor;
-use Illuminate\Support\Carbon;
 
 /**
  * Record that somebody is on a site right now (ADR 0019).
@@ -28,39 +27,17 @@ final class VisitorPresenceReport
 
         $now = now();
 
+        // `current_visit_started_at` is NOT set here. The model maintains it
+        // from whatever replaces `last_seen_at`, so bootstrap, conversation
+        // start, message fetch and typing all get the same transition -- and a
+        // returning visitor who opens the panel before their first heartbeat
+        // still starts a new visit rather than resuming one from days ago.
         $visitor->forceFill([
             'metadata' => $this->metadata($visitor, $pageUrl),
-            'current_visit_started_at' => $this->visitStartedAt($visitor, $now),
             'last_seen_at' => $now,
         ])->save();
 
         return $visitor;
-    }
-
-    /**
-     * When the visit this report belongs to began.
-     *
-     * A gap long enough to read as `quiet` is long enough to call the next
-     * report a new visit, so this reuses `VisitorPresence`'s existing recent
-     * window rather than inventing a session length.
-     *
-     * The first clause is load-bearing rather than defensive: a visitor's
-     * OPENING heartbeat has no previous one to be older than, so a rule written
-     * only around the gap would never start a visit at all and every new
-     * visitor would be left without the field the board exists to show.
-     */
-    private function visitStartedAt(Visitor $visitor, Carbon $now): Carbon
-    {
-        $lastSeen = $visitor->last_seen_at;
-        $current = $visitor->current_visit_started_at;
-
-        if ($lastSeen === null || $current === null) {
-            return $now;
-        }
-
-        return $lastSeen->lt($now->copy()->subMinutes(VisitorPresence::RECENT_MINUTES))
-            ? $now
-            : $current;
     }
 
     /**

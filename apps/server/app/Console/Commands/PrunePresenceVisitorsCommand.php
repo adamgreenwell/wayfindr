@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Models\Visitor;
+use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Delete visitors who never made contact and have stopped coming back.
@@ -53,10 +55,11 @@ class PrunePresenceVisitorsCommand extends Command
             ->whereDoesntHave('conversations')
             ->whereDoesntHave('tickets')
             ->orderBy('id')
-            ->chunkById(500, function ($visitors) use (&$deleted): void {
+            ->chunkById(500, function ($visitors) use (&$deleted, $cutoff): void {
                 foreach ($visitors as $visitor) {
-                    $visitor->delete();
-                    $deleted++;
+                    if ($this->deleteIfStillStale((int) $visitor->id, $cutoff)) {
+                        $deleted++;
+                    }
                 }
             });
 
@@ -65,6 +68,45 @@ class PrunePresenceVisitorsCommand extends Command
             : sprintf('Deleted %d presence-only visitor(s) last seen over %d days ago.', $deleted, $days));
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Delete only if the reasons still hold, checked under a lock.
+     *
+     * The chunk is a snapshot. A visitor selected as stale can heartbeat, open
+     * a chat or raise a ticket before the loop reaches them, and an
+     * unconditional delete by primary key ignores all of it -- worse than
+     * useless, because `conversations.visitor_id` cascades, so the support
+     * request that just landed is deleted along with them. Reversed, an insert
+     * arriving after the delete fails on a foreign key and the visitor is told
+     * their message could not be sent.
+     *
+     * So the predicates are re-evaluated inside the transaction that deletes,
+     * against a locked row, rather than trusted from the earlier read.
+     */
+    private function deleteIfStillStale(int $id, CarbonInterface $cutoff): bool
+    {
+        return (bool) DB::transaction(function () use ($id, $cutoff): bool {
+            $visitor = Visitor::query()->whereKey($id)->lockForUpdate()->first();
+
+            if ($visitor === null) {
+                return false;
+            }
+
+            if ($visitor->last_seen_at === null || $visitor->last_seen_at->greaterThanOrEqualTo($cutoff)) {
+                // They came back while we were working, which is the best
+                // possible reason not to delete somebody.
+                return false;
+            }
+
+            if ($visitor->conversations()->exists() || $visitor->tickets()->exists()) {
+                return false;
+            }
+
+            $visitor->delete();
+
+            return true;
+        });
     }
 
     private function retentionDays(): int
