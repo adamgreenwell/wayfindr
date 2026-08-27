@@ -1603,3 +1603,82 @@ test('opening the panel early does not turn presence off', async (t) => {
     'opening the panel early left the visitor reported by neither path',
   );
 });
+
+test('a site that keeps no addresses still keeps none after presence stops', async (t) => {
+  // Turning presence off clears the config, and reading the page-address
+  // setting from a cleared config makes it look unknown -- so a site that had
+  // said "never keep page addresses" got them again from bootstrap the moment
+  // reporting stopped. That is the wrong direction for it to fail in.
+  let reports = true;
+
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/pricing',
+  });
+
+  const calls = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 20,
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, {
+          data: { appearance: { position: 'right' }, presence: { reports: true, every: 45, page_urls: false } },
+        });
+      }
+
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return jsonResponse(200, {
+          data: {
+            site: { public_key: 'site_public_shop', settings: {}, color: 'blue', presence: { reports, every: 45, page_urls: false } },
+            visitor: { anonymous_id: 'anon-shop', token: 'visitor-token-shop' },
+          },
+        });
+      }
+
+      return jsonResponse(202, { data: { reports, every: 45, page_urls: false } });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  // The operator switches presence off; the next heartbeat answer stops it.
+  reports = false;
+
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  await settle();
+
+  // The visitor then opens the panel, long after reporting stopped.
+  await widget.open();
+  await settle();
+
+  const bootstrap = calls.filter((c) => c.url.endsWith('/api/widget/bootstrap'));
+
+  assert.ok(bootstrap.length > 0, 'the panel never bootstrapped, so this proves nothing');
+  assert.ok(
+    bootstrap.every((c) => !c.body.page_url),
+    'an address came back once reporting stopped, on a site that keeps none',
+  );
+});

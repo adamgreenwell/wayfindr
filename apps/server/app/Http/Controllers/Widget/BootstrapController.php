@@ -43,6 +43,13 @@ class BootstrapController extends Controller
         // Once and no more: after a conflict the row exists, so a second
         // failure is some other constraint and a loop would make it a hot one
         // on a public endpoint.
+        // The site as it stood at the WRITE, carried back out so the payload and
+        // the write agree. stampVisitor() reads the locked row while this
+        // response was built from the copy the request arrived with, so a
+        // revocation landing in between produced an answer telling the widget
+        // to keep reporting against a setting the write had already refused.
+        $current = $site;
+
         try {
             // Wrapped for the same reason as VisitorPresenceReport: on
             // PostgreSQL a constraint violation aborts the surrounding
@@ -50,18 +57,30 @@ class BootstrapController extends Controller
             // every statement. DB::transaction() is a real transaction standing
             // alone and a SAVEPOINT inside a caller's, and either is enough to
             // leave something usable to retry on.
-            $visitor = DB::transaction(fn (): Visitor => $this->stampVisitor($site, $validated, $visitorContextSanitizer));
+            $visitor = DB::transaction(function () use ($site, $validated, $visitorContextSanitizer, &$current): Visitor {
+                // A real closure with `&$current`, not an arrow function: those
+                // capture by VALUE, so the by-reference parameter would bind to
+                // the closure's own copy and the locked site never reaches the
+                // payload.
+                return $this->stampVisitor($site, $validated, $visitorContextSanitizer, $current);
+            });
         } catch (UniqueConstraintViolationException) {
             // Wrapped as well. Outside a transaction every statement
             // autocommits, so the lockForUpdate() inside stampVisitor() is
             // released the moment its select finishes -- which is exactly when
             // it is supposed to still be held.
-            $visitor = DB::transaction(fn (): Visitor => $this->stampVisitor($site, $validated, $visitorContextSanitizer));
+            $visitor = DB::transaction(function () use ($site, $validated, $visitorContextSanitizer, &$current): Visitor {
+                // A real closure with `&$current`, not an arrow function: those
+                // capture by VALUE, so the by-reference parameter would bind to
+                // the closure's own copy and the locked site never reaches the
+                // payload.
+                return $this->stampVisitor($site, $validated, $visitorContextSanitizer, $current);
+            });
         }
 
         return response()->json([
             'data' => [
-                'site' => $this->sitePayload($site, SiteIntake::knownFor($visitor)),
+                'site' => $this->sitePayload($current, SiteIntake::knownFor($visitor)),
                 'visitor' => [
                     'anonymous_id' => $visitor->anonymous_id,
                     'token' => $visitorSessionToken->issue($site, $visitor),
@@ -83,7 +102,7 @@ class BootstrapController extends Controller
     /**
      * @param  array<string, mixed>  $validated
      */
-    private function stampVisitor(Site $site, array $validated, VisitorContextSanitizer $visitorContextSanitizer): Visitor
+    private function stampVisitor(Site $site, array $validated, VisitorContextSanitizer $visitorContextSanitizer, ?Site &$current = null): Visitor
     {
         $visitor = Visitor::query()->firstOrNew([
             'site_id' => $site->id,
