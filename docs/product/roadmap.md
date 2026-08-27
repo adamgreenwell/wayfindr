@@ -56,10 +56,14 @@ The product has moved past a spine. It now includes:
 - Visitor presence collection (ADR 0019) — heartbeat, disclosure, decline, and a
   thirty-day retention window that is the product's first automatic one.
 
-  **Dormant until the board ships.** No dashboard surface writes the per-site
-  switch, so nothing reports and no visitor sees a notice. That is the intended
-  order: the machinery is reviewable on its own, and the toggle arrives with the
-  board that makes it worth enabling.
+  **Off until an operator turns it on.** The switch lives on the site page under
+  *Live visitor presence*, behind the same permission as the masking rules, and
+  a default install reports nothing and shows no visitor any notice. Turning it
+  off again deletes the visitors it collected who never made contact.
+
+  The board that reads it is still in review, so an operator who enables
+  presence today is collecting for the visitor directory rather than for a live
+  view.
 
 Underneath that, the original foundation:
 
