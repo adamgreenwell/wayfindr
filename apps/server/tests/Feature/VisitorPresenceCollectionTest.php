@@ -13,7 +13,9 @@ use App\Support\Mail\InboundMessage;
 use App\Support\Sites\SitePresenceReporting;
 use App\Support\Visitors\VisitorPresence;
 use App\Support\VisitorSessionToken;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 
@@ -1034,4 +1036,65 @@ test('a heartbeat does not undo context written while it was in flight', functio
 
     expect($metadata['plan'] ?? null)->toBe('pro', 'the heartbeat erased context written while it was in flight')
         ->and($metadata['last_page_url'])->toBe('https://shop.test/checkout');
+});
+
+test('the retention sweep is actually scheduled and resolvable', function (): void {
+    // The whole of ADR 0019 §4 is a promise that rows disappear. That promise
+    // is only as good as the scheduler being able to find the command, and
+    // `bootstrap/app.php` carries an explicit `withCommands()` list that this
+    // command is deliberately NOT in -- it is discovered from
+    // app/Console/Commands, as `wayfindr:expire-idle-cobrowse-sessions` has
+    // been for as long as cobrowse has shipped.
+    //
+    // Written down because the arrangement looks like an omission: anyone
+    // reading the list will wonder, and this answers them without their having
+    // to run the scheduler to find out.
+    expect(array_keys(Artisan::all()))
+        ->toContain('wayfindr:prune-presence-visitors');
+
+    $scheduled = collect(app(Schedule::class)->events())
+        ->map(fn ($event): string => (string) $event->command);
+
+    expect($scheduled->filter(fn (string $c): bool => str_contains($c, 'prune-presence-visitors')))
+        ->not->toBeEmpty('the retention sweep is never run');
+});
+
+test('a heartbeat in flight cannot outlive the revocation', function (): void {
+    // The endpoint checks the setting on the way in. An operator revoking
+    // presence between that check and the write would have their deletion pass
+    // over a row this request then created -- one visitor left behind who never
+    // made contact, on a site that had just said not to watch them, until the
+    // retention sweep. The dashboard promises otherwise in as many words.
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $site = Site::factory()->for($account)->create([
+        'domain' => 'shop.test',
+        'public_key' => 'site_public_revoked',
+        'settings' => ['presence' => ['enabled' => true]],
+    ]);
+
+    $revoked = false;
+
+    // The operator's revocation, landing after the endpoint has read the
+    // setting and before the row is written.
+    Site::retrieved(function (Site $read) use (&$revoked, $site): void {
+        if ($revoked || $read->id !== $site->id) {
+            return;
+        }
+
+        $revoked = true;
+
+        DB::table('sites')->where('id', $site->id)->update([
+            'settings' => json_encode(['presence' => ['enabled' => false]]),
+        ]);
+    });
+
+    test()->postJson(route('widget.presence'), [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-revoked',
+    ])->assertSuccessful();
+
+    expect($revoked)->toBeTrue('the race never happened, so this proves nothing')
+        ->and(Visitor::query()->where('anonymous_id', 'anon-revoked')->exists())
+        ->toBeFalse('a visitor was recorded for a site that had just revoked presence');
 });

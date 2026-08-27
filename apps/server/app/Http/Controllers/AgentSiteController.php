@@ -30,6 +30,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -665,20 +666,27 @@ class AgentSiteController extends Controller
             'page_urls' => (bool) ($validated['presence_page_urls'] ?? false),
         ];
 
-        $site->forceFill(['settings' => $settings])->save();
+        // Locked, because a heartbeat in flight takes the same lock before it
+        // writes. Without that, revoking presence could pass over a row a
+        // request already on its way then created, leaving one visitor behind
+        // on a site that had just said not to watch anybody.
+        $removed = DB::transaction(function () use ($site, $settings, $enabled): int {
+            Site::query()->whereKey($site->getKey())->lockForUpdate()->first();
 
-        // Switching it off is a revocation, so the rows collected under it go.
-        //
-        // Leaving them to age out over thirty days would mean the visitor
-        // directory still listing people who never made contact, on a site
-        // whose operator has just said it should not watch them -- and every
-        // surface describing that list would be saying something the setting
-        // contradicts.
-        //
-        // Only rows this feature created and nobody has since been in touch
-        // through. Somebody who arrived as a heartbeat and later wrote in is a
-        // contact, and stays.
-        $removed = $enabled ? 0 : $this->forgetPresenceOnlyVisitors($site);
+            $site->forceFill(['settings' => $settings])->save();
+
+            // Switching it off is a revocation, so the rows collected under it
+            // go. Leaving them to age out over thirty days would mean the
+            // visitor directory still listing people who never made contact,
+            // on a site whose operator has just said it should not watch them
+            // -- and every surface describing that list would be saying
+            // something the setting contradicts.
+            //
+            // Only rows this feature created and nobody has since been in
+            // touch through. Somebody who arrived as a heartbeat and later
+            // wrote in is a contact, and stays.
+            return $enabled ? 0 : $this->forgetPresenceOnlyVisitors($site);
+        });
 
         // Turning page addresses off clears the ones already stored.
         //
