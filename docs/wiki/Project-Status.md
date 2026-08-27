@@ -43,9 +43,16 @@ parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamg
 - **Per-site widget appearance**, and a widget that speaks the visitor's
   language — **English and German**.
 - **A dashboard an agent can read in their own language** — **English, German
-  and Italian** — across the queues, the ticket list, the app shell, the profile
-  page and the conversation detail page, cobrowse panel included. The detail
-  page was the last surface and landed after `0.7.0`.
+  and Italian** — on the surfaces extracted so far: the profile pages, the
+  conversation queue, the ticket list, and the conversation detail page with its
+  cobrowse panel.
+
+  **The dashboard home, Alerts, Reports, Visitors, site settings and ticket
+  detail are still English**, and a German or Italian agent moving from the
+  queue to Reports changes language mid-session.
+  `DashboardLanguage::EXTRACTED_ROUTES` is the list that decides: a route
+  missing from it renders English by design rather than by accident, which is
+  what makes the remainder a known quantity rather than a surprise.
 
   **The two lists are not the same, and the difference matters.** Italian is
   agent-facing only: an Italian-speaking desk reads its own dashboard in

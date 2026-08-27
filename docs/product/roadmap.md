@@ -6,11 +6,10 @@ As of August 25, 2026, the latest public release is `v0.7.0`, and the next
 development line is `0.7.1`.
 
 `1.0.0` is scoped to finishing the core support product and proving it, rather
-than to feature parity: the remaining Tier 1 gap (live visitor monitoring —
-[ADR 0019](../decisions/0019-presence-for-visitors-who-have-not-made-contact.md)
-took the decision it was blocked on), first-class localization including timezone
-and regional settings, and hardening — upgrade paths, performance, and
-third-party install validation. Tier 2 parity work and the AI
+than to feature parity: the remaining Tier 1 gaps (live visitor monitoring, and
+the dashboard surfaces still rendering English), first-class localization
+including timezone and regional settings, and hardening — upgrade paths,
+performance, and third-party install validation. Tier 2 parity work and the AI
 tier are explicitly post-1.0.
 
 ## Shipped
@@ -23,13 +22,19 @@ The product has moved past a spine. It now includes:
   configurable pre-chat form.
 - Reporting over conversations and tickets, plus visitor satisfaction ratings.
 - Per-site widget appearance, a widget language catalogue in English and German,
-  and an agent-selectable dashboard language in English, German and Italian
-  across every dashboard surface — the conversation detail page and its cobrowse
-  panel were the last, and landed after `0.7.0`.
+  and an agent-selectable dashboard language in English, German and Italian on
+  the surfaces extracted so far: the profile pages, the conversation queue, the
+  ticket list, and the conversation detail page with its cobrowse panel.
 
-  The widget and the dashboard carry different language sets on purpose rather
-  than by omission: Italian is agent-facing, and adding it to the widget is a
-  separate catalogue for a separate audience.
+  **Still English:** the dashboard home, Alerts, Reports, Visitors, site
+  settings, and ticket detail. `DashboardLanguage::EXTRACTED_ROUTES` is the list
+  that decides, and a route missing from it renders English by design rather
+  than by accident — so a German agent moving from the queue to Reports changes
+  language mid-session. Finishing that is the remaining half.
+
+  The widget and the dashboard also carry different language sets on purpose
+  rather than by omission: Italian is agent-facing, and adding it to the widget
+  is a separate catalogue for a separate audience.
 - A visitor directory, agent-initiated password recovery, and a read-only public
   API with a decided isolation model.
 
