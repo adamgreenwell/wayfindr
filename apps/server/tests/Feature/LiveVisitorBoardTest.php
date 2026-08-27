@@ -380,3 +380,36 @@ test('a refreshed row moves to the newest-first position', function (): void {
     expect($apply)->toContain('existing.remove()')
         ->and($apply)->not->toContain('existing.replaceWith');
 });
+
+test('an archived site does not open a socket it cannot subscribe to', function (): void {
+    // SitePresenceChannel queries servable() and refuses every authorization.
+    // Handing the page a config anyway meant the socket opened, the auth
+    // failed, the reconnect fired, and the agent watched "Reconnecting to live
+    // updates" for as long as the tab stayed open -- retrying something
+    // refused by design.
+    config()->set('broadcasting.default', 'reverb');
+    config()->set('broadcasting.connections.reverb.key', 'board-key');
+    config()->set('broadcasting.connections.reverb.options.client_host', 'realtime.shop.test');
+    config()->set('broadcasting.connections.reverb.options.port', 8080);
+    config()->set('broadcasting.connections.reverb.options.scheme', 'https');
+
+    $f = boardFixture();
+    presentVisitor($f['site'], 'anon-archived-board');
+
+    // Live first, so the difference is the archiving and not the config.
+    test()->actingAs($f['agent'])
+        ->get(route('dashboard.sites.live', $f['site']))
+        ->assertOk()
+        ->assertSee('pusher:subscribe', false);
+
+    $f['site']->forceFill(['archived_at' => now()])->save();
+
+    $response = test()->actingAs($f['agent'])->get(route('dashboard.sites.live', $f['site']->fresh()));
+
+    if ($response->status() === 200) {
+        $response->assertDontSee('pusher:subscribe', false);
+    } else {
+        // Refusing the page outright is also a correct answer.
+        expect($response->status())->toBeIn([403, 404]);
+    }
+});

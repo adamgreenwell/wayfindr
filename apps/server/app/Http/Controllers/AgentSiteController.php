@@ -694,6 +694,16 @@ class AgentSiteController extends Controller
      */
     private function presenceRealtimeConfig(Site $site): ?array
     {
+        // An archived site has no board to subscribe to: SitePresenceChannel
+        // queries `servable()` and refuses every authorization. Handing the
+        // page a config anyway meant the socket opened, the auth failed, the
+        // reconnect fired, and the agent watched "Reconnecting to live
+        // updates" for as long as they left the tab open -- retrying something
+        // that is refused by design and will never succeed.
+        if ($site->isArchived()) {
+            return null;
+        }
+
         if ((string) config('broadcasting.default') !== 'reverb') {
             return null;
         }
