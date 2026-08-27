@@ -118,13 +118,28 @@ would be refused for other people's page views. The response is identical for
 everyone on the site and writes nothing, so it is cheap to serve and safe to
 allow generously.
 
-**A tab that stays open picks up a revised setting.** The config read happens
-once per page load, so an afternoon-long tab would otherwise act on whatever was
-true when it loaded — including sending page addresses an operator switched off
-hours before. Bootstrap carries the settings too, and is the freshest answer such
-a tab ever gets, so it updates them underneath the running reporter without
-restarting it. Reporting being turned off takes effect at once rather than
-tidily.
+**A tab that stays open picks up a revised setting**, and the channel that
+matters is the heartbeat's own answer. Bootstrap carries the settings too and
+updates them underneath a running reporter without restarting it — but bootstrap
+only runs when somebody opens the panel, and the visitor this feature exists for
+never does. Their config read happened once, at page load, and would otherwise
+be the newest answer that tab ever got: an operator turning presence off would
+leave precisely the targeted population reporting until they navigated away.
+
+So **every heartbeat is answered with the settings in force**, and the refusal
+answer takes the same shape as the accepted one, so a widget already reporting
+learns from it that it should stop.
+
+Rejecting the write server-side does not substitute for this. By the time the
+request arrives the address has already crossed the wire, which is the whole
+reason the widget sanitises before sending rather than trusting the endpoint to
+clean up afterwards.
+
+Settings arriving this way are merged key by key. A key the answer does not
+carry means *unchanged*, not *allowed* — assigning wholesale would let a partial
+response put addresses back on the wire that an operator had switched off — and
+a body that is not recognisable as configuration is ignored rather than read as
+permission.
 
 ### 3. What is reported, named exhaustively
 
