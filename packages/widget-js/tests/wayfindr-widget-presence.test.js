@@ -982,3 +982,137 @@ test('hyphenated page names survive client-side too', async (t) => {
     );
   }
 });
+
+test('a passive tab learns that presence was switched off', async (t) => {
+  // The visitor this feature is about never opens the panel, so bootstrap
+  // never runs and the page-load config fetch happens once. The heartbeat
+  // answer is the only way such a tab ever hears about a change.
+  let reports = true;
+
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/pricing',
+  });
+
+  const calls = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 20,
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, {
+          data: { appearance: { position: 'right' }, presence: { reports: true, every: 45, page_urls: true } },
+        });
+      }
+
+      return jsonResponse(202, { data: { reports, every: 45, page_urls: true } });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  assert.ok(presenceCalls(calls).length > 0, 'nothing was reported, so this proves nothing');
+
+  // The operator turns it off. Nobody opens the panel; nothing reloads.
+  reports = false;
+
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  await settle();
+
+  const settled = presenceCalls(calls).length;
+
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  await settle();
+
+  assert.equal(
+    presenceCalls(calls).length,
+    settled,
+    'a passive tab kept reporting after presence was switched off',
+  );
+
+  const notice = widget.root.querySelector('.wayfindr-widget__presence');
+
+  assert.equal(notice.hidden, true, 'the notice still claims the site is watching');
+});
+
+test('a partial answer does not re-enable address sharing', async (t) => {
+  // A key the answer does not carry means unchanged, not allowed. Assigning
+  // the settings wholesale meant a response without `page_urls` silently put
+  // addresses an operator had switched off back on the wire.
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/pricing',
+  });
+
+  const calls = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 20,
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, {
+          data: { appearance: { position: 'right' }, presence: { reports: true, every: 45, page_urls: false } },
+        });
+      }
+
+      // An answer that says nothing about page addresses.
+      return jsonResponse(202, { data: { reports: true } });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  await settle();
+
+  const sent = presenceCalls(calls);
+
+  assert.ok(sent.length > 1, 'only one heartbeat was sent, so this proves nothing');
+  assert.ok(
+    sent.every((c) => !('page_url' in c.body)),
+    'a partial answer put page addresses back on the wire',
+  );
+});

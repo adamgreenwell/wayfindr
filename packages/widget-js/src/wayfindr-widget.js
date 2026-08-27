@@ -2863,13 +2863,28 @@
         return;
       }
 
-      if (!config || config.reports !== true) {
+      // Not an answer this understands: left alone. A truncated or unexpected
+      // body is not evidence of anything, and reading it as permission is the
+      // wrong direction to guess in.
+      if (!config || typeof config.reports !== 'boolean') {
+        return;
+      }
+
+      if (config.reports !== true) {
         stopPresence();
 
         return;
       }
 
-      presenceConfig = config;
+      // Merged key by key rather than assigned, because a key the answer does
+      // not carry means UNCHANGED, not allowed. Assigning wholesale meant a
+      // response without `page_urls` silently re-enabled sending addresses an
+      // operator had switched off.
+      presenceConfig = {
+        reports: true,
+        every: typeof config.every === 'number' ? config.every : presenceConfig.every,
+        page_urls: typeof config.page_urls === 'boolean' ? config.page_urls : presenceConfig.page_urls,
+      };
 
       // The notice describes what is collected, so it changes with it.
       renderPresenceDisclosure();
@@ -3021,7 +3036,15 @@
       // which is the whole reason the client sanitises in the first place.
       var pageUrl = presenceConfig.page_urls === false ? null : sanitisePageUrl(currentHref());
 
-      client.reportPresence(pageUrl).catch(function () {
+      client.reportPresence(pageUrl).then(function (result) {
+        // Every heartbeat comes back with the settings in force, and this is
+        // the ONLY way a passive tab ever hears about a change: a visitor who
+        // never opens the panel never calls bootstrap, and the page-load config
+        // fetch happens once. Without this, an operator turning presence off
+        // left exactly the visitors this feature is about reporting until they
+        // navigated away.
+        refreshPresenceSettings(result);
+      }).catch(function () {
         // A missed heartbeat is a visitor reading as quiet, which is a fair
         // description of somebody we cannot reach.
       });
