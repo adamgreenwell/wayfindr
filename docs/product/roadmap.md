@@ -6,8 +6,8 @@ As of August 25, 2026, the latest public release is `v0.7.0`, and the next
 development line is `0.7.1`.
 
 `1.0.0` is scoped to finishing the core support product and proving it, rather
-than to feature parity: the remaining Tier 1 gaps (live visitor monitoring and
-the second half of interface language support), first-class localization
+than to feature parity: the remaining Tier 1 gaps (live visitor monitoring, and
+the dashboard surfaces still rendering English), first-class localization
 including timezone and regional settings, and hardening — upgrade paths,
 performance, and third-party install validation. Tier 2 parity work and the AI
 tier are explicitly post-1.0.
@@ -21,8 +21,36 @@ The product has moved past a spine. It now includes:
   widget, per-site support hours with an away state and offline capture, and a
   configurable pre-chat form.
 - Reporting over conversations and tickets, plus visitor satisfaction ratings.
-- Per-site widget appearance, a widget language catalogue with German complete,
-  and an agent-selectable dashboard language on the surfaces translated so far.
+- Per-site widget appearance, a widget language catalogue in English and German,
+  and an agent-selectable dashboard language in English, German and Italian on
+  the surfaces extracted so far: the profile pages, the conversation queue, the
+  ticket list, and the conversation detail page with its cobrowse panel.
+
+  **Everything else is still English**, and it is most of the dashboard: the
+  home page, Alerts, Reports, Visitors, site settings, ticket detail, and the
+  whole account-management side — Account, Integrations, API tokens, Operator
+  access, Audit, Labels, Articles, Reply templates.
+
+  `DashboardLanguage::EXTRACTED_ROUTES` is the list that decides which **pages**
+  are translated, and it is the only place worth reading: a page missing from it
+  renders English by design rather than by accident. Rather than keep a second
+  list here in prose and let the two drift, treat that constant as the answer —
+  what is written above is a summary of it on the day this was edited.
+
+  **Write endpoints are the exception, and it is deliberate.** A form submitted
+  from a translated page answers in that page's language even when its own route
+  is unlisted, because `DashboardLanguage::forRequest()` resolves from the
+  surface the response renders back to. Closing a ticket from the conversation
+  panel produces German validation; the same action from the untranslated ticket
+  page produces English. The language belongs to the page the agent is looking
+  at, not to the endpoint.
+
+  A German agent moving from the queue to Reports changes language mid-session,
+  and finishing that is the remaining half.
+
+  The widget and the dashboard also carry different language sets on purpose
+  rather than by omission: Italian is agent-facing, and adding it to the widget
+  is a separate catalogue for a separate audience.
 - A visitor directory, agent-initiated password recovery, and a read-only public
   API with a decided isolation model.
 - Visitor presence collection (ADR 0019) — heartbeat, disclosure, decline, and a

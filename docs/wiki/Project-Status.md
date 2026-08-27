@@ -41,10 +41,54 @@ parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamg
   separately. Volume, first-response times and agent replies come from data the
   product always kept and reach back as far as the install does.
 - **Per-site widget appearance**, and a widget that speaks the visitor's
-  language (German ships complete).
-- **A dashboard an agent can read in their own language** on the queues, the
-  ticket list, the app shell and the profile page. The conversation detail page
-  follows in `0.7.1`.
+  language — **English and German**.
+- **A dashboard an agent can read in their own language** — **English, German
+  and Italian** — on the surfaces extracted so far: the profile pages, the
+  conversation queue, the ticket list, and the conversation detail page with its
+  cobrowse panel.
+
+  **Most of the dashboard is still English** — the home page, Alerts, Reports,
+  Visitors, site settings, ticket detail, and all of account management:
+  Account, Integrations, API tokens, Operator access, Audit, Labels, Articles,
+  Reply templates. A German or Italian agent moving from the queue to Reports
+  changes language mid-session.
+
+  `DashboardLanguage::EXTRACTED_ROUTES` is the list that decides which **pages**
+  are translated, and it is the authority rather than this paragraph: a page
+  missing from it renders English by design rather than by accident. A prose
+  list will drift from the constant, so read the constant.
+
+  **Write endpoints are the deliberate exception.** A form submitted from a
+  translated page answers in that page's language even when its own route is
+  absent from the constant, because `DashboardLanguage::forRequest()` resolves
+  from the surface the response renders back to. Closing a ticket from the
+  conversation panel produces German validation; the same action from the
+  untranslated ticket page produces English. The language belongs to the page
+  the agent is looking at rather than to the endpoint.
+
+  **The two lists are not the same, and the difference matters.** Italian is
+  agent-facing only: an Italian-speaking desk reads its own dashboard in
+  Italian, and its visitors still get English or German. Adding a language to
+  the widget is a separate catalogue with a separate audience, and reading
+  "Italian" as covering both is the wrong conclusion to draw.
+
+  **Neither pack has been read by a qualified speaker, and they are unreviewed
+  in different ways.** German was drafted during development: written by hand,
+  in context, by somebody who is not a professional translator. Italian is
+  mostly machine output. Eight of its nine catalogues came out of a pipeline
+  with a glossary, a protection scheme for placeholders and a policy scorer;
+  each opens with `NOT YET REVIEWED` and describes its own values as proposals.
+  The ninth, `validation.php`, is not pipeline output at all — the pipeline only
+  translates files it finds in `lang/en`, and there is no English validation
+  catalogue — so it was written by hand against the German one, covering the
+  rules the dashboard actually validates with and falling back to Laravel's own
+  English for any rule it does not name.
+
+  Those checks establish mechanical consistency: the same term rendered the same
+  way everywhere, no placeholder lost in translation, the right register
+  attempted. They establish nothing about whether a sentence is good Italian,
+  and the translation policy says so directly. Do not promise either language to
+  a customer until somebody who speaks it has read the rendered screens.
 - **A visitor directory**, and a read-only public API with a decided isolation
   model (ADR 0018).
 - **Live visitor presence — collected, not yet shown.** The decision that

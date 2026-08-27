@@ -18,6 +18,7 @@ use App\Support\WidgetSiteResolver;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class BootstrapController extends Controller
 {
@@ -43,7 +44,13 @@ class BootstrapController extends Controller
         // failure is some other constraint and a loop would make it a hot one
         // on a public endpoint.
         try {
-            $visitor = $this->stampVisitor($site, $validated, $visitorContextSanitizer);
+            // Wrapped for the same reason as VisitorPresenceReport: on
+            // PostgreSQL a constraint violation aborts the surrounding
+            // transaction, so the retry would run on a connection that refuses
+            // every statement. DB::transaction() is a real transaction standing
+            // alone and a SAVEPOINT inside a caller's, and either is enough to
+            // leave something usable to retry on.
+            $visitor = DB::transaction(fn (): Visitor => $this->stampVisitor($site, $validated, $visitorContextSanitizer));
         } catch (UniqueConstraintViolationException) {
             $visitor = $this->stampVisitor($site, $validated, $visitorContextSanitizer);
         }
@@ -78,6 +85,27 @@ class BootstrapController extends Controller
             'site_id' => $site->id,
             'anonymous_id' => $validated['anonymous_id'],
         ]);
+
+        // Locked, and re-created if the lock finds nothing.
+        //
+        // The pruner deletes visitors who never made contact, and this is the
+        // endpoint that decides somebody HAS. If the delete lands between the
+        // read above and the write below, Eloquent does not complain: an update
+        // matching zero rows is a successful save. Bootstrap would then answer
+        // 200 and issue a session token naming a visitor that no longer exists,
+        // and every conversation and message request afterwards would fail
+        // token resolution with a 401 the visitor cannot do anything about.
+        //
+        // Worse than an error, because it looks like success right up until
+        // they try to say something.
+        if ($visitor->exists) {
+            $locked = Visitor::query()->whereKey($visitor->getKey())->lockForUpdate()->first();
+
+            $visitor = $locked ?? Visitor::query()->newModelInstance([
+                'site_id' => $site->id,
+                'anonymous_id' => $validated['anonymous_id'],
+            ]);
+        }
 
         $visitor->forceFill([
             'metadata' => $visitorContextSanitizer->mergeMetadata(

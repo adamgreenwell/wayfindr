@@ -227,10 +227,13 @@ final class VisitorPageUrl
      * as written rejected every page on the site -- silently, since a rejected
      * address is stored as null and reads as "we did not see one".
      *
-     * `intl` is not guaranteed present. Without it both sides are simply
-     * lowercased, which is exactly today's behaviour: an install lacking the
-     * extension is no worse off than before, and one that has it stops
-     * discarding a site's own pages.
+     * `ext-intl` is declared in composer.json, so an install without it is one
+     * that should not exist. The guard below is not a supported fallback: it
+     * keeps ASCII hosts -- which need no conversion -- comparing correctly
+     * rather than fataling on every widget request, on an install that has
+     * already ignored its own dependency list. An IDN site in that state still
+     * cannot be compared, which is why the requirement is declared rather than
+     * worked around.
      */
     private static function asciiHost(string $host): string
     {
