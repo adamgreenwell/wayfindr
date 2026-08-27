@@ -10,6 +10,7 @@ use App\Support\Sites\SiteAvailability;
 use App\Support\Sites\SiteIntake;
 use App\Support\Sites\WidgetLanguage;
 use App\Support\VisitorContextSanitizer;
+use App\Support\Visitors\VisitorPageUrl;
 use App\Support\VisitorSessionToken;
 use App\Support\WidgetSiteResolver;
 use Illuminate\Http\JsonResponse;
@@ -58,6 +59,7 @@ class ConversationController extends Controller
                 $validated['page_url'] ?? null,
                 array_key_exists('context', $validated),
                 $validated['context'] ?? null,
+                $site->domain,
             ),
             'last_seen_at' => now(),
         ]
@@ -71,7 +73,14 @@ class ConversationController extends Controller
             'status' => 'open',
             'subject' => $validated['subject'] ?? null,
             'metadata' => array_filter([
-                'started_page_url' => $validated['page_url'] ?? null,
+                // Sanitised like the visitor's copy. This is the SECOND
+                // place the same URL lands, it is durable for the life of the
+                // conversation, and it is what the agent panels label the entry
+                // page -- so fixing only the visitor row would have left the
+                // likelier path open: people ask for help FROM the page that is
+                // going wrong, which on a reset flow is the page holding the
+                // token.
+                'started_page_url' => VisitorPageUrl::forSite($validated['page_url'] ?? null, $site->domain),
                 // The reason belongs to this conversation, not to the person:
                 // the next one may be about something else entirely. Name and
                 // email go on the visitor, where they are reusable.

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\SanitisesStoredPageUrls;
 use App\Support\Conversations\ConversationLifecycleLog;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
@@ -29,6 +30,16 @@ use Illuminate\Support\Str;
 ])]
 class Conversation extends Model
 {
+    use SanitisesStoredPageUrls;
+
+    /**
+     * @return array<int, string>
+     */
+    protected static function pageUrlPaths(): array
+    {
+        return ['started_page_url'];
+    }
+
     /** @use HasFactory<ConversationFactory> */
     use HasFactory;
 

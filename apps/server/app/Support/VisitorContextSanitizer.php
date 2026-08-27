@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use App\Support\Visitors\VisitorPageUrl;
+
 class VisitorContextSanitizer
 {
     private const MAX_ITEMS = 10;
@@ -61,13 +63,38 @@ class VisitorContextSanitizer
      * @param  array<string, mixed>|null  $metadata
      * @return array<string, mixed>
      */
-    public function mergeMetadata(?array $metadata, ?string $pageUrl, bool $contextWasProvided, mixed $context): array
+    /**
+     * @param  string|null  $siteHost  the site's configured domain; a page
+     *                                 address from anywhere else is not stored
+     */
+    public function mergeMetadata(?array $metadata, ?string $pageUrl, bool $contextWasProvided, mixed $context, ?string $siteHost = null): array
     {
         $metadata = $metadata ?? [];
 
         if ($pageUrl !== null) {
-            $metadata['last_page_url'] = $pageUrl;
-        } elseif (! array_key_exists('last_page_url', $metadata)) {
+            // Sanitised, which this class knew how to do for `context` and had
+            // never asked of the URL. SENSITIVE_KEY_PATTERN sits three methods
+            // up; the page address went past it untouched, and reached agents
+            // whole -- reset tokens, invite codes and all.
+            $metadata['last_page_url'] = VisitorPageUrl::forSite($pageUrl, $siteHost);
+        } elseif (array_key_exists('last_page_url', $metadata)) {
+            // The RETAINED value is sanitised too, and this is not belt and
+            // braces -- it closes a hole the sweep's row lock cannot reach.
+            //
+            // A request that reads a visitor before the sweep locks that row
+            // holds a copy of the old tokenised URL. If it omits `page_url`
+            // (bootstrap and conversation start both make it optional) this
+            // branch used to carry that copy forward untouched, and the
+            // request's ordinary save() -- landing AFTER the sweep committed --
+            // would put the token straight back. The lock cannot prevent it,
+            // because the read that matters happened before the lock existed.
+            //
+            // Sanitising on the way out means every writer converges on the
+            // clean value regardless of what it read or when.
+            $metadata['last_page_url'] = is_string($metadata['last_page_url'])
+                ? VisitorPageUrl::reduce($metadata['last_page_url'])
+                : null;
+        } else {
             $metadata['last_page_url'] = null;
         }
 
