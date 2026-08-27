@@ -33,7 +33,7 @@ final class VisitorPresenceReport
         // returning visitor who opens the panel before their first heartbeat
         // still starts a new visit rather than resuming one from days ago.
         $visitor->forceFill([
-            'metadata' => $this->metadata($visitor, $pageUrl),
+            'metadata' => $this->metadata($visitor, $pageUrl, $site),
             'last_seen_at' => $now,
         ])->save();
 
@@ -43,14 +43,19 @@ final class VisitorPresenceReport
     /**
      * @return array<string, mixed>
      */
-    private function metadata(Visitor $visitor, ?string $pageUrl): array
+    private function metadata(Visitor $visitor, ?string $pageUrl, Site $site): array
     {
         $metadata = is_array($visitor->metadata) ? $visitor->metadata : [];
 
-        // Sanitised here as well as by the model's saving hook. Not redundant:
-        // this is the entry point and should reject at the door, while the hook
-        // is what makes it true of the database no matter who writes.
-        $metadata['last_page_url'] = VisitorPageUrl::sanitise($pageUrl);
+        // forSite(), because this is INGRESS and the site is known here. The
+        // endpoint is public and so is the site key, so an address from any
+        // other host is somebody else's page -- and stored addresses render as
+        // clickable links in the agent dashboard.
+        //
+        // The model's saving hook reduces it again, which is not redundant:
+        // this rejects at the door, the hook makes it true of the database no
+        // matter who writes.
+        $metadata['last_page_url'] = VisitorPageUrl::forSite($pageUrl, $site->domain);
 
         return $metadata;
     }

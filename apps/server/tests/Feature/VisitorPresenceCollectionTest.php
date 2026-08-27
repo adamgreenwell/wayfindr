@@ -18,6 +18,10 @@ function presenceSite(bool $enabled = true): Site
 
     return Site::factory()->for($account)->create([
         'public_key' => 'site_public_presence',
+        // A configured domain, because a page address is only stored for a site
+        // that has one -- the endpoint is public, so without it we cannot tell
+        // this site's pages from an attacker's.
+        'domain' => 'shop.test',
         'settings' => ['presence' => ['enabled' => $enabled]],
     ]);
 }
@@ -305,4 +309,33 @@ test('a visitor who makes contact mid-sweep is not deleted from under it', funct
     expect(Conversation::query()->where('visitor_id', $stale->id)->exists())->toBeTrue(
         'the conversation that just landed was cascaded away'
     );
+});
+
+test('a heartbeat cannot plant another host in front of an agent', function (): void {
+    // The endpoint is public and so is the site key, so this value is
+    // attacker-controlled -- and stored addresses render as clickable
+    // target="_blank" links on the agent ticket page. Presence is the newest
+    // public writer, which makes it the newest way in.
+    $site = presenceSite();
+
+    reportPresence($site, 'anon-phish', 'https://attacker.example/login')->assertStatus(202);
+
+    $visitor = Visitor::query()->where('anonymous_id', 'anon-phish')->firstOrFail();
+
+    expect($visitor->metadata['last_page_url'])->toBeNull(
+        'a foreign host was stored and will be rendered as a link to an agent'
+    );
+
+    // The visitor is still recorded: presence is about who is here, and we can
+    // know that without believing where they claim to be.
+    expect($visitor->last_seen_at)->not->toBeNull();
+});
+
+test('a token in the path does not reach an agent either', function (): void {
+    $site = presenceSite();
+
+    reportPresence($site, 'anon-path-token', 'https://shop.test/reset-password/9f2c8a1b4e6d7c3f0a5b2e8d1c4f7a9b');
+
+    expect(Visitor::query()->where('anonymous_id', 'anon-path-token')->firstOrFail()->metadata['last_page_url'])
+        ->toBe('https://shop.test/reset-password/[redacted]');
 });
