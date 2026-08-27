@@ -24,7 +24,14 @@ Run Composer, Artisan, queue, scheduler, and Reverb commands from
 
 Minimum runtime:
 
-- PHP 8.4 or newer.
+- PHP 8.4 or newer, with `ext-intl`. It is declared in
+  `apps/server/composer.json`, so `composer install` refuses an environment
+  without it rather than letting one reach production — most distributions ship
+  it as `php8.4-intl` and the official PHP images include it. Wayfindr uses it
+  to compare hostnames in one representation: an operator configures the domain
+  they own (`bücher.example`) and browsers report its Punycode form
+  (`xn--bcher-kva.example`), and without normalisation those read as different
+  sites, so every page address on such a site is silently discarded.
 - Composer 2.
 - A web server that can serve Laravel through PHP-FPM or an equivalent PHP
   runtime.

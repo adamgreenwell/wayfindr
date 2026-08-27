@@ -226,10 +226,6 @@ test('a site written in its own script is not a different site', function (): vo
     // punycode. Comparing them as written discarded every page on the site,
     // and silently -- a rejected address is stored as null, which reads as
     // "we never saw one".
-    if (! function_exists('idn_to_ascii')) {
-        test()->markTestSkipped('intl is not installed');
-    }
-
     expect(VisitorPageUrl::forSite('https://xn--bcher-kva.example/preise', 'bücher.example'))
         ->toBe('https://xn--bcher-kva.example/preise')
         ->and(VisitorPageUrl::forSite('https://xn--bcher-kva.example/preise', 'xn--bcher-kva.example'))
