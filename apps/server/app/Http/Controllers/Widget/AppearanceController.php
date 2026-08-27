@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Widget;
 use App\Http\Controllers\Controller;
 use App\Support\Sites\SitePresenceReporting;
 use App\Support\Sites\WidgetAppearance;
+use App\Support\Sites\WidgetLanguage;
 use App\Support\WidgetSiteResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -49,6 +50,14 @@ class AppearanceController extends Controller
             'data' => [
                 'appearance' => WidgetAppearance::for($site)->toPayload(),
                 'presence' => SitePresenceReporting::for($site)->toPayload(),
+                // The site's configured language, for the same reason as the
+                // rest of this response. It only matters when neither the host
+                // page nor the browser has expressed a preference -- and in
+                // exactly that case a silent visitor on a German site was shown
+                // an English privacy notice, because the site default arrived
+                // with bootstrap and a silent visitor never bootstraps. A
+                // disclosure in a language somebody does not read is not one.
+                'locale' => WidgetLanguage::for($site),
             ],
         ]);
     }

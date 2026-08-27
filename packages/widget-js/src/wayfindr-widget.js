@@ -1826,8 +1826,13 @@
         return;
       }
 
-      sendPresence();
-      startPresenceTimer();
+      // Through the same gate as the first report ever sent, not straight out.
+      // If the config arrived while this tab was in the background, the notice
+      // has never been painted -- the two-frame wait ran against a hidden
+      // document -- and foregrounding used to send the heartbeat synchronously
+      // inside the visibilitychange handler, ahead of the first paint the
+      // visitor could have seen anything in.
+      startPresenceAfterDisclosure();
     }
 
     function renderCobrowseConsent() {
@@ -2836,7 +2841,23 @@
       //
       // Re-checked rather than assumed at that point, because two frames is
       // long enough for the answer to change.
+      startPresenceAfterDisclosure();
+    }
+
+    /**
+     * Begin reporting once the notice has had a frame to appear.
+     *
+     * The single way into a running heartbeat, so every path -- config
+     * arriving, a tab returning to the foreground -- passes the same two
+     * checks. Having the first caller do them and the rest inherit the result
+     * is how the visibility path came to bypass both.
+     */
+    function startPresenceAfterDisclosure() {
       afterNextPaint(function () {
+        if (!presenceConfig) {
+          return;
+        }
+
         if (!presenceNoticeVisible() || declineRecorded()) {
           presenceConfig = null;
 
@@ -3009,9 +3030,16 @@
       // meant every heartbeat omitted the page and the board could never say
       // where anybody was.
       //
-      // The document fallback is not only for tests: a widget mounted into a
-      // document it was handed should report THAT document's address rather
-      // than whatever the surrounding global happens to be.
+      // An EXPLICITLY supplied document wins over the ambient location. A host
+      // calling init({document: iframe.contentDocument}) without passing a
+      // location got `root.location` -- the surrounding page -- so the widget
+      // reported an address the visitor was not on, and on a same-origin
+      // iframe integration that address can be an unrelated part of the site.
+      // The document it was handed is the document it is in.
+      if (options.document && options.document.location && options.document.location.href) {
+        return options.document.location.href;
+      }
+
       if (location && location.href) {
         return location.href;
       }
@@ -3130,9 +3158,13 @@
 
       if (cached) {
         try {
+          // Painted from the cache, and then asked anyway. The early return
+          // that used to be here made a RETURNING visitor -- anyone holding a
+          // cached appearance, which is everyone after their first page --
+          // never fetch the config that now carries presence. They saw no
+          // disclosure and sent no heartbeat: the same defect this rework was
+          // for, reintroduced one line further down.
           applyAppearance(JSON.parse(cached));
-
-          return;
         } catch (error) {
           storageRemove(widgetStorage, appearanceStorageKey(options.sitePublicKey));
         }
@@ -3165,6 +3197,15 @@
         if (appearance) {
           applyAppearance(appearance);
           rememberAppearance(appearance);
+        }
+
+        // The site's language BEFORE the disclosure is rendered. It only
+        // decides anything when neither the host page nor the browser has a
+        // preference -- and in exactly that case a silent visitor on a German
+        // site was shown an English privacy notice, because the site default
+        // used to arrive with bootstrap and a silent visitor never bootstraps.
+        if (result && typeof result.locale === 'string') {
+          applyLocale(result.locale);
         }
 
         applyPresence((result && result.presence) || null);

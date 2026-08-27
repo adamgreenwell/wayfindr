@@ -537,3 +537,198 @@ test('a short secret in the path never leaves the browser either', async (t) => 
     'https://shop.example.test/invite/[redacted]',
   );
 });
+
+test('a returning visitor with a cached appearance is still told and still reported', async (t) => {
+  // Everyone is a returning visitor after their first page. The cached
+  // appearance used to end configuration there, so the response carrying
+  // presence was never fetched -- no disclosure, no heartbeat, for almost
+  // every real visitor. The earlier tests missed it because the harness seeds
+  // no cached appearance, which is the least realistic state a browser is in.
+  const seeded = {
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+    'wayfindr:site_public_shop:appearance': JSON.stringify({ position: 'right' }),
+  };
+
+  const values = new Map(Object.entries(seeded));
+  const storage = {
+    getItem: (key) => (values.has(key) ? values.get(key) : null),
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: (key) => values.delete(key),
+  };
+
+  const { widget, calls } = widgetWithPresence({ storage });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  const notice = widget.root.querySelector('.wayfindr-widget__presence');
+
+  assert.equal(notice.hidden, false, 'a returning visitor was never shown the notice');
+  assert.equal(presenceCalls(calls).length, 1, 'a returning visitor was never reported');
+});
+
+test('a tab coming back to the foreground waits for the notice too', async (t) => {
+  // If the config arrives while the tab is in the background, the notice has
+  // never been painted. Foregrounding used to send the heartbeat synchronously
+  // inside the visibilitychange handler, which is ahead of the first paint the
+  // visitor could have seen anything in.
+  const { widget, calls, dom } = widgetWithPresence();
+
+  t.after(() => widget.destroy());
+
+  Object.defineProperty(dom.window.document, 'visibilityState', { value: 'hidden', configurable: true });
+
+  await settle();
+
+  assert.equal(presenceCalls(calls).length, 0, 'a hidden tab reported');
+
+  Object.defineProperty(dom.window.document, 'visibilityState', { value: 'visible', configurable: true });
+
+  const beforePaint = presenceCalls(calls).length;
+
+  dom.window.document.dispatchEvent(new dom.window.Event('visibilitychange'));
+
+  assert.equal(
+    presenceCalls(calls).length,
+    beforePaint,
+    'foregrounding reported synchronously, before anything could be painted',
+  );
+
+  await settle();
+
+  assert.ok(presenceCalls(calls).length > beforePaint, 'foregrounding never resumed reporting');
+});
+
+test('a widget handed a document reports that document', async (t) => {
+  // A host calling init({document: iframe.contentDocument}) without a location
+  // got the surrounding page's address, which on a same-origin iframe can be an
+  // unrelated part of the site. The document it was handed is the document it
+  // is in.
+  const inner = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/embedded/help',
+  });
+
+  // The surrounding page, as the widget's captured global sees it. Without
+  // this the test cannot reach the bug at all: under Node the ambient global
+  // has no location, so `options.location || root.location` is null either way
+  // and the document fallback answers correctly by accident.
+  const hadLocation = 'location' in globalThis;
+  const previousLocation = globalThis.location;
+
+  Object.defineProperty(globalThis, 'location', {
+    value: { href: 'https://shop.example.test/dashboard' },
+    configurable: true,
+    writable: true,
+  });
+
+  t.after(() => {
+    if (hadLocation) {
+      Object.defineProperty(globalThis, 'location', {
+        value: previousLocation, configurable: true, writable: true,
+      });
+    } else {
+      delete globalThis.location;
+    }
+  });
+
+  const calls = [];
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const widget = Wayfindr.init({
+    document: inner.window.document,
+    // No location, exactly as such a host embeds it.
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 0,
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, { data: { appearance: { position: 'right' }, presence: { reports: true, every: 45 } } });
+      }
+
+      return jsonResponse(202, { data: { reports: true } });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  assert.equal(
+    presenceCalls(calls)[0].body.page_url,
+    'https://shop.example.test/embedded/help',
+    'the widget reported the surrounding page instead of its own document',
+  );
+
+});
+
+test('the notice speaks the site language before the first heartbeat', async (t) => {
+  // A silent visitor never bootstraps, and the site's configured default used
+  // to arrive only with bootstrap -- so on a German site with a visitor whose
+  // browser expresses no preference, the privacy notice was in English. A
+  // disclosure somebody cannot read is not a disclosure.
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/preise',
+  });
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 0,
+    fetch: async (url) => {
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, {
+          data: {
+            appearance: { position: 'right' },
+            presence: { reports: true, every: 45 },
+            locale: 'de',
+          },
+        });
+      }
+
+      return jsonResponse(202, { data: { reports: true } });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  const copy = widget.root.querySelector('.wayfindr-widget__presence-copy');
+
+  assert.match(copy.textContent, /Website kann sehen/, 'the notice was not in the site language');
+  assert.equal(widget.root.lang, 'de');
+});
