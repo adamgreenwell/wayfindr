@@ -1202,6 +1202,12 @@
                             Page addresses are stored with the query string removed and path segments that look like tokens replaced. That check is a good guess, not a guarantee &mdash; if this site puts invitation codes, order numbers or reset tokens in the path itself, turn this off and presence will record only that somebody is here.
                         </p>
 
+                        @if ($presenceEnabled)
+                            <p class="field-help">
+                                <a href="{{ route('dashboard.sites.live', $site) }}">Open the live visitor board</a> to see who is on the site now.
+                            </p>
+                        @endif
+
                         <p class="field-help">
                             Leave presence off and nothing changes: the install records people only once they open the widget or get in touch. Turning it off later deletes the visitors it collected who never made contact.
                         </p>

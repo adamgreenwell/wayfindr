@@ -25,6 +25,7 @@ use App\Support\Sites\WidgetAppearance;
 use App\Support\Sites\WidgetLanguage;
 use App\Support\TicketExternalIssueState;
 use App\Support\Visitors\LiveVisitorBoard;
+use App\Support\Visitors\VisitorPresence;
 use App\Support\WidgetRealtimeConfig;
 use DateTimeZone;
 use Illuminate\Http\RedirectResponse;
@@ -663,6 +664,14 @@ class AgentSiteController extends Controller
             'presentMinutes' => LiveVisitorBoard::PRESENT_MINUTES,
             'canUpdatePrivacy' => Gate::forUser($agent)->allows('updatePrivacy', $site),
             'realtime' => $this->presenceRealtimeConfig($site),
+            // Words for the script, chosen here. The socket carries a state
+            // and this page picks the sentence, which is the same rule the
+            // conversation presence payload follows: a payload broadcast to
+            // every agent watching cannot know which language each of them
+            // reads.
+            'presenceLabels' => collect(VisitorPresence::states())
+                ->mapWithKeys(fn (string $state): array => [$state => VisitorPresence::label($state)])
+                ->all(),
         ]);
     }
 

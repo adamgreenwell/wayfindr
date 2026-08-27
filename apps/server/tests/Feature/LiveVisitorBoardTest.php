@@ -228,3 +228,56 @@ test('a heartbeat announces the visitor to the board', function (): void {
             && $event->site->is($f['site']),
     );
 });
+
+test('the board subscribes when the install runs realtime', function (): void {
+    config()->set('broadcasting.default', 'reverb');
+    config()->set('broadcasting.connections.reverb.key', 'board-key');
+    config()->set('broadcasting.connections.reverb.options.host', 'reverb.internal');
+    config()->set('broadcasting.connections.reverb.options.client_host', 'realtime.shop.test');
+    config()->set('broadcasting.connections.reverb.options.port', 8080);
+    config()->set('broadcasting.connections.reverb.options.scheme', 'https');
+
+    $f = boardFixture();
+    presentVisitor($f['site'], 'anon-live');
+
+    $response = test()->actingAs($f['agent'])
+        ->get(route('dashboard.sites.live', $f['site']))
+        ->assertOk();
+
+    // The CLIENT host, not the internal one a browser cannot resolve.
+    $response->assertSee('realtime.shop.test', false)
+        ->assertDontSee('reverb.internal', false)
+        ->assertSee('private-sites.'.$f['site']->id.'.presence', false);
+});
+
+test('an install without realtime says the list is a snapshot', function (): void {
+    // Better than a board that looks live and is not.
+    config()->set('broadcasting.default', 'log');
+
+    $f = boardFixture();
+    presentVisitor($f['site'], 'anon-static');
+
+    test()->actingAs($f['agent'])
+        ->get(route('dashboard.sites.live', $f['site']))
+        ->assertOk()
+        ->assertSee('does not run realtime updates', false)
+        ->assertDontSee('pusher:subscribe', false);
+});
+
+test('realtime is refused when the browser cannot be told where to connect', function (): void {
+    // A half-configured Reverb produces a socket URL to nowhere, and the page
+    // would sit there saying "Updating live" while nothing arrived.
+    config()->set('broadcasting.default', 'reverb');
+    config()->set('broadcasting.connections.reverb.key', 'board-key');
+    config()->set('broadcasting.connections.reverb.options.host', null);
+    config()->set('broadcasting.connections.reverb.options.client_host', null);
+    config()->set('broadcasting.connections.reverb.options.port', 8080);
+    config()->set('broadcasting.connections.reverb.options.scheme', 'https');
+
+    $f = boardFixture();
+
+    test()->actingAs($f['agent'])
+        ->get(route('dashboard.sites.live', $f['site']))
+        ->assertOk()
+        ->assertDontSee('pusher:subscribe', false);
+});
