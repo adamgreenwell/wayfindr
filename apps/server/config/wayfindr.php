@@ -102,6 +102,14 @@ return [
         // heartbeat rather than lost.
         'presence_creations_per_ip_per_minute' => (int) env('WAYFINDR_WIDGET_PRESENCE_CREATIONS_PER_IP_PER_MINUTE', 30),
 
+        // And the sustained one. Thirty a minute held all day is 43,200 rows
+        // and about 1.3 million across the retention window, so the burst
+        // allowance that makes an office work is also, by itself, a licence to
+        // grow the table without end. This is far above a real site's new
+        // visitors from one address in a day and far below what an unattended
+        // script reaches by lunchtime.
+        'presence_creations_per_ip_per_day' => (int) env('WAYFINDR_WIDGET_PRESENCE_CREATIONS_PER_IP_PER_DAY', 2000),
+
         // The abuse cap, per source IP and site. Covers about nine hundred
         // simultaneous visitors behind one address at the standard cadence;
         // an install that genuinely has more raises it rather than watching

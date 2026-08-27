@@ -10,6 +10,7 @@ use App\Models\Site;
 use App\Models\SiteExternalIssueProject;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Models\Visitor;
 use App\Support\ExternalIssueCapability;
 use App\Support\ExternalIssueProvider;
 use App\Support\ExternalIssueSyncStatus;
@@ -173,6 +174,7 @@ class AgentSiteController extends Controller
             'externalIssueProviderConnections' => $externalIssueProviderConnections,
             'externalIssueProviders' => ExternalIssueProvider::options(),
             'presenceEnabled' => SitePresenceReporting::for($site)->enabled,
+            'presencePageUrls' => SitePresenceReporting::for($site)->pageUrls,
             'presenceEvery' => SitePresenceReporting::HEARTBEAT_SECONDS,
             'maskSelectors' => $maskSelectors,
             'maskTerms' => $maskTerms,
@@ -652,16 +654,60 @@ class AgentSiteController extends Controller
 
         $validated = $request->validate([
             'presence_enabled' => ['nullable', 'boolean'],
+            'presence_page_urls' => ['nullable', 'boolean'],
         ]);
 
+        $enabled = (bool) ($validated['presence_enabled'] ?? false);
+
         $settings = $site->settings ?? [];
-        $settings['presence'] = ['enabled' => (bool) ($validated['presence_enabled'] ?? false)];
+        $settings['presence'] = [
+            'enabled' => $enabled,
+            'page_urls' => (bool) ($validated['presence_page_urls'] ?? false),
+        ];
 
         $site->forceFill(['settings' => $settings])->save();
 
+        // Switching it off is a revocation, so the rows collected under it go.
+        //
+        // Leaving them to age out over thirty days would mean the visitor
+        // directory still listing people who never made contact, on a site
+        // whose operator has just said it should not watch them -- and every
+        // surface describing that list would be saying something the setting
+        // contradicts.
+        //
+        // Only rows this feature created and nobody has since been in touch
+        // through. Somebody who arrived as a heartbeat and later wrote in is a
+        // contact, and stays.
+        $removed = $enabled ? 0 : $this->forgetPresenceOnlyVisitors($site);
+
         return redirect()
             ->route('dashboard.sites.show', $site)
-            ->with('status', ($settings['presence']['enabled'] ? 'Live visitor presence is on.' : 'Live visitor presence is off.'));
+            ->with('status', $this->presenceStatusMessage($enabled, $removed));
+    }
+
+    private function presenceStatusMessage(bool $enabled, int $removed): string
+    {
+        if ($enabled) {
+            return 'Live visitor presence is on.';
+        }
+
+        if ($removed === 0) {
+            return 'Live visitor presence is off.';
+        }
+
+        return $removed === 1
+            ? 'Live visitor presence is off. 1 visitor who never made contact was deleted.'
+            : 'Live visitor presence is off. '.$removed.' visitors who never made contact were deleted.';
+    }
+
+    private function forgetPresenceOnlyVisitors(Site $site): int
+    {
+        return Visitor::query()
+            ->where('site_id', $site->id)
+            ->where('presence_only', true)
+            ->whereDoesntHave('conversations')
+            ->whereDoesntHave('tickets')
+            ->delete();
     }
 
     /**

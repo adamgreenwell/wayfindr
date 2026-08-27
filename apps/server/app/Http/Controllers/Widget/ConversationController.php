@@ -94,6 +94,14 @@ class ConversationController extends Controller
                     $site->domain,
                 ),
                 'last_web_seen_at' => now(),
+                // Starting a conversation is contact, and this route does not
+                // require bootstrap to have run -- so the flag that means
+                // "never made contact" has to be cleared here as well as
+                // there. The pruner already refuses to delete anybody with a
+                // conversation, so nothing was at risk; leaving it set would
+                // still have been a record saying something untrue about
+                // somebody who had just written in.
+                'presence_only' => false,
             ]
                 + $this->externalIdentifierUpdate($site, $visitor, $validated, $visitorContextSanitizer)
                 + $this->intakeAnswers($validated))->save();
