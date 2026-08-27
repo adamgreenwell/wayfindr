@@ -41,6 +41,9 @@
       'notice.emptyVisitor': 'No messages yet. Send a message and support will see it here.',
       'notice.emptyAgent': 'No messages yet. Replies will show up here.',
       'notice.closed': 'This conversation was closed. Send a new message to reopen it.',
+      'presence.disclosure': 'This site can see which of its pages you are on while this widget is loaded.',
+      'presence.decline': 'Stop sharing',
+      'presence.declined': 'Not sharing which pages you visit.',
       'notice.retry': 'Try again',
       'form.label': 'How can we help?',
       'form.placeholder': 'Type your message...',
@@ -125,6 +128,9 @@
       'notice.emptyVisitor': 'Noch keine Nachrichten. Schreiben Sie uns, der Support sieht Ihre Nachricht hier.',
       'notice.emptyAgent': 'Noch keine Nachrichten. Antworten erscheinen hier.',
       'notice.closed': 'Diese Unterhaltung wurde geschlossen. Senden Sie eine neue Nachricht, um sie wieder zu öffnen.',
+      'presence.disclosure': 'Diese Website kann sehen, auf welchen ihrer Seiten Sie sich befinden, solange dieses Widget geladen ist.',
+      'presence.decline': 'Nicht mehr teilen',
+      'presence.declined': 'Es wird nicht geteilt, welche Seiten Sie besuchen.',
       'notice.retry': 'Erneut versuchen',
       'form.label': 'Wie können wir helfen?',
       'form.placeholder': 'Nachricht eingeben …',
@@ -579,6 +585,16 @@
           return result;
         });
       },
+      // Somebody is on the site. Public and unauthenticated by necessity: a
+      // visitor who has never made contact has no token, and that is the whole
+      // population this reports.
+      reportPresence: function (pageUrl) {
+        return postJson(fetcher, apiBaseUrl + '/api/widget/presence', withoutNullValues({
+          site_public_key: sitePublicKey,
+          anonymous_id: anonymousId,
+          page_url: pageUrl || null,
+        }));
+      },
       startConversation: function (body, details) {
         details = details || {};
         var externalId = normalizeVisitorExternalId(details.visitorExternalId) || visitorExternalId;
@@ -980,6 +996,10 @@
       '    <button class="wayfindr-widget__rating-send" type="submit"></button>',
       '    <p class="wayfindr-widget__rating-status" role="status" aria-live="polite" hidden></p>',
       '  </form>',
+      '  <div class="wayfindr-widget__presence" hidden>',
+      '    <p class="wayfindr-widget__presence-copy">' + escapeHtml(t('presence.disclosure')) + '</p>',
+      '    <button class="wayfindr-widget__presence-decline" type="button">' + escapeHtml(t('presence.decline')) + '</button>',
+      '  </div>',
       '  <p class="wayfindr-widget__typing" role="status" aria-live="polite" aria-atomic="true" hidden></p>',
       '  <p class="wayfindr-widget__connection" role="status" aria-live="polite" aria-atomic="true" hidden></p>',
       '  <form class="wayfindr-widget__form">',
@@ -1045,6 +1065,17 @@
     var ratingComment = rootEl.querySelector('.wayfindr-widget__rating-comment');
     var ratingSend = rootEl.querySelector('.wayfindr-widget__rating-send');
     var ratingStatus = rootEl.querySelector('.wayfindr-widget__rating-status');
+    var presenceEl = rootEl.querySelector('.wayfindr-widget__presence');
+    var presenceCopyEl = rootEl.querySelector('.wayfindr-widget__presence-copy');
+    var presenceDeclineEl = rootEl.querySelector('.wayfindr-widget__presence-decline');
+    var presenceConfig = null;
+    var presenceTimer = null;
+    // An override, the way messagePollMs and cobrowseStatusPollMs already work.
+    // Zero disables the repeating heartbeat while leaving the first report and
+    // the disclosure intact -- which is what a test wants, and what a host page
+    // that only cares about arrival could ask for.
+    var presencePollMs = typeof options.presencePollMs === 'number' ? Math.max(0, options.presencePollMs) : null;
+    var storage = resolveStorageOption(options);
     var ratingConfig = null;
     var ratingScore = null;
     var ratingAnswered = false;
@@ -2682,6 +2713,31 @@
     }
 
     // Everything a bootstrap answer tells the widget, applied in one place.
+    if (presenceDeclineEl) {
+      presenceDeclineEl.addEventListener('click', function () {
+        declinePresence();
+      });
+    }
+
+    if (doc && typeof doc.addEventListener === 'function') {
+      doc.addEventListener('visibilitychange', function () {
+        if (!presenceConfig) {
+          return;
+        }
+
+        if (presenceHidden()) {
+          // A hidden tab reports nothing, and decaying to quiet is the honest
+          // answer for somebody who is not looking.
+          stopPresenceTimer();
+
+          return;
+        }
+
+        sendPresence();
+        startPresenceTimer();
+      });
+    }
+
     function applyBootstrapResult(result) {
       // Language first: everything below renders copy, and rendering it twice
       // would show the visitor the wrong language for a frame.
@@ -2699,6 +2755,144 @@
       applyHelpAvailability(siteHasArticles(result));
       ratingConfig = siteRatingPrompt(result);
       renderRatingPrompt();
+      applyPresence(result && result.site ? result.site.presence : null);
+    }
+
+    /**
+     * Report that somebody is here, once the notice saying so exists.
+     *
+     * Four conditions, and every one of them can stop it:
+     *
+     *  - the operator has not switched it on for this site;
+     *  - the visitor declined, which is remembered per site;
+     *  - the browser cannot REMEMBER a decline, so we fail closed -- an embed
+     *    passing `storage: null` or a private window would otherwise resume
+     *    reporting on the next page for somebody who already said no;
+     *  - the tab is hidden, which is the honest signal that nobody is looking.
+     */
+    function applyPresence(config) {
+      stopPresence();
+
+      presenceConfig = config && config.reports === true ? config : null;
+
+      if (!presenceConfig) {
+        return;
+      }
+
+      var key = presenceStorageKey(options.sitePublicKey);
+
+      // Fail closed. If a "no" cannot survive a navigation, we do not get to
+      // assume a "yes".
+      if (!storageRemembers(storage, key)) {
+        return;
+      }
+
+      if (storageGet(storage, key) === 'declined') {
+        renderPresenceDeclined();
+
+        return;
+      }
+
+      renderPresenceDisclosure();
+
+      // The first report waits for the notice to be IN the document. Reporting
+      // before the visitor could have seen it is the same defect as not having
+      // one, arriving a few hundred milliseconds earlier.
+      if (!presenceEl || !rootEl.contains(presenceEl)) {
+        return;
+      }
+
+      sendPresence();
+      startPresenceTimer();
+    }
+
+    function sendPresence() {
+      if (!presenceConfig || presenceHidden()) {
+        return;
+      }
+
+      client.reportPresence(sanitisePageUrl(currentHref())).catch(function () {
+        // A missed heartbeat is a visitor reading as quiet, which is a fair
+        // description of somebody we cannot reach.
+      });
+    }
+
+    function startPresenceTimer() {
+      stopPresenceTimer();
+
+      var every = presencePollMs === null
+        ? Math.max(5, Number(presenceConfig && presenceConfig.every) || 45) * 1000
+        : presencePollMs;
+
+      if (every <= 0) {
+        return;
+      }
+
+      presenceTimer = setInterval(sendPresence, every);
+    }
+
+    function stopPresenceTimer() {
+      if (presenceTimer) {
+        clearInterval(presenceTimer);
+        presenceTimer = null;
+      }
+    }
+
+    function stopPresence() {
+      stopPresenceTimer();
+      presenceConfig = null;
+
+      if (presenceEl) {
+        presenceEl.hidden = true;
+      }
+    }
+
+    function presenceHidden() {
+      return Boolean(doc && doc.visibilityState === 'hidden');
+    }
+
+    function currentHref() {
+      return options.location && options.location.href ? options.location.href : null;
+    }
+
+    function renderPresenceDisclosure() {
+      if (!presenceEl) {
+        return;
+      }
+
+      presenceEl.hidden = false;
+
+      if (presenceCopyEl) {
+        presenceCopyEl.textContent = t('presence.disclosure');
+      }
+
+      if (presenceDeclineEl) {
+        presenceDeclineEl.hidden = false;
+        presenceDeclineEl.textContent = t('presence.decline');
+      }
+    }
+
+    function renderPresenceDeclined() {
+      if (!presenceEl) {
+        return;
+      }
+
+      presenceEl.hidden = false;
+
+      if (presenceCopyEl) {
+        presenceCopyEl.textContent = t('presence.declined');
+      }
+
+      if (presenceDeclineEl) {
+        presenceDeclineEl.hidden = true;
+      }
+    }
+
+    function declinePresence() {
+      storageSet(storage, presenceStorageKey(options.sitePublicKey), 'declined');
+      stopPresenceTimer();
+      presenceConfig = null;
+      renderPresenceDeclined();
     }
 
     /**
@@ -5687,6 +5881,63 @@
     }
   }
 
+  // Does this storage actually keep things?
+  //
+  // `storageSet` swallows failures, which is right for a cached token and wrong
+  // for a decline: an embed passing `storage: null`, private browsing, or a
+  // locked-down browser all leave a "no" that evaporates on the next
+  // navigation. Presence has to know the difference, so it writes a sentinel
+  // and reads it back rather than trusting the write.
+  function storageRemembers(storage, key) {
+    if (!storage) {
+      return false;
+    }
+
+    try {
+      var probe = key + ':probe';
+
+      storage.setItem(probe, '1');
+      var read = storage.getItem(probe);
+      storage.removeItem(probe);
+
+      return read === '1';
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function presenceStorageKey(sitePublicKey) {
+    return 'wayfindr:' + sitePublicKey + ':presence-declined';
+  }
+
+  // The same rule the server applies, applied before the request is built.
+  //
+  // Not redundant with the server pass: sanitising on arrival means the raw URL
+  // has already crossed the wire, and a query string that reached Wayfindr
+  // reached proxies, access logs and error trackers on the way. Removing a
+  // token after transmitting it is not removing it.
+  function sanitisePageUrl(href) {
+    if (typeof href !== 'string' || href === '') {
+      return null;
+    }
+
+    try {
+      var parsed = new URL(href);
+
+      // http and https only. These values become clickable links in the agent
+      // dashboard, and `javascript://host/%0Aalert(1)` parses perfectly.
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return null;
+      }
+
+      // Rebuilt from named parts, so anything not named -- query, fragment,
+      // `user:pass@` credentials -- cannot survive by being forgotten.
+      return parsed.protocol + '//' + parsed.host + parsed.pathname;
+    } catch (error) {
+      return null;
+    }
+  }
+
   function storageRemove(storage, key) {
     try {
       if (storage) {
@@ -5798,6 +6049,9 @@
       '.wayfindr-widget__notice{display:grid;gap:10px;margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-surface-2);color:var(--wf-muted);font-size:13px;line-height:1.4}',
       '.wayfindr-widget__notice[data-state="warning"]{background:color-mix(in srgb, var(--wf-signal-hold) 12%, var(--wf-surface));color:color-mix(in srgb, var(--wf-signal-hold) 70%, var(--wf-ink))}',
       '.wayfindr-widget__notice-copy{margin:0}',
+      '.wayfindr-widget__presence{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:8px 12px;font-size:12px;opacity:.85}',
+      '.wayfindr-widget__presence-copy{margin:0}',
+      '.wayfindr-widget__presence-decline{background:none;border:0;padding:0;font:inherit;text-decoration:underline;cursor:pointer;color:inherit;white-space:nowrap}',
       '.wayfindr-widget__notice-retry{justify-self:start;min-height:34px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);cursor:pointer;padding:0 12px;font:700 13px/1 var(--wf-font-sans)}',
       '.wayfindr-widget__notice-retry:hover{border-color:var(--wf-brand);color:var(--wf-brand)}',
       '.wayfindr-widget__notice-retry:disabled{cursor:wait;opacity:.7}',

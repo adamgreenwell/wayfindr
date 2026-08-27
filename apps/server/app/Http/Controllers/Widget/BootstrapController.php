@@ -8,6 +8,7 @@ use App\Models\Site;
 use App\Models\Visitor;
 use App\Support\Sites\SiteAvailability;
 use App\Support\Sites\SiteIntake;
+use App\Support\Sites\SitePresenceReporting;
 use App\Support\Sites\SiteRatingPrompt;
 use App\Support\Sites\WidgetAppearance;
 use App\Support\Sites\WidgetLanguage;
@@ -87,6 +88,12 @@ class BootstrapController extends Controller
             // schedule are the server's to know, and sending them would let a
             // visitor's wrong clock decide whether support looks open.
             'availability' => $availability->toPayload(),
+            // Whether this site watches visitors who have not made contact, and
+            // how often it expects to hear. Sent so the widget can DISCLOSE it
+            // before reporting -- a notice the visitor cannot see is not a
+            // disclosure, and the cadence belongs to the server because it is
+            // tied to the presence cutoffs the server applies (ADR 0019).
+            'presence' => SitePresenceReporting::for($site)->toPayload(),
             // What to ask before the conversation starts. Out of hours an email
             // is promoted to required here, because it is the only way back to
             // somebody -- the server applies the same promotion on the way in.
