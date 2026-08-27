@@ -538,3 +538,37 @@ test('fetching messages runs the visit transition like every other writer', func
     expect($visitor->current_visit_started_at->isToday())
         ->toBeTrue('the visit still spans the previous session');
 });
+
+test('one visitor cannot spend another visitor behind the same address', function (): void {
+    // The heartbeat is the one widget endpoint every visitor hits continuously,
+    // so the shared per-IP key every other limiter uses divides the quota by
+    // the number of people behind an office or carrier NAT. The symptom is
+    // silent: valid heartbeats take a 429 and those visitors flicker to
+    // inactive on the board while nobody reports an error.
+    config()->set('wayfindr.widget_rate_limits.presence_per_minute', 2);
+    config()->set('wayfindr.widget_rate_limits.presence_per_ip_per_minute', 1000);
+
+    $site = presenceSite();
+
+    reportPresence($site, 'anon-noisy')->assertSuccessful();
+    reportPresence($site, 'anon-noisy')->assertSuccessful();
+    reportPresence($site, 'anon-noisy')->assertStatus(429);
+
+    // The colleague at the next desk has spent nothing.
+    reportPresence($site, 'anon-quiet')->assertSuccessful();
+});
+
+test('the per-address ceiling still bounds a forged client', function (): void {
+    // Rekeying to the visitor must not remove the abuse cap -- rotating the
+    // anonymous ID is free, and creating rows is the thing worth bounding.
+    config()->set('wayfindr.widget_rate_limits.presence_per_minute', 1000);
+    config()->set('wayfindr.widget_rate_limits.presence_per_ip_per_minute', 3);
+
+    $site = presenceSite();
+
+    foreach (range(1, 3) as $i) {
+        reportPresence($site, 'anon-forged-'.$i)->assertSuccessful();
+    }
+
+    reportPresence($site, 'anon-forged-4')->assertStatus(429);
+});
