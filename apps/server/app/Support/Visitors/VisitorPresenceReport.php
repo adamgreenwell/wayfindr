@@ -7,6 +7,7 @@ namespace App\Support\Visitors;
 use App\Models\Site;
 use App\Models\Visitor;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\RateLimiter;
 
 /**
  * Record that somebody is on a site right now (ADR 0019).
@@ -60,6 +61,22 @@ final class VisitorPresenceReport
         // row might have been created by somebody opening the widget, which
         // ADR 0016 counts as contact, and no absence of conversations can tell
         // those apart afterwards.
+        // A row that does not exist yet is a DURABLE cost, not a request.
+        //
+        // The per-address limiter bounds traffic, and traffic is the cheap
+        // half: a forged client rotating anonymous IDs turns every accepted
+        // request into a new row that lives for the full retention window, so
+        // a ceiling generous enough for a busy office is millions of rows a
+        // day when spent on creation instead. Refreshing an existing visitor
+        // costs nothing durable and is not counted here.
+        //
+        // Over the limit the report is simply not stored. Not an error: the
+        // client cannot tell the difference and should not be able to, and a
+        // 429 here would leak how much of the quota is left.
+        if (! $visitor->exists && ! $this->mayCreate($site)) {
+            return $visitor;
+        }
+
         $provenance = $visitor->exists ? [] : ['presence_only' => true];
 
         $visitor->forceFill([
@@ -68,6 +85,23 @@ final class VisitorPresenceReport
         ] + $provenance)->save();
 
         return $visitor;
+    }
+
+    /**
+     * Is there room to mint a new visitor for this site from this address?
+     *
+     * Keyed by site and address rather than by visitor, which is the opposite
+     * of the heartbeat's everyday quota and correct for the same reason: an
+     * attacker choosing a fresh anonymous ID every time has an unlimited supply
+     * of per-visitor buckets, and exactly one address.
+     */
+    private function mayCreate(Site $site): bool
+    {
+        $perMinute = max(1, (int) config('wayfindr.widget_rate_limits.presence_creations_per_ip_per_minute', 30));
+
+        $key = 'presence-create|'.hash('sha256', (string) $site->getKey().'|'.(string) request()->ip());
+
+        return RateLimiter::attempt($key, $perMinute, static fn (): bool => true) !== false;
     }
 
     /**

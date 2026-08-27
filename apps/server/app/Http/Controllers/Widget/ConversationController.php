@@ -16,6 +16,7 @@ use App\Support\WidgetSiteResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
+use Illuminate\Support\Facades\DB;
 
 class ConversationController extends Controller
 {
@@ -53,40 +54,72 @@ class ConversationController extends Controller
 
         $visitor = $visitorSessionToken->visitorFromRequest($request, $site, $validated['anonymous_id']);
 
-        $visitor->forceFill([
-            'metadata' => $visitorContextSanitizer->mergeMetadata(
-                $visitor->metadata,
-                $validated['page_url'] ?? null,
-                array_key_exists('context', $validated),
-                $validated['context'] ?? null,
-                $site->domain,
-            ),
-            'last_web_seen_at' => now(),
-        ]
-            + $this->externalIdentifierUpdate($site, $visitor, $validated, $visitorContextSanitizer)
-            + $this->intakeAnswers($validated))->save();
+        // The stamp and the insert are ONE transaction, against a locked row.
+        //
+        // `wayfindr:prune-presence-visitors` deletes visitors who never made
+        // contact, and it re-checks its predicates under a lock before doing
+        // so -- which makes it safe against a writer that has already
+        // committed, and not against this one. If the pruner takes the lock
+        // first, this request waits, the delete commits, and then the save
+        // below updates nothing while the insert that follows fails its
+        // `visitor_id` foreign key. The visitor is told their message could
+        // not be sent, for a reason that has nothing to do with them.
+        //
+        // Locking here puts both sides in the same queue. Whoever arrives
+        // second sees what the first one did rather than a stale copy of the
+        // world from before it started.
+        $conversation = DB::transaction(function () use (
 
-        $conversation = Conversation::query()->create([
-            'site_id' => $site->id,
-            'visitor_id' => $visitor->id,
-            'support_code' => Conversation::generateSupportCode(),
-            'status' => 'open',
-            'subject' => $validated['subject'] ?? null,
-            'metadata' => array_filter([
-                // Sanitised like the visitor's copy. This is the SECOND
-                // place the same URL lands, it is durable for the life of the
-                // conversation, and it is what the agent panels label the entry
-                // page -- so fixing only the visitor row would have left the
-                // likelier path open: people ask for help FROM the page that is
-                // going wrong, which on a reset flow is the page holding the
-                // token.
-                'started_page_url' => VisitorPageUrl::forSite($validated['page_url'] ?? null, $site->domain),
-                // The reason belongs to this conversation, not to the person:
-                // the next one may be about something else entirely. Name and
-                // email go on the visitor, where they are reusable.
-                'reason' => $this->trimmedOrNull($validated['visitor_reason'] ?? null),
-            ], fn ($value): bool => $value !== null),
-        ]);
+            $site,
+            $validated,
+            $visitorContextSanitizer,
+            $visitor,
+        ): Conversation {
+            $locked = Visitor::query()->whereKey($visitor->getKey())->lockForUpdate()->first();
+
+            // Gone means the pruner won the race. Re-created rather than
+            // failed: this visitor is here NOW, asking for help, which is the
+            // one fact that outranks having been quiet for thirty days.
+            $visitor = $locked ?? Visitor::query()->create([
+                'site_id' => $site->id,
+                'anonymous_id' => $validated['anonymous_id'],
+            ]);
+
+            $visitor->forceFill([
+                'metadata' => $visitorContextSanitizer->mergeMetadata(
+                    $visitor->metadata,
+                    $validated['page_url'] ?? null,
+                    array_key_exists('context', $validated),
+                    $validated['context'] ?? null,
+                    $site->domain,
+                ),
+                'last_web_seen_at' => now(),
+            ]
+                + $this->externalIdentifierUpdate($site, $visitor, $validated, $visitorContextSanitizer)
+                + $this->intakeAnswers($validated))->save();
+
+            return Conversation::query()->create([
+                'site_id' => $site->id,
+                'visitor_id' => $visitor->id,
+                'support_code' => Conversation::generateSupportCode(),
+                'status' => 'open',
+                'subject' => $validated['subject'] ?? null,
+                'metadata' => array_filter([
+                    // Sanitised like the visitor's copy. This is the SECOND
+                    // place the same URL lands, it is durable for the life of the
+                    // conversation, and it is what the agent panels label the entry
+                    // page -- so fixing only the visitor row would have left the
+                    // likelier path open: people ask for help FROM the page that is
+                    // going wrong, which on a reset flow is the page holding the
+                    // token.
+                    'started_page_url' => VisitorPageUrl::forSite($validated['page_url'] ?? null, $site->domain),
+                    // The reason belongs to this conversation, not to the person:
+                    // the next one may be about something else entirely. Name and
+                    // email go on the visitor, where they are reusable.
+                    'reason' => $this->trimmedOrNull($validated['visitor_reason'] ?? null),
+                ], fn ($value): bool => $value !== null),
+            ]);
+        });
 
         return response()->json([
             'data' => [

@@ -14,6 +14,7 @@ use App\Support\Sites\SitePresenceReporting;
 use App\Support\Visitors\VisitorPresence;
 use App\Support\VisitorSessionToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 
 uses(RefreshDatabase::class);
@@ -615,6 +616,151 @@ test('turning presence on is not an ordinary agent decision', function (): void 
         ->assertForbidden();
 
     expect(SitePresenceReporting::for($site->fresh())->enabled)->toBeFalse();
+});
+
+test('creating durable rows is bounded even when traffic is not', function (): void {
+    // The traffic limits are the cheap half. A forged client rotating anonymous
+    // IDs turns every accepted request into a visitor that lives for the whole
+    // retention window, so a ceiling sized for a busy office becomes millions
+    // of rows a day when it is spent on creation.
+    config()->set('wayfindr.widget_rate_limits.presence_per_minute', 1000);
+    config()->set('wayfindr.widget_rate_limits.presence_per_ip_per_minute', 1000);
+    config()->set('wayfindr.widget_rate_limits.presence_creations_per_ip_per_minute', 3);
+
+    $site = presenceSite();
+
+    foreach (range(1, 6) as $i) {
+        reportPresence($site, 'anon-mint-'.$i)->assertSuccessful();
+    }
+
+    expect(Visitor::query()->where('anonymous_id', 'like', 'anon-mint-%')->count())
+        ->toBe(3, 'row creation was not bounded');
+});
+
+test('a visitor already known is refreshed regardless of the creation cap', function (): void {
+    // The cap must bound minting, not reporting. Somebody the site already
+    // knows costs nothing durable, and throttling them would make the board
+    // wrong for exactly the visitors it is right about.
+    config()->set('wayfindr.widget_rate_limits.presence_creations_per_ip_per_minute', 1);
+
+    $site = presenceSite();
+
+    reportPresence($site, 'anon-known')->assertSuccessful();
+
+    $visitor = Visitor::query()->where('anonymous_id', 'anon-known')->firstOrFail();
+
+    $visitor->forceFill(['last_web_seen_at' => now()->subHour()])->save();
+
+    // The creation quota is spent. This is not a creation.
+    reportPresence($site, 'anon-known')->assertSuccessful();
+
+    expect($visitor->fresh()->last_web_seen_at->diffInMinutes(now()))
+        ->toBeLessThan(2, 'a known visitor stopped being refreshed');
+});
+
+test('bootstrap survives losing the race to create the visitor', function (): void {
+    // A new visitor's first page load puts bootstrap and the first heartbeat in
+    // flight together. Both read no row, both insert, and the unique constraint
+    // lets exactly one win -- and the loser used to be a 500 that left the
+    // widget with no configuration at all.
+    //
+    // Sequencing the two requests does NOT reproduce it: whichever runs second
+    // simply finds the row and updates it. The conflict only exists when the
+    // row appears between the read and the insert, so that is what is staged --
+    // a competing insert at the moment bootstrap commits to creating.
+    $site = presenceSite();
+    $raced = false;
+
+    Visitor::creating(function (Visitor $creating) use (&$raced, $site): void {
+        if ($raced || $creating->anonymous_id !== 'anon-raced') {
+            return;
+        }
+
+        $raced = true;
+
+        // The heartbeat, landing in the gap. Written through the query builder
+        // so it does not re-enter this hook.
+        DB::table('visitors')->insert([
+            'site_id' => $site->id,
+            'anonymous_id' => 'anon-raced',
+            'presence_only' => true,
+            'last_seen_at' => now(),
+            'last_web_seen_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    });
+
+    test()->postJson('/api/widget/bootstrap', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-raced',
+    ])->assertSuccessful();
+
+    expect($raced)->toBeTrue('the race never happened, so this proves nothing');
+
+    $visitor = Visitor::query()->where('anonymous_id', 'anon-raced')->firstOrFail();
+
+    expect(Visitor::query()->where('anonymous_id', 'anon-raced')->count())->toBe(1)
+        ->and($visitor->presence_only)->toBeFalse('the row the heartbeat won kept its presence-only mark');
+});
+
+test('a visitor pruned mid-request still gets their conversation', function (): void {
+    // The pruner re-checks its predicates under a lock, which makes it safe
+    // against a writer that has already committed and not against one still in
+    // flight. The unsafe ordering is narrow and real: the request resolves the
+    // visitor, the pruner takes the lock and deletes, and the conversation
+    // insert then fails its foreign key -- so the visitor is told their message
+    // could not be sent, for a reason that has nothing to do with them.
+    //
+    // Driven deterministically: the row is deleted the moment the request has
+    // read it, which is exactly the window and cannot be produced by ordinary
+    // sequencing in one process.
+    $site = presenceSite();
+
+    reportPresence($site, 'anon-returns')->assertSuccessful();
+
+    $visitor = Visitor::query()->where('anonymous_id', 'anon-returns')->firstOrFail();
+    $visitorId = $visitor->id;
+    $token = app(VisitorSessionToken::class)->issue($site, $visitor);
+
+    // The request reads this visitor more than once: the intake check, then the
+    // token resolve, then the locked read inside the transaction. The window
+    // being reproduced is between the token resolve and the lock, so the delete
+    // goes after the SECOND read -- deleting on the first only reproduces a
+    // missing visitor, which the token resolver already rejects with a 401.
+    $reads = 0;
+    $pruned = false;
+
+    Visitor::retrieved(function (Visitor $read) use (&$reads, &$pruned, $visitorId): void {
+        if ($pruned || $read->id !== $visitorId) {
+            return;
+        }
+
+        $reads++;
+
+        if ($reads < 2) {
+            return;
+        }
+
+        $pruned = true;
+
+        Visitor::query()->whereKey($visitorId)->delete();
+    });
+
+    test()->postJson('/api/conversations', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-returns',
+        'visitor_token' => $token,
+        'subject' => 'My order has not arrived',
+    ])->assertSuccessful();
+
+    expect($pruned)->toBeTrue('the race never happened, so this proves nothing');
+
+    $recreated = Visitor::query()->where('anonymous_id', 'anon-returns')->firstOrFail();
+
+    expect($recreated->id)->not->toBe($visitorId)
+        ->and(Conversation::query()->where('visitor_id', $recreated->id)->exists())
+        ->toBeTrue('the conversation was lost with the visitor');
 });
 
 test('the widget learns about presence without making contact', function (): void {
