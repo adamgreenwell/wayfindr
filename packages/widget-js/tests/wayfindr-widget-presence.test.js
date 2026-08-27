@@ -945,3 +945,40 @@ test('a running reporter picks up a revised setting', async (t) => {
     'the tab kept sending page addresses after the operator switched them off',
   );
 });
+
+test('punctuation does not launder a credential client-side either', async (t) => {
+  // The client rule decides what leaves the browser at all, so a divergence
+  // from the server's means the credential has already crossed the wire by the
+  // time anything redacts it.
+  const cases = [
+    ['/invite/ABC-123', 'https://shop.example.test/invite/[redacted]'],
+    ['/reset/abc_def123', 'https://shop.example.test/reset/[redacted]'],
+    ['/t/A1B2-C3D4', 'https://shop.example.test/t/[redacted]'],
+  ];
+
+  for (const [path, expected] of cases) {
+    const { widget, calls } = widgetWithPresence({ href: 'https://shop.example.test' + path });
+
+    t.after(() => widget.destroy());
+
+    await settle();
+
+    assert.equal(presenceCalls(calls)[0].body.page_url, expected, path + ' was not redacted');
+  }
+});
+
+test('hyphenated page names survive client-side too', async (t) => {
+  for (const path of ['/billing-preferences', '/blog/2024-my-post', '/help/how-do-i-cancel', '/en-GB/pricing']) {
+    const { widget, calls } = widgetWithPresence({ href: 'https://shop.example.test' + path });
+
+    t.after(() => widget.destroy());
+
+    await settle();
+
+    assert.equal(
+      presenceCalls(calls)[0].body.page_url,
+      'https://shop.example.test' + path,
+      path + ' was redacted',
+    );
+  }
+});
