@@ -166,10 +166,27 @@ means rather than leaving it to the implementation:
   `/reset-password/9f2c…` still says which page without saying which token.
 
   The test is deliberately crude, and it is a heuristic rather than a proof: a
-  UUID, anything 40 characters or longer, or anything at least 20 characters
-  carrying a digit with no word separators. A long hyphenated slug survives; a
-  token does not. It will occasionally redact something harmless, which is the
-  right way round for a rule whose failures are credentials.
+  UUID, anything 32 characters or longer, or anything at least **six**
+  characters carrying a digit with no word separator.
+
+  Six, not twenty, and the difference matters more than it looks. Twenty is
+  long enough to feel safe and is not: the dangerous values are frequently
+  short. `/invite/A1B2C3` and `/orders/123456` are both a credential in a path
+  on real sites, and a rule waiting for twenty characters keeps them whole.
+
+  A hyphenated slug survives because it has a separator; a word without digits
+  survives at any length; a version segment survives because it is short. The
+  cost is real and named: `/product/iphone15` is redacted, which loses an agent
+  some context on some sites. That is the right way round for a rule whose
+  failures are credentials — and it is exactly why the query string is dropped
+  WHOLE rather than filtered by this same kind of guessing.
+
+  **The same rule runs in the widget, before the report leaves the browser.**
+  Redacting on arrival is too late to be the promise it sounds like: by then the
+  value has crossed every proxy in between and landed in access logs on both
+  sides. The server keeps its copy of the rule because the widget is not the
+  only writer, and the two must not drift — a disagreement shows up as page
+  addresses that change shape depending on which path they took.
 - **The query string is dropped in full.** No exceptions, and no per-site
   allowlist — see below.
 - **The fragment is dropped.** It never reaches a server in an ordinary
@@ -314,10 +331,25 @@ one browser, since tabs share an anonymous ID.
 and address as the **abuse cap**, covering roughly nine hundred simultaneous
 visitors behind one address at the standard cadence.
 
-The second is the limit that wanted to be there anyway. The thing worth bounding
-is a forged client rotating anonymous IDs to create rows until §4's sweep
-removes them, not a busy office — and because §1 keeps this off until an
-operator turns it on, the surface is only the sites that chose it.
+**And a third, on creating rows rather than on traffic.** The two above bound
+requests, which is the cheap half. A forged client rotating anonymous IDs turns
+every accepted report into a visitor that lives for the whole of §4's retention
+window, so a per-address ceiling sized for a busy office is millions of durable
+rows a day when it is spent on creation.
+`WAYFINDR_WIDGET_PRESENCE_CREATIONS_PER_IP_PER_MINUTE` (default 30) bounds that
+directly, keyed by address and site — an attacker choosing a fresh ID every time
+has an unlimited supply of per-visitor buckets and exactly one address.
+
+Refreshing somebody the site already knows is not counted: it costs nothing
+durable, and throttling it would make the board wrong for precisely the visitors
+it is right about. Over the limit the report is not stored and the client is not
+told, because a 429 there reports how much quota is left to whoever is probing.
+
+An office where everybody arrives at nine exceeds thirty new visitors a minute
+briefly; those visitors are recorded on their next heartbeat rather than lost.
+
+Because §1 keeps all of this off until an operator turns it on, the surface is
+only ever the sites that chose it.
 
 The first clause is not pedantry: a presence-only visitor's opening heartbeat
 has nothing to be "older than", so a rule written only around the gap never
