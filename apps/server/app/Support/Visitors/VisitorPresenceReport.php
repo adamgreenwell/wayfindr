@@ -6,6 +6,7 @@ namespace App\Support\Visitors;
 
 use App\Models\Site;
 use App\Models\Visitor;
+use App\Support\Sites\SitePresenceReporting;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
@@ -62,6 +63,25 @@ final class VisitorPresenceReport
 
     private function stamp(Visitor $visitor, ?string $pageUrl, Site $site): Visitor
     {
+        // The site's setting, re-read under a lock, inside the transaction that
+        // writes.
+        //
+        // The endpoint checks it on the way in, and an operator revoking
+        // presence between that check and this write would have their deletion
+        // pass over a row this request then created -- leaving one visitor
+        // behind who never made contact, on a site that had just said not to
+        // watch them, until the retention sweep. The dashboard promises
+        // otherwise in as many words.
+        //
+        // Locking the SITE row is what serialises the two: the disable action
+        // takes the same lock, so whichever arrives second sees what the first
+        // one did instead of a copy of the world from before it started.
+        $current = Site::query()->whereKey($site->getKey())->lockForUpdate()->first();
+
+        if ($current === null || ! SitePresenceReporting::for($current)->enabled) {
+            return $visitor;
+        }
+
         // Re-read under a lock before merging metadata.
         //
         // `metadata` is one JSON column, so writing it replaces the whole
