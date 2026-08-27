@@ -82,9 +82,13 @@ final class VisitorPageUrl
             return null;
         }
 
-        $host = parse_url($reduced, PHP_URL_HOST);
+        $parts = parse_url($reduced);
 
-        return is_string($host) && self::belongsToSite($host, $expectedHost) ? $reduced : null;
+        if (! is_array($parts) || ! isset($parts['host'], $parts['scheme'])) {
+            return null;
+        }
+
+        return self::belongsToSite($parts, $expectedHost) ? $reduced : null;
     }
 
     /**
@@ -146,38 +150,71 @@ final class VisitorPageUrl
     }
 
     /**
-     * Is this the site's own host?
+     * Is this address on the site's own origin?
      *
      * A null expectation is not "anything goes" -- it means we have nothing to
      * check against, so nothing is trusted. A site with no configured domain
      * stores no page address at all, because we cannot tell its pages from
      * anybody else's and guessing is the failure this exists to prevent.
+     *
+     * Host AND port, because same host on a different port is a different
+     * service. A site configured as `shop.test:8443` does not vouch for
+     * `shop.test:9998`, which may be an admin panel, a database console or
+     * anything else somebody left listening -- and the value this returns is
+     * rendered as a clickable link on the agent ticket page.
+     *
+     * @param  array<string, mixed>  $parts  the reported URL, already reduced
      */
-    private static function belongsToSite(string $host, ?string $expectedHost): bool
+    private static function belongsToSite(array $parts, ?string $expectedHost): bool
     {
         if ($expectedHost === null) {
             return false;
         }
 
-        $host = strtolower(trim($host));
-        $expected = strtolower(trim((string) preg_replace('#^[a-z]+://#i', '', $expectedHost)));
-        $expected = ltrim(explode('/', $expected)[0], '.');
+        $host = strtolower(trim((string) $parts['host']));
 
-        // A configured domain may carry a port -- `localhost:8000` and
-        // `staging.example.test:8443` are both supported install shapes -- while
-        // parse_url() hands back the hostname alone. Comparing them unstripped
-        // rejects every legitimate page on exactly the installs that need a
-        // port, and stores null instead.
-        $expected = explode(':', $expected)[0];
+        // The configured value is operator input and arrives in whatever shape
+        // they typed: a bare host, a host and port, a full URL, a leading dot.
+        // Reduce it to an authority, then let the SAME parser that read the
+        // reported URL read this one -- so `shop.test:8443` and `[::1]:8000`
+        // split into host and port identically on both sides of the comparison
+        // rather than by a hand-rolled split that gets IPv6 wrong.
+        $authority = trim((string) preg_replace('#^[a-z][a-z0-9+.-]*://#i', '', trim($expectedHost)));
+        $authority = ltrim(explode('/', $authority)[0], '.');
 
-        if ($expected === '' || $host === '') {
+        if ($authority === '' || $host === '') {
+            return false;
+        }
+
+        $expected = parse_url('//'.$authority);
+
+        // A configured authority this cannot parse -- `shop.test:not-a-port` --
+        // is not one to trust. Failing closed here stores no address; failing
+        // open would store an unchecked one.
+        if (! is_array($expected) || ! isset($expected['host'])) {
+            return false;
+        }
+
+        $expectedHostOnly = strtolower($expected['host']);
+
+        if ($expectedHostOnly === '') {
             return false;
         }
 
         // The apex, or a subdomain of it. `www.` and a marketing subdomain are
         // the same site; `evil-shop.test` is NOT `shop.test`, which is why this
         // matches on a dot boundary rather than as a suffix.
-        return $host === $expected || str_ends_with($host, '.'.$expected);
+        if ($host !== $expectedHostOnly && ! str_ends_with($host, '.'.$expectedHostOnly)) {
+            return false;
+        }
+
+        // Compared as effective ports so the two ways of writing one origin
+        // agree: a site configured `shop.test` matches `https://shop.test/` and
+        // `https://shop.test:443/` both, and a site configured `shop.test:8443`
+        // matches neither.
+        $default = strtolower((string) $parts['scheme']) === 'https' ? 443 : 80;
+
+        return ($parts['port'] ?? $default) === ($expected['port'] ?? $default);
     }
 
     /**
