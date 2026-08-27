@@ -60,6 +60,8 @@ test('widget bootstrap creates a site scoped visitor and returns safe config', f
 test('widget bootstrap stores safe host context and drops sensitive visitor fields', function (): void {
     $site = Site::factory()->create([
         'public_key' => 'site_public_docs',
+        // A page address is only stored for a site with a configured domain.
+        'domain' => 'docs.example.test',
     ]);
 
     $response = $this->postJson('/api/widget/bootstrap', [
@@ -242,7 +244,12 @@ test('conversation creation uses the site scoped visitor', function (): void {
 });
 
 test('conversation creation can refresh safe host context for the visitor', function (): void {
-    $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+    // A configured domain, because a page address is only stored for a site
+    // that has one.
+    $site = Site::factory()->create([
+        'public_key' => 'site_public_docs',
+        'domain' => 'docs.example.test',
+    ]);
     Visitor::factory()->for($site)->create([
         'anonymous_id' => 'anon-docs',
         'metadata' => [

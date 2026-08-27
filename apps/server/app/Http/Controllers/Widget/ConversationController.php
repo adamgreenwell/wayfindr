@@ -59,6 +59,7 @@ class ConversationController extends Controller
                 $validated['page_url'] ?? null,
                 array_key_exists('context', $validated),
                 $validated['context'] ?? null,
+                $site->domain,
             ),
             'last_seen_at' => now(),
         ]
@@ -79,7 +80,7 @@ class ConversationController extends Controller
                 // likelier path open: people ask for help FROM the page that is
                 // going wrong, which on a reset flow is the page holding the
                 // token.
-                'started_page_url' => VisitorPageUrl::sanitise($validated['page_url'] ?? null),
+                'started_page_url' => VisitorPageUrl::forSite($validated['page_url'] ?? null, $site->domain),
                 // The reason belongs to this conversation, not to the person:
                 // the next one may be about something else entirely. Name and
                 // email go on the visitor, where they are reusable.

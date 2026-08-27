@@ -2,11 +2,17 @@
 
 use App\Support\Visitors\VisitorPageUrl;
 
+/**
+ * `reduce()` is the at-rest rule: everything that is not a page address is
+ * stripped, and the host is left alone because a stored row does not know which
+ * site it belongs to. The ingress rule that judges the host is `forSite()`, and
+ * it has its own tests below.
+ */
 test('a reset token never survives being reported as a page', function (): void {
     // The reason this class exists. A visitor who opens the chat while on a
     // password-reset page reported the whole URL, it was stored forever, and it
     // was shown to an agent in the visitor context panel.
-    $sanitised = VisitorPageUrl::sanitise(
+    $sanitised = VisitorPageUrl::reduce(
         'https://shop.test/account/reset?reset_token=abc123&email=someone@example.test'
     );
 
@@ -17,9 +23,9 @@ test('the query string goes whether or not its names look dangerous', function (
     // Deliberately NOT a name-based rule. The dangerous parameters are often
     // the shortest -- `?t=`, `?k=`, `?c=` -- so a pattern over names fails
     // exactly where it matters, and fails silently.
-    expect(VisitorPageUrl::sanitise('https://shop.test/go?t=eyJhbGciOi'))
+    expect(VisitorPageUrl::reduce('https://shop.test/go?t=eyJhbGciOi'))
         ->toBe('https://shop.test/go')
-        ->and(VisitorPageUrl::sanitise('https://shop.test/search?q=hello'))
+        ->and(VisitorPageUrl::reduce('https://shop.test/search?q=hello'))
         ->toBe('https://shop.test/search');
 });
 
@@ -27,14 +33,14 @@ test('a fragment goes too, because we cannot tell routing from a token', functio
     // A fragment never reaches a server in an ordinary navigation, so a widget
     // reporting one is reporting something the page chose to put in front of
     // us. Single-page apps route with it; they also carry tokens in it.
-    expect(VisitorPageUrl::sanitise('https://shop.test/pricing?plan=pro#access_token=xyz'))
+    expect(VisitorPageUrl::reduce('https://shop.test/pricing?plan=pro#access_token=xyz'))
         ->toBe('https://shop.test/pricing');
 });
 
 test('credentials in the authority are dropped by construction', function (): void {
     // Not matched and removed -- never copied across. The URL is rebuilt from
     // the parts this class names, so anything it does not name cannot survive.
-    expect(VisitorPageUrl::sanitise('https://user:hunter2@shop.test/admin'))
+    expect(VisitorPageUrl::reduce('https://user:hunter2@shop.test/admin'))
         ->toBe('https://shop.test/admin');
 });
 
@@ -42,9 +48,9 @@ test('what is left still answers which page', function (): void {
     // The whole point is context for an agent, so the path has to survive --
     // "/pricing" is a different conversation from "/". Ports too, because a
     // staging install on :8443 is a different host from the same name on 443.
-    expect(VisitorPageUrl::sanitise('https://shop.test/docs/install/forge'))
+    expect(VisitorPageUrl::reduce('https://shop.test/docs/install/forge'))
         ->toBe('https://shop.test/docs/install/forge')
-        ->and(VisitorPageUrl::sanitise('https://shop.test:8443/pricing'))
+        ->and(VisitorPageUrl::reduce('https://shop.test:8443/pricing'))
         ->toBe('https://shop.test:8443/pricing');
 });
 
@@ -59,57 +65,80 @@ test('a dangerous scheme is dropped even when it parses perfectly', function ():
     // through: `javascript://evil.test/%0Aalert(document.domain)` parses with a
     // scheme, a host and a path, and looks entirely ordinary to every check
     // that is not an allowlist.
-    expect(VisitorPageUrl::sanitise('javascript://evil.test/%0Aalert(document.domain)'))->toBeNull()
-        ->and(VisitorPageUrl::sanitise('data://text/html;base64,PHNjcmlwdD4='))->toBeNull()
-        ->and(VisitorPageUrl::sanitise('vbscript://x.test/foo'))->toBeNull()
-        ->and(VisitorPageUrl::sanitise('file://etc/passwd'))->toBeNull()
-        ->and(VisitorPageUrl::sanitise('FTP://files.test/x'))->toBeNull();
+    expect(VisitorPageUrl::reduce('javascript://evil.test/%0Aalert(document.domain)'))->toBeNull()
+        ->and(VisitorPageUrl::reduce('data://text/html;base64,PHNjcmlwdD4='))->toBeNull()
+        ->and(VisitorPageUrl::reduce('vbscript://x.test/foo'))->toBeNull()
+        ->and(VisitorPageUrl::reduce('file://etc/passwd'))->toBeNull()
+        ->and(VisitorPageUrl::reduce('FTP://files.test/x'))->toBeNull();
 
     // And the two that are a page address survive, in either case.
-    expect(VisitorPageUrl::sanitise('http://shop.test/ok'))->toBe('http://shop.test/ok')
-        ->and(VisitorPageUrl::sanitise('HTTPS://shop.test/ok'))->toBe('HTTPS://shop.test/ok');
+    expect(VisitorPageUrl::reduce('http://shop.test/ok'))->toBe('http://shop.test/ok')
+        ->and(VisitorPageUrl::reduce('HTTPS://shop.test/ok'))->toBe('HTTPS://shop.test/ok');
 });
 
 test('an unparseable URL is dropped rather than kept', function (): void {
     // "Leave it alone if you cannot read it" keeps precisely the inputs least
     // likely to be an ordinary page address.
-    expect(VisitorPageUrl::sanitise('not a url'))->toBeNull()
-        ->and(VisitorPageUrl::sanitise('javascript:alert(1)'))->toBeNull()
-        ->and(VisitorPageUrl::sanitise('   '))->toBeNull()
-        ->and(VisitorPageUrl::sanitise(null))->toBeNull();
-});
-
-test('a site can name parameters back, and gets only those', function (): void {
-    // An operator whose URLs carry a plan or a campaign gets that context back
-    // by naming it -- a decision somebody made, rather than a pattern that
-    // happened not to match. Everything unnamed still goes.
-    $kept = VisitorPageUrl::sanitise(
-        'https://shop.test/pricing?plan=pro&utm_source=email&session=abc',
-        ['plan', 'utm_source'],
-    );
-
-    expect($kept)->toContain('plan=pro')
-        ->and($kept)->toContain('utm_source=email');
-
-    expect($kept)->not->toContain('session');
-    expect($kept)->not->toContain('abc');
-});
-
-test('naming a parameter is case-insensitive but does not widen anything else', function (): void {
-    expect(VisitorPageUrl::sanitise('https://shop.test/p?Plan=pro&token=x', ['plan']))
-        ->toBe('https://shop.test/p?Plan=pro');
-});
-
-test('an array parameter is not kept even when named', function (): void {
-    // `?plan[]=a&plan[]=b` parses to an array. http_build_query would happily
-    // re-encode it, but the value shape is no longer the scalar the allowlist
-    // was reasoning about, so it is skipped rather than guessed at.
-    expect(VisitorPageUrl::sanitise('https://shop.test/p?plan[]=a&plan[]=b', ['plan']))
-        ->toBe('https://shop.test/p');
+    expect(VisitorPageUrl::reduce('not a url'))->toBeNull()
+        ->and(VisitorPageUrl::reduce('javascript:alert(1)'))->toBeNull()
+        ->and(VisitorPageUrl::reduce('   '))->toBeNull()
+        ->and(VisitorPageUrl::reduce(null))->toBeNull();
 });
 
 test('the result is capped to what the column holds', function (): void {
-    $long = 'https://shop.test/'.str_repeat('a', 4000);
+    // Built from many SHORT legible segments on purpose. A single 4000-character
+    // segment is opaque by any reasonable test and gets redacted to one
+    // character, which exercises the redaction rather than the cap -- the
+    // earlier version of this test did exactly that and stopped measuring what
+    // it claimed to.
+    $long = 'https://shop.test/'.implode('/', array_fill(0, 400, 'pages'));
 
-    expect(mb_strlen((string) VisitorPageUrl::sanitise($long)))->toBe(2048);
+    expect(mb_strlen((string) VisitorPageUrl::reduce($long)))->toBe(2048);
+});
+
+test('an address from another host is not stored at all', function (): void {
+    // The widget endpoints are public and so is the site key, so this value is
+    // attacker-controlled -- and stored addresses render as clickable
+    // target="_blank" links on the agent ticket page. An unchecked host is a
+    // phishing channel pointed at an agent.
+    expect(VisitorPageUrl::forSite('https://attacker.example/login', 'shop.test'))->toBeNull();
+
+    // Matched on a dot boundary, not as a suffix: this is the lookalike the
+    // rule exists for.
+    expect(VisitorPageUrl::forSite('https://evil-shop.test/login', 'shop.test'))->toBeNull();
+});
+
+test('a subdomain of the site is the same site', function (): void {
+    expect(VisitorPageUrl::forSite('https://www.shop.test/pricing', 'shop.test'))
+        ->toBe('https://www.shop.test/pricing')
+        ->and(VisitorPageUrl::forSite('https://shop.test/pricing', 'shop.test'))
+        ->toBe('https://shop.test/pricing');
+});
+
+test('a site with no configured domain stores no address', function (): void {
+    // Null is not "anything goes" -- it means there is nothing to check
+    // against, and guessing is the failure this rule exists to prevent.
+    expect(VisitorPageUrl::forSite('https://shop.test/pricing', null))->toBeNull()
+        ->and(VisitorPageUrl::forSite('https://shop.test/pricing', ''))->toBeNull();
+});
+
+test('a token in the PATH is redacted, because this product puts one there', function (): void {
+    // `/reset-password/{token}` is a route in this repository. Dropping the
+    // query and fragment and calling the path safe leaves the secret in the one
+    // part that survived.
+    expect(VisitorPageUrl::reduce('https://shop.test/reset-password/9f2c8a1b4e6d7c3f0a5b2e8d1c4f7a9b'))
+        ->toBe('https://shop.test/reset-password/…')
+        ->and(VisitorPageUrl::reduce('https://shop.test/u/550e8400-e29b-41d4-a716-446655440000'))
+        ->toBe('https://shop.test/u/…');
+});
+
+test('a page name survives the redaction', function (): void {
+    // The rule is crude and will occasionally take a harmless slug, but it must
+    // not take the ordinary ones -- the field exists to say which page.
+    expect(VisitorPageUrl::reduce('https://shop.test/docs/how-to-configure-your-widget'))
+        ->toBe('https://shop.test/docs/how-to-configure-your-widget')
+        ->and(VisitorPageUrl::reduce('https://shop.test/blog/2024-my-post'))
+        ->toBe('https://shop.test/blog/2024-my-post')
+        ->and(VisitorPageUrl::reduce('https://shop.test/pricing'))
+        ->toBe('https://shop.test/pricing');
 });
