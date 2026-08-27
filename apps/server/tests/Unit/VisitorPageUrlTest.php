@@ -142,3 +142,17 @@ test('a page name survives the redaction', function (): void {
         ->and(VisitorPageUrl::reduce('https://shop.test/pricing'))
         ->toBe('https://shop.test/pricing');
 });
+
+test('a site configured with a port still matches its own pages', function (): void {
+    // localhost:8000 and staging.example.test:8443 are both supported install
+    // shapes. parse_url() hands back the hostname alone, so comparing it against
+    // an unstripped configured value rejected every legitimate page on exactly
+    // the installs that need a port -- and stored null instead.
+    expect(VisitorPageUrl::forSite('http://localhost:8000/pricing', 'localhost:8000'))
+        ->toBe('http://localhost:8000/pricing')
+        ->and(VisitorPageUrl::forSite('https://staging.example.test:8443/docs', 'staging.example.test:8443'))
+        ->toBe('https://staging.example.test:8443/docs');
+
+    // And a port does not weaken the host rule.
+    expect(VisitorPageUrl::forSite('https://attacker.example/login', 'localhost:8000'))->toBeNull();
+});

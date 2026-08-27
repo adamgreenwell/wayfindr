@@ -163,6 +163,13 @@ final class VisitorPageUrl
         $expected = strtolower(trim((string) preg_replace('#^[a-z]+://#i', '', $expectedHost)));
         $expected = ltrim(explode('/', $expected)[0], '.');
 
+        // A configured domain may carry a port -- `localhost:8000` and
+        // `staging.example.test:8443` are both supported install shapes -- while
+        // parse_url() hands back the hostname alone. Comparing them unstripped
+        // rejects every legitimate page on exactly the installs that need a
+        // port, and stores null instead.
+        $expected = explode(':', $expected)[0];
+
         if ($expected === '' || $host === '') {
             return false;
         }
