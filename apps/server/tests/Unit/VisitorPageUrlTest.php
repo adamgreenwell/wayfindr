@@ -303,3 +303,15 @@ test('the configured scheme decides which port is the default', function (): voi
         ->toBe('http://shop.test:80/login')
         ->and(VisitorPageUrl::forSite('http://shop.test:443/login', 'http://shop.test'))->toBeNull();
 });
+
+test('the fully qualified spelling of a host is the same host', function (): void {
+    // `shop.test.` is `shop.test` with its root label written out. Browsers
+    // report either, and comparing them as written discarded the page.
+    expect(VisitorPageUrl::forSite('https://shop.test./pricing', 'shop.test'))
+        ->toBe('https://shop.test./pricing')
+        ->and(VisitorPageUrl::forSite('https://shop.test/pricing', 'shop.test.'))
+        ->toBe('https://shop.test/pricing');
+
+    // And it is not a way past the host rule.
+    expect(VisitorPageUrl::forSite('https://attacker.example./login', 'shop.test'))->toBeNull();
+});

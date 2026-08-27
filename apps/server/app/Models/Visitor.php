@@ -182,18 +182,22 @@ class Visitor extends Model
      */
     public function presenceCue(): array
     {
-        if (! $this->last_seen_at) {
+        // The website sighting throughout, matching presenceState(). Mixing the
+        // two produced a visitor labelled `unknown` and captioned "seen two
+        // minutes ago" -- the state from one column and the moment from the
+        // other, describing somebody who had emailed as though they were here.
+        if (! $this->last_web_seen_at) {
             return ['key' => 'no_heartbeat', 'seen_at' => null];
         }
 
         return $this->presenceState() === 'active'
             ? ['key' => 'seen_recently', 'seen_at' => null]
-            : ['key' => 'seen_at', 'seen_at' => $this->last_seen_at];
+            : ['key' => 'seen_at', 'seen_at' => $this->last_web_seen_at];
     }
 
     public function presenceDetail(): string
     {
-        if (! $this->last_seen_at) {
+        if (! $this->last_web_seen_at) {
             return 'No visitor heartbeat yet.';
         }
 
@@ -201,7 +205,7 @@ class Visitor extends Model
             return 'Seen in the last 2 minutes';
         }
 
-        return 'Seen '.$this->last_seen_at->diffForHumans();
+        return 'Seen '.$this->last_web_seen_at->diffForHumans();
     }
 
     public function auditEvents(): MorphMany

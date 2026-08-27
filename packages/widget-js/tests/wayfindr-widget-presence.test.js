@@ -1116,3 +1116,130 @@ test('a partial answer does not re-enable address sharing', async (t) => {
     'a partial answer put page addresses back on the wire',
   );
 });
+
+test('a notice hidden by the host page is not a disclosure', async (t) => {
+  // `visibility: hidden` occupies space, so the element still has client
+  // rects: laid out, measurable and invisible. A check that only asked
+  // geometry called it shown, and the host page owns the stylesheet, so this
+  // is a shape somebody else can put us in.
+  const dom = new JSDOM(
+    '<!doctype html><html><head><style>#support{visibility:hidden}</style></head>'
+    + '<body><div id="support"></div></body></html>',
+    { url: 'https://shop.example.test/pricing' },
+  );
+
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const calls = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 0,
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, {
+          data: { appearance: { position: 'right' }, presence: { reports: true, every: 45, page_urls: true } },
+        });
+      }
+
+      return jsonResponse(202, { data: { reports: true, every: 45, page_urls: true } });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  assert.equal(
+    presenceCalls(calls).length,
+    0,
+    'reported while the notice was invisible to the visitor',
+  );
+});
+
+test('declining confirms what actually stopped', async (t) => {
+  // On a site that never shared page addresses, "not sharing which pages you
+  // visit" was already true before the click, so the confirmation confirmed
+  // nothing and read like the control had failed.
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/pricing',
+  });
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 0,
+    fetch: async (url) => {
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, {
+          data: { appearance: { position: 'right' }, presence: { reports: true, every: 45, page_urls: false } },
+        });
+      }
+
+      return jsonResponse(202, { data: { reports: true, every: 45, page_urls: false } });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  widget.root.querySelector('.wayfindr-widget__presence-decline').click();
+
+  await settle();
+
+  const copy = widget.root.querySelector('.wayfindr-widget__presence-copy').textContent;
+
+  assert.match(copy, /know you are here/i, 'the confirmation described something that had not changed');
+});
+
+test('the notice names what is kept, not only what is visible', async (t) => {
+  // The record outlives the visit by 30 days, specifically so a later visit is
+  // recognised as a return. Describing only live visibility told the visitor
+  // the truth about the half they are less likely to object to.
+  const { widget } = widgetWithPresence();
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  const copy = widget.root.querySelector('.wayfindr-widget__presence-copy').textContent;
+
+  assert.match(copy, /30 days/, 'the notice did not mention how long the visit is kept');
+  assert.match(copy, /been here before/i, 'the notice did not mention being recognised on a return');
+});

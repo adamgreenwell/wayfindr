@@ -50,7 +50,12 @@ final class VisitorPresenceReport
             // Retried once and no more. A second failure is not this race --
             // the row is there by then -- and a loop would turn some other
             // constraint problem into a hot one on a public endpoint.
-            return $this->stamp($this->resolve($site, $anonymousId), $pageUrl, $site);
+            // Wrapped as well. Outside a transaction every statement
+            // autocommits, so the site and visitor locks taken inside stamp()
+            // would be released the moment each select finished -- and the
+            // whole point of taking them is that they are still held when the
+            // write happens.
+            return DB::transaction(fn (): Visitor => $this->stamp($this->resolve($site, $anonymousId), $pageUrl, $site));
         }
     }
 
@@ -79,8 +84,22 @@ final class VisitorPresenceReport
         // one did instead of a copy of the world from before it started.
         $current = Site::query()->whereKey($site->getKey())->lockForUpdate()->first();
 
-        if ($current === null || ! SitePresenceReporting::for($current)->enabled) {
+        if ($current === null) {
             return $visitor;
+        }
+
+        $reporting = SitePresenceReporting::for($current);
+
+        if (! $reporting->enabled) {
+            return $visitor;
+        }
+
+        // The page address is decided by the LOCKED reading too, not by what
+        // the endpoint saw on the way in. An operator switching addresses off
+        // while this request was in flight would otherwise have their purge
+        // pass over this visitor and then watch this write put one back.
+        if (! $reporting->pageUrls) {
+            $pageUrl = null;
         }
 
         // Re-read under a lock before merging metadata.
@@ -96,9 +115,15 @@ final class VisitorPresenceReport
         if ($visitor->exists) {
             $locked = Visitor::query()->whereKey($visitor->getKey())->lockForUpdate()->first();
 
-            if ($locked !== null) {
-                $visitor = $locked;
-            }
+            // Gone means the pruner deleted it between the read and this lock.
+            // Keeping the stale model is the trap: `exists` is still true, so
+            // save() updates zero rows, Eloquent calls that success, and the
+            // endpoint answers 202 having stored nothing -- the visitor
+            // vanishes from the board until they happen to be created again.
+            $visitor = $locked ?? Visitor::query()->newModelInstance([
+                'site_id' => $site->id,
+                'anonymous_id' => $visitor->anonymous_id,
+            ]);
         }
 
         $now = now();

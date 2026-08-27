@@ -67,9 +67,25 @@ class VisitorContextSanitizer
      * @param  string|null  $siteHost  the site's configured domain; a page
      *                                 address from anywhere else is not stored
      */
-    public function mergeMetadata(?array $metadata, ?string $pageUrl, bool $contextWasProvided, mixed $context, ?string $siteHost = null): array
+    public function mergeMetadata(?array $metadata, ?string $pageUrl, bool $contextWasProvided, mixed $context, ?string $siteHost = null, bool $storePageUrl = true): array
     {
         $metadata = $metadata ?? [];
+
+        // A site can decide it does not keep page addresses at all, because
+        // redaction is a heuristic and an operator whose paths carry codes
+        // knows better than the heuristic does. That decision binds EVERY
+        // writer of this column, not only the heartbeat -- the board and the
+        // visitor profile read one field, so an address suppressed on one path
+        // and stored on another is a setting that does not mean anything.
+        if (! $storePageUrl) {
+            $metadata['last_page_url'] = null;
+
+            if ($contextWasProvided) {
+                $metadata['context'] = $this->sanitize($context);
+            }
+
+            return $metadata;
+        }
 
         if ($pageUrl !== null) {
             // Sanitised, which this class knew how to do for `context` and had

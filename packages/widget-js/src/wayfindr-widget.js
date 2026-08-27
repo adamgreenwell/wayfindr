@@ -41,10 +41,11 @@
       'notice.emptyVisitor': 'No messages yet. Send a message and support will see it here.',
       'notice.emptyAgent': 'No messages yet. Replies will show up here.',
       'notice.closed': 'This conversation was closed. Send a new message to reopen it.',
-      'presence.disclosure': 'This site can see which of its pages you are on while this widget is loaded.',
-      'presence.disclosureNoPage': 'This site can see that you are here while this widget is loaded. It is not told which page you are on.',
+      'presence.disclosure': 'This site can see which of its pages you are on while this widget is loaded, and remembers this visit for 30 days so it can tell you have been here before.',
+      'presence.disclosureNoPage': 'This site can see that you are here while this widget is loaded, and remembers this visit for 30 days so it can tell you have been here before. It is not told which page you are on.',
       'presence.decline': 'Stop sharing',
       'presence.declined': 'Not sharing which pages you visit.',
+      'presence.declinedNoPage': 'Not letting this site know you are here.',
       'notice.retry': 'Try again',
       'form.label': 'How can we help?',
       'form.placeholder': 'Type your message...',
@@ -129,10 +130,11 @@
       'notice.emptyVisitor': 'Noch keine Nachrichten. Schreiben Sie uns, der Support sieht Ihre Nachricht hier.',
       'notice.emptyAgent': 'Noch keine Nachrichten. Antworten erscheinen hier.',
       'notice.closed': 'Diese Unterhaltung wurde geschlossen. Senden Sie eine neue Nachricht, um sie wieder zu öffnen.',
-      'presence.disclosure': 'Diese Website kann sehen, auf welchen ihrer Seiten Sie sich befinden, solange dieses Widget geladen ist.',
-      'presence.disclosureNoPage': 'Diese Website kann sehen, dass Sie hier sind, solange dieses Widget geladen ist. Welche Seite Sie ansehen, erfährt sie nicht.',
+      'presence.disclosure': 'Diese Website kann sehen, auf welchen ihrer Seiten Sie sich befinden, solange dieses Widget geladen ist, und merkt sich diesen Besuch 30 Tage lang, um Sie bei einem erneuten Besuch wiederzuerkennen.',
+      'presence.disclosureNoPage': 'Diese Website kann sehen, dass Sie hier sind, solange dieses Widget geladen ist, und merkt sich diesen Besuch 30 Tage lang, um Sie bei einem erneuten Besuch wiederzuerkennen. Welche Seite Sie ansehen, erfährt sie nicht.',
       'presence.decline': 'Nicht mehr teilen',
       'presence.declined': 'Es wird nicht geteilt, welche Seiten Sie besuchen.',
+      'presence.declinedNoPage': 'Diese Website erfährt nicht mehr, dass Sie hier sind.',
       'notice.retry': 'Erneut versuchen',
       'form.label': 'Wie können wir helfen?',
       'form.placeholder': 'Nachricht eingeben …',
@@ -2946,6 +2948,26 @@
         node = node.parentElement;
       }
 
+      // `visibility: hidden` occupies space, so it still has client rects. A
+      // notice hidden that way is laid out, measurable and invisible, and a
+      // check that only asked geometry called it shown. The host page owns the
+      // stylesheet, so this is a shape somebody else can put us in.
+      var view = presenceWindow;
+
+      if (view && typeof view.getComputedStyle === 'function') {
+        var styled = presenceEl;
+
+        while (styled && styled !== rootEl.parentNode) {
+          var style = view.getComputedStyle(styled);
+
+          if (style && (style.visibility === 'hidden' || style.visibility === 'collapse' || style.display === 'none' || style.opacity === '0')) {
+            return false;
+          }
+
+          styled = styled.parentElement;
+        }
+      }
+
       // Then geometry, which is what catches being hidden by the HOST page's
       // stylesheet rather than by us -- a class we never see, on an element we
       // do not own.
@@ -3139,7 +3161,13 @@
       presenceEl.hidden = false;
 
       if (presenceCopyEl) {
-        presenceCopyEl.textContent = t('presence.declined');
+        // On a site that never shared page addresses, "not sharing which pages
+        // you visit" was already true before the click -- so the confirmation
+        // confirmed nothing and read like the control had failed. What stopped
+        // is the site being told the visitor is here.
+        presenceCopyEl.textContent = presenceReportedPageUrls
+          ? t('presence.declined')
+          : t('presence.declinedNoPage');
       }
 
       if (presenceDeclineEl) {
@@ -3147,7 +3175,17 @@
       }
     }
 
+    /**
+     * Which shape of presence the visitor was declining.
+     *
+     * Read before `presenceConfig` is cleared, because the confirmation has to
+     * describe what actually stopped and by then there is nothing left to ask.
+     */
+    var presenceReportedPageUrls = true;
+
     function declinePresence() {
+      presenceReportedPageUrls = Boolean(presenceConfig && presenceConfig.page_urls !== false);
+
       storageSet(storage, presenceStorageKey(options.sitePublicKey), 'declined');
       stopPresenceTimer();
       presenceConfig = null;

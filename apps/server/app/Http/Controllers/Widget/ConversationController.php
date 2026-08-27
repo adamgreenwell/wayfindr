@@ -8,6 +8,7 @@ use App\Models\Site;
 use App\Models\Visitor;
 use App\Support\Sites\SiteAvailability;
 use App\Support\Sites\SiteIntake;
+use App\Support\Sites\SitePresenceReporting;
 use App\Support\Sites\WidgetLanguage;
 use App\Support\VisitorContextSanitizer;
 use App\Support\Visitors\VisitorPageUrl;
@@ -92,6 +93,7 @@ class ConversationController extends Controller
                     array_key_exists('context', $validated),
                     $validated['context'] ?? null,
                     $site->domain,
+                    SitePresenceReporting::for($site)->pageUrls,
                 ),
                 'last_web_seen_at' => now(),
                 // Starting a conversation is contact, and this route does not
