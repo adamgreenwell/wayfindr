@@ -90,34 +90,6 @@ is the only part of it we actually know.
 contents, form values, scroll or viewport geometry, referrer chains, device or
 browser fingerprints, IP-derived location.
 
-### 3a. How often, and when a visit begins
-
-Two values the payload does not carry and the feature cannot work without.
-
-**The heartbeat reports every 45 seconds** while the page is loaded and the
-visitor has not declined. The number is not free: `VisitorPresence` calls a
-visitor inactive after two minutes, so any cadence at or near that cutoff makes
-a continuously present visitor flicker between *active* and *quiet* for most of
-every interval. Comfortably under the cutoff, with room for one lost report, is
-the requirement — 45 seconds gives two chances to stay inside two minutes.
-
-A hidden tab reports nothing. `visibilitychange` is the honest signal that
-somebody is not looking, and presence decaying to *quiet* while a tab sits in
-the background is correct rather than a gap to paper over.
-
-**A visit needs its own start**, because `last_seen_at` cannot answer "how long
-have they been here" — updating it destroys the very thing the question needs —
-and `visitors.created_at` answers "when did we first ever see them", which is a
-different question that #747 also asks under *returning or new*. So the server
-keeps a current-visit start alongside `last_seen_at`, set when a heartbeat
-arrives from a visitor whose last one is older than the fifteen-minute *recent*
-window, and left alone otherwise.
-
-That reuses a cutoff the product already has rather than inventing a session
-length: a gap long enough to read as *quiet* is long enough to call the next
-report a new visit. Time on site is then the distance between the two fields,
-and both are server-stamped.
-
 The URL is sanitised before it is stored, and this ADR specifies what that
 means rather than leaving it to the implementation:
 
@@ -179,6 +151,39 @@ outlive the conversations that produced them.
 Presence adds a fourth writer to that list. It sanitises for the same reason and
 through the same class.
 
+### 3a. How often, and when a visit begins
+
+Two values the payload does not carry and the feature cannot work without.
+
+**The heartbeat reports every 45 seconds** while the page is loaded and the
+visitor has not declined. The number is not free: `VisitorPresence` calls a
+visitor inactive after two minutes, so any cadence at or near that cutoff makes
+a continuously present visitor flicker between *active* and *quiet* for most of
+every interval. Comfortably under the cutoff, with room for one lost report, is
+the requirement — 45 seconds gives two chances to stay inside two minutes.
+
+A hidden tab reports nothing. `visibilitychange` is the honest signal that
+somebody is not looking, and presence decaying to *quiet* while a tab sits in
+the background is correct rather than a gap to paper over.
+
+**A visit needs its own start**, because `last_seen_at` cannot answer "how long
+have they been here" — updating it destroys the very thing the question needs —
+and `visitors.created_at` answers "when did we first ever see them", which is a
+different question that #747 also asks under *returning or new*. So the server
+keeps a current-visit start alongside `last_seen_at`, set when a heartbeat
+arrives from a visitor who has **no** previous one, or whose previous one is
+older than the fifteen-minute *recent* window. Left alone otherwise.
+
+The first clause is not pedantry: a presence-only visitor's opening heartbeat
+has nothing to be "older than", so a rule written only around the gap never
+starts a visit at all and every new visitor is left without the field the board
+needs.
+
+That reuses a cutoff the product already has rather than inventing a session
+length: a gap long enough to read as *quiet* is long enough to call the next
+report a new visit. Time on site is then the distance between the two fields,
+and both are server-stamped.
+
 ### 4. Retention, which this product does not currently have
 
 `visitors` has no pruning today, and the
@@ -189,7 +194,14 @@ the absence of retention a defect rather than a gap.
 So this ships with the product's **first automatic retention control**:
 
 - A visitor who has **never made contact** — no conversation, no ticket, no
-  message — is deleted after **30 days**. An operator may shorten that; they may
+  message — is deleted **30 days after their last heartbeat**, measured from
+  `last_seen_at` rather than `created_at`.
+
+  Which timestamp is the whole rule. Measured from `created_at`, somebody first
+  seen 31 days ago is deleted while they are on the site heartbeating, and
+  reappears seconds later as a brand-new visitor — so the board loses them
+  mid-visit and *returning or new* starts lying. Measured from activity, a row
+  is only ever removed once nobody has been behind it for a month. An operator may shorten that; they may
   not lengthen it, so 30 days is not merely the default but the product's
   maximum retention for presence-only rows, and the data inventory can state it
   as a fact.
