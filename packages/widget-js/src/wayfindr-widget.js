@@ -6264,38 +6264,41 @@
       return true;
     }
 
-    if (segment.length >= 32) {
-      return true;
-    }
-
-    // Carries a digit and has no word separator. Six, not twenty: the
-    // dangerous values are frequently SHORT -- `/invite/A1B2C3` and
-    // `/orders/123456` are both a credential in a path on real sites, and a
-    // rule that waits for twenty characters keeps them whole.
+    // A separator used to end the test, on the reasoning that a slug is words
+    // joined by hyphens. It is also how a credential is punctuated:
+    // `/invite/ABC-123` and `/reset/abc_def123` walked straight past a rule
+    // that read any hyphen as proof of readability -- and here that meant the
+    // credential crossed the wire before the server could redact anything.
     //
-    // `my-account-settings` keeps its hyphens and is kept; `pricing` carries no
-    // digit and is kept at any length; `v2` is too short to trip it. The cost
-    // is that `iphone15` is redacted, which is the right way round for a rule
-    // whose failures are credentials.
-    if (/[-_.]/.test(segment)) {
-      return false;
-    }
+    // Kept identical to VisitorPageUrl::looksOpaque(). A disagreement between
+    // the two shows up as addresses that change shape depending on which path
+    // they took, and the client's is the one that decides what leaves at all.
+    var bare = segment.replace(/[-_.]/g, '');
 
-    if (segment.length >= 6 && /[0-9]/.test(segment)) {
+    if (bare.length >= 5 && /^[A-Z0-9]+$/.test(bare)) {
       return true;
     }
 
-    // A credential need not carry a digit. Sixteen letters with no separator is
-    // past the length of the words routes are named after, and an all-capitals
-    // run of five or more is a code rather than a word -- sites write `/about`,
-    // not `/ABOUT`, while invitation codes are capitals by convention. Kept
-    // identical to VisitorPageUrl::looksOpaque(); a disagreement shows up as
-    // addresses that change shape depending on which path they took.
-    if (segment.length >= 16) {
+    return segment.split(/[-_.]/).some(looksOpaquePart);
+  }
+
+  function looksOpaquePart(part) {
+    if (part.length >= 32) {
       return true;
     }
 
-    return segment.length >= 5 && /^[A-Z0-9]+$/.test(segment);
+    // Carries a digit and is past the length of a version or a year: `v2`,
+    // `2024` and `page3` survive, `A1B2C3` and `123456` do not.
+    if (part.length >= 6 && /[0-9]/.test(part)) {
+      return true;
+    }
+
+    // Sixteen letters unbroken is past the words routes are named after.
+    if (part.length >= 16) {
+      return true;
+    }
+
+    return part.length >= 5 && /^[A-Z0-9]+$/.test(part);
   }
 
   function storageRemove(storage, key) {
