@@ -18,6 +18,10 @@ function presenceSite(bool $enabled = true): Site
 
     return Site::factory()->for($account)->create([
         'public_key' => 'site_public_presence',
+        // A configured domain, because a page address is only stored for a site
+        // that has one -- the endpoint is public, so without it we cannot tell
+        // this site's pages from an attacker's.
+        'domain' => 'shop.test',
         'settings' => ['presence' => ['enabled' => $enabled]],
     ]);
 }
@@ -218,4 +222,120 @@ test('the retention window can be shortened but not lengthened', function (): vo
     expect(Visitor::query()->whereKey($visitor->id)->exists())->toBeFalse(
         'a configured window longer than the maximum was honoured'
     );
+});
+
+test('bootstrap cannot swallow a returning visitor\'s new visit', function (): void {
+    // Presence is not the only writer of last_seen_at -- bootstrap,
+    // conversation start, message fetch and typing all stamp it. A returning
+    // visitor who OPENS THE PANEL before their first heartbeat arrives would
+    // have last_seen_at refreshed by bootstrap first, and a rule living only in
+    // the presence recorder would then see a recent timestamp, keep the
+    // previous visit's start, and report a visit spanning days.
+    $site = presenceSite();
+
+    reportPresence($site, 'anon-bootstrap-first');
+    $first = Visitor::query()->where('anonymous_id', 'anon-bootstrap-first')->firstOrFail()->current_visit_started_at;
+
+    $this->travel(VisitorPresence::RECENT_MINUTES + 1)->minutes();
+
+    // The panel opens before the heartbeat. This is the write that used to hide
+    // the gap from everything downstream.
+    $this->postJson('/api/widget/bootstrap', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-bootstrap-first',
+    ])->assertSuccessful();
+
+    $visitor = Visitor::query()->where('anonymous_id', 'anon-bootstrap-first')->firstOrFail();
+
+    expect($visitor->current_visit_started_at->greaterThan($first))->toBeTrue(
+        'bootstrap refreshed last_seen_at without starting the new visit, so time on site spans the gap'
+    );
+});
+
+test('a writer that does not touch last_seen_at leaves the visit alone', function (): void {
+    // The transition keys on last_seen_at changing, so an unrelated save must
+    // not restart somebody's visit.
+    $site = presenceSite();
+
+    reportPresence($site, 'anon-untouched');
+
+    $visitor = Visitor::query()->where('anonymous_id', 'anon-untouched')->firstOrFail();
+    $started = $visitor->current_visit_started_at;
+
+    $this->travel(1)->hours();
+
+    $visitor->forceFill(['name' => 'Given a name by intake'])->save();
+
+    expect($visitor->fresh()->current_visit_started_at->timestamp)->toBe($started->timestamp);
+});
+
+test('a visitor who makes contact mid-sweep is not deleted from under it', function (): void {
+    // The chunk is a snapshot. A visitor selected as stale can start a chat
+    // before the loop reaches them -- and conversations.visitor_id CASCADES, so
+    // an unconditional delete by primary key takes the support request that
+    // just landed with it.
+    //
+    // Interposed on the chunk SELECT, which is exactly that window.
+    $site = presenceSite();
+
+    $stale = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-mid-sweep',
+        'last_seen_at' => now()->subDays(PrunePresenceVisitorsCommand::MAXIMUM_DAYS + 1),
+    ]);
+
+    $interposed = false;
+
+    DB::listen(function ($query) use ($site, $stale, &$interposed): void {
+        if ($interposed
+            || ! str_contains($query->sql, 'from "visitors"')
+            || ! str_contains($query->sql, 'order by "id" asc')) {
+            return;
+        }
+
+        $interposed = true;
+
+        // They came back, and started a conversation, after we decided they
+        // were gone.
+        Conversation::factory()->for($site)->for($stale)->create();
+    });
+
+    $this->artisan('wayfindr:prune-presence-visitors')->assertExitCode(0);
+
+    expect($interposed)->toBeTrue('nothing landed during the sweep, so this proves nothing');
+
+    expect(Visitor::query()->whereKey($stale->id)->exists())->toBeTrue(
+        'a visitor who made contact mid-sweep was deleted, taking their conversation with them'
+    );
+    expect(Conversation::query()->where('visitor_id', $stale->id)->exists())->toBeTrue(
+        'the conversation that just landed was cascaded away'
+    );
+});
+
+test('a heartbeat cannot plant another host in front of an agent', function (): void {
+    // The endpoint is public and so is the site key, so this value is
+    // attacker-controlled -- and stored addresses render as clickable
+    // target="_blank" links on the agent ticket page. Presence is the newest
+    // public writer, which makes it the newest way in.
+    $site = presenceSite();
+
+    reportPresence($site, 'anon-phish', 'https://attacker.example/login')->assertStatus(202);
+
+    $visitor = Visitor::query()->where('anonymous_id', 'anon-phish')->firstOrFail();
+
+    expect($visitor->metadata['last_page_url'])->toBeNull(
+        'a foreign host was stored and will be rendered as a link to an agent'
+    );
+
+    // The visitor is still recorded: presence is about who is here, and we can
+    // know that without believing where they claim to be.
+    expect($visitor->last_seen_at)->not->toBeNull();
+});
+
+test('a token in the path does not reach an agent either', function (): void {
+    $site = presenceSite();
+
+    reportPresence($site, 'anon-path-token', 'https://shop.test/reset-password/9f2c8a1b4e6d7c3f0a5b2e8d1c4f7a9b');
+
+    expect(Visitor::query()->where('anonymous_id', 'anon-path-token')->firstOrFail()->metadata['last_page_url'])
+        ->toBe('https://shop.test/reset-password/[redacted]');
 });

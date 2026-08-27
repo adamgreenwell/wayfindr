@@ -43,6 +43,7 @@ class BootstrapController extends Controller
                 $validated['page_url'] ?? null,
                 array_key_exists('context', $validated),
                 $validated['context'] ?? null,
+                $site->domain,
             ),
             'last_seen_at' => now(),
         ] + $this->externalIdentifierUpdate($site, $visitor, $validated, $visitorContextSanitizer))->save();

@@ -11,11 +11,57 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Support\Carbon;
 
 #[Fillable(['site_id', 'external_id', 'anonymous_id', 'name', 'email', 'metadata', 'last_seen_at', 'current_visit_started_at'])]
 class Visitor extends Model
 {
     use SanitisesStoredPageUrls;
+
+    /**
+     * Keep the current visit's start honest, whoever touches `last_seen_at`.
+     *
+     * Presence is not the only writer: bootstrap, conversation start, message
+     * fetch and typing all stamp `last_seen_at`, and any of them can land
+     * before the first heartbeat of a returning visitor. If the rule lived only
+     * in the presence recorder, a visitor who opens the panel before their
+     * heartbeat arrives would have `last_seen_at` refreshed first -- and the
+     * heartbeat would then see a RECENT timestamp, keep the previous visit's
+     * start, and report a visit spanning days.
+     *
+     * So the transition is computed here, from the value being replaced, and it
+     * is true for every writer including ones nobody has written yet. Same
+     * reasoning as the page-URL hook above: a rule that depends on one caller
+     * winning a race is not a rule.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (Visitor $visitor): void {
+            if (! $visitor->isDirty('last_seen_at') || $visitor->last_seen_at === null) {
+                return;
+            }
+
+            $previous = $visitor->getOriginal('last_seen_at');
+            $previous = $previous === null ? null : Carbon::parse($previous);
+
+            // No previous sighting, or none recorded for the visit: this
+            // report starts one. The first clause is load-bearing -- an opening
+            // heartbeat has nothing to be "older than", so a rule written only
+            // around the gap would never start a visit at all.
+            if ($previous === null || $visitor->current_visit_started_at === null) {
+                $visitor->current_visit_started_at = $visitor->last_seen_at;
+
+                return;
+            }
+
+            // A gap long enough to read as `quiet` is long enough to be a new
+            // visit, which reuses a cutoff the product already has rather than
+            // inventing a session length.
+            if ($previous->lt($visitor->last_seen_at->copy()->subMinutes(VisitorPresence::RECENT_MINUTES))) {
+                $visitor->current_visit_started_at = $visitor->last_seen_at;
+            }
+        });
+    }
 
     /**
      * @return array<int, string>

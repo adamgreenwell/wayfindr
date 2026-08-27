@@ -6,7 +6,6 @@ namespace App\Support\Visitors;
 
 use App\Models\Site;
 use App\Models\Visitor;
-use Illuminate\Support\Carbon;
 
 /**
  * Record that somebody is on a site right now (ADR 0019).
@@ -28,9 +27,13 @@ final class VisitorPresenceReport
 
         $now = now();
 
+        // `current_visit_started_at` is NOT set here. The model maintains it
+        // from whatever replaces `last_seen_at`, so bootstrap, conversation
+        // start, message fetch and typing all get the same transition -- and a
+        // returning visitor who opens the panel before their first heartbeat
+        // still starts a new visit rather than resuming one from days ago.
         $visitor->forceFill([
-            'metadata' => $this->metadata($visitor, $pageUrl),
-            'current_visit_started_at' => $this->visitStartedAt($visitor, $now),
+            'metadata' => $this->metadata($visitor, $pageUrl, $site),
             'last_seen_at' => $now,
         ])->save();
 
@@ -38,42 +41,21 @@ final class VisitorPresenceReport
     }
 
     /**
-     * When the visit this report belongs to began.
-     *
-     * A gap long enough to read as `quiet` is long enough to call the next
-     * report a new visit, so this reuses `VisitorPresence`'s existing recent
-     * window rather than inventing a session length.
-     *
-     * The first clause is load-bearing rather than defensive: a visitor's
-     * OPENING heartbeat has no previous one to be older than, so a rule written
-     * only around the gap would never start a visit at all and every new
-     * visitor would be left without the field the board exists to show.
-     */
-    private function visitStartedAt(Visitor $visitor, Carbon $now): Carbon
-    {
-        $lastSeen = $visitor->last_seen_at;
-        $current = $visitor->current_visit_started_at;
-
-        if ($lastSeen === null || $current === null) {
-            return $now;
-        }
-
-        return $lastSeen->lt($now->copy()->subMinutes(VisitorPresence::RECENT_MINUTES))
-            ? $now
-            : $current;
-    }
-
-    /**
      * @return array<string, mixed>
      */
-    private function metadata(Visitor $visitor, ?string $pageUrl): array
+    private function metadata(Visitor $visitor, ?string $pageUrl, Site $site): array
     {
         $metadata = is_array($visitor->metadata) ? $visitor->metadata : [];
 
-        // Sanitised here as well as by the model's saving hook. Not redundant:
-        // this is the entry point and should reject at the door, while the hook
-        // is what makes it true of the database no matter who writes.
-        $metadata['last_page_url'] = VisitorPageUrl::sanitise($pageUrl);
+        // forSite(), because this is INGRESS and the site is known here. The
+        // endpoint is public and so is the site key, so an address from any
+        // other host is somebody else's page -- and stored addresses render as
+        // clickable links in the agent dashboard.
+        //
+        // The model's saving hook reduces it again, which is not redundant:
+        // this rejects at the door, the hook makes it true of the database no
+        // matter who writes.
+        $metadata['last_page_url'] = VisitorPageUrl::forSite($pageUrl, $site->domain);
 
         return $metadata;
     }
