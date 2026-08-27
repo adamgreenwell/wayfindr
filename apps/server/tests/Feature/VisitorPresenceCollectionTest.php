@@ -159,12 +159,14 @@ test('the pruner measures from the last heartbeat, not from creation', function 
         'anonymous_id' => 'anon-old-but-here',
         'created_at' => now()->subDays(90),
         'last_seen_at' => now()->subMinutes(2),
+        'presence_only' => true,
     ]);
 
     $gone = Visitor::factory()->for($site)->create([
         'anonymous_id' => 'anon-long-gone',
         'created_at' => now()->subDays(90),
         'last_seen_at' => now()->subDays(PrunePresenceVisitorsCommand::MAXIMUM_DAYS + 1),
+        'presence_only' => true,
     ]);
 
     $this->artisan('wayfindr:prune-presence-visitors')->assertExitCode(0);
@@ -213,6 +215,7 @@ test('the retention window can be shortened but not lengthened', function (): vo
     $visitor = Visitor::factory()->for($site)->create([
         'anonymous_id' => 'anon-clamped',
         'last_seen_at' => now()->subDays(PrunePresenceVisitorsCommand::MAXIMUM_DAYS + 5),
+        'presence_only' => true,
     ]);
 
     config(['wayfindr.presence.retention_days' => 3650]);
@@ -281,6 +284,7 @@ test('a visitor who makes contact mid-sweep is not deleted from under it', funct
     $stale = Visitor::factory()->for($site)->create([
         'anonymous_id' => 'anon-mid-sweep',
         'last_seen_at' => now()->subDays(PrunePresenceVisitorsCommand::MAXIMUM_DAYS + 1),
+        'presence_only' => true,
     ]);
 
     $interposed = false;
@@ -338,4 +342,79 @@ test('a token in the path does not reach an agent either', function (): void {
 
     expect(Visitor::query()->where('anonymous_id', 'anon-path-token')->firstOrFail()->metadata['last_page_url'])
         ->toBe('https://shop.test/reset-password/[redacted]');
+});
+
+test('a visitor who only ever opened the widget is never pruned', function (): void {
+    // The bug this column exists to prevent, and it would have hit EVERY
+    // install -- including ones that never enabled presence.
+    //
+    // BootstrapController creates a visitor the moment somebody opens the
+    // widget, and ADR 0016 §1 counts opening the widget as making contact. Such
+    // a row has no conversation and no ticket, so a pruner inferring
+    // "never made contact" from their absence would have deleted a decade of
+    // them, irreversibly, on the first scheduled run after upgrading.
+    $site = presenceSite();
+
+    $this->postJson('/api/widget/bootstrap', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-opened-only',
+    ])->assertSuccessful();
+
+    $visitor = Visitor::query()->where('anonymous_id', 'anon-opened-only')->firstOrFail();
+
+    $visitor->forceFill(['last_seen_at' => now()->subDays(PrunePresenceVisitorsCommand::MAXIMUM_DAYS + 60)])->save();
+
+    expect($visitor->fresh()->conversations()->count())->toBe(0, 'the fixture made contact, so this proves nothing');
+
+    $this->artisan('wayfindr:prune-presence-visitors')->assertExitCode(0);
+
+    expect(Visitor::query()->whereKey($visitor->id)->exists())->toBeTrue(
+        'a visitor who opened the widget was deleted as though they had never made contact'
+    );
+});
+
+test('every row that predates the column is safe', function (): void {
+    // Defaulting to false is the whole protection: a legacy row cannot be
+    // presence-only, because presence did not exist when it was written.
+    $site = presenceSite();
+
+    $legacy = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-legacy',
+        'last_seen_at' => now()->subYears(2),
+    ]);
+
+    // Read back rather than trusted from the instance: `create()` does not
+    // reload database defaults, so the in-memory value is null while the stored
+    // one is false. Both are safe here -- the pruner matches on `true` and
+    // neither is -- but the column default is the thing being asserted.
+    expect($legacy->fresh()->presence_only)->toBeFalse('the column does not default to false');
+
+    $this->artisan('wayfindr:prune-presence-visitors')->assertExitCode(0);
+
+    expect(Visitor::query()->whereKey($legacy->id)->exists())->toBeTrue();
+});
+
+test('opening the widget later takes a presence row out of scope', function (): void {
+    // A visitor first seen by a heartbeat, who then opens the panel. They have
+    // made contact now, and no conversation exists to prove it.
+    $site = presenceSite();
+
+    reportPresence($site, 'anon-then-opened');
+
+    expect(Visitor::query()->where('anonymous_id', 'anon-then-opened')->firstOrFail()->presence_only)->toBeTrue();
+
+    $this->postJson('/api/widget/bootstrap', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-then-opened',
+    ])->assertSuccessful();
+
+    $visitor = Visitor::query()->where('anonymous_id', 'anon-then-opened')->firstOrFail();
+
+    expect($visitor->presence_only)->toBeFalse('opening the widget left them prunable');
+
+    $visitor->forceFill(['last_seen_at' => now()->subDays(PrunePresenceVisitorsCommand::MAXIMUM_DAYS + 1)])->save();
+
+    $this->artisan('wayfindr:prune-presence-visitors')->assertExitCode(0);
+
+    expect(Visitor::query()->whereKey($visitor->id)->exists())->toBeTrue();
 });

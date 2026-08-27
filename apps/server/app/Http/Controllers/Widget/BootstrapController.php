@@ -45,6 +45,11 @@ class BootstrapController extends Controller
                 $site->domain,
             ),
             'last_seen_at' => now(),
+            // Opening the widget IS making contact -- ADR 0016 §1 says so -- and
+            // this is the endpoint that means it. A row that existed only
+            // because somebody loaded a page stops being presence-only the
+            // moment they open the panel, and stops being prunable with it.
+            'presence_only' => false,
         ] + $this->externalIdentifierUpdate($site, $visitor, $validated, $visitorContextSanitizer))->save();
 
         return response()->json([
