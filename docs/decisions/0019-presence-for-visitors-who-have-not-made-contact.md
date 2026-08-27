@@ -67,6 +67,15 @@ reporting.
 Declining is remembered per site in the same storage the anonymous id already
 uses, and a declined visitor reports nothing — not a reduced payload, nothing.
 
+**And when that storage is unavailable, presence stays off.** An embed may pass
+`storage: null`; private browsing and locked-down browsers reject writes;
+`storageSet()` swallows the failure and `resolveAnonymousId()` already falls back
+to an in-memory id. In all of those the widget cannot remember a decline across a
+navigation, so a visitor who declined would be reported again on the next page.
+
+Fail closed, because the alternative is a control that appears to work and does
+not. If we cannot keep a "no", we do not get to assume a "yes".
+
 **The first report waits for the disclosure to exist on the page.** Reporting
 before the visitor could have seen the notice is the same defect as not having
 one, arriving a few hundred milliseconds earlier.
@@ -75,6 +84,16 @@ one, arriving a few hundred milliseconds earlier.
 
 Sent: the site's public key, the visitor's existing anonymous id, and the
 current page URL after sanitising.
+
+**Sanitised in the widget, before the request is built** — and again on the
+server. Not belt and braces: a server-side pass alone means the raw URL has
+already crossed the wire, and a query string that reached us is a query string
+that reached proxies, access logs, error trackers and anything else on the path.
+Removing a token after transmitting it is not removing it.
+
+The server pass stays because the endpoint is public and the client cannot be
+trusted to have done it. Client-side is what keeps the secret off the wire;
+server-side is what makes the stored value true regardless.
 
 **No timestamp, and no duration.** `last_seen_at` is stamped from server receipt
 time, exactly as bootstrap, conversation start, message fetch and typing already
