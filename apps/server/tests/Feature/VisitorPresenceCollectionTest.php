@@ -1126,6 +1126,72 @@ test('the heartbeat answers with the settings in force', function (): void {
         ->assertJsonPath('data.reports', false);
 });
 
+test('a site that keeps no page addresses keeps none from any writer', function (): void {
+    // The board and the visitor profile read one field, so an address
+    // suppressed on the heartbeat and stored by bootstrap is a setting that
+    // does not mean anything.
+    $site = presenceSite();
+    $site->forceFill(['settings' => ['presence' => ['enabled' => true, 'page_urls' => false]]])->save();
+
+    test()->postJson('/api/widget/bootstrap', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-writers',
+        'page_url' => 'https://shop.test/invite/ABCDEF',
+    ])->assertSuccessful();
+
+    $visitor = Visitor::query()->where('anonymous_id', 'anon-writers')->firstOrFail();
+
+    expect($visitor->metadata['last_page_url'] ?? null)->toBeNull('bootstrap stored an address the site does not keep');
+
+    $token = app(VisitorSessionToken::class)->issue($site, $visitor);
+
+    test()->postJson('/api/conversations', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-writers',
+        'visitor_token' => $token,
+        'page_url' => 'https://shop.test/invite/ABCDEF',
+        'subject' => 'Help',
+    ])->assertSuccessful();
+
+    expect($visitor->fresh()->metadata['last_page_url'] ?? null)
+        ->toBeNull('starting a conversation stored an address the site does not keep');
+});
+
+test('a heartbeat in flight cannot restore an address the operator just removed', function (): void {
+    // The endpoint captures the page on the way in. An operator switching
+    // addresses off between that and the write would have their sweep pass
+    // over this visitor and then watch this request put one back.
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $site = Site::factory()->for($account)->create([
+        'domain' => 'shop.test',
+        'public_key' => 'site_public_inflight',
+        'settings' => ['presence' => ['enabled' => true, 'page_urls' => true]],
+    ]);
+
+    reportPresence($site, 'anon-inflight', 'https://shop.test/pricing')->assertSuccessful();
+
+    $switched = false;
+
+    Site::retrieved(function (Site $read) use (&$switched, $site): void {
+        if ($switched || $read->id !== $site->id) {
+            return;
+        }
+
+        $switched = true;
+
+        DB::table('sites')->where('id', $site->id)->update([
+            'settings' => json_encode(['presence' => ['enabled' => true, 'page_urls' => false]]),
+        ]);
+    });
+
+    reportPresence($site, 'anon-inflight', 'https://shop.test/checkout')->assertSuccessful();
+
+    expect($switched)->toBeTrue('the race never happened, so this proves nothing')
+        ->and(Visitor::query()->where('anonymous_id', 'anon-inflight')->firstOrFail()->metadata['last_page_url'] ?? null)
+        ->toBeNull('an address was stored after the operator switched them off');
+});
+
 test('the widget learns about presence without making contact', function (): void {
     // The endpoint that answers this is the one a page load is allowed to ask.
     // Bootstrap cannot be: it creates or touches a visitor row and marks them

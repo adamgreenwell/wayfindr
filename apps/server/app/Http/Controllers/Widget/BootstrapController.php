@@ -114,6 +114,7 @@ class BootstrapController extends Controller
                 array_key_exists('context', $validated),
                 $validated['context'] ?? null,
                 $site->domain,
+                SitePresenceReporting::for($site)->pageUrls,
             ),
             'last_web_seen_at' => now(),
             // Opening the widget IS making contact -- ADR 0016 §1 says so -- and
