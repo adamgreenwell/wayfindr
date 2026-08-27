@@ -282,58 +282,70 @@ final class VisitorPageUrl
             return true;
         }
 
-        $length = mb_strlen($segment);
+        // A separator used to end the test, on the reasoning that a slug is
+        // words joined by hyphens. It is also how a credential is punctuated:
+        // `/invite/ABC-123` and `/reset/abc_def123` walked straight past a rule
+        // that treated any hyphen as proof of readability.
+        //
+        // So separators are removed rather than trusted, and the segment is
+        // judged twice -- once as a whole with its punctuation stripped, and
+        // once part by part.
 
-        // Nothing legible is this long in one segment.
+        // Whole, unpunctuated: a run of capitals and digits is a code. Sites
+        // write `/about`, not `/ABOUT`, while invitation and coupon codes are
+        // capitals by convention -- and `ABC-123` is that code with a hyphen
+        // in it. Lowercase is deliberately not included here, because
+        // `billing-preferences` unpunctuated is a long lowercase run and a
+        // perfectly ordinary page.
+        $bare = (string) preg_replace('/[-_.]/', '', $segment);
+
+        if (mb_strlen($bare) >= 5 && preg_match('/^[A-Z0-9]+$/', $bare) === 1) {
+            return true;
+        }
+
+        // Part by part: one token-shaped piece condemns the segment. This is
+        // what catches `abc_def123`, whose second half is a token however
+        // ordinary the first half looks.
+        foreach (preg_split('/[-_.]/', $segment) ?: [] as $part) {
+            if (self::partLooksOpaque($part)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * One separator-free piece of a path segment.
+     *
+     * Crude on purpose, and a heuristic rather than a proof. It will sometimes
+     * redact a long harmless slug, which is the right way round for a rule
+     * whose failures are credentials -- and it is why an operator whose paths
+     * carry secrets can turn page addresses off entirely rather than trusting
+     * this.
+     */
+    private static function partLooksOpaque(string $part): bool
+    {
+        $length = mb_strlen($part);
+
+        // Nothing legible is this long in one unbroken piece.
         if ($length >= 32) {
             return true;
         }
 
-        // Carries a digit and has no word separator.
-        //
-        // The cutoff was 20, which is long enough to feel safe and is not: the
-        // dangerous values are frequently SHORT. `/invite/A1B2C3` and
-        // `/orders/123456` are both credentials-in-a-path on real sites, and a
-        // rule that waits for twenty characters keeps them whole. Six is the
-        // shortest length at which this can be said without eating ordinary
-        // page names.
-        //
-        // What survives, and why the rule is shaped this way rather than by
-        // length alone: a slug is words joined by hyphens, so `billing-2024`
-        // keeps its separator and is kept. A word without digits is kept at any
-        // length -- `pricing`, `Contact`, `unsubscribe`. A version segment is
-        // kept because it is short -- `v2`, `en-GB`.
-        //
-        // What it costs: `/product/iphone15` is redacted, and that is a real
-        // loss of context on some sites. It is the right way round for a rule
-        // whose failures are credentials, and it is a heuristic rather than a
-        // proof -- which is why the query string is dropped WHOLE rather than
-        // filtered by the same kind of guessing.
-        $hasSeparator = preg_match('/[-_.]/', $segment) === 1;
-
-        if ($hasSeparator) {
-            return false;
-        }
-
-        if ($length >= 6 && preg_match('/\d/', $segment) === 1) {
+        // Carries a digit and is past the length of a version or a year:
+        // `v2`, `2024` and `page3` survive, `A1B2C3` and `123456` do not.
+        if ($length >= 6 && preg_match('/\d/', $part) === 1) {
             return true;
         }
 
-        // A credential need not carry a digit. `/invite/ABCDEF` and
-        // `/reset-password/abcdefghijklmnopqrst` are both tokens made only of
-        // letters, and a rule that waited for a digit called them page names.
-        //
-        // Two shapes catch them without eating vocabulary. Sixteen letters with
-        // no separator is past the length of the words a route is named after
-        // -- `notifications`, `recommendations`, `personalization` all fit
-        // under it, `internationalization` does not and is the price. And an
-        // all-capitals segment of five or more is a code rather than a word:
-        // sites write `/about`, not `/ABOUT`, while invitation and coupon
-        // codes are capitals by convention.
+        // Sixteen letters unbroken is past the words routes are named after.
+        // `notifications`, `recommendations` and `personalization` all fit
+        // under it; `internationalization` does not, and that is the price.
         if ($length >= 16) {
             return true;
         }
 
-        return $length >= 5 && preg_match('/^[A-Z0-9]+$/', $segment) === 1;
+        return $length >= 5 && preg_match('/^[A-Z0-9]+$/', $part) === 1;
     }
 }
