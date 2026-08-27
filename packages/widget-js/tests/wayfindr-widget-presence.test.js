@@ -519,3 +519,21 @@ test('the first report waits for a paint, not just for the notice to exist', asy
 
   assert.equal(presenceCalls(calls).length, 1, 'the report never arrived at all');
 });
+
+test('a short secret in the path never leaves the browser either', async (t) => {
+  // The client and server rules have to be the same rule. A disagreement shows
+  // up as page addresses that change shape depending on which path they took,
+  // and the client's is the one that decides what crosses the wire at all.
+  const { widget, calls } = widgetWithPresence({
+    href: 'https://shop.example.test/invite/A1B2C3',
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  assert.equal(
+    presenceCalls(calls)[0].body.page_url,
+    'https://shop.example.test/invite/[redacted]',
+  );
+});

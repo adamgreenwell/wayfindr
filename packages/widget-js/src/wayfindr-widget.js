@@ -6179,13 +6179,20 @@
       return true;
     }
 
-    if (segment.length >= 40) {
+    if (segment.length >= 32) {
       return true;
     }
 
-    // Long, carries a digit, and has no word separator: `my-account-settings`
-    // is a page, `a8f3c19d4b7e2f6a` is not.
-    return segment.length >= 20 && /[0-9]/.test(segment) && !/[-_]/.test(segment);
+    // Carries a digit and has no word separator. Six, not twenty: the
+    // dangerous values are frequently SHORT -- `/invite/A1B2C3` and
+    // `/orders/123456` are both a credential in a path on real sites, and a
+    // rule that waits for twenty characters keeps them whole.
+    //
+    // `my-account-settings` keeps its hyphens and is kept; `pricing` carries no
+    // digit and is kept at any length; `v2` is too short to trip it. The cost
+    // is that `iphone15` is redacted, which is the right way round for a rule
+    // whose failures are credentials.
+    return segment.length >= 6 && /[0-9]/.test(segment) && !/[-_.]/.test(segment);
   }
 
   function storageRemove(storage, key) {
