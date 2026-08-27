@@ -2,13 +2,24 @@
 
 Date: 2026-08-22
 
-> **§1 and §4 are amended by
+> **§1, §2 and §4 are amended by
 > [ADR 0019](0019-presence-for-visitors-who-have-not-made-contact.md)
 > (2026-08-26).** The deferral in §4 has been answered: Wayfindr will observe
 > visitors who have not made contact, on a per-site operator switch, with
 > visitor-facing disclosure and bounded retention. So §1's "loading a page does
-> not record a visitor" is now the default rather than an invariant. §2 and §3
-> stand unchanged.
+> not record a visitor" is now the default rather than an invariant.
+>
+> **§2 is amended with it.** Read as written — the index lists people who made
+> contact — it contradicts ADR 0019, which requires the index to include
+> presence-only visitors on an opted-in site. An implementer working from this
+> page alone could satisfy §2 by omitting exactly the visitors presence exists
+> to show, and be correct by one document and wrong by the other. §2 now reads:
+> the index lists visitors the install has a record of, which is people who made
+> contact plus, on an opted-in site, people presence recorded. **Its scoping
+> rules are untouched** — account and per-site assignment still decide who sees
+> which visitors.
+>
+> §3 stands unchanged.
 
 ## Context
 
