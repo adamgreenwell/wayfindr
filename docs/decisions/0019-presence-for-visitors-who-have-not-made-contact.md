@@ -64,6 +64,14 @@ presence is on, the widget carries a visible statement that this site can see
 which of its pages you are on while the widget is loaded, and a control to stop
 reporting.
 
+**The notice covers the record, not only the moment.** It said the site can see
+which of its pages you are on *while this widget is loaded*, which describes
+live visibility and stops there — while §4 keeps the visitor's record for thirty
+days after their last heartbeat, specifically so a later visit can be recognised
+as a return. A visitor could therefore be told the truth about what is visible
+and nothing about what is kept, which is the half they would more likely object
+to. The disclosure names the retention and the recognition.
+
 **Outside the panel, beside the launcher.** The notice began inside the panel,
 which was the wrong place by the same logic that justifies the whole feature:
 the visitors presence exists to see are the ones who never open the widget, so a
@@ -129,6 +137,16 @@ leave precisely the targeted population reporting until they navigated away.
 So **every heartbeat is answered with the settings in force**, and the refusal
 answer takes the same shape as the accepted one, so a widget already reporting
 learns from it that it should stop.
+
+**The bound this achieves is one report, not zero**, and that is worth stating
+plainly rather than implying otherwise. A tab learns from a response, so it
+learns after sending: a change made between two heartbeats is acted on at the
+next one, and the heartbeat already in flight was built under the old setting.
+Reaching zero means either asking before every report — doubling the request
+volume of the one endpoint every visitor hits continuously — or pushing
+configuration to widgets over a socket, which is a great deal of machinery for a
+window measured in seconds. One report at the previous setting, bounded by the
+cadence, is the trade this takes.
 
 Rejecting the write server-side does not substitute for this. By the time the
 request arrives the address has already crossed the wire, which is the whole
@@ -535,9 +553,18 @@ arrive" — was written as a deliberate property. It is now **conditional**: tru
 for every install by default, and untrue for a site whose operator has enabled
 presence and whose visitor has not declined.
 
-ADR 0016 §4 is answered rather than deferred. §2 and §3 stand: the index still
-scopes by account and per-site assignment, and presence keeps the two-minute and
-fifteen-minute cutoffs in `VisitorPresence`.
+**ADR 0016 §2 is amended, not preserved.** It defines the visitor index as
+listing people who made contact, and this decision requires that index to
+include presence-only visitors on a site that has opted in. Saying §2 stands
+would leave two requirements that cannot both be met, and an implementation
+could satisfy the older one by omitting exactly the visitors this exists to
+show. So §2 now reads: the index lists visitors the install has a record of,
+which is people who made contact plus — on an opted-in site — people presence
+recorded. Its scoping rules are untouched: account and per-site assignment
+decide who sees which visitors, and that is unchanged.
+
+ADR 0016 §4 is answered rather than deferred. §3 stands: presence keeps the
+two-minute and fifteen-minute cutoffs in `VisitorPresence`.
 
 ## Consequences
 
