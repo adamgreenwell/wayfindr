@@ -1425,3 +1425,22 @@ test('the configuration read is still bounded', function (): void {
     test()->getJson(route('widget.appearance', ['site_public_key' => $site->public_key]))
         ->assertStatus(429);
 });
+
+test('the presence caption agrees with the state beside it', function (): void {
+    // Computed from the cross-channel timestamp, the caption disagreed with the
+    // state it sits next to: `quiet`, "2 minutes ago" -- the state describing
+    // the website and the words describing an email.
+    $account = Account::factory()->create();
+    $site = Site::factory()->for($account)->create(['domain' => 'shop.test']);
+
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-caption',
+        'last_seen_at' => now(),
+        'last_web_seen_at' => now()->subHours(4),
+    ]);
+
+    $payload = Conversation::factory()->for($site)->for($visitor)->create()->visitorPresencePayload();
+
+    expect($payload['state'])->toBe('quiet')
+        ->and($payload['last_seen_label'])->toBe($visitor->last_web_seen_at->diffForHumans());
+});

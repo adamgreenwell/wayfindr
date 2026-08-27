@@ -1445,3 +1445,161 @@ test('an overtaken page-load config cannot reinstate settings', async (t) => {
     'an overtaken config response started reporting the operator had switched off',
   );
 });
+
+test('a decline binds the first message too', async (t) => {
+  // Bootstrap and the heartbeat were gated; starting a conversation was not.
+  // The page a visitor declined to share travelled with their first message
+  // and landed on the conversation, where it outlives the decline entirely.
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+    'wayfindr:site_public_shop:presence-declined': 'declined',
+  }));
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/pricing',
+  });
+
+  const calls = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 0,
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, {
+          data: { appearance: { position: 'right' }, presence: { reports: true, every: 45, page_urls: true } },
+        });
+      }
+
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return jsonResponse(200, {
+          data: {
+            site: { public_key: 'site_public_shop', settings: {}, color: 'blue', presence: { reports: true, every: 45, page_urls: true } },
+            visitor: { anonymous_id: 'anon-shop', token: 'visitor-token-shop' },
+          },
+        });
+      }
+
+      if (url.endsWith('/api/conversations')) {
+        return jsonResponse(201, { data: { support_code: 'WF-DECLINE1', status: 'open' } });
+      }
+
+      return jsonResponse(201, { data: { support_code: 'WF-DECLINE1', status: 'open', messages: [] } });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+  await widget.open();
+  await settle();
+
+  const textarea = widget.root.querySelector('.wayfindr-widget__textarea');
+
+  textarea.value = 'My order has not arrived';
+  widget.root.querySelector('.wayfindr-widget__form')
+    .dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+
+  await settle();
+
+  const started = calls.filter((c) => c.url.endsWith('/api/conversations'));
+
+  assert.ok(started.length > 0, 'no conversation was started, so this proves nothing');
+  assert.ok(
+    started.every((c) => !c.body.page_url),
+    'the first message carried the page a declined visitor asked not to share',
+  );
+});
+
+test('opening the panel early does not turn presence off', async (t) => {
+  // Bootstrap's answer was discarded for having nothing to update, and the
+  // page-load config read that arrived afterwards was discarded for being
+  // overtaken -- so opening the panel while the config was in flight left the
+  // visitor reported by neither path.
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/pricing',
+  });
+
+  const calls = [];
+  const gate = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 0,
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      if (url.includes('/api/widget/appearance')) {
+        return new Promise((resolve) => {
+          gate.push(() => resolve(jsonResponse(200, {
+            data: { appearance: { position: 'right' }, presence: { reports: true, every: 45, page_urls: true } },
+          })));
+        });
+      }
+
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return jsonResponse(200, {
+          data: {
+            site: {
+              public_key: 'site_public_shop',
+              settings: {},
+              color: 'blue',
+              presence: { reports: true, every: 45, page_urls: true },
+            },
+            visitor: { anonymous_id: 'anon-shop', token: 'visitor-token-shop' },
+          },
+        });
+      }
+
+      return jsonResponse(202, { data: { reports: true, every: 45, page_urls: true } });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  // The panel is opened while the page-load config read is still in flight.
+  await widget.open();
+  await settle();
+
+  gate.forEach((release) => release());
+  await settle();
+
+  assert.ok(
+    presenceCalls(calls).length > 0,
+    'opening the panel early left the visitor reported by neither path',
+  );
+});
