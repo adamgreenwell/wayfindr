@@ -934,6 +934,108 @@ test('starting a conversation counts as contact even without bootstrap', functio
     expect($visitor->fresh()->presence_only)->toBeFalse('a visitor who wrote in is still marked as never having made contact');
 });
 
+test('an email correspondent does not read as being on the site', function (): void {
+    // "Active" on a visitor means somebody is at the other end right now. After
+    // mail and web were separated, the cross-channel timestamp stopped being
+    // able to say that -- an email correspondent read as active while they sat
+    // in their mail client, and an agent would offer to cobrowse with a browser
+    // that was not open.
+    $site = presenceSite();
+
+    $mailer = Visitor::factory()->for($site)->create([
+        'anonymous_id' => null,
+        'email' => 'mailer@elsewhere.test',
+        'last_seen_at' => now(),
+    ]);
+
+    // Cleared after creating: the factory fills this in from `last_seen_at`
+    // for the widget visitor it normally makes, and cannot tell an explicit
+    // null from an absent one.
+    $mailer->forceFill(['last_web_seen_at' => null])->save();
+
+    // `unknown` rather than `not_reported`: this surface has always named the
+    // null case that way, and VisitorPresence keeps the cutoffs rather than the
+    // labels, which is the part that must not diverge.
+    expect($mailer->presenceState())->toBe('unknown')
+        // And the cross-channel column still answers its own question.
+        ->and($mailer->last_seen_at->isToday())->toBeTrue();
+
+    // Somebody actually browsing does read as active.
+    reportPresence($site, 'anon-browsing')->assertSuccessful();
+
+    expect(Visitor::query()->where('anonymous_id', 'anon-browsing')->firstOrFail()->presenceState())
+        ->toBe(VisitorPresence::ACTIVE);
+});
+
+test('turning page addresses off clears the ones already stored', function (): void {
+    // The form recommends this switch to operators whose paths carry codes or
+    // tokens, so "from now on" is the wrong scope: a visitor who does not
+    // heartbeat again keeps the address that prompted the change for thirty
+    // days, on an agent's screen the whole time.
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $site = Site::factory()->for($account)->create([
+        'domain' => 'shop.test',
+        'public_key' => 'site_public_purge',
+        'settings' => ['presence' => ['enabled' => true, 'page_urls' => true]],
+    ]);
+
+    reportPresence($site, 'anon-stored', 'https://shop.test/pricing')->assertSuccessful();
+
+    expect(Visitor::query()->where('anonymous_id', 'anon-stored')->firstOrFail()->metadata['last_page_url'])
+        ->toBe('https://shop.test/pricing');
+
+    test()->actingAs($owner)
+        ->put(route('dashboard.sites.presence.update', $site), ['presence_enabled' => '1'])
+        ->assertRedirect();
+
+    $visitor = Visitor::query()->where('anonymous_id', 'anon-stored')->firstOrFail();
+
+    expect($visitor->metadata['last_page_url'] ?? null)
+        ->toBeNull('an address the operator asked us to stop keeping was kept');
+
+    // The visitor is still there; only the address went.
+    expect($visitor->last_web_seen_at)->not->toBeNull();
+});
+
+test('a heartbeat does not undo context written while it was in flight', function (): void {
+    // `metadata` is one JSON column, so writing it replaces the whole value. A
+    // heartbeat that read the row, then waited while bootstrap committed new
+    // host context, would merge into its stale snapshot and put the old
+    // context back.
+    $site = presenceSite();
+
+    reportPresence($site, 'anon-merge', 'https://shop.test/pricing')->assertSuccessful();
+
+    $visitor = Visitor::query()->where('anonymous_id', 'anon-merge')->firstOrFail();
+    $raced = false;
+
+    // The competing write, landing after this request has read the row.
+    Visitor::retrieved(function (Visitor $read) use (&$raced, $visitor): void {
+        if ($raced || $read->id !== $visitor->id) {
+            return;
+        }
+
+        $raced = true;
+
+        // `where('id', ...)`, not `whereKey()`: that is an Eloquent method and
+        // the query builder does not have it, so the competing write silently
+        // did nothing and the test passed against the bug.
+        DB::table('visitors')->where('id', $visitor->id)->update([
+            'metadata' => json_encode(['last_page_url' => 'https://shop.test/pricing', 'plan' => 'pro']),
+        ]);
+    });
+
+    reportPresence($site, 'anon-merge', 'https://shop.test/checkout')->assertSuccessful();
+
+    expect($raced)->toBeTrue('the race never happened, so this proves nothing');
+
+    $metadata = Visitor::query()->where('anonymous_id', 'anon-merge')->firstOrFail()->metadata;
+
+    expect($metadata['plan'] ?? null)->toBe('pro', 'the heartbeat erased context written while it was in flight')
+        ->and($metadata['last_page_url'])->toBe('https://shop.test/checkout');
+});
+
 test('the widget learns about presence without making contact', function (): void {
     // The endpoint that answers this is the one a page load is allowed to ask.
     // Bootstrap cannot be: it creates or touches a visitor row and marks them

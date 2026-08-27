@@ -84,7 +84,7 @@ final class ConversationQueueQuery
         // Visitor::presenceState() independently, which is exactly the second
         // implementation this class exists to prevent.
         return $query->whereHas('visitor', function (Builder $query) use ($presence): void {
-            VisitorPresence::constrain($query, $presence);
+            VisitorPresence::constrain($query, $presence, 'last_web_seen_at');
         });
     }
 
