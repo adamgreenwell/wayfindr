@@ -41,8 +41,8 @@
       'notice.emptyVisitor': 'No messages yet. Send a message and support will see it here.',
       'notice.emptyAgent': 'No messages yet. Replies will show up here.',
       'notice.closed': 'This conversation was closed. Send a new message to reopen it.',
-      'presence.disclosure': 'This site can see which of its pages you are on while this widget is loaded, and remembers this visit for 30 days so it can tell you have been here before.',
-      'presence.disclosureNoPage': 'This site can see that you are here while this widget is loaded, and remembers this visit for 30 days so it can tell you have been here before. It is not told which page you are on.',
+      'presence.disclosure': 'This site can see which of its pages you are on while this widget is loaded, and remembers this visit so it can tell you have been here before. If you never get in touch, that record is deleted after 30 days.',
+      'presence.disclosureNoPage': 'This site can see that you are here while this widget is loaded, and remembers this visit so it can tell you have been here before. It is not told which page you are on. If you never get in touch, that record is deleted after 30 days.',
       'presence.decline': 'Stop sharing',
       'presence.declined': 'Not sharing which pages you visit.',
       'presence.declinedNoPage': 'Not letting this site know you are here.',
@@ -130,8 +130,8 @@
       'notice.emptyVisitor': 'Noch keine Nachrichten. Schreiben Sie uns, der Support sieht Ihre Nachricht hier.',
       'notice.emptyAgent': 'Noch keine Nachrichten. Antworten erscheinen hier.',
       'notice.closed': 'Diese Unterhaltung wurde geschlossen. Senden Sie eine neue Nachricht, um sie wieder zu öffnen.',
-      'presence.disclosure': 'Diese Website kann sehen, auf welchen ihrer Seiten Sie sich befinden, solange dieses Widget geladen ist, und merkt sich diesen Besuch 30 Tage lang, um Sie bei einem erneuten Besuch wiederzuerkennen.',
-      'presence.disclosureNoPage': 'Diese Website kann sehen, dass Sie hier sind, solange dieses Widget geladen ist, und merkt sich diesen Besuch 30 Tage lang, um Sie bei einem erneuten Besuch wiederzuerkennen. Welche Seite Sie ansehen, erfährt sie nicht.',
+      'presence.disclosure': 'Diese Website kann sehen, auf welchen ihrer Seiten Sie sich befinden, solange dieses Widget geladen ist, und merkt sich diesen Besuch, um Sie bei einem erneuten Besuch wiederzuerkennen. Wenn Sie nie Kontakt aufnehmen, wird dieser Eintrag nach 30 Tagen gelöscht.',
+      'presence.disclosureNoPage': 'Diese Website kann sehen, dass Sie hier sind, solange dieses Widget geladen ist, und merkt sich diesen Besuch, um Sie bei einem erneuten Besuch wiederzuerkennen. Welche Seite Sie ansehen, erfährt sie nicht. Wenn Sie nie Kontakt aufnehmen, wird dieser Eintrag nach 30 Tagen gelöscht.',
       'presence.decline': 'Nicht mehr teilen',
       'presence.declined': 'Es wird nicht geteilt, welche Seiten Sie besuchen.',
       'presence.declinedNoPage': 'Diese Website erfährt nicht mehr, dass Sie hier sind.',
@@ -2787,6 +2787,7 @@
       // ever gets. fetchSiteConfig() runs once per page load, so a tab left
       // open all afternoon would otherwise keep the settings it started with
       // and go on sending page addresses an operator switched off hours ago.
+      presenceSettingsSequence++;
       refreshPresenceSettings(result && result.site ? result.site.presence : null);
     }
 
@@ -2860,6 +2861,15 @@
      * than tidy -- an operator revoking it should not have to wait for the tab
      * to close.
      */
+    /**
+     * Orders the answers that carry settings.
+     *
+     * Bumped by every request that will come back with them, so a response
+     * overtaken by a later one is discarded rather than applied late. The same
+     * device the bootstrap sequence uses, and for the same reason.
+     */
+    var presenceSettingsSequence = 0;
+
     function refreshPresenceSettings(config) {
       if (!presenceConfig) {
         return;
@@ -3023,6 +3033,11 @@
       }
 
       if (event.newValue === 'declined') {
+        // Recorded before the config is cleared, exactly as the direct click
+        // does. Without it a decline arriving from another tab confirmed the
+        // page-sharing wording on a site that never shared page addresses.
+        presenceReportedPageUrls = Boolean(presenceConfig && presenceConfig.page_urls !== false);
+
         stopPresenceTimer();
         presenceConfig = null;
         renderPresenceDeclined();
@@ -3058,7 +3073,18 @@
       // which is the whole reason the client sanitises in the first place.
       var pageUrl = presenceConfig.page_urls === false ? null : sanitisePageUrl(currentHref());
 
+      var seq = ++presenceSettingsSequence;
+
       client.reportPresence(pageUrl).then(function (result) {
+        // Only the NEWEST answer touches the settings. Heartbeats can overlap
+        // when one runs longer than the interval, and bootstrap answers on its
+        // own schedule, so responses arrive out of order -- and an older one
+        // carrying `page_urls: true` would undo a newer one that turned
+        // addresses off, putting them back on the wire for the life of the tab.
+        if (seq !== presenceSettingsSequence) {
+          return;
+        }
+
         // Every heartbeat comes back with the settings in force, and this is
         // the ONLY way a passive tab ever hears about a change: a visitor who
         // never opens the panel never calls bootstrap, and the page-load config
@@ -6427,6 +6453,8 @@
       '.wayfindr-widget[data-wf-theme="dark"]{--wf-paper:#141517;--wf-surface:#1B1D20;--wf-surface-2:#24272A;--wf-ink:#ECECE8;--wf-ink-invert:var(--wf-brand-ink-configured-dark,#16181A);--wf-muted:#9BA0A3;--wf-rule:#2E3134;--wf-rule-firm:#3D4145;--wf-brand:var(--wf-brand-configured-dark,#3FA69D);--wf-signal-rest:#7E8386;--wf-signal-go:#4CA97A;--wf-signal-hold:#E0A72A;--wf-signal-stop:#E2685C;--wf-site-red:#D54C43;--wf-site-blue:#5578D0;--wf-site-ochre:#A57105;--wf-site-pine:#238C57;--wf-site-violet:#896EB6;--wf-site-rust:#C65C2E}',
       // wayfindr:tokens:end
       '.wayfindr-widget{position:fixed;inset-inline-end:20px;bottom:20px;z-index:2147483000;font-family:var(--wf-font-sans);color:var(--wf-ink)}',
+      // Anchors the presence notice, which is positioned against this box.
+      '.wayfindr-widget{isolation:isolate}',
       '.wayfindr-widget *{box-sizing:border-box}',
       '.wayfindr-widget [hidden]{display:none!important}',
       '.wayfindr-widget__launcher,.wayfindr-widget__send{border:0;border-radius:999px;background:var(--wf-brand);color:var(--wf-ink-invert);box-shadow:0 12px 30px rgba(8,37,34,.18);cursor:pointer;font:700 14px/1 var(--wf-font-sans)}',
@@ -6473,7 +6501,12 @@
       '.wayfindr-widget__notice{display:grid;gap:10px;margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-surface-2);color:var(--wf-muted);font-size:13px;line-height:1.4}',
       '.wayfindr-widget__notice[data-state="warning"]{background:color-mix(in srgb, var(--wf-signal-hold) 12%, var(--wf-surface));color:color-mix(in srgb, var(--wf-signal-hold) 70%, var(--wf-ink))}',
       '.wayfindr-widget__notice-copy{margin:0}',
-      '.wayfindr-widget__presence{display:flex;gap:8px;align-items:center;justify-content:flex-end;max-width:min(280px,calc(100vw - 40px));margin-bottom:8px;padding:6px 10px;border:var(--wf-border) solid var(--wf-rule);border-radius:var(--wf-radius);background:var(--wf-surface);color:var(--wf-muted);font-size:12px;line-height:1.35;box-shadow:0 6px 18px rgba(8,37,34,.10)}',
+      // The root is fixed and auto-width, so a 280px child in normal flow
+      // widened it and the inline launcher stayed at the left edge of that
+      // box -- pushing the launcher off the corner it is anchored to, on
+      // every page of an opted-in site. Taken out of flow and pinned to the
+      // same corner instead, so the root keeps the launcher's width.
+      '.wayfindr-widget__presence{position:absolute;bottom:100%;inset-inline-end:0;display:flex;gap:8px;align-items:center;justify-content:flex-end;width:max-content;max-width:min(280px,calc(100vw - 40px));margin-bottom:8px;padding:6px 10px;border:var(--wf-border) solid var(--wf-rule);border-radius:var(--wf-radius);background:var(--wf-surface);color:var(--wf-muted);font-size:12px;line-height:1.35;box-shadow:0 6px 18px rgba(8,37,34,.10)}',
       '.wayfindr-widget__presence-copy{margin:0}',
       '.wayfindr-widget__presence-decline{background:none;border:0;padding:0;font:inherit;text-decoration:underline;cursor:pointer;color:inherit;white-space:nowrap}',
       '.wayfindr-widget__notice-retry{justify-self:start;min-height:34px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);cursor:pointer;padding:0 12px;font:700 13px/1 var(--wf-font-sans)}',
