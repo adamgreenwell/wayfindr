@@ -11,6 +11,7 @@ use App\Models\Visitor;
 use App\Support\Visitors\LiveVisitorBoard;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -331,4 +332,51 @@ test('a site that stopped watching shows nobody, not everybody', function (): vo
         ->assertSee('stays empty by design', false);
 
     expect($response->viewData('visitors'))->toHaveCount(0);
+});
+
+test('the board recovers from a failed subscription', function (): void {
+    // A failed authorization leaves the socket healthy and unsubscribed, so no
+    // close event fires and the reconnect that only the close handler schedules
+    // never runs. The board then sits connected to nothing for the rest of the
+    // session, looking exactly like a quiet afternoon.
+    //
+    // Read from the template rather than a rendered page: the behaviour lives
+    // in a socket callback no server-side test can drive, and the template is
+    // the artifact under test.
+    $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
+
+    $authorize = Str::before(
+        Str::after($source, 'function authorize(activeSocket, socketId) {'),
+        'function handleSocketMessage',
+    );
+
+    // The slice is proven before anything is asserted about it -- `.catch(`
+    // appears several times in this script, and a slice that grabbed the wrong
+    // one would assert over the wrong code and pass.
+    test()->assertStringContainsString(
+        'pusher:subscribe',
+        $authorize,
+        'the slice is not the authorize function',
+    );
+
+    expect($authorize)->toContain('scheduleReconnect();')
+        ->and($authorize)->toContain('activeSocket.close();');
+});
+
+test('a refreshed row moves to the newest-first position', function (): void {
+    // The server orders by the latest sighting. Replacing a row in place meant
+    // a visitor already on the board kept their original position for ever --
+    // the ordering frozen at page load while the timestamps changed underneath.
+    $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
+
+    $apply = Str::before(Str::after($source, 'function applyVisitor(visitor) {'), 'function dropDeparted');
+
+    test()->assertStringContainsString(
+        'rows.insertBefore(fresh, rows.firstChild)',
+        $apply,
+        'the slice is not applyVisitor',
+    );
+
+    expect($apply)->toContain('existing.remove()')
+        ->and($apply)->not->toContain('existing.replaceWith');
 });

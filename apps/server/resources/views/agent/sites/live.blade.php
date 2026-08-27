@@ -251,7 +251,14 @@
                     var fresh = buildRow(visitor);
 
                     if (existing) {
-                        existing.replaceWith(fresh);
+                        existing.remove();
+
+                        // Moved, not replaced in place. The server orders by
+                        // the latest sighting, so a visitor already on the
+                        // board when it loaded would otherwise keep their
+                        // original position for ever -- the ordering frozen at
+                        // page load while the timestamps underneath it change.
+                        rows.insertBefore(fresh, rows.firstChild);
                     } else {
                         // Newest first, matching the server's ordering. A row
                         // appended to the bottom would put the person who just
@@ -343,8 +350,22 @@
                         }
                     }).catch(function () {
                         if (statusEl) {
-                            statusEl.textContent = 'Live updates stopped. This list is correct as of when it last updated.';
+                            statusEl.textContent = 'Reconnecting to live updates.';
                         }
+
+                        // A failed authorization leaves the socket HEALTHY and
+                        // unsubscribed, so no close event ever fires and the
+                        // reconnect that only the close handler schedules never
+                        // runs. The board would then sit there, connected to
+                        // nothing, for the rest of the session -- looking
+                        // exactly like a quiet afternoon.
+                        try {
+                            activeSocket.close();
+                        } catch (error) {
+                            // Closing is best effort; the reconnect is what matters.
+                        }
+
+                        scheduleReconnect();
                     });
                 }
 
