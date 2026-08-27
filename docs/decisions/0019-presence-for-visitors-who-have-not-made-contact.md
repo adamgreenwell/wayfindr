@@ -181,6 +181,21 @@ means rather than leaving it to the implementation:
   failures are credentials — and it is exactly why the query string is dropped
   WHOLE rather than filtered by this same kind of guessing.
 
+  **And it is not enough, which is why there is a switch.** Three rounds of
+  broadening this rule taught the same thing each time: there is no shape that
+  separates a short lowercase token from a short lowercase word. `/invite/abcdef`
+  is indistinguishable from a page name, and a rule strict enough to catch it
+  redacts the vocabulary routes are named after.
+
+  So a site can report presence **without page addresses at all**. It is on by
+  default, because which page is most of the value and a site with nothing
+  sensitive in its paths should not have to opt in to the ordinary case. A site
+  that puts invitation codes, order numbers or reset tokens in path segments
+  turns it off and gets presence that says somebody is here and nothing more.
+
+  That is the answer a heuristic cannot be: the operator knows what their own
+  routes contain, and this decision does not.
+
   **The same rule runs in the widget, before the report leaves the browser.**
   Redacting on arrival is too late to be the promise it sounds like: by then the
   value has crossed every proxy in between and landed in access logs on both
@@ -249,6 +264,18 @@ outlive the conversations that produced them.
 
 Presence adds a fourth writer to that list. It sanitises for the same reason and
 through the same class.
+
+**Two windows on the same site are one visitor, and the last report wins.**
+The anonymous id belongs to the browser, not to the tab, so a visitor with two
+non-minimised windows on different pages has both reporting and alternately
+overwriting the current page. The board will show them moving between two pages
+they are not navigating between.
+
+Accepted rather than solved. Giving each tab its own identity means a row per
+tab, a retention story per tab, and a board that shows one person as several —
+which is a worse answer to "who is on the site right now" than an occasionally
+oscillating page. The page is the most recent report, and that is all it claims
+to be.
 
 ### 3a. How often, and when a visit begins
 
@@ -348,6 +375,15 @@ told, because a 429 there reports how much quota is left to whoever is probing.
 An office where everybody arrives at nine exceeds thirty new visitors a minute
 briefly; those visitors are recorded on their next heartbeat rather than lost.
 
+**And a daily budget, because a burst limit is not a sustained one.** Thirty a
+minute held all day is 43,200 rows and roughly 1.3 million across the retention
+window — so the allowance that makes an office work is, by itself, a licence to
+grow the table without end. `WAYFINDR_WIDGET_PRESENCE_CREATIONS_PER_IP_PER_DAY`
+(default 2000) sits far above any real site's new visitors from one address in a
+day and far below what an unattended script reaches by lunchtime. It is checked
+before the minute limit is spent, so an exhausted day does not silently consume
+the burst counter as well.
+
 Because §1 keeps all of this off until an operator turns it on, the surface is
 only ever the sites that chose it.
 
@@ -384,8 +420,25 @@ So this ships with the product's **first automatic retention control**:
 
   So a row carries a `presence_only` flag that defaults to **false**. Every row
   written before this existed is therefore safe by construction; only the
-  presence endpoint sets it, and only when creating; and opening the widget
-  clears it.
+  presence endpoint sets it, and only when creating; and **every path that
+  constitutes contact clears it** — opening the widget, and starting a
+  conversation, which is its own public route and does not require bootstrap to
+  have run.
+
+  The flag is one of three conditions, not the whole test. The pruner also
+  requires no conversations and no tickets, in the selecting query and again
+  under the row lock before it deletes. A visitor whose flag was somehow left
+  set after they wrote in is still not deletable; the flag being accurate
+  matters because the record should not say something untrue about them, not
+  because it is the only thing standing between them and a cascade.
+
+  **Switching presence off deletes what it collected.** Not "stops collecting
+  and lets the rest age out": leaving the rows for thirty days means the visitor
+  directory still listing people who never made contact, on a site whose
+  operator has just revoked the setting that collected them, while every surface
+  describing that list says otherwise. Only rows this feature created and nobody
+  has since been in touch through — somebody who arrived as a heartbeat and
+  later wrote in is a contact and stays.
 
   Which timestamp is the whole rule. Measured from `created_at`, somebody first
   seen 31 days ago is deleted while they are on the site heartbeating, and
