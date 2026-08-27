@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\SanitisesStoredPageUrls;
 use App\Support\Visitors\VisitorPresence;
 use Database\Factories\VisitorFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -14,6 +15,16 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 #[Fillable(['site_id', 'external_id', 'anonymous_id', 'name', 'email', 'metadata', 'last_seen_at'])]
 class Visitor extends Model
 {
+    use SanitisesStoredPageUrls;
+
+    /**
+     * @return array<int, string>
+     */
+    protected static function pageUrlPaths(): array
+    {
+        return ['last_page_url'];
+    }
+
     /** @use HasFactory<VisitorFactory> */
     use HasFactory;
 

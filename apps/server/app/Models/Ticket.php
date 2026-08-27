@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\SanitisesStoredPageUrls;
 use App\Support\TicketCategory;
 use Carbon\CarbonInterface;
 use Database\Factories\TicketFactory;
@@ -32,6 +33,16 @@ use Illuminate\Support\Str;
 ])]
 class Ticket extends Model
 {
+    use SanitisesStoredPageUrls;
+
+    /**
+     * @return array<int, string>
+     */
+    protected static function pageUrlPaths(): array
+    {
+        return ['visitor_context.last_page_url', 'visitor_context.started_page_url'];
+    }
+
     /** @use HasFactory<TicketFactory> */
     use HasFactory;
 

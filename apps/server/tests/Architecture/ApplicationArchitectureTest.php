@@ -6,7 +6,11 @@ arch('application code avoids debugging helpers')
 
 arch('support models remain Eloquent models')
     ->expect('App\Models')
-    ->toExtend('Illuminate\Database\Eloquent\Model');
+    ->toExtend('Illuminate\Database\Eloquent\Model')
+    // A `Concerns` namespace holds traits, which cannot extend anything. The
+    // rule means "a model class is an Eloquent model", not "nothing may live
+    // under App\Models" -- and App\Events\Concerns already sets the precedent.
+    ->ignoring('App\Models\Concerns');
 
 /**
  * A webhook signature is compared in constant time, or it is not compared.
