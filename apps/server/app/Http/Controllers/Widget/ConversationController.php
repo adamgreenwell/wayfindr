@@ -109,6 +109,16 @@ class ConversationController extends Controller
                 'anonymous_id' => $validated['anonymous_id'],
             ]);
 
+            // Lock whatever that returned, unless we just made it. firstOrCreate
+            // can hand back a row somebody else recreated under the same
+            // `(site_id, anonymous_id)`, and merging metadata into an unlocked
+            // copy of it is the race the lock above exists to settle -- a
+            // heartbeat committing between that SELECT and this save would have
+            // its page address overwritten by what was read here.
+            if (! $visitor->wasRecentlyCreated) {
+                $visitor = Visitor::query()->whereKey($visitor->getKey())->lockForUpdate()->first() ?? $visitor;
+            }
+
             $visitor->forceFill([
                 'metadata' => $visitorContextSanitizer->mergeMetadata(
                     $visitor->metadata,
