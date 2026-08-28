@@ -1600,3 +1600,22 @@ test('bootstrap answers with the settings it actually wrote against', function (
         ->and($response->json('data.site.presence.reports'))
         ->toBeFalse('the answer told the widget to report against a setting the write refused');
 });
+
+test('the widget is told the retention this install applies', function (): void {
+    // The disclosure names a number of days. Baking 30 into the copy made an
+    // operator who shortened the window tell every visitor something untrue.
+    config()->set('wayfindr.presence.retention_days', 7);
+
+    $site = presenceSite();
+
+    test()->getJson(route('widget.appearance', ['site_public_key' => $site->public_key]))
+        ->assertOk()
+        ->assertJsonPath('data.presence.retention_days', 7);
+
+    // Clamped the same way the pruner clamps it, so the notice cannot promise
+    // longer than the sweep will allow.
+    config()->set('wayfindr.presence.retention_days', 400);
+
+    expect(SitePresenceReporting::retentionDays())
+        ->toBe(PrunePresenceVisitorsCommand::MAXIMUM_DAYS);
+});
