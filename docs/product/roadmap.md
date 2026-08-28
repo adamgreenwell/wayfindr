@@ -53,8 +53,11 @@ The product has moved past a spine. It now includes:
   is a separate catalogue for a separate audience.
 - A visitor directory, agent-initiated password recovery, and a read-only public
   API with a decided isolation model.
-- Visitor presence collection (ADR 0019) — heartbeat, disclosure, decline, and a
-  thirty-day retention window that is the product's first automatic one.
+- Visitor presence collection (ADR 0019) — heartbeat, disclosure, decline, and
+  the product's first automatic retention window: thirty days by default, and at
+  most, with operators free to shorten it. The maximum belongs to the product
+  rather than the install, so a configured value longer than thirty days is
+  clamped rather than honoured.
 
   **Off until an operator turns it on.** The switch lives on the site page under
   *Live visitor presence*, behind the same permission as the masking rules, and
