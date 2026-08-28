@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\Conversation;
+use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\Visitor;
+use App\Support\Sites\SitePresenceReporting;
 use App\Support\VisitorContextSanitizer;
 use App\Support\Visitors\VisitorPresence;
 use Carbon\CarbonInterface;
@@ -93,9 +95,18 @@ class AgentVisitorController extends Controller
             ->paginate(25)
             ->withQueryString();
 
+        // Whether this screen can contain people who never made contact, which
+        // decides what its empty state is allowed to claim. Scoped to what the
+        // filter selects rather than the account, so an agent looking at one
+        // site is told how THAT site behaves -- and computed from the sites
+        // already loaded for the filter, so it costs no query.
+        $listsBrowsers = ($siteId !== null ? $visibleSites->where('id', $siteId) : $visibleSites)
+            ->contains(fn (Site $site): bool => SitePresenceReporting::for($site)->enabled);
+
         return view('agent.visitors.index', [
             'account' => $account,
             'agent' => $agent,
+            'listsBrowsers' => $listsBrowsers,
             'presence' => $presence,
             'search' => $search,
             'siteId' => $siteId,

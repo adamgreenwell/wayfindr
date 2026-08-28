@@ -49,7 +49,17 @@ final class SitePresenceReporting
         $config = is_array($site->settings['presence'] ?? null) ? $site->settings['presence'] : [];
 
         return new self(
-            ($config['enabled'] ?? false) === true,
+            // An archived site reports nothing, whatever its settings still
+            // say. The write path already refuses these -- but the ANSWER is
+            // what the widget acts on, and a request that declines to record a
+            // visitor while replying "keep reporting" leaves the tab sending
+            // heartbeats and page addresses to a site taken out of service.
+            //
+            // It cannot correct itself later either: once the site is
+            // archived the next heartbeat is a 404 from the resolver, and a
+            // 404 carries no configuration, so this reply is the last
+            // instruction that tab will ever get.
+            ! $site->isArchived() && ($config['enabled'] ?? false) === true,
             // On unless switched off, because "which page" is most of the value
             // and a site with no secrets in its paths should not have to opt in
             // to the ordinary case.
