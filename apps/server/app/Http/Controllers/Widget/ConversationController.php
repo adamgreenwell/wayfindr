@@ -168,7 +168,7 @@ class ConversationController extends Controller
                     // public: a custom or older client keeps sending one, and
                     // this is the field that outlives the visitor row.
                     'started_page_url' => $storePageUrl
-                        ? VisitorPageUrl::forSite($validated['page_url'] ?? null, $site->domain)
+                        ? VisitorPageUrl::forSite($validated['page_url'] ?? null, $current->domain)
                         : null,
                     // The reason belongs to this conversation, not to the person:
                     // the next one may be about something else entirely. Name and
