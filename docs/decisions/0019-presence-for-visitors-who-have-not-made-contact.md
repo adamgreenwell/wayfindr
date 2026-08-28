@@ -475,10 +475,14 @@ re-reads the setting under it before writing. Without that the cleanup finishes
 first and a request already in flight puts back exactly what it removed, which
 on a visitor's last heartbeat means for the rest of the retention window.
 
-The same lock is why one settings form can no longer overwrite another's:
-`settings` is a single JSON column, so every form reads, modifies and writes the
-whole value, and a form loaded before a revocation would otherwise save the
-revoked value back. Over the limit the report is not stored and the client is not
+The same lock is why one settings form can no longer overwrite another's, and
+the lock alone is not what does it. `settings` is a single JSON column, so every
+form reads, modifies and writes the whole value — and serialising a stale
+submission only means it writes its stale copy *later*, which is worse. So the
+mutation is handed **the settings as they are at the moment of the write**, read
+under the lock, rather than the copy its request arrived with. A form saving the
+rating prompt applies its own change to the current value and cannot carry a
+revoked `presence.enabled` back with it. Over the limit the report is not stored and the client is not
 told, because a 429 there reports how much quota is left to whoever is probing.
 
 An office where everybody arrives at nine exceeds thirty new visitors a minute
