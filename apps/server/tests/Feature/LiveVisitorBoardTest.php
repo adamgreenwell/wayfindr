@@ -650,3 +650,34 @@ test('a heartbeat refused by the creation quota announces nothing', function ():
         fn (VisitorPresenceUpdated $event): bool => $event->visitor->exists
     );
 });
+
+test('a close event from a replaced socket cannot open another', function (): void {
+    // The generation guard reached the authorization callback and not the close
+    // handler, and the close handler is the one that always runs.
+    //
+    // A failed authorization closes its own socket and schedules a reconnect in
+    // the same breath. `close` is delivered asynchronously, so by the time it
+    // arrives the reconnect has already fired and a healthy socket is in
+    // service -- and the unguarded handler then schedules another reconnect,
+    // opening a third socket beside it. Every failed authorization leaves one
+    // more, each with its own subscription, and the board counts every
+    // arrival once per live socket.
+    $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
+
+    $closeHandler = Str::before(
+        Str::after($source, "socket.addEventListener('close', function () {"),
+        "socket.addEventListener('error'",
+    );
+
+    test()->assertStringContainsString(
+        'scheduleReconnect();',
+        $closeHandler,
+        'the slice is not the close handler',
+    );
+
+    test()->assertStringContainsString(
+        'generation !== socketGeneration',
+        $closeHandler,
+        'a close event from a socket nobody is using still schedules a reconnect',
+    );
+});

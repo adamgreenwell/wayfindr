@@ -547,6 +547,21 @@
                     socket.addEventListener('message', handleSocketMessage);
 
                     socket.addEventListener('close', function () {
+                        // The same guard the authorization callback takes, and
+                        // this is the handler that always runs.
+                        //
+                        // A failed authorization closes its own socket and
+                        // schedules a reconnect in the same breath. `close`
+                        // arrives asynchronously, by which time the reconnect
+                        // has fired and a healthy socket is in service -- so an
+                        // unguarded handler scheduled another one and opened a
+                        // third socket beside it. Every failed authorization
+                        // left one more, each with its own subscription, and
+                        // the board counted every arrival once per live socket.
+                        if (generation !== socketGeneration) {
+                            return;
+                        }
+
                         if (statusEl && !pageClosing) {
                             statusEl.textContent = 'Reconnecting to live updates.';
                         }
