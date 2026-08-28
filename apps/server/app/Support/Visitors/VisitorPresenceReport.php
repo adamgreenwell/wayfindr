@@ -74,6 +74,22 @@ final class VisitorPresenceReport
      */
     private function announce(Site $site, Visitor $visitor): Visitor
     {
+        // Only for a row that exists. stamp() returns the model it declined to
+        // write on three paths -- an archived site, presence switched off, and
+        // the creation quota exhausted -- and on the last of those the model is
+        // brand new, so it has no id and no `presence_only`. LiveVisitorBoard
+        // reads an unset `presence_only` as contacted and builds a profile
+        // route for a null key, which throws.
+        //
+        // The catch below then swallows it, so the heartbeat still succeeds and
+        // the only trace is a reported exception -- one per refused report,
+        // arriving in a burst, at exactly the moment the quota exists to
+        // protect against. There is also nothing to announce: no board row
+        // changed, because no row was written.
+        if (! $visitor->exists) {
+            return $visitor;
+        }
+
         try {
             event(new VisitorPresenceUpdated($site, $visitor));
         } catch (\Throwable $e) {

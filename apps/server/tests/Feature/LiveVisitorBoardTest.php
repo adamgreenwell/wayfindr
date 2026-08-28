@@ -13,6 +13,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 
 uses(RefreshDatabase::class);
 
@@ -31,6 +32,14 @@ function boardFixture(bool $enabled = true): array
     ]);
 
     return ['account' => $account, 'agent' => $agent, 'site' => $site];
+}
+
+function boardHeartbeat(Site $site, string $anonymousId): TestResponse
+{
+    return test()->postJson(route('widget.presence'), [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => $anonymousId,
+    ]);
 }
 
 function presentVisitor(Site $site, string $anonymousId, array $attributes = []): Visitor
@@ -612,4 +621,32 @@ test('an unreachable broadcaster does not stop presence being recorded', functio
 
     expect($visitor)->not->toBeNull('a broadcast failure rolled back the visitor')
         ->and($visitor->metadata['last_page_url'])->toBe('https://shop.test/pricing');
+});
+
+test('a heartbeat refused by the creation quota announces nothing', function (): void {
+    // The quota returns the unsaved model it declined to write. Announcing it
+    // hands LiveVisitorBoard::row() a visitor with no id and no `presence_only`
+    // -- unset reads as contacted, so it builds a profile route for a null key
+    // and throws. announce() catches and reports, so the heartbeat still
+    // succeeds and the damage is silent: one logged exception per refused
+    // report, at exactly the moment there are a great many of them.
+    $f = boardFixture();
+
+    config()->set('wayfindr.widget_rate_limits.presence_creations_per_ip_per_minute', 1);
+
+    Event::fake([VisitorPresenceUpdated::class]);
+
+    boardHeartbeat($f['site'], 'anon-quota-first')->assertSuccessful();
+    boardHeartbeat($f['site'], 'anon-quota-second')->assertSuccessful();
+
+    expect(Visitor::query()->where('anonymous_id', 'anon-quota-second')->exists())
+        ->toBeFalse('the quota was not actually exhausted, so this proves nothing');
+
+    // One announcement, for the one visitor that exists.
+    Event::assertDispatchedTimes(VisitorPresenceUpdated::class, 1);
+
+    Event::assertDispatched(
+        VisitorPresenceUpdated::class,
+        fn (VisitorPresenceUpdated $event): bool => $event->visitor->exists
+    );
 });
