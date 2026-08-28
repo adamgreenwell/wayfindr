@@ -91,7 +91,16 @@ return [
         // to reach visitors who never open the widget, at which point passive
         // page views from one office could exhaust the allowance that lets
         // somebody start a chat.
-        'config_per_minute' => (int) env('WAYFINDR_WIDGET_CONFIG_RATE_LIMIT', 600),
+        //
+        // Sized for the WORST legitimate address rather than the typical one.
+        // A carrier-grade NAT can put thousands of unrelated people behind one
+        // IP, and the failure here is not a throttled request: a widget that
+        // cannot read its configuration cannot start reporting or show anybody
+        // a notice, so the feature silently switches itself off for everyone
+        // behind that address. The response is identical for every visitor on
+        // the site and writes nothing, so serving it is cheap and being
+        // generous costs little.
+        'config_per_minute' => (int) env('WAYFINDR_WIDGET_CONFIG_RATE_LIMIT', 3000),
         // Per VISITOR, not per source IP -- see the widget-presence limiter.
         // A 45-second cadence is 1.33 a minute per open tab, and tabs of one
         // browser share an anonymous ID, so this is roughly twenty tabs' worth.
