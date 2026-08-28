@@ -91,6 +91,26 @@ parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamg
   a customer until somebody who speaks it has read the rendered screens.
 - **A visitor directory**, and a read-only public API with a decided isolation
   model (ADR 0018).
+- **Live visitor presence — collected, not yet shown.** The decision that
+  unblocked it is
+  [ADR 0019](https://github.com/adamgreenwell/wayfindr/blob/main/docs/decisions/0019-presence-for-visitors-who-have-not-made-contact.md):
+  Wayfindr may observe visitors who never made contact, on a per-site operator
+  switch, with a visitor-facing disclosure, a decline the widget honours, and
+  the product's first automatic retention control.
+
+  **Off on every install until somebody turns it on.** The switch is on the site
+  page under *Live visitor presence*, behind the same permission as the masking
+  rules, and a default install reports nothing and shows no visitor a notice.
+  Turning it off again deletes the visitors it collected who never made contact,
+  and a second switch decides whether reports may name the page at all — for
+  sites whose paths carry invitation codes or reset tokens.
+
+  What is still in review is the board that reads it. An operator enabling
+  presence today is collecting for the visitor directory rather than for a live
+  view.
+
+  [#747](https://github.com/adamgreenwell/wayfindr/issues/747) stays open for
+  that board — who is on the site right now, on what page, for how long.
 - **Agent-initiated password recovery.**
 - Consent-based cobrowse observe mode with sanitized snapshots, bounded
   mutations, telemetry, and an inert replay preview.

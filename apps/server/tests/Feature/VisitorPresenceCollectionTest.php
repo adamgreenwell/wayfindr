@@ -1699,3 +1699,278 @@ test('the visitor directory heading describes the sites it is actually showing',
         ->assertDontSee($heardFrom, false)
         ->assertSee('Everyone this desk has seen', false);
 });
+
+test('the widget learns about presence without making contact', function (): void {
+    // The endpoint that answers this is the one a page load is allowed to ask.
+    // Bootstrap cannot be: it creates or touches a visitor row and marks them
+    // as having made contact, so asking IT whether to watch people who have not
+    // made contact answers the question by destroying it.
+    $site = presenceSite();
+
+    $response = test()->getJson(route('widget.appearance', ['site_public_key' => $site->public_key]))
+        ->assertOk();
+
+    expect($response->json('data.presence.reports'))->toBeTrue()
+        ->and($response->json('data.presence.every'))
+        ->toBe(SitePresenceReporting::HEARTBEAT_SECONDS);
+
+    // And nothing was recorded by asking.
+    expect(Visitor::query()->count())->toBe(0, 'a configuration read created a visitor');
+});
+
+test('a site that has not opted in says so before anybody reports', function (): void {
+    $site = presenceSite(enabled: false);
+
+    test()->getJson(route('widget.appearance', ['site_public_key' => $site->public_key]))
+        ->assertOk()
+        ->assertJsonPath('data.presence.reports', false);
+});
+
+test('reading site configuration does not spend the budget for starting a chat', function (): void {
+    // Presence made this a per-PAGE-LOAD read rather than a per-panel-opening
+    // one. Sharing bootstrap's bucket meant passive browsing from one office
+    // could exhaust it, and the visitor who then tried to start a conversation
+    // got a 429 for somebody else's page views.
+    config()->set('wayfindr.widget_rate_limits.bootstrap_per_minute', 2);
+    config()->set('wayfindr.widget_rate_limits.config_per_minute', 100);
+
+    $site = presenceSite();
+
+    foreach (range(1, 6) as $i) {
+        test()->getJson(route('widget.appearance', ['site_public_key' => $site->public_key]))
+            ->assertOk();
+    }
+
+    // Bootstrap has spent nothing.
+    test()->postJson('/api/widget/bootstrap', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-after-config-reads',
+    ])->assertSuccessful();
+});
+
+test('the configuration read is still bounded', function (): void {
+    config()->set('wayfindr.widget_rate_limits.config_per_minute', 3);
+
+    $site = presenceSite();
+
+    foreach (range(1, 3) as $i) {
+        test()->getJson(route('widget.appearance', ['site_public_key' => $site->public_key]))->assertOk();
+    }
+
+    test()->getJson(route('widget.appearance', ['site_public_key' => $site->public_key]))
+        ->assertStatus(429);
+});
+
+test('the presence caption agrees with the state beside it', function (): void {
+    // Computed from the cross-channel timestamp, the caption disagreed with the
+    // state it sits next to: `quiet`, "2 minutes ago" -- the state describing
+    // the website and the words describing an email.
+    $account = Account::factory()->create();
+    $site = Site::factory()->for($account)->create(['domain' => 'shop.test']);
+
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-caption',
+        'last_seen_at' => now(),
+        'last_web_seen_at' => now()->subHours(4),
+    ]);
+
+    $payload = Conversation::factory()->for($site)->for($visitor)->create()->visitorPresencePayload();
+
+    expect($payload['state'])->toBe('quiet')
+        ->and($payload['last_seen_label'])->toBe($visitor->last_web_seen_at->diffForHumans());
+});
+
+test('bootstrap answers with the settings it actually wrote against', function (): void {
+    // The write reads the locked row while the response was built from the copy
+    // the request arrived with, so a revocation landing in between produced an
+    // answer telling the widget to keep reporting against a setting the write
+    // had already refused.
+    $account = Account::factory()->create();
+    $site = Site::factory()->for($account)->create([
+        'domain' => 'shop.test',
+        'public_key' => 'site_public_answer',
+        'settings' => ['presence' => ['enabled' => true, 'page_urls' => true]],
+    ]);
+
+    $revoked = false;
+
+    Site::retrieved(function (Site $read) use (&$revoked, $site): void {
+        if ($revoked || $read->id !== $site->id) {
+            return;
+        }
+
+        $revoked = true;
+
+        DB::table('sites')->where('id', $site->id)->update([
+            'settings' => json_encode(['presence' => ['enabled' => false]]),
+        ]);
+    });
+
+    $response = test()->postJson('/api/widget/bootstrap', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-answer',
+        'page_url' => 'https://shop.test/pricing',
+    ])->assertSuccessful();
+
+    expect($revoked)->toBeTrue('the race never happened, so this proves nothing')
+        ->and($response->json('data.site.presence.reports'))
+        ->toBeFalse('the answer told the widget to report against a setting the write refused');
+});
+
+test('the widget is told the retention this install applies', function (): void {
+    // The disclosure names a number of days. Baking 30 into the copy made an
+    // operator who shortened the window tell every visitor something untrue.
+    config()->set('wayfindr.presence.retention_days', 7);
+
+    $site = presenceSite();
+
+    test()->getJson(route('widget.appearance', ['site_public_key' => $site->public_key]))
+        ->assertOk()
+        ->assertJsonPath('data.presence.retention_days', 7);
+
+    // Clamped the same way the pruner clamps it, so the notice cannot promise
+    // longer than the sweep will allow.
+    config()->set('wayfindr.presence.retention_days', 400);
+
+    expect(SitePresenceReporting::retentionDays())
+        ->toBe(PrunePresenceVisitorsCommand::MAXIMUM_DAYS);
+});
+
+test('the settings page quotes the same retention as the visitor notice', function (): void {
+    // An operator reading "30 days" on the page where they configure this,
+    // while their install deletes after seven, is being told something untrue
+    // by the surface that exists to tell them the truth.
+    config()->set('wayfindr.presence.retention_days', 7);
+
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $site = Site::factory()->for($account)->create(['domain' => 'shop.test']);
+
+    test()->actingAs($owner)
+        ->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee('deleted 7 days after they were last seen', false)
+        ->assertDontSee('deleted 30 days after they were last seen', false);
+});
+
+test('the settings help does not promise page reporting that is switched off', function (): void {
+    // An operator who enables presence but leaves addresses off was told the
+    // widget reports which page they are on -- contradicting the checkbox
+    // directly beside it and the payload the widget actually sends.
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $site = Site::factory()->for($account)->create([
+        'domain' => 'shop.test',
+        'settings' => ['presence' => ['enabled' => true, 'page_urls' => false]],
+    ]);
+
+    test()->actingAs($owner)
+        ->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertDontSee('and which page they are on', false);
+
+    $site->forceFill(['settings' => ['presence' => ['enabled' => true, 'page_urls' => true]]])->save();
+
+    test()->actingAs($owner)
+        ->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee('and which page they are on', false);
+});
+
+test('a revocation sweep overtaken by a re-enable stops instead of finishing', function (): void {
+    // The sweep runs AFTER the settings transaction commits, deliberately: it
+    // would otherwise hold a row lock per visitor across the whole table while
+    // an operator waited on a form post. The cost of that choice is that it
+    // holds no site lock while it runs.
+    //
+    // So a second operator can turn page addresses back on mid-sweep, and
+    // heartbeats immediately begin storing them again under a policy that is
+    // now perfectly valid -- and the older sweep, still walking the table,
+    // deletes them as it arrives. The operator who re-enabled watches addresses
+    // appear and vanish for as long as the first sweep takes.
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $site = Site::factory()->for($account)->create([
+        'domain' => 'shop.test',
+        'settings' => ['presence' => ['enabled' => true, 'page_urls' => true]],
+    ]);
+
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-swept',
+        'metadata' => ['last_page_url' => 'https://shop.test/pricing'],
+    ]);
+
+    // The re-enable lands after the revocation commits and before the sweep
+    // reads any visitor row -- the window the sweep leaves open.
+    $reEnabled = false;
+
+    DB::listen(function ($query) use (&$reEnabled, $site): void {
+        // The sweep's own chunk query. `last_page_url` is a binding rather
+        // than SQL text, so it is the bindings that identify it.
+        if ($reEnabled || ! str_contains($query->sql, 'from "visitors"')) {
+            return;
+        }
+
+        if (! in_array('%last_page_url%', $query->bindings, true)) {
+            return;
+        }
+
+        $reEnabled = true;
+
+        DB::table('sites')->where('id', $site->id)->update([
+            'settings' => json_encode(['presence' => ['enabled' => true, 'page_urls' => true]]),
+        ]);
+    });
+
+    test()->actingAs($owner)
+        ->put(route('dashboard.sites.presence.update', $site), [
+            'presence_enabled' => '1',
+            'presence_page_urls' => '0',
+        ])
+        ->assertRedirect();
+
+    expect($reEnabled)->toBeTrue('the sweep never ran, so this proves nothing');
+
+    $visitor->refresh();
+
+    expect($visitor->metadata['last_page_url'] ?? null)
+        ->toBe('https://shop.test/pricing', 'a superseded revocation deleted an address collected after it');
+});
+
+test('the abuse-control guide documents the limits this install actually applies', function (): void {
+    // Operators tune throttles from this guide and nowhere else -- the config
+    // file is not shipped as an interface. It described a world in which every
+    // widget throttle was keyed by IP and site, which stopped being true when
+    // presence arrived with a per-visitor limit, an IP ceiling behind it, and
+    // two budgets on durable rows. Somebody diagnosing 429s on a shared address
+    // would have raised the one limit that was already per visitor.
+    $guide = file_get_contents(base_path('../../docs/product/widget-api-abuse-controls.md'));
+    $config = file_get_contents(config_path('wayfindr.php'));
+
+    // Every key the guide tells operators to set has to exist, with the default
+    // the guide prints beside it.
+    preg_match_all('/^(WAYFINDR_[A-Z_]+)=(\d+)$/m', $guide, $matches, PREG_SET_ORDER);
+
+    expect($matches)->not->toHaveCount(0, 'no environment overrides were parsed out of the guide');
+
+    foreach ($matches as [, $key, $documented]) {
+        test()->assertMatchesRegularExpression(
+            '/env\(\''.preg_quote($key, '/').'\',\s*'.$documented.'\)/',
+            $config,
+            $key.' is documented as '.$documented.', which is not what the config reads',
+        );
+    }
+
+    // And the presence keys specifically, because they are the ones whose
+    // absence caused this: an operator cannot discover them by reading about
+    // the routes.
+    foreach ([
+        'WAYFINDR_WIDGET_PRESENCE_PER_MINUTE',
+        'WAYFINDR_WIDGET_PRESENCE_PER_IP_PER_MINUTE',
+        'WAYFINDR_WIDGET_PRESENCE_CREATIONS_PER_IP_PER_MINUTE',
+        'WAYFINDR_WIDGET_PRESENCE_CREATIONS_PER_IP_PER_DAY',
+        'WAYFINDR_WIDGET_CONFIG_RATE_LIMIT',
+    ] as $key) {
+        test()->assertStringContainsString($key, $guide, $key.' is not in the operator guide');
+    }
+});

@@ -1188,7 +1188,7 @@
                         </div>
 
                         <p class="field-help">
-                            With this on, the widget reports every {{ $presenceEvery }} seconds that somebody is on the site, and which page they are on. Visitors are told in the widget and can decline. Addresses are stored without query strings, and a visitor who never makes contact is deleted 30 days after they were last seen.
+                            With this on, the widget reports every {{ $presenceEvery }} seconds that somebody is on the site@if ($presencePageUrls), and which page they are on@endif. Visitors are told in the widget and can decline.@if ($presencePageUrls) Addresses are stored without query strings.@endif A visitor who never makes contact is deleted {{ $presenceRetentionDays }} {{ Str::plural('day', $presenceRetentionDays) }} after they were last seen.
                         </p>
 
                         <div class="field field-check">

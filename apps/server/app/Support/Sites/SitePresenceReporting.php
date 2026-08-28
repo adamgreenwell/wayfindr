@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Sites;
 
+use App\Console\Commands\PrunePresenceVisitorsCommand;
 use App\Models\Site;
 
 /**
@@ -73,11 +74,26 @@ final class SitePresenceReporting
     }
 
     /**
-     * @return array{reports: bool, every: int, page_urls: bool}
+     * How many days a presence-only visitor is kept, as this install applies it.
+     *
+     * Clamped the same way the pruner clamps it, because the disclosure has to
+     * name the number that will actually be used -- an operator shortening the
+     * window to seven days had every visitor told thirty.
+     */
+    public static function retentionDays(): int
+    {
+        $configured = (int) config('wayfindr.presence.retention_days', PrunePresenceVisitorsCommand::MAXIMUM_DAYS);
+
+        return max(1, min($configured, PrunePresenceVisitorsCommand::MAXIMUM_DAYS));
+    }
+
+    /**
+     * @return array{reports: bool, every: int, page_urls: bool, retention_days: int}
      */
     public function toPayload(): array
     {
         return [
+            'retention_days' => self::retentionDays(),
             'reports' => $this->enabled,
             'every' => self::HEARTBEAT_SECONDS,
             // The site's own policy, NOT ANDed with `reports`.
