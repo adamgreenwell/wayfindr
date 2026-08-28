@@ -2202,3 +2202,74 @@ test('an idle tab still learns that addresses were revoked', async (t) => {
     'an idle tab kept sending addresses after the revocation reached it',
   );
 });
+
+test('a failed bootstrap does not bury a config answer still in flight', async (t) => {
+  // The config read stalls past the wait, the panel opens, that bootstrap
+  // fails -- and the config response then arrives successfully. Leaving the
+  // failed bootstrap's sequence in place made it look overtaken, so the only
+  // successful configuration either request produced was discarded and
+  // presence never started.
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/pricing',
+  });
+
+  const calls = [];
+  const gate = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 0,
+    siteConfigWaitMs: 20,
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      if (url.includes('/api/widget/appearance')) {
+        return new Promise((resolve) => {
+          gate.push(() => resolve(jsonResponse(200, {
+            data: { appearance: { position: 'right' }, presence: { reports: true, every: 45, page_urls: true } },
+          })));
+        });
+      }
+
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return jsonResponse(500, { message: 'no' });
+      }
+
+      return jsonResponse(202, { data: { reports: true, every: 45, page_urls: true } });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  // Opening past the wait starts a bootstrap that fails.
+  await widget.open();
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  await settle();
+
+  // Now the configuration answer lands.
+  gate.forEach((release) => release());
+  await settle();
+
+  assert.ok(
+    presenceCalls(calls).length > 0,
+    'a failed bootstrap discarded the configuration that did succeed',
+  );
+});
