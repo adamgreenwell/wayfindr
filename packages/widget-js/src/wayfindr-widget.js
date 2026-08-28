@@ -3269,6 +3269,26 @@
         return;
       }
 
+      // RE-CHECKED, not inherited from the way in. The gate used to run once,
+      // in startPresenceAfterDisclosure(), and the interval reported
+      // unconditionally ever after -- so anything that hid the notice AFTER
+      // reporting began left a visitor being watched with nothing on screen
+      // saying so and no way to decline.
+      //
+      // The layout above is what stops the open panel doing that. This is what
+      // stops the next thing doing it: a host stylesheet that loads late, a
+      // wrapper that gains `overflow:hidden`, a change to this widget nobody
+      // thought to check. The disclosure is the whole basis on which this is
+      // collected, so its absence has to be able to stop the collection at any
+      // moment, not only at the start.
+      //
+      // Skipped rather than stopped. A notice hidden by an open panel or a
+      // transient host state comes back, and reporting resumes with it; ending
+      // the run would make one obscured frame permanent for the life of the tab.
+      if (!presenceNoticeVisible()) {
+        return;
+      }
+
       // The stored decline is re-read on EVERY beat rather than trusted from
       // the in-memory config. The same site is often open in several tabs, and
       // "Stop sharing" in one of them writes the site-wide key but can only
@@ -6814,7 +6834,23 @@
       '@media (prefers-color-scheme:dark){.wayfindr-widget:not([data-wf-theme="light"]){--wf-paper:#141517;--wf-surface:#1B1D20;--wf-surface-2:#24272A;--wf-ink:#ECECE8;--wf-ink-invert:var(--wf-brand-ink-configured-dark,#16181A);--wf-muted:#9BA0A3;--wf-rule:#2E3134;--wf-rule-firm:#3D4145;--wf-brand:var(--wf-brand-configured-dark,#3FA69D);--wf-signal-rest:#7E8386;--wf-signal-go:#4CA97A;--wf-signal-hold:#E0A72A;--wf-signal-stop:#E2685C;--wf-site-red:#D54C43;--wf-site-blue:#5578D0;--wf-site-ochre:#A57105;--wf-site-pine:#238C57;--wf-site-violet:#896EB6;--wf-site-rust:#C65C2E}}',
       '.wayfindr-widget[data-wf-theme="dark"]{--wf-paper:#141517;--wf-surface:#1B1D20;--wf-surface-2:#24272A;--wf-ink:#ECECE8;--wf-ink-invert:var(--wf-brand-ink-configured-dark,#16181A);--wf-muted:#9BA0A3;--wf-rule:#2E3134;--wf-rule-firm:#3D4145;--wf-brand:var(--wf-brand-configured-dark,#3FA69D);--wf-signal-rest:#7E8386;--wf-signal-go:#4CA97A;--wf-signal-hold:#E0A72A;--wf-signal-stop:#E2685C;--wf-site-red:#D54C43;--wf-site-blue:#5578D0;--wf-site-ochre:#A57105;--wf-site-pine:#238C57;--wf-site-violet:#896EB6;--wf-site-rust:#C65C2E}',
       // wayfindr:tokens:end
-      '.wayfindr-widget{position:fixed;inset-inline-end:20px;bottom:20px;z-index:2147483000;font-family:var(--wf-font-sans);color:var(--wf-ink)}',
+      // A column laid out bottom-up, capped to the viewport.
+      //
+      // The notice used to float above the root on `bottom:100%`, which is
+      // measured against whatever the root's height happens to be. Closed
+      // that is the launcher and the notice sits neatly above it; OPEN the
+      // launcher is hidden and the panel becomes the whole root, so the
+      // notice was pushed above the panel -- and on a phone the panel IS the
+      // viewport, so the disclosure and its "Stop sharing" control went
+      // entirely off the top of the screen while reporting carried on.
+      //
+      // column-reverse keeps the DOM order (launcher first, for focus) and
+      // renders it upward from the corner, so the launcher stays pinned, the
+      // notice sits above it, and the panel takes what is left. align-items
+      // keeps the launcher its own width: a 280px notice in normal flow was
+      // what widened the root and dragged the launcher off its corner, which
+      // is why the notice was taken out of flow in the first place.
+      '.wayfindr-widget{position:fixed;inset-inline-end:20px;bottom:20px;z-index:2147483000;display:flex;flex-direction:column-reverse;align-items:flex-end;gap:8px;max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);font-family:var(--wf-font-sans);color:var(--wf-ink)}',
       // Anchors the presence notice, which is positioned against this box.
       '.wayfindr-widget{isolation:isolate}',
       '.wayfindr-widget *{box-sizing:border-box}',
@@ -6830,7 +6866,7 @@
       '.wayfindr-widget__send{min-height:40px;padding:0 14px;border-radius:6px}',
       '.wayfindr-widget__launcher:hover,.wayfindr-widget__send:hover{background:color-mix(in srgb, var(--wf-brand) 80%, var(--wf-ink))}',
       '.wayfindr-widget__send:disabled{cursor:wait;opacity:.7}',
-      '.wayfindr-widget__panel{display:flex;flex-direction:column;width:min(360px,calc(100vw - 32px));max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);border:1px solid var(--wf-rule);border-top:3px solid var(--wf-site-accent,var(--wf-brand));border-radius:8px;background:var(--wf-surface);box-shadow:0 20px 55px rgba(8,37,34,.2);overflow:auto}',
+      '.wayfindr-widget__panel{display:flex;flex-direction:column;width:min(360px,calc(100vw - 32px));max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);border:1px solid var(--wf-rule);border-top:3px solid var(--wf-site-accent,var(--wf-brand));border-radius:8px;background:var(--wf-surface);box-shadow:0 20px 55px rgba(8,37,34,.2);min-height:0;overflow:auto}',
       '.wayfindr-widget__panel>*{flex-shrink:0}',
       '.wayfindr-widget__panel>.wayfindr-widget__timeline-wrap{flex:0 1 auto;min-height:0}',
       '.wayfindr-widget__header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-paper)}',
@@ -6868,7 +6904,7 @@
       // box -- pushing the launcher off the corner it is anchored to, on
       // every page of an opted-in site. Taken out of flow and pinned to the
       // same corner instead, so the root keeps the launcher's width.
-      '.wayfindr-widget__presence{position:absolute;bottom:100%;inset-inline-end:0;display:flex;gap:8px;align-items:center;justify-content:flex-end;width:max-content;max-width:min(280px,calc(100vw - 40px));margin-bottom:8px;padding:6px 10px;border:var(--wf-border) solid var(--wf-rule);border-radius:var(--wf-radius);background:var(--wf-surface);color:var(--wf-muted);font-size:12px;line-height:1.35;box-shadow:0 6px 18px rgba(8,37,34,.10)}',
+      '.wayfindr-widget__presence{display:flex;flex:0 0 auto;gap:8px;align-items:center;justify-content:flex-end;width:max-content;max-width:min(280px,calc(100vw - 40px));padding:6px 10px;border:var(--wf-border) solid var(--wf-rule);border-radius:var(--wf-radius);background:var(--wf-surface);color:var(--wf-muted);font-size:12px;line-height:1.35;box-shadow:0 6px 18px rgba(8,37,34,.10)}',
       '.wayfindr-widget__presence-copy{margin:0}',
       '.wayfindr-widget__presence-decline{background:none;border:0;padding:0;font:inherit;text-decoration:underline;cursor:pointer;color:inherit;white-space:nowrap}',
       '.wayfindr-widget__notice-retry{justify-self:start;min-height:34px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);cursor:pointer;padding:0 12px;font:700 13px/1 var(--wf-font-sans)}',
@@ -6942,7 +6978,7 @@
       '.wayfindr-widget__cobrowse-decline:hover{border-color:var(--wf-brand);color:var(--wf-brand)}',
       '.wayfindr-widget__cobrowse-allow:disabled,.wayfindr-widget__cobrowse-decline:disabled{cursor:wait;opacity:.7}',
       '.wayfindr-widget__status{min-height:20px;margin:0;padding:0 16px 16px;color:var(--wf-muted);font-size:13px}',
-      '@media (max-width:480px){.wayfindr-widget{inset-inline-end:12px;bottom:12px}.wayfindr-widget__panel{width:calc(100vw - 24px);max-height:calc(100dvh - 24px)}}',
+      '@media (max-width:480px){.wayfindr-widget{inset-inline-end:12px;bottom:12px;max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px)}.wayfindr-widget__panel{width:calc(100vw - 24px);max-height:calc(100dvh - 24px)}}',
     ].join('');
 
     doc.head.appendChild(style);
