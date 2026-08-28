@@ -2264,9 +2264,14 @@ test('a failed bootstrap does not bury a config answer still in flight', async (
   await new Promise((resolve) => setTimeout(resolve, 60));
   await settle();
 
-  // Now the configuration answer lands.
-  gate.forEach((release) => release());
-  await settle();
+  // Now the configuration answer lands. Drained rather than released as a
+  // snapshot: a retired answer is not applied, it triggers a fresh read, and
+  // that read is gated too -- so the assertion below is about presence
+  // starting from an answer that is CURRENT, which is the stronger claim.
+  for (let i = 0; i < 5 && gate.length; i += 1) {
+    gate.splice(0).forEach((release) => release());
+    await settle();
+  }
 
   assert.ok(
     presenceCalls(calls).length > 0,
@@ -2346,9 +2351,14 @@ test('two failed requests do not strand the settings sequence', async (t) => {
   await new Promise((resolve) => setTimeout(resolve, 40));
   await settle();
 
-  // The configuration answer, older than both, finally lands.
-  gate.forEach((release) => release());
-  await settle();
+  // The configuration answer, older than both, finally lands. Drained rather
+  // than released as a snapshot: an answer whose request was retired is not
+  // applied, it asks again, and that read is gated too -- so this asserts
+  // presence starting from a CURRENT answer, which is the stronger claim.
+  for (let i = 0; i < 5 && gate.length; i += 1) {
+    gate.splice(0).forEach((release) => release());
+    await settle();
+  }
 
   assert.ok(
     presenceCalls(calls).length > 0,
@@ -2905,5 +2915,109 @@ test('a failed refresh forgets the permission it was refreshing', async (t) => {
   assert.ok(
     bootstrap.every((c) => !c.body.page_url),
     'a failed refresh left a revoked permission in force and the address went out under it',
+  );
+});
+
+test('a retired configuration answer cannot come back and apply itself', async (t) => {
+  // Retiring a stalled request dropped the reference and left its TICKET live.
+  //
+  // The watermark only rises when an answer is actually applied, so if the
+  // request that overtook the retired one fails -- applying nothing, moving
+  // nothing -- the retired request's answer still beat it whenever the network
+  // finally coughed it up. Minutes later, carrying the policy as it stood
+  // before the operator revoked page addresses, and granting it.
+  //
+  // Discarding it is only half an answer: a tab that stopped waiting and then
+  // threw away the reply has no policy at all, and presence never starts. So
+  // the arrival asks again, and the tab acts on what is true NOW.
+  const gate = [];
+  let configReads = 0;
+
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/pricing',
+  });
+
+  const calls = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 20,
+    siteConfigWaitMs: 20,
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      if (url.includes('/api/widget/appearance')) {
+        configReads += 1;
+
+        // The FIRST read is held past the wait, so it is retired, and released
+        // later carrying the policy as it was before the revocation. Every
+        // later read answers with the policy as it is now.
+        const pageUrls = configReads === 1;
+
+        return new Promise((resolve) => {
+          gate.push(() => resolve(jsonResponse(200, {
+            data: {
+              appearance: { position: 'right' },
+              presence: { reports: true, every: 45, page_urls: pageUrls },
+            },
+          })));
+        });
+      }
+
+      if (url.endsWith('/api/widget/bootstrap')) {
+        // Fails, so it applies nothing and the watermark never moves.
+        return jsonResponse(500, { message: 'no' });
+      }
+
+      return jsonResponse(202, { data: {} });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  // Past the wait: the stalled read is retired, and a bootstrap has taken a
+  // newer ticket and failed with it.
+  await widget.open();
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  await settle();
+
+  assert.equal(presenceCalls(calls).length, 0, 'presence started before any policy arrived');
+
+  // The network recovers. The retired answer lands, is refused, and asks
+  // again; the fresh read carries the revoked policy.
+  for (let i = 0; i < 5 && gate.length; i += 1) {
+    gate.splice(0).forEach((release) => release());
+    await settle();
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  await settle();
+
+  assert.ok(configReads > 1, 'the retired answer was not followed by a fresh read');
+
+  const reports = presenceCalls(calls);
+
+  assert.ok(reports.length > 0, 'the tab was left with no policy and never reported');
+  assert.ok(
+    reports.every((c) => !c.body.page_url),
+    'a retired answer came back and granted a permission that had been revoked',
   );
 });
