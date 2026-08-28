@@ -2952,10 +2952,24 @@
       // address is dropped rather than the request. That is the right way
       // round -- losing page context is a worse outcome for the agent and a
       // better one for the visitor than losing the conversation.
+      var pending = siteConfigPromise;
+
       return Promise.race([
-        siteConfigPromise.catch(function () {}),
+        pending.catch(function () {}),
         new Promise(function (resolve) {
-          setTimeout(resolve, SITE_CONFIG_WAIT_MS);
+          setTimeout(function () {
+            // Retire a request that never settles. Without this
+            // `siteConfigSettledAt` stays null for ever, so the staleness check
+            // never re-fetches, the hung promise is referenced permanently, and
+            // every later wait pays the full timeout again -- for an answer
+            // that is not coming even once the network recovers.
+            if (siteConfigPromise === pending) {
+              siteConfigPromise = null;
+              siteConfigSettledAt = Date.now();
+            }
+
+            resolve();
+          }, SITE_CONFIG_WAIT_MS);
         }),
       ]);
     }

@@ -2563,3 +2563,87 @@ test('a decline holds even when the storage write fails', async (t) => {
 
   assert.match(copy, /Not sharing|know you are here/i, 'the notice went back to claiming it is sharing');
 });
+
+test('a request that never settles is retired, not waited on for ever', async (t) => {
+  // Without retiring it, `siteConfigSettledAt` stays null so the staleness
+  // check never re-fetches, the hung promise is referenced permanently, and
+  // every later wait pays the full timeout again -- for an answer that is not
+  // coming even once the network recovers.
+  let stall = true;
+
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/pricing',
+  });
+
+  const calls = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 0,
+    siteConfigWaitMs: 20,
+    siteConfigStaleMs: 0,
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      if (url.includes('/api/widget/appearance')) {
+        // Hangs the first time; answers once the network recovers.
+        return stall ? new Promise(() => {}) : jsonResponse(200, {
+          data: { appearance: { position: 'right' }, presence: { reports: true, every: 45, page_urls: true } },
+        });
+      }
+
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return jsonResponse(200, {
+          data: {
+            site: { public_key: 'site_public_shop', settings: {}, color: 'blue' },
+            visitor: { anonymous_id: 'anon-shop', token: 'visitor-token-shop' },
+          },
+        });
+      }
+
+      return jsonResponse(202, { data: { reports: true, every: 45, page_urls: true } });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  await widget.open();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  await settle();
+
+  const firstReads = calls.filter((c) => c.url.includes('/api/widget/appearance')).length;
+
+  // The network recovers. Something that asks again must actually ask.
+  stall = false;
+
+  widget.close();
+  await widget.open();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  await settle();
+
+  const laterReads = calls.filter((c) => c.url.includes('/api/widget/appearance')).length;
+
+  assert.ok(
+    laterReads > firstReads,
+    'the widget stayed attached to a request that never settled',
+  );
+  assert.ok(presenceCalls(calls).length > 0, 'presence never started once the config answered');
+});

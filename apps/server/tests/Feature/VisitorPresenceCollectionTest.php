@@ -1636,3 +1636,27 @@ test('the settings page quotes the same retention as the visitor notice', functi
         ->assertSee('deleted 7 days after they were last seen', false)
         ->assertDontSee('deleted 30 days after they were last seen', false);
 });
+
+test('the settings help does not promise page reporting that is switched off', function (): void {
+    // An operator who enables presence but leaves addresses off was told the
+    // widget reports which page they are on -- contradicting the checkbox
+    // directly beside it and the payload the widget actually sends.
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $site = Site::factory()->for($account)->create([
+        'domain' => 'shop.test',
+        'settings' => ['presence' => ['enabled' => true, 'page_urls' => false]],
+    ]);
+
+    test()->actingAs($owner)
+        ->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertDontSee('and which page they are on', false);
+
+    $site->forceFill(['settings' => ['presence' => ['enabled' => true, 'page_urls' => true]]])->save();
+
+    test()->actingAs($owner)
+        ->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee('and which page they are on', false);
+});
