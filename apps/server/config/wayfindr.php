@@ -91,7 +91,16 @@ return [
         // to reach visitors who never open the widget, at which point passive
         // page views from one office could exhaust the allowance that lets
         // somebody start a chat.
-        'config_per_minute' => (int) env('WAYFINDR_WIDGET_CONFIG_RATE_LIMIT', 600),
+        //
+        // Sized for the WORST legitimate address rather than the typical one.
+        // A carrier-grade NAT can put thousands of unrelated people behind one
+        // IP, and the failure here is not a throttled request: a widget that
+        // cannot read its configuration cannot start reporting or show anybody
+        // a notice, so the feature silently switches itself off for everyone
+        // behind that address. The response is identical for every visitor on
+        // the site and writes nothing, so serving it is cheap and being
+        // generous costs little.
+        'config_per_minute' => (int) env('WAYFINDR_WIDGET_CONFIG_RATE_LIMIT', 3000),
         // Per VISITOR, not per source IP -- see the widget-presence limiter.
         // A 45-second cadence is 1.33 a minute per open tab, and tabs of one
         // browser share an anonymous ID, so this is roughly twenty tabs' worth.
@@ -113,10 +122,16 @@ return [
         // And the sustained one. Thirty a minute held all day is 43,200 rows
         // and about 1.3 million across the retention window, so the burst
         // allowance that makes an office work is also, by itself, a licence to
-        // grow the table without end. This is far above a real site's new
-        // visitors from one address in a day and far below what an unattended
-        // script reaches by lunchtime.
-        'presence_creations_per_ip_per_day' => (int) env('WAYFINDR_WIDGET_PRESENCE_CREATIONS_PER_IP_PER_DAY', 2000),
+        // grow the table without end.
+        //
+        // Twenty thousand rather than two: a mobile carrier's NAT can put that
+        // many genuinely distinct first-time visitors behind one address in a
+        // day, and once the budget is spent those visitors are not throttled
+        // but INVISIBLE -- absent from the board with nothing to say why. Being
+        // wrong in that direction is worse than the table growing, and the
+        // minute-scale limit still bounds any burst. An install that wants it
+        // tighter has the environment variable.
+        'presence_creations_per_ip_per_day' => (int) env('WAYFINDR_WIDGET_PRESENCE_CREATIONS_PER_IP_PER_DAY', 20000),
 
         // The abuse cap, per source IP and site. Covers about nine hundred
         // simultaneous visitors behind one address at the standard cadence;
