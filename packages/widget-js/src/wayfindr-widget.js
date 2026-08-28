@@ -2776,6 +2776,13 @@
         return client.bootstrap(pageUrlForReporting(), visitorContext);
       }).then(function (result) {
         if (seq !== bootstrapSequence) {
+          // Overtaken: this answer is not about the panel on screen, so none
+          // of its visitor or conversation state is applied. Its SETTINGS
+          // still are -- being overtaken says another panel opened, not that
+          // the server said nothing -- and the watermark decides whether they
+          // are the newest word on the subject.
+          applyBootstrapSettings(result, settingsSeq);
+
           return;
         }
 
@@ -2830,6 +2837,25 @@
       // newest answer no matter what overtook it: a heartbeat carrying the
       // operator's revocation would stop reporting, and this response --
       // fetched before that revocation existed -- would then reinstate it.
+      applyBootstrapSettings(result, bootstrapSettingsSeq);
+    }
+
+    /**
+     * The half of a bootstrap answer that is about the SITE, not this panel.
+     *
+     * Split out because the two halves are ordered differently and always
+     * were. The visitor and conversation state describes the panel that asked,
+     * so only the newest one matters and an overtaken answer is worthless. The
+     * settings describe the site, and `settingsAnswerIsNewest()` orders those
+     * on its own.
+     *
+     * Gating both on the panel's identity threw away revocations: a bootstrap
+     * carrying an operator's change was discarded merely because the visitor
+     * had closed and reopened the panel while it was in flight -- and if the
+     * bootstrap that overtook it then failed, nothing applied the change at
+     * all and the tab carried on under a policy that no longer existed.
+     */
+    function applyBootstrapSettings(result, bootstrapSettingsSeq) {
       if (!settingsAnswerIsNewest(bootstrapSettingsSeq)) {
         return;
       }
@@ -2943,6 +2969,34 @@
     // retired or superseded request can be told apart from the live one when
     // its answer finally arrives. Zero means no request is live.
     var siteConfigSequence = 0;
+
+    /**
+     * This request has answered. Is it still the one we were waiting for?
+     *
+     * True hands over settlement: the reference and the ticket are cleared, so
+     * nothing later mistakes a request that has answered for one still in
+     * flight. That mistake was real -- the wait races the request against a
+     * timer, winning the race does not cancel the timer, and the timer then
+     * found `siteConfigPromise` still pointing at the settled request and
+     * "retired" it three seconds after it had succeeded, forgetting a page
+     * address permission the server had granted.
+     *
+     * False means retired or superseded, and the caller must not touch shared
+     * policy with what it is holding -- in either direction. A late failure
+     * from an overtaken read used to null a permission a newer answer had just
+     * granted.
+     */
+    function siteConfigSettles(seq) {
+      if (seq !== siteConfigSequence) {
+        return false;
+      }
+
+      siteConfigPromise = null;
+      siteConfigSequence = 0;
+      siteConfigSettledAt = Date.now();
+
+      return true;
+    }
 
     /**
      * How long anything will wait for the page-load configuration.
@@ -3692,7 +3746,7 @@
         // way this answer is not ours to apply -- and the watermark cannot
         // catch it, because a ticket that never applied anything never moved
         // it.
-        if (seq !== siteConfigSequence) {
+        if (!siteConfigSettles(seq)) {
           // But an answer arriving at all means the network is back, and
           // retiring left this tab with no policy -- so ask again rather than
           // going quiet. Discarding without re-reading is how "we stopped
@@ -3721,8 +3775,6 @@
             ? presence.page_urls
             : true;
         }
-
-        siteConfigSettledAt = Date.now();
 
         // Overtaken answers are discarded here. This request starts at page
         // load and can be slow; a visitor who opens the panel meanwhile gets a
@@ -3757,6 +3809,23 @@
 
         applyPresence(presence);
       }).catch(function () {
+        // Retired or superseded: this failure is not about the policy in
+        // force. A timed-out page-load read rejecting after a bootstrap has
+        // succeeded would otherwise null the permission that bootstrap had
+        // just granted -- a request nobody was waiting for revoking something
+        // current by giving up.
+        //
+        // NOT covered by a test, and it is worth saying so. Every scenario I
+        // could build re-granted the policy before anything observable read
+        // it, so the window is real but narrow and self-healing, and a test
+        // that passes either way is worse than none. This stands on being the
+        // same rule the success path above follows: an answer from a request
+        // that is no longer live does not touch shared policy, in either
+        // direction.
+        if (!siteConfigSettles(seq)) {
+          return;
+        }
+
         // A failed read leaves the policy UNKNOWN, and unknown withholds.
         //
         // This used to resolve to "allowed", reasoning that a site which cannot

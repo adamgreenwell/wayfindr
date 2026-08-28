@@ -3021,3 +3021,235 @@ test('a retired configuration answer cannot come back and apply itself', async (
     'a retired answer came back and granted a permission that had been revoked',
   );
 });
+
+test('a configuration read that succeeds is not retired behind its own back', async (t) => {
+  // The wait races the request against a timer, and winning the race does not
+  // cancel the timer. `siteConfigPromise` still referenced the settled request,
+  // so the identity check three seconds later said "still pending" about
+  // something that had answered -- and retirement forgets the page-address
+  // permission.
+  //
+  // On a site that ALLOWS page addresses and does not report presence, nothing
+  // ever restores it: there is no heartbeat on such a site. A visitor who opens
+  // the panel and takes more than three seconds to write their first message
+  // sent it without the page they were on, on an ordinary healthy install.
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/pricing',
+  });
+
+  const calls = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 0,
+    siteConfigWaitMs: 20,
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      if (url.includes('/api/widget/appearance')) {
+        // Ordinary, healthy, prompt. Presence off, addresses allowed -- the
+        // default shape of a site that has never touched this feature.
+        return jsonResponse(200, {
+          data: { appearance: { position: 'right' }, presence: { reports: false, page_urls: true } },
+        });
+      }
+
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return jsonResponse(200, {
+          data: {
+            site: { public_key: 'site_public_shop', settings: {}, color: 'blue' },
+            visitor: { anonymous_id: 'anon-shop', token: 'visitor-token-shop' },
+          },
+        });
+      }
+
+      return jsonResponse(201, { data: { support_code: 'WF-AAA111', status: 'open' } });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+  await widget.open();
+  await settle();
+
+  // The visitor reads the page, thinks, and writes. Past the wait, which is
+  // when the stray timer fires.
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  await settle();
+
+  const textarea = widget.root.querySelector('.wayfindr-widget__textarea');
+
+  textarea.value = 'my card was declined';
+  widget.root.querySelector('.wayfindr-widget__form')
+    .dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+
+  await settle();
+  await settle();
+
+  const started = calls.filter((c) => c.url.endsWith('/api/conversations'));
+
+  assert.ok(started.length > 0, 'no conversation was started, so this proves nothing');
+  assert.equal(
+    started[0].body.page_url,
+    'https://shop.example.test/pricing',
+    'a healthy configuration read was retired by its own timer and the page context was lost',
+  );
+});
+
+test('a bootstrap that was overtaken still delivers its revocation', async (t) => {
+  // The identity check gated the whole answer, settings included -- so a
+  // bootstrap carrying an operator's revocation was thrown away merely because
+  // the visitor had closed and reopened the panel while it was in flight. If
+  // the bootstrap that overtook it then fails, nothing applies the change and
+  // the tab carries on under a policy that no longer exists.
+  //
+  // The two halves of a bootstrap answer are ordered differently and always
+  // were. The visitor and conversation state describes the panel that asked,
+  // so only the newest matters. The settings describe the SITE, and the
+  // watermark orders those on its own -- being overtaken says another panel
+  // opened, not that the server said nothing.
+  //
+  // Presence is off here on purpose: a reporting site sends a heartbeat every
+  // 45 seconds and each answer carries the settings, so the revocation would
+  // arrive that way regardless and the test would prove nothing. A site that
+  // does not report has no such channel, and bootstrap is the only thing that
+  // will ever tell this tab.
+  let releaseFirstBootstrap;
+  let bootstraps = 0;
+
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/pricing',
+  });
+
+  const calls = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 0,
+    siteConfigWaitMs: 20,
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      if (url.includes('/api/widget/appearance')) {
+        // Page addresses allowed, as they were before the operator changed it.
+        return jsonResponse(200, {
+          data: { appearance: { position: 'right' }, presence: { reports: false, page_urls: true } },
+        });
+      }
+
+      if (url.endsWith('/api/widget/bootstrap')) {
+        bootstraps += 1;
+
+        // The first is slow and carries the REVOCATION, and is overtaken
+        // while in flight.
+        if (bootstraps === 1) {
+          return new Promise((resolve) => {
+            releaseFirstBootstrap = () => resolve(jsonResponse(200, {
+              data: {
+                site: {
+                  public_key: 'site_public_shop',
+                  settings: {},
+                  color: 'blue',
+                  presence: { reports: false, page_urls: false },
+                },
+                visitor: { anonymous_id: 'anon-shop', token: 'visitor-token-shop' },
+              },
+            }));
+          });
+        }
+
+        // The one that overtakes it fails, so it applies nothing and never
+        // moves the watermark.
+        if (bootstraps === 2) {
+          return jsonResponse(500, { message: 'no' });
+        }
+
+        return jsonResponse(200, {
+          data: {
+            site: { public_key: 'site_public_shop', settings: {}, color: 'blue' },
+            visitor: { anonymous_id: 'anon-shop', token: 'visitor-token-shop' },
+          },
+        });
+      }
+
+      return jsonResponse(202, { data: {} });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  await widget.open();
+  await settle();
+
+  // Closed and reopened: a second bootstrap starts and fails.
+  widget.close();
+
+  try {
+    await widget.open();
+  } catch (error) {
+    // The failure is the point.
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  await settle();
+
+  assert.ok(bootstraps > 1, 'the first bootstrap was never overtaken, so this proves nothing');
+
+  // The overtaken answer, carrying the revocation, finally lands.
+  releaseFirstBootstrap();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  await settle();
+
+  // The next thing the tab does carries the page address, or does not.
+  widget.close();
+  await widget.open();
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  await settle();
+
+  const sent = calls.filter((c) => c.url.endsWith('/api/widget/bootstrap'));
+
+  assert.ok(sent.length > 2, 'the tab never bootstrapped again, so this proves nothing');
+  assert.ok(
+    !sent[sent.length - 1].body.page_url,
+    'an overtaken bootstrap carried the revocation and the tab discarded it',
+  );
+});
