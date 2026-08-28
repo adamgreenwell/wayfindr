@@ -1349,3 +1349,37 @@ test('a board page rendered after a revocation renders the revoked page', functi
 
     expect($revoked)->toBeTrue('the race never happened, so this proves nothing');
 });
+
+test('a board cleared by a revocation comes back when the revocation is undone', function (): void {
+    // Clearing latches, deliberately: a message already queued for the closed
+    // socket must not repopulate a board the operator has just emptied. But the
+    // latch outlived the reason for it. An operator who switched presence off
+    // and back on left every open board a zombie -- rows redrawn once a minute
+    // by the snapshot, every socket message ignored, the socket closed and
+    // barred from reconnecting, and the status line still saying presence is
+    // off for a site that is collecting again.
+    //
+    // A snapshot that HAS rows is the revocation being undone, and it is the
+    // same signal read the other way: the absence of that element is what
+    // cleared the board in the first place.
+    $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
+
+    $resync = Str::before(
+        Str::after($source, 'function resyncBoard() {'),
+        '// Holds events that arrive while a snapshot',
+    );
+
+    test()->assertStringContainsString(
+        'restoreBoard()',
+        $resync,
+        'a snapshot that finds the board enabled again leaves it latched shut',
+    );
+
+    $restore = Str::before(Str::after($source, 'function restoreBoard() {'), "\n                }");
+
+    // Every latch clearBoard() set has to come off, or the board comes back
+    // half alive in a way no test of one flag would catch.
+    test()->assertStringContainsString('boardCleared = false;', $restore, 'the board still ignores socket messages');
+    test()->assertStringContainsString('pageClosing = false;', $restore, 'the board still refuses to reconnect');
+    test()->assertStringContainsString('connect();', $restore, 'the board never opens a socket again');
+});

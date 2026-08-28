@@ -404,6 +404,38 @@
                     }
                 }
 
+                // The revocation has been undone: come back to life.
+                //
+                // Clearing latches on purpose -- a message queued for the
+                // closed socket must not repopulate a board the operator just
+                // emptied -- and the latch outlived its reason. An operator
+                // switching presence off and back on left every open board a
+                // zombie: rows redrawn once a minute by the snapshot, every
+                // socket message ignored, the socket closed and barred from
+                // reconnecting, and the status line still saying presence was
+                // off for a site that was collecting again.
+                //
+                // A snapshot that HAS a rows element is that signal read the
+                // other way round, since its absence is what cleared the board.
+                function restoreBoard() {
+                    if (!boardCleared) {
+                        return;
+                    }
+
+                    boardCleared = false;
+                    pageClosing = false;
+                    reconnectDelay = 1000;
+
+                    if (statusEl) {
+                        statusEl.textContent = 'Reconnecting to live updates.';
+                    }
+
+                    // The old socket was closed on the way in here, so this
+                    // opens a new one; its generation retires anything still
+                    // answering for the old.
+                    connect();
+                }
+
                 // Is this event about a later sighting than the row already has?
                 //
                 // An unparseable or missing timestamp on either side answers
@@ -539,6 +571,11 @@
 
                             return;
                         }
+
+                        // Rows are present, so this site is collecting. If this
+                        // board was cleared by an earlier revocation, that
+                        // revocation has been undone.
+                        restoreBoard();
 
                         rows.replaceChildren.apply(rows, Array.prototype.slice.call(fresh.childNodes));
 
