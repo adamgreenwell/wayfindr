@@ -232,10 +232,10 @@ means rather than leaving it to the implementation:
   short. `/invite/A1B2C3` and `/orders/123456` are both a credential in a path
   on real sites, and a rule waiting for twenty characters keeps them whole.
 
-  A hyphenated slug survives because it has a separator; a word without digits
-  survives at any length; a version segment survives because it is short. The
-  cost is real and named: `/product/iphone15` is redacted, which loses an agent
-  some context on some sites. That is the right way round for a rule whose
+  A hyphenated slug survives because its parts are short; a word without digits
+  survives **up to sixteen characters**; a version segment survives because it
+  is short. The cost is real and named: `/product/iphone15` is redacted, and so
+  is `/internationalization`, which loses an agent some context on some sites. That is the right way round for a rule whose
   failures are credentials — and it is exactly why the query string is dropped
   WHOLE rather than filtered by this same kind of guessing.
 
@@ -539,7 +539,15 @@ So this ships with the product's **first automatic retention control**:
   install, including ones that never enabled presence, irreversibly, on its
   first scheduled run.
 
-  **Contact and pruning serialise on the visitor row.** The pruner re-checks its
+  **One lock order, everywhere: site, then visitor.** Revocation locks the site
+and then the visitor rows it deletes; the heartbeat, bootstrap and conversation
+start each lock the site to read the settings in force and then the visitor they
+write. Two paths taking those in opposite orders is a deadlock rather than a
+race, and it would appear under exactly the load that makes it hardest to
+reproduce — so the order is stated here rather than left to be inferred from
+four call sites.
+
+**Contact and pruning serialise on the visitor row.** The pruner re-checks its
   predicates under a lock, and every writer that constitutes contact — bootstrap,
   conversation start — takes that same lock before writing and re-resolves if the
   row has gone. Locking only in the pruner leaves the ordering where the absence
