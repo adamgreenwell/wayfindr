@@ -6891,7 +6891,13 @@
       // RTL language rather than fighting it -- see the widget language work.
       // No issue number here on purpose: the token guard scans this block for
       // hardcoded colours and reads a bare hash-774 as a three-digit hex.
-      '.wayfindr-widget[data-wf-launcher="left"]{inset-inline-end:auto;inset-inline-start:20px}',
+      // Aligned to the corner the root is actually anchored to. The column
+      // shrinks to fit, so `align-items` decides where the NARROW children sit
+      // inside the width the widest one sets -- and the notice is much wider
+      // than the launcher. Anchored on the right, flex-end keeps the launcher
+      // on its corner; anchored on the left it pushed the launcher inward by
+      // the whole difference, measured at 120px on a phone.
+      '.wayfindr-widget[data-wf-launcher="left"]{inset-inline-end:auto;inset-inline-start:20px;align-items:flex-start}',
       '.wayfindr-widget__launcher[data-cobrowse-active="true"]::after{content:"";position:absolute;top:-3px;inset-inline-end:-3px;width:14px;height:14px;border-radius:999px;background:var(--wf-signal-hold);border:2px solid var(--wf-surface);box-shadow:0 0 0 2px color-mix(in srgb, var(--wf-signal-hold) 35%, transparent)}',
       '.wayfindr-widget__send{min-height:40px;padding:0 14px;border-radius:6px}',
       '.wayfindr-widget__launcher:hover,.wayfindr-widget__send:hover{background:color-mix(in srgb, var(--wf-brand) 80%, var(--wf-ink))}',
