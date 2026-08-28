@@ -1739,3 +1739,87 @@ test('a host wrapper above the mount can hide the notice too', async (t) => {
     'reported while a host wrapper made the notice invisible',
   );
 });
+
+test('no address crosses the wire before the site policy is known', async (t) => {
+  // A visitor can open the panel before the page-load config read answers.
+  // Assuming "allowed" meant bootstrap submitted the address on a site whose
+  // policy is to keep none -- dropped on arrival, but already across the wire,
+  // which is the one thing the client-side rule exists to prevent.
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/invite/ABCDEF',
+  });
+
+  const calls = [];
+  const gate = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 0,
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      // Held open, so the panel opens before the policy is known.
+      if (url.includes('/api/widget/appearance')) {
+        return new Promise((resolve) => {
+          gate.push(() => resolve(jsonResponse(200, {
+            data: { appearance: { position: 'right' }, presence: { reports: true, every: 45, page_urls: false } },
+          })));
+        });
+      }
+
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return jsonResponse(200, {
+          data: {
+            site: { public_key: 'site_public_shop', settings: {}, color: 'blue', presence: { reports: true, every: 45, page_urls: false } },
+            visitor: { anonymous_id: 'anon-shop', token: 'visitor-token-shop' },
+          },
+        });
+      }
+
+      return jsonResponse(202, { data: { reports: true, every: 45, page_urls: false } });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  const opening = widget.open();
+
+  await settle();
+
+  // Nothing has been sent yet: bootstrap is waiting on the policy.
+  assert.equal(
+    calls.filter((c) => c.url.endsWith('/api/widget/bootstrap')).length,
+    0,
+    'bootstrap ran before the site had said whether it keeps page addresses',
+  );
+
+  gate.forEach((release) => release());
+  await opening;
+  await settle();
+
+  const bootstrap = calls.filter((c) => c.url.endsWith('/api/widget/bootstrap'));
+
+  assert.ok(bootstrap.length > 0, 'bootstrap never ran, so this proves nothing');
+  assert.ok(
+    bootstrap.every((c) => !c.body.page_url),
+    'an address crossed the wire on a site that keeps none',
+  );
+});

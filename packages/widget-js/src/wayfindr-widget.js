@@ -2740,7 +2740,9 @@
       // opened the panel had their page submitted here anyway -- so the board
       // and their profile showed where somebody was who had just asked not to
       // be followed, and it reached the server before anything could drop it.
-      bootstrapPromise = client.bootstrap(pageUrlForReporting(), visitorContext).then(function (result) {
+      bootstrapPromise = whenSiteConfigKnown().then(function () {
+        return client.bootstrap(pageUrlForReporting(), visitorContext);
+      }).then(function (result) {
         if (seq !== bootstrapSequence) {
           return;
         }
@@ -2812,11 +2814,18 @@
 
       presenceConfig = config && config.reports === true ? config : null;
 
-      // Remembered outside the config, which is cleared when reporting stops.
-      // A site's decision not to keep page addresses has to outlive its
+      // Remembered outside the config, which is cleared when reporting stops:
+      // a site's decision not to keep page addresses has to outlive its
       // decision to stop watching.
-      if (config && typeof config.page_urls === 'boolean') {
-        presenceReportedPageUrls = config.page_urls;
+      //
+      // An answer that carries no `page_urls` at all RESOLVES the policy to
+      // true rather than leaving it unknown. The server has replied and has
+      // not forbidden anything, and a widget talking to an older build that
+      // does not send the key must not withhold addresses for ever.
+      if (config) {
+        presenceReportedPageUrls = typeof config.page_urls === 'boolean'
+          ? config.page_urls
+          : true;
       }
 
       if (!presenceConfig) {
@@ -2873,6 +2882,26 @@
      * to close.
      */
     /**
+     * The page-load configuration read, once it has been started.
+     *
+     * Waited on by the writers that send a page address, rather than having
+     * them guess. Withholding the address until the policy is known keeps it
+     * off the wire on a site that forbids it; waiting for the answer instead of
+     * withholding outright keeps it for every site that does not, which is most
+     * of them and includes every install that never touched presence.
+     *
+     * The read starts at init, so by the time somebody opens the panel it has
+     * usually resolved and this costs nothing.
+     */
+    var siteConfigPromise = null;
+
+    function whenSiteConfigKnown() {
+      // Resolved, never rejected: a failed read must not stop somebody starting
+      // a conversation. fetchSiteConfig()'s own catch settles the policy.
+      return siteConfigPromise ? siteConfigPromise.catch(function () {}) : Promise.resolve();
+    }
+
+    /**
      * Orders the answers that carry settings.
      *
      * Bumped by every request that will come back with them, so a response
@@ -2921,6 +2950,7 @@
       };
 
       presenceReportedPageUrls = presenceConfig.page_urls !== false;
+
 
       // The notice describes what is collected, so it changes with it.
       renderPresenceDisclosure();
@@ -3148,7 +3178,8 @@
       // it look unknown -- so a site that had said "never keep page addresses"
       // got them again from bootstrap and conversation start the moment
       // reporting stopped, which is the wrong direction for that to fail in.
-      if (!presenceReportedPageUrls) {
+      // Unknown withholds, exactly like false.
+      if (presenceReportedPageUrls !== true) {
         return null;
       }
 
@@ -3268,9 +3299,17 @@
      * which still runs for bootstrap and conversation start long after any
      * heartbeat has.
      *
-     * Defaults to true because a site that has never said otherwise keeps them.
+     * Starts UNKNOWN, and unknown withholds. A visitor can open the panel
+     * before the page-load config read answers, and defaulting to "allowed"
+     * meant bootstrap submitted the address on a site whose policy is not to
+     * keep any -- dropped on arrival, but already across the wire, which is the
+     * one thing the client-side rule exists to prevent.
+     *
+     * Resolved to true if that read FAILS, which restores the behaviour every
+     * install had before presence existed: a site that cannot tell us its
+     * policy is not a site that has forbidden anything.
      */
-    var presenceReportedPageUrls = true;
+    var presenceReportedPageUrls = null;
 
     function declinePresence() {
       presenceReportedPageUrls = Boolean(presenceConfig && presenceConfig.page_urls !== false);
@@ -3387,7 +3426,7 @@
     function fetchSiteConfig() {
       var seq = ++presenceSettingsSequence;
 
-      client.fetchAppearance().then(function (result) {
+      siteConfigPromise = client.fetchAppearance().then(function (result) {
         // Overtaken answers are discarded here too. This request starts at page
         // load and can be slow; a visitor who opens the panel meanwhile gets a
         // bootstrap answer that is NEWER, and applying this one afterwards
@@ -3412,8 +3451,27 @@
           applyLocale(result.locale);
         }
 
-        applyPresence((result && result.presence) || null);
+        // The server has ANSWERED, so the page-address policy is known --
+        // whatever it said, and including saying nothing at all. An older
+        // build that sends no presence block has not forbidden anything, and
+        // withholding addresses from it for ever would break page context on
+        // every install that never touched this feature.
+        var presence = (result && result.presence) || null;
+
+        presenceReportedPageUrls = presence && typeof presence.page_urls === 'boolean'
+          ? presence.page_urls
+          : true;
+
+        applyPresence(presence);
       }).catch(function () {
+        // A site that cannot tell us its policy has not forbidden anything, so
+        // page addresses go back to the behaviour every install had before
+        // presence existed. Withholding them for ever on a failed lookup would
+        // quietly break page context on sites that never enabled presence.
+        if (presenceReportedPageUrls === null) {
+          presenceReportedPageUrls = true;
+        }
+
         // The default corner is a fine answer to a failed lookup, and no
         // answer about presence means no reporting -- which is the direction
         // an unanswered privacy question has to fail in.
@@ -4129,6 +4187,11 @@
         // subject), so files staged before it existed have somewhere to go — no
         // empty conversation is created just by picking a file.
         if (!supportCode) {
+          // The site's page-address policy is known before the address is
+          // built, so a site that keeps none never has one cross the wire and
+          // every other site keeps its support context.
+          await whenSiteConfigKnown();
+
           var conversation = await client.startConversation(body, {
             // The same gate bootstrap and the heartbeat use. Without it a
             // visitor who declined and then sent their first message had the
