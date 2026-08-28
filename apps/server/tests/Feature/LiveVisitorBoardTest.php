@@ -835,3 +835,49 @@ test('a resync applies its total before replaying what it missed', function (): 
             'the snapshot total is applied after the buffer, so it discards buffered arrivals'
         );
 });
+
+test('an event that arrives late does not overwrite a newer row', function (): void {
+    // One visitor with two tabs writes twice. The database serialises those,
+    // but each broadcast happens after its own commit and they can reach Reverb
+    // in the other order -- so the board replaced a row it had just updated
+    // with the older event's contents: a stale page address, a stale contact
+    // state, a sighting time that moves backwards. It stayed that way until the
+    // next heartbeat or the minute's resync.
+    $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
+
+    $apply = Str::before(Str::after($source, 'function applyVisitor(visitor) {'), 'function dropDeparted');
+
+    test()->assertStringContainsString(
+        'rows.insertBefore(fresh, rows.firstChild);',
+        $apply,
+        'the slice is not applyVisitor()',
+    );
+
+    test()->assertStringContainsString(
+        'isNewerThanRow(existing, visitor)',
+        $apply,
+        'an event about a visitor already on the board is applied without checking its age',
+    );
+
+    // Ordered by what the SERVER stamped, not by arrival.
+    $compare = Str::before(Str::after($source, 'function isNewerThanRow(row, visitor) {'), '}');
+
+    test()->assertStringContainsString(
+        'row.dataset.lastSeen',
+        $compare,
+        'the comparison does not read the sighting time the server rendered',
+    );
+
+    test()->assertStringContainsString(
+        'visitor.last_web_seen_at',
+        $compare,
+        'the comparison does not read the sighting time the event carries',
+    );
+
+    // A value that cannot be read must not silently drop a real update.
+    test()->assertStringContainsString(
+        'isNaN(had) || isNaN(has)',
+        $compare,
+        'an unreadable timestamp discards the update instead of applying it',
+    );
+});

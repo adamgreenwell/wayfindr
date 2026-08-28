@@ -282,6 +282,25 @@
                     }
 
                     var existing = rows.querySelector('[data-visitor-id="' + CSS.escape(String(visitor.id)) + '"]');
+
+                    // An older event about somebody already on the board is
+                    // dropped.
+                    //
+                    // One visitor with two tabs writes twice, and the database
+                    // serialises those -- but the broadcasts happen after each
+                    // commit and can reach Reverb in the other order. Replacing
+                    // the row unconditionally let the older one win, putting a
+                    // stale page address, contact state and sighting time on
+                    // the board and leaving them there until the next heartbeat
+                    // or the minute's resync.
+                    //
+                    // Compared against the row's own `data-last-seen`, which is
+                    // what the server stamped: the two events are ordered by
+                    // the writes they describe, not by their arrival.
+                    if (existing && !isNewerThanRow(existing, visitor)) {
+                        return;
+                    }
+
                     var fresh = buildRow(visitor);
 
                     if (existing) {
@@ -338,6 +357,25 @@
                     }
 
                     refreshCount();
+                }
+
+                // Is this event about a later sighting than the row already has?
+                //
+                // An unparseable or missing timestamp on either side answers
+                // yes: the alternative is dropping a real update because a
+                // value could not be read, and a board that refuses updates it
+                // does not understand goes quietly stale. Equal timestamps also
+                // pass -- the same second is not evidence of being older, and
+                // re-rendering an identical row costs nothing.
+                function isNewerThanRow(row, visitor) {
+                    var had = row.dataset.lastSeen ? Date.parse(row.dataset.lastSeen) : NaN;
+                    var has = visitor.last_web_seen_at ? Date.parse(visitor.last_web_seen_at) : NaN;
+
+                    if (isNaN(had) || isNaN(has)) {
+                        return true;
+                    }
+
+                    return has >= had;
                 }
 
                 // Somebody who stops reporting is gone, and nothing tells us so
