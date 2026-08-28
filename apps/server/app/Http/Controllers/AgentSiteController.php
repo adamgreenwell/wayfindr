@@ -765,11 +765,36 @@ class AgentSiteController extends Controller
             // 16 rather than assumed; do not "fix" it into a whereRaw CAST,
             // which only hardcodes what the grammar already does.
             ->where('metadata', 'like', '%last_page_url%')
-            ->chunkById(200, function ($visitors): void {
+            ->chunkById(200, function ($visitors) use ($site): bool {
+                $superseded = false;
+
                 // A transaction per chunk. Each row is re-read under its own
                 // lock before writing, so the lock is held for one row's work
                 // rather than for the length of the sweep.
-                DB::transaction(function () use ($visitors): void {
+                DB::transaction(function () use ($visitors, $site, &$superseded): void {
+                    // Is this revocation still the current one?
+                    //
+                    // The sweep runs after its settings transaction commits and
+                    // therefore holds no site lock, so a second operator can
+                    // turn addresses back on while it walks the table --
+                    // whereupon heartbeats legitimately store addresses again
+                    // and this sweep, still going, deletes them as it reaches
+                    // them. The operator who re-enabled watches addresses
+                    // appear and vanish for as long as the older sweep lasts.
+                    //
+                    // Read under the SHARED lock every other reader takes, so
+                    // the answer is either wholly before or wholly after a
+                    // settings write, never halfway through one. Site before
+                    // visitor, the same order as the heartbeat and the settings
+                    // form, so this cannot deadlock against either.
+                    $current = Site::query()->whereKey($site->getKey())->sharedLock()->first();
+
+                    if ($current === null || SitePresenceReporting::for($current)->pageUrls) {
+                        $superseded = true;
+
+                        return;
+                    }
+
                     foreach ($visitors as $visitor) {
                         // Re-read under a lock before writing. `metadata` is one
                         // JSON column, so a save replaces the whole value: writing
@@ -794,6 +819,9 @@ class AgentSiteController extends Controller
                         $locked->forceFill(['metadata' => $metadata])->save();
                     }
                 });
+
+                // Stops the walk, rather than skipping one chunk of it.
+                return ! $superseded;
             });
     }
 
