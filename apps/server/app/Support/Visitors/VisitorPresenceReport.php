@@ -155,8 +155,22 @@ final class VisitorPresenceReport
         // Over the limit the report is simply not stored. Not an error: the
         // client cannot tell the difference and should not be able to, and a
         // 429 here would leak how much of the quota is left.
-        if (! $visitor->exists && ! $this->mayCreate($site)) {
-            return $visitor;
+        if (! $visitor->exists) {
+            // Re-resolved under the site lock before any quota is spent. Two
+            // first heartbeats for one anonymous ID both resolve before either
+            // takes the lock, so the second still believes it is creating --
+            // and would spend both creation counters on an insert that is
+            // about to collide and be retried as an update.
+            $existing = Visitor::query()
+                ->where('site_id', $site->id)
+                ->where('anonymous_id', $visitor->anonymous_id)
+                ->first();
+
+            if ($existing !== null) {
+                $visitor = $existing;
+            } elseif (! $this->mayCreate($site)) {
+                return $visitor;
+            }
         }
 
         $provenance = $visitor->exists ? [] : ['presence_only' => true];

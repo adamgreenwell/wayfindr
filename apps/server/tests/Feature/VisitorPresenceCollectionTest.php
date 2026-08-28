@@ -1451,6 +1451,39 @@ test('a site archived mid-request stops accepting heartbeats', function (): void
         ->toBeFalse('a heartbeat landed on a site that had just been archived');
 });
 
+test('an existing visitor never spends the creation quota', function (): void {
+    // The substance of the race fix: a request that turns out to be updating
+    // rather than creating must not consume a creation slot. Two first
+    // heartbeats for one anonymous ID both believe they are creating, and the
+    // loser would otherwise spend the budget on an insert that collides.
+    //
+    // The interleaving itself is not reproducible in-process -- a competing
+    // insert made inside the test transaction is rolled back with the savepoint
+    // the collision unwinds -- so this asserts the property the fix turns on:
+    // an already-resolved row costs nothing.
+    config()->set('wayfindr.widget_rate_limits.presence_creations_per_ip_per_minute', 1);
+
+    $site = presenceSite();
+
+    reportPresence($site, 'anon-first')->assertSuccessful();
+
+    expect(Visitor::query()->where('anonymous_id', 'anon-first')->exists())->toBeTrue();
+
+    // The single creation slot is now spent. This visitor already exists, so
+    // reporting again must not need one.
+    reportPresence($site, 'anon-first')->assertSuccessful();
+
+    $visitor = Visitor::query()->where('anonymous_id', 'anon-first')->firstOrFail();
+
+    expect($visitor->last_web_seen_at)->not->toBeNull('an existing visitor stopped being refreshed');
+
+    // And a genuinely new one is still refused, so the budget is real.
+    reportPresence($site, 'anon-second')->assertSuccessful();
+
+    expect(Visitor::query()->where('anonymous_id', 'anon-second')->exists())
+        ->toBeFalse('the creation budget was not enforced at all');
+});
+
 test('the widget learns about presence without making contact', function (): void {
     // The endpoint that answers this is the one a page load is allowed to ask.
     // Bootstrap cannot be: it creates or touches a visitor row and marks them
