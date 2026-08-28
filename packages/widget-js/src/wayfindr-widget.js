@@ -2740,9 +2740,29 @@
       // opened the panel had their page submitted here anyway -- so the board
       // and their profile showed where somebody was who had just asked not to
       // be followed, and it reached the server before anything could drop it.
-      var settingsSeq = ++presenceSettingsSequence;
+      var settingsSeq = 0;
 
       bootstrapPromise = whenSiteConfigKnown().then(function () {
+        // The ticket is taken HERE, after the wait, not before it.
+        //
+        // whenSiteConfigKnown() can start a configuration fetch of its own,
+        // and that fetch takes a ticket. Reserving this one first therefore
+        // numbered the bootstrap BELOW a request it was about to wait for --
+        // so the bootstrap, sent afterwards and answering from a later read of
+        // the same server, arrived carrying the lower number and was thrown
+        // away by its own watermark as stale.
+        //
+        // An operator revoking presence or page addresses between the two
+        // reads lands in the later one, which is exactly the answer that was
+        // being discarded: the tab went on reporting under a policy that no
+        // longer existed until some later heartbeat happened to carry the
+        // change.
+        //
+        // Still taken before the request rather than on arrival, which is the
+        // other way to get this wrong: incrementing when the answer lands makes
+        // a slow bootstrap the newest answer no matter what overtook it.
+        settingsSeq = ++presenceSettingsSequence;
+
         return client.bootstrap(pageUrlForReporting(), visitorContext);
       }).then(function (result) {
         if (seq !== bootstrapSequence) {

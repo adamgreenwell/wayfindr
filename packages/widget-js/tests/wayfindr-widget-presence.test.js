@@ -2707,3 +2707,100 @@ test('the notice is anchored so an open panel cannot push it off the screen', as
   assert.doesNotMatch(css, /\.wayfindr-widget__presence\{[^}]*bottom:100%/,
     'the notice is still anchored above the whole widget');
 });
+
+test('a bootstrap outranks the configuration read it waited for', async (t) => {
+  // `refreshFromBootstrap()` took its settings ticket, THEN waited on
+  // `whenSiteConfigKnown()` -- which can start a configuration fetch of its
+  // own, and that fetch takes a higher ticket. So the bootstrap request, sent
+  // after the configuration answer came back, arrived carrying the lower
+  // number and was rejected as stale by its own watermark.
+  //
+  // The two reads are of the same server at different moments, and an operator
+  // revoking page addresses between them lands in the later one. Rejecting the
+  // later one means the revocation is discarded and the tab goes on sending
+  // addresses under a policy that no longer exists.
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/pricing',
+  });
+
+  const calls = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 20,
+    // Always stale, so opening the panel starts a configuration fetch inside
+    // the wait -- the ordering this is about.
+    siteConfigStaleMs: 0,
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      if (url.includes('/api/widget/appearance')) {
+        // The policy as it was. This read happens first.
+        return jsonResponse(200, {
+          data: { appearance: { position: 'right' }, presence: { reports: true, every: 45, page_urls: true } },
+        });
+      }
+
+      if (url.endsWith('/api/widget/bootstrap')) {
+        // The revocation, in the LATER read.
+        return jsonResponse(200, {
+          data: {
+            site: {
+              public_key: 'site_public_shop',
+              settings: {},
+              color: 'blue',
+              presence: { reports: true, every: 45, page_urls: false },
+            },
+            visitor: { anonymous_id: 'anon-shop', token: 'visitor-token-shop' },
+          },
+        });
+      }
+
+      return jsonResponse(202, { data: {} });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  assert.ok(
+    presenceCalls(calls).some((c) => c.body.page_url),
+    'no address was ever sent, so this proves nothing about stopping',
+  );
+
+  await widget.open();
+  await settle();
+  await settle();
+
+  const sentBefore = presenceCalls(calls).length;
+
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  await settle();
+
+  const after = presenceCalls(calls).slice(sentBefore);
+
+  assert.ok(after.length > 0, 'nothing was reported after the bootstrap, so this proves nothing');
+  assert.ok(
+    after.every((c) => !c.body.page_url),
+    'the bootstrap carried the revocation and its own watermark threw it away',
+  );
+});
