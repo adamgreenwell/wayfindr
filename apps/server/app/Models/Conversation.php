@@ -551,7 +551,12 @@ class Conversation extends Model
             'detail_key' => $visitor?->presenceCue()['key'] ?? 'no_heartbeat',
             'label' => $visitor?->presenceLabel() ?? 'Not reported',
             'detail' => $visitor?->presenceDetail() ?? 'No visitor heartbeat yet.',
-            'last_seen_at' => $visitor?->last_seen_at?->toJSON(),
+            // The WEBSITE sighting, matching the state above it. Serializing
+            // the cross-channel one produced a payload that disagreed with
+            // itself -- state `quiet`, moment two minutes ago -- and the agent
+            // page interpolates that moment into the detail line, so a visitor
+            // who had emailed read as having just been on the site.
+            'last_seen_at' => $visitor?->last_web_seen_at?->toJSON(),
             'last_seen_label' => $visitor?->last_seen_at?->diffForHumans() ?? 'Not reported',
         ];
     }

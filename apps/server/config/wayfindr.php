@@ -84,6 +84,43 @@ return [
 
     'widget_rate_limits' => [
         'bootstrap_per_minute' => (int) env('WAYFINDR_WIDGET_BOOTSTRAP_RATE_LIMIT', 120),
+        // Per VISITOR, not per source IP -- see the widget-presence limiter.
+        // A 45-second cadence is 1.33 a minute per open tab, and tabs of one
+        // browser share an anonymous ID, so this is roughly twenty tabs' worth.
+        'presence_per_minute' => (int) env('WAYFINDR_WIDGET_PRESENCE_PER_MINUTE', 30),
+
+        // The cap on creating DURABLE rows, per source IP and site. The two
+        // limits above bound traffic, which is the cheap half: a forged client
+        // rotating anonymous IDs turns each accepted request into a visitor
+        // that lives for the whole retention window, so a ceiling sized for a
+        // busy office is millions of rows a day when spent on creation. A
+        // refresh of somebody already known is not counted.
+        //
+        // Thirty a minute is roughly a genuinely busy site's rate of NEW
+        // visitors from one address; an office where everybody arrives at nine
+        // exceeds it briefly and those visitors are recorded on their next
+        // heartbeat rather than lost.
+        'presence_creations_per_ip_per_minute' => (int) env('WAYFINDR_WIDGET_PRESENCE_CREATIONS_PER_IP_PER_MINUTE', 30),
+
+        // And the sustained one. Thirty a minute held all day is 43,200 rows
+        // and about 1.3 million across the retention window, so the burst
+        // allowance that makes an office work is also, by itself, a licence to
+        // grow the table without end.
+        //
+        // Twenty thousand rather than two: a mobile carrier's NAT can put that
+        // many genuinely distinct first-time visitors behind one address in a
+        // day, and once the budget is spent those visitors are not throttled
+        // but INVISIBLE -- absent from the board with nothing to say why. Being
+        // wrong in that direction is worse than the table growing, and the
+        // minute-scale limit still bounds any burst. An install that wants it
+        // tighter has the environment variable.
+        'presence_creations_per_ip_per_day' => (int) env('WAYFINDR_WIDGET_PRESENCE_CREATIONS_PER_IP_PER_DAY', 20000),
+
+        // The abuse cap, per source IP and site. Covers about nine hundred
+        // simultaneous visitors behind one address at the standard cadence;
+        // an install that genuinely has more raises it rather than watching
+        // its board flicker.
+        'presence_per_ip_per_minute' => (int) env('WAYFINDR_WIDGET_PRESENCE_PER_IP_PER_MINUTE', 1200),
         'broadcast_auth_per_minute' => (int) env('WAYFINDR_WIDGET_BROADCAST_AUTH_RATE_LIMIT', 120),
         'conversation_per_minute' => (int) env('WAYFINDR_WIDGET_CONVERSATION_RATE_LIMIT', 30),
         'message_per_minute' => (int) env('WAYFINDR_WIDGET_MESSAGE_RATE_LIMIT', 240),
@@ -95,6 +132,13 @@ return [
     // Conversation message attachments (ADR 0007). Limits are server-enforced
     // and independent of the client; the allowlist is matched against the
     // SERVER-detected MIME (never the client's Content-Type).
+    'presence' => [
+        // ADR 0019 §4. Shortening is an operator's to choose; lengthening is
+        // not, and the command clamps to the stated maximum regardless of what
+        // is set here.
+        'retention_days' => (int) env('WAYFINDR_PRESENCE_RETENTION_DAYS', 30),
+    ],
+
     'attachments' => [
         // Which filesystem disk NEW uploads land on: 'attachments' (local
         // private disk, the default) or 'attachments-s3' (S3-compatible).

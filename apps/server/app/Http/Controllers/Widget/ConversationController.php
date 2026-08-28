@@ -8,6 +8,7 @@ use App\Models\Site;
 use App\Models\Visitor;
 use App\Support\Sites\SiteAvailability;
 use App\Support\Sites\SiteIntake;
+use App\Support\Sites\SitePresenceReporting;
 use App\Support\Sites\WidgetLanguage;
 use App\Support\VisitorContextSanitizer;
 use App\Support\Visitors\VisitorPageUrl;
@@ -16,6 +17,7 @@ use App\Support\WidgetSiteResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
+use Illuminate\Support\Facades\DB;
 
 class ConversationController extends Controller
 {
@@ -53,40 +55,128 @@ class ConversationController extends Controller
 
         $visitor = $visitorSessionToken->visitorFromRequest($request, $site, $validated['anonymous_id']);
 
-        $visitor->forceFill([
-            'metadata' => $visitorContextSanitizer->mergeMetadata(
-                $visitor->metadata,
-                $validated['page_url'] ?? null,
-                array_key_exists('context', $validated),
-                $validated['context'] ?? null,
-                $site->domain,
-            ),
-            'last_seen_at' => now(),
-        ]
-            + $this->externalIdentifierUpdate($site, $visitor, $validated, $visitorContextSanitizer)
-            + $this->intakeAnswers($validated))->save();
+        // The stamp and the insert are ONE transaction, against a locked row.
+        //
+        // `wayfindr:prune-presence-visitors` deletes visitors who never made
+        // contact, and it re-checks its predicates under a lock before doing
+        // so -- which makes it safe against a writer that has already
+        // committed, and not against this one. If the pruner takes the lock
+        // first, this request waits, the delete commits, and then the save
+        // below updates nothing while the insert that follows fails its
+        // `visitor_id` foreign key. The visitor is told their message could
+        // not be sent, for a reason that has nothing to do with them.
+        //
+        // Locking here puts both sides in the same queue. Whoever arrives
+        // second sees what the first one did rather than a stale copy of the
+        // world from before it started.
+        $conversation = DB::transaction(function () use (
 
-        $conversation = Conversation::query()->create([
-            'site_id' => $site->id,
-            'visitor_id' => $visitor->id,
-            'support_code' => Conversation::generateSupportCode(),
-            'status' => 'open',
-            'subject' => $validated['subject'] ?? null,
-            'metadata' => array_filter([
-                // Sanitised like the visitor's copy. This is the SECOND
-                // place the same URL lands, it is durable for the life of the
-                // conversation, and it is what the agent panels label the entry
-                // page -- so fixing only the visitor row would have left the
-                // likelier path open: people ask for help FROM the page that is
-                // going wrong, which on a reset flow is the page holding the
-                // token.
-                'started_page_url' => VisitorPageUrl::forSite($validated['page_url'] ?? null, $site->domain),
-                // The reason belongs to this conversation, not to the person:
-                // the next one may be about something else entirely. Name and
-                // email go on the visitor, where they are reusable.
-                'reason' => $this->trimmedOrNull($validated['visitor_reason'] ?? null),
-            ], fn ($value): bool => $value !== null),
-        ]);
+            $site,
+            $validated,
+            $visitorContextSanitizer,
+            $visitor,
+        ): Conversation {
+            // Same lock `updatePresence()` takes, for the same reason as
+            // bootstrap: the page-address setting has to be the one in force
+            // at the write, not the one this request saw on arrival.
+            // A SHARED lock, not an exclusive one. These three readers only need
+            // the setting to be stable across their own write; they do not conflict
+            // with each other, and every visitor on the site takes this every 45
+            // seconds. FOR UPDATE would serialise every heartbeat on a busy site
+            // behind one row -- a convoy on the hottest path in the feature, to
+            // protect against a revocation that happens once in a while.
+            //
+            // FOR SHARE still does the whole job: `Site::mutateSettings()` takes
+            // the exclusive lock, so a revocation waits for the readers in flight
+            // and blocks the ones after it. Readers exclude the writer; they do not
+            // exclude each other.
+            $current = Site::query()->whereKey($site->getKey())->sharedLock()->first() ?? $site;
+            $storePageUrl = SitePresenceReporting::for($current)->pageUrls;
+
+            $locked = Visitor::query()->whereKey($visitor->getKey())->lockForUpdate()->first();
+
+            // Gone means the pruner won the race. Re-created rather than
+            // failed: this visitor is here NOW, asking for help, which is the
+            // one fact that outranks having been quiet for thirty days.
+            // firstOrCreate, not create. The pruner deleting the row this
+            // request resolved is one ordering; a heartbeat recreating it
+            // before this transaction takes the lock is another, and then an
+            // unconditional insert collides with the replacement on
+            // `(site_id, anonymous_id)` and the visitor is told their message
+            // could not be sent.
+            $visitor = $locked ?? Visitor::query()->firstOrCreate([
+                'site_id' => $site->id,
+                'anonymous_id' => $validated['anonymous_id'],
+            ]);
+
+            // Lock whatever that returned, unless we just made it. firstOrCreate
+            // can hand back a row somebody else recreated under the same
+            // `(site_id, anonymous_id)`, and merging metadata into an unlocked
+            // copy of it is the race the lock above exists to settle -- a
+            // heartbeat committing between that SELECT and this save would have
+            // its page address overwritten by what was read here.
+            if (! $visitor->wasRecentlyCreated) {
+                $visitor = Visitor::query()->whereKey($visitor->getKey())->lockForUpdate()->first() ?? $visitor;
+            }
+
+            $visitor->forceFill([
+                'metadata' => $visitorContextSanitizer->mergeMetadata(
+                    $visitor->metadata,
+                    $validated['page_url'] ?? null,
+                    array_key_exists('context', $validated),
+                    $validated['context'] ?? null,
+                    // The LOCKED row's domain, not the one this request
+                    // arrived holding. A site renamed between resolving it
+                    // and taking the lock leaves the copy above naming a host
+                    // that is no longer the site's own -- and an address is
+                    // kept or dropped by exactly that comparison, so reading
+                    // it from the stale copy stores a page from a host we no
+                    // longer trust. $storePageUrl is already read from
+                    // $current one screen up, for the same reason.
+                    $current->domain,
+                    $storePageUrl,
+                ),
+                'last_web_seen_at' => now(),
+                // Starting a conversation is contact, and this route does not
+                // require bootstrap to have run -- so the flag that means
+                // "never made contact" has to be cleared here as well as
+                // there. The pruner already refuses to delete anybody with a
+                // conversation, so nothing was at risk; leaving it set would
+                // still have been a record saying something untrue about
+                // somebody who had just written in.
+                'presence_only' => false,
+            ]
+                + $this->externalIdentifierUpdate($site, $visitor, $validated, $visitorContextSanitizer)
+                + $this->intakeAnswers($validated))->save();
+
+            return Conversation::query()->create([
+                'site_id' => $site->id,
+                'visitor_id' => $visitor->id,
+                'support_code' => Conversation::generateSupportCode(),
+                'status' => 'open',
+                'subject' => $validated['subject'] ?? null,
+                'metadata' => array_filter([
+                    // Sanitised like the visitor's copy. This is the SECOND
+                    // place the same URL lands, it is durable for the life of the
+                    // conversation, and it is what the agent panels label the entry
+                    // page -- so fixing only the visitor row would have left the
+                    // likelier path open: people ask for help FROM the page that is
+                    // going wrong, which on a reset flow is the page holding the
+                    // token.
+                    // Gated on the same locked setting as the visitor's copy.
+                    // The widget already omits the address, but the endpoint is
+                    // public: a custom or older client keeps sending one, and
+                    // this is the field that outlives the visitor row.
+                    'started_page_url' => $storePageUrl
+                        ? VisitorPageUrl::forSite($validated['page_url'] ?? null, $current->domain)
+                        : null,
+                    // The reason belongs to this conversation, not to the person:
+                    // the next one may be about something else entirely. Name and
+                    // email go on the visitor, where they are reusable.
+                    'reason' => $this->trimmedOrNull($validated['visitor_reason'] ?? null),
+                ], fn ($value): bool => $value !== null),
+            ]);
+        });
 
         return response()->json([
             'data' => [

@@ -89,6 +89,7 @@
                 $siteMapSections[] = ['label' => 'External issue routing', 'href' => '#external-issue-routing-heading'];
                 $siteMapSections[] = ['label' => 'Asking how it went', 'href' => '#rating-prompt-heading'];
                 $siteMapSections[] = ['label' => 'Data responsibility', 'href' => '#data-responsibility-heading'];
+                $siteMapSections[] = ['label' => 'Live visitor presence', 'href' => '#presence-settings-heading'];
                 $siteMapSections[] = ['label' => 'Mask selectors', 'href' => '#privacy-settings-heading'];
             @endphp
 
@@ -1161,6 +1162,56 @@
                 @else
                     <div class="notice-copy">
                         <p>Only an account admin can change what visitors are asked.</p>
+                    </div>
+                @endif
+            </section>
+
+            <section class="section" aria-labelledby="presence-settings-heading">
+                <div class="section-header">
+                    <h2 id="presence-settings-heading">Live visitor presence</h2>
+                    <span class="lede">{{ $presenceEnabled ? 'On' : 'Off' }}</span>
+                </div>
+
+                @if ($canUpdatePrivacy)
+                    <form class="section-form" method="POST" action="{{ route('dashboard.sites.presence.update', $site) }}">
+                        @csrf
+                        @method('PUT')
+
+                        <div class="field field-check">
+                            <label for="presence_enabled">
+                                <input type="checkbox" id="presence_enabled" name="presence_enabled" value="1" @checked(old('presence_enabled', $presenceEnabled))>
+                                Show visitors who are browsing but have not made contact
+                            </label>
+                            @error('presence_enabled')
+                                <p class="field-error">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <p class="field-help">
+                            With this on, the widget reports every {{ $presenceEvery }} seconds that somebody is on the site, and which page they are on. Visitors are told in the widget and can decline. Addresses are stored without query strings, and a visitor who never makes contact is deleted 30 days after they were last seen.
+                        </p>
+
+                        <div class="field field-check">
+                            <label for="presence_page_urls">
+                                <input type="checkbox" id="presence_page_urls" name="presence_page_urls" value="1" @checked(old('presence_page_urls', $presencePageUrls))>
+                                Include which page they are on
+                            </label>
+                        </div>
+
+                        <p class="field-help">
+                            Page addresses are stored with the query string removed and path segments that look like tokens replaced. That check is a good guess, not a guarantee &mdash; if this site puts invitation codes, order numbers or reset tokens in the path itself, turn this off. No page address is then kept for any visitor, whether they were browsing, opened the widget or started a conversation, and the ones already stored are deleted. The page a conversation was started from stays on that conversation, because it is part of a support record somebody wrote in about.
+                        </p>
+
+                        <p class="field-help">
+                            Leave presence off and nothing changes: the install records people only once they open the widget or get in touch. Turning it off later deletes the visitors it collected who never made contact.
+                        </p>
+
+                        <button class="button" type="submit">Save presence setting</button>
+                    </form>
+                @else
+                    <div class="notice-copy">
+                        <p>Account owners and admins decide whether this site watches visitors who have not made contact.</p>
+                        <p>{{ $presenceEnabled ? 'It is on for this site.' : 'It is off for this site.' }}</p>
                     </div>
                 @endif
             </section>

@@ -8,14 +8,17 @@ use App\Models\Site;
 use App\Models\Visitor;
 use App\Support\Sites\SiteAvailability;
 use App\Support\Sites\SiteIntake;
+use App\Support\Sites\SitePresenceReporting;
 use App\Support\Sites\SiteRatingPrompt;
 use App\Support\Sites\WidgetAppearance;
 use App\Support\Sites\WidgetLanguage;
 use App\Support\VisitorContextSanitizer;
 use App\Support\VisitorSessionToken;
 use App\Support\WidgetSiteResolver;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class BootstrapController extends Controller
 {
@@ -31,21 +34,30 @@ class BootstrapController extends Controller
 
         $site = WidgetSiteResolver::resolveOrFail($validated['site_public_key']);
 
-        $visitor = Visitor::query()->firstOrNew([
-            'site_id' => $site->id,
-            'anonymous_id' => $validated['anonymous_id'],
-        ]);
-
-        $visitor->forceFill([
-            'metadata' => $visitorContextSanitizer->mergeMetadata(
-                $visitor->metadata,
-                $validated['page_url'] ?? null,
-                array_key_exists('context', $validated),
-                $validated['context'] ?? null,
-                $site->domain,
-            ),
-            'last_seen_at' => now(),
-        ] + $this->externalIdentifierUpdate($site, $visitor, $validated, $visitorContextSanitizer))->save();
+        // Retried once on a duplicate key. A new visitor's first page load can
+        // put bootstrap and the first heartbeat in flight together -- both read
+        // no row, both insert, and `(site_id, anonymous_id)` lets exactly one
+        // win. The presence endpoint already survives losing; this one returned
+        // a 500 and the widget never got its configuration.
+        //
+        // Once and no more: after a conflict the row exists, so a second
+        // failure is some other constraint and a loop would make it a hot one
+        // on a public endpoint.
+        try {
+            // Wrapped for the same reason as VisitorPresenceReport: on
+            // PostgreSQL a constraint violation aborts the surrounding
+            // transaction, so the retry would run on a connection that refuses
+            // every statement. DB::transaction() is a real transaction standing
+            // alone and a SAVEPOINT inside a caller's, and either is enough to
+            // leave something usable to retry on.
+            $visitor = DB::transaction(fn (): Visitor => $this->stampVisitor($site, $validated, $visitorContextSanitizer));
+        } catch (UniqueConstraintViolationException) {
+            // Wrapped as well. Outside a transaction every statement
+            // autocommits, so the lockForUpdate() inside stampVisitor() is
+            // released the moment its select finishes -- which is exactly when
+            // it is supposed to still be held.
+            $visitor = DB::transaction(fn (): Visitor => $this->stampVisitor($site, $validated, $visitorContextSanitizer));
+        }
 
         return response()->json([
             'data' => [
@@ -68,6 +80,78 @@ class BootstrapController extends Controller
      * @return array{name: string, domain: string|null, color: string, public_key: string, availability: array{away: bool, message: string|null, opens_at: string|null, timezone: string}, intake: array{asks: bool, intro: string|null, fields: array<string, string>}, settings: array{mask_selectors: array<int, string>, mask_terms: array<int, string>}}
      */
     /** @param array<string, bool> $known */
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    private function stampVisitor(Site $site, array $validated, VisitorContextSanitizer $visitorContextSanitizer): Visitor
+    {
+        $visitor = Visitor::query()->firstOrNew([
+            'site_id' => $site->id,
+            'anonymous_id' => $validated['anonymous_id'],
+        ]);
+
+        // Locked, and re-created if the lock finds nothing.
+        //
+        // The pruner deletes visitors who never made contact, and this is the
+        // endpoint that decides somebody HAS. If the delete lands between the
+        // read above and the write below, Eloquent does not complain: an update
+        // matching zero rows is a successful save. Bootstrap would then answer
+        // 200 and issue a session token naming a visitor that no longer exists,
+        // and every conversation and message request afterwards would fail
+        // token resolution with a 401 the visitor cannot do anything about.
+        //
+        // Worse than an error, because it looks like success right up until
+        // they try to say something.
+        // The site under the same lock `updatePresence()` takes, so the
+        // page-address setting read here is the one in force at the write
+        // rather than the one the request saw on arrival. Without it the
+        // cleanup can finish first and this can store the address again
+        // afterwards, which is the shape the heartbeat already guards against.
+        // A SHARED lock, not an exclusive one. These three readers only need
+        // the setting to be stable across their own write; they do not conflict
+        // with each other, and every visitor on the site takes this every 45
+        // seconds. FOR UPDATE would serialise every heartbeat on a busy site
+        // behind one row -- a convoy on the hottest path in the feature, to
+        // protect against a revocation that happens once in a while.
+        //
+        // FOR SHARE still does the whole job: `Site::mutateSettings()` takes
+        // the exclusive lock, so a revocation waits for the readers in flight
+        // and blocks the ones after it. Readers exclude the writer; they do not
+        // exclude each other.
+        $current = Site::query()->whereKey($site->getKey())->sharedLock()->first() ?? $site;
+        $storePageUrl = SitePresenceReporting::for($current)->pageUrls;
+
+        if ($visitor->exists) {
+            $locked = Visitor::query()->whereKey($visitor->getKey())->lockForUpdate()->first();
+
+            $visitor = $locked ?? Visitor::query()->newModelInstance([
+                'site_id' => $site->id,
+                'anonymous_id' => $validated['anonymous_id'],
+            ]);
+        }
+
+        $visitor->forceFill([
+            'metadata' => $visitorContextSanitizer->mergeMetadata(
+                $visitor->metadata,
+                $validated['page_url'] ?? null,
+                array_key_exists('context', $validated),
+                $validated['context'] ?? null,
+                // The locked row's domain -- see ConversationController for
+                // why the copy this request arrived with is the wrong one.
+                $current->domain,
+                $storePageUrl,
+            ),
+            'last_web_seen_at' => now(),
+            // Opening the widget IS making contact -- ADR 0016 §1 says so -- and
+            // this is the endpoint that means it. A row that existed only
+            // because somebody loaded a page stops being presence-only the
+            // moment they open the panel, and stops being prunable with it.
+            'presence_only' => false,
+        ] + $this->externalIdentifierUpdate($site, $visitor, $validated, $visitorContextSanitizer))->save();
+
+        return $visitor;
+    }
+
     private function sitePayload(Site $site, array $known): array
     {
         $availability = SiteAvailability::for($site);

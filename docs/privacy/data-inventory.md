@@ -12,7 +12,7 @@ document, not a complete compliance register.
 | Agents | Name, email, hashed password, account ID | `users` | Agents are authenticated Laravel users. |
 | Sites | Name, domain, public widget key, settings | `sites` | Site settings can include mask selectors and support hours. Only widget-safe settings should be exposed to public bootstrap responses. The bootstrap response carries a site's *derived* availability — away or not, the operator's away message, and the next opening time — never the schedule itself, so the desk's working pattern is not published to every visitor. |
 | Site access | Site and agent links | `site_user` | Controls which agents can support each site. Empty site access keeps an account-wide fallback for first-run installs. |
-| Visitors | Anonymous ID, optional external ID, optional name/email, last seen time, metadata | `visitors` | Widget traffic is scoped by site public key and signed visitor token. Host-provided external IDs should be non-sensitive references; obvious direct PII is ignored by widget intake before it appears in agent context. **`name` and `email` are populated only by a pre-chat form the operator configured and the visitor filled in** — an answer to a question that was asked, which is why it is kept where the same channel's incidental PII is stripped. Nothing else writes them. |
+| Visitors | Anonymous ID, optional external ID, optional name/email, last seen time, current visit start, metadata | `visitors` | **What a row means depends on whether the site enables presence reporting.** Off (the default), a row means somebody opened the chat. On, it means somebody loaded a page — see [ADR 0019](../decisions/0019-presence-for-visitors-who-have-not-made-contact.md) for the disclosure and decline the visitor gets, and the Retention Posture below for how long a row that never made contact is kept. **Stored page addresses carry no query string, no fragment, and no path segment that looks like a credential**, and an address whose host is not the site's own is not stored at all. Widget traffic is scoped by site public key and signed visitor token. Host-provided external IDs should be non-sensitive references; obvious direct PII is ignored by widget intake before it appears in agent context. **`name` and `email` are populated only by a pre-chat form the operator configured and the visitor filled in** — an answer to a question that was asked, which is why it is kept where the same channel's incidental PII is stripped. Nothing else writes them. |
 | Conversations | Subject, status, support code, visitor/site links, page URL metadata | `conversations` | Conversation subjects and page URLs can contain personal data depending on the host site. |
 | Messages | Visitor and agent message bodies, sender references, timestamps, metadata | `conversation_messages` | Message bodies are user-supplied support data. |
 | Conversation ratings | Score (good/ok/bad), optional free-text comment, conversation/site links, time answered | `conversation_ratings` | Written only by a visitor answering a prompt the operator switched on, and only about a conversation that is already closed. **The comment is the visitor's own words** and carries whatever they decided to type, so it is support data of the same class as a message body and inherits the same handling. Absence of a row means *unrated*, never *neutral* — no aggregate is computed over people who did not answer. Rows are deleted with their conversation, so purging a site removes its ratings with everything else. |
@@ -40,9 +40,23 @@ Wayfindr should not intentionally collect or store:
 
 ## Retention Posture
 
-The current application does not yet ship automatic data retention controls.
-Until those controls exist, operators should assume database records, logs, and
-backups persist according to their infrastructure defaults.
+**One automatic retention control ships, and it covers one data class.**
+Visitors who have never made contact — no conversation, no ticket, no message —
+are deleted 30 days after their last sighting. That is measured from activity
+rather than from creation, so a row is only ever removed once nobody has been
+behind it for a month, and a visitor who returns is not deleted mid-visit.
+
+Thirty days is the **maximum**, not merely the default: an operator may shorten
+the window with `WAYFINDR_PRESENCE_RETENTION_DAYS`, and a longer value is
+clamped rather than honoured. It exists because presence reporting
+([ADR 0019](../decisions/0019-presence-for-visitors-who-have-not-made-contact.md))
+changes `visitors` from *people who opened the chat* to *people on the site*,
+which turns the absence of pruning from a gap into a defect.
+
+**Everything else still persists indefinitely.** Conversations, messages,
+tickets, ratings and audit events have no automatic retention, and operators
+should assume database records, logs and backups persist according to their
+infrastructure defaults.
 
 Future retention controls should let operators decide how long each data class
 is kept and should show the data responsibility reminder before saving unusually

@@ -47,3 +47,9 @@ Schedule::command('wayfindr:sweep-orphaned-attachments')
 Schedule::command('wayfindr:sanitise-page-urls')
     ->daily()
     ->description('Rewrite stored visitor page addresses that still carry a query string.');
+
+// Retention for presence-only visitors (ADR 0019 §4). Daily, because the window
+// is measured in days and an hourly pass would scan for nothing 23 times over.
+Schedule::command('wayfindr:prune-presence-visitors')
+    ->daily()
+    ->description('Delete visitors who never made contact and whose last heartbeat is past the retention window.');
