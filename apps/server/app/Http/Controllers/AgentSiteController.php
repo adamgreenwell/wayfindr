@@ -736,9 +736,16 @@ class AgentSiteController extends Controller
             // the operator's own request -- and on an established site that is
             // most of the table for the sake of the few rows that have one.
             //
-            // A LIKE rather than a JSON path, because this has to behave the
-            // same on SQLite and PostgreSQL. It over-matches harmlessly: a row
-            // whose key is present but already null re-saves unchanged.
+            // A LIKE rather than a JSON path, so the two drivers run the same
+            // query. It over-matches harmlessly: a row whose key is present but
+            // already null re-saves unchanged.
+            //
+            // `metadata` is a `json` column and PostgreSQL has no LIKE operator
+            // for that type -- but Laravel's Postgres grammar appends `::text`
+            // to any operator containing "like", so this emits
+            // `"metadata"::text like ?` and works. Verified against PostgreSQL
+            // 16 rather than assumed; do not "fix" it into a whereRaw CAST,
+            // which only hardcodes what the grammar already does.
             ->where('metadata', 'like', '%last_page_url%')
             ->chunkById(200, function ($visitors): void {
                 foreach ($visitors as $visitor) {

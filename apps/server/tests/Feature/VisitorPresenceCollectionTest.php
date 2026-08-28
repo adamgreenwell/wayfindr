@@ -1364,3 +1364,89 @@ test('another settings form cannot undo a revocation', function (): void {
         ->toBeFalse('a later settings save restored a revoked presence setting')
         ->and($site->fresh()->settings['rating']['enabled'])->toBeTrue('the other form lost its own change');
 });
+
+test('a site that never enabled presence still keeps page addresses', function (): void {
+    // Folding `enabled` into the page-address flag looked tidy and reached
+    // every install: a default site has presence off and addresses on, so the
+    // payload said `page_urls: false`, the widget copied that into the setting
+    // it applies to bootstrap and conversation start, and every site that had
+    // never touched presence stopped storing page addresses entirely.
+    $account = Account::factory()->create();
+    $site = Site::factory()->for($account)->create([
+        'domain' => 'shop.test',
+        'public_key' => 'site_public_default',
+        'settings' => [],
+    ]);
+
+    $payload = SitePresenceReporting::for($site)->toPayload();
+
+    expect($payload['reports'])->toBeFalse('presence is off by default')
+        ->and($payload['page_urls'])->toBeTrue('a default site was told not to keep page addresses');
+
+    // And the ordinary path still stores one.
+    test()->postJson('/api/widget/bootstrap', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-default',
+        'page_url' => 'https://shop.test/pricing',
+    ])->assertSuccessful();
+
+    expect(Visitor::query()->where('anonymous_id', 'anon-default')->firstOrFail()->metadata['last_page_url'])
+        ->toBe('https://shop.test/pricing');
+});
+
+test('a conversation started with addresses off keeps none either', function (): void {
+    // The widget omits the address, but the endpoint is public: a custom or
+    // older client keeps sending one, and `started_page_url` outlives the
+    // visitor row it sits beside.
+    $site = presenceSite();
+    $site->forceFill(['settings' => ['presence' => ['enabled' => true, 'page_urls' => false]]])->save();
+
+    reportPresence($site, 'anon-started')->assertSuccessful();
+
+    $visitor = Visitor::query()->where('anonymous_id', 'anon-started')->firstOrFail();
+    $token = app(VisitorSessionToken::class)->issue($site, $visitor);
+
+    test()->postJson('/api/conversations', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-started',
+        'visitor_token' => $token,
+        'page_url' => 'https://shop.test/invite/ABCDEF',
+        'subject' => 'Help',
+    ])->assertSuccessful();
+
+    $conversation = Conversation::query()->where('visitor_id', $visitor->id)->firstOrFail();
+
+    expect($conversation->metadata['started_page_url'] ?? null)
+        ->toBeNull('a client that kept sending an address had it stored anyway');
+});
+
+test('a site archived mid-request stops accepting heartbeats', function (): void {
+    // Archiving that commits between the resolver reading the site and the
+    // locked reread would let the write through -- and broadcastWhen() then
+    // suppresses the event, so the row would exist with nothing on any board
+    // ever showing it.
+    $account = Account::factory()->create();
+    $site = Site::factory()->for($account)->create([
+        'domain' => 'shop.test',
+        'public_key' => 'site_public_archiving',
+        'settings' => ['presence' => ['enabled' => true]],
+    ]);
+
+    $archived = false;
+
+    Site::retrieved(function (Site $read) use (&$archived, $site): void {
+        if ($archived || $read->id !== $site->id) {
+            return;
+        }
+
+        $archived = true;
+
+        DB::table('sites')->where('id', $site->id)->update(['archived_at' => now()]);
+    });
+
+    reportPresence($site, 'anon-archiving')->assertSuccessful();
+
+    expect($archived)->toBeTrue('the race never happened, so this proves nothing')
+        ->and(Visitor::query()->where('anonymous_id', 'anon-archiving')->exists())
+        ->toBeFalse('a heartbeat landed on a site that had just been archived');
+});
