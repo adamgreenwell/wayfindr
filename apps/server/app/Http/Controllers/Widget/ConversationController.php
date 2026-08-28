@@ -125,7 +125,15 @@ class ConversationController extends Controller
                     $validated['page_url'] ?? null,
                     array_key_exists('context', $validated),
                     $validated['context'] ?? null,
-                    $site->domain,
+                    // The LOCKED row's domain, not the one this request
+                    // arrived holding. A site renamed between resolving it
+                    // and taking the lock leaves the copy above naming a host
+                    // that is no longer the site's own -- and an address is
+                    // kept or dropped by exactly that comparison, so reading
+                    // it from the stale copy stores a page from a host we no
+                    // longer trust. $storePageUrl is already read from
+                    // $current one screen up, for the same reason.
+                    $current->domain,
                     $storePageUrl,
                 ),
                 'last_web_seen_at' => now(),

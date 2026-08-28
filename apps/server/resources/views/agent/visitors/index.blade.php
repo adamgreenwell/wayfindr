@@ -58,8 +58,13 @@
         @if ($visitors->isEmpty())
             <div class="notice-copy">
                 <p>
-                    No visitors match this search. Wayfindr records somebody when they open the chat, not when they
-                    load a page, so this lists people who reached out.
+                    @if ($listsBrowsers)
+                        No visitors match this search. On the sites shown here Wayfindr records somebody when they
+                        load a page, so this also lists people who were only browsing.
+                    @else
+                        No visitors match this search. Wayfindr records somebody when they open the chat, not when
+                        they load a page, so this lists people who reached out.
+                    @endif
                 </p>
             </div>
         @else

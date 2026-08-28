@@ -1483,3 +1483,186 @@ test('an existing visitor never spends the creation quota', function (): void {
     expect(Visitor::query()->where('anonymous_id', 'anon-second')->exists())
         ->toBeFalse('the creation budget was not enforced at all');
 });
+
+/**
+ * Change the site's domain the first time a query matching $needle runs, so a
+ * request that resolved the site before the rename does its write after it.
+ * This is the only way to stage the window between resolving a site and taking
+ * the lock inside a single-process test.
+ */
+function presenceRenameSiteDuring(string $needle, Site $site, string $newDomain): void
+{
+    $fired = false;
+
+    DB::listen(function ($query) use (&$fired, $needle, $site, $newDomain): void {
+        if ($fired || ! str_contains($query->sql, $needle)) {
+            return;
+        }
+
+        $fired = true;
+
+        DB::table('sites')->where('id', $site->id)->update(['domain' => $newDomain]);
+    });
+}
+
+test('starting a conversation sanitises the page address against the domain in force at the write', function (): void {
+    // The site is renamed between this request resolving it and the request
+    // taking its lock. The address the visitor is on belongs to the OLD host,
+    // which is no longer the site's own -- so it is not ours to keep, and the
+    // rule that "an address whose host is not the site's own is not stored"
+    // has to be read against the row we locked, not the copy we arrived with.
+    $account = Account::factory()->create();
+    $site = Site::factory()->for($account)->create([
+        'domain' => 'shop.test',
+        'settings' => ['presence' => ['enabled' => true, 'page_urls' => true]],
+    ]);
+
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-renamed-mid-flight']);
+    $token = app(VisitorSessionToken::class)->issue($site, $visitor);
+
+    presenceRenameSiteDuring('"public_key" = ?', $site, 'elsewhere.test');
+
+    test()->postJson('/api/conversations', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => $visitor->anonymous_id,
+        'visitor_token' => $token,
+        'subject' => 'Something is broken',
+        'page_url' => 'https://shop.test/pricing',
+    ])->assertSuccessful();
+
+    $visitor->refresh();
+
+    expect($visitor->metadata['last_page_url'] ?? null)->toBeNull();
+});
+
+test('bootstrap sanitises the page address against the domain in force at the write', function (): void {
+    $account = Account::factory()->create();
+    $site = Site::factory()->for($account)->create([
+        'domain' => 'shop.test',
+        'settings' => ['presence' => ['enabled' => true, 'page_urls' => true]],
+    ]);
+
+    presenceRenameSiteDuring('"public_key" = ?', $site, 'elsewhere.test');
+
+    test()->postJson('/api/widget/bootstrap', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-bootstrap-renamed',
+        'page_url' => 'https://shop.test/pricing',
+    ])->assertSuccessful();
+
+    $visitor = Visitor::query()->where('anonymous_id', 'anon-bootstrap-renamed')->sole();
+
+    expect($visitor->metadata['last_page_url'] ?? null)->toBeNull();
+});
+
+test('a site archived mid-heartbeat tells the widget to stop reporting', function (): void {
+    // The write half of this race is covered above: the locked reread refuses
+    // the row. The ANSWER was still built from the settings, which say
+    // presence is on, so the widget was told `reports: true` by the very
+    // request that had just declined to record it.
+    //
+    // That is not a cosmetic disagreement. The next heartbeat gets a 404 from
+    // the resolver, and a 404 is not a configuration payload -- a client
+    // following the documented merge-and-ignore rule never learns anything
+    // from it, so the last instruction it ever received is "keep reporting".
+    // It goes on sending heartbeats, and page addresses with them, to a site
+    // whose operator has taken it out of service.
+    $account = Account::factory()->create();
+    $site = Site::factory()->for($account)->create([
+        'domain' => 'shop.test',
+        'public_key' => 'site_public_archiving_answer',
+        'settings' => ['presence' => ['enabled' => true, 'page_urls' => true]],
+    ]);
+
+    $archived = false;
+
+    Site::retrieved(function (Site $read) use (&$archived, $site): void {
+        if ($archived || $read->id !== $site->id) {
+            return;
+        }
+
+        $archived = true;
+
+        DB::table('sites')->where('id', $site->id)->update(['archived_at' => now()]);
+    });
+
+    $response = reportPresence($site, 'anon-archiving-answer');
+
+    $response->assertSuccessful();
+
+    expect($archived)->toBeTrue('the race never happened, so this proves nothing')
+        ->and($response->json('data.reports'))->toBeFalse(
+            'the request that refused to record a visitor told the widget to keep sending them'
+        );
+});
+
+test('an archived site reports nothing whatever its settings say', function (): void {
+    $site = Site::factory()->create([
+        'settings' => ['presence' => ['enabled' => true, 'page_urls' => true]],
+        'archived_at' => now(),
+    ]);
+
+    $reporting = SitePresenceReporting::for($site);
+
+    // `page_urls` is not forced: it answers what a report may CONTAIN, which
+    // stays the site's own policy and is read on paths that have nothing to do
+    // with presence. `reports` is the one that has to become false.
+    expect($reporting->enabled)->toBeFalse()
+        ->and($reporting->pageUrls)->toBeTrue();
+});
+
+test('the visitor directory empty state describes the sites it is actually showing', function (): void {
+    // The directory's own explanation of what it contains: "Wayfindr records
+    // somebody when they open the chat, not when they load a page, so this
+    // lists people who reached out." True of every site before this feature,
+    // and false the moment presence is on -- said on the one screen where an
+    // agent has no rows to contradict it.
+    //
+    // Scoped to what the filter selects, not to the account: an agent looking
+    // at one site should be told how THAT site behaves.
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+
+    $quiet = Site::factory()->for($account)->create([
+        'name' => 'Quiet',
+        'settings' => ['presence' => ['enabled' => false]],
+    ]);
+    $watching = Site::factory()->for($account)->create([
+        'name' => 'Watching',
+        'settings' => ['presence' => ['enabled' => true]],
+    ]);
+
+    $browsing = 'also lists people who were only browsing';
+    $reachedOut = 'lists people who reached out';
+
+    // No site has presence on: the original sentence, unqualified.
+    $watching->forceFill(['settings' => ['presence' => ['enabled' => false]]])->save();
+
+    test()->actingAs($agent)
+        ->get(route('dashboard.visitors.index', ['search' => 'nobody-matches-this']))
+        ->assertOk()
+        ->assertSee($reachedOut, false)
+        ->assertDontSee($browsing, false);
+
+    $watching->forceFill(['settings' => ['presence' => ['enabled' => true]]])->save();
+
+    // One of the visible sites is watching, and no filter narrows it.
+    test()->actingAs($agent)
+        ->get(route('dashboard.visitors.index', ['search' => 'nobody-matches-this']))
+        ->assertOk()
+        ->assertSee($browsing, false);
+
+    // Filtered to the site that is NOT watching: the presence sentence is not
+    // about anything on this screen.
+    test()->actingAs($agent)
+        ->get(route('dashboard.visitors.index', ['search' => 'nobody-matches-this', 'site' => $quiet->id]))
+        ->assertOk()
+        ->assertSee($reachedOut, false)
+        ->assertDontSee($browsing, false);
+
+    // Filtered to the one that is.
+    test()->actingAs($agent)
+        ->get(route('dashboard.visitors.index', ['search' => 'nobody-matches-this', 'site' => $watching->id]))
+        ->assertOk()
+        ->assertSee($browsing, false);
+});
