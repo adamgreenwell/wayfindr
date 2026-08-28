@@ -2647,3 +2647,63 @@ test('a request that never settles is retired, not waited on for ever', async (t
   );
   assert.ok(presenceCalls(calls).length > 0, 'presence never started once the config answered');
 });
+
+test('a notice that stops being visible stops the reporting', async (t) => {
+  // The visibility gate runs once, on the way in. After that the interval
+  // reports unconditionally -- so anything that hides the notice AFTER
+  // reporting begins leaves a visitor being watched with nothing on screen
+  // saying so and no way to decline.
+  //
+  // The panel is the one that happens by itself: opening it hides the launcher
+  // and makes the panel the widget's whole height, and the notice is anchored
+  // above that. A host stylesheet loading late does the same thing, and so does
+  // any future layout change nobody thought to check.
+  const { widget, calls } = widgetWithPresence({ pollMs: 20 });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  const reported = presenceCalls(calls).length;
+
+  assert.ok(reported > 0, 'nothing was reported, so this proves nothing');
+
+  const notice = widget.root.querySelector('.wayfindr-widget__presence');
+
+  notice.hidden = true;
+
+  await new Promise((resolve) => setTimeout(resolve, 90));
+  await settle();
+
+  assert.equal(
+    presenceCalls(calls).length,
+    reported,
+    'the visitor was still being reported with the notice off the screen',
+  );
+});
+
+test('the notice is anchored so an open panel cannot push it off the screen', async (t) => {
+  // JSDOM has no layout engine, so this asserts the RULE rather than the
+  // rendered result: the widget lays its three children out in a column that
+  // is capped to the viewport, instead of floating the notice above whatever
+  // height the panel happens to reach.
+  //
+  // The failure it replaces was silent and total. `bottom:100%` is measured
+  // against the widget root, the open panel becomes that root's height, and on
+  // a phone the panel is the viewport -- so the notice and its "Stop sharing"
+  // control sat entirely above the top of the screen.
+  const { widget } = widgetWithPresence();
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  const css = widget.root.ownerDocument.getElementById('wayfindr-widget-styles').textContent;
+
+  assert.match(css, /\.wayfindr-widget\{[^}]*flex-direction:column-reverse/,
+    'the widget does not stack its children bottom-up');
+  assert.match(css, /\.wayfindr-widget\{[^}]*max-height:calc\(100dvh/,
+    'the widget is not capped to the viewport, so its children can leave it');
+  assert.doesNotMatch(css, /\.wayfindr-widget__presence\{[^}]*bottom:100%/,
+    'the notice is still anchored above the whole widget');
+});
