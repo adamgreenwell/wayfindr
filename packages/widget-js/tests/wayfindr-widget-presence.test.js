@@ -1682,3 +1682,60 @@ test('a site that keeps no addresses still keeps none after presence stops', asy
     'an address came back once reporting stopped, on a site that keeps none',
   );
 });
+
+test('a host wrapper above the mount can hide the notice too', async (t) => {
+  // Opacity does not inherit and invisible descendants still have client
+  // rects, so a wrapper styled `opacity: 0` ABOVE the mount hid the notice
+  // while every check inside the widget root said it was fine.
+  const dom = new JSDOM(
+    '<!doctype html><html><head><style>#wrap{opacity:0}</style></head>'
+    + '<body><div id="wrap"><div id="support"></div></div></body></html>',
+    { url: 'https://shop.example.test/pricing' },
+  );
+
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const calls = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 0,
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, {
+          data: { appearance: { position: 'right' }, presence: { reports: true, every: 45, page_urls: true } },
+        });
+      }
+
+      return jsonResponse(202, { data: { reports: true, every: 45, page_urls: true } });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  assert.equal(
+    presenceCalls(calls).length,
+    0,
+    'reported while a host wrapper made the notice invisible',
+  );
+});

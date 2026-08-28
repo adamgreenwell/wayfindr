@@ -84,7 +84,12 @@ final class VisitorPresenceReport
         // one did instead of a copy of the world from before it started.
         $current = Site::query()->whereKey($site->getKey())->lockForUpdate()->first();
 
-        if ($current === null) {
+        // Archived counts as gone, checked on the LOCKED row. Archiving that
+        // commits between the resolver reading the site and this lock would
+        // otherwise let the write through -- and the event it broadcasts is
+        // then suppressed by broadcastWhen(), so the row would exist with
+        // nothing on any board ever showing it.
+        if ($current === null || $current->isArchived()) {
             return $visitor;
         }
 
