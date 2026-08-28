@@ -1893,3 +1893,81 @@ test('a stalled config read does not trap the visitor', async (t) => {
   // address rather than the request.
   assert.ok(bootstrap.every((c) => !c.body.page_url), 'an address went out under an unknown policy');
 });
+
+test('a long-lived tab re-reads a policy that has gone stale', async (t) => {
+  // A tab open all afternoon holds the policy it loaded with. The heartbeat
+  // refreshes it continuously -- but a site that is not reporting has no
+  // heartbeat, so an operator switching page addresses off would still see one
+  // arrive from the next panel opening.
+  let pageUrls = true;
+
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/pricing',
+  });
+
+  const calls = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 0,
+    siteConfigStaleMs: 0,
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, {
+          data: { appearance: { position: 'right' }, presence: { reports: false, page_urls: pageUrls } },
+        });
+      }
+
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return jsonResponse(200, {
+          data: {
+            site: { public_key: 'site_public_shop', settings: {}, color: 'blue' },
+            visitor: { anonymous_id: 'anon-shop', token: 'visitor-token-shop' },
+          },
+        });
+      }
+
+      return jsonResponse(202, { data: {} });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  // The operator switches page addresses off. Nothing reloads; there is no
+  // heartbeat on this site to carry the change.
+  pageUrls = false;
+
+  await widget.open();
+  await settle();
+  await settle();
+
+  const bootstrap = calls.filter((c) => c.url.endsWith('/api/widget/bootstrap'));
+
+  assert.ok(bootstrap.length > 0, 'the panel never bootstrapped, so this proves nothing');
+  assert.ok(
+    bootstrap.every((c) => !c.body.page_url),
+    'a tab acted on a page-address policy the operator had already changed',
+  );
+});

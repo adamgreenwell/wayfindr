@@ -2905,7 +2905,24 @@
       ? Math.max(0, options.siteConfigWaitMs)
       : 3000;
 
+    /** When the last configuration answer settled, or null before the first. */
+    var siteConfigSettledAt = null;
+
+    /** Past this, a settled answer is re-read rather than reused. */
+    var SITE_CONFIG_STALE_MS = typeof options.siteConfigStaleMs === 'number'
+      ? Math.max(0, options.siteConfigStaleMs)
+      : 300000;
+
     function whenSiteConfigKnown() {
+      // Re-read when the settled answer is old. A tab left open all afternoon
+      // holds a policy from page load, so an operator switching page addresses
+      // off would still see one arrive from the next panel opening -- the
+      // heartbeat refreshes continuously, but a site that is not reporting has
+      // no heartbeat to carry it.
+      if (siteConfigSettledAt !== null && Date.now() - siteConfigSettledAt > SITE_CONFIG_STALE_MS) {
+        fetchSiteConfig();
+      }
+
       if (!siteConfigPromise) {
         return Promise.resolve();
       }
@@ -3490,12 +3507,16 @@
           ? presence.page_urls
           : true;
 
+        siteConfigSettledAt = Date.now();
+
         applyPresence(presence);
       }).catch(function () {
         // A site that cannot tell us its policy has not forbidden anything, so
         // page addresses go back to the behaviour every install had before
         // presence existed. Withholding them for ever on a failed lookup would
         // quietly break page context on sites that never enabled presence.
+        siteConfigSettledAt = Date.now();
+
         if (presenceReportedPageUrls === null) {
           presenceReportedPageUrls = true;
         }
