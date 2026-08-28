@@ -212,8 +212,14 @@ means rather than leaving it to the implementation:
 - **The port and path are kept, with opaque segments redacted.** A path is the
   answer to "which page" — but it is also where this very product puts a
   credential: `/reset-password/{token}` is a route in this repository. A segment
-  that looks like an identifier rather than a word is replaced with `…`, so
-  `/reset-password/9f2c…` still says which page without saying which token.
+  that looks like an identifier rather than a word is replaced with the literal
+  `[redacted]`, so `/reset-password/[redacted]` still says which page without
+  saying which token.
+
+  Plain ASCII, deliberately. An ellipsis reads better and puts a
+  security-relevant marker at the mercy of whatever collation an operator's
+  database happens to use; brackets also make it obvious that something was
+  removed rather than that the page is named "redacted".
 
   The test is deliberately crude, and it is a heuristic rather than a proof. A
   segment is judged twice, because a separator is how a slug is written AND how
