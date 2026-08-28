@@ -191,6 +191,14 @@ final class VisitorPresenceReport
             'last_web_seen_at' => $now,
         ] + $provenance)->save();
 
+        // Charged only once a row actually exists. Concurrent first heartbeats
+        // for one anonymous ID all pass the check above -- the site lock is
+        // shared, so neither sees the other's uncommitted insert -- and exactly
+        // one of them creates anything.
+        if ($visitor->wasRecentlyCreated) {
+            $this->recordCreation($site);
+        }
+
         return $visitor;
     }
 
@@ -202,37 +210,55 @@ final class VisitorPresenceReport
      * attacker choosing a fresh anonymous ID every time has an unlimited supply
      * of per-visitor buckets, and exactly one address.
      */
+    /**
+     * Is there room to mint a new visitor for this site from this address?
+     *
+     * Keyed by site and address rather than by visitor, which is the opposite
+     * of the heartbeat's everyday quota and correct for the same reason: an
+     * attacker choosing a fresh anonymous ID every time has an unlimited supply
+     * of per-visitor buckets, and exactly one address.
+     *
+     * ASKS ONLY. Spending is recordCreation(), after a row actually exists,
+     * because concurrent first heartbeats for one anonymous ID all reach this
+     * check -- the site lock is shared, so neither transaction sees the other's
+     * uncommitted insert -- and only one of them ends up creating anything.
+     * Counting attempts meant a replayed request could burn a day's budget on a
+     * single durable row and suppress visitors who really were new.
+     */
     private function mayCreate(Site $site): bool
     {
-        $fingerprint = hash('sha256', (string) $site->getKey().'|'.(string) request()->ip());
-
         // TWO windows, because one cannot say both things. A minute-scale limit
         // has to be generous enough for an office arriving at nine, and thirty
         // a minute sustained is 43,200 rows a day and roughly 1.3 million
         // across the retention window -- so the burst allowance that makes the
         // feature work is also, on its own, a licence to grow the table
-        // indefinitely.
-        //
-        // The daily budget is what bounds that. It is far above any real site's
-        // new visitors from ONE address in a day, and far below what an
-        // unattended script would reach by lunchtime.
-        $perMinute = max(1, (int) config('wayfindr.widget_rate_limits.presence_creations_per_ip_per_minute', 30));
-        $perDay = max(1, (int) config('wayfindr.widget_rate_limits.presence_creations_per_ip_per_day', 2000));
+        // indefinitely. The daily budget is what bounds that.
+        return ! RateLimiter::tooManyAttempts('presence-create-day|'.self::fingerprint($site), self::perDay())
+            && ! RateLimiter::tooManyAttempts('presence-create|'.self::fingerprint($site), self::perMinute());
+    }
 
-        // Checked before it is spent: attempting the minute limit first would
-        // consume it even when the day is already exhausted, and the two
-        // counters would drift apart for no reason.
-        if (RateLimiter::tooManyAttempts('presence-create-day|'.$fingerprint, $perDay)) {
-            return false;
-        }
+    /**
+     * Charge one visitor to both budgets, once the row exists.
+     */
+    private function recordCreation(Site $site): void
+    {
+        RateLimiter::hit('presence-create|'.self::fingerprint($site), 60);
+        RateLimiter::hit('presence-create-day|'.self::fingerprint($site), 86400);
+    }
 
-        if (RateLimiter::attempt('presence-create|'.$fingerprint, $perMinute, static fn (): bool => true) === false) {
-            return false;
-        }
+    private static function fingerprint(Site $site): string
+    {
+        return hash('sha256', (string) $site->getKey().'|'.(string) request()->ip());
+    }
 
-        RateLimiter::hit('presence-create-day|'.$fingerprint, 86400);
+    private static function perMinute(): int
+    {
+        return max(1, (int) config('wayfindr.widget_rate_limits.presence_creations_per_ip_per_minute', 30));
+    }
 
-        return true;
+    private static function perDay(): int
+    {
+        return max(1, (int) config('wayfindr.widget_rate_limits.presence_creations_per_ip_per_day', 2000));
     }
 
     /**
