@@ -82,7 +82,18 @@ final class VisitorPresenceReport
         // Locking the SITE row is what serialises the two: the disable action
         // takes the same lock, so whichever arrives second sees what the first
         // one did instead of a copy of the world from before it started.
-        $current = Site::query()->whereKey($site->getKey())->lockForUpdate()->first();
+        // A SHARED lock, not an exclusive one. These three readers only need
+        // the setting to be stable across their own write; they do not conflict
+        // with each other, and every visitor on the site takes this every 45
+        // seconds. FOR UPDATE would serialise every heartbeat on a busy site
+        // behind one row -- a convoy on the hottest path in the feature, to
+        // protect against a revocation that happens once in a while.
+        //
+        // FOR SHARE still does the whole job: `Site::mutateSettings()` takes
+        // the exclusive lock, so a revocation waits for the readers in flight
+        // and blocks the ones after it. Readers exclude the writer; they do not
+        // exclude each other.
+        $current = Site::query()->whereKey($site->getKey())->sharedLock()->first();
 
         // Archived counts as gone, checked on the LOCKED row. Archiving that
         // commits between the resolver reading the site and this lock would

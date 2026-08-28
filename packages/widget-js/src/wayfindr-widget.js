@@ -2751,6 +2751,17 @@
 
         bootstrapped = true;
         applyBootstrapResult(result, settingsSeq);
+      }, function (error) {
+        // The settings ticket is handed back if it is still the newest. A
+        // bootstrap that FAILS has no settings to contribute, and leaving its
+        // sequence in place made a configuration response arriving afterwards
+        // look overtaken -- so the only successful configuration either request
+        // produced was discarded, and presence never started.
+        if (settingsSeq === presenceSettingsSequence) {
+          presenceSettingsSequence--;
+        }
+
+        throw error;
       });
 
       // Opening the panel must not surface a failure: the fallback state is
