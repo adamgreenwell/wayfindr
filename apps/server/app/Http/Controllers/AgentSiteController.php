@@ -662,9 +662,20 @@ class AgentSiteController extends Controller
         $this->authorizeSiteAbility($request, 'view', $site, 404);
 
         $agent = $request->user();
+
+        // Read as of NOW, not as of route binding.
+        //
+        // The whole revocation path downstream depends on this response
+        // dropping its `[data-live-rows]` element -- that absence is what tells
+        // an open board to clear itself. Built from the model the route
+        // resolved, a revocation committing in between rendered a full board,
+        // rows element and all, so the resync that fetched this page saw
+        // nothing wrong and carried on showing visitors.
+        $site = Site::query()->whereKey($site->getKey())->first() ?? $site;
+
         $reporting = SitePresenceReporting::for($site);
 
-        $snapshot = $reporting->enabled
+        $snapshot = $reporting->enabled && ! $site->isArchived()
             ? LiveVisitorBoard::snapshotFor($site)
             : ['visitors' => collect(), 'total' => 0];
 

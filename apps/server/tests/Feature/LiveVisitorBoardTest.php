@@ -1188,7 +1188,7 @@ test('a cleared board refuses the events already on their way to it', function (
     );
 
     // And the flag is actually set where the board is cleared.
-    $clear = Str::before(Str::after($source, 'function clearBoard() {'), 'function ');
+    $clear = Str::before(Str::after($source, 'function clearBoard('), 'function ');
 
     test()->assertStringContainsString(
         'boardCleared = true;',
@@ -1237,6 +1237,99 @@ test('the board reads the policy as it is at render, not at route binding', func
         ->get(route('dashboard.sites.live', $site))
         ->assertOk()
         ->assertDontSee('shop.test/pricing', false);
+
+    expect($revoked)->toBeTrue('the race never happened, so this proves nothing');
+});
+
+test('a board whose agent has lost access to the site shuts itself down', function (): void {
+    // Channel authorisation is checked when the socket SUBSCRIBES and never
+    // again. An operator removing an agent from a site therefore does nothing
+    // to a board that agent already has open: the subscription stays live and
+    // keeps delivering visitor identities and page addresses, for as long as
+    // the tab is open.
+    //
+    // The resync is the one thing that would notice -- it gets a 404 from the
+    // site authorisation -- and it treated every non-OK response as a
+    // transient failure, on the reasonable-sounding grounds that a board
+    // missing somebody is what it was a moment ago. That is right for a 500
+    // and wrong for a 404: one is the server having a bad moment, the other is
+    // the answer.
+    $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
+
+    $resync = Str::before(
+        Str::after($source, 'function resyncBoard() {'),
+        '// Holds events that arrive while a snapshot',
+    );
+
+    test()->assertStringContainsString(
+        'resyncSequence',
+        $resync,
+        'the slice is not resyncBoard()',
+    );
+
+    test()->assertStringContainsString(
+        'response.status === 403 || response.status === 404',
+        $resync,
+        'a terminal authorisation answer is treated as a transient failure',
+    );
+
+    test()->assertStringContainsString(
+        'clearBoard(',
+        $resync,
+        'losing access to the site does not shut the board down',
+    );
+
+    // And the route really does answer 404 for an agent who cannot see it,
+    // which is what makes that status mean something.
+    $account = Account::factory()->create();
+    $site = Site::factory()->for($account)->create([
+        'settings' => ['presence' => ['enabled' => true]],
+    ]);
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+    $assigned = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+
+    // A site with named support agents is visible only to them, so assigning
+    // somebody else is what removing this agent looks like.
+    $site->supportAgents()->sync([$assigned->id]);
+
+    test()->actingAs($agent)
+        ->get(route('dashboard.sites.live', $site))
+        ->assertNotFound();
+});
+
+test('a board page rendered after a revocation renders the revoked page', function (): void {
+    // The revocation path the resync depends on is "the response has no
+    // [data-live-rows] element". That only holds if the response is built from
+    // the CURRENT settings -- and this action read them from the model the
+    // route resolved, so a revocation committing between the two rendered a
+    // full board, rows element and all.
+    //
+    // Which means the in-flight resync that fetched this page saw a normal
+    // board, did not call clearBoard(), and carried on showing visitors until
+    // some later resync happened to land after the binding.
+    $f = boardFixture();
+    $site = $f['site'];
+
+    presentVisitor($site, 'anon-render-after-revocation');
+
+    $revoked = false;
+
+    Site::retrieved(function (Site $read) use (&$revoked, $site): void {
+        if ($revoked || $read->id !== $site->id) {
+            return;
+        }
+
+        $revoked = true;
+
+        DB::table('sites')->where('id', $site->id)->update([
+            'settings' => json_encode(['presence' => ['enabled' => false]]),
+        ]);
+    });
+
+    test()->actingAs($f['agent'])
+        ->get(route('dashboard.sites.live', $site))
+        ->assertOk()
+        ->assertDontSee('data-live-rows', false);
 
     expect($revoked)->toBeTrue('the race never happened, so this proves nothing');
 });

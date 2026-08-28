@@ -371,7 +371,7 @@
                 // subscribed would take the next broadcast -- there can be one
                 // in flight -- and put a visitor back on a page that has just
                 // said the site is not collecting them.
-                function clearBoard() {
+                function clearBoard(reason) {
                     // Latched, because closing a socket does not cancel a
                     // message the browser has already queued for it. An update
                     // dispatched before the revocation arrives after the rows
@@ -400,7 +400,7 @@
                     }
 
                     if (statusEl) {
-                        statusEl.textContent = 'Live visitor presence is off for this site.';
+                        statusEl.textContent = reason || 'Live visitor presence is off for this site.';
                     }
                 }
 
@@ -472,12 +472,39 @@
                         credentials: 'same-origin',
                         headers: { Accept: 'text/html' },
                     }).then(function (response) {
+                        // A terminal answer, not a bad moment.
+                        //
+                        // Channel authorisation is checked when the socket
+                        // SUBSCRIBES and never again, so an operator removing
+                        // this agent from the site does nothing to a board they
+                        // already have open -- the subscription stays live and
+                        // goes on delivering visitor identities and page
+                        // addresses for as long as the tab is. The resync is
+                        // the only thing that finds out, and treating its 404
+                        // as transient meant it found out and carried on.
+                        //
+                        // 403 and 404 both mean the answer is no. Anything else
+                        // is the server having a bad moment, where keeping the
+                        // rows is right: the board is missing somebody, which
+                        // is what it was a moment ago.
+                        if (response.status === 403 || response.status === 404) {
+                            if (seq === resyncSequence) {
+                                clearBoard('You no longer have access to this site.');
+                            }
+
+                            return null;
+                        }
+
                         if (!response.ok) {
                             throw new Error('resync');
                         }
 
                         return response.text();
                     }).then(function (html) {
+                        if (html === null) {
+                            return;
+                        }
+
                         var parsed = new DOMParser().parseFromString(html, 'text/html');
                         var fresh = parsed.querySelector('[data-live-rows]');
 
