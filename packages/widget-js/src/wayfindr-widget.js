@@ -2939,6 +2939,11 @@
      */
     var siteConfigPromise = null;
 
+    // The settings ticket held by the request in `siteConfigPromise`, so a
+    // retired or superseded request can be told apart from the live one when
+    // its answer finally arrives. Zero means no request is live.
+    var siteConfigSequence = 0;
+
     /**
      * How long anything will wait for the page-load configuration.
      *
@@ -2996,6 +3001,21 @@
             if (siteConfigPromise === pending) {
               siteConfigPromise = null;
               siteConfigSettledAt = Date.now();
+
+              // Its TICKET dies with it. Dropping only the reference left the
+              // ticket live, and the watermark rises only when an answer is
+              // actually applied -- so if whatever overtook this request then
+              // failed, applying nothing and moving nothing, this request's
+              // answer still beat the watermark whenever the network finally
+              // produced it. Minutes late, carrying the policy as it stood
+              // before an operator revoked page addresses, and granting it.
+              siteConfigSequence = 0;
+
+              // And the policy is unknown until something answers, which
+              // withholds -- the same rule the failure path applies, for the
+              // same reason. A request we have stopped waiting for has told us
+              // nothing.
+              presenceReportedPageUrls = null;
             }
 
             resolve();
@@ -3665,7 +3685,29 @@
     function fetchSiteConfig() {
       var seq = ++presenceSettingsSequence;
 
+      siteConfigSequence = seq;
+
       siteConfigPromise = client.fetchAppearance().then(function (result) {
+        // Retired while we were away, or superseded by a later read. Either
+        // way this answer is not ours to apply -- and the watermark cannot
+        // catch it, because a ticket that never applied anything never moved
+        // it.
+        if (seq !== siteConfigSequence) {
+          // But an answer arriving at all means the network is back, and
+          // retiring left this tab with no policy -- so ask again rather than
+          // going quiet. Discarding without re-reading is how "we stopped
+          // waiting" turns into "presence never started", which is the failure
+          // the retirement was not supposed to cause.
+          //
+          // Only when nothing is live, so a superseded request does not stack
+          // another read on top of the one that superseded it.
+          if (siteConfigSequence === 0) {
+            fetchSiteConfig();
+          }
+
+          return;
+        }
+
         var presence = (result && result.presence) || null;
 
         // The POLICY resolves even from an overtaken answer, before the
