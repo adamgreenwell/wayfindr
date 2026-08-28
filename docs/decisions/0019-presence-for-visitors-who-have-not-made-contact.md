@@ -488,10 +488,18 @@ briefly; those visitors are recorded on their next heartbeat rather than lost.
 minute held all day is 43,200 rows and roughly 1.3 million across the retention
 window — so the allowance that makes an office work is, by itself, a licence to
 grow the table without end. `WAYFINDR_WIDGET_PRESENCE_CREATIONS_PER_IP_PER_DAY`
-(default 2000) sits far above any real site's new visitors from one address in a
-day and far below what an unattended script reaches by lunchtime. It is checked
-before the minute limit is spent, so an exhausted day does not silently consume
-the burst counter as well.
+(default 20000) bounds it. It is checked before the minute limit is spent, so an
+exhausted day does not silently consume the burst counter as well.
+
+**Every one of these defaults is sized for the worst legitimate address, not the
+typical one**, because the two failures are not symmetrical. Too generous grows
+a table §4 already prunes. Too strict makes visitors *invisible* — absent from
+the board with nothing anywhere saying why — and on a carrier-grade NAT, where
+thousands of unrelated people share one address, a number chosen for an office
+reaches that state before lunch. The configuration read is the sharpest case: a
+widget that cannot fetch its settings cannot report or show anybody a notice, so
+a throttle there switches the feature off for everyone behind that address
+rather than slowing anyone down.
 
 Because §1 keeps all of this off until an operator turns it on, the surface is
 only ever the sites that chose it.
@@ -526,6 +534,13 @@ So this ships with the product's **first automatic retention control**:
   from absence would delete every one of those older than the window — on every
   install, including ones that never enabled presence, irreversibly, on its
   first scheduled run.
+
+  **Contact and pruning serialise on the visitor row.** The pruner re-checks its
+  predicates under a lock, and every writer that constitutes contact — bootstrap,
+  conversation start — takes that same lock before writing and re-resolves if the
+  row has gone. Locking only in the pruner leaves the ordering where the absence
+  check passes and the contact write lands a moment later, which is how somebody
+  gets deleted while they are opening the widget.
 
   So a row carries a `presence_only` flag that defaults to **false**. Every row
   written before this existed is therefore safe by construction; only the
