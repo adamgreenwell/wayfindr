@@ -626,6 +626,32 @@
                         return;
                     }
 
+                    // Reverb sends this on a quiet connection and closes the
+                    // socket if nothing answers. It is a protocol MESSAGE, not
+                    // a WebSocket control frame, so the browser does not reply
+                    // on our behalf -- the bundled Pusher client does that, and
+                    // this board speaks the protocol itself.
+                    //
+                    // Without it the board still worked, which is why it was
+                    // easy to miss: the socket was retired, the close handler
+                    // reconnected, and the subscription resynced. A board with
+                    // a gap in it every minute or so, on every install.
+                    //
+                    // Answered on the socket the frame ARRIVED on, not on
+                    // whichever one is current: a ping to a socket being
+                    // replaced should not have its pong sent down its
+                    // successor.
+                    if (event.event === 'pusher:ping') {
+                        try {
+                            message.target.send(JSON.stringify({ event: 'pusher:pong', data: {} }));
+                        } catch (error) {
+                            // A socket that cannot be written to is already
+                            // gone, and the close handler reconnects.
+                        }
+
+                        return;
+                    }
+
                     if (event.event === 'pusher:connection_established') {
                         var established;
 

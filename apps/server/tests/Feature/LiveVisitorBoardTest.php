@@ -1059,3 +1059,75 @@ test('the board hides page addresses the moment their collection is revoked', fu
         ->assertOk()
         ->assertSee('shop.test/pricing', false);
 });
+
+test('the board answers the keepalive the server sends it', function (): void {
+    // Reverb sends an application-level `pusher:ping` on a quiet connection
+    // (`REVERB_APP_PING_INTERVAL`, sixty seconds by default) and closes the
+    // socket if no `pusher:pong` comes back. These are protocol MESSAGES, not
+    // WebSocket control frames, so the browser does not answer them -- the
+    // bundled Pusher client does, and this board does not use it.
+    //
+    // The board hid the consequence rather than avoiding it: the socket is
+    // retired, the close handler reconnects, and the subscription resyncs. It
+    // looks like a working board with a gap in it every minute or so.
+    $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
+
+    $handler = Str::before(Str::after($source, 'function handleSocketMessage(message) {'), 'function ');
+
+    test()->assertStringContainsString(
+        "event.event === 'pusher:connection_established'",
+        $handler,
+        'the slice is not the message handler',
+    );
+
+    test()->assertStringContainsString(
+        "event.event === 'pusher:ping'",
+        $handler,
+        'the board never answers the keepalive, so the server retires its socket',
+    );
+
+    test()->assertStringContainsString(
+        'pusher:pong',
+        $handler,
+        'the board recognises the keepalive without answering it',
+    );
+});
+
+test('a broadcast asks the database what the policy is, not the model it was handed', function (): void {
+    // The event carries the site the REQUEST resolved. A revocation committing
+    // between the heartbeat's own commit and this dispatch leaves that model
+    // describing a policy that no longer exists -- and the visitor model
+    // carries the address from before the sweep -- so the board was handed the
+    // revoked address and kept it until its next resync.
+    //
+    // The same staleness applied to the archived check beside it, which is why
+    // one re-read serves both.
+    $f = boardFixture();
+    $site = $f['site'];
+
+    $site->forceFill([
+        'settings' => ['presence' => ['enabled' => true, 'page_urls' => true]],
+    ])->save();
+
+    $visitor = presentVisitor($site, 'anon-mid-revocation', [
+        'metadata' => ['last_page_url' => 'https://shop.test/pricing'],
+    ]);
+
+    // The operator revokes, underneath the models this event is holding.
+    DB::table('sites')->where('id', $site->id)->update([
+        'settings' => json_encode(['presence' => ['enabled' => true, 'page_urls' => false]]),
+    ]);
+
+    $event = new VisitorPresenceUpdated($site, $visitor);
+
+    expect($event->broadcastWith()['visitor']['page_url'])->toBeNull(
+        'the broadcast read its policy from a model resolved before the revocation'
+    );
+
+    // And archiving, read the same way.
+    DB::table('sites')->where('id', $site->id)->update(['archived_at' => now()]);
+
+    expect((new VisitorPresenceUpdated($site, $visitor))->broadcastWhen())->toBeFalse(
+        'a site archived after the request resolved it was still broadcast for'
+    );
+});
