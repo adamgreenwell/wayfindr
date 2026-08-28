@@ -218,7 +218,13 @@ final class VisitorPresenceReport
         $provenance = $visitor->exists ? [] : ['presence_only' => true];
 
         $visitor->forceFill([
-            'metadata' => $this->metadata($visitor, $pageUrl, $site),
+            // The LOCKED site, so the host an address is checked against is
+            // the domain in force at the write. An operator renaming the site
+            // between the resolver and this lock would otherwise have the
+            // in-flight report judged against the old domain -- accepting an
+            // address for a host the site no longer answers on, or discarding
+            // one for the host it now does.
+            'metadata' => $this->metadata($visitor, $pageUrl, $current),
             'last_web_seen_at' => $now,
         ] + $provenance)->save();
 
