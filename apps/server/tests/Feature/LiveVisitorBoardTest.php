@@ -1196,3 +1196,47 @@ test('a cleared board refuses the events already on their way to it', function (
         'clearing the board does not record that it was cleared',
     );
 });
+
+test('the board reads the policy as it is at render, not at route binding', function (): void {
+    // The site here is the model the ROUTE resolved, on the way in. Another
+    // operator revoking page addresses between that binding and this query
+    // leaves it describing a policy that has already been replaced -- and the
+    // sweep is still walking the rows, so the addresses are still there to be
+    // rendered.
+    //
+    // The same window the broadcast closed by re-reading; this is the other
+    // half of it, on the page.
+    $f = boardFixture();
+    $site = $f['site'];
+
+    $site->forceFill([
+        'settings' => ['presence' => ['enabled' => true, 'page_urls' => true]],
+    ])->save();
+
+    presentVisitor($site, 'anon-render-race', [
+        'metadata' => ['last_page_url' => 'https://shop.test/pricing'],
+    ]);
+
+    $revoked = false;
+
+    // Committed after the route has resolved the site and before the board
+    // queries its rows.
+    Site::retrieved(function (Site $read) use (&$revoked, $site): void {
+        if ($revoked || $read->id !== $site->id) {
+            return;
+        }
+
+        $revoked = true;
+
+        DB::table('sites')->where('id', $site->id)->update([
+            'settings' => json_encode(['presence' => ['enabled' => true, 'page_urls' => false]]),
+        ]);
+    });
+
+    test()->actingAs($f['agent'])
+        ->get(route('dashboard.sites.live', $site))
+        ->assertOk()
+        ->assertDontSee('shop.test/pricing', false);
+
+    expect($revoked)->toBeTrue('the race never happened, so this proves nothing');
+});

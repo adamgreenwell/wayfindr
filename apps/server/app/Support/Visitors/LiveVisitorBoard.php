@@ -89,7 +89,18 @@ final class LiveVisitorBoard
      */
     public static function for(Site $site): Collection
     {
-        $showPageUrls = SitePresenceReporting::for($site)->pageUrls;
+        // Read as of NOW, not as of route binding. The site handed in is the
+        // model the request resolved on its way in, and another operator
+        // revoking page addresses between that and this query leaves it
+        // describing a policy that has already been replaced -- while the
+        // sweep is still walking the rows, so the addresses are still there to
+        // be rendered.
+        //
+        // The broadcast closed the same window by re-reading; this is the
+        // other half of it, on the page. A site that has gone withholds.
+        $current = Site::query()->whereKey($site->getKey())->first();
+
+        $showPageUrls = $current !== null && SitePresenceReporting::for($current)->pageUrls;
 
         return self::present($site)
             ->withCount('conversations')
