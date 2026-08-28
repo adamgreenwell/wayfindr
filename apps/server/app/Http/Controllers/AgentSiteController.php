@@ -664,6 +664,10 @@ class AgentSiteController extends Controller
         $agent = $request->user();
         $reporting = SitePresenceReporting::for($site);
 
+        $snapshot = $reporting->enabled
+            ? LiveVisitorBoard::snapshotFor($site)
+            : ['visitors' => collect(), 'total' => 0];
+
         return view('agent.sites.live', [
             'agent' => $agent,
             'account' => $agent?->account,
@@ -674,12 +678,17 @@ class AgentSiteController extends Controller
             // through bootstrap and message fetches, so an unguarded query
             // would put a nonzero count above a paragraph explaining that the
             // board stays empty by design.
-            'visitors' => $reporting->enabled ? LiveVisitorBoard::for($site) : collect(),
-            // Counted without the display cap: the list stops at 200 so one
-            // page stays readable, and telling an agent "200" when four
-            // hundred people are on the site is the one number here they
-            // would have taken at face value.
-            'presentCount' => $reporting->enabled ? LiveVisitorBoard::countFor($site) : 0,
+            'visitors' => $snapshot['visitors'],
+            // From the SAME read as the rows. Asked separately, a visitor
+            // committing between the two landed in the count and not in the
+            // table -- and the browser then counted them again when the
+            // buffered socket event replayed them as an arrival.
+            //
+            // Still uncapped past 200: the list stops there so one page stays
+            // readable, and telling an agent "200" when four hundred people
+            // are on the site is the one number here they would have taken at
+            // face value.
+            'presentCount' => $snapshot['total'],
             'presentMinutes' => LiveVisitorBoard::PRESENT_MINUTES,
             'canUpdatePrivacy' => Gate::forUser($agent)->allows('updatePrivacy', $site),
             'realtime' => $this->presenceRealtimeConfig($site),

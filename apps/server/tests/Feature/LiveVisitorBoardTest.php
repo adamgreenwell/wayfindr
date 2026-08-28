@@ -881,3 +881,49 @@ test('an event that arrives late does not overwrite a newer row', function (): v
         'an unreadable timestamp discards the update instead of applying it',
     );
 });
+
+test('the board renders a count that matches the rows beside it', function (): void {
+    // The rows and the total came from two separate queries. A visitor
+    // committing between them is in the count and not in the table -- and it
+    // does not end there: during a resync the socket event for that visitor is
+    // buffered, so the browser applies this count and then replays them as a
+    // new arrival, adding them a second time on a board that shows everybody.
+    //
+    // Below the cap the rows ARE the population, so there is no need to ask
+    // twice and no window to be inconsistent in.
+    $f = boardFixture();
+    $site = $f['site'];
+
+    presentVisitor($site, 'anon-already-here');
+
+    $arrived = false;
+
+    // A heartbeat landing between the two reads.
+    DB::listen(function ($query) use (&$arrived, $site): void {
+        if ($arrived || ! str_contains($query->sql, 'from "visitors"')) {
+            return;
+        }
+
+        $arrived = true;
+
+        presentVisitor($site, 'anon-arrived-mid-request');
+    });
+
+    $response = test()->actingAs($f['agent'])
+        ->get(route('dashboard.sites.live', $site))
+        ->assertOk();
+
+    expect($arrived)->toBeTrue('nothing arrived mid-request, so this proves nothing');
+
+    $html = $response->getContent();
+
+    preg_match('/data-live-count[^>]*>(\d+)</', $html, $count);
+    $rendered = preg_match_all('/data-visitor-id="/', $html);
+
+    expect($count)->not->toBeEmpty('the board did not render a count');
+
+    expect((int) $count[1])->toBe(
+        $rendered,
+        'the heading counts somebody the table does not show, on a board with room for everybody'
+    );
+});

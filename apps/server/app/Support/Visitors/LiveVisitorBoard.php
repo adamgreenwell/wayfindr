@@ -54,6 +54,36 @@ final class LiveVisitorBoard
     }
 
     /**
+     * The rows and the total that describes them, together.
+     *
+     * They used to be two calls, and a visitor committing between them landed
+     * in the count and not in the table. Worse than a heading that is out by
+     * one: during a resync the socket event for that visitor is buffered, so
+     * the browser applies this count and THEN replays them as an arrival,
+     * adding them a second time on a board that shows everybody.
+     *
+     * Below the cap the rows are the population, so the count is exact and the
+     * second query is not needed -- which removes the window rather than
+     * narrowing it. At the cap it is unavoidable: the rows are a window onto a
+     * larger set and only the server can say how large. There the two can
+     * disagree by one for an instant, and the browser does not adjust a capped
+     * total from what it can see, so the next resync settles it.
+     *
+     * @return array{visitors: Collection<int, array<string, mixed>>, total: int}
+     */
+    public static function snapshotFor(Site $site): array
+    {
+        $visitors = self::for($site);
+
+        return [
+            'visitors' => $visitors,
+            'total' => $visitors->count() < self::DISPLAY_LIMIT
+                ? $visitors->count()
+                : self::countFor($site),
+        ];
+    }
+
+    /**
      * @return Collection<int, array<string, mixed>>
      */
     public static function for(Site $site): Collection
