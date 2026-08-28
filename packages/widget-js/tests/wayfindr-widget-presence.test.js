@@ -2107,3 +2107,98 @@ test('a stop that also revokes addresses revokes them', async (t) => {
     'an address went out after the same answer that stopped reporting revoked it',
   );
 });
+
+test('an idle tab still learns that addresses were revoked', async (t) => {
+  // A site with presence off still has a page-address policy. Returning early
+  // when nothing is reporting left a tab that loaded when addresses were
+  // allowed sending them after the operator revoked -- the revocation arriving
+  // in the very answer being ignored.
+  let pageUrls = true;
+
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/pricing',
+  });
+
+  const calls = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 0,
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      // Presence is OFF throughout: nothing ever reports, so presenceConfig
+      // stays null and only the idle branch runs.
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, {
+          data: { appearance: { position: 'right' }, presence: { reports: false, page_urls: pageUrls } },
+        });
+      }
+
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return jsonResponse(200, {
+          data: {
+            site: {
+              public_key: 'site_public_shop',
+              settings: {},
+              color: 'blue',
+              presence: { reports: false, page_urls: pageUrls },
+            },
+            visitor: { anonymous_id: 'anon-shop', token: 'visitor-token-shop' },
+          },
+        });
+      }
+
+      return jsonResponse(202, { data: {} });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+  await widget.open();
+  await settle();
+
+  const before = calls.filter((c) => c.url.endsWith('/api/widget/bootstrap')).length;
+
+  assert.ok(before > 0, 'the panel never bootstrapped, so this proves nothing');
+
+  // The operator revokes addresses. Bootstrap re-runs on each OPEN after a
+  // close, so the panel is closed between them -- reopening an open panel does
+  // not re-ask, and the test would otherwise be asserting over one request.
+  pageUrls = false;
+
+  widget.close();
+  await widget.open();
+  await settle();
+
+  widget.close();
+  await widget.open();
+  await settle();
+
+  const later = calls.filter((c) => c.url.endsWith('/api/widget/bootstrap')).slice(before);
+
+  assert.ok(later.length > 0, 'no further bootstrap, so this proves nothing');
+  assert.ok(
+    later.slice(1).every((c) => !c.body.page_url),
+    'an idle tab kept sending addresses after the revocation reached it',
+  );
+});

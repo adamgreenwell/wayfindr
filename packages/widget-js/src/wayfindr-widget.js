@@ -2974,6 +2974,15 @@
       // and the config read that arrived afterwards was discarded for being
       // overtaken. Opening the panel quickly turned the feature off.
       if (!presenceConfig) {
+        // The page-address policy is updated even while nothing is reporting.
+        // A site with presence off still has one, and returning early here left
+        // a tab that loaded when addresses were allowed sending them after the
+        // operator revoked -- the revocation arriving in the very answer that
+        // was being ignored.
+        if (config && typeof config.page_urls === 'boolean') {
+          presenceReportedPageUrls = config.page_urls;
+        }
+
         if (config && config.reports === true) {
           applyPresence(config);
         }

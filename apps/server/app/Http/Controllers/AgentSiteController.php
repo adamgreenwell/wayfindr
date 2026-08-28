@@ -32,6 +32,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -177,6 +178,11 @@ class AgentSiteController extends Controller
             'externalIssueProviders' => ExternalIssueProvider::options(),
             'presenceEnabled' => SitePresenceReporting::for($site)->enabled,
             'presencePageUrls' => SitePresenceReporting::for($site)->pageUrls,
+            // The same number the visitor's notice quotes. An operator reading
+            // "30 days" on the page where they configure this, while their
+            // install deletes after seven, is being told something untrue by
+            // the surface that exists to tell them the truth.
+            'presenceRetentionDays' => SitePresenceReporting::retentionDays(),
             'presenceEvery' => SitePresenceReporting::HEARTBEAT_SECONDS,
             'maskSelectors' => $maskSelectors,
             'maskTerms' => $maskTerms,
@@ -781,20 +787,32 @@ class AgentSiteController extends Controller
                 $removed = $this->forgetPresenceOnlyVisitors($site);
             }
 
-            // Addresses go whenever the switch is off, not only while presence
-            // is on. Contacted visitors are kept, and they hold addresses too
-            // -- written by bootstrap and conversation start -- so an operator
-            // unchecking this box while switching presence off would otherwise
-            // keep exactly the addresses they unchecked it for.
-            //
-            // "From now on" is the wrong scope for a control that exists
-            // because a path held a secret.
-            if (! $pageUrls) {
-                $this->forgetStoredPageUrls($site);
-            }
-
             return $settings;
         });
+
+        // Addresses go whenever the switch is off, not only while presence is
+        // on. Contacted visitors are kept and they hold addresses too, written
+        // by bootstrap and conversation start, so an operator unchecking this
+        // box while switching presence off would otherwise keep exactly the
+        // addresses they unchecked it for. "From now on" is the wrong scope for
+        // a control that exists because a path held a secret.
+        //
+        // AFTER the settings transaction, not inside it, and this is the safe
+        // order rather than the convenient one. Every writer of an address
+        // reads the setting under the site lock, so once the revocation has
+        // COMMITTED no further address can be written -- and a request that
+        // committed before it is exactly what this sweep is here to clean up.
+        // Running inside meant one transaction holding a row lock per visitor
+        // across the whole table while an operator waited on a form post.
+        //
+        // It is still synchronous, and on a very large site it is still slow.
+        // Chunked with a transaction per chunk, so the locks are short and
+        // another request can interleave; a site with hundreds of thousands of
+        // presence rows will want this on a queue, which is a change to make
+        // when somebody has one.
+        if (! $pageUrls) {
+            $this->forgetStoredPageUrls($site);
+        }
 
         return redirect()
             ->route('dashboard.sites.show', $site)
@@ -846,29 +864,34 @@ class AgentSiteController extends Controller
             // which only hardcodes what the grammar already does.
             ->where('metadata', 'like', '%last_page_url%')
             ->chunkById(200, function ($visitors): void {
-                foreach ($visitors as $visitor) {
-                    // Re-read under a lock before writing. `metadata` is one
-                    // JSON column, so a save replaces the whole value: writing
-                    // the copy this loop read would erase host context that
-                    // bootstrap or a conversation committed in between -- and
-                    // this runs at exactly the moment such writes are likely,
-                    // because operators change this setting on a live site.
-                    $locked = Visitor::query()->whereKey($visitor->getKey())->lockForUpdate()->first();
+                // A transaction per chunk. Each row is re-read under its own
+                // lock before writing, so the lock is held for one row's work
+                // rather than for the length of the sweep.
+                DB::transaction(function () use ($visitors): void {
+                    foreach ($visitors as $visitor) {
+                        // Re-read under a lock before writing. `metadata` is one
+                        // JSON column, so a save replaces the whole value: writing
+                        // the copy this loop read would erase host context that
+                        // bootstrap or a conversation committed in between -- and
+                        // this runs at exactly the moment such writes are likely,
+                        // because operators change this setting on a live site.
+                        $locked = Visitor::query()->whereKey($visitor->getKey())->lockForUpdate()->first();
 
-                    if ($locked === null) {
-                        continue;
+                        if ($locked === null) {
+                            continue;
+                        }
+
+                        $metadata = is_array($locked->metadata) ? $locked->metadata : [];
+
+                        if (! array_key_exists('last_page_url', $metadata)) {
+                            continue;
+                        }
+
+                        unset($metadata['last_page_url']);
+
+                        $locked->forceFill(['metadata' => $metadata])->save();
                     }
-
-                    $metadata = is_array($locked->metadata) ? $locked->metadata : [];
-
-                    if (! array_key_exists('last_page_url', $metadata)) {
-                        continue;
-                    }
-
-                    unset($metadata['last_page_url']);
-
-                    $locked->forceFill(['metadata' => $metadata])->save();
-                }
+                });
             });
     }
 
