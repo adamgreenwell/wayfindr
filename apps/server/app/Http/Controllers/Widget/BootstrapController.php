@@ -155,7 +155,9 @@ class BootstrapController extends Controller
                 $validated['page_url'] ?? null,
                 array_key_exists('context', $validated),
                 $validated['context'] ?? null,
-                $site->domain,
+                // The locked row's domain -- see ConversationController for
+                // why the copy this request arrived with is the wrong one.
+                $current->domain,
                 $storePageUrl,
             ),
             'last_web_seen_at' => now(),
