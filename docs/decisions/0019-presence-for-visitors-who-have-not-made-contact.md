@@ -233,7 +233,8 @@ means rather than leaving it to the implementation:
   on real sites, and a rule waiting for twenty characters keeps them whole.
 
   A hyphenated slug survives because its parts are short; a word without digits
-  survives **up to sixteen characters**; a version segment survives because it
+  survives **up to fifteen characters** — sixteen is redacted, matching the
+  `>= 16` above rather than reading as a limit that includes it; a version segment survives because it
   is short. The cost is real and named: `/product/iphone15` is redacted, and so
   is `/internationalization`, which loses an agent some context on some sites. That is the right way round for a rule whose
   failures are credentials — and it is exactly why the query string is dropped
