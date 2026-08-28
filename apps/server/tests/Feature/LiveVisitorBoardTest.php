@@ -431,6 +431,36 @@ test('the board resyncs whenever it subscribes', function (): void {
         'the slice is not the authorize function',
     );
 
-    expect($authorize)->toContain('resyncBoard();')
-        ->and($source)->toContain('function resyncBoard()');
+    // The resync hangs off the SUBSCRIPTION CONFIRMATION, not the
+    // authorization: the auth returning only means the subscribe frame was
+    // sent, so a snapshot taken then still has a window on the far side of it.
+    $handler = Str::before(
+        Str::after($source, 'function handleSocketMessage(message) {'),
+        'function connect()',
+    );
+
+    test()->assertStringContainsString(
+        'pusher_internal:subscription_succeeded',
+        $handler,
+        'the slice is not the socket message handler',
+    );
+
+    expect($handler)->toContain('resyncBoard();')
+        ->and($source)->toContain('function resyncBoard()')
+        ->and($authorize)->not->toContain('resyncBoard();');
+});
+
+test('an open board does not keep showing revoked visitors', function (): void {
+    // Another operator revoking presence deletes the rows this board is
+    // showing, page addresses and all -- and nothing is broadcast for a
+    // deletion, so an open board would display them until each aged out.
+    $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
+
+    test()->assertStringContainsString(
+        'function resyncBoard()',
+        $source,
+        'there is no resync to schedule',
+    );
+
+    expect($source)->toContain('window.setInterval(resyncBoard, 60000);');
 });

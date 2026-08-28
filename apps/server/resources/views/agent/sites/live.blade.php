@@ -385,14 +385,11 @@
                             statusEl.textContent = 'Updating live.';
                         }
 
-                        // Resync on EVERY successful subscribe, including the
-                        // first. Reverb does not replay, so anything broadcast
-                        // between the server rendering this page and this
-                        // subscription existing is simply gone -- and after a
-                        // reconnect that gap is however long the socket was
-                        // down. The agent conversation page refreshes its
-                        // transcript at exactly this point for the same reason.
-                        resyncBoard();
+                        // NOT resynced here. Authorization succeeding only
+                        // means the subscribe frame has been sent; Reverb has
+                        // not yet confirmed it, so a snapshot taken now still
+                        // has a window on the far side of it. The resync waits
+                        // for `pusher_internal:subscription_succeeded`.
                     }).catch(function () {
                         if (statusEl) {
                             statusEl.textContent = 'Reconnecting to live updates.';
@@ -433,6 +430,18 @@
                         }
 
                         authorize(socket, established.socket_id);
+
+                        return;
+                    }
+
+                    // The subscription is live from HERE, not from the moment
+                    // authorization returned. Resyncing on every confirmation,
+                    // first one included: Reverb does not replay, so whatever
+                    // was broadcast between the server rendering this page and
+                    // this frame is gone -- and after a reconnect that gap is
+                    // however long the socket was down.
+                    if (event.event === 'pusher_internal:subscription_succeeded') {
+                        resyncBoard();
 
                         return;
                     }
@@ -483,6 +492,14 @@
                 });
 
                 window.setInterval(dropDeparted, 15000);
+
+                // A periodic resync, because some changes have no event.
+                // Another operator revoking presence deletes the rows this
+                // board is showing -- with their page addresses -- and nothing
+                // is broadcast for a deletion, so an open board would keep
+                // displaying them until each aged out on its own. A minute
+                // bounds that without making the socket pointless.
+                window.setInterval(resyncBoard, 60000);
                 connect();
             })();
         </script>
