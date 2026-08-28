@@ -589,3 +589,27 @@ test('a callback from a replaced socket cannot open another', function (): void 
     expect($connect)->toContain('var generation = ++socketGeneration;')
         ->and($source)->toContain('activeSocket.wayfindrGeneration !== socketGeneration');
 });
+
+test('an unreachable broadcaster does not stop presence being recorded', function (): void {
+    // The event is ShouldBroadcastNow, so it is dispatched synchronously.
+    // Inside the transaction a Reverb that is merely unreachable threw, rolled
+    // the visitor save back and failed the heartbeat -- realtime being down
+    // would have stopped presence being COLLECTED, which is the wrong blast
+    // radius by a wide margin.
+    $f = boardFixture();
+
+    Event::listen(VisitorPresenceUpdated::class, function (): void {
+        throw new RuntimeException('reverb is down');
+    });
+
+    test()->postJson(route('widget.presence'), [
+        'site_public_key' => $f['site']->public_key,
+        'anonymous_id' => 'anon-broadcast-down',
+        'page_url' => 'https://shop.test/pricing',
+    ])->assertSuccessful();
+
+    $visitor = Visitor::query()->where('anonymous_id', 'anon-broadcast-down')->first();
+
+    expect($visitor)->not->toBeNull('a broadcast failure rolled back the visitor')
+        ->and($visitor->metadata['last_page_url'])->toBe('https://shop.test/pricing');
+});

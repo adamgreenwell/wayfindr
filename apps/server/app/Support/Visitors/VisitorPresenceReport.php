@@ -39,7 +39,7 @@ final class VisitorPresenceReport
             //
             // SQLite does not behave this way, which is why the suite was green
             // and the PostgreSQL run was not.
-            return DB::transaction(fn (): Visitor => $this->stamp($this->resolve($site, $anonymousId), $pageUrl, $site));
+            return $this->announce($site, DB::transaction(fn (): Visitor => $this->stamp($this->resolve($site, $anonymousId), $pageUrl, $site)));
         } catch (UniqueConstraintViolationException) {
             // Two first reports for the same visitor overlapped -- a page-load
             // heartbeat racing bootstrap, or two tabs opened together. Both saw
@@ -55,8 +55,32 @@ final class VisitorPresenceReport
             // would be released the moment each select finished -- and the
             // whole point of taking them is that they are still held when the
             // write happens.
-            return DB::transaction(fn (): Visitor => $this->stamp($this->resolve($site, $anonymousId), $pageUrl, $site));
+            return $this->announce($site, DB::transaction(fn (): Visitor => $this->stamp($this->resolve($site, $anonymousId), $pageUrl, $site)));
         }
+    }
+
+    /**
+     * Tell the boards, without letting them undo the write.
+     *
+     * The event is `ShouldBroadcastNow`, so it is dispatched synchronously --
+     * and inside the transaction a Reverb that is merely unreachable threw,
+     * rolled the visitor save back, and failed the heartbeat. Realtime being
+     * down would have stopped presence being COLLECTED, which is the wrong
+     * blast radius by a wide margin: the board is one reader of this data.
+     *
+     * So it happens after the commit, and a failure to announce is swallowed.
+     * A board that misses one arrival gets it from the next heartbeat or the
+     * next resync; a visitor whose row was never written is gone.
+     */
+    private function announce(Site $site, Visitor $visitor): Visitor
+    {
+        try {
+            event(new VisitorPresenceUpdated($site, $visitor));
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return $visitor;
     }
 
     private function resolve(Site $site, string $anonymousId): Visitor
@@ -205,10 +229,6 @@ final class VisitorPresenceReport
         if ($visitor->wasRecentlyCreated) {
             $this->recordCreation($site);
         }
-
-        // Announced after the write, so a board that reacts by reading the row
-        // sees what was written rather than what is about to be.
-        event(new VisitorPresenceUpdated($site, $visitor));
 
         return $visitor;
     }
