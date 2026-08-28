@@ -2989,9 +2989,13 @@
       var view = presenceWindow;
 
       if (view && typeof view.getComputedStyle === 'function') {
+        // Walked to the DOCUMENT, not stopped at the widget root. Opacity does
+        // not inherit and an invisible descendant still has client rects, so a
+        // host wrapper styled `opacity: 0` ABOVE the mount hid the notice while
+        // every check inside the root said it was fine.
         var styled = presenceEl;
 
-        while (styled && styled !== rootEl.parentNode) {
+        while (styled) {
           var style = view.getComputedStyle(styled);
 
           if (style && (style.visibility === 'hidden' || style.visibility === 'collapse' || style.display === 'none' || style.opacity === '0')) {
