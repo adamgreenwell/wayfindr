@@ -490,3 +490,21 @@ test('a resync does not overwrite events that arrived during it', function (): v
 
     expect($handler)->toContain('resyncBuffer.push(visitor);');
 });
+
+test('an overtaken resync does not replace a newer one', function (): void {
+    // The subscribe resync and the minute timer overlap. If the older request
+    // lands last it replaces the newer board with staler markup -- and replays
+    // a buffer that stopped collecting when the second call took over.
+    $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
+
+    $resync = Str::before(Str::after($source, 'function resyncBoard() {'), 'var socketScheme');
+
+    test()->assertStringContainsString(
+        'replaceChildren',
+        $resync,
+        'the slice is not resyncBoard',
+    );
+
+    expect($resync)->toContain('var seq = ++resyncSequence;')
+        ->and($resync)->toContain('if (seq !== resyncSequence) {');
+});

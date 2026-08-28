@@ -310,6 +310,7 @@
                     // ordering, not the unlucky one, since a broadcast beats
                     // the page render it raced.
                     var pending = [];
+                    var seq = ++resyncSequence;
 
                     resyncBuffer = pending;
 
@@ -328,6 +329,15 @@
                             .querySelector('[data-live-rows]');
 
                         if (!fresh) {
+                            return;
+                        }
+
+                        // An overtaken snapshot is discarded. The subscribe
+                        // resync and the minute timer can overlap, and if the
+                        // older request lands last it would replace the newer
+                        // board with staler markup -- and replay a buffer that
+                        // stopped collecting when the second call took over.
+                        if (seq !== resyncSequence) {
                             return;
                         }
 
@@ -351,6 +361,9 @@
                 // Holds events that arrive while a snapshot is being fetched.
                 // Null when no resync is in flight, which is most of the time.
                 var resyncBuffer = null;
+
+                // Orders overlapping snapshots, so only the newest is applied.
+                var resyncSequence = 0;
 
                 var socketScheme = config.scheme === 'https' ? 'wss' : 'ws';
                 var socketUrl = socketScheme + '://' + config.host + ':' + config.port + '/app/'
