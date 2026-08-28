@@ -678,12 +678,15 @@
       // Delete a not-yet-sent upload (server only removes an unbound attachment
       // this visitor owns), freeing the conversation quota it held.
       deleteAttachment: function (supportCode, attachmentId) {
-        return fetcher(this.attachmentDownloadUrl(supportCode, attachmentId), {
+        // REQUEST_PRIVACY explicitly: this is the one request that does not go
+        // through the JSON or form helpers, so it did not inherit the policy
+        // they apply and sent the host page address like any ordinary fetch.
+        return fetcher(this.attachmentDownloadUrl(supportCode, attachmentId), Object.assign({
           method: 'DELETE',
           headers: {
             Accept: 'application/json',
           },
-        }).then(function (response) {
+        }, REQUEST_PRIVACY)).then(function (response) {
           if (! response.ok) {
             throw responseError(response, {});
           }
@@ -2650,6 +2653,13 @@
         img.setAttribute('src', url);
         img.setAttribute('alt', attachment.filename || t('attachment.fallbackName'));
         img.setAttribute('loading', 'lazy');
+        // The BROWSER fetches this one, not us, so the policy the widget puts
+        // on its own requests does not reach it -- and `rel`, which the file
+        // link beside this uses, does not apply to an image. Without this the
+        // host page's full address goes to the server as a Referer header on
+        // every preview, which is the address presence strips a token out of
+        // before it will even report it.
+        img.setAttribute('referrerpolicy', 'no-referrer');
         link.appendChild(img);
 
         return link;

@@ -220,6 +220,15 @@ test('renders received image and file attachments in the transcript', async () =
   assert.ok(img, 'the image attachment renders inline');
   assert.match(img.getAttribute('src'), /\/api\/conversations\/WF-DOCS\/attachments\/100\?/);
   assert.equal(img.getAttribute('alt'), 'diagram.png');
+  // The browser fetches this URL itself, so `no-referrer` on the widget's own
+  // requests does not cover it and `rel` does not apply to an image. Without
+  // this attribute the host page's full address -- reset token, invitation
+  // code and all -- rides along as a Referer header on every preview.
+  assert.equal(
+    img.getAttribute('referrerpolicy'),
+    'no-referrer',
+    'an image preview sent the host page address',
+  );
 
   const fileLink = widget.root.querySelector('.wayfindr-widget__attachment--file');
   assert.ok(fileLink, 'the non-image attachment renders as a file row');
@@ -602,4 +611,38 @@ test('removing a chip is a no-op while a send is in flight', async () => {
   assert.equal(widget.root.querySelectorAll('.wayfindr-widget__attach-chip').length, 0, 'chips clear once the send completes');
 
   widget.destroy();
+});
+
+test('every request the widget makes withholds the host page address', async () => {
+  // `no-referrer` reached the JSON and form helpers and stopped there. The two
+  // requests that do not go through them are the ones that carry the host
+  // page's full URL to the server: deleting a staged upload, and the image
+  // preview the browser fetches from an <img src> the widget writes.
+  //
+  // The address is the point. Presence exists around the fact that a path can
+  // hold a reset token or an invitation code, and the widget strips one before
+  // reporting it -- while the browser attached the same URL to these two
+  // requests as a Referer header, after the visitor declined and whether or not
+  // the operator allows addresses at all.
+  const calls = [];
+  const client = Wayfindr.createClient({
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    visitorToken: 'visitor-token-123',
+    fetch: async (url, options) => {
+      calls.push({ url, options });
+
+      return jsonResponse(204, {});
+    },
+  });
+
+  await client.deleteAttachment('WF-TEST123', 42);
+
+  assert.equal(calls.length, 1);
+  assert.equal(
+    calls[0].options.referrerPolicy,
+    'no-referrer',
+    'deleting an upload sent the host page address',
+  );
 });
