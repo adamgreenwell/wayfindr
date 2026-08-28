@@ -799,10 +799,16 @@ test('a realtime arrival is counted and the board stays within its limit', funct
         'the slice is not the insert branch',
     );
 
+    // Counted, but only where a missing row means a new person. On a capped
+    // board somebody outside the rendered 200 is already in the total and their
+    // next heartbeat also arrives with no row to match -- so an unguarded
+    // increment climbed away from the real population every 45 seconds, once
+    // per capped visitor, until the resync pulled it back.
     test()->assertStringContainsString(
-        'presentTotal = presentTotal + 1;',
+        'if (boardIsWhole()) {'.'
+'.'                            presentTotal = presentTotal + 1;',
         $insert,
-        'a visitor the board has no room for is not counted',
+        'the arrival count is not gated on the board showing everybody',
     );
 
     test()->assertStringContainsString(

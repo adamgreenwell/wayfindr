@@ -299,13 +299,31 @@
                         // arrived where an agent stops looking.
                         rows.insertBefore(fresh, rows.firstChild);
 
-                        // One more person on the site, whether or not there is
-                        // room to show them. Counted BEFORE the trim below, or
-                        // a full board would drop the row and the arrival with
-                        // it -- and counted here rather than left to
-                        // refreshCount(), which infers the total from the rows
-                        // and cannot see somebody it just evicted.
-                        presentTotal = presentTotal + 1;
+                        // One more person on the site -- but only where the
+                        // absence of a row actually means they are new.
+                        //
+                        // On a WHOLE board it does: every visitor the total
+                        // counts is rendered, so nothing here was already
+                        // counted. Incremented before the trim below, and here
+                        // rather than in refreshCount(), which infers the total
+                        // from the rows and cannot see somebody just evicted.
+                        //
+                        // On a CAPPED board it does not. Somebody outside the
+                        // rendered 200 is already in the total, and their next
+                        // heartbeat also arrives with no row to match -- so
+                        // counting it inflated the heading every time a capped
+                        // visitor reported, and they report every 45 seconds.
+                        // The count climbed away from the real population until
+                        // the resync pulled it back, once a minute, for ever.
+                        //
+                        // There is no way to tell the two apart from here. The
+                        // server knows, and asking it would mean a count query
+                        // on every broadcast -- the hottest path in the feature
+                        // -- for a number the resync already carries. So a
+                        // capped board leaves its total alone and waits.
+                        if (boardIsWhole()) {
+                            presentTotal = presentTotal + 1;
+                        }
 
                         // The server renders at most `displayLimit` rows, for
                         // readability and to bound the query. Realtime inserts
