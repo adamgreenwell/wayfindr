@@ -70,11 +70,18 @@ final class SitePresenceReporting
         return [
             'reports' => $this->enabled,
             'every' => self::HEARTBEAT_SECONDS,
-            // Told to the widget rather than only enforced here, so a page
-            // address the operator has said not to keep is never put on the
-            // wire in the first place. Enforced on arrival too: the endpoint is
-            // public and the payload is a request, not a promise.
-            'page_urls' => $this->enabled && $this->pageUrls,
+            // The site's own policy, NOT ANDed with `reports`.
+            //
+            // Folding `enabled` in here looked tidy and was wrong in a way that
+            // reached every install: a default site has presence off and page
+            // addresses on, so this reported `page_urls: false`, and the widget
+            // copies that into the setting it applies to bootstrap and
+            // conversation start. Every site that has never touched presence
+            // would have stopped storing page addresses entirely.
+            //
+            // `reports` already says whether to report. This says what a report
+            // may contain, and it is a separate question.
+            'page_urls' => $this->pageUrls,
         ];
     }
 }

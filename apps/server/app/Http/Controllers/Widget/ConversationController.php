@@ -134,7 +134,13 @@ class ConversationController extends Controller
                     // likelier path open: people ask for help FROM the page that is
                     // going wrong, which on a reset flow is the page holding the
                     // token.
-                    'started_page_url' => VisitorPageUrl::forSite($validated['page_url'] ?? null, $site->domain),
+                    // Gated on the same locked setting as the visitor's copy.
+                    // The widget already omits the address, but the endpoint is
+                    // public: a custom or older client keeps sending one, and
+                    // this is the field that outlives the visitor row.
+                    'started_page_url' => $storePageUrl
+                        ? VisitorPageUrl::forSite($validated['page_url'] ?? null, $site->domain)
+                        : null,
                     // The reason belongs to this conversation, not to the person:
                     // the next one may be about something else entirely. Name and
                     // email go on the visitor, where they are reusable.
