@@ -1,7 +1,12 @@
 <x-layouts.app title="Visitors" crumb="Visitors">
     <x-page-header
         title="Visitors"
-        subtitle="Everyone this desk has heard from, most recently seen first."
+        {{-- The heading makes the same claim the empty state does, above every
+             result rather than only the empty ones -- so where presence is on
+             the rows themselves contradict it. --}}
+        :subtitle="$listsBrowsers
+            ? 'Everyone this desk has seen, whether or not they got in touch, most recently seen first.'
+            : 'Everyone this desk has heard from, most recently seen first.'"
     />
 
     <section class="section" aria-labelledby="visitor-filters-heading">
