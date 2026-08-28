@@ -488,9 +488,18 @@
                         // rows is right: the board is missing somebody, which
                         // is what it was a moment ago.
                         if (response.status === 403 || response.status === 404) {
-                            if (seq === resyncSequence) {
-                                clearBoard('You no longer have access to this site.');
-                            }
+                            // UNCONDITIONALLY, without the sequence guard the
+                            // rest of this handler takes. That guard stops an
+                            // older snapshot's ROWS replacing newer ones, and a
+                            // denial is not a snapshot -- it is a fact about
+                            // who is watching, and it does not go stale.
+                            //
+                            // Two resyncs overlap, the newer one hangs, the
+                            // older comes back 404: guarded, the only answer
+                            // either of them produced is thrown away, and the
+                            // subscription keeps delivering visitors to
+                            // somebody who has been removed from the site.
+                            clearBoard('You no longer have access to this site.');
 
                             return null;
                         }

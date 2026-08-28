@@ -1279,6 +1279,22 @@ test('a board whose agent has lost access to the site shuts itself down', functi
         'losing access to the site does not shut the board down',
     );
 
+    // UNCONDITIONALLY. The sequence guard exists to stop an older snapshot's
+    // ROWS replacing newer ones, and a denial is not a snapshot -- it is a fact
+    // about the viewer, and it does not go stale. Two overlapping resyncs where
+    // the newer one hangs and the older returns 404 would otherwise discard the
+    // only answer either of them produced, and the subscription lives on.
+    $denial = Str::before(
+        Str::after($resync, 'if (response.status === 403 || response.status === 404) {'),
+        'return null;',
+    );
+
+    test()->assertStringNotContainsString(
+        'resyncSequence',
+        $denial,
+        'an access denial is discarded when a newer resync has overtaken it',
+    );
+
     // And the route really does answer 404 for an agent who cannot see it,
     // which is what makes that status mean something.
     $account = Account::factory()->create();
