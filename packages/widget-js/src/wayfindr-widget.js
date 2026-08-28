@@ -3727,6 +3727,20 @@
         //
         // Not permanent either: bootstrap carries the settings too, and the
         // read is retried once this answer goes stale.
+        //
+        // FORGOTTEN, not merely left unset. Everything above was true only of
+        // the first read, where there was no value to leave -- a refresh that
+        // fails kept whatever the last successful one said, so the comment
+        // described a rule the code applied in one case out of two.
+        //
+        // The second case is the one this exists for. A tab open all afternoon
+        // holds the permission it loaded with; the operator revokes it; the
+        // staleness check fires a refresh and the endpoint rate-limits it. The
+        // tab then treats a revoked permission as current and sends the address
+        // on the next thing it does, reaching the server before the answer that
+        // would have stopped it.
+        presenceReportedPageUrls = null;
+
         siteConfigSettledAt = Date.now();
 
         // The default corner is a fine answer to a failed lookup, and no
