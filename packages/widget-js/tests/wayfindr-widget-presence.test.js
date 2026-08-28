@@ -1971,3 +1971,139 @@ test('a long-lived tab re-reads a policy that has gone stale', async (t) => {
     'a tab acted on a page-address policy the operator had already changed',
   );
 });
+
+test('the notice names the retention this install actually applies', async (t) => {
+  // An operator shortening the window had every visitor told thirty days
+  // regardless -- a privacy notice wrong in the direction that matters least
+  // to them and most to being truthful.
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/pricing',
+  });
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 0,
+    fetch: async (url) => {
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, {
+          data: {
+            appearance: { position: 'right' },
+            presence: { reports: true, every: 45, page_urls: true, retention_days: 7 },
+          },
+        });
+      }
+
+      return jsonResponse(202, { data: { reports: true, every: 45, page_urls: true, retention_days: 7 } });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  const copy = widget.root.querySelector('.wayfindr-widget__presence-copy').textContent;
+
+  assert.match(copy, /after 7 days/, 'the notice quoted a retention window this install does not use');
+  assert.ok(!copy.includes('{days}'), 'the placeholder was left in the visitor-facing copy');
+});
+
+test('a stop that also revokes addresses revokes them', async (t) => {
+  // An answer saying reporting is off AND addresses are off left the address
+  // policy at its previous value, so a visitor opening the panel afterwards had
+  // bootstrap send one the operator had switched off in the same breath.
+  let stopped = false;
+
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/pricing',
+  });
+
+  const calls = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 20,
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, {
+          data: { appearance: { position: 'right' }, presence: { reports: true, every: 45, page_urls: true } },
+        });
+      }
+
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return jsonResponse(200, {
+          data: {
+            site: { public_key: 'site_public_shop', settings: {}, color: 'blue' },
+            visitor: { anonymous_id: 'anon-shop', token: 'visitor-token-shop' },
+          },
+        });
+      }
+
+      // Both switches revoked in one answer.
+      if (stopped) {
+        return jsonResponse(202, { data: { reports: false, page_urls: false } });
+      }
+
+      return jsonResponse(202, { data: { reports: true, every: 45, page_urls: true } });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  assert.ok(presenceCalls(calls).length > 0, 'nothing was reported, so this proves nothing');
+
+  stopped = true;
+
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  await settle();
+
+  await widget.open();
+  await settle();
+
+  const bootstrap = calls.filter((c) => c.url.endsWith('/api/widget/bootstrap'));
+
+  assert.ok(bootstrap.length > 0, 'the panel never bootstrapped, so this proves nothing');
+  assert.ok(
+    bootstrap.every((c) => !c.body.page_url),
+    'an address went out after the same answer that stopped reporting revoked it',
+  );
+});

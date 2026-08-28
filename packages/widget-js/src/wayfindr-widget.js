@@ -41,8 +41,8 @@
       'notice.emptyVisitor': 'No messages yet. Send a message and support will see it here.',
       'notice.emptyAgent': 'No messages yet. Replies will show up here.',
       'notice.closed': 'This conversation was closed. Send a new message to reopen it.',
-      'presence.disclosure': 'This site can see which of its pages you are on while this widget is loaded, and remembers this visit so it can tell you have been here before. If you never get in touch, that record is deleted after 30 days.',
-      'presence.disclosureNoPage': 'This site can see that you are here while this widget is loaded, and remembers this visit so it can tell you have been here before. It is not told which page you are on. If you never get in touch, that record is deleted after 30 days.',
+      'presence.disclosure': 'This site can see which of its pages you are on while this widget is loaded, and remembers this visit so it can tell you have been here before. If you never get in touch, that record is deleted after {days} days.',
+      'presence.disclosureNoPage': 'This site can see that you are here while this widget is loaded, and remembers this visit so it can tell you have been here before. It is not told which page you are on. If you never get in touch, that record is deleted after {days} days.',
       'presence.decline': 'Stop sharing',
       'presence.declined': 'Not sharing which pages you visit.',
       'presence.declinedNoPage': 'Not letting this site know you are here.',
@@ -130,8 +130,8 @@
       'notice.emptyVisitor': 'Noch keine Nachrichten. Schreiben Sie uns, der Support sieht Ihre Nachricht hier.',
       'notice.emptyAgent': 'Noch keine Nachrichten. Antworten erscheinen hier.',
       'notice.closed': 'Diese Unterhaltung wurde geschlossen. Senden Sie eine neue Nachricht, um sie wieder zu öffnen.',
-      'presence.disclosure': 'Diese Website kann sehen, auf welchen ihrer Seiten Sie sich befinden, solange dieses Widget geladen ist, und merkt sich diesen Besuch, um Sie bei einem erneuten Besuch wiederzuerkennen. Wenn Sie nie Kontakt aufnehmen, wird dieser Eintrag nach 30 Tagen gelöscht.',
-      'presence.disclosureNoPage': 'Diese Website kann sehen, dass Sie hier sind, solange dieses Widget geladen ist, und merkt sich diesen Besuch, um Sie bei einem erneuten Besuch wiederzuerkennen. Welche Seite Sie ansehen, erfährt sie nicht. Wenn Sie nie Kontakt aufnehmen, wird dieser Eintrag nach 30 Tagen gelöscht.',
+      'presence.disclosure': 'Diese Website kann sehen, auf welchen ihrer Seiten Sie sich befinden, solange dieses Widget geladen ist, und merkt sich diesen Besuch, um Sie bei einem erneuten Besuch wiederzuerkennen. Wenn Sie nie Kontakt aufnehmen, wird dieser Eintrag nach {days} Tagen gelöscht.',
+      'presence.disclosureNoPage': 'Diese Website kann sehen, dass Sie hier sind, solange dieses Widget geladen ist, und merkt sich diesen Besuch, um Sie bei einem erneuten Besuch wiederzuerkennen. Welche Seite Sie ansehen, erfährt sie nicht. Wenn Sie nie Kontakt aufnehmen, wird dieser Eintrag nach {days} Tagen gelöscht.',
       'presence.decline': 'Nicht mehr teilen',
       'presence.declined': 'Es wird nicht geteilt, welche Seiten Sie besuchen.',
       'presence.declinedNoPage': 'Diese Website erfährt nicht mehr, dass Sie hier sind.',
@@ -2740,6 +2740,8 @@
       // opened the panel had their page submitted here anyway -- so the board
       // and their profile showed where somebody was who had just asked not to
       // be followed, and it reached the server before anything could drop it.
+      var settingsSeq = ++presenceSettingsSequence;
+
       bootstrapPromise = whenSiteConfigKnown().then(function () {
         return client.bootstrap(pageUrlForReporting(), visitorContext);
       }).then(function (result) {
@@ -2748,7 +2750,7 @@
         }
 
         bootstrapped = true;
-        applyBootstrapResult(result);
+        applyBootstrapResult(result, settingsSeq);
       });
 
       // Opening the panel must not surface a failure: the fallback state is
@@ -2769,7 +2771,7 @@
       });
     }
 
-    function applyBootstrapResult(result) {
+    function applyBootstrapResult(result, bootstrapSettingsSeq) {
       // Language first: everything below renders copy, and rendering it twice
       // would show the visitor the wrong language for a frame.
       applyLocale(siteLocale(result));
@@ -2793,7 +2795,15 @@
       // ever gets. fetchSiteConfig() runs once per page load, so a tab left
       // open all afternoon would otherwise keep the settings it started with
       // and go on sending page addresses an operator switched off hours ago.
-      presenceSettingsSequence++;
+      // The ticket was taken when the REQUEST started, in refreshFromBootstrap,
+      // and is checked here. Incrementing on arrival made a slow bootstrap the
+      // newest answer no matter what overtook it: a heartbeat carrying the
+      // operator's revocation would stop reporting, and this response --
+      // fetched before that revocation existed -- would then reinstate it.
+      if (bootstrapSettingsSeq !== presenceSettingsSequence) {
+        return;
+      }
+
       refreshPresenceSettings(result && result.site ? result.site.presence : null);
     }
 
@@ -2979,6 +2989,14 @@
       }
 
       if (config.reports !== true) {
+        // The policy travels with the stop. An answer saying reporting is off
+        // AND addresses are off left the address policy at its previous value,
+        // so a visitor opening the panel before the next config refresh had
+        // bootstrap send one the operator had switched off in the same breath.
+        if (typeof config.page_urls === 'boolean') {
+          presenceReportedPageUrls = config.page_urls;
+        }
+
         stopPresence();
 
         return;
@@ -2992,6 +3010,12 @@
         reports: true,
         every: typeof config.every === 'number' ? config.every : presenceConfig.every,
         page_urls: typeof config.page_urls === 'boolean' ? config.page_urls : presenceConfig.page_urls,
+        // Carried through, or the notice loses the install's retention window
+        // on the first heartbeat and silently reverts to the default it is
+        // written around.
+        retention_days: typeof config.retention_days === 'number'
+          ? config.retention_days
+          : presenceConfig.retention_days,
       };
 
       presenceReportedPageUrls = presenceConfig.page_urls !== false;
@@ -3301,9 +3325,17 @@
         // disclosure claiming otherwise is both untrue and a worse explanation
         // than none -- it describes a sharing the visitor cannot stop because
         // it is not happening.
-        presenceCopyEl.textContent = presenceConfig && presenceConfig.page_urls === false
+        // The retention the INSTALL applies, not a number baked into the copy.
+        // An operator shortening the window told every visitor thirty days
+        // regardless, which is a privacy notice that is wrong in the direction
+        // that matters least to them and most to being truthful.
+        var days = presenceConfig && typeof presenceConfig.retention_days === 'number'
+            ? presenceConfig.retention_days
+            : 30;
+
+        presenceCopyEl.textContent = (presenceConfig && presenceConfig.page_urls === false
             ? t('presence.disclosureNoPage')
-            : t('presence.disclosure');
+            : t('presence.disclosure')).replace('{days}', String(days));
       }
 
       if (presenceDeclineEl) {
@@ -3472,7 +3504,23 @@
       var seq = ++presenceSettingsSequence;
 
       siteConfigPromise = client.fetchAppearance().then(function (result) {
-        // Overtaken answers are discarded here too. This request starts at page
+        var presence = (result && result.presence) || null;
+
+        // The POLICY resolves even from an overtaken answer, before the
+        // sequence check discards the rest of it. Being overtaken says this is
+        // not the newest configuration; it does not unsay that the server
+        // replied, and "not asked yet" is the only state that withholds page
+        // addresses. Skipped when something newer has already answered, which
+        // is what the null check means here.
+        if (presenceReportedPageUrls === null) {
+          presenceReportedPageUrls = presence && typeof presence.page_urls === 'boolean'
+            ? presence.page_urls
+            : true;
+        }
+
+        siteConfigSettledAt = Date.now();
+
+        // Overtaken answers are discarded here. This request starts at page
         // load and can be slow; a visitor who opens the panel meanwhile gets a
         // bootstrap answer that is NEWER, and applying this one afterwards
         // would reinstate settings the operator had already changed.
@@ -3496,18 +3544,12 @@
           applyLocale(result.locale);
         }
 
-        // The server has ANSWERED, so the page-address policy is known --
-        // whatever it said, and including saying nothing at all. An older
-        // build that sends no presence block has not forbidden anything, and
-        // withholding addresses from it for ever would break page context on
-        // every install that never touched this feature.
-        var presence = (result && result.presence) || null;
-
+        // This answer IS the newest, so it sets the policy outright -- whatever
+        // it said, including saying nothing about presence at all. An older
+        // build that sends no presence block has not forbidden anything.
         presenceReportedPageUrls = presence && typeof presence.page_urls === 'boolean'
           ? presence.page_urls
           : true;
-
-        siteConfigSettledAt = Date.now();
 
         applyPresence(presence);
       }).catch(function () {
