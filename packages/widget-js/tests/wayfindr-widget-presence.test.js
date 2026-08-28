@@ -2813,3 +2813,97 @@ test('a bootstrap outranks the configuration read it waited for', async (t) => {
     'the bootstrap carried the revocation and its own watermark threw it away',
   );
 });
+
+test('a failed refresh forgets the permission it was refreshing', async (t) => {
+  // The catch here says a failed read leaves the policy unknown, and unknown
+  // withholds. It only ever did that on the FIRST read, where there was no
+  // value to leave -- a refresh that fails kept whatever the last successful
+  // one said.
+  //
+  // Which is the case that matters. A tab open all afternoon holds
+  // `page_urls: true` from page load; the operator revokes it; the staleness
+  // check fires a refresh and the endpoint rate-limits it. The tab then went on
+  // treating the revoked permission as current and sent the address on the next
+  // thing it did -- bootstrap, in this case, which reaches the server before
+  // the answer that would have told it to stop.
+  let configReads = 0;
+
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/pricing',
+  });
+
+  const calls = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 0,
+    // Always stale, so opening the panel refreshes.
+    siteConfigStaleMs: 0,
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      if (url.includes('/api/widget/appearance')) {
+        configReads += 1;
+
+        // The first read grants the permission. Every later one fails, which
+        // is what an operator's revocation looks like through a rate limiter.
+        if (configReads > 1) {
+          throw new Error('rate limited');
+        }
+
+        return jsonResponse(200, {
+          data: { appearance: { position: 'right' }, presence: { reports: false, page_urls: true } },
+        });
+      }
+
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return jsonResponse(200, {
+          data: {
+            site: { public_key: 'site_public_shop', settings: {}, color: 'blue' },
+            visitor: { anonymous_id: 'anon-shop', token: 'visitor-token-shop' },
+          },
+        });
+      }
+
+      return jsonResponse(202, { data: {} });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  assert.equal(configReads, 1, 'the first read did not happen, so this proves nothing');
+
+  await widget.open();
+  await settle();
+  await settle();
+
+  assert.ok(configReads > 1, 'no refresh was attempted, so this proves nothing');
+
+  const bootstrap = calls.filter((c) => c.url.endsWith('/api/widget/bootstrap'));
+
+  assert.ok(bootstrap.length > 0, 'the panel never bootstrapped, so this proves nothing');
+  assert.ok(
+    bootstrap.every((c) => !c.body.page_url),
+    'a failed refresh left a revoked permission in force and the address went out under it',
+  );
+});
