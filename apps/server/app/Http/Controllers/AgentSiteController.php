@@ -675,6 +675,11 @@ class AgentSiteController extends Controller
             // would put a nonzero count above a paragraph explaining that the
             // board stays empty by design.
             'visitors' => $reporting->enabled ? LiveVisitorBoard::for($site) : collect(),
+            // Counted without the display cap: the list stops at 200 so one
+            // page stays readable, and telling an agent "200" when four
+            // hundred people are on the site is the one number here they
+            // would have taken at face value.
+            'presentCount' => $reporting->enabled ? LiveVisitorBoard::countFor($site) : 0,
             'presentMinutes' => LiveVisitorBoard::PRESENT_MINUTES,
             'canUpdatePrivacy' => Gate::forUser($agent)->allows('updatePrivacy', $site),
             'realtime' => $this->presenceRealtimeConfig($site),

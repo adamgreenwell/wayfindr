@@ -6,7 +6,7 @@
     <section class="section" aria-labelledby="live-board-heading">
         <div class="section-header">
             <h2 id="live-board-heading">On the site now</h2>
-            <span class="lede" data-live-count>{{ $visitors->count() }}</span>
+            <span class="lede" data-live-count>{{ $presentCount }}</span>
         </div>
 
         @if (! $reporting->enabled)

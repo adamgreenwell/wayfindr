@@ -6,6 +6,7 @@ namespace App\Support\Visitors;
 
 use App\Models\Site;
 use App\Models\Visitor;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 /**
@@ -33,9 +34,47 @@ final class LiveVisitorBoard
     public const PRESENT_MINUTES = VisitorPresence::RECENT_MINUTES;
 
     /**
+     * How many rows the board renders at once.
+     *
+     * A page nobody can read is not a board. The COUNT is deliberately not
+     * bounded by this -- see countFor().
+     */
+    public const DISPLAY_LIMIT = 200;
+
+    /**
+     * How many visitors are on the site, without the display cap.
+     *
+     * `for()` stops at 200 rows because a board nobody can read is not a
+     * board; the COUNT has no such excuse, and reporting "200" to a site with
+     * four hundred people on it is the one number an agent would have trusted.
+     */
+    public static function countFor(Site $site): int
+    {
+        return self::present($site)->count();
+    }
+
+    /**
      * @return Collection<int, array<string, mixed>>
      */
     public static function for(Site $site): Collection
+    {
+        return self::present($site)
+            ->withCount('conversations')
+            ->orderByDesc('last_web_seen_at')
+            ->orderByDesc('id')
+            // Capped so one page stays readable and one query stays bounded.
+            // The count beside it is not capped, so a busier site reads as
+            // "247 here" above the 200 most recent rather than as 200.
+            ->limit(self::DISPLAY_LIMIT)
+            ->get()
+            ->map(static fn (Visitor $visitor): array => self::row($visitor))
+            ->values();
+    }
+
+    /**
+     * Everyone this site counts as present, before ordering or capping.
+     */
+    private static function present(Site $site): Builder
     {
         return Visitor::query()
             ->where('site_id', $site->id)
@@ -47,14 +86,7 @@ final class LiveVisitorBoard
             ->where(function ($query): void {
                 $query->whereNull('anonymous_id')
                     ->orWhere('anonymous_id', 'not like', 'tester-site-%');
-            })
-            ->withCount('conversations')
-            ->orderByDesc('last_web_seen_at')
-            ->orderByDesc('id')
-            ->limit(200)
-            ->get()
-            ->map(static fn (Visitor $visitor): array => self::row($visitor))
-            ->values();
+            });
     }
 
     /**

@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Visitor;
 use App\Support\Visitors\LiveVisitorBoard;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 
@@ -507,4 +508,46 @@ test('an overtaken resync does not replace a newer one', function (): void {
 
     expect($resync)->toContain('var seq = ++resyncSequence;')
         ->and($resync)->toContain('if (seq !== resyncSequence) {');
+});
+
+test('the count is not capped by the display limit', function (): void {
+    // The list stops at 200 so one page stays readable. Telling an agent "200"
+    // when more than that are on the site is the one number here they would
+    // have taken at face value.
+    $f = boardFixture();
+
+    // Past the cap, or the two queries agree and this proves nothing.
+    $total = LiveVisitorBoard::DISPLAY_LIMIT + 12;
+    $rows = [];
+
+    foreach (range(1, $total) as $i) {
+        $rows[] = [
+            'site_id' => $f['site']->id,
+            'anonymous_id' => 'anon-many-'.$i,
+            'presence_only' => true,
+            'last_seen_at' => now(),
+            'last_web_seen_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+    }
+
+    DB::table('visitors')->insert($rows);
+
+    expect(LiveVisitorBoard::for($f['site']))->toHaveCount(LiveVisitorBoard::DISPLAY_LIMIT)
+        ->and(LiveVisitorBoard::countFor($f['site']))->toBe($total);
+
+    // The rendered count comes from the uncapped query, not from the rows.
+    $response = test()->actingAs($f['agent'])
+        ->get(route('dashboard.sites.live', $f['site']))
+        ->assertOk();
+
+    expect($response->viewData('presentCount'))->toBe($total);
+
+    // And somebody who left is in neither.
+    presentVisitor($f['site'], 'anon-departed', [
+        'last_web_seen_at' => now()->subMinutes(LiveVisitorBoard::PRESENT_MINUTES + 1),
+    ]);
+
+    expect(LiveVisitorBoard::countFor($f['site']))->toBe($total, 'the count includes somebody who left');
 });
