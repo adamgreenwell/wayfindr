@@ -927,3 +927,45 @@ test('the board renders a count that matches the rows beside it', function (): v
         'the heading counts somebody the table does not show, on a board with room for everybody'
     );
 });
+
+test('a resync that finds presence switched off clears what it was showing', function (): void {
+    // The resync exists so a board corrects itself. Its one early return was
+    // "no rows element in the response", which is exactly the shape the page
+    // takes when another operator has just switched presence OFF -- so the
+    // response that carried the revocation was the one the board ignored.
+    //
+    // The visitors and their page addresses then stayed on screen until the
+    // local expiry aged each row out, up to fifteen minutes after the operator
+    // revoked the collection that produced them.
+    $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
+
+    $resync = Str::before(Str::after($source, "var fresh = parsed.querySelector('[data-live-rows]');"), 'function ');
+
+    test()->assertStringContainsString(
+        'resyncSequence',
+        $resync,
+        'the slice is not the resync response handler',
+    );
+
+    test()->assertStringNotContainsString(
+        "if (!fresh) {\n                            return;\n                        }",
+        $resync,
+        'a response with no rows is still ignored rather than read as a revocation',
+    );
+
+    test()->assertStringContainsString(
+        'clearBoard()',
+        $resync,
+        'a resync that finds presence off does not clear the board',
+    );
+
+    // And the page really does drop that element when presence is off, which
+    // is what makes its absence mean something.
+    $f = boardFixture(false);
+    presentVisitor($f['site'], 'anon-was-here');
+
+    test()->actingAs($f['agent'])
+        ->get(route('dashboard.sites.live', $f['site']))
+        ->assertOk()
+        ->assertDontSee('data-live-rows', false);
+});

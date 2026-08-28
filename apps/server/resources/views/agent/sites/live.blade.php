@@ -359,6 +359,37 @@
                     refreshCount();
                 }
 
+                // Nobody is being watched here any more.
+                //
+                // Stops the socket as well as emptying the table: a board left
+                // subscribed would take the next broadcast -- there can be one
+                // in flight -- and put a visitor back on a page that has just
+                // said the site is not collecting them.
+                function clearBoard() {
+                    rows.replaceChildren();
+                    presentTotal = 0;
+                    refreshCount(0);
+
+                    pageClosing = true;
+
+                    if (reconnectTimer) {
+                        window.clearTimeout(reconnectTimer);
+                        reconnectTimer = null;
+                    }
+
+                    if (socket) {
+                        try {
+                            socket.close();
+                        } catch (error) {
+                            // Closing is best effort; the rows are already gone.
+                        }
+                    }
+
+                    if (statusEl) {
+                        statusEl.textContent = 'Live visitor presence is off for this site.';
+                    }
+                }
+
                 // Is this event about a later sighting than the row already has?
                 //
                 // An unparseable or missing timestamp on either side answers
@@ -436,16 +467,26 @@
                         var parsed = new DOMParser().parseFromString(html, 'text/html');
                         var fresh = parsed.querySelector('[data-live-rows]');
 
-                        if (!fresh) {
-                            return;
-                        }
-
                         // An overtaken snapshot is discarded. The subscribe
                         // resync and the minute timer can overlap, and if the
                         // older request lands last it would replace the newer
                         // board with staler markup -- and replay a buffer that
                         // stopped collecting when the second call took over.
                         if (seq !== resyncSequence) {
+                            return;
+                        }
+
+                        // No rows element is not an empty answer, it is a
+                        // REVOCATION. The page drops that element entirely when
+                        // presence is off, which is the shape it takes the
+                        // moment another operator switches this site off -- so
+                        // the response carrying the revocation was the one this
+                        // handler used to ignore, and the visitors and their
+                        // page addresses stayed on screen until each row aged
+                        // out locally, up to fifteen minutes later.
+                        if (!fresh) {
+                            clearBoard();
+
                             return;
                         }
 
