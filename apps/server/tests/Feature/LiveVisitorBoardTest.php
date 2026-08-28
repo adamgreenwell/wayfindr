@@ -464,3 +464,29 @@ test('an open board does not keep showing revoked visitors', function (): void {
 
     expect($source)->toContain('window.setInterval(resyncBoard, 60000);');
 });
+
+test('a resync does not overwrite events that arrived during it', function (): void {
+    // Events landing while the snapshot is being fetched are NEWER than it.
+    // Replacing the rows wholesale overwrites them with older state -- and
+    // that is the likely ordering rather than the unlucky one, since a
+    // broadcast beats the page render it raced.
+    $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
+
+    $resync = Str::before(Str::after($source, 'function resyncBoard() {'), 'var socketScheme');
+
+    test()->assertStringContainsString(
+        'replaceChildren',
+        $resync,
+        'the slice is not resyncBoard',
+    );
+
+    expect($resync)->toContain('resyncBuffer = pending;')
+        ->and($resync)->toContain('pending.forEach(applyVisitor);');
+
+    $handler = Str::before(
+        Str::after($source, 'function handleSocketMessage(message) {'),
+        'function connect()',
+    );
+
+    expect($handler)->toContain('resyncBuffer.push(visitor);');
+});

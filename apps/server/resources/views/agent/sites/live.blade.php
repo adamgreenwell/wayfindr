@@ -304,6 +304,15 @@
                  * the same template.
                  */
                 function resyncBoard() {
+                    // Events that land while the snapshot is being fetched are
+                    // NEWER than it. Replacing the rows wholesale would then
+                    // overwrite them with older state -- and that is the likely
+                    // ordering, not the unlucky one, since a broadcast beats
+                    // the page render it raced.
+                    var pending = [];
+
+                    resyncBuffer = pending;
+
                     fetch(window.location.href, {
                         credentials: 'same-origin',
                         headers: { Accept: 'text/html' },
@@ -323,13 +332,25 @@
                         }
 
                         rows.replaceChildren.apply(rows, Array.prototype.slice.call(fresh.childNodes));
+
+                        // Re-applied on top, in arrival order, so the newer
+                        // state wins over the snapshot that did not have it.
+                        pending.forEach(applyVisitor);
                         refreshCount();
                     }).catch(function () {
                         // The rows already on the page stay. A failed resync
                         // leaves the board possibly missing somebody, which is
                         // exactly what it was a moment ago.
+                    }).then(function () {
+                        if (resyncBuffer === pending) {
+                            resyncBuffer = null;
+                        }
                     });
                 }
+
+                // Holds events that arrive while a snapshot is being fetched.
+                // Null when no resync is in flight, which is most of the time.
+                var resyncBuffer = null;
 
                 var socketScheme = config.scheme === 'https' ? 'wss' : 'ws';
                 var socketUrl = socketScheme + '://' + config.host + ':' + config.port + '/app/'
@@ -457,7 +478,16 @@
                             return;
                         }
 
-                        applyVisitor(payload && payload.visitor);
+                        var visitor = payload && payload.visitor;
+
+                        // Buffered as well as applied. A resync in flight is
+                        // about to overwrite this row with older markup, and
+                        // the buffer is what puts it back.
+                        if (resyncBuffer && visitor) {
+                            resyncBuffer.push(visitor);
+                        }
+
+                        applyVisitor(visitor);
                     }
                 }
 
