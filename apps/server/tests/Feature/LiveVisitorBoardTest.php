@@ -681,3 +681,151 @@ test('a close event from a replaced socket cannot open another', function (): vo
         'a close event from a socket nobody is using still schedules a reconnect',
     );
 });
+
+test('a heartbeat refused after a revocation announces nothing', function (): void {
+    // The `exists` guard on announce() reads the model in memory, and this row
+    // existed when the request resolved it. Presence is then switched off --
+    // which deletes the presence-only visitors it collected -- and the locked
+    // re-read inside stamp() correctly refuses to write.
+    //
+    // It refused by returning that same model, whose `exists` is still true
+    // because nothing told it otherwise. So the heartbeat broadcast a visitor
+    // that had just been deleted, and an open board put them back on the
+    // screen -- name, page address and all -- seconds after the operator
+    // revoked the collection that produced them.
+    $f = boardFixture();
+    $site = $f['site'];
+
+    $visitor = presentVisitor($site, 'anon-revoked-mid-flight');
+
+    $visitor->forceFill(['presence_only' => true])->save();
+
+    $revoked = false;
+
+    // Between resolve() reading the visitor and stamp() taking the site lock.
+    // Hooked on the VISITOR read: the site is read by the resolver before
+    // record() is even called, so a hook there fires too early -- resolve()
+    // then finds nothing and hands back a model that never existed, which the
+    // guard already catches. The case this is about needs a row that WAS
+    // found and has since gone.
+    Visitor::retrieved(function (Visitor $read) use (&$revoked, $site): void {
+        if ($revoked || $read->site_id !== $site->id) {
+            return;
+        }
+
+        $revoked = true;
+
+        DB::table('sites')->where('id', $site->id)->update([
+            'settings' => json_encode(['presence' => ['enabled' => false]]),
+        ]);
+        DB::table('visitors')->where('site_id', $site->id)->where('presence_only', true)->delete();
+    });
+
+    Event::fake([VisitorPresenceUpdated::class]);
+
+    boardHeartbeat($site, 'anon-revoked-mid-flight')->assertSuccessful();
+
+    expect($revoked)->toBeTrue('the race never happened, so this proves nothing')
+        ->and(Visitor::query()->where('anonymous_id', 'anon-revoked-mid-flight')->exists())
+        ->toBeFalse('the revocation did not delete the row, so this proves nothing');
+
+    Event::assertNotDispatched(VisitorPresenceUpdated::class);
+});
+
+test('the board is told the row limit it has to respect', function (): void {
+    // The browser cannot infer this. It needs the limit to know whether its own
+    // row count is the whole population -- and to stop inserting past it.
+    $f = boardFixture();
+
+    config()->set('broadcasting.default', 'reverb');
+    config()->set('broadcasting.connections.reverb.key', 'board-key');
+    config()->set('broadcasting.connections.reverb.options.host', 'reverb.internal');
+    config()->set('broadcasting.connections.reverb.options.port', 8080);
+    config()->set('broadcasting.connections.reverb.options.scheme', 'https');
+
+    test()->actingAs($f['agent'])
+        ->get(route('dashboard.sites.live', $f['site']))
+        ->assertOk()
+        ->assertSee('"displayLimit":'.LiveVisitorBoard::DISPLAY_LIMIT, false);
+});
+
+test('the count follows the rows when no row is hidden', function (): void {
+    // `presentTotal` is the server's uncapped figure and the rows are capped at
+    // 200, so a departure was never allowed to lower it -- the rows below the
+    // cap were not on the page to leave it.
+    //
+    // That reasoning does not hold on a board showing everybody. There, the
+    // rows ARE the population, and refusing to lower the total left an empty
+    // table under "3 on the site now" for the minute until the next resync.
+    $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
+
+    $refresh = Str::before(Str::after($source, 'function refreshCount(total) {'), 'function ');
+
+    test()->assertStringContainsString(
+        'presentTotal = present;',
+        $refresh,
+        'the slice is not refreshCount()',
+    );
+
+    test()->assertStringContainsString(
+        'boardIsWhole()',
+        $refresh,
+        'a departure cannot lower the count even when every visitor is on the page',
+    );
+
+    // And the test of wholeness is the server's limit, not a guess.
+    test()->assertStringContainsString(
+        'presentTotal <= displayLimit',
+        $source,
+        'the board decides it is showing everybody without reference to the limit',
+    );
+});
+
+test('a realtime arrival is counted and the board stays within its limit', function (): void {
+    // Two halves of one thing. The insert has to count the arrival even when
+    // there is no room to show them, and it has to evict a row so the board
+    // does not grow past the bound the server renders to -- by every distinct
+    // visitor who reports in between resyncs, on a busy site.
+    $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
+
+    $insert = Str::before(
+        Str::after($source, 'appended to the bottom would put the person who just'),
+        'function dropDeparted',
+    );
+
+    test()->assertStringContainsString(
+        'rows.insertBefore(fresh, rows.firstChild);',
+        $insert,
+        'the slice is not the insert branch',
+    );
+
+    test()->assertStringContainsString(
+        'presentTotal = presentTotal + 1;',
+        $insert,
+        'a visitor the board has no room for is not counted',
+    );
+
+    test()->assertStringContainsString(
+        'rendered.length > displayLimit',
+        $insert,
+        'realtime inserts can grow the board past the limit the server renders to',
+    );
+});
+
+test('a resync applies its total before replaying what it missed', function (): void {
+    // A visitor who arrives between the snapshot being queried and its response
+    // landing is in the buffer and not in the snapshot. Replaying them adds a
+    // row and counts them -- and then applying the snapshot's older total took
+    // it away again, leaving the table holding somebody the heading did not.
+    $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
+
+    $applyTotal = mb_strpos($source, 'refreshCount(freshCount ? Number(freshCount.textContent) || 0 : undefined);');
+    $replayBuffer = mb_strpos($source, 'pending.forEach(applyVisitor);');
+
+    expect($applyTotal)->not->toBeFalse('the resync no longer applies a snapshot total')
+        ->and($replayBuffer)->not->toBeFalse('the resync no longer replays its buffer')
+        ->and($applyTotal)->toBeLessThan(
+            $replayBuffer,
+            'the snapshot total is applied after the buffer, so it discards buffered arrivals'
+        );
+});

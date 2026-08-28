@@ -122,15 +122,33 @@
                 // rendered the real one.
                 var presentTotal = countEl ? Number(countEl.textContent) || 0 : 0;
 
+                var displayLimit = Number(config.displayLimit) || 0;
+
+                // Is every visitor the total counts actually on this page?
+                //
+                // At or below the server's limit the rows ARE the population,
+                // so a departure is a real decrease. Above it the rows are a
+                // window onto a larger set, and the ones below the cap were
+                // never here to leave -- which is why a departure could not
+                // lower the total before, and why it must now.
+                function boardIsWhole() {
+                    return displayLimit > 0 && presentTotal <= displayLimit;
+                }
+
                 function refreshCount(total) {
                     var present = rows.querySelectorAll('[data-visitor-id]').length;
 
                     if (typeof total === 'number') {
                         presentTotal = total;
                     } else if (present > presentTotal) {
-                        // A new arrival can push past the last known total; a
-                        // departure cannot lower it, because the rows below the
-                        // cap were never on this page to leave it.
+                        // A new arrival can push past the last known total.
+                        presentTotal = present;
+                    } else if (boardIsWhole()) {
+                        // Nobody is hidden, so the rows are the count. Without
+                        // this the heading went on claiming the old figure
+                        // after everybody aged out -- an empty table under
+                        // "3 on the site now" until the next resync a minute
+                        // later.
                         presentTotal = present;
                     }
 
@@ -280,6 +298,25 @@
                         // appended to the bottom would put the person who just
                         // arrived where an agent stops looking.
                         rows.insertBefore(fresh, rows.firstChild);
+
+                        // One more person on the site, whether or not there is
+                        // room to show them. Counted BEFORE the trim below, or
+                        // a full board would drop the row and the arrival with
+                        // it -- and counted here rather than left to
+                        // refreshCount(), which infers the total from the rows
+                        // and cannot see somebody it just evicted.
+                        presentTotal = presentTotal + 1;
+
+                        // The server renders at most `displayLimit` rows, for
+                        // readability and to bound the query. Realtime inserts
+                        // were not held to it, so a busy site grew past it
+                        // between resyncs -- by every distinct visitor who
+                        // reported in during that minute.
+                        var rendered = rows.querySelectorAll('[data-visitor-id]');
+
+                        if (displayLimit > 0 && rendered.length > displayLimit) {
+                            rendered[rendered.length - 1].remove();
+                        }
                     }
 
                     refreshCount();
@@ -358,15 +395,24 @@
 
                         rows.replaceChildren.apply(rows, Array.prototype.slice.call(fresh.childNodes));
 
-                        // Re-applied on top, in arrival order, so the newer
-                        // state wins over the snapshot that did not have it.
-                        pending.forEach(applyVisitor);
-
                         // The snapshot carries the uncapped total, which is the
                         // only place the browser can learn it.
+                        //
+                        // Applied BEFORE the buffer is replayed, not after. A
+                        // visitor who arrived between the snapshot being
+                        // queried and its response landing is in `pending` and
+                        // not in the snapshot -- so replaying them adds a row
+                        // and counts them, and then setting the total to the
+                        // snapshot's figure took that away again. The table
+                        // held somebody the heading did not, until the next
+                        // resync a minute later.
                         var freshCount = parsed.querySelector('[data-live-count]');
 
                         refreshCount(freshCount ? Number(freshCount.textContent) || 0 : undefined);
+
+                        // Re-applied on top, in arrival order, so the newer
+                        // state wins over the snapshot that did not have it.
+                        pending.forEach(applyVisitor);
                     }).catch(function () {
                         // The rows already on the page stay. A failed resync
                         // leaves the board possibly missing somebody, which is

@@ -746,6 +746,12 @@ class AgentSiteController extends Controller
             'scheme' => (string) $scheme,
             'eventName' => 'visitor.presence.updated',
             'presentMinutes' => LiveVisitorBoard::PRESENT_MINUTES,
+            // How many rows the server will ever render. The board needs it to
+            // know whether its own row count is the whole truth: at or below
+            // this, every visitor counted is on the page and a departure really
+            // does lower the total. Above it, the rows are a window and the
+            // total has to come from the server.
+            'displayLimit' => LiveVisitorBoard::DISPLAY_LIMIT,
         ];
     }
 
