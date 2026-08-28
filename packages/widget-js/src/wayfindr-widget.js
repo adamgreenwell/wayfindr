@@ -2857,7 +2857,11 @@
         return;
       }
 
-      if (storageGet(storage, key) === 'declined') {
+      // Through declineRecorded(), not straight at storage. A decline whose
+      // write was lost to a transient failure lives only in memory, and
+      // reading the store directly here restarted reporting for somebody who
+      // had already said no.
+      if (declineRecorded()) {
         presenceConfig = null;
         renderPresenceDeclined();
 
@@ -3147,8 +3151,35 @@
         return true;
       }
 
-      if (presenceEl.getClientRects().length > 0) {
-        return true;
+      var rects = presenceEl.getClientRects();
+
+      if (rects.length > 0) {
+        // ON SCREEN, not merely laid out. Host CSS can translate the notice off
+        // the viewport, or a transformed mount can clip it under `overflow:
+        // hidden`, and it keeps a perfectly good rectangle throughout -- the
+        // browser is happy to describe where something would be if anyone could
+        // see it.
+        var view = presenceWindow;
+        var width = (view && view.innerWidth) || (doc.documentElement && doc.documentElement.clientWidth) || 0;
+        var height = (view && view.innerHeight) || (doc.documentElement && doc.documentElement.clientHeight) || 0;
+
+        // No viewport to measure against means a non-visual environment, where
+        // the structural checks above are the whole answer.
+        if (width === 0 || height === 0) {
+          return true;
+        }
+
+        for (var i = 0; i < rects.length; i++) {
+          var rect = rects[i];
+
+          if (rect.width > 0 && rect.height > 0
+            && rect.bottom > 0 && rect.right > 0
+            && rect.top < height && rect.left < width) {
+            return true;
+          }
+        }
+
+        return false;
       }
 
       // No geometry has two meanings and they are opposites: genuinely hidden,
@@ -3195,6 +3226,8 @@
       }
 
       if (event.newValue === 'declined') {
+        presenceDeclinedInMemory = true;
+
         // Recorded before the config is cleared, exactly as the direct click
         // does. Without it a decline arriving from another tab confirmed the
         // page-sharing wording on a site that never shared page addresses.
@@ -3207,7 +3240,14 @@
     }
 
     function declineRecorded() {
-      return storageGet(storage, presenceStorageKey(options.sitePublicKey)) === 'declined';
+      // In memory OR in storage. The probe at start-up proves storage worked
+      // THEN; a host that fills its quota afterwards, or an adapter that starts
+      // rejecting, makes storageSet fail silently -- and the decline would have
+      // existed nowhere, because the in-memory config is cleared in the same
+      // breath. A "no" that evaporates because the disk was full is the failure
+      // the fail-closed rule exists to prevent, arriving from the other side.
+      return presenceDeclinedInMemory
+        || storageGet(storage, presenceStorageKey(options.sitePublicKey)) === 'declined';
     }
 
     function sendPresence() {
@@ -3254,8 +3294,21 @@
         // left exactly the visitors this feature is about reporting until they
         // navigated away.
         refreshPresenceSettings(result);
-      }).catch(function () {
-        // A missed heartbeat is a visitor reading as quiet, which is a fair
+      }).catch(function (error) {
+        // A site that is GONE stops the tab, rather than leaving it posting for
+        // as long as somebody keeps the page open. Archiving a site makes every
+        // presence request 404, and a missed heartbeat is otherwise treated as
+        // a network blip -- correctly, which is why this needs the status to
+        // tell them apart.
+        var status = error && error.status;
+
+        if (status === 404 || status === 403 || status === 410) {
+          stopPresence();
+
+          return;
+        }
+
+        // Anything else is a visitor reading as quiet, which is a fair
         // description of somebody we cannot reach.
       });
     }
@@ -3423,8 +3476,18 @@
      */
     var presenceReportedPageUrls = null;
 
+    /**
+     * The decline, held here as well as in storage.
+     *
+     * Storage is what makes it survive a navigation; this is what makes it
+     * survive a storage write that fails after the start-up probe said writes
+     * work.
+     */
+    var presenceDeclinedInMemory = false;
+
     function declinePresence() {
       presenceReportedPageUrls = Boolean(presenceConfig && presenceConfig.page_urls !== false);
+      presenceDeclinedInMemory = true;
 
       storageSet(storage, presenceStorageKey(options.sitePublicKey), 'declined');
       stopPresenceTimer();

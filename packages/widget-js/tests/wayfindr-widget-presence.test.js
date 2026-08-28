@@ -2424,3 +2424,142 @@ test('a failed configuration read does not grant permission', async (t) => {
     'a failed configuration read granted permission to send page addresses',
   );
 });
+
+test('an archived site stops the tab reporting', async (t) => {
+  // Archiving makes every presence request 404. A missed heartbeat is
+  // otherwise treated as a network blip -- correctly -- so the tab would have
+  // kept posting for as long as somebody left the page open.
+  let gone = false;
+
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/pricing',
+  });
+
+  const calls = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 20,
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(200, {
+          data: { appearance: { position: 'right' }, presence: { reports: true, every: 45, page_urls: true } },
+        });
+      }
+
+      if (gone) {
+        return jsonResponse(404, { message: 'Site not found.' });
+      }
+
+      return jsonResponse(202, { data: { reports: true, every: 45, page_urls: true } });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  assert.ok(presenceCalls(calls).length > 0, 'nothing was reported, so this proves nothing');
+
+  gone = true;
+
+  // One more beat learns the site is gone.
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  await settle();
+
+  const afterGone = presenceCalls(calls).length;
+
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  await settle();
+
+  assert.equal(
+    presenceCalls(calls).length,
+    afterGone,
+    'the tab kept posting to a site that no longer exists',
+  );
+});
+
+test('a decline holds even when the storage write fails', async (t) => {
+  // The start-up probe proves storage worked THEN. A host that fills its quota
+  // afterwards makes the write fail silently, and the in-memory config is
+  // cleared in the same breath -- so the decline would have existed nowhere.
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  let writesWork = true;
+
+  const storage = {
+    getItem: (k) => (values.has(k) ? values.get(k) : null),
+    setItem: (k, v) => {
+      if (!writesWork) {
+        throw new Error('quota exceeded');
+      }
+
+      values.set(k, String(v));
+    },
+    removeItem: (k) => values.delete(k),
+  };
+
+  const { widget, calls } = widgetWithPresence({ storage, pollMs: 20 });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+
+  assert.ok(presenceCalls(calls).length > 0, 'nothing was reported, so this proves nothing');
+
+  // Storage breaks, then the visitor declines.
+  writesWork = false;
+  widget.root.querySelector('.wayfindr-widget__presence-decline').click();
+
+  await settle();
+
+  const afterDecline = presenceCalls(calls).length;
+
+  // Writes start working again. A PERMANENT storage failure is already handled
+  // -- the fail-closed probe stops presence restarting at all -- so the case
+  // that needs the in-memory record is the transient one: the write that
+  // carried the decline was lost, and storage now looks perfectly healthy with
+  // no decline in it.
+  writesWork = true;
+
+  // Declining stops the local timer on its own, so that alone proves nothing.
+  // What matters is whether something that RESTARTS presence honours it.
+  await widget.open();
+  await settle();
+
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  await settle();
+
+  assert.equal(
+    presenceCalls(calls).length,
+    afterDecline,
+    'a decline whose storage write failed was forgotten when presence restarted',
+  );
+
+  const copy = widget.root.querySelector('.wayfindr-widget__presence-copy').textContent;
+
+  assert.match(copy, /Not sharing|know you are here/i, 'the notice went back to claiming it is sharing');
+});
