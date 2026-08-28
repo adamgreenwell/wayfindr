@@ -1533,6 +1533,11 @@ test('starting a conversation sanitises the page address against the domain in f
     $visitor->refresh();
 
     expect($visitor->metadata['last_page_url'] ?? null)->toBeNull();
+
+    // And the conversation's own copy, which is the one that matters more: it
+    // outlives the visitor row, it is what the agent panels label the entry
+    // page, and people ask for help FROM the page that is going wrong.
+    expect($visitor->conversations()->sole()->metadata['started_page_url'] ?? null)->toBeNull();
 });
 
 test('bootstrap sanitises the page address against the domain in force at the write', function (): void {
@@ -1665,4 +1670,32 @@ test('the visitor directory empty state describes the sites it is actually showi
         ->get(route('dashboard.visitors.index', ['search' => 'nobody-matches-this', 'site' => $watching->id]))
         ->assertOk()
         ->assertSee($browsing, false);
+});
+
+test('the visitor directory heading describes the sites it is actually showing', function (): void {
+    // The empty state is not the only claim on this page. "Everyone this desk
+    // has heard from" is printed above every result, empty or not -- and on a
+    // site with presence it is the rows themselves that contradict it, which is
+    // worse than the empty state: the agent can see the people it says are not
+    // there.
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $site = Site::factory()->for($account)->create([
+        'settings' => ['presence' => ['enabled' => false]],
+    ]);
+
+    $heardFrom = 'Everyone this desk has heard from';
+
+    test()->actingAs($agent)
+        ->get(route('dashboard.visitors.index'))
+        ->assertOk()
+        ->assertSee($heardFrom, false);
+
+    $site->forceFill(['settings' => ['presence' => ['enabled' => true]]])->save();
+
+    test()->actingAs($agent)
+        ->get(route('dashboard.visitors.index'))
+        ->assertOk()
+        ->assertDontSee($heardFrom, false)
+        ->assertSee('Everyone this desk has seen', false);
 });
